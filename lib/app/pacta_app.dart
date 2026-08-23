@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:pacta/app/chain_theme.dart';
-import 'package:pacta/app/shell/app_shell.dart';
+import 'package:pacta/auth/auth_gate.dart';
 
 class PactaApp extends StatelessWidget {
   const PactaApp({super.key});
@@ -11,7 +11,7 @@ class PactaApp extends StatelessWidget {
       title: 'Pacta',
       debugShowCheckedModeBanner: false,
       theme: buildChainTheme(),
-      home: const AppShell(),
+      home: const AuthGate(),
     );
   }
 }

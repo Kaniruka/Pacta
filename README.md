@@ -1,17 +1,30 @@
-# pacta
+# Pacta
 
-A new Flutter project.
+Pacta is a mobile-first, cross-platform self-regulation app built with Flutter,
+Riverpod, Drift, and Supabase.
 
-## Getting Started
+## Local development
 
-This project is a starting point for a Flutter application.
+Install dependencies and run the test suite:
 
-A few resources to get you started if this is your first Flutter project:
+```powershell
+flutter pub get
+flutter test
+```
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+To connect the App to a Supabase project, apply the migrations in
+`supabase/migrations` and provide the project URL and publishable key at build
+time:
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+```powershell
+flutter run `
+  --dart-define=SUPABASE_URL=https://your-project.supabase.co `
+  --dart-define=SUPABASE_PUBLISHABLE_KEY=your-publishable-key
+```
+
+Without those values, the App remains runnable but sign-in reports that
+Supabase has not been configured. Never provide a secret or service-role key to
+the Flutter client.
+
+The Drift web worker and SQLite WebAssembly assets in `web/` match the locked
+Drift release and are required for the offline cache on Flutter Web.

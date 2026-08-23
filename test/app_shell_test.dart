@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pacta/app/pacta_app.dart';
+import 'package:pacta/app/chain_theme.dart';
+import 'package:pacta/app/shell/app_shell.dart';
 
 void main() {
   testWidgets('launches on Board with exactly four primary destinations', (
     tester,
   ) async {
-    await tester.pumpWidget(const ProviderScope(child: PactaApp()));
+    await _pumpShell(tester);
 
     expect(find.text('Today\'s Board'), findsOneWidget);
 
@@ -22,7 +23,7 @@ void main() {
   testWidgets('switches destinations and preserves destination state', (
     tester,
   ) async {
-    await tester.pumpWidget(const ProviderScope(child: PactaApp()));
+    await _pumpShell(tester);
 
     await tester.tap(_navigationLabel('National Focus Tree'));
     await tester.pumpAndSettle();
@@ -51,3 +52,11 @@ void main() {
 
 Finder _navigationLabel(String label) =>
     find.descendant(of: find.byType(NavigationBar), matching: find.text(label));
+
+Future<void> _pumpShell(WidgetTester tester) {
+  return tester.pumpWidget(
+    ProviderScope(
+      child: MaterialApp(theme: buildChainTheme(), home: const AppShell()),
+    ),
+  );
+}
