@@ -8,7 +8,7 @@ final privateDataStoreProvider = Provider<PrivateDataStore>((ref) {
   );
 });
 
-final connectivityChangesProvider = Provider<Stream<bool>>((ref) {
+final syncRetryTriggersProvider = Provider<Stream<void>>((ref) {
   return const Stream.empty();
 });
 
@@ -20,7 +20,7 @@ final privateBootstrapProvider =
       final store = ref.watch(privateDataStoreProvider);
       yield await store.bootstrap(userId);
 
-      await for (final isOnline in ref.watch(connectivityChangesProvider)) {
-        if (isOnline) yield await store.bootstrap(userId);
+      await for (final _ in ref.watch(syncRetryTriggersProvider)) {
+        yield await store.bootstrap(userId);
       }
     });

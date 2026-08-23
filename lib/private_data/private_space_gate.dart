@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pacta/app/shell/app_shell.dart';
+import 'package:pacta/app/status_page.dart';
 import 'package:pacta/auth/auth_session.dart';
 import 'package:pacta/private_data/private_data_state.dart';
 
@@ -16,7 +17,7 @@ class PrivateSpaceGate extends ConsumerWidget {
         .when(
           data: (bootstrap) {
             if (bootstrap.isOffline && bootstrap.profile == null) {
-              return const _PrivateDataStatusPage(
+              return const StatusPage(
                 icon: Icons.cloud_off_outlined,
                 title: 'Private data is unavailable offline',
                 message: 'Connect once to prepare this User\'s local cache.',
@@ -36,12 +37,12 @@ class PrivateSpaceGate extends ConsumerWidget {
               ],
             );
           },
-          error: (error, stackTrace) => const _PrivateDataStatusPage(
+          error: (error, stackTrace) => const StatusPage(
             icon: Icons.sync_problem_outlined,
             title: 'Unable to open your private space',
             message: 'Pacta could not load this User\'s private data.',
           ),
-          loading: () => const _PrivateDataStatusPage(
+          loading: () => const StatusPage(
             icon: Icons.sync_outlined,
             title: 'Opening your private space',
             message: 'Loading the local cache and checking for updates…',
@@ -67,45 +68,6 @@ class _OfflineBadge extends StatelessWidget {
             SizedBox(width: 8),
             Text('Offline · using local cache'),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PrivateDataStatusPage extends StatelessWidget {
-  const _PrivateDataStatusPage({
-    required this.icon,
-    required this.title,
-    required this.message,
-    this.showProgress = false,
-  });
-
-  final IconData icon;
-  final String title;
-  final String message;
-  final bool showProgress;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 48),
-              const SizedBox(height: 20),
-              Text(title, style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              Text(message, textAlign: TextAlign.center),
-              if (showProgress) ...[
-                const SizedBox(height: 24),
-                const CircularProgressIndicator(),
-              ],
-            ],
-          ),
         ),
       ),
     );

@@ -26,5 +26,18 @@ Without those values, the App remains runnable but sign-in reports that
 Supabase has not been configured. Never provide a secret or service-role key to
 the Flutter client.
 
+Pacta registration is invitation-only. Before exposing a Supabase project,
+open **Authentication > Providers > Email** in its dashboard and disable
+**Allow new users to sign up**. Create or invite approved users through a
+trusted administrative path; the client intentionally has no sign-up flow.
+Keep this setting aligned in every deployed Supabase project.
+
+The RLS boundary has pgTAP coverage in `supabase/tests/database`. With a local
+Supabase stack running, execute it with:
+
+```powershell
+supabase test db
+```
+
 The Drift web worker and SQLite WebAssembly assets in `web/` match the locked
 Drift release and are required for the offline cache on Flutter Web.

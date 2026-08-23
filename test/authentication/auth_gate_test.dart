@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/app/pacta_app.dart';
@@ -19,9 +21,7 @@ void main() {
             _FakeAuthSession.unauthenticated(),
           ),
           privateDataStoreProvider.overrideWithValue(privateData),
-          connectivityChangesProvider.overrideWith(
-            (ref) => const Stream.empty(),
-          ),
+          syncRetryTriggersProvider.overrideWith((ref) => const Stream.empty()),
         ],
         child: const PactaApp(),
       ),
@@ -42,9 +42,7 @@ void main() {
             _FakeAuthSession.authenticated(const AppUserId('user-a')),
           ),
           privateDataStoreProvider.overrideWithValue(privateData),
-          connectivityChangesProvider.overrideWith(
-            (ref) => const Stream.empty(),
-          ),
+          syncRetryTriggersProvider.overrideWith((ref) => const Stream.empty()),
         ],
         child: const PactaApp(),
       ),
@@ -55,9 +53,46 @@ void main() {
     expect(find.text('Sign in to Pacta'), findsNothing);
     expect(privateData.requestedUsers, [const AppUserId('user-a')]);
   });
+
+  testWidgets('authenticated User resynchronizes after a retry trigger', (
+    tester,
+  ) async {
+    final retryTriggers = StreamController<void>();
+    addTearDown(retryTriggers.close);
+    final privateData = _FakePrivateDataStore(isOffline: true);
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          authSessionProvider.overrideWithValue(
+            _FakeAuthSession.authenticated(const AppUserId('user-a')),
+          ),
+          privateDataStoreProvider.overrideWithValue(privateData),
+          syncRetryTriggersProvider.overrideWithValue(retryTriggers.stream),
+        ],
+        child: const PactaApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Offline · using local cache'), findsOneWidget);
+
+    privateData.isOffline = false;
+    retryTriggers.add(null);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Offline · using local cache'), findsNothing);
+    expect(privateData.requestedUsers, [
+      const AppUserId('user-a'),
+      const AppUserId('user-a'),
+    ]);
+  });
 }
 
 class _FakePrivateDataStore implements PrivateDataStore {
+  _FakePrivateDataStore({this.isOffline = false});
+
+  bool isOffline;
   final requestedUsers = <AppUserId>[];
 
   @override
@@ -69,7 +104,7 @@ class _FakePrivateDataStore implements PrivateDataStore {
         displayName: 'Test User',
         updatedAt: DateTime.utc(2026, 8, 24),
       ),
-      isOffline: false,
+      isOffline: isOffline,
     );
   }
 }

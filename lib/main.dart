@@ -43,9 +43,7 @@ Future<void> main() async {
       overrides: [
         authSessionProvider.overrideWithValue(authSession),
         privateDataStoreProvider.overrideWithValue(privateDataStore),
-        connectivityChangesProvider.overrideWithValue(
-          connectivity.onlineChanges,
-        ),
+        syncRetryTriggersProvider.overrideWithValue(connectivity.retryTriggers),
       ],
       child: const PactaApp(),
     ),

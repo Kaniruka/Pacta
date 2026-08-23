@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pacta/app/status_page.dart';
 import 'package:pacta/auth/auth_state.dart';
 import 'package:pacta/private_data/private_space_gate.dart';
 
@@ -14,12 +15,12 @@ class AuthGate extends ConsumerWidget {
           data: (userId) => userId == null
               ? const _SignInPage()
               : PrivateSpaceGate(userId: userId),
-          error: (error, stackTrace) => const _AuthStatusPage(
+          error: (error, stackTrace) => const StatusPage(
             icon: Icons.cloud_off_outlined,
             title: 'Unable to check your session',
             message: 'Check your connection and reopen Pacta.',
           ),
-          loading: () => const _AuthStatusPage(
+          loading: () => const StatusPage(
             icon: Icons.lock_outline,
             title: 'Opening your private space',
             message: 'Restoring the authenticated session…',
@@ -134,45 +135,6 @@ class _SignInPageState extends ConsumerState<_SignInPage> {
                 ],
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _AuthStatusPage extends StatelessWidget {
-  const _AuthStatusPage({
-    required this.icon,
-    required this.title,
-    required this.message,
-    this.showProgress = false,
-  });
-
-  final IconData icon;
-  final String title;
-  final String message;
-  final bool showProgress;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, size: 48),
-              const SizedBox(height: 20),
-              Text(title, style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              Text(message, textAlign: TextAlign.center),
-              if (showProgress) ...[
-                const SizedBox(height: 24),
-                const CircularProgressIndicator(),
-              ],
-            ],
           ),
         ),
       ),
