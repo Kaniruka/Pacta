@@ -16,25 +16,45 @@ class SelectedDestination extends Notifier<int> {
 class AppShell extends ConsumerWidget {
   const AppShell({super.key});
 
-  static const _pages = <Widget>[
-    _DestinationPage(
-      title: "Today's Board",
-      eyebrow: 'MONDAY / 04:00—04:00',
-      description: 'Choose the next concrete Task before reviewing progress.',
+  static const _destinations = <_AppDestination>[
+    _AppDestination(
+      label: 'Board',
       icon: Icons.dashboard_outlined,
+      selectedIcon: Icons.dashboard,
+      page: _DestinationPage(
+        title: "Today's Board",
+        eyebrow: 'MONDAY / 04:00—04:00',
+        description: 'Choose the next concrete Task before reviewing progress.',
+        icon: Icons.dashboard_outlined,
+      ),
     ),
-    NationalFocusTreePage(),
-    _DestinationPage(
-      title: 'Start a Focus Session',
-      eyebrow: 'FOCUS CHAIN / SETUP',
-      description: 'Select a Task and explicitly choose the chain for today.',
-      icon: Icons.radio_button_checked,
+    _AppDestination(
+      label: 'National Focus Tree',
+      icon: Icons.account_tree_outlined,
+      selectedIcon: Icons.account_tree,
+      page: NationalFocusTreePage(),
     ),
-    _DestinationPage(
-      title: 'My',
-      eyebrow: 'ACCOUNT / RECORD',
-      description: 'Review personal records and global settings.',
+    _AppDestination(
+      label: 'Focus Chain',
+      icon: Icons.radio_button_unchecked,
+      selectedIcon: Icons.radio_button_checked,
+      page: _DestinationPage(
+        title: 'Start a Focus Session',
+        eyebrow: 'FOCUS CHAIN / SETUP',
+        description: 'Select a Task and explicitly choose the chain for today.',
+        icon: Icons.radio_button_checked,
+      ),
+    ),
+    _AppDestination(
+      label: 'My',
       icon: Icons.person_outline,
+      selectedIcon: Icons.person,
+      page: _DestinationPage(
+        title: 'My',
+        eyebrow: 'ACCOUNT / RECORD',
+        description: 'Review personal records and global settings.',
+        icon: Icons.person_outline,
+      ),
     ),
   ];
 
@@ -44,38 +64,41 @@ class AppShell extends ConsumerWidget {
 
     return Scaffold(
       body: SafeArea(
-        child: IndexedStack(index: selectedIndex, children: _pages),
+        child: IndexedStack(
+          index: selectedIndex,
+          children: [for (final destination in _destinations) destination.page],
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedIndex,
         onDestinationSelected: ref
             .read(selectedDestinationProvider.notifier)
             .select,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: 'Board',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.account_tree_outlined),
-            selectedIcon: Icon(Icons.account_tree),
-            label: 'National Focus Tree',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.radio_button_unchecked),
-            selectedIcon: Icon(Icons.radio_button_checked),
-            label: 'Focus Chain',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'My',
-          ),
+        destinations: [
+          for (final destination in _destinations)
+            NavigationDestination(
+              icon: Icon(destination.icon),
+              selectedIcon: Icon(destination.selectedIcon),
+              label: destination.label,
+            ),
         ],
       ),
     );
   }
+}
+
+class _AppDestination {
+  const _AppDestination({
+    required this.label,
+    required this.icon,
+    required this.selectedIcon,
+    required this.page,
+  });
+
+  final String label;
+  final IconData icon;
+  final IconData selectedIcon;
+  final Widget page;
 }
 
 class _DestinationPage extends StatelessWidget {
