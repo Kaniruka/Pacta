@@ -32,6 +32,9 @@ migrate_working_dir/
 .pub/
 /build/
 /coverage/
+node_modules/
+supabase/.branches/
+supabase/.temp/
 
 # Symbolication related
 app.*.symbols

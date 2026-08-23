@@ -33,10 +33,12 @@ trusted administrative path; the client intentionally has no sign-up flow.
 Keep this setting aligned in every deployed Supabase project.
 
 The RLS boundary has pgTAP coverage in `supabase/tests/database`. With a local
-Supabase stack running, execute it with:
+Supabase stack running, install the project-pinned CLI and execute it with:
 
 ```powershell
-supabase test db
+pnpm install
+pnpm exec supabase start
+pnpm exec supabase test db
 ```
 
 The Drift web worker and SQLite WebAssembly assets in `web/` match the locked
