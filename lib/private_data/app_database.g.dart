@@ -1921,6 +1921,1655 @@ class GoalTaskOutboxCompanion extends UpdateCompanion<GoalTaskOutboxRow> {
   }
 }
 
+class $CachedFocusSessionsTable extends CachedFocusSessions
+    with TableInfo<$CachedFocusSessionsTable, FocusSessionRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $CachedFocusSessionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _taskIdMeta = const VerificationMeta('taskId');
+  @override
+  late final GeneratedColumn<String> taskId = GeneratedColumn<String>(
+    'task_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _modeMeta = const VerificationMeta('mode');
+  @override
+  late final GeneratedColumn<String> mode = GeneratedColumn<String>(
+    'mode',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _plannedSecondsMeta = const VerificationMeta(
+    'plannedSeconds',
+  );
+  @override
+  late final GeneratedColumn<int> plannedSeconds = GeneratedColumn<int>(
+    'planned_seconds',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _startedAtMeta = const VerificationMeta(
+    'startedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> startedAt = GeneratedColumn<DateTime>(
+    'started_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _actualElapsedSecondsMeta =
+      const VerificationMeta('actualElapsedSeconds');
+  @override
+  late final GeneratedColumn<int> actualElapsedSeconds = GeneratedColumn<int>(
+    'actual_elapsed_seconds',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _outcomeMeta = const VerificationMeta(
+    'outcome',
+  );
+  @override
+  late final GeneratedColumn<String> outcome = GeneratedColumn<String>(
+    'outcome',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _completedAtMeta = const VerificationMeta(
+    'completedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> completedAt = GeneratedColumn<DateTime>(
+    'completed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mutationIdMeta = const VerificationMeta(
+    'mutationId',
+  );
+  @override
+  late final GeneratedColumn<String> mutationId = GeneratedColumn<String>(
+    'mutation_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    userId,
+    taskId,
+    mode,
+    plannedSeconds,
+    startedAt,
+    actualElapsedSeconds,
+    outcome,
+    completedAt,
+    createdAt,
+    updatedAt,
+    mutationId,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'cached_focus_sessions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FocusSessionRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('task_id')) {
+      context.handle(
+        _taskIdMeta,
+        taskId.isAcceptableOrUnknown(data['task_id']!, _taskIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_taskIdMeta);
+    }
+    if (data.containsKey('mode')) {
+      context.handle(
+        _modeMeta,
+        mode.isAcceptableOrUnknown(data['mode']!, _modeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_modeMeta);
+    }
+    if (data.containsKey('planned_seconds')) {
+      context.handle(
+        _plannedSecondsMeta,
+        plannedSeconds.isAcceptableOrUnknown(
+          data['planned_seconds']!,
+          _plannedSecondsMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_plannedSecondsMeta);
+    }
+    if (data.containsKey('started_at')) {
+      context.handle(
+        _startedAtMeta,
+        startedAt.isAcceptableOrUnknown(data['started_at']!, _startedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_startedAtMeta);
+    }
+    if (data.containsKey('actual_elapsed_seconds')) {
+      context.handle(
+        _actualElapsedSecondsMeta,
+        actualElapsedSeconds.isAcceptableOrUnknown(
+          data['actual_elapsed_seconds']!,
+          _actualElapsedSecondsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('outcome')) {
+      context.handle(
+        _outcomeMeta,
+        outcome.isAcceptableOrUnknown(data['outcome']!, _outcomeMeta),
+      );
+    }
+    if (data.containsKey('completed_at')) {
+      context.handle(
+        _completedAtMeta,
+        completedAt.isAcceptableOrUnknown(
+          data['completed_at']!,
+          _completedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('mutation_id')) {
+      context.handle(
+        _mutationIdMeta,
+        mutationId.isAcceptableOrUnknown(data['mutation_id']!, _mutationIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mutationIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id, userId};
+  @override
+  FocusSessionRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FocusSessionRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      taskId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}task_id'],
+      )!,
+      mode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mode'],
+      )!,
+      plannedSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}planned_seconds'],
+      )!,
+      startedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}started_at'],
+      )!,
+      actualElapsedSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}actual_elapsed_seconds'],
+      )!,
+      outcome: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}outcome'],
+      ),
+      completedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}completed_at'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      mutationId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mutation_id'],
+      )!,
+    );
+  }
+
+  @override
+  $CachedFocusSessionsTable createAlias(String alias) {
+    return $CachedFocusSessionsTable(attachedDatabase, alias);
+  }
+}
+
+class FocusSessionRow extends DataClass implements Insertable<FocusSessionRow> {
+  final String id;
+  final String userId;
+  final String taskId;
+  final String mode;
+  final int plannedSeconds;
+  final DateTime startedAt;
+  final int actualElapsedSeconds;
+  final String? outcome;
+  final DateTime? completedAt;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String mutationId;
+  const FocusSessionRow({
+    required this.id,
+    required this.userId,
+    required this.taskId,
+    required this.mode,
+    required this.plannedSeconds,
+    required this.startedAt,
+    required this.actualElapsedSeconds,
+    this.outcome,
+    this.completedAt,
+    required this.createdAt,
+    required this.updatedAt,
+    required this.mutationId,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['user_id'] = Variable<String>(userId);
+    map['task_id'] = Variable<String>(taskId);
+    map['mode'] = Variable<String>(mode);
+    map['planned_seconds'] = Variable<int>(plannedSeconds);
+    map['started_at'] = Variable<DateTime>(startedAt);
+    map['actual_elapsed_seconds'] = Variable<int>(actualElapsedSeconds);
+    if (!nullToAbsent || outcome != null) {
+      map['outcome'] = Variable<String>(outcome);
+    }
+    if (!nullToAbsent || completedAt != null) {
+      map['completed_at'] = Variable<DateTime>(completedAt);
+    }
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    map['mutation_id'] = Variable<String>(mutationId);
+    return map;
+  }
+
+  CachedFocusSessionsCompanion toCompanion(bool nullToAbsent) {
+    return CachedFocusSessionsCompanion(
+      id: Value(id),
+      userId: Value(userId),
+      taskId: Value(taskId),
+      mode: Value(mode),
+      plannedSeconds: Value(plannedSeconds),
+      startedAt: Value(startedAt),
+      actualElapsedSeconds: Value(actualElapsedSeconds),
+      outcome: outcome == null && nullToAbsent
+          ? const Value.absent()
+          : Value(outcome),
+      completedAt: completedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(completedAt),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      mutationId: Value(mutationId),
+    );
+  }
+
+  factory FocusSessionRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FocusSessionRow(
+      id: serializer.fromJson<String>(json['id']),
+      userId: serializer.fromJson<String>(json['userId']),
+      taskId: serializer.fromJson<String>(json['taskId']),
+      mode: serializer.fromJson<String>(json['mode']),
+      plannedSeconds: serializer.fromJson<int>(json['plannedSeconds']),
+      startedAt: serializer.fromJson<DateTime>(json['startedAt']),
+      actualElapsedSeconds: serializer.fromJson<int>(
+        json['actualElapsedSeconds'],
+      ),
+      outcome: serializer.fromJson<String?>(json['outcome']),
+      completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      mutationId: serializer.fromJson<String>(json['mutationId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'userId': serializer.toJson<String>(userId),
+      'taskId': serializer.toJson<String>(taskId),
+      'mode': serializer.toJson<String>(mode),
+      'plannedSeconds': serializer.toJson<int>(plannedSeconds),
+      'startedAt': serializer.toJson<DateTime>(startedAt),
+      'actualElapsedSeconds': serializer.toJson<int>(actualElapsedSeconds),
+      'outcome': serializer.toJson<String?>(outcome),
+      'completedAt': serializer.toJson<DateTime?>(completedAt),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'mutationId': serializer.toJson<String>(mutationId),
+    };
+  }
+
+  FocusSessionRow copyWith({
+    String? id,
+    String? userId,
+    String? taskId,
+    String? mode,
+    int? plannedSeconds,
+    DateTime? startedAt,
+    int? actualElapsedSeconds,
+    Value<String?> outcome = const Value.absent(),
+    Value<DateTime?> completedAt = const Value.absent(),
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    String? mutationId,
+  }) => FocusSessionRow(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    taskId: taskId ?? this.taskId,
+    mode: mode ?? this.mode,
+    plannedSeconds: plannedSeconds ?? this.plannedSeconds,
+    startedAt: startedAt ?? this.startedAt,
+    actualElapsedSeconds: actualElapsedSeconds ?? this.actualElapsedSeconds,
+    outcome: outcome.present ? outcome.value : this.outcome,
+    completedAt: completedAt.present ? completedAt.value : this.completedAt,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    mutationId: mutationId ?? this.mutationId,
+  );
+  FocusSessionRow copyWithCompanion(CachedFocusSessionsCompanion data) {
+    return FocusSessionRow(
+      id: data.id.present ? data.id.value : this.id,
+      userId: data.userId.present ? data.userId.value : this.userId,
+      taskId: data.taskId.present ? data.taskId.value : this.taskId,
+      mode: data.mode.present ? data.mode.value : this.mode,
+      plannedSeconds: data.plannedSeconds.present
+          ? data.plannedSeconds.value
+          : this.plannedSeconds,
+      startedAt: data.startedAt.present ? data.startedAt.value : this.startedAt,
+      actualElapsedSeconds: data.actualElapsedSeconds.present
+          ? data.actualElapsedSeconds.value
+          : this.actualElapsedSeconds,
+      outcome: data.outcome.present ? data.outcome.value : this.outcome,
+      completedAt: data.completedAt.present
+          ? data.completedAt.value
+          : this.completedAt,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      mutationId: data.mutationId.present
+          ? data.mutationId.value
+          : this.mutationId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FocusSessionRow(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('taskId: $taskId, ')
+          ..write('mode: $mode, ')
+          ..write('plannedSeconds: $plannedSeconds, ')
+          ..write('startedAt: $startedAt, ')
+          ..write('actualElapsedSeconds: $actualElapsedSeconds, ')
+          ..write('outcome: $outcome, ')
+          ..write('completedAt: $completedAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('mutationId: $mutationId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    userId,
+    taskId,
+    mode,
+    plannedSeconds,
+    startedAt,
+    actualElapsedSeconds,
+    outcome,
+    completedAt,
+    createdAt,
+    updatedAt,
+    mutationId,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FocusSessionRow &&
+          other.id == this.id &&
+          other.userId == this.userId &&
+          other.taskId == this.taskId &&
+          other.mode == this.mode &&
+          other.plannedSeconds == this.plannedSeconds &&
+          other.startedAt == this.startedAt &&
+          other.actualElapsedSeconds == this.actualElapsedSeconds &&
+          other.outcome == this.outcome &&
+          other.completedAt == this.completedAt &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.mutationId == this.mutationId);
+}
+
+class CachedFocusSessionsCompanion extends UpdateCompanion<FocusSessionRow> {
+  final Value<String> id;
+  final Value<String> userId;
+  final Value<String> taskId;
+  final Value<String> mode;
+  final Value<int> plannedSeconds;
+  final Value<DateTime> startedAt;
+  final Value<int> actualElapsedSeconds;
+  final Value<String?> outcome;
+  final Value<DateTime?> completedAt;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<String> mutationId;
+  final Value<int> rowid;
+  const CachedFocusSessionsCompanion({
+    this.id = const Value.absent(),
+    this.userId = const Value.absent(),
+    this.taskId = const Value.absent(),
+    this.mode = const Value.absent(),
+    this.plannedSeconds = const Value.absent(),
+    this.startedAt = const Value.absent(),
+    this.actualElapsedSeconds = const Value.absent(),
+    this.outcome = const Value.absent(),
+    this.completedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.mutationId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  CachedFocusSessionsCompanion.insert({
+    required String id,
+    required String userId,
+    required String taskId,
+    required String mode,
+    required int plannedSeconds,
+    required DateTime startedAt,
+    this.actualElapsedSeconds = const Value.absent(),
+    this.outcome = const Value.absent(),
+    this.completedAt = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    required String mutationId,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       userId = Value(userId),
+       taskId = Value(taskId),
+       mode = Value(mode),
+       plannedSeconds = Value(plannedSeconds),
+       startedAt = Value(startedAt),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt),
+       mutationId = Value(mutationId);
+  static Insertable<FocusSessionRow> custom({
+    Expression<String>? id,
+    Expression<String>? userId,
+    Expression<String>? taskId,
+    Expression<String>? mode,
+    Expression<int>? plannedSeconds,
+    Expression<DateTime>? startedAt,
+    Expression<int>? actualElapsedSeconds,
+    Expression<String>? outcome,
+    Expression<DateTime>? completedAt,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<String>? mutationId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (userId != null) 'user_id': userId,
+      if (taskId != null) 'task_id': taskId,
+      if (mode != null) 'mode': mode,
+      if (plannedSeconds != null) 'planned_seconds': plannedSeconds,
+      if (startedAt != null) 'started_at': startedAt,
+      if (actualElapsedSeconds != null)
+        'actual_elapsed_seconds': actualElapsedSeconds,
+      if (outcome != null) 'outcome': outcome,
+      if (completedAt != null) 'completed_at': completedAt,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (mutationId != null) 'mutation_id': mutationId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  CachedFocusSessionsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? userId,
+    Value<String>? taskId,
+    Value<String>? mode,
+    Value<int>? plannedSeconds,
+    Value<DateTime>? startedAt,
+    Value<int>? actualElapsedSeconds,
+    Value<String?>? outcome,
+    Value<DateTime?>? completedAt,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<String>? mutationId,
+    Value<int>? rowid,
+  }) {
+    return CachedFocusSessionsCompanion(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      taskId: taskId ?? this.taskId,
+      mode: mode ?? this.mode,
+      plannedSeconds: plannedSeconds ?? this.plannedSeconds,
+      startedAt: startedAt ?? this.startedAt,
+      actualElapsedSeconds: actualElapsedSeconds ?? this.actualElapsedSeconds,
+      outcome: outcome ?? this.outcome,
+      completedAt: completedAt ?? this.completedAt,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      mutationId: mutationId ?? this.mutationId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (taskId.present) {
+      map['task_id'] = Variable<String>(taskId.value);
+    }
+    if (mode.present) {
+      map['mode'] = Variable<String>(mode.value);
+    }
+    if (plannedSeconds.present) {
+      map['planned_seconds'] = Variable<int>(plannedSeconds.value);
+    }
+    if (startedAt.present) {
+      map['started_at'] = Variable<DateTime>(startedAt.value);
+    }
+    if (actualElapsedSeconds.present) {
+      map['actual_elapsed_seconds'] = Variable<int>(actualElapsedSeconds.value);
+    }
+    if (outcome.present) {
+      map['outcome'] = Variable<String>(outcome.value);
+    }
+    if (completedAt.present) {
+      map['completed_at'] = Variable<DateTime>(completedAt.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (mutationId.present) {
+      map['mutation_id'] = Variable<String>(mutationId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CachedFocusSessionsCompanion(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('taskId: $taskId, ')
+          ..write('mode: $mode, ')
+          ..write('plannedSeconds: $plannedSeconds, ')
+          ..write('startedAt: $startedAt, ')
+          ..write('actualElapsedSeconds: $actualElapsedSeconds, ')
+          ..write('outcome: $outcome, ')
+          ..write('completedAt: $completedAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('mutationId: $mutationId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $CachedFocusNodesTable extends CachedFocusNodes
+    with TableInfo<$CachedFocusNodesTable, FocusNodeRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $CachedFocusNodesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sessionIdMeta = const VerificationMeta(
+    'sessionId',
+  );
+  @override
+  late final GeneratedColumn<String> sessionId = GeneratedColumn<String>(
+    'session_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _taskIdMeta = const VerificationMeta('taskId');
+  @override
+  late final GeneratedColumn<String> taskId = GeneratedColumn<String>(
+    'task_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _modeMeta = const VerificationMeta('mode');
+  @override
+  late final GeneratedColumn<String> mode = GeneratedColumn<String>(
+    'mode',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _elapsedSecondsMeta = const VerificationMeta(
+    'elapsedSeconds',
+  );
+  @override
+  late final GeneratedColumn<int> elapsedSeconds = GeneratedColumn<int>(
+    'elapsed_seconds',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mutationIdMeta = const VerificationMeta(
+    'mutationId',
+  );
+  @override
+  late final GeneratedColumn<String> mutationId = GeneratedColumn<String>(
+    'mutation_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    userId,
+    sessionId,
+    taskId,
+    mode,
+    elapsedSeconds,
+    createdAt,
+    mutationId,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'cached_focus_nodes';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FocusNodeRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('session_id')) {
+      context.handle(
+        _sessionIdMeta,
+        sessionId.isAcceptableOrUnknown(data['session_id']!, _sessionIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sessionIdMeta);
+    }
+    if (data.containsKey('task_id')) {
+      context.handle(
+        _taskIdMeta,
+        taskId.isAcceptableOrUnknown(data['task_id']!, _taskIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_taskIdMeta);
+    }
+    if (data.containsKey('mode')) {
+      context.handle(
+        _modeMeta,
+        mode.isAcceptableOrUnknown(data['mode']!, _modeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_modeMeta);
+    }
+    if (data.containsKey('elapsed_seconds')) {
+      context.handle(
+        _elapsedSecondsMeta,
+        elapsedSeconds.isAcceptableOrUnknown(
+          data['elapsed_seconds']!,
+          _elapsedSecondsMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_elapsedSecondsMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('mutation_id')) {
+      context.handle(
+        _mutationIdMeta,
+        mutationId.isAcceptableOrUnknown(data['mutation_id']!, _mutationIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mutationIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id, userId};
+  @override
+  FocusNodeRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FocusNodeRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      sessionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}session_id'],
+      )!,
+      taskId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}task_id'],
+      )!,
+      mode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mode'],
+      )!,
+      elapsedSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}elapsed_seconds'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      mutationId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mutation_id'],
+      )!,
+    );
+  }
+
+  @override
+  $CachedFocusNodesTable createAlias(String alias) {
+    return $CachedFocusNodesTable(attachedDatabase, alias);
+  }
+}
+
+class FocusNodeRow extends DataClass implements Insertable<FocusNodeRow> {
+  final String id;
+  final String userId;
+  final String sessionId;
+  final String taskId;
+  final String mode;
+  final int elapsedSeconds;
+  final DateTime createdAt;
+  final String mutationId;
+  const FocusNodeRow({
+    required this.id,
+    required this.userId,
+    required this.sessionId,
+    required this.taskId,
+    required this.mode,
+    required this.elapsedSeconds,
+    required this.createdAt,
+    required this.mutationId,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['user_id'] = Variable<String>(userId);
+    map['session_id'] = Variable<String>(sessionId);
+    map['task_id'] = Variable<String>(taskId);
+    map['mode'] = Variable<String>(mode);
+    map['elapsed_seconds'] = Variable<int>(elapsedSeconds);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['mutation_id'] = Variable<String>(mutationId);
+    return map;
+  }
+
+  CachedFocusNodesCompanion toCompanion(bool nullToAbsent) {
+    return CachedFocusNodesCompanion(
+      id: Value(id),
+      userId: Value(userId),
+      sessionId: Value(sessionId),
+      taskId: Value(taskId),
+      mode: Value(mode),
+      elapsedSeconds: Value(elapsedSeconds),
+      createdAt: Value(createdAt),
+      mutationId: Value(mutationId),
+    );
+  }
+
+  factory FocusNodeRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FocusNodeRow(
+      id: serializer.fromJson<String>(json['id']),
+      userId: serializer.fromJson<String>(json['userId']),
+      sessionId: serializer.fromJson<String>(json['sessionId']),
+      taskId: serializer.fromJson<String>(json['taskId']),
+      mode: serializer.fromJson<String>(json['mode']),
+      elapsedSeconds: serializer.fromJson<int>(json['elapsedSeconds']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      mutationId: serializer.fromJson<String>(json['mutationId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'userId': serializer.toJson<String>(userId),
+      'sessionId': serializer.toJson<String>(sessionId),
+      'taskId': serializer.toJson<String>(taskId),
+      'mode': serializer.toJson<String>(mode),
+      'elapsedSeconds': serializer.toJson<int>(elapsedSeconds),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'mutationId': serializer.toJson<String>(mutationId),
+    };
+  }
+
+  FocusNodeRow copyWith({
+    String? id,
+    String? userId,
+    String? sessionId,
+    String? taskId,
+    String? mode,
+    int? elapsedSeconds,
+    DateTime? createdAt,
+    String? mutationId,
+  }) => FocusNodeRow(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    sessionId: sessionId ?? this.sessionId,
+    taskId: taskId ?? this.taskId,
+    mode: mode ?? this.mode,
+    elapsedSeconds: elapsedSeconds ?? this.elapsedSeconds,
+    createdAt: createdAt ?? this.createdAt,
+    mutationId: mutationId ?? this.mutationId,
+  );
+  FocusNodeRow copyWithCompanion(CachedFocusNodesCompanion data) {
+    return FocusNodeRow(
+      id: data.id.present ? data.id.value : this.id,
+      userId: data.userId.present ? data.userId.value : this.userId,
+      sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
+      taskId: data.taskId.present ? data.taskId.value : this.taskId,
+      mode: data.mode.present ? data.mode.value : this.mode,
+      elapsedSeconds: data.elapsedSeconds.present
+          ? data.elapsedSeconds.value
+          : this.elapsedSeconds,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      mutationId: data.mutationId.present
+          ? data.mutationId.value
+          : this.mutationId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FocusNodeRow(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('sessionId: $sessionId, ')
+          ..write('taskId: $taskId, ')
+          ..write('mode: $mode, ')
+          ..write('elapsedSeconds: $elapsedSeconds, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('mutationId: $mutationId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    userId,
+    sessionId,
+    taskId,
+    mode,
+    elapsedSeconds,
+    createdAt,
+    mutationId,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FocusNodeRow &&
+          other.id == this.id &&
+          other.userId == this.userId &&
+          other.sessionId == this.sessionId &&
+          other.taskId == this.taskId &&
+          other.mode == this.mode &&
+          other.elapsedSeconds == this.elapsedSeconds &&
+          other.createdAt == this.createdAt &&
+          other.mutationId == this.mutationId);
+}
+
+class CachedFocusNodesCompanion extends UpdateCompanion<FocusNodeRow> {
+  final Value<String> id;
+  final Value<String> userId;
+  final Value<String> sessionId;
+  final Value<String> taskId;
+  final Value<String> mode;
+  final Value<int> elapsedSeconds;
+  final Value<DateTime> createdAt;
+  final Value<String> mutationId;
+  final Value<int> rowid;
+  const CachedFocusNodesCompanion({
+    this.id = const Value.absent(),
+    this.userId = const Value.absent(),
+    this.sessionId = const Value.absent(),
+    this.taskId = const Value.absent(),
+    this.mode = const Value.absent(),
+    this.elapsedSeconds = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.mutationId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  CachedFocusNodesCompanion.insert({
+    required String id,
+    required String userId,
+    required String sessionId,
+    required String taskId,
+    required String mode,
+    required int elapsedSeconds,
+    required DateTime createdAt,
+    required String mutationId,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       userId = Value(userId),
+       sessionId = Value(sessionId),
+       taskId = Value(taskId),
+       mode = Value(mode),
+       elapsedSeconds = Value(elapsedSeconds),
+       createdAt = Value(createdAt),
+       mutationId = Value(mutationId);
+  static Insertable<FocusNodeRow> custom({
+    Expression<String>? id,
+    Expression<String>? userId,
+    Expression<String>? sessionId,
+    Expression<String>? taskId,
+    Expression<String>? mode,
+    Expression<int>? elapsedSeconds,
+    Expression<DateTime>? createdAt,
+    Expression<String>? mutationId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (userId != null) 'user_id': userId,
+      if (sessionId != null) 'session_id': sessionId,
+      if (taskId != null) 'task_id': taskId,
+      if (mode != null) 'mode': mode,
+      if (elapsedSeconds != null) 'elapsed_seconds': elapsedSeconds,
+      if (createdAt != null) 'created_at': createdAt,
+      if (mutationId != null) 'mutation_id': mutationId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  CachedFocusNodesCompanion copyWith({
+    Value<String>? id,
+    Value<String>? userId,
+    Value<String>? sessionId,
+    Value<String>? taskId,
+    Value<String>? mode,
+    Value<int>? elapsedSeconds,
+    Value<DateTime>? createdAt,
+    Value<String>? mutationId,
+    Value<int>? rowid,
+  }) {
+    return CachedFocusNodesCompanion(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      sessionId: sessionId ?? this.sessionId,
+      taskId: taskId ?? this.taskId,
+      mode: mode ?? this.mode,
+      elapsedSeconds: elapsedSeconds ?? this.elapsedSeconds,
+      createdAt: createdAt ?? this.createdAt,
+      mutationId: mutationId ?? this.mutationId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (sessionId.present) {
+      map['session_id'] = Variable<String>(sessionId.value);
+    }
+    if (taskId.present) {
+      map['task_id'] = Variable<String>(taskId.value);
+    }
+    if (mode.present) {
+      map['mode'] = Variable<String>(mode.value);
+    }
+    if (elapsedSeconds.present) {
+      map['elapsed_seconds'] = Variable<int>(elapsedSeconds.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (mutationId.present) {
+      map['mutation_id'] = Variable<String>(mutationId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('CachedFocusNodesCompanion(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('sessionId: $sessionId, ')
+          ..write('taskId: $taskId, ')
+          ..write('mode: $mode, ')
+          ..write('elapsedSeconds: $elapsedSeconds, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('mutationId: $mutationId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $FocusSessionOutboxTable extends FocusSessionOutbox
+    with TableInfo<$FocusSessionOutboxTable, FocusSessionOutboxRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FocusSessionOutboxTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entityTypeMeta = const VerificationMeta(
+    'entityType',
+  );
+  @override
+  late final GeneratedColumn<String> entityType = GeneratedColumn<String>(
+    'entity_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entityIdMeta = const VerificationMeta(
+    'entityId',
+  );
+  @override
+  late final GeneratedColumn<String> entityId = GeneratedColumn<String>(
+    'entity_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _mutationIdMeta = const VerificationMeta(
+    'mutationId',
+  );
+  @override
+  late final GeneratedColumn<String> mutationId = GeneratedColumn<String>(
+    'mutation_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _payloadMeta = const VerificationMeta(
+    'payload',
+  );
+  @override
+  late final GeneratedColumn<String> payload = GeneratedColumn<String>(
+    'payload',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    entityType,
+    entityId,
+    mutationId,
+    updatedAt,
+    payload,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'focus_session_outbox';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FocusSessionOutboxRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('entity_type')) {
+      context.handle(
+        _entityTypeMeta,
+        entityType.isAcceptableOrUnknown(data['entity_type']!, _entityTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityTypeMeta);
+    }
+    if (data.containsKey('entity_id')) {
+      context.handle(
+        _entityIdMeta,
+        entityId.isAcceptableOrUnknown(data['entity_id']!, _entityIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityIdMeta);
+    }
+    if (data.containsKey('mutation_id')) {
+      context.handle(
+        _mutationIdMeta,
+        mutationId.isAcceptableOrUnknown(data['mutation_id']!, _mutationIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_mutationIdMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('payload')) {
+      context.handle(
+        _payloadMeta,
+        payload.isAcceptableOrUnknown(data['payload']!, _payloadMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_payloadMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId, entityType, entityId};
+  @override
+  FocusSessionOutboxRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FocusSessionOutboxRow(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      entityType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entity_type'],
+      )!,
+      entityId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entity_id'],
+      )!,
+      mutationId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mutation_id'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      payload: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payload'],
+      )!,
+    );
+  }
+
+  @override
+  $FocusSessionOutboxTable createAlias(String alias) {
+    return $FocusSessionOutboxTable(attachedDatabase, alias);
+  }
+}
+
+class FocusSessionOutboxRow extends DataClass
+    implements Insertable<FocusSessionOutboxRow> {
+  final String userId;
+  final String entityType;
+  final String entityId;
+  final String mutationId;
+  final DateTime updatedAt;
+  final String payload;
+  const FocusSessionOutboxRow({
+    required this.userId,
+    required this.entityType,
+    required this.entityId,
+    required this.mutationId,
+    required this.updatedAt,
+    required this.payload,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['entity_type'] = Variable<String>(entityType);
+    map['entity_id'] = Variable<String>(entityId);
+    map['mutation_id'] = Variable<String>(mutationId);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    map['payload'] = Variable<String>(payload);
+    return map;
+  }
+
+  FocusSessionOutboxCompanion toCompanion(bool nullToAbsent) {
+    return FocusSessionOutboxCompanion(
+      userId: Value(userId),
+      entityType: Value(entityType),
+      entityId: Value(entityId),
+      mutationId: Value(mutationId),
+      updatedAt: Value(updatedAt),
+      payload: Value(payload),
+    );
+  }
+
+  factory FocusSessionOutboxRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FocusSessionOutboxRow(
+      userId: serializer.fromJson<String>(json['userId']),
+      entityType: serializer.fromJson<String>(json['entityType']),
+      entityId: serializer.fromJson<String>(json['entityId']),
+      mutationId: serializer.fromJson<String>(json['mutationId']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      payload: serializer.fromJson<String>(json['payload']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'entityType': serializer.toJson<String>(entityType),
+      'entityId': serializer.toJson<String>(entityId),
+      'mutationId': serializer.toJson<String>(mutationId),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'payload': serializer.toJson<String>(payload),
+    };
+  }
+
+  FocusSessionOutboxRow copyWith({
+    String? userId,
+    String? entityType,
+    String? entityId,
+    String? mutationId,
+    DateTime? updatedAt,
+    String? payload,
+  }) => FocusSessionOutboxRow(
+    userId: userId ?? this.userId,
+    entityType: entityType ?? this.entityType,
+    entityId: entityId ?? this.entityId,
+    mutationId: mutationId ?? this.mutationId,
+    updatedAt: updatedAt ?? this.updatedAt,
+    payload: payload ?? this.payload,
+  );
+  FocusSessionOutboxRow copyWithCompanion(FocusSessionOutboxCompanion data) {
+    return FocusSessionOutboxRow(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      entityType: data.entityType.present
+          ? data.entityType.value
+          : this.entityType,
+      entityId: data.entityId.present ? data.entityId.value : this.entityId,
+      mutationId: data.mutationId.present
+          ? data.mutationId.value
+          : this.mutationId,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      payload: data.payload.present ? data.payload.value : this.payload,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FocusSessionOutboxRow(')
+          ..write('userId: $userId, ')
+          ..write('entityType: $entityType, ')
+          ..write('entityId: $entityId, ')
+          ..write('mutationId: $mutationId, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('payload: $payload')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(userId, entityType, entityId, mutationId, updatedAt, payload);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FocusSessionOutboxRow &&
+          other.userId == this.userId &&
+          other.entityType == this.entityType &&
+          other.entityId == this.entityId &&
+          other.mutationId == this.mutationId &&
+          other.updatedAt == this.updatedAt &&
+          other.payload == this.payload);
+}
+
+class FocusSessionOutboxCompanion
+    extends UpdateCompanion<FocusSessionOutboxRow> {
+  final Value<String> userId;
+  final Value<String> entityType;
+  final Value<String> entityId;
+  final Value<String> mutationId;
+  final Value<DateTime> updatedAt;
+  final Value<String> payload;
+  final Value<int> rowid;
+  const FocusSessionOutboxCompanion({
+    this.userId = const Value.absent(),
+    this.entityType = const Value.absent(),
+    this.entityId = const Value.absent(),
+    this.mutationId = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.payload = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  FocusSessionOutboxCompanion.insert({
+    required String userId,
+    required String entityType,
+    required String entityId,
+    required String mutationId,
+    required DateTime updatedAt,
+    required String payload,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       entityType = Value(entityType),
+       entityId = Value(entityId),
+       mutationId = Value(mutationId),
+       updatedAt = Value(updatedAt),
+       payload = Value(payload);
+  static Insertable<FocusSessionOutboxRow> custom({
+    Expression<String>? userId,
+    Expression<String>? entityType,
+    Expression<String>? entityId,
+    Expression<String>? mutationId,
+    Expression<DateTime>? updatedAt,
+    Expression<String>? payload,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (entityType != null) 'entity_type': entityType,
+      if (entityId != null) 'entity_id': entityId,
+      if (mutationId != null) 'mutation_id': mutationId,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (payload != null) 'payload': payload,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  FocusSessionOutboxCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? entityType,
+    Value<String>? entityId,
+    Value<String>? mutationId,
+    Value<DateTime>? updatedAt,
+    Value<String>? payload,
+    Value<int>? rowid,
+  }) {
+    return FocusSessionOutboxCompanion(
+      userId: userId ?? this.userId,
+      entityType: entityType ?? this.entityType,
+      entityId: entityId ?? this.entityId,
+      mutationId: mutationId ?? this.mutationId,
+      updatedAt: updatedAt ?? this.updatedAt,
+      payload: payload ?? this.payload,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (entityType.present) {
+      map['entity_type'] = Variable<String>(entityType.value);
+    }
+    if (entityId.present) {
+      map['entity_id'] = Variable<String>(entityId.value);
+    }
+    if (mutationId.present) {
+      map['mutation_id'] = Variable<String>(mutationId.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (payload.present) {
+      map['payload'] = Variable<String>(payload.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FocusSessionOutboxCompanion(')
+          ..write('userId: $userId, ')
+          ..write('entityType: $entityType, ')
+          ..write('entityId: $entityId, ')
+          ..write('mutationId: $mutationId, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('payload: $payload, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -1928,6 +3577,13 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $CachedGoalsTable cachedGoals = $CachedGoalsTable(this);
   late final $CachedTasksTable cachedTasks = $CachedTasksTable(this);
   late final $GoalTaskOutboxTable goalTaskOutbox = $GoalTaskOutboxTable(this);
+  late final $CachedFocusSessionsTable cachedFocusSessions =
+      $CachedFocusSessionsTable(this);
+  late final $CachedFocusNodesTable cachedFocusNodes = $CachedFocusNodesTable(
+    this,
+  );
+  late final $FocusSessionOutboxTable focusSessionOutbox =
+      $FocusSessionOutboxTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1937,6 +3593,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     cachedGoals,
     cachedTasks,
     goalTaskOutbox,
+    cachedFocusSessions,
+    cachedFocusNodes,
+    focusSessionOutbox,
   ];
 }
 
@@ -2941,6 +4600,862 @@ typedef $$GoalTaskOutboxTableProcessedTableManager =
       GoalTaskOutboxRow,
       PrefetchHooks Function()
     >;
+typedef $$CachedFocusSessionsTableCreateCompanionBuilder =
+    CachedFocusSessionsCompanion Function({
+      required String id,
+      required String userId,
+      required String taskId,
+      required String mode,
+      required int plannedSeconds,
+      required DateTime startedAt,
+      Value<int> actualElapsedSeconds,
+      Value<String?> outcome,
+      Value<DateTime?> completedAt,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      required String mutationId,
+      Value<int> rowid,
+    });
+typedef $$CachedFocusSessionsTableUpdateCompanionBuilder =
+    CachedFocusSessionsCompanion Function({
+      Value<String> id,
+      Value<String> userId,
+      Value<String> taskId,
+      Value<String> mode,
+      Value<int> plannedSeconds,
+      Value<DateTime> startedAt,
+      Value<int> actualElapsedSeconds,
+      Value<String?> outcome,
+      Value<DateTime?> completedAt,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<String> mutationId,
+      Value<int> rowid,
+    });
+
+class $$CachedFocusSessionsTableFilterComposer
+    extends Composer<_$AppDatabase, $CachedFocusSessionsTable> {
+  $$CachedFocusSessionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get taskId => $composableBuilder(
+    column: $table.taskId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mode => $composableBuilder(
+    column: $table.mode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get plannedSeconds => $composableBuilder(
+    column: $table.plannedSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get startedAt => $composableBuilder(
+    column: $table.startedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get actualElapsedSeconds => $composableBuilder(
+    column: $table.actualElapsedSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get outcome => $composableBuilder(
+    column: $table.outcome,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get completedAt => $composableBuilder(
+    column: $table.completedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mutationId => $composableBuilder(
+    column: $table.mutationId,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$CachedFocusSessionsTableOrderingComposer
+    extends Composer<_$AppDatabase, $CachedFocusSessionsTable> {
+  $$CachedFocusSessionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get taskId => $composableBuilder(
+    column: $table.taskId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mode => $composableBuilder(
+    column: $table.mode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get plannedSeconds => $composableBuilder(
+    column: $table.plannedSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get startedAt => $composableBuilder(
+    column: $table.startedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get actualElapsedSeconds => $composableBuilder(
+    column: $table.actualElapsedSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get outcome => $composableBuilder(
+    column: $table.outcome,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get completedAt => $composableBuilder(
+    column: $table.completedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mutationId => $composableBuilder(
+    column: $table.mutationId,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$CachedFocusSessionsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $CachedFocusSessionsTable> {
+  $$CachedFocusSessionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get taskId =>
+      $composableBuilder(column: $table.taskId, builder: (column) => column);
+
+  GeneratedColumn<String> get mode =>
+      $composableBuilder(column: $table.mode, builder: (column) => column);
+
+  GeneratedColumn<int> get plannedSeconds => $composableBuilder(
+    column: $table.plannedSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get startedAt =>
+      $composableBuilder(column: $table.startedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get actualElapsedSeconds => $composableBuilder(
+    column: $table.actualElapsedSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get outcome =>
+      $composableBuilder(column: $table.outcome, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get completedAt => $composableBuilder(
+    column: $table.completedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get mutationId => $composableBuilder(
+    column: $table.mutationId,
+    builder: (column) => column,
+  );
+}
+
+class $$CachedFocusSessionsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $CachedFocusSessionsTable,
+          FocusSessionRow,
+          $$CachedFocusSessionsTableFilterComposer,
+          $$CachedFocusSessionsTableOrderingComposer,
+          $$CachedFocusSessionsTableAnnotationComposer,
+          $$CachedFocusSessionsTableCreateCompanionBuilder,
+          $$CachedFocusSessionsTableUpdateCompanionBuilder,
+          (
+            FocusSessionRow,
+            BaseReferences<
+              _$AppDatabase,
+              $CachedFocusSessionsTable,
+              FocusSessionRow
+            >,
+          ),
+          FocusSessionRow,
+          PrefetchHooks Function()
+        > {
+  $$CachedFocusSessionsTableTableManager(
+    _$AppDatabase db,
+    $CachedFocusSessionsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$CachedFocusSessionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$CachedFocusSessionsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$CachedFocusSessionsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> userId = const Value.absent(),
+                Value<String> taskId = const Value.absent(),
+                Value<String> mode = const Value.absent(),
+                Value<int> plannedSeconds = const Value.absent(),
+                Value<DateTime> startedAt = const Value.absent(),
+                Value<int> actualElapsedSeconds = const Value.absent(),
+                Value<String?> outcome = const Value.absent(),
+                Value<DateTime?> completedAt = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<String> mutationId = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => CachedFocusSessionsCompanion(
+                id: id,
+                userId: userId,
+                taskId: taskId,
+                mode: mode,
+                plannedSeconds: plannedSeconds,
+                startedAt: startedAt,
+                actualElapsedSeconds: actualElapsedSeconds,
+                outcome: outcome,
+                completedAt: completedAt,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                mutationId: mutationId,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String userId,
+                required String taskId,
+                required String mode,
+                required int plannedSeconds,
+                required DateTime startedAt,
+                Value<int> actualElapsedSeconds = const Value.absent(),
+                Value<String?> outcome = const Value.absent(),
+                Value<DateTime?> completedAt = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                required String mutationId,
+                Value<int> rowid = const Value.absent(),
+              }) => CachedFocusSessionsCompanion.insert(
+                id: id,
+                userId: userId,
+                taskId: taskId,
+                mode: mode,
+                plannedSeconds: plannedSeconds,
+                startedAt: startedAt,
+                actualElapsedSeconds: actualElapsedSeconds,
+                outcome: outcome,
+                completedAt: completedAt,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                mutationId: mutationId,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$CachedFocusSessionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $CachedFocusSessionsTable,
+      FocusSessionRow,
+      $$CachedFocusSessionsTableFilterComposer,
+      $$CachedFocusSessionsTableOrderingComposer,
+      $$CachedFocusSessionsTableAnnotationComposer,
+      $$CachedFocusSessionsTableCreateCompanionBuilder,
+      $$CachedFocusSessionsTableUpdateCompanionBuilder,
+      (
+        FocusSessionRow,
+        BaseReferences<
+          _$AppDatabase,
+          $CachedFocusSessionsTable,
+          FocusSessionRow
+        >,
+      ),
+      FocusSessionRow,
+      PrefetchHooks Function()
+    >;
+typedef $$CachedFocusNodesTableCreateCompanionBuilder =
+    CachedFocusNodesCompanion Function({
+      required String id,
+      required String userId,
+      required String sessionId,
+      required String taskId,
+      required String mode,
+      required int elapsedSeconds,
+      required DateTime createdAt,
+      required String mutationId,
+      Value<int> rowid,
+    });
+typedef $$CachedFocusNodesTableUpdateCompanionBuilder =
+    CachedFocusNodesCompanion Function({
+      Value<String> id,
+      Value<String> userId,
+      Value<String> sessionId,
+      Value<String> taskId,
+      Value<String> mode,
+      Value<int> elapsedSeconds,
+      Value<DateTime> createdAt,
+      Value<String> mutationId,
+      Value<int> rowid,
+    });
+
+class $$CachedFocusNodesTableFilterComposer
+    extends Composer<_$AppDatabase, $CachedFocusNodesTable> {
+  $$CachedFocusNodesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sessionId => $composableBuilder(
+    column: $table.sessionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get taskId => $composableBuilder(
+    column: $table.taskId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mode => $composableBuilder(
+    column: $table.mode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get elapsedSeconds => $composableBuilder(
+    column: $table.elapsedSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mutationId => $composableBuilder(
+    column: $table.mutationId,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$CachedFocusNodesTableOrderingComposer
+    extends Composer<_$AppDatabase, $CachedFocusNodesTable> {
+  $$CachedFocusNodesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sessionId => $composableBuilder(
+    column: $table.sessionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get taskId => $composableBuilder(
+    column: $table.taskId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mode => $composableBuilder(
+    column: $table.mode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get elapsedSeconds => $composableBuilder(
+    column: $table.elapsedSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mutationId => $composableBuilder(
+    column: $table.mutationId,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$CachedFocusNodesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $CachedFocusNodesTable> {
+  $$CachedFocusNodesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get sessionId =>
+      $composableBuilder(column: $table.sessionId, builder: (column) => column);
+
+  GeneratedColumn<String> get taskId =>
+      $composableBuilder(column: $table.taskId, builder: (column) => column);
+
+  GeneratedColumn<String> get mode =>
+      $composableBuilder(column: $table.mode, builder: (column) => column);
+
+  GeneratedColumn<int> get elapsedSeconds => $composableBuilder(
+    column: $table.elapsedSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get mutationId => $composableBuilder(
+    column: $table.mutationId,
+    builder: (column) => column,
+  );
+}
+
+class $$CachedFocusNodesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $CachedFocusNodesTable,
+          FocusNodeRow,
+          $$CachedFocusNodesTableFilterComposer,
+          $$CachedFocusNodesTableOrderingComposer,
+          $$CachedFocusNodesTableAnnotationComposer,
+          $$CachedFocusNodesTableCreateCompanionBuilder,
+          $$CachedFocusNodesTableUpdateCompanionBuilder,
+          (
+            FocusNodeRow,
+            BaseReferences<_$AppDatabase, $CachedFocusNodesTable, FocusNodeRow>,
+          ),
+          FocusNodeRow,
+          PrefetchHooks Function()
+        > {
+  $$CachedFocusNodesTableTableManager(
+    _$AppDatabase db,
+    $CachedFocusNodesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$CachedFocusNodesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$CachedFocusNodesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$CachedFocusNodesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> userId = const Value.absent(),
+                Value<String> sessionId = const Value.absent(),
+                Value<String> taskId = const Value.absent(),
+                Value<String> mode = const Value.absent(),
+                Value<int> elapsedSeconds = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<String> mutationId = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => CachedFocusNodesCompanion(
+                id: id,
+                userId: userId,
+                sessionId: sessionId,
+                taskId: taskId,
+                mode: mode,
+                elapsedSeconds: elapsedSeconds,
+                createdAt: createdAt,
+                mutationId: mutationId,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String userId,
+                required String sessionId,
+                required String taskId,
+                required String mode,
+                required int elapsedSeconds,
+                required DateTime createdAt,
+                required String mutationId,
+                Value<int> rowid = const Value.absent(),
+              }) => CachedFocusNodesCompanion.insert(
+                id: id,
+                userId: userId,
+                sessionId: sessionId,
+                taskId: taskId,
+                mode: mode,
+                elapsedSeconds: elapsedSeconds,
+                createdAt: createdAt,
+                mutationId: mutationId,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$CachedFocusNodesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $CachedFocusNodesTable,
+      FocusNodeRow,
+      $$CachedFocusNodesTableFilterComposer,
+      $$CachedFocusNodesTableOrderingComposer,
+      $$CachedFocusNodesTableAnnotationComposer,
+      $$CachedFocusNodesTableCreateCompanionBuilder,
+      $$CachedFocusNodesTableUpdateCompanionBuilder,
+      (
+        FocusNodeRow,
+        BaseReferences<_$AppDatabase, $CachedFocusNodesTable, FocusNodeRow>,
+      ),
+      FocusNodeRow,
+      PrefetchHooks Function()
+    >;
+typedef $$FocusSessionOutboxTableCreateCompanionBuilder =
+    FocusSessionOutboxCompanion Function({
+      required String userId,
+      required String entityType,
+      required String entityId,
+      required String mutationId,
+      required DateTime updatedAt,
+      required String payload,
+      Value<int> rowid,
+    });
+typedef $$FocusSessionOutboxTableUpdateCompanionBuilder =
+    FocusSessionOutboxCompanion Function({
+      Value<String> userId,
+      Value<String> entityType,
+      Value<String> entityId,
+      Value<String> mutationId,
+      Value<DateTime> updatedAt,
+      Value<String> payload,
+      Value<int> rowid,
+    });
+
+class $$FocusSessionOutboxTableFilterComposer
+    extends Composer<_$AppDatabase, $FocusSessionOutboxTable> {
+  $$FocusSessionOutboxTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entityType => $composableBuilder(
+    column: $table.entityType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entityId => $composableBuilder(
+    column: $table.entityId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mutationId => $composableBuilder(
+    column: $table.mutationId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$FocusSessionOutboxTableOrderingComposer
+    extends Composer<_$AppDatabase, $FocusSessionOutboxTable> {
+  $$FocusSessionOutboxTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entityType => $composableBuilder(
+    column: $table.entityType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entityId => $composableBuilder(
+    column: $table.entityId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mutationId => $composableBuilder(
+    column: $table.mutationId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$FocusSessionOutboxTableAnnotationComposer
+    extends Composer<_$AppDatabase, $FocusSessionOutboxTable> {
+  $$FocusSessionOutboxTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get entityType => $composableBuilder(
+    column: $table.entityType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get entityId =>
+      $composableBuilder(column: $table.entityId, builder: (column) => column);
+
+  GeneratedColumn<String> get mutationId => $composableBuilder(
+    column: $table.mutationId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get payload =>
+      $composableBuilder(column: $table.payload, builder: (column) => column);
+}
+
+class $$FocusSessionOutboxTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $FocusSessionOutboxTable,
+          FocusSessionOutboxRow,
+          $$FocusSessionOutboxTableFilterComposer,
+          $$FocusSessionOutboxTableOrderingComposer,
+          $$FocusSessionOutboxTableAnnotationComposer,
+          $$FocusSessionOutboxTableCreateCompanionBuilder,
+          $$FocusSessionOutboxTableUpdateCompanionBuilder,
+          (
+            FocusSessionOutboxRow,
+            BaseReferences<
+              _$AppDatabase,
+              $FocusSessionOutboxTable,
+              FocusSessionOutboxRow
+            >,
+          ),
+          FocusSessionOutboxRow,
+          PrefetchHooks Function()
+        > {
+  $$FocusSessionOutboxTableTableManager(
+    _$AppDatabase db,
+    $FocusSessionOutboxTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FocusSessionOutboxTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FocusSessionOutboxTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$FocusSessionOutboxTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> entityType = const Value.absent(),
+                Value<String> entityId = const Value.absent(),
+                Value<String> mutationId = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<String> payload = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FocusSessionOutboxCompanion(
+                userId: userId,
+                entityType: entityType,
+                entityId: entityId,
+                mutationId: mutationId,
+                updatedAt: updatedAt,
+                payload: payload,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                required String entityType,
+                required String entityId,
+                required String mutationId,
+                required DateTime updatedAt,
+                required String payload,
+                Value<int> rowid = const Value.absent(),
+              }) => FocusSessionOutboxCompanion.insert(
+                userId: userId,
+                entityType: entityType,
+                entityId: entityId,
+                mutationId: mutationId,
+                updatedAt: updatedAt,
+                payload: payload,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$FocusSessionOutboxTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $FocusSessionOutboxTable,
+      FocusSessionOutboxRow,
+      $$FocusSessionOutboxTableFilterComposer,
+      $$FocusSessionOutboxTableOrderingComposer,
+      $$FocusSessionOutboxTableAnnotationComposer,
+      $$FocusSessionOutboxTableCreateCompanionBuilder,
+      $$FocusSessionOutboxTableUpdateCompanionBuilder,
+      (
+        FocusSessionOutboxRow,
+        BaseReferences<
+          _$AppDatabase,
+          $FocusSessionOutboxTable,
+          FocusSessionOutboxRow
+        >,
+      ),
+      FocusSessionOutboxRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -2953,4 +5468,10 @@ class $AppDatabaseManager {
       $$CachedTasksTableTableManager(_db, _db.cachedTasks);
   $$GoalTaskOutboxTableTableManager get goalTaskOutbox =>
       $$GoalTaskOutboxTableTableManager(_db, _db.goalTaskOutbox);
+  $$CachedFocusSessionsTableTableManager get cachedFocusSessions =>
+      $$CachedFocusSessionsTableTableManager(_db, _db.cachedFocusSessions);
+  $$CachedFocusNodesTableTableManager get cachedFocusNodes =>
+      $$CachedFocusNodesTableTableManager(_db, _db.cachedFocusNodes);
+  $$FocusSessionOutboxTableTableManager get focusSessionOutbox =>
+      $$FocusSessionOutboxTableTableManager(_db, _db.focusSessionOutbox);
 }

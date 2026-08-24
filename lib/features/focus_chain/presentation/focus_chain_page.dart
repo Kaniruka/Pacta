@@ -2,15 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pacta/auth/auth_session.dart';
 import 'package:pacta/features/focus_chain/domain/focus_chain_models.dart';
+import 'package:pacta/features/focus_chain/domain/focus_session_models.dart';
+import 'package:pacta/features/focus_chain/presentation/focus_session_page.dart';
 import 'package:pacta/features/focus_chain/presentation/task_picker_page.dart';
 import 'package:pacta/features/goals_tasks/data/goal_task_state.dart';
 import 'package:pacta/features/goals_tasks/domain/goal_task_models.dart';
 
 class FocusChainPage extends ConsumerStatefulWidget {
-  const FocusChainPage({required this.userId, this.initialTaskId, super.key});
+  const FocusChainPage({
+    required this.userId,
+    this.initialTaskId,
+    this.clock,
+    super.key,
+  });
 
   final AppUserId userId;
   final String? initialTaskId;
+  final DateTime Function()? clock;
 
   @override
   ConsumerState<FocusChainPage> createState() => _FocusChainPageState();
@@ -256,11 +264,14 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
   void _startImmediate(Task task, FocusChainMode mode) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => FocusStartPreviewPage(
-          task: task,
-          mode: mode,
-          duration: Duration(minutes: _durationMinutes),
-          kind: FocusStartKind.immediate,
+        builder: (_) => FocusSessionPage(
+          userId: widget.userId,
+          config: FocusSessionConfig(
+            task: task,
+            mode: mode,
+            duration: Duration(minutes: _durationMinutes),
+          ),
+          clock: widget.clock,
         ),
       ),
     );

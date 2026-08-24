@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/app/chain_theme.dart';
 import 'package:pacta/auth/auth_session.dart';
+import 'package:pacta/features/focus_chain/data/drift_focus_session_repository.dart';
+import 'package:pacta/features/focus_chain/data/focus_session_state.dart';
 import 'package:pacta/features/focus_chain/domain/focus_chain_models.dart';
+import 'package:pacta/features/focus_chain/domain/focus_session_repository.dart';
 import 'package:pacta/features/focus_chain/presentation/focus_chain_page.dart';
 import 'package:pacta/features/goals_tasks/data/drift_goal_task_repository.dart';
 import 'package:pacta/features/goals_tasks/data/goal_task_state.dart';
@@ -222,17 +225,68 @@ void main() {
       findsOneWidget,
     );
   });
+
+  testWidgets('Immediate start opens the dedicated Focus Session surface', (
+    tester,
+  ) async {
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = DriftGoalTaskRepository(
+      database: database,
+      remote: const UnavailableRemoteGoalTaskSource(),
+      clock: () => now,
+    );
+    final goal = await repository.saveGoal(
+      userId,
+      const GoalDraft(title: 'Immediate Goal'),
+    );
+    final task = await repository.saveTask(
+      userId,
+      TaskDraft(
+        goalId: goal.id,
+        title: 'Immediate Task',
+        classification: TaskChainClassification.elite,
+      ),
+    );
+    final sessions = DriftFocusSessionRepository(
+      database: database,
+      clock: () => now,
+    );
+
+    await _pump(
+      tester,
+      repository,
+      FocusChainPage(userId: userId, initialTaskId: task.id, clock: () => now),
+      focusSessions: sessions,
+    );
+    await _chooseMode(tester, FocusChainMode.elite);
+    await tester.drag(find.byType(ListView), const Offset(0, -1000));
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const Key('start-immediate-focus'), skipOffstage: false),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Focus Session'), findsOneWidget);
+    expect(find.text('Immediate Task'), findsOneWidget);
+    expect(find.text('0:00'), findsOneWidget);
+    expect(find.text('25:00'), findsOneWidget);
+    expect(find.text('Complete'), findsNothing);
+  });
 }
 
 Future<void> _pump(
   WidgetTester tester,
   DriftGoalTaskRepository repository,
-  Widget child,
-) async {
+  Widget child, {
+  FocusSessionRepository? focusSessions,
+}) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         goalTaskRepositoryProvider.overrideWithValue(repository),
+        if (focusSessions != null)
+          focusSessionRepositoryProvider.overrideWithValue(focusSessions),
         syncRetryTriggersProvider.overrideWith((ref) => const Stream.empty()),
       ],
       child: MaterialApp(theme: buildChainTheme(), home: child),
