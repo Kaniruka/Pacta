@@ -6,18 +6,21 @@ class ChainColors extends ThemeExtension<ChainColors> {
     required this.focus,
     required this.nationalFocus,
     required this.warning,
+    required this.success,
     required this.canvas,
   });
 
   final Color focus;
   final Color nationalFocus;
   final Color warning;
+  final Color success;
   final Color canvas;
 
   static const light = ChainColors(
     focus: Color(0xFF246BFD),
     nationalFocus: Color(0xFF168B72),
     warning: Color(0xFFE47B28),
+    success: Color(0xFF2E7D32),
     canvas: Color(0xFFF7F7F2),
   );
 
@@ -26,12 +29,14 @@ class ChainColors extends ThemeExtension<ChainColors> {
     Color? focus,
     Color? nationalFocus,
     Color? warning,
+    Color? success,
     Color? canvas,
   }) {
     return ChainColors(
       focus: focus ?? this.focus,
       nationalFocus: nationalFocus ?? this.nationalFocus,
       warning: warning ?? this.warning,
+      success: success ?? this.success,
       canvas: canvas ?? this.canvas,
     );
   }
@@ -43,6 +48,7 @@ class ChainColors extends ThemeExtension<ChainColors> {
       focus: Color.lerp(focus, other.focus, t)!,
       nationalFocus: Color.lerp(nationalFocus, other.nationalFocus, t)!,
       warning: Color.lerp(warning, other.warning, t)!,
+      success: Color.lerp(success, other.success, t)!,
       canvas: Color.lerp(canvas, other.canvas, t)!,
     );
   }

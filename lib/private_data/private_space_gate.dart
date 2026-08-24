@@ -26,7 +26,7 @@ class PrivateSpaceGate extends ConsumerWidget {
 
             return Stack(
               children: [
-                const AppShell(),
+                AppShell(userId: userId),
                 if (bootstrap.isOffline)
                   const SafeArea(
                     child: Align(

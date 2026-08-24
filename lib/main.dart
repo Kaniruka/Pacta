@@ -5,6 +5,10 @@ import 'package:pacta/app/pacta_app.dart';
 import 'package:pacta/auth/auth_session.dart';
 import 'package:pacta/auth/auth_state.dart';
 import 'package:pacta/auth/supabase_auth_session.dart';
+import 'package:pacta/features/goals_tasks/data/goal_task_state.dart';
+import 'package:pacta/features/goals_tasks/data/drift_goal_task_repository.dart';
+import 'package:pacta/features/goals_tasks/data/supabase_goal_task_source.dart';
+import 'package:pacta/features/goals_tasks/domain/goal_task_repository.dart';
 import 'package:pacta/private_data/app_database.dart';
 import 'package:pacta/private_data/connectivity_monitor.dart';
 import 'package:pacta/private_data/offline_first_private_data_store.dart';
@@ -20,6 +24,8 @@ Future<void> main() async {
   const configuration = AppConfiguration.fromEnvironment();
   AuthSession authSession = const UnconfiguredAuthSession();
   RemoteProfileSource remoteProfiles = const UnavailableRemoteProfileSource();
+  RemoteGoalTaskSource remoteGoalTasks =
+      const UnavailableRemoteGoalTaskSource();
 
   if (configuration.hasSupabase) {
     await Supabase.initialize(
@@ -29,12 +35,17 @@ Future<void> main() async {
     final client = Supabase.instance.client;
     authSession = SupabaseAuthSession(client);
     remoteProfiles = SupabaseProfileSource(client);
+    remoteGoalTasks = SupabaseGoalTaskSource(client);
   }
 
   final database = AppDatabase.defaults();
   final privateDataStore = OfflineFirstPrivateDataStore(
     cache: DriftProfileCache(database),
     remote: remoteProfiles,
+  );
+  final goalTaskRepository = DriftGoalTaskRepository(
+    database: database,
+    remote: remoteGoalTasks,
   );
   final connectivity = ConnectivityMonitor();
 
@@ -43,6 +54,7 @@ Future<void> main() async {
       overrides: [
         authSessionProvider.overrideWithValue(authSession),
         privateDataStoreProvider.overrideWithValue(privateDataStore),
+        goalTaskRepositoryProvider.overrideWithValue(goalTaskRepository),
         syncRetryTriggersProvider.overrideWithValue(connectivity.retryTriggers),
       ],
       child: const PactaApp(),

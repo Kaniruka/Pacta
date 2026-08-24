@@ -1,0 +1,346 @@
+<!doctype html>
+<!--
+  PROTOTYPE ONLY — Pacta's own mobile information architecture.
+  The reference question is: can a four-tab shell combine the board and data view
+  while keeping National Focus Tree and Focus Chain as separate workspaces?
+  Switch entry surfaces with ?variant=A|B|C. State is in-memory only.
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Pacta Own Shell Prototype</title>
+  <style>
+    :root {
+      --paper: #f5f1e9;
+      --paper-2: #eee8dd;
+      --panel: #fcfaf6;
+      --ink: #202b39;
+      --muted: #798391;
+      --line: #d8d1c5;
+      --blue: #356b91;
+      --blue-2: #dceaf0;
+      --orange: #dc754e;
+      --orange-2: #fae4d9;
+      --green: #6eaa9a;
+      --green-2: #dcece6;
+      --purple: #74688b;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-width: 320px; background: #d9d4ca; color: var(--ink); }
+    body { min-height: 100vh; }
+    button { font: inherit; color: inherit; }
+    button:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
+    .app { width: min(100%, 460px); min-height: 100vh; margin: auto; padding-bottom: 96px; background: var(--paper); }
+    .app.board { background: var(--paper); }
+    .app.tree { background: #f9f7f2; }
+    .app.chain { background: #f1f5f5; }
+    .app.me { background: #eeece8; }
+    .page { min-height: calc(100vh - 96px); padding: 24px 22px 36px; }
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+    .kicker { color: var(--muted); font-size: 10px; font-weight: 850; letter-spacing: .16em; text-transform: uppercase; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 31px; line-height: 1.05; letter-spacing: -.07em; }
+    h2 { font-size: 20px; letter-spacing: -.045em; }
+    h3 { font-size: 14px; letter-spacing: -.02em; }
+    .intro { margin-top: 10px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .header-tools { display: flex; gap: 4px; }
+    .tool { display: grid; place-items: center; width: 34px; height: 34px; border: 1px solid var(--line); background: transparent; cursor: pointer; }
+    .tool:first-child { border-radius: 10px 0 0 10px; }
+    .tool:last-child { border-radius: 0 10px 10px 0; }
+    .tool svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+    .section-label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 28px 0 12px; }
+    .section-label span { color: var(--muted); font-size: 11px; }
+    .rule { height: 1px; background: var(--line); }
+    .board-hero { display: grid; grid-template-columns: 1fr auto; gap: 15px; margin-top: 26px; padding: 20px 18px; border: 1px solid var(--line); border-left: 5px solid var(--blue); background: var(--panel); }
+    .board-hero strong { display: block; margin-top: 8px; font-size: 22px; letter-spacing: -.05em; }
+    .board-hero p { margin-top: 8px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .hero-value { align-self: center; color: var(--blue); font-size: 36px; font-weight: 900; letter-spacing: -.1em; }
+    .action-link { border: 0; border-bottom: 1px solid currentColor; background: transparent; color: var(--blue); cursor: pointer; font-size: 12px; font-weight: 850; }
+    .board-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .board-stat { padding: 15px; border-top: 3px solid var(--line); background: var(--panel); }
+    .board-stat.blue { border-color: var(--blue); }
+    .board-stat.green { border-color: var(--green); }
+    .board-stat.orange { border-color: var(--orange); }
+    .board-stat.purple { border-color: var(--purple); }
+    .board-stat span { display: block; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .board-stat strong { display: block; margin-top: 12px; font-size: 25px; letter-spacing: -.08em; }
+    .board-tasks { border-top: 1px solid var(--line); background: var(--panel); }
+    .task-row { display: grid; grid-template-columns: 8px 1fr auto; gap: 11px; align-items: center; padding: 14px 13px; border-bottom: 1px solid var(--line); cursor: pointer; text-align: left; }
+    .task-row:last-child { border-bottom: 0; }
+    .task-row i { display: block; width: 8px; height: 8px; background: var(--blue); }
+    .task-row:nth-child(2) i { background: var(--orange); }
+    .task-row strong { display: block; font-size: 12px; }
+    .task-row span { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
+    .task-row b { color: var(--blue); font-size: 11px; }
+    .pulse-panel { padding: 17px; border: 1px solid var(--line); background: var(--panel); }
+    .pulse-row { display: flex; align-items: center; gap: 12px; }
+    .pulse-rail { position: relative; width: 9px; height: 68px; background: var(--blue-2); }
+    .pulse-rail::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 74%; background: var(--green); }
+    .pulse-copy { flex: 1; }
+    .pulse-copy strong { display: block; font-size: 16px; }
+    .pulse-copy p { margin-top: 5px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+    .pulse-badge { padding: 6px 8px; background: var(--green-2); color: #427b6d; font-size: 10px; font-weight: 850; }
+    .mini-chart { display: flex; align-items: end; gap: 7px; height: 86px; padding-top: 15px; }
+    .mini-chart i { flex: 1; min-height: 8px; background: var(--blue); opacity: .22; }
+    .mini-chart i:nth-child(2n) { opacity: .45; }
+    .mini-chart i:last-child { opacity: 1; background: var(--orange); }
+    .chart-axis { display: flex; justify-content: space-between; color: var(--muted); font-size: 9px; }
+    .tree-stage { position: relative; min-height: 560px; margin-top: 25px; overflow: hidden; border: 1px solid var(--line); background: var(--panel); }
+    .tree-stage::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: #ece7df; }
+    .tree-map { position: relative; z-index: 1; display: grid; justify-items: center; padding-top: 42px; }
+    .tree-node { position: relative; z-index: 2; width: 164px; padding: 13px 12px; border: 1px solid var(--line); background: var(--paper); cursor: pointer; text-align: left; box-shadow: 6px 6px 0 rgba(53,107,145,.08); }
+    .tree-node::before { content: ""; display: block; width: 24px; height: 4px; margin-bottom: 11px; background: var(--blue); }
+    .tree-node.selected { border-color: var(--orange); box-shadow: 6px 6px 0 var(--orange-2); }
+    .tree-node.off { opacity: .55; filter: grayscale(.6); }
+    .tree-node.root { width: 202px; border-color: var(--green); background: var(--green-2); box-shadow: 6px 6px 0 rgba(110,170,154,.16); }
+    .tree-node.root::before { background: var(--green); }
+    .tree-node strong { display: block; font-size: 14px; }
+    .tree-node p { min-height: 28px; margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .tree-node time { display: block; margin-top: 9px; color: var(--blue); font-size: 10px; font-weight: 850; }
+    .tree-trunk { width: 1px; height: 44px; background: var(--blue); }
+    .tree-branch { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: calc(100% - 20px); margin-top: 0; padding-top: 34px; }
+    .tree-branch::before { content: ""; position: absolute; top: 0; left: 16.66%; right: 16.66%; height: 1px; background: var(--blue); }
+    .tree-branch::after { content: ""; position: absolute; top: -44px; left: 50%; width: 1px; height: 44px; background: var(--blue); }
+    .branch-child { position: relative; }
+    .branch-child::before { content: ""; position: absolute; top: -34px; left: 50%; width: 1px; height: 34px; background: var(--blue); }
+    .tree-branch .tree-node { width: 100%; min-height: 131px; padding: 10px 8px; box-shadow: 4px 4px 0 rgba(53,107,145,.06); }
+    .tree-branch .tree-node strong { font-size: 11px; }
+    .tree-branch .tree-node p { font-size: 9px; }
+    .tree-descendant { position: relative; display: flex; justify-content: center; margin-top: 44px; }
+    .tree-descendant::before { content: ""; position: absolute; top: -44px; left: 50%; width: 1px; height: 44px; background: var(--blue); }
+    .tree-descendant .tree-node { width: 130px; }
+    .tree-legend { display: flex; justify-content: center; gap: 13px; margin-top: 12px; color: var(--muted); font-size: 10px; }
+    .tree-legend i { display: inline-block; width: 7px; height: 7px; margin-right: 4px; background: var(--green); }
+    .tree-legend i.orange { background: var(--orange); }
+    .chain-header { display: flex; align-items: end; justify-content: space-between; gap: 14px; }
+    .chain-header .chain-index { color: var(--orange); font-size: 41px; font-weight: 900; letter-spacing: -.1em; }
+    .chain-switch { display: grid; grid-template-columns: 1fr 1fr; margin-top: 24px; border-bottom: 1px solid var(--line); }
+    .chain-switch button { padding: 13px 10px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: var(--muted); cursor: pointer; font-weight: 850; }
+    .chain-switch button.active { border-color: var(--orange); color: var(--ink); }
+    .chain-menu { margin-top: 13px; border: 1px solid var(--line); background: var(--paper); }
+    .chain-menu button { width: 100%; padding: 11px 13px; border: 0; background: transparent; cursor: pointer; text-align: left; font-size: 11px; font-weight: 850; }
+    .chain-menu p { padding: 0 13px 12px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+    .focus-form { margin-top: 20px; padding: 19px; border: 1px solid var(--line); background: var(--panel); }
+    .field-label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 10px; font-weight: 850; letter-spacing: .08em; text-transform: uppercase; }
+    .target-button { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 14px 13px; border: 1px solid var(--line); background: var(--paper); cursor: pointer; font-weight: 850; text-align: left; }
+    .target-button span { color: var(--blue); }
+    .target-button svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 2; }
+    .duration-line { display: flex; align-items: center; justify-content: space-between; margin-top: 23px; }
+    .duration-number { color: var(--blue); font-size: 58px; font-weight: 900; letter-spacing: -.1em; }
+    .duration-number small { margin-left: 6px; color: var(--muted); font-size: 18px; letter-spacing: 0; }
+    .step { width: 38px; height: 38px; border: 1px solid var(--line); background: var(--paper); cursor: pointer; font-size: 22px; }
+    .signal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 18px; }
+    .signal { min-height: 136px; padding: 14px; border-top: 4px solid var(--orange); background: var(--orange-2); }
+    .signal.marker { border-color: var(--purple); background: #e9e5ef; }
+    .signal .signal-mark { color: var(--orange); font-size: 28px; font-weight: 900; }
+    .signal.marker .signal-mark { color: var(--purple); }
+    .signal strong { display: block; margin-top: 13px; font-size: 14px; }
+    .signal p { margin-top: 5px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+    .start-row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 20px; }
+    .start-button { min-height: 52px; border: 1px solid var(--orange); background: transparent; color: var(--orange); cursor: pointer; font-size: 12px; font-weight: 900; }
+    .start-button.primary { background: var(--orange); color: #fff; }
+    .hint { margin-top: 11px; color: var(--muted); font-size: 10px; line-height: 1.5; text-align: center; }
+    .data-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-top: 25px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .data-strip > div { padding: 14px 8px; border-right: 1px solid var(--line); }
+    .data-strip > div:last-child { border-right: 0; }
+    .data-strip span { display: block; color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .data-strip strong { display: block; margin-top: 8px; color: var(--blue); font-size: 22px; letter-spacing: -.08em; }
+    .heatmap { display: grid; grid-template-columns: repeat(14, 1fr); gap: 4px; margin-top: 13px; }
+    .heatmap i { display: block; aspect-ratio: 1; background: #e4e0d8; }
+    .heatmap i.l1 { background: #d3e8e1; } .heatmap i.l2 { background: #9bcabd; } .heatmap i.l3 { background: var(--blue); }
+    .log-line { display: grid; grid-template-columns: 55px 1fr auto; gap: 10px; align-items: center; padding: 13px 0; border-bottom: 1px solid var(--line); }
+    .log-line time { color: var(--muted); font-size: 10px; }
+    .log-line strong { font-size: 12px; }
+    .log-line span { color: var(--muted); font-size: 10px; }
+    .profile { padding: 22px 0; border-bottom: 1px solid var(--line); }
+    .profile-head { display: flex; align-items: center; gap: 14px; }
+    .avatar { display: grid; place-items: center; width: 62px; height: 62px; border: 1px solid var(--line); background: var(--paper); color: var(--purple); font-size: 27px; }
+    .profile-head strong { display: block; font-size: 22px; letter-spacing: -.06em; }
+    .profile-head span { display: block; margin-top: 5px; color: var(--muted); font-size: 11px; }
+    .profile-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-top: 22px; background: var(--line); }
+    .profile-stats div { padding: 12px 9px; background: var(--paper); }
+    .profile-stats span { display: block; color: var(--muted); font-size: 10px; line-height: 1.4; }
+    .profile-stats strong { display: block; margin-top: 8px; font-size: 20px; }
+    .settings { display: grid; gap: 0; margin-top: 15px; border-top: 1px solid var(--line); }
+    .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 17px 0; border-bottom: 1px solid var(--line); background: transparent; cursor: pointer; text-align: left; }
+    .setting-row span { color: var(--muted); font-size: 11px; }
+    .setting-row strong { font-size: 14px; }
+    .setting-row b { color: var(--muted); font-size: 20px; font-weight: 400; }
+    .secondary-page { min-height: calc(100vh - 96px); padding: 25px 22px 40px; background: var(--panel); }
+    .secondary-page .back { margin-bottom: 26px; }
+    .filter-row { display: flex; gap: 7px; margin-top: 19px; overflow-x: auto; }
+    .filter-chip { flex: 0 0 auto; padding: 8px 12px; border: 1px solid var(--line); background: var(--paper); color: var(--muted); cursor: pointer; font-size: 11px; font-weight: 850; }
+    .filter-chip.active { border-color: var(--blue); background: var(--blue-2); color: var(--blue); }
+    .picker-list { display: grid; gap: 9px; margin-top: 16px; }
+    .picker-item { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 15px 13px; border: 1px solid var(--line); background: var(--paper); cursor: pointer; text-align: left; }
+    .picker-item strong { display: block; font-size: 13px; }
+    .picker-item span { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; }
+    .picker-kind { color: var(--blue); font-size: 10px; font-weight: 900; }
+    .library-list { display: grid; gap: 9px; margin-top: 20px; }
+    .library-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border: 1px solid var(--line); background: var(--paper); }
+    .library-card strong { display: block; font-size: 13px; }
+    .library-card span { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
+    .library-card button, .new-card-button { padding: 8px 10px; border: 1px solid var(--blue); background: var(--blue-2); color: var(--blue); cursor: pointer; font-size: 10px; font-weight: 900; }
+    .new-card-button { width: 100%; margin-top: 18px; padding: 13px; background: var(--blue); color: #fff; }
+    .card-form { display: grid; gap: 9px; margin-top: 22px; }
+    .card-form input, .card-form textarea { width: 100%; padding: 12px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); font: inherit; font-size: 12px; }
+    .card-form textarea { min-height: 84px; resize: vertical; }
+    .node-symbol { display: block; margin: 3px 0 10px; color: var(--blue); font-size: 27px; line-height: 1; }
+    .tree-node.icon-only { min-height: 83px; padding-top: 10px; text-align: center; }
+    .tree-node.icon-only::before { margin: 0 auto 9px; }
+    .tree-node.icon-only p, .tree-node.icon-only time { display: none; }
+    .bottom-nav { position: fixed; z-index: 20; right: 50%; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); width: min(100%, 460px); min-height: 76px; transform: translateX(50%); padding: 9px 10px max(9px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: rgba(250,248,243,.98); }
+    .nav-item { display: grid; justify-items: center; gap: 4px; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; font-weight: 850; }
+    .nav-item.active { color: var(--blue); }
+    .nav-glyph { display: grid; place-items: center; width: 34px; height: 28px; border-bottom: 3px solid transparent; font-size: 20px; line-height: 1; }
+    .nav-item.active .nav-glyph { border-color: var(--blue); }
+    .confirm-page { min-height: calc(100vh - 96px); padding: 25px 22px 40px; background: var(--panel); }
+    .back { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 850; }
+    .confirm-list { display: grid; gap: 10px; margin-top: 24px; }
+    .confirm-row { display: flex; align-items: center; gap: 12px; padding: 14px 12px; border: 1px solid var(--line); background: var(--paper); cursor: pointer; }
+    .confirm-row input { width: 19px; height: 19px; accent-color: var(--blue); }
+    .confirm-row div { flex: 1; }
+    .confirm-row strong { display: block; font-size: 13px; }
+    .confirm-row span { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; }
+    .confirm-row.off { opacity: .52; }
+    .confirm-button { width: 100%; margin-top: 20px; padding: 14px; border: 0; background: var(--blue); color: #fff; cursor: pointer; font-size: 13px; font-weight: 900; }
+    .confirm-note { margin-top: 14px; padding: 13px; border-left: 4px solid var(--orange); background: var(--orange-2); color: #8d6858; font-size: 10px; line-height: 1.6; }
+    .session { display: grid; min-height: 100vh; padding: 27px 24px 30px; background: #202b39; color: #f9f5ed; }
+    .session-top { display: flex; justify-content: space-between; color: #b9c6d0; font-size: 10px; font-weight: 850; letter-spacing: .13em; }
+    .session-body { display: grid; align-content: center; justify-items: center; text-align: center; }
+    .session-body h1 { margin-top: 22px; font-size: 29px; }
+    .session-timer { margin-top: 27px; color: #f5b18d; font-size: 92px; font-weight: 900; letter-spacing: -.12em; line-height: .9; }
+    .session-body p { max-width: 285px; margin-top: 22px; color: #b9c6d0; font-size: 12px; line-height: 1.6; }
+    .session-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-self: end; }
+    .session-button { min-height: 55px; border: 1px solid #526174; background: #2a394c; color: #fff; cursor: pointer; font-size: 13px; font-weight: 850; }
+    .session-button.primary { grid-column: 1 / -1; border-color: #f5b18d; background: #f5b18d; color: #202b39; }
+    .session-button.danger { color: #f5b4b4; }
+    .prototype-switcher { position: fixed; z-index: 30; right: 50%; bottom: 80px; display: flex; align-items: center; gap: 4px; transform: translateX(50%); padding: 4px 6px; border: 1px solid #4d5b69; background: #202b39; color: #fff; box-shadow: 4px 4px 0 rgba(32,43,57,.14); }
+    .prototype-switcher button { width: 25px; height: 25px; border: 0; background: transparent; color: #f5b18d; cursor: pointer; }
+    .prototype-switcher strong { min-width: 145px; color: #d5dee4; font-size: 9px; text-align: center; }
+    .toast { position: fixed; z-index: 60; left: 50%; bottom: 145px; max-width: 340px; transform: translateX(-50%); padding: 11px 14px; background: #202b39; color: #fff; box-shadow: 4px 4px 0 rgba(32,43,57,.2); font-size: 11px; font-weight: 800; text-align: center; }
+    .modal-backdrop { position: fixed; z-index: 70; inset: 0; display: grid; place-items: center; padding: 22px; background: rgba(32,43,57,.56); }
+    .modal { width: min(100%, 365px); padding: 21px; border: 1px solid var(--line); background: var(--panel); }
+    .modal h2 { font-size: 21px; }
+    .modal p { margin-top: 10px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+    .modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 18px; }
+    .modal-actions.three { grid-template-columns: 1fr 1fr 1fr; }
+    .modal-actions button { padding: 12px; border: 0; background: var(--orange); color: #fff; cursor: pointer; font-size: 12px; font-weight: 850; }
+    .modal-actions button.secondary { background: var(--paper-2); color: var(--ink); }
+    @media (max-width: 370px) {
+      .page { padding-left: 16px; padding-right: 16px; }
+      .tree-branch { gap: 5px; width: calc(100% - 10px); }
+      .tree-branch .tree-node { padding-left: 5px; padding-right: 5px; }
+      .tree-branch .tree-node strong { font-size: 10px; }
+      .session-timer { font-size: 76px; }
+    }
+  </style>
+</head>
+<body>
+  <main id="app"></main>
+  <div id="prototype-switcher" class="prototype-switcher"></div>
+  <script>
+    const variants = { A: { label: '看板主视图', screen: 'board' }, B: { label: '国策树主视图', screen: 'tree' }, C: { label: '专注链主视图', screen: 'chain' } };
+    const variantKeys = Object.keys(variants);
+    const getVariant = () => { const value = new URLSearchParams(location.search).get('variant'); return variantKeys.includes(value) ? value : 'A'; };
+    const state = { screen: variants[getVariant()].screen, treeDetail: true, selectedNode: 'root', nodeLit: true, chainKind: 'regular', taskFilter: 'all', target: '选择一个小任务', duration: 45, focusRunning: true, seconds: 2700, selectedConfirm: new Set(['a', 'b']), confirmed: false, chainMenu: false, libraryAttach: false };
+    const svg = name => {
+      const p = { tree:'<circle cx="12" cy="5" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M12 7v5M12 12H6v4M12 12h6v4"/>', chain:'<circle cx="8" cy="6" r="2"/><circle cx="8" cy="18" r="2"/><path d="M8 8v8M12 7h8M12 12h8M12 17h8"/>', board:'<path d="M4 19V8M10 19V5M16 19v-8M22 19H2"/>', me:'<circle cx="12" cy="8" r="3"/><path d="M5 20c.7-3.3 3-5 7-5s6.3 1.7 7 5"/>', more:'<circle cx="12" cy="5" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/>', bag:'<path d="M5 8h14l-1 12H6L5 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>', plus:'<path d="M12 5v14M5 12h14"/>', down:'<path d="m6 9 6 6 6-6"/>', check:'<path d="m5 12 4 4L19 6"/>', clock:'<circle cx="12" cy="12" r="8"/><path d="M12 8v5l3 2"/>' };
+      return `<svg viewBox="0 0 24 24" aria-hidden="true">${p[name] || p.more}</svg>`;
+    };
+    const button = (label, action, cls = '') => `<button class="${cls}" data-action="${action}">${label}</button>`;
+    function bottomNav() {
+      const items = [['board','看板','▦'], ['tree','国策树','⌘'], ['chain','专注链','◌'], ['me','我的','○']];
+      return `<nav class="bottom-nav">${items.map(([screen, label, glyph]) => `<button class="nav-item ${state.screen === screen ? 'active' : ''}" data-screen="${screen}"><span class="nav-glyph">${glyph}</span><span>${label}</span></button>`).join('')}</nav>`;
+    }
+    function pageHeader(kicker, title, actions = '') { return `<div class="page-header"><div><div class="kicker">${kicker}</div><h1 style="margin-top:8px">${title}</h1></div><div class="header-tools">${actions}</div></div>`; }
+    function boardPage() {
+      return `<section class="page"><div class="page-header"><div><div class="kicker">MONDAY / 04:00—04:00</div><h1 style="margin-top:8px">今天的看板</h1></div></div><p class="intro">先看今天要做的事，再决定进入哪条链。统计和状态放在同一张看板里，不另起一个数据页面。</p><div class="section-label"><h2>今天要做</h2><span>Goal → Task</span></div><section class="board-tasks"><button class="task-row" data-action="task-from-board"><i></i><div><strong>整理研究资料</strong><span>普通链 · 预计 60 分钟 · 已投入 36 分钟</span></div><b>开始 ›</b></button><button class="task-row" data-action="task-from-board"><i></i><div><strong>写完实验结论</strong><span>精锐链 · 预计 45 分钟 · 尚未投入</span></div><b>选择 ›</b></button><button class="task-row" data-action="task-from-board"><i></i><div><strong>整理桌面上的纸张</strong><span>两者皆可 · 预计 15 分钟 · 尚未投入</span></div><b>选择 ›</b></button></section><section class="board-hero"><div><div class="kicker">NEXT FOCUS</div><strong>从任务进入专注链</strong><p>先在二级任务界面按精锐、普通或两者筛选，再选择一个小任务。</p><button class="action-link" style="margin-top:13px" data-action="open-chain">进入专注链</button></div><div class="hero-value">45′</div></section><div class="section-label"><h2>今日概览</h2><span>数据与状态合看</span></div><div class="board-grid"><div class="board-stat blue"><span>累计专注时长</span><strong>4h 47m</strong></div><div class="board-stat green"><span>点亮国策</span><strong>1 / 6</strong></div><div class="board-stat orange"><span>连续专注次数</span><strong>9</strong></div><div class="board-stat purple"><span>当前最长记录</span><strong>42d</strong></div></div><div class="section-label"><h2>国策状态</h2><button class="action-link" data-action="open-tree">查看树结构</button></div><section class="pulse-panel"><div class="pulse-row"><div class="pulse-rail"></div><div class="pulse-copy"><strong>根促国策 · 今日保持点亮</strong><p>2 个节点等待确认。批量确认前仍可取消昨天的点亮状态。</p></div><span class="pulse-badge">待确认</span></div></section><div class="section-label"><h2>最近投入</h2><span>近 7 天</span></div><section class="pulse-panel"><div class="mini-chart">${[28,44,38,61,49,75,88].map(h => `<i style="height:${h}%"></i>`).join('')}</div><div class="chart-axis"><span>上周一</span><span>今天</span></div></section></section>${bottomNav()}`;
+    }
+    function treeNode(id, title, text, date, cls = '') { const active = state.selectedNode === id ? 'selected' : ''; const off = id === 'child3' && !state.nodeLit ? 'off' : ''; const iconOnly = state.treeDetail ? '' : 'icon-only'; const body = state.treeDetail ? `<strong>${title}</strong><p>${text}</p><time>${date}</time>` : `<span class="node-symbol">${id === 'root' ? '★' : '●'}</span><strong>${title.slice(0, 3)}</strong>`; return `<button class="tree-node ${cls} ${active} ${off} ${iconOnly}" data-node="${id}">${body}</button>`; }
+    function treePage() {
+      const actions = `<button class="tool" title="卡片库" data-action="library">${svg('bag')}</button><button class="tool" title="批量确认" data-action="confirm-page">${svg('check')}</button><button class="tool" title="从卡片库放入树" data-action="attach-card">${svg('plus')}</button>`;
+      return `<section class="page"><div class="page-header"><div><div class="kicker">NATIONAL FOCUS / TREE</div><h1 style="margin-top:8px">国策树</h1></div><div class="header-tools">${actions}</div></div><div class="section-label"><span>根节点 → 分枝 → 子节点</span><div class="chain-switch" style="margin:0;border:0"><button class="${state.treeDetail ? '' : 'active'}" style="padding:7px 8px" data-action="simple">简洁</button><button class="${state.treeDetail ? 'active' : ''}" style="padding:7px 8px" data-action="detail">详细</button></div></div><div class="tree-stage"><div class="tree-map"><div>${treeNode('root','根促国策','应对必须有一个根国策但不想…','2026-08-06','root')}</div><div class="tree-trunk"></div><div class="tree-branch"><div class="branch-child">${treeNode('child1','娱乐计费','如果很想玩游戏或其他娱乐…','N/A')}</div><div class="branch-child">${treeNode('child2','国策路由器','根据不同的生活状态切换…','2026-08-22')}${state.treeDetail ? `<div class="tree-descendant">${treeNode('child3','水密隔舱','出现影响生活一天以上的意…','2026-08-06')}</div>` : ''}</div><div class="branch-child">${treeNode('child4','秉冠日恒','每天必须坐上一次神圣座位','2026-05-26')}</div></div></div></div><div class="tree-legend"><span><i></i>点亮</span><span><i class="orange"></i>当前选择</span><span>点击卡片查看记录</span></div></section>${bottomNav()}`;
+    }
+    function chainPage() {
+      return `<section class="page"><div class="chain-header"><div><div class="kicker">FOCUS CHAIN / SETUP</div><h1 style="margin-top:8px">开始一次专注</h1></div><div class="chain-index">09</div></div><p class="intro">先选择一个具体小任务。精锐与普通只是任务分类筛选，不是两个独立页面。</p><button class="target-button" style="margin-top:22px" data-action="choose-target"><span>${state.target}</span>${svg('down')}</button><button class="action-link" style="margin-top:13px" data-action="rules-menu">例外规则与专注规则 ${state.chainMenu ? '↑' : '↓'}</button>${state.chainMenu ? `<div class="chain-menu"><button data-action="manage-rules">管理下必为例规则</button><p>Session 中发生暂停、提前结束或放弃时，从这里选择已有规则或创建新规则。没有规则时返回计时。</p></div>` : ''}<section class="focus-form"><label class="field-label">本次投入时长</label><div class="duration-line" style="margin-top:0"><strong class="duration-number">${state.duration}<small>分钟</small></strong><div><button class="step" data-action="duration-down">−</button><button class="step" data-action="duration-up" style="margin-left:6px">＋</button></div></div><div class="target-meta" style="display:flex;justify-content:space-between;margin-top:14px;color:var(--muted);font-size:10px"><span>当前分类：${state.chainKind === 'elite' ? '精锐链' : '普通链'}</span><span>计时长度由用户决定</span></div></section><div class="signal-grid"><article class="signal"><div class="signal-mark">↯</div><strong>触发信号</strong><p>左手三个响指<br>预约链开始后再决定是否进入专注</p></article><article class="signal marker"><div class="signal-mark">＋</div><strong>专注标识</strong><p>现实中的标志动作<br>APP 不判断你是否真的触发</p></article></div><div class="start-row"><button class="start-button" data-action="appointment">预约链 · 15 分钟</button><button class="start-button primary" data-action="instant">立即进入专注</button></div><p class="hint">正常完成只有一个出口：倒计时自然归零。其他操作都会进入例外规则流程。</p></section>${bottomNav()}`;
+    }
+    function taskPickerPage() {
+      const tasks = [['elite-1','写完实验结论','精锐链 · 45 分钟 · Goal：实验报告','elite'],['regular-1','整理研究资料','普通链 · 60 分钟 · Goal：实验报告','regular'],['both-1','整理桌面上的纸张','精锐 / 普通皆可 · 15 分钟 · Goal：稳定生活','both']];
+      const visible = tasks.filter(([, , , kind]) => state.taskFilter === 'all' || state.taskFilter === kind || (state.taskFilter === 'both' && kind === 'both'));
+      const filters = [['all','全部'],['elite','精锐'],['regular','普通'],['both','两者皆可']];
+      return `<section class="secondary-page"><button class="back" data-action="back-chain">← 返回专注链</button><div class="kicker">TASK PICKER / CLASSIFICATION FILTER</div><h1 style="margin-top:8px">选择小任务</h1><p class="intro">这里用标签筛选任务分类；精锐链和普通链不会拆成两个主页面。</p><div class="filter-row">${filters.map(([id,label]) => `<button class="filter-chip ${state.taskFilter === id ? 'active' : ''}" data-filter="${id}">${label}</button>`).join('')}</div><div class="picker-list">${visible.map(([id,title,desc,kind]) => `<button class="picker-item" data-task="${id}" data-kind="${kind}"><div><strong>${title}</strong><span>${desc}</span></div><b class="picker-kind">${kind === 'elite' ? '精锐' : kind === 'regular' ? '普通' : '两者'}</b></button>`).join('')}</div></section>`;
+    }
+    function libraryPage() {
+      const attach = state.libraryAttach;
+      const cards = [['card-1','早晨先处理正事','触发：起床后 · 动作：先处理正事'],['card-2','晚饭后立即洗碗','触发：晚饭后 · 动作：立即洗碗'],['card-3','睡前清空桌面','触发：准备睡觉 · 动作：清空桌面']];
+      return `<section class="secondary-page"><button class="back" data-action="back-tree">← 返回国策树</button><div class="kicker">CARD LIBRARY</div><h1 style="margin-top:8px">${attach ? '从卡片库放入树' : '卡片库'}</h1><p class="intro">卡片库保存尚未放入树中的卡片。${attach ? '选择一张卡片后，再选择它要挂入的枝干。' : '新建卡片从这里开始，不在国策树页面直接创建。'}</p><button class="new-card-button" data-action="create-card">＋ 新建国策卡片</button><div class="library-list">${cards.map(([id,title,desc]) => `<div class="library-card"><div><strong>${title}</strong><span>${desc}</span></div><button data-library-card="${id}">${attach ? '放入树' : '查看'}</button></div>`).join('')}</div></section>`;
+    }
+    function cardCreatePage() {
+      return `<section class="secondary-page"><button class="back" data-action="back-library">← 返回卡片库</button><div class="kicker">CARD LIBRARY / NEW CARD</div><h1 style="margin-top:8px">新建国策卡片</h1><p class="intro">卡片由用户自己定义，创建后先进入卡片库，再由用户放入国策树。</p><div class="card-form"><label class="field-label">触发条件</label><input placeholder="例如：起床后"/><label class="field-label">行动</label><input placeholder="例如：先处理正事"/><label class="field-label">适用范围（可选）</label><input placeholder="例如：工作日"/><label class="field-label">例外说明（可选）</label><textarea placeholder="例如：生病时不适用"></textarea><button class="confirm-button" data-action="save-card">保存到卡片库</button></div></section>`;
+    }
+    function dataBlock(label, value) { return `<div><span>${label}</span><strong>${value}</strong></div>`; }
+    function mePage() {
+      return `<section class="page"><div class="page-header"><div><div class="kicker">ACCOUNT / RECORD</div><h1 style="margin-top:8px">我的</h1></div><button class="tool" data-action="me-menu">${svg('more')}</button></div><section class="profile"><div class="profile-head"><div class="avatar">◒</div><div><strong>MistyRain</strong><span>把状态变成可重复的行动</span></div></div><div class="profile-stats">${dataBlock('国策历史最大', '1')}${dataBlock('累计专注', '9')}${dataBlock('投入时长', '5h')}</div></section><div class="section-label"><h2>我的记录</h2><span>可追溯、可复盘</span></div><div class="log-line"><time>今天</time><div><strong>普通链 · 整理研究资料</strong><span>预计 45 分钟</span></div><b style="color:var(--blue)">›</b></div><div class="log-line"><time>昨天</time><div><strong>国策确认 · 2 个节点</strong><span>保留点亮状态</span></div><b style="color:var(--green)">✓</b></div><div class="log-line"><time>08-21</time><div><strong>Session 失败记录</strong><span>原因：临时被打断</span></div><b style="color:var(--orange)">›</b></div><div class="section-label"><h2>设置</h2></div><div class="settings"><button class="setting-row" data-action="profile"><strong>个人资料</strong><span>名称与显示</span><b>›</b></button><button class="setting-row" data-action="notification"><strong>通知与后台计时</strong><span>本地通知</span><b>›</b></button><button class="setting-row" data-action="rules"><strong>下必为例规则</strong><span>3 条规则</span><b>›</b></button></div></section>${bottomNav()}`;
+    }
+    function confirmPage() {
+      const rows = [['a','国策路由器','昨天已点亮 · 当前记录保留'],['b','秉冠日恒','昨天已点亮 · 当前记录保留'],['c','水密隔舱','可取消 · 边界时仍未点亮才失败']];
+      return `<section class="confirm-page"><button class="back" data-action="back-tree">← 返回国策树</button><div class="kicker" style="margin-top:27px">DAILY CONFIRMATION / 04:00</div><h1 style="margin-top:8px">确认昨天的节点</h1><p class="intro">确认是一次用户操作。默认保留昨天点亮的节点，但可以在这里取消某个节点。</p><div class="confirm-list">${rows.map(([id,title,text]) => `<label class="confirm-row ${state.selectedConfirm.has(id) ? '' : 'off'}"><input type="checkbox" data-confirm="${id}" ${state.selectedConfirm.has(id) ? 'checked' : ''}><div><strong>${title}</strong><span>${text}</span></div></label>`).join('')}</div><button class="confirm-button" data-action="confirm">${state.confirmed ? '已完成批量确认' : '确认选中的节点'}</button><div class="confirm-note">取消不会立即清除最大连续记录；只有到了下一个凌晨 4 点仍未点亮，才按失败规则处理。</div></section>`;
+    }
+    function sessionPage() { const mm = String(Math.floor(state.seconds / 60)).padStart(2,'0'); const ss = String(state.seconds % 60).padStart(2,'0'); return `<section class="session"><div class="session-top"><span>FOCUS SESSION</span><span>${state.focusRunning ? '● RUNNING' : 'Ⅱ PAUSED'}</span></div><div class="session-body"><div class="kicker" style="color:#9ccabc">${state.chainKind === 'elite' ? '精锐链' : '普通链'} · 用户选择</div><h1>整理研究资料</h1><div class="session-timer">${mm}:${ss}</div><p>切到后台不会自动失败。通知会继续计时；只有倒计时自然归零，才会记录为正常完成并计入进度。</p></div><div class="session-controls"><button class="session-button" data-action="pause">${state.focusRunning ? '暂停' : '继续'}</button><button class="session-button" data-action="end">提前结束</button><button class="session-button danger" data-action="abandon">放弃</button></div></section>`; }
+    function render() {
+      const current = state.screen;
+      const app = document.getElementById('app');
+      app.className = current === 'session' ? 'app' : current === 'confirm' || current === 'library' || current === 'card-create' || current === 'task-picker' ? 'app tree' : `app ${current}`;
+      app.innerHTML = current === 'board' ? boardPage() : current === 'tree' ? treePage() : current === 'chain' ? chainPage() : current === 'me' ? mePage() : current === 'confirm' ? confirmPage() : current === 'task-picker' ? taskPickerPage() : current === 'library' ? libraryPage() : current === 'card-create' ? cardCreatePage() : sessionPage();
+      const key = getVariant();
+      document.getElementById('prototype-switcher').innerHTML = `<button data-switch="prev">‹</button><strong>PROTOTYPE · ${key} ${variants[key].label}</strong><button data-switch="next">›</button>`;
+      document.querySelectorAll('[data-screen]').forEach(el => el.addEventListener('click', () => { state.screen = el.dataset.screen; render(); }));
+      document.querySelectorAll('[data-action]').forEach(el => el.addEventListener('click', handleAction));
+      document.querySelectorAll('[data-switch]').forEach(el => el.addEventListener('click', () => cycle(el.dataset.switch)));
+      document.querySelectorAll('[data-node]').forEach(el => el.addEventListener('click', () => { state.selectedNode = el.dataset.node; toast('已选中节点，可继续查看它的历史与失败记录'); render(); }));
+      document.querySelectorAll('[data-confirm]').forEach(el => el.addEventListener('change', () => { el.checked ? state.selectedConfirm.add(el.dataset.confirm) : state.selectedConfirm.delete(el.dataset.confirm); render(); }));
+      document.querySelectorAll('[data-filter]').forEach(el => el.addEventListener('click', () => { state.taskFilter = el.dataset.filter; render(); }));
+      document.querySelectorAll('[data-task]').forEach(el => el.addEventListener('click', () => { state.target = el.querySelector('strong').textContent; state.chainKind = el.dataset.kind === 'elite' ? 'elite' : 'regular'; state.screen = 'chain'; toast(`已选择${state.chainKind === 'elite' ? '精锐链' : '普通链'}小任务`); render(); }));
+      document.querySelectorAll('[data-library-card]').forEach(el => el.addEventListener('click', () => { toast(state.libraryAttach ? '已选择卡片，原型中下一步选择挂载枝干' : '卡片详情'); }));
+    }
+    function handleAction(event) {
+      const action = event.currentTarget.dataset.action;
+      if (action === 'open-chain') { state.screen = 'chain'; render(); return; }
+      if (action === 'task-from-board') { state.screen = 'chain'; render(); return; }
+      if (action === 'open-tree') { state.screen = 'tree'; render(); return; }
+      if (action === 'confirm-page') { state.screen = 'confirm'; render(); return; }
+      if (action === 'back-tree') { state.screen = 'tree'; render(); return; }
+      if (action === 'back-chain') { state.screen = 'chain'; render(); return; }
+      if (action === 'back-library') { state.libraryAttach = false; state.screen = 'library'; render(); return; }
+      if (action === 'simple') { state.treeDetail = false; render(); return; }
+      if (action === 'detail') { state.treeDetail = true; render(); return; }
+      if (action === 'choose-target') { state.screen = 'task-picker'; render(); return; }
+      if (action === 'rules-menu') { state.chainMenu = !state.chainMenu; render(); return; }
+      if (action === 'manage-rules') { openModal('下必为例规则', '这里可以选择已有规则，或创建一条只影响未来 Session 的新规则。', 'rules'); return; }
+      if (action === 'duration-down') { state.duration = Math.max(5, state.duration - 5); state.seconds = state.duration * 60; render(); return; }
+      if (action === 'duration-up') { state.duration = Math.min(180, state.duration + 5); state.seconds = state.duration * 60; render(); return; }
+      if (action === 'appointment') { toast('预约链开始：15 分钟内再决定是否进入专注链'); return; }
+      if (action === 'instant') { state.screen = 'session'; state.focusRunning = true; state.seconds = state.duration * 60; render(); return; }
+      if (action === 'pause') { openModal(state.focusRunning ? '暂停本次 Session' : '继续本次 Session', state.focusRunning ? '暂停不是默认路径。请选择或创建例外规则；否则返回计时继续工作。' : '继续也需要明确选择例外规则，或返回当前计时页面。', state.focusRunning ? 'pause' : 'continue'); return; }
+      if (action === 'end') { openModal('提前结束', '提前结束不是普通完成。请选择或创建下必为例规则；否则返回计时。', 'end'); return; }
+      if (action === 'abandon') { openModal('放弃本次 Session', '请选择或创建规则以保留进度，或填写简短失败原因记录放弃；也可以返回计时。', 'abandon'); return; }
+      if (action === 'confirm') { state.confirmed = true; toast(`已确认 ${state.selectedConfirm.size} 个节点`); render(); return; }
+      if (action === 'library') { state.libraryAttach = false; state.screen = 'library'; render(); return; }
+      if (action === 'attach-card') { state.libraryAttach = true; state.screen = 'library'; render(); return; }
+      if (action === 'create-card') { state.screen = 'card-create'; render(); return; }
+      if (action === 'save-card') { state.screen = 'library'; state.libraryAttach = false; toast('卡片已保存到卡片库，可稍后放入树'); render(); return; }
+      if (action === 'board-menu' || action === 'me-menu' || action === 'profile' || action === 'notification' || action === 'rules') { toast('设置入口只属于“我的”页面'); return; }
+    }
+    function openModal(title, text, kind = 'rules') { const abandon = kind === 'abandon'; const backdrop = document.createElement('div'); backdrop.className = 'modal-backdrop'; backdrop.innerHTML = `<div class="modal"><h2>${title}</h2><p>${text}</p><div class="modal-actions ${abandon ? 'three' : ''}"><button data-modal="rule">选择/创建规则</button>${abandon ? '<button data-modal="failure" class="secondary">填写失败原因</button>' : ''}<button class="secondary" data-modal="cancel">返回计时</button></div></div>`; document.body.appendChild(backdrop); backdrop.querySelector('[data-modal="cancel"]').onclick = () => backdrop.remove(); backdrop.querySelector('[data-modal="rule"]').onclick = () => { backdrop.remove(); if (kind === 'pause') { state.focusRunning = false; toast('已按例外规则暂停；继续时仍需经过规则确认'); render(); } else if (kind === 'continue') { state.focusRunning = true; toast('已按例外规则继续计时'); render(); } else if (kind === 'end') { state.screen = 'chain'; state.focusRunning = false; toast('已按例外规则提前结束，实际投入计入进度'); render(); } else if (kind === 'abandon') { state.screen = 'chain'; state.focusRunning = false; toast('已按规则保留本次进度'); render(); } else { toast('原型：已进入规则选择流程'); } }; if (abandon) backdrop.querySelector('[data-modal="failure"]').onclick = () => { backdrop.remove(); state.screen = 'chain'; state.focusRunning = false; toast('原型：已进入失败原因填写，需输入简短文字'); render(); }; }
+    function toast(message) { document.querySelectorAll('.toast').forEach(el => el.remove()); const el = document.createElement('div'); el.className = 'toast'; el.textContent = message; document.body.appendChild(el); setTimeout(() => el.remove(), 2400); }
+    function cycle(direction) { const index = variantKeys.indexOf(getVariant()); const next = direction === 'next' ? (index + 1) % variantKeys.length : (index + variantKeys.length - 1) % variantKeys.length; history.replaceState(null, '', `?variant=${variantKeys[next]}`); state.screen = variants[variantKeys[next]].screen; render(); }
+    window.addEventListener('keydown', event => { const tag = document.activeElement?.tagName; if (['INPUT','TEXTAREA'].includes(tag) || document.activeElement?.isContentEditable) return; if (event.key === 'ArrowLeft') cycle('prev'); if (event.key === 'ArrowRight') cycle('next'); });
+    function finishSessionNormally() { state.seconds = 0; state.focusRunning = false; state.screen = 'chain'; toast('倒计时自然归零，本次 Session 正常完成，实际投入已计入进度'); render(); }
+    setInterval(() => { if (state.screen === 'session' && state.focusRunning && state.seconds > 0) { state.seconds -= 1; if (state.seconds === 0) { finishSessionNormally(); return; } const timer = document.querySelector('.session-timer'); if (timer) timer.textContent = `${String(Math.floor(state.seconds / 60)).padStart(2,'0')}:${String(state.seconds % 60).padStart(2,'0')}`; } }, 1000);
+    render();
+  </script>
+</body>
+</html>

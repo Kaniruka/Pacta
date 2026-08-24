@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pacta/auth/auth_session.dart';
+import 'package:pacta/features/goals_tasks/presentation/board_page.dart';
 import 'package:pacta/features/national_focus/national_focus_tree_page.dart';
 
 final selectedDestinationProvider = NotifierProvider<SelectedDestination, int>(
@@ -14,27 +16,61 @@ class SelectedDestination extends Notifier<int> {
 }
 
 class AppShell extends ConsumerWidget {
-  const AppShell({super.key});
+  const AppShell({this.userId, super.key});
 
-  static const _destinations = <_AppDestination>[
+  final AppUserId? userId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selectedIndex = ref.watch(selectedDestinationProvider);
+    final destinations = _destinations;
+
+    return Scaffold(
+      body: SafeArea(
+        child: IndexedStack(
+          index: selectedIndex,
+          children: [for (final destination in destinations) destination.page],
+        ),
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: selectedIndex,
+        onDestinationSelected: ref
+            .read(selectedDestinationProvider.notifier)
+            .select,
+        destinations: [
+          for (final destination in destinations)
+            NavigationDestination(
+              icon: Icon(destination.icon),
+              selectedIcon: Icon(destination.selectedIcon),
+              label: destination.label,
+            ),
+        ],
+      ),
+    );
+  }
+
+  List<_AppDestination> get _destinations => [
     _AppDestination(
       label: 'Board',
       icon: Icons.dashboard_outlined,
       selectedIcon: Icons.dashboard,
-      page: _DestinationPage(
-        title: "Today's Board",
-        eyebrow: 'MONDAY / 04:00—04:00',
-        description: 'Choose the next concrete Task before reviewing progress.',
-        icon: Icons.dashboard_outlined,
-      ),
+      page: userId == null
+          ? const _DestinationPage(
+              title: "Today's Board",
+              eyebrow: 'MONDAY / 04:00—04:00',
+              description:
+                  'Choose the next concrete Task before reviewing progress.',
+              icon: Icons.dashboard_outlined,
+            )
+          : BoardPage(userId: userId!),
     ),
-    _AppDestination(
+    const _AppDestination(
       label: 'National Focus Tree',
       icon: Icons.account_tree_outlined,
       selectedIcon: Icons.account_tree,
       page: NationalFocusTreePage(),
     ),
-    _AppDestination(
+    const _AppDestination(
       label: 'Focus Chain',
       icon: Icons.radio_button_unchecked,
       selectedIcon: Icons.radio_button_checked,
@@ -45,7 +81,7 @@ class AppShell extends ConsumerWidget {
         icon: Icons.radio_button_checked,
       ),
     ),
-    _AppDestination(
+    const _AppDestination(
       label: 'My',
       icon: Icons.person_outline,
       selectedIcon: Icons.person,
@@ -57,34 +93,6 @@ class AppShell extends ConsumerWidget {
       ),
     ),
   ];
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final selectedIndex = ref.watch(selectedDestinationProvider);
-
-    return Scaffold(
-      body: SafeArea(
-        child: IndexedStack(
-          index: selectedIndex,
-          children: [for (final destination in _destinations) destination.page],
-        ),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: selectedIndex,
-        onDestinationSelected: ref
-            .read(selectedDestinationProvider.notifier)
-            .select,
-        destinations: [
-          for (final destination in _destinations)
-            NavigationDestination(
-              icon: Icon(destination.icon),
-              selectedIcon: Icon(destination.selectedIcon),
-              label: destination.label,
-            ),
-        ],
-      ),
-    );
-  }
 }
 
 class _AppDestination {
