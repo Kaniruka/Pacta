@@ -124,4 +124,51 @@ void main() {
     expect(saved.tasks.single.isComplete, isTrue);
     expect(saved.isGoalComplete(goal.id), isTrue);
   });
+
+  testWidgets('Board Task opens Focus Chain setup with preserved context', (
+    tester,
+  ) async {
+    final database = AppDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = DriftGoalTaskRepository(
+      database: database,
+      remote: const UnavailableRemoteGoalTaskSource(),
+      clock: () => now,
+    );
+    final goal = await repository.saveGoal(
+      userId,
+      const GoalDraft(title: 'Context Goal'),
+    );
+    final task = await repository.saveTask(
+      userId,
+      TaskDraft(
+        goalId: goal.id,
+        title: 'Context Task',
+        classification: TaskChainClassification.both,
+        estimatedDuration: const Duration(minutes: 35),
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          goalTaskRepositoryProvider.overrideWithValue(repository),
+          syncRetryTriggersProvider.overrideWith((ref) => const Stream.empty()),
+        ],
+        child: MaterialApp(
+          theme: buildChainTheme(),
+          home: BoardPage(userId: userId),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(Key('configure-focus-${task.id}')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Focus Chain Setup'), findsOneWidget);
+    expect(find.text('Goal: Context Goal'), findsOneWidget);
+    expect(find.text('Estimate: 35m'), findsOneWidget);
+    expect(find.text('Classification: Both'), findsOneWidget);
+  });
 }

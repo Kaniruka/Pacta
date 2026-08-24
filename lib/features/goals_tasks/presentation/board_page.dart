@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pacta/app/chain_theme.dart';
 import 'package:pacta/auth/auth_session.dart';
+import 'package:pacta/features/focus_chain/presentation/focus_chain_page.dart';
 import 'package:pacta/features/goals_tasks/data/goal_task_state.dart';
 import 'package:pacta/features/goals_tasks/domain/goal_task_models.dart';
 import 'package:pacta/features/goals_tasks/presentation/goal_task_pages.dart';
@@ -233,6 +234,23 @@ class _TaskCard extends ConsumerWidget {
                     ),
                 ],
               ),
+              if (!task.isComplete)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    key: Key('configure-focus-${task.id}'),
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => FocusChainPage(
+                          userId: userId,
+                          initialTaskId: task.id,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.radio_button_checked),
+                    label: const Text('Configure Focus Chain'),
+                  ),
+                ),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,

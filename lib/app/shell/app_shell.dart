@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pacta/auth/auth_session.dart';
+import 'package:pacta/features/focus_chain/presentation/focus_chain_page.dart';
 import 'package:pacta/features/goals_tasks/presentation/board_page.dart';
 import 'package:pacta/features/national_focus/national_focus_tree_page.dart';
 
@@ -70,16 +71,19 @@ class AppShell extends ConsumerWidget {
       selectedIcon: Icons.account_tree,
       page: NationalFocusTreePage(),
     ),
-    const _AppDestination(
+    _AppDestination(
       label: 'Focus Chain',
       icon: Icons.radio_button_unchecked,
       selectedIcon: Icons.radio_button_checked,
-      page: _DestinationPage(
-        title: 'Start a Focus Session',
-        eyebrow: 'FOCUS CHAIN / SETUP',
-        description: 'Select a Task and explicitly choose the chain for today.',
-        icon: Icons.radio_button_checked,
-      ),
+      page: userId == null
+          ? const _DestinationPage(
+              title: 'Start a Focus Session',
+              eyebrow: 'FOCUS CHAIN / SETUP',
+              description:
+                  'Select a Task and explicitly choose the chain for today.',
+              icon: Icons.radio_button_checked,
+            )
+          : FocusChainPage(userId: userId!),
     ),
     const _AppDestination(
       label: 'My',
