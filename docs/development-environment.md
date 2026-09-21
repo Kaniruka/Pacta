@@ -18,6 +18,10 @@ if (!(Test-Path -LiteralPath .env)) { Copy-Item -LiteralPath .env.example -Desti
 | --- | --- | --- |
 | `SUPABASE_URL` | 开发用 Supabase 项目的 URL | 登录和云端同步 |
 | `SUPABASE_PUBLISHABLE_KEY` | 同一项目的 publishable key，或兼容的旧 anon key | 登录和云端同步 |
+| `TEST_REGISTRATION_PHONE` | 本地注册验收使用的手机号 | 仅本机测试，不由客户端读取 |
+| `TEST_REGISTRATION_EMAIL` | 本地注册验收使用的邮箱 | 仅本机测试，不由客户端读取 |
+| `TEST_ADMIN_EMAIL` | 本地 Supabase 管理员验收账号 | 仅本机测试，不由客户端读取 |
+| `TEST_ADMIN_PASSWORD` | 本地管理员验收密码 | 仅本机测试，禁止提交、记录到公开文档或传给 Flutter |
 
 从 Supabase 项目的 Connect 面板获取真实值。模板留空，避免将占位值误认为可连接的服务。
 
@@ -35,6 +39,8 @@ Flutter 不会自动加载 `.env`。应用初始化代码需要以 `const String
 以上是后续接入要求，尚未实现。纯界面和领域逻辑开发可以先使用本地存储或测试替身，但仓库当前还没有实现可用的离线开发模式。
 
 客户端编译期配置可以从产物中提取。此文件只用于客户端公开配置，不可放入 `service_role`、`sb_secret_...`、数据库密码、Supabase access token 或签名材料。后台注册资格与用户管理操作需要可信服务端；部署凭据放入服务端环境或 CI secrets，不能随 `--dart-define-from-file` 传给客户端。
+
+`.env` 还可以保存本机验收账号变量，但这些变量不是客户端配置：`TEST_*` 只供人工验收脚本或控制台操作使用。测试密码属于敏感凭据，只保存在被 Git 忽略的本机 `.env`，不要复制到 `.env.example`、提交记录、截图或聊天记录。管理员账号必须先在 Supabase Auth 中确认邮箱，再用该账号登录客户端；`app_admins` 表中的管理员绑定由可信 SQL 迁移初始化，普通客户端不能自行授予管理员权限。
 
 ## 工具与平台
 
