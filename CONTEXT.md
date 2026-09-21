@@ -1,6 +1,6 @@
-# Chain App Context
+# Pacta Context
 
-Chain is an open-source, cross-platform self-regulation app. It combines short, executable focus commitments with a longer-term progression model so that users can turn deadlines and unfinished work into a concrete next action.
+Pacta is an open-source, cross-platform self-regulation app. It combines short, executable focus commitments with a longer-term progression model so that users can turn deadlines and unfinished work into a concrete next action.
 
 ## Core concepts
 
@@ -8,155 +8,153 @@ Chain is an open-source, cross-platform self-regulation app. It combines short, 
 An individual person whose tasks, focus history, chains, and focus-tree progress are private to that person.
 _Avoid_: Account, tenant, organization
 
-**Focus Session**:
-A bounded period in which the user commits to carrying out one clearly defined focus task under an agreed focus rule. It runs as a countdown, and the normal completion path is to remain in the session until the countdown ends. Pausing or ending early is not allowed by default. When an interruption occurs, the user chooses either to abandon the current progress, which records failure or abandonment and requires a brief Failure Reason, or to preserve the progress by creating or selecting a Precedent Rule. A Precedent Rule-approved pause or early termination is recorded as completed, with the exception basis retained separately. Only completed sessions contribute their actual elapsed focus time to Focus Progress; elapsed time from failed or abandoned sessions remains history but contributes no Task progress. Completion does not complete the linked Task. Its outcome is completed, failed, or abandoned. Failure or abandonment resets only the selected Focus Chain's current maximum consecutive record to zero; the session and its recorded reason remain in history. Moving the App to the background does not itself abandon the session. Abandonment may be grouped with failure when filtering, but remains a distinct recorded outcome.
+**Focus Session (专注会话)**:
+A bounded countdown devoted to one Task, whose completed or failed outcome contributes actual active focus time independently of Task completion. A rule-approved pause is an unfinished state of that same Session; normal countdown completion and rule-approved early completion remain distinguishable.
 _Avoid_: Timer, pomodoro
 
-**Focus Session Outcome**:
-The recorded result of a Focus Session: completed, failed, or abandoned. Abandoned sessions remain distinct in history but belong to the same filter group as failed sessions.
-_Avoid_: Success/failure boolean
+**Focus Session Outcome (专注结果)**:
+The settled result of a Focus Session: completed or failed, with completed records distinguishing normal countdown completion from exception-approved early termination. “Abandon this Focus Session” is a user action that settles failure after confirmation, not an independent outcome or a temporary first-version distinction.
+_Avoid_: Abandoned outcome, success/failure boolean
 
-**Focus Progress**:
-The accumulated actual focus time contributed by completed Focus Sessions toward a Task's estimated duration. Focus Progress is separate from Task completion and from a Focus Chain's consecutive record.
+**Focus Session Reconciliation (专注记录核对)**:
+The user's review of conflicting multi-device focus records, separating configuration selection, outcome confirmation, and effective-time deduplication. Original sources remain available, disputed contributions and affected records are marked pending review, and ongoing work remains usable.
+_Avoid_: Automatic outcome overwrite
+
+**Duplicate Focus Record (重复专注记录)**:
+A retained source record marked as a duplicate during Focus Session Reconciliation rather than a separate accepted focus attempt. It contributes no additional official progress or Focus Node and is not a failed Session that resets a chain.
+_Avoid_: Failed Session, deleted history
+
+**Task Estimated Duration (任务预计时长)**:
+The user's estimate of the focus time needed to complete a Task, used only as a progress reference rather than a time limit or completion criterion. A Task may be explicitly completed before this estimate is reached, or remain incomplete after accumulated Focus Progress exceeds it.
+_Avoid_: Time quota, deadline, required completion threshold
+
+**Focus Progress (任务专注进度)**:
+The accumulated actual active focus time contributed to a Task by accepted completed and failed Focus Sessions, excluding paused time and using the same effective-time basis as Recent Focus Activity. It excludes unresolved conflicting contributions and duplicate records, may exceed the Task Estimated Duration without being capped, and is separate from explicit Task completion and from a Focus Chain's consecutive record.
 _Avoid_: Task completion, time quota
 
-**Recent Focus Activity**:
-A read-only, per-day summary of actual focus minutes recorded in recent Focus Session history, including effort from completed, failed, and abandoned sessions. It is a history projection and does not change Focus Progress, Focus Chain records, Task completion, or National Focus records.
+**Recent Focus Activity (近期专注活动)**:
+A read-only summary using the same effective-time basis as Focus Progress: actual active time from completed and failed Sessions, excluding pauses, unresolved conflicting contributions, and duplicate records, grouped by calendar day in each device's display time zone rather than by Task. Redistributing daily totals when the display zone changes does not change total duration, occurrence order, Focus Progress, or chain records.
 _Avoid_: Investment data, Focus Progress, time quota
 
-**Focus Chain**:
-An ordered accumulation of completed focus sessions for a specific area of work or life. In the first version, each area has at most one Elite Focus Chain and one Regular Focus Chain. A Focus Chain is selected in one of two modes, Elite or Regular, according to the user's current state; that mode also classifies which Tasks are appropriate for the chain. Each chain maintains an independent current maximum consecutive record. Any failed session, including an active abandonment, resets only the selected chain's current record to zero while preserving its history.
-_Avoid_: Streak, habit counter
+**Focus Chain (专注链)**:
+One of two fixed focus records, Elite or Regular, each with its own consecutive record and failure scope shared across Tasks. Together with the single Appointment Chain, these form the user's three independent records; there are no user-created independent chains.
+_Avoid_: Streak, habit counter, task dependency chain, a single Focus Session
 
-**Focus Chain Mode**:
-The mode of a Focus Chain selected for the user's current state: Elite Focus Chain (精锐链) or Regular Focus Chain (普通链).
-_Avoid_: Difficulty level, streak tier
+**Elite Focus Chain (精锐链)**:
+One of the two fixed Focus Chains, with a consecutive record independent of the Regular Focus Chain and Appointment Chain. Its mode does not prescribe a fixed session duration or an automatically assessed difficulty level.
+_Avoid_: 精英链, fixed-duration chain, automatic difficulty level
 
-**Focus Practice Type**:
-A state- and time-appropriate way to begin a Focus Session. The Regular Short Chain (普通短链) is a short entry into the Regular Focus Chain and shares its progress. A Recon Practice (侦查练习) is a non-persisted method the user may apply to a concrete Task within a Goal to test whether they can enter a working state; it is not a Task, Focus Chain, Focus Session, or other App entity.
-_Avoid_: Timer preset, difficulty tier
+**Regular Focus Chain (普通链)**:
+One of the two fixed Focus Chains, with a consecutive record independent of the Elite Focus Chain and Appointment Chain. The user chooses the duration of each Focus Session.
+_Avoid_: Fixed-duration chain
 
-**Focus Marker**:
-A distinctive physical or digital marker that defines the selected Focus Chain's active context. The App does not detect whether the user has activated it; the user performs the marker and manually starts or confirms the corresponding App flow.
-_Avoid_: Trigger Signal, notification
+**Recon Practice (侦查练习)**:
+A method the user may apply to a concrete Task within a Goal to test whether they can enter a working state. It is an approach to existing work, with no independent App record.
+_Avoid_: Task, Focus Chain, Focus Session
 
-**Trigger Signal**:
-A simple user-performed action that belongs to one of two flows: an Appointment Signal starts an Appointment Chain, while an Immediate-start Signal directly signals readiness to begin a Focus Chain. Trigger Signals are part of the user's real-world protocol; the App records the manually selected flow rather than detecting the signal itself.
+**Trigger Signal (启动信号)**:
+A user-chosen action carrying an appointment or focus commitment, such as putting on specific headphones or snapping three times; it is the product adaptation of the theoretical Sacred Seat (神圣座位). The Appointment Signal initiates preparation and the Immediate-start Signal initiates focus; the App relies on the user to perform the action.
 _Avoid_: Push notification, biometric signal
 
-**Appointment Chain**:
-A parallel delayed-start chain with a fixed 15-minute commitment window before entering a Focus Chain. After the Appointment Signal, the user must manually perform the Immediate-start Signal and open the Focus Chain within that window; the App does not detect either signal or start the Focus Chain automatically. If the user does not enter, the Appointment Chain is failed; if the user actively abandons it, it is abandoned. Either outcome resets only the Appointment Chain's own current record. Neither case creates a Focus Session or resets the selected Focus Chain. Its expiry, exception, and handoff rules are separate from the Focus Session countdown.
-_Avoid_: Calendar event, reminder
+**Appointment Chain (预约链)**:
+The single delayed-start record shared across Elite and Regular preparation, with its own consecutive record and history; each attempt prepares a selected Task and Focus Session duration through a fixed 15-minute countdown. Normal or early entry into focus records one appointment success, while cancellation records failure and clears only the current Appointment Chain record.
+_Avoid_: Calendar event, reminder, Focus Chain record
 
-**Precedent Rule**:
-The exception rule for a Focus Chain or Appointment Chain. When an interruption would otherwise discard progress, the user may create a new Precedent Rule or select an existing one eligible for the same Focus Chain and Focus Rule to preserve the progress and complete the session by exception. Each later adjustment creates a new rule revision rather than changing an old revision; the new revision affects future sessions, while each session retains the revision used at completion. The rule becomes part of the relevant chain's future boundary. If the user does not create or select a rule, the current progress is discarded and the session is recorded as failed or abandoned.
-_Avoid_: One-time exception, ad hoc override
+**下必为例 (Precedent Rule)**:
+A user-written permission for otherwise disallowed behavior during focus, shared by Elite and Regular Focus Chains: the user judges its meaning and applicability and chooses whether to permit that behavior in future or acknowledge failure. Users may edit or delete the text to correct it; confirmed operations retain their original rule basis, and this permission applies only to focus.
+_Avoid_: One-time exception, automatic compliance evaluator
 
-**Focus Node**:
-One system-generated position in a focus chain appended when a Focus Session completes normally or through a Precedent Rule-approved exception. It records the completed focus unit independently of whether the linked Task or Goal is complete; it is not created merely because Focus Progress has reached an estimated duration. Users may add notes to a node but cannot create one manually.
+**Focus Node (专注节点)**:
+One system-generated position in a focus chain appended when a Focus Session completes normally or through Precedent Rule-approved early termination. It records the completed focus unit independently of whether the linked Task or Goal is complete; it is not created merely because Focus Progress has reached an estimated duration. Users may add notes to a node but cannot create one manually.
 _Avoid_: Check-in, badge
 
-**National Focus Tree**:
-A progression model in which small, maintainable rules and actions unlock or support broader improvements in the user's daily state. The tree reflects the user's current state and can inform which Focus Chain is appropriate, but the user still explicitly selects the chain; the App does not automatically switch or block a choice. The tree is not attached to a Goal or Task. The first version uses manually created National Focus Cards, presented in a Card Library and placed into a tree as National Focus Nodes, with explicit user lighting, daily confirmation records, and failure reasons. After each 04:00 boundary, the user must complete one National Focus Daily Confirmation before the next 04:00; it confirms every node eligible from the previous National Focus Day in one action. Nodes newly activated today require individual manual confirmation before joining a later batch. The user may exclude a node from the batch when it is no longer valid compared with yesterday; exclusion clears that node's current maximum consecutive record and extinguishes its child cards without creating separate child failure logs. The App may recommend adding at most one new card per day, but this is advisory rather than a hard limit. Missing a single daily confirmation window invalidates the current National Focus state: the failure snapshot is saved first, all current maximum consecutive records and the batch eligibility set are cleared, historical maximum records are retained, and the next cycle starts from zero. The system records the invalidation reason as “missed daily confirmation”; the user may edit that reason later. A node is never individually failed automatically by a deadline or inactivity. When a node fails, the failed node remains in the tree with its current maximum consecutive record cleared, its historical maximum record retained, and its child cards remain in the tree marked as extinguished. Its parent is not affected. Only the failed node receives a Failure Reason; extinguished child cards do not create separate failure logs. The user may then edit the current tree in place, soft-delete cards, or create new cards and manually attach them to any branch; the App does not automatically split or generate replacement cards. New cards are new nodes and do not inherit the failed node's current record. Each National Focus Card also has a persistent Internalization Progress value in addition to its current and historical maximum consecutive records. Complex inheritance is deferred.
+**National Focus Tree (国策树)**:
+A user-maintained progression tree of National Focus Cards, independent of Goals and Tasks, reflecting the user's current state. Its nodes distinguish Lit, Pending Today Confirmation, and Extinguished; detailed behavior is defined in the core specification.
 _Avoid_: Skill tree, goal hierarchy
 
-The first version does not model a separate National Focus Group or tolerance quota: parent-child status remains strict. It also does not provide a Water-tight Compartment freeze exception or automatic post-failure redesign suggestions.
-
-**National Focus Card**:
-A user-authored rule card with lightweight structure: a primary Trigger Condition and Action, plus optional Scope and Exception Notes. The App stores and presents these fields but does not automatically evaluate whether the user performed the real-world action; the user still lights and confirms nodes manually.
+**National Focus Card (国策卡)**:
+A user-authored rule with a primary Trigger Condition and Action, optional Scope and Exception Notes, and persistent Internalization Progress. The user evaluates its real-world validity manually.
 _Avoid_: Executable rule, automatic evaluator
 
-Internalization Progress is retained separately from current and historical maximum consecutive records. It is derived from the card's cumulative successful National Focus Day count rather than entered by the user.
-
-Node lighting, extinguishing, and moving a card to the Card Library are user actions. The App does not reset a node's current maximum consecutive record immediately after an extinguish or removal; it evaluates the state at the 04:00 National Focus Day boundary and only then records failure and clears the current maximum when the node is not lit.
-
-**National Focus Card Library**:
-The user's collection of National Focus Cards that are not currently placed in the tree. Explicitly moving a card from the tree into the library starts a reversible removal state and does not immediately clear its current maximum consecutive record. If the card is restored and lit before the daily boundary, its current, historical, and Internalization Progress records are preserved; otherwise the boundary evaluation records failure and then clears the current maximum consecutive record while retaining the historical maximum and Internalization Progress. Moving a card directly between tree branches preserves its current and historical records. A failed or extinguished card remains in the tree and is not moved to the library automatically. A restored soft-deleted card returns to the library rather than to any current tree position; the user may later select a parent node in the tree to establish a new parent relationship.
+**National Focus Card Library (国策卡片库)**:
+The user's collection of independent cards not currently placed in the tree, including restored soft-deleted cards. Cards moved here from a subtree no longer retain their parent-child relationships and are placed back individually.
 _Avoid_: Archive-only storage, task list
 
-**National Focus Node**:
-A Card Library card placed into the National Focus Tree under a chosen parent branch. A card can occupy only one tree position at a time. It represents one concrete state rule or action, has its own current maximum consecutive record, historical maximum record, and Internalization Progress, and may have child cards. The user manually lights or extinguishes a node. Extinguishing changes the node's visible state but does not immediately clear its current maximum consecutive record; if the node is lit again before the daily boundary, the record is preserved. At the daily boundary, a node that is not lit is recorded as failed, its current maximum consecutive record is cleared, and its historical maximum record and Internalization Progress are retained. Extinguishing a parent also extinguishes its child cards without removing any of them from the tree; extinguishing alone does not create a Failure Reason or failure log. A manually created replacement or follow-up card is a new node rather than a continuation of the failed node. Moving a card directly between tree branches preserves its current and historical records. Explicitly moving a card from the tree into the Card Library starts the same reversible removal state; it has no immediate reset, but if it remains removed at the daily boundary it is recorded as failed and its current maximum consecutive record is then cleared. If the card is referenced by any National Focus Failure Record, it cannot be permanently deleted and can only be restored to the Card Library. A card not referenced by any failure snapshot may be permanently deleted.
+**National Focus Node (国策节点)**:
+A National Focus Card occupying one tree position, optionally with child cards, and carrying current/historical consecutive records and Internalization Progress. Its state is Lit (点亮), Pending Today Confirmation (待今日确认; visually unlit without failure), or Extinguished (真正熄灭; requires separate manual lighting).
 _Avoid_: Focus Node, Task, badge
 
-A newly placed card starts extinguished and must be manually lit. A failed node relit on a later day starts with a current maximum consecutive record of zero while retaining its historical maximum record and Internalization Progress. Relighting a parent does not relight its extinguished children; each child requires separate manual lighting.
-
-**Internalization Progress**:
-A persistent card-level indication of how familiar a National Focus rule has become through successful confirmations. Let `S` be the card's cumulative number of successful National Focus Days. At each successful National Focus Daily Confirmation for that card, `S` increases by one. The derived score is `I = 100 * (1 - exp(-S / 60))`, where `60` is the initial global calibration constant in successful days. The score approaches 100 asymptotically, so three successful days cannot reach the highest familiarity range. `S` is retained when the card is failed, extinguished, moved to the Card Library, or restored; `I` is derived from `S`. A newly created card starts with `S = 0`. They are separate from the current and historical maximum consecutive records, are not a completion state, and cannot be manually edited.
+**Internalization Progress (内化进度)**:
+A persistent card-level indication of familiarity derived from cumulative successful National Focus Days, separate from current/historical consecutive records and Strengthening Levels. It survives failure and is not manually editable; successful days are counted at National Focus Checkpoints rather than per lighting action.
 _Avoid_: Current streak, Task progress, completion percentage
 
-The user interface may derive qualitative labels from the continuous Internalization Progress score, but those labels are presentation only and do not define the number of progress levels.
-
-Internalization Progress increases only after the user completes a successful National Focus Daily Confirmation for the previous National Focus Day; failure or extinguishing preserves the accumulated value but does not increase it.
-
-Internalization Progress is separate from a National Focus Strengthening Level and does not determine its requirements.
-
-**National Focus Strengthening Level**:
+**National Focus Strengthening Level (国策强化等级)**:
 A user-defined stricter set of requirements for a National Focus Card, expressed through concrete Trigger Condition and/or Action content; for example, changing a trigger from before 02:00 to before 01:00. A card retains its base requirements and supports up to five user-created strengthening levels, each with its own concrete requirements; the base is not counted toward this limit. Levels are defined independently of Internalization Progress and are not automatically earned upgrades.
 _Avoid_: Internalization Progress, automatic upgrade, numeric-only bonus
 
-**National Focus Daily Confirmation**:
-A user action performed once after the 04:00 boundary and before the next 04:00 boundary. It confirms, in one batch, the nodes that were eligible from the previous National Focus Day, increments their current maximum consecutive records and Internalization Progress, and allows the user to exclude nodes that are no longer valid. Newly activated nodes require individual confirmation before they can join a later batch. If the user does not complete this action within the window, the current National Focus state is invalidated at the next 04:00 boundary.
-_Avoid_: Automatic daily confirmation, per-node daily confirmation
+**National Focus Daily Confirmation (国策每日确认)**:
+The user's acknowledgment that a node remains valid today (确认今日继续有效), performed by individually lighting pending nodes or by One-click Confirm Today. The batch lights only Pending Today Confirmation nodes and leaves Lit and Extinguished nodes unchanged.
+_Avoid_: Yesterday-success acknowledgment, automatic daily confirmation
 
-**National Focus Day**:
-A daily evaluation period from 04:00 until the next day's 04:00. A node's light or extinguished state is judged at the boundary: a node that is still lit becomes eligible for the next National Focus Daily Confirmation, while a node that is not lit is recorded as failed. Extinguishing or moving a card to the Card Library before the boundary is reversible and does not immediately clear its current maximum consecutive record.
-_Avoid_: Calendar day, deadline
+**National Focus Checkpoint (国策检查点)**:
+The fixed daily settlement boundary at 04:00 Beijing time (UTC+08:00), the same instant for every user and device. Changing the user's time zone changes its local-time display, never the checkpoint itself.
+_Avoid_: Local 04:00, user-configurable settlement time
 
-When a node reaches the 04:00 boundary without being lit, the system pre-fills its Failure Reason as “04:00 时未保持点亮”; the user may edit it later. A parent may mark children extinguished immediately, but those children are not formally failed until the boundary.
+**National Focus Day (国策日)**:
+The period from one National Focus Checkpoint to the next. At the closing checkpoint, nodes still awaiting that day's confirmation formally fail and become Extinguished; surviving Lit nodes then become Pending Today Confirmation for the new day without failure.
+_Avoid_: Local calendar day, deadline
 
-An extinguished child cannot be lit independently while its parent remains extinguished; the parent must be lit first.
-
-**National Focus Failure Record**:
-An immutable historical record created when the system determines that a National Focus Tree node was not lit at the boundary or when one missed daily confirmation window invalidates the current tree. It contains the required brief Failure Reason when a specific node is failed, or the system-generated “missed daily confirmation” reason for tree-wide invalidation, plus a complete snapshot of the National Focus Tree's structure and state at that moment. Later in-place tree restructuring or card removal cannot change what the user sees in the failure log.
+**National Focus Failure Record (国策失败记录)**:
+A historical National Focus failure event identified by an independent failure source, with a complete immutable tree snapshot and optional user explanation. Events in one daily-confirmation failure batch share one explanation entry without becoming a single failure event.
 _Avoid_: Current tree state, task failure
 
-**Focus Rule**:
-The explicit condition that defines what a focus session requires and what counts as a valid completion or failure.
-_Avoid_: Motivation, promise
-
 **Failure Reason**:
-The user's required short free-text explanation for a failed or abandoned Focus Session or a failed National Focus Tree node. The initial entry may be only a few words and can be edited later for reflection. Structured categories or tags may be added later for aggregate statistics and pattern analysis, without replacing the original text. A completed session preserved by a Precedent Rule uses the rule as its exception basis instead of a Failure Reason.
+A short explanation of a failed attempt or National Focus event: required for focus abandonment and appointment cancellation, optional for active National Focus extinguishing. Missed National Focus confirmation has a system reason, and users may later add or edit reflective explanations without changing settled outcomes.
 _Avoid_: Excuse, diagnostic
 
-**Goal**:
-A broader intended outcome that groups multiple executable Tasks. In the first version, the hierarchy is limited to Goal -> Task: a Task does not contain nested child Tasks, and every Task in a Goal is required. A Goal may contain Tasks classified for different Focus Chain modes, and its progress is composed from those Tasks; the Goal is complete only when all of its Tasks are explicitly complete.
+**Goal (目标)**:
+A broader intended outcome that groups multiple executable Tasks. In the first version, the hierarchy is limited to Goal -> Task: a Task does not contain nested child Tasks, and every Task in a Goal is required. A Goal may contain Tasks classified for different Focus Chain modes, and its progress is composed from those Tasks; a nonempty Goal is complete only when all of its Tasks are explicitly complete; an empty Goal is not complete.
 _Avoid_: Project, Focus Chain
 
-**Task Chain Classification**:
-The assignment of a Task to the Elite Focus Chain, the Regular Focus Chain, or explicitly both, so it can be selected in a state-appropriate task list. This classification does not determine the duration of a Focus Session.
-_Avoid_: Duration tier, priority
+**Task Chain Classification (任务链分类)**:
+An organizational and filtering classification of a Task as Elite, Regular, or both, independent of the mode used for a particular attempt. A Goal's classification may suggest a new Task's default without requiring its Tasks to share that classification.
+_Avoid_: Fixed record ownership, success criterion
 
-**Focus Chain Selection**:
-The user's explicit choice of which Focus Chain to enter for the current state. The App presents Tasks eligible for that chain and may suggest the Regular Focus Chain when the selected Elite Focus Chain has no available Tasks, but it does not switch chains automatically.
-_Avoid_: Automatic fallback policy, timer mode
+**Focus Chain Mode (本次专注模式)**:
+The Elite or Regular mode adopted for the current attempt, determining its focus record attribution; preparation always belongs to the single independent Appointment Chain regardless of mode. It is carried from the originating mode list or shown and switchable alongside duration settings, without a separate chain-selection or pairing page.
+_Avoid_: Task classification, start-time chain pairing
 
-**Task**:
-An executable subtask within a Goal, with enough information to connect it to a deadline or a Focus Session. In the first version, a Task has no nested child Tasks. A Task has a Task Chain Classification and may have an estimated duration and accumulated Focus Progress; Focus Progress is only evidence of work performed, and completing a Focus Session does not by itself complete the Task or its Goal. Task completion is recorded separately by explicit user confirmation.
+**Task (任务)**:
+An executable subtask belonging to one Goal, without cross-Goal movement, with enough information to connect it to a deadline or a Focus Session. In the first version, a Task has no nested child Tasks. A Task has a Task Chain Classification and may have an estimated duration and accumulated Focus Progress; Focus Progress is only evidence of work performed, and completing a Focus Session does not by itself complete the Task or its Goal. Task completion is recorded separately by explicit user confirmation.
 _Avoid_: To-do item, ticket
 
-**Calendar Block**:
-A time interval imported from a device calendar and treated as an external scheduling constraint.
+**Calendar Block (日历块)**:
+An imported calendar event used as read-only planning context: timed busy intervals indicate occupancy, while all-day events retain their original dates as reminders. Calendar occupancy never restricts starting focus.
 _Avoid_: Appointment, event
 
-**Deadline**:
+**Deadline (截止时间)**:
 The point in time by which a task or outcome becomes materially late or loses value.
 _Avoid_: Due date, reminder
 
-**Active User**:
+**Registration Eligibility (注册资格)**:
+An administrator-issued permission for a specified email address or phone number to register once, without verifying ownership of that identifier. Unused eligibility remains valid until revoked; successful registration consumes it.
+_Avoid_: Email invitation, verification code, proof of identity
+
+**Active User (正常用户)**:
 A user currently allowed to access the app and their data.
 _Avoid_: Enabled account
 
-**Suspended User**:
-A user whose access is disabled while their data is retained for a possible recovery period.
+**Suspended User (停用用户)**:
+A user whose new business operations and uploads are disabled once suspension is known, while local data and existing flow state are retained for recovery. Suspension itself is not a failed focus or appointment outcome.
 _Avoid_: Deleted user, banned user
 
-**Purge**:
-The deliberate, irreversible removal of a user's app data and authentication account after suspension or explicit deletion.
+**Purge (清除)**:
+The administrator's deliberate, irreversible removal of an eligible user's cloud business data and authentication identity. Cloud purge does not itself establish deletion of data on offline devices.
 _Avoid_: Deactivation, archive
 
 ## Boundaries
 
 - The app owns tasks, focus sessions, chains, and focus-tree progress.
-- Device calendars are external constraints and are read-only in the initial design.
+- Device calendars provide read-only planning context.
 - The app does not model organizations, teams, or shared workspaces.
 - Each user's app data remains private and isolated from other users.

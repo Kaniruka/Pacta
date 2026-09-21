@@ -2,9 +2,9 @@
 status: accepted
 ---
 
-# Keep tasks in the App and treat device calendars as read-only constraints
+# Keep tasks in the App and treat device calendars as read-only planning context
 
-Chain will own its To-do data and focus planning, while mobile clients may read selected device calendars and normalize them into Calendar Blocks. The first version will not integrate Microsoft services or perform bidirectional calendar editing. This keeps the core interaction centered on Focus Chains and the National Focus Tree, avoids building a full task/calendar replacement, and lets desktop clients consume synchronized calendar constraints without duplicating every platform-specific calendar API.
+Pacta will own its Goal and Task data and focus planning, while mobile clients may read selected device calendars and normalize them into Calendar Blocks. The first version will not integrate Microsoft services or perform bidirectional calendar editing. This keeps the core interaction centered on Focus Chains and the National Focus Tree, avoids building a full task/calendar replacement, and lets desktop clients consume synchronized Calendar Blocks without duplicating every platform-specific calendar API.
 
 ## Considered options
 

@@ -5,6 +5,9 @@ Pacta is a mobile-first, cross-platform self-regulation app.
 Product language, domain boundaries, architectural decisions, and open
 questions are documented under [`docs/`](docs/).
 
-App concept images are indexed in [Design reference](docs/design-reference/README.md).
-They provide broad guidance, not a sole standard; layouts and UI styles should
-be designed for the actual product rather than copied from these images.
+Development uses cloud Supabase with a local Flutter client. Prerequisites and local `.env` setup are documented in
+[Development environment](docs/development-environment.md).
+
+Start with [Domain terminology](CONTEXT.md), [Product design](docs/product-design.md),
+and [Core specification](docs/spec-focus-loop-and-core-shell.md).
+The [document audit](docs/document-audit-20260921.md) records the latest consistency review.

@@ -1,4 +1,10 @@
 # Miscellaneous
+# Local configuration; only sanitized templates belong in Git.
+.env
+.env.*
+!.env.example
+!.env.*.example
+
 *.class
 *.log
 *.pyc
