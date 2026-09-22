@@ -19,6 +19,9 @@ class SupabaseAuthRepository implements AuthRepository {
   }
 
   @override
+  String? get currentUserId => _client.auth.currentUser?.id;
+
+  @override
   Future<void> signIn({
     required String identifier,
     required String password,
@@ -98,6 +101,9 @@ class UnavailableAuthRepository implements AuthRepository {
 
   @override
   String? get currentUserIdentifier => null;
+
+  @override
+  String? get currentUserId => null;
 
   @override
   Future<void> signIn({

@@ -1,31 +1,59 @@
+import 'dart:async';
+
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'src/auth/auth_repository.dart';
 import 'src/auth/supabase_auth_repository.dart';
+import 'src/tasks/task_database.dart';
+import 'src/tasks/task_models.dart';
+import 'src/tasks/task_repository.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final url = const String.fromEnvironment('SUPABASE_URL');
   final key = const String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
   AuthRepository repository = const UnavailableAuthRepository();
+  final database = PactaDatabase.open();
+  TaskRemoteDataSource remote = const UnavailableTaskRemoteDataSource();
   if (url.isNotEmpty && key.isNotEmpty) {
     await Supabase.initialize(url: url, publishableKey: key);
     repository = SupabaseAuthRepository(Supabase.instance.client);
+    remote = SupabaseTaskRemoteDataSource(Supabase.instance.client);
   }
-  runApp(PactaApp(authRepository: repository));
+  runApp(
+    PactaApp(
+      authRepository: repository,
+      taskRepositoryFactory: (userId) => LocalTaskRepository(
+        database: database,
+        userId: userId,
+        remote: remote,
+      ),
+    ),
+  );
 }
 
 class PactaApp extends StatelessWidget {
-  const PactaApp({super.key, required this.authRepository});
+  const PactaApp({
+    super.key,
+    required this.authRepository,
+    this.taskRepositoryFactory,
+  });
 
   final AuthRepository authRepository;
+  final TaskRepository Function(String userId)? taskRepositoryFactory;
 
   @override
   Widget build(BuildContext context) {
     return ProviderScope(
-      overrides: [authRepositoryProvider.overrideWithValue(authRepository)],
+      overrides: [
+        authRepositoryProvider.overrideWithValue(authRepository),
+        taskRepositoryFactoryProvider.overrideWithValue(
+          taskRepositoryFactory ?? (_) => const UnavailableTaskRepository(),
+        ),
+      ],
       child: MaterialApp(
         title: 'Pacta',
         debugShowCheckedModeBanner: false,
@@ -48,6 +76,19 @@ class PactaApp extends StatelessWidget {
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return const UnavailableAuthRepository();
+});
+
+final taskRepositoryFactoryProvider =
+    Provider<TaskRepository Function(String userId)>((ref) {
+      return (_) => const UnavailableTaskRepository();
+    });
+
+final taskRepositoryProvider = Provider.autoDispose<TaskRepository>((ref) {
+  final userId = ref.watch(authRepositoryProvider).currentUserId;
+  if (userId == null) return const UnavailableTaskRepository();
+  final repository = ref.watch(taskRepositoryFactoryProvider)(userId);
+  ref.onDispose(repository.dispose);
+  return repository;
 });
 
 class AuthGate extends ConsumerWidget {
@@ -211,8 +252,11 @@ class AppShell extends ConsumerStatefulWidget {
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends ConsumerState<AppShell> {
+class _AppShellState extends ConsumerState<AppShell>
+    with WidgetsBindingObserver {
   int _index = 0;
+  late final StreamSubscription<List<ConnectivityResult>>
+  _connectivitySubscription;
 
   static const _destinations = [
     _Destination('看板', Icons.dashboard_outlined, Icons.dashboard),
@@ -220,6 +264,38 @@ class _AppShellState extends ConsumerState<AppShell> {
     _Destination('专注链', Icons.bolt_outlined, Icons.bolt),
     _Destination('我的', Icons.person_outline, Icons.person),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      _,
+    ) {
+      unawaited(_syncTasks());
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncTasks());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_syncTasks());
+  }
+
+  Future<void> _syncTasks() async {
+    try {
+      await ref.read(taskRepositoryProvider).sync();
+    } catch (_) {
+      // Offline edits stay local and are retried on resume or reconnect.
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _connectivitySubscription.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -256,16 +332,418 @@ class _Destination {
   final IconData selectedIcon;
 }
 
-class BoardPage extends StatelessWidget {
+class BoardPage extends ConsumerWidget {
   const BoardPage({super.key});
 
   @override
-  Widget build(BuildContext context) => const _EmptyPage(
-    title: '今天先做什么',
-    message: '暂无任务',
-    detail: '创建目标和任务后，它们会优先出现在这里。当前没有伪造的任务或统计数据。',
-    icon: Icons.inbox_outlined,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final repository = ref.watch(taskRepositoryProvider);
+    return StreamBuilder<List<Goal>>(
+      stream: repository.watchGoals(),
+      initialData: const [],
+      builder: (context, snapshot) {
+        final goals = snapshot.data ?? const <Goal>[];
+        return _BoardContent(repository: repository, goals: goals);
+      },
+    );
+  }
+}
+
+class _BoardContent extends StatelessWidget {
+  const _BoardContent({required this.repository, required this.goals});
+
+  final TaskRepository repository;
+  final List<Goal> goals;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '今天先做什么',
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+            ),
+            FilledButton.icon(
+              onPressed: () => _createGoal(context),
+              icon: const Icon(Icons.add),
+              label: const Text('新建目标'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (goals.isEmpty)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  Icon(Icons.inbox_outlined, size: 48),
+                  SizedBox(height: 12),
+                  Text('暂无任务', style: TextStyle(fontSize: 22)),
+                  SizedBox(height: 8),
+                  Text('创建目标和任务后，它们会优先出现在这里。'),
+                ],
+              ),
+            ),
+          )
+        else
+          for (final goal in goals)
+            _GoalCard(repository: repository, goal: goal),
+      ],
+    );
+  }
+
+  Future<void> _createGoal(BuildContext context) async {
+    final draft = await _showGoalDialog(context);
+    if (draft != null) await repository.createGoal(draft);
+  }
+}
+
+class _GoalCard extends StatelessWidget {
+  const _GoalCard({required this.repository, required this.goal});
+
+  final TaskRepository repository;
+  final Goal goal;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = goal.tasks.isEmpty
+        ? '暂无任务 · 未完成'
+        : goal.isComplete
+        ? '已完成'
+        : '进行中';
+    return Card(
+      margin: const EdgeInsets.only(top: 12),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(goal.title),
+              subtitle: Text('${goal.classification.label} · $status'),
+              trailing: IconButton(
+                tooltip: '编辑目标',
+                onPressed: () async {
+                  final draft = await _showGoalDialog(context, initial: goal);
+                  if (draft != null) {
+                    await repository.updateGoal(goal.id, draft);
+                  }
+                },
+                icon: const Icon(Icons.edit_outlined),
+              ),
+            ),
+            if (goal.tasks.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text('暂无任务，先添加一个可执行的下一步。'),
+              )
+            else
+              for (final task in goal.tasks)
+                _TaskTile(repository: repository, task: task),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () async {
+                  final draft = await _showTaskDialog(context, goal: goal);
+                  if (draft != null) {
+                    await repository.createTask(goal.id, draft);
+                  }
+                },
+                icon: const Icon(Icons.add_task),
+                label: const Text('添加任务'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TaskTile extends StatelessWidget {
+  const _TaskTile({required this.repository, required this.task});
+
+  final TaskRepository repository;
+  final Task task;
+
+  @override
+  Widget build(BuildContext context) {
+    final deadline = task.deadline == null
+        ? null
+        : '截止 ${_formatDateTime(task.deadline!)}';
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Checkbox(
+        value: task.isComplete,
+        onChanged: (value) {
+          if (value != null) {
+            repository.setTaskCompletion(task.id, isComplete: value);
+          }
+        },
+      ),
+      title: Text(
+        task.title,
+        style: task.isComplete
+            ? const TextStyle(decoration: TextDecoration.lineThrough)
+            : null,
+      ),
+      subtitle: Text(
+        [
+          task.classification.label,
+          if (task.estimatedMinutes != null) '${task.estimatedMinutes} 分钟',
+          ?deadline,
+        ].join(' · '),
+      ),
+      onTap: () async {
+        final draft = await _showTaskDialog(context, task: task);
+        if (draft != null) await repository.updateTask(task.id, draft);
+      },
+    );
+  }
+}
+
+Future<GoalDraft?> _showGoalDialog(BuildContext context, {Goal? initial}) {
+  return showDialog<GoalDraft>(
+    context: context,
+    builder: (_) => _GoalDialog(initial: initial),
   );
+}
+
+Future<TaskDraft?> _showTaskDialog(
+  BuildContext context, {
+  Goal? goal,
+  Task? task,
+}) {
+  return showDialog<TaskDraft>(
+    context: context,
+    builder: (_) => _TaskDialog(goal: goal, initial: task),
+  );
+}
+
+class _GoalDialog extends StatefulWidget {
+  const _GoalDialog({this.initial});
+
+  final Goal? initial;
+
+  @override
+  State<_GoalDialog> createState() => _GoalDialogState();
+}
+
+class _GoalDialogState extends State<_GoalDialog> {
+  late final TextEditingController _title;
+  late TaskClassification _classification;
+
+  @override
+  void initState() {
+    super.initState();
+    _title = TextEditingController(text: widget.initial?.title);
+    _classification =
+        widget.initial?.classification ?? TaskClassification.regular;
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.initial == null ? '新建目标' : '编辑目标'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextField(
+          controller: _title,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: '目标名称'),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<TaskClassification>(
+          initialValue: _classification,
+          decoration: const InputDecoration(labelText: '新任务默认分类'),
+          items: [
+            for (final classification in TaskClassification.values)
+              DropdownMenuItem(
+                value: classification,
+                child: Text(classification.label),
+              ),
+          ],
+          onChanged: (value) {
+            if (value != null) setState(() => _classification = value);
+          },
+        ),
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('取消'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.pop(
+          context,
+          GoalDraft(title: _title.text, classification: _classification),
+        ),
+        child: const Text('保存'),
+      ),
+    ],
+  );
+}
+
+class _TaskDialog extends StatefulWidget {
+  const _TaskDialog({this.goal, this.initial});
+
+  final Goal? goal;
+  final Task? initial;
+
+  @override
+  State<_TaskDialog> createState() => _TaskDialogState();
+}
+
+class _TaskDialogState extends State<_TaskDialog> {
+  late final TextEditingController _title;
+  late final TextEditingController _estimatedMinutes;
+  late TaskClassification _classification;
+  DateTime? _deadline;
+
+  @override
+  void initState() {
+    super.initState();
+    _title = TextEditingController(text: widget.initial?.title);
+    _estimatedMinutes = TextEditingController(
+      text: widget.initial?.estimatedMinutes?.toString(),
+    );
+    _classification =
+        widget.initial?.classification ??
+        widget.goal?.classification ??
+        TaskClassification.regular;
+    _deadline = widget.initial?.deadline;
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _estimatedMinutes.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDeadline() async {
+    final initialDate = _deadline ?? DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+      initialDate: initialDate,
+    );
+    if (!mounted || date == null) return;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_deadline ?? DateTime.now()),
+    );
+    if (!mounted || time == null) return;
+    setState(
+      () => _deadline = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.initial == null ? '新建任务' : '编辑任务'),
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _title,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: '任务名称'),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<TaskClassification>(
+            initialValue: _classification,
+            decoration: const InputDecoration(labelText: '任务分类'),
+            items: [
+              for (final classification in TaskClassification.values)
+                DropdownMenuItem(
+                  value: classification,
+                  child: Text(classification.label),
+                ),
+            ],
+            onChanged: (value) {
+              if (value != null) setState(() => _classification = value);
+            },
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _estimatedMinutes,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: '预计时长（分钟，可选）'),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _deadline == null
+                      ? '未设置截止时间'
+                      : '截止 ${_formatDateTime(_deadline!)}',
+                ),
+              ),
+              IconButton(
+                tooltip: '设置截止时间',
+                onPressed: _pickDeadline,
+                icon: const Icon(Icons.event_outlined),
+              ),
+              if (_deadline != null)
+                IconButton(
+                  tooltip: '清除截止时间',
+                  onPressed: () => setState(() => _deadline = null),
+                  icon: const Icon(Icons.clear),
+                ),
+            ],
+          ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('取消'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.pop(
+          context,
+          TaskDraft(
+            title: _title.text,
+            classification: _classification,
+            estimatedMinutes: int.tryParse(_estimatedMinutes.text.trim()),
+            deadline: _deadline,
+          ),
+        ),
+        child: const Text('保存'),
+      ),
+    ],
+  );
+}
+
+String _formatDateTime(DateTime value) {
+  String twoDigits(int number) => number.toString().padLeft(2, '0');
+  return '${value.year}-${twoDigits(value.month)}-${twoDigits(value.day)} '
+      '${twoDigits(value.hour)}:${twoDigits(value.minute)}';
 }
 
 class NationalFocusPage extends StatelessWidget {

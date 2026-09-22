@@ -10,6 +10,9 @@ class FakeAuthRepository implements AuthRepository {
   String? get currentUserIdentifier => signedInUser;
 
   @override
+  String? get currentUserId => signedInUser;
+
+  @override
   Future<void> signIn({
     required String identifier,
     required String password,
