@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/focus/focus_models.dart';
@@ -616,6 +618,324 @@ void main() {
     now = now.add(const Duration(minutes: 10));
     await secondFocusRepository.getSessions();
     expect((await secondFocusRepository.getNodes()), hasLength(1));
+  });
+
+  test('进程重启后预约按原时间线交接并完成，重复恢复不重复记账', () async {
+    final task = await createTask('重启后恢复预约');
+    final appointment = await focusRepository.startAppointment(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 30),
+    );
+
+    await focusRepository.dispose();
+    now = appointment.endsAt.add(const Duration(minutes: 45));
+    focusRepository = LocalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      remote: focusRemote,
+      now: () => now,
+    );
+
+    await focusRepository.settleDueSessions();
+    await focusRepository.settleDueSessions();
+
+    final session = (await focusRepository.getSessions()).single;
+    expect(session.status, FocusSessionStatus.completed);
+    expect(session.startedAt.isAtSameMomentAs(appointment.endsAt), isTrue);
+    expect(
+      session.endsAt.isAtSameMomentAs(
+        appointment.endsAt.add(const Duration(minutes: 30)),
+      ),
+      isTrue,
+    );
+    expect(
+      session.completedAt?.isAtSameMomentAs(
+        appointment.endsAt.add(const Duration(minutes: 30)),
+      ),
+      isTrue,
+    );
+    expect(session.effectiveSeconds, 30 * 60);
+    expect(await focusRepository.getNodes(), hasLength(1));
+    expect(
+      (await focusRepository.getAppointmentChainRecord()).currentConsecutive,
+      1,
+    );
+    expect(
+      (await taskRepository.getGoals())
+          .single
+          .tasks
+          .single
+          .focusProgressSeconds,
+      30 * 60,
+    );
+
+    await focusRepository.sync();
+    await focusRepository.settleDueSessions();
+    await focusRepository.sync();
+    final remoteSnapshot = await focusRemote.pull(userId: 'user-a');
+    expect(remoteSnapshot.sessions, hasLength(1));
+    expect(
+      remoteSnapshot.sessions.single.completedAt?.isAtSameMomentAs(
+        appointment.endsAt.add(const Duration(minutes: 30)),
+      ),
+      isTrue,
+    );
+    expect(remoteSnapshot.nodes, hasLength(1));
+    expect(
+      remoteSnapshot.nodes.single.createdAt.isAtSameMomentAs(
+        appointment.endsAt.add(const Duration(minutes: 30)),
+      ),
+      isTrue,
+    );
+  });
+
+  test('进程重启后未暂停专注按原结束时间完成，不计入重开后的空档', () async {
+    final task = await createTask('按原时间线完成');
+    final started = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.elite,
+      duration: const Duration(minutes: 30),
+    );
+
+    await focusRepository.dispose();
+    now = started.endsAt.add(const Duration(hours: 2));
+    focusRepository = LocalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      remote: focusRemote,
+      now: () => now,
+    );
+
+    await focusRepository.settleDueSessions();
+    final completed = (await focusRepository.getSessions()).single;
+    expect(completed.status, FocusSessionStatus.completed);
+    expect(completed.effectiveSeconds, 30 * 60);
+    expect(completed.completedAt?.isAtSameMomentAs(started.endsAt), isTrue);
+    expect(await focusRepository.getNodes(), hasLength(1));
+    expect(
+      (await taskRepository.getGoals())
+          .single
+          .tasks
+          .single
+          .focusProgressSeconds,
+      30 * 60,
+    );
+
+    await focusRepository.settleDueSessions();
+    expect(await focusRepository.getNodes(), hasLength(1));
+    expect(
+      (await taskRepository.getGoals())
+          .single
+          .tasks
+          .single
+          .focusProgressSeconds,
+      30 * 60,
+    );
+  });
+
+  test('进程重启后批准暂停保持暂停，恢复时只继续剩余时长', () async {
+    final task = await createTask('隔夜保持暂停');
+    final started = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 30),
+    );
+    now = now.add(const Duration(minutes: 10));
+    await focusRepository.pauseSession(started.id, ruleText: '允许隔夜暂停');
+    final pausedAt = now;
+
+    await focusRepository.dispose();
+    now = now.add(const Duration(hours: 12));
+    focusRepository = LocalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      remote: focusRemote,
+      now: () => now,
+    );
+
+    await focusRepository.settleDueSessions();
+    final restored = await focusRepository.getActiveSession();
+    expect(restored?.status, FocusSessionStatus.paused);
+    expect(restored?.pausedSeconds, 0);
+    expect(restored?.pauseRuleText, '允许隔夜暂停');
+    expect(restored?.pausedAt?.isAtSameMomentAs(pausedAt), isTrue);
+    expect(await focusRepository.getNodes(), isEmpty);
+
+    final resumed = await focusRepository.resumeSession(started.id);
+    expect(resumed.status, FocusSessionStatus.active);
+    expect(resumed.endsAt.difference(now), const Duration(minutes: 20));
+
+    now = resumed.endsAt;
+    await focusRepository.settleDueSessions();
+    final completed = (await focusRepository.getSessions()).single;
+    expect(completed.status, FocusSessionStatus.completed);
+    expect(completed.effectiveSeconds, 30 * 60);
+    expect(await focusRepository.getNodes(), hasLength(1));
+  });
+
+  test('关闭并重新打开本地 SQLite 后仍能恢复预约时间线', () async {
+    final directory = await Directory.systemTemp.createTemp('pacta-t07-');
+    final file = File('${directory.path}${Platform.pathSeparator}pacta.sqlite');
+    final persistentTaskRemote = InMemoryTaskRemote();
+    final persistentFocusRemote = InMemoryFocusRemote();
+    PactaDatabase? persistentDatabase;
+    LocalTaskRepository? persistentTaskRepository;
+    LocalFocusRepository? persistentFocusRepository;
+
+    try {
+      persistentDatabase = PactaDatabase(NativeDatabase(file));
+      persistentTaskRepository = LocalTaskRepository(
+        database: persistentDatabase,
+        userId: 'user-a',
+        remote: persistentTaskRemote,
+        now: () => now,
+      );
+      persistentFocusRepository = LocalFocusRepository(
+        database: persistentDatabase,
+        userId: 'user-a',
+        remote: persistentFocusRemote,
+        now: () => now,
+      );
+      final goal = await persistentTaskRepository.createGoal(
+        const GoalDraft(
+          title: '本地重开验收',
+          classification: TaskClassification.both,
+        ),
+      );
+      final task = await persistentTaskRepository.createTask(
+        goal.id,
+        const TaskDraft(title: '恢复预约', classification: TaskClassification.both),
+      );
+      final appointment = await persistentFocusRepository.startAppointment(
+        taskId: task.id,
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 30),
+      );
+
+      await persistentFocusRepository.dispose();
+      persistentFocusRepository = null;
+      await persistentTaskRepository.dispose();
+      persistentTaskRepository = null;
+      await persistentDatabase.close();
+      persistentDatabase = null;
+
+      now = appointment.endsAt.add(const Duration(minutes: 45));
+      persistentDatabase = PactaDatabase(NativeDatabase(file));
+      persistentTaskRepository = LocalTaskRepository(
+        database: persistentDatabase,
+        userId: 'user-a',
+        remote: persistentTaskRemote,
+        now: () => now,
+      );
+      persistentFocusRepository = LocalFocusRepository(
+        database: persistentDatabase,
+        userId: 'user-a',
+        remote: persistentFocusRemote,
+        now: () => now,
+      );
+
+      await persistentFocusRepository.settleDueSessions();
+      final session = (await persistentFocusRepository.getSessions()).single;
+      expect(session.status, FocusSessionStatus.completed);
+      expect(session.startedAt.isAtSameMomentAs(appointment.endsAt), isTrue);
+      expect(
+        session.completedAt?.isAtSameMomentAs(
+          appointment.endsAt.add(const Duration(minutes: 30)),
+        ),
+        isTrue,
+      );
+      expect(session.effectiveSeconds, 30 * 60);
+      final node = (await persistentFocusRepository.getNodes()).single;
+      expect(
+        node.createdAt.isAtSameMomentAs(
+          appointment.endsAt.add(const Duration(minutes: 30)),
+        ),
+        isTrue,
+      );
+      expect(
+        (await persistentTaskRepository.getGoals())
+            .single
+            .tasks
+            .single
+            .focusProgressSeconds,
+        30 * 60,
+      );
+
+      await persistentFocusRepository.settleDueSessions();
+      expect(await persistentFocusRepository.getNodes(), hasLength(1));
+
+      final pausedSession = await persistentFocusRepository.startSession(
+        taskId: task.id,
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 30),
+      );
+      now = now.add(const Duration(minutes: 10));
+      await persistentFocusRepository.pauseSession(
+        pausedSession.id,
+        ruleText: '本地重开后保持暂停',
+      );
+      final pausedAt = now;
+
+      await persistentFocusRepository.dispose();
+      persistentFocusRepository = null;
+      await persistentTaskRepository.dispose();
+      persistentTaskRepository = null;
+      await persistentDatabase.close();
+      persistentDatabase = null;
+
+      now = pausedAt.add(const Duration(hours: 12));
+      persistentDatabase = PactaDatabase(NativeDatabase(file));
+      persistentTaskRepository = LocalTaskRepository(
+        database: persistentDatabase,
+        userId: 'user-a',
+        remote: persistentTaskRemote,
+        now: () => now,
+      );
+      persistentFocusRepository = LocalFocusRepository(
+        database: persistentDatabase,
+        userId: 'user-a',
+        remote: persistentFocusRemote,
+        now: () => now,
+      );
+
+      await persistentFocusRepository.settleDueSessions();
+      final restoredPaused = await persistentFocusRepository.getActiveSession();
+      expect(restoredPaused?.status, FocusSessionStatus.paused);
+      expect(restoredPaused?.pauseRuleText, '本地重开后保持暂停');
+      expect(restoredPaused?.pausedAt?.isAtSameMomentAs(pausedAt), isTrue);
+      expect(await persistentFocusRepository.getNodes(), hasLength(1));
+
+      final resumed = await persistentFocusRepository.resumeSession(
+        pausedSession.id,
+      );
+      expect(resumed.endsAt.difference(now), const Duration(minutes: 20));
+      now = resumed.endsAt;
+      await persistentFocusRepository.settleDueSessions();
+      await persistentFocusRepository.settleDueSessions();
+      final completedPaused = (await persistentFocusRepository.getSessions())
+          .singleWhere((item) => item.id == pausedSession.id);
+      expect(completedPaused.status, FocusSessionStatus.completed);
+      expect(completedPaused.effectiveSeconds, 30 * 60);
+      expect(
+        completedPaused.completedAt?.isAtSameMomentAs(resumed.endsAt),
+        isTrue,
+      );
+      expect(await persistentFocusRepository.getNodes(), hasLength(2));
+      expect(
+        (await persistentTaskRepository.getGoals())
+            .single
+            .tasks
+            .single
+            .focusProgressSeconds,
+        60 * 60,
+      );
+    } finally {
+      await persistentFocusRepository?.dispose();
+      await persistentTaskRepository?.dispose();
+      await persistentDatabase?.close();
+      if (await directory.exists()) await directory.delete(recursive: true);
+    }
   });
 
   test('失败原因和正常节点备注可编辑并持久化', () async {

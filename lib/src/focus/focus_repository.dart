@@ -1080,8 +1080,7 @@ class LocalFocusRepository implements FocusRepository {
 
   @override
   Future<void> sync() async {
-    await _settleDueAppointments();
-    await _settleDueSessions();
+    await settleDueSessions();
     final snapshot = await remote.pull(userId: userId);
     for (final appointment in snapshot.appointments) {
       final local = await _appointmentRow(appointment.id);

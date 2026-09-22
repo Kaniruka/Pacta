@@ -311,7 +311,6 @@ class _AppShellState extends ConsumerState<AppShell>
 
   Future<void> _syncTasks() async {
     try {
-      await ref.read(focusRepositoryProvider).settleDueSessions();
       await ref.read(focusRepositoryProvider).sync();
     } catch (_) {
       // Focus records remain local and are retried on resume or reconnect.
