@@ -31,6 +31,11 @@ revokes unused phone eligibility while preserving historical phone eligibility
 rows and existing `auth.users` identities. Apply it before disabling Phone Auth
 in the Supabase dashboard.
 
+`202609220003_fix_email_eligibility_validation.sql` tightens the email-only
+grant validation and recreates the eligibility trigger as `AFTER INSERT` so
+`used_user_id` satisfies its foreign key to the newly created Auth user while
+remaining part of the same transaction.
+
 Do not create replacement users for existing phone-only users. First produce a
 server-side inventory of users whose `auth.users.email` is null, collect and
 confirm one unique email for each user, then update that same Auth user by ID
