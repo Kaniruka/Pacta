@@ -294,6 +294,13 @@ void main() {
     await focusRepository.sync();
 
     expect(await focusRepository.getNodes(), isEmpty);
+    final remoteAfterDuplicate = await focusRemote.pull(userId: 'user-a');
+    expect(
+      remoteAfterDuplicate.nodes.where(
+        (node) => node.sessionId == completed.id,
+      ),
+      isEmpty,
+    );
     expect(
       (await focusRepository.getChainRecords())
           .singleWhere((record) => record.mode == FocusChainMode.regular)
@@ -343,6 +350,11 @@ void main() {
     );
     expect(metrics.totalAcceptedFocusSeconds, 10 * 60);
     expect(await focusRepository.getNodes(), hasLength(1));
+    final remoteAfterAcceptance = await focusRemote.pull(userId: 'user-a');
+    expect(
+      remoteAfterAcceptance.nodes.where((node) => node.sessionId == pending.id),
+      hasLength(1),
+    );
     expect(
       (await focusRepository.getChainRecords())
           .singleWhere((record) => record.mode == FocusChainMode.regular)

@@ -46,6 +46,11 @@ abstract interface class FocusRemoteDataSource {
     required List<FocusNode> nodes,
   });
 
+  Future<void> deleteNodes({
+    required String userId,
+    required List<String> sessionIds,
+  });
+
   Future<void> upsertRecords({
     required String userId,
     required List<FocusChainRecord> records,
@@ -90,6 +95,14 @@ class UnavailableFocusRemoteDataSource implements FocusRemoteDataSource {
   Future<void> upsertNodes({
     required String userId,
     required List<FocusNode> nodes,
+  }) async {
+    throw StateError('当前未配置 Supabase，专注记录将先保存在本机。');
+  }
+
+  @override
+  Future<void> deleteNodes({
+    required String userId,
+    required List<String> sessionIds,
   }) async {
     throw StateError('当前未配置 Supabase，专注记录将先保存在本机。');
   }
@@ -1232,9 +1245,7 @@ class LocalFocusRepository implements FocusRepository {
   Future<void> sync() async {
     await settleDueSessions();
     final snapshot = await remote.pull(userId: userId);
-    final dispositionChangedSessionIds = <String>{};
-    final dispositionChangedModes = <String>{};
-    final dispositionChangedAtBySession = <String, DateTime>{};
+    final dispositionUpdates = <String, FocusSession>{};
     for (final appointment in snapshot.appointments) {
       final local = await _appointmentRow(appointment.id);
       if (local == null ||
@@ -1257,23 +1268,17 @@ class LocalFocusRepository implements FocusRepository {
           remoteReviewAt != null &&
           (local.reviewDispositionUpdatedAt == null ||
               remoteReviewAt.isAfter(local.reviewDispositionUpdatedAt!))) {
-        final dispositionChanged =
-            local.reviewDisposition != session.reviewDisposition.storageValue;
-        await (database.update(database.focusSessions)
-              ..where((row) => row.userId.equals(userId))
-              ..where((row) => row.id.equals(session.id)))
-            .write(
-              db.FocusSessionsCompanion(
-                reviewDisposition: Value(
-                  session.reviewDisposition.storageValue,
+        if (local.reviewDisposition != session.reviewDisposition.storageValue) {
+          dispositionUpdates[session.id] = session;
+        } else {
+          await (database.update(database.focusSessions)
+                ..where((row) => row.userId.equals(userId))
+                ..where((row) => row.id.equals(session.id)))
+              .write(
+                db.FocusSessionsCompanion(
+                  reviewDispositionUpdatedAt: Value(remoteReviewAt),
                 ),
-                reviewDispositionUpdatedAt: Value(remoteReviewAt),
-              ),
-            );
-        if (dispositionChanged) {
-          dispositionChangedSessionIds.add(session.id);
-          dispositionChangedModes.add(local.mode);
-          dispositionChangedAtBySession[session.id] = remoteReviewAt;
+              );
         }
       }
       final shouldApplyCompletedEffects =
@@ -1370,13 +1375,12 @@ class LocalFocusRepository implements FocusRepository {
             );
       }
     }
-    if (dispositionChangedSessionIds.isNotEmpty) {
+    if (dispositionUpdates.isNotEmpty) {
       await _reconcileFocusEffectsAfterDispositionChanges(
-        sessionIds: dispositionChangedSessionIds,
-        modes: dispositionChangedModes,
-        dispositionChangedAtBySession: dispositionChangedAtBySession,
+        updates: dispositionUpdates,
       );
     }
+    await _removeNodesForNonAcceptedSessionsAndRemote();
     await _reconcileTaskFocusProgressFromSessions();
     final sessions = await getSessions();
     final appointments = await getAppointments();
@@ -1570,16 +1574,35 @@ class LocalFocusRepository implements FocusRepository {
   }
 
   Future<void> _reconcileFocusEffectsAfterDispositionChanges({
-    required Set<String> sessionIds,
-    required Set<String> modes,
-    required Map<String, DateTime> dispositionChangedAtBySession,
+    required Map<String, FocusSession> updates,
   }) async {
     await database.transaction(() async {
+      for (final session in updates.values) {
+        await (database.update(database.focusSessions)
+              ..where((row) => row.userId.equals(userId))
+              ..where((row) => row.id.equals(session.id)))
+            .write(
+              db.FocusSessionsCompanion(
+                reviewDisposition: Value(
+                  session.reviewDisposition.storageValue,
+                ),
+                reviewDispositionUpdatedAt: Value(
+                  session.reviewDispositionUpdatedAt,
+                ),
+              ),
+            );
+      }
       final changedRows =
           await (database.select(database.focusSessions)
                 ..where((row) => row.userId.equals(userId))
-                ..where((row) => row.id.isIn(sessionIds)))
+                ..where((row) => row.id.isIn(updates.keys)))
               .get();
+      final modes = changedRows.map((row) => row.mode).toSet();
+      final dispositionChangedAtBySession = {
+        for (final row in changedRows)
+          if (row.reviewDispositionUpdatedAt != null)
+            row.id: row.reviewDispositionUpdatedAt!,
+      };
       for (final row in changedRows) {
         final nodes =
             await (database.select(database.focusNodes)
@@ -1677,6 +1700,36 @@ class LocalFocusRepository implements FocusRepository {
         await _queue('focus_chain', mode, updatedAt);
       }
     });
+  }
+
+  Future<void> _removeNodesForNonAcceptedSessionsAndRemote() async {
+    final sessions = await (database.select(
+      database.focusSessions,
+    )..where((row) => row.userId.equals(userId))).get();
+    final excludedSessionIds = [
+      for (final session in sessions)
+        if (!FocusRecordDisposition.fromStorage(session.reviewDisposition)
+            .contributesToFocusProgress)
+          session.id,
+    ];
+    if (excludedSessionIds.isEmpty) return;
+
+    final localNodes =
+        await (database.select(database.focusNodes)
+              ..where((node) => node.userId.equals(userId))
+              ..where((node) => node.sessionId.isIn(excludedSessionIds)))
+            .get();
+    if (localNodes.isNotEmpty) {
+      await database.transaction(() async {
+        for (final node in localNodes) {
+          await (database.delete(database.focusNodes)
+                ..where((candidate) => candidate.userId.equals(userId))
+                ..where((candidate) => candidate.id.equals(node.id)))
+              .go();
+        }
+      });
+    }
+    await remote.deleteNodes(userId: userId, sessionIds: excludedSessionIds);
   }
 
   Future<void> _reconcileTaskFocusProgressFromSessions() async {
@@ -2171,6 +2224,19 @@ class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
   }
 
   @override
+  Future<void> deleteNodes({
+    required String userId,
+    required List<String> sessionIds,
+  }) async {
+    if (sessionIds.isEmpty) return;
+    await client
+        .from('focus_nodes')
+        .delete()
+        .eq('user_id', userId)
+        .inFilter('session_id', sessionIds);
+  }
+
+  @override
   Future<void> upsertRecords({
     required String userId,
     required List<FocusChainRecord> records,
@@ -2376,6 +2442,16 @@ class InMemoryFocusRemote implements FocusRemoteDataSource {
     for (final node in nodes) {
       target[node.id] = node;
     }
+  }
+
+  @override
+  Future<void> deleteNodes({
+    required String userId,
+    required List<String> sessionIds,
+  }) async {
+    final target = _nodes[userId];
+    if (target == null || sessionIds.isEmpty) return;
+    target.removeWhere((_, node) => sessionIds.contains(node.sessionId));
   }
 
   @override
