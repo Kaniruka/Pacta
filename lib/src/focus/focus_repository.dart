@@ -1232,6 +1232,9 @@ class LocalFocusRepository implements FocusRepository {
   Future<void> sync() async {
     await settleDueSessions();
     final snapshot = await remote.pull(userId: userId);
+    final dispositionChangedSessionIds = <String>{};
+    final dispositionChangedModes = <String>{};
+    final dispositionChangedAtBySession = <String, DateTime>{};
     for (final appointment in snapshot.appointments) {
       final local = await _appointmentRow(appointment.id);
       if (local == null ||
@@ -1254,6 +1257,8 @@ class LocalFocusRepository implements FocusRepository {
           remoteReviewAt != null &&
           (local.reviewDispositionUpdatedAt == null ||
               remoteReviewAt.isAfter(local.reviewDispositionUpdatedAt!))) {
+        final dispositionChanged =
+            local.reviewDisposition != session.reviewDisposition.storageValue;
         await (database.update(database.focusSessions)
               ..where((row) => row.userId.equals(userId))
               ..where((row) => row.id.equals(session.id)))
@@ -1265,6 +1270,11 @@ class LocalFocusRepository implements FocusRepository {
                 reviewDispositionUpdatedAt: Value(remoteReviewAt),
               ),
             );
+        if (dispositionChanged) {
+          dispositionChangedSessionIds.add(session.id);
+          dispositionChangedModes.add(local.mode);
+          dispositionChangedAtBySession[session.id] = remoteReviewAt;
+        }
       }
       final shouldApplyCompletedEffects =
           session.status == FocusSessionStatus.completed &&
@@ -1359,6 +1369,13 @@ class LocalFocusRepository implements FocusRepository {
               ),
             );
       }
+    }
+    if (dispositionChangedSessionIds.isNotEmpty) {
+      await _reconcileFocusEffectsAfterDispositionChanges(
+        sessionIds: dispositionChangedSessionIds,
+        modes: dispositionChangedModes,
+        dispositionChangedAtBySession: dispositionChangedAtBySession,
+      );
     }
     await _reconcileTaskFocusProgressFromSessions();
     final sessions = await getSessions();
@@ -1550,6 +1567,116 @@ class LocalFocusRepository implements FocusRepository {
           ),
         );
     await _queue('task', taskId, updatedAt);
+  }
+
+  Future<void> _reconcileFocusEffectsAfterDispositionChanges({
+    required Set<String> sessionIds,
+    required Set<String> modes,
+    required Map<String, DateTime> dispositionChangedAtBySession,
+  }) async {
+    await database.transaction(() async {
+      final changedRows =
+          await (database.select(database.focusSessions)
+                ..where((row) => row.userId.equals(userId))
+                ..where((row) => row.id.isIn(sessionIds)))
+              .get();
+      for (final row in changedRows) {
+        final nodes =
+            await (database.select(database.focusNodes)
+                  ..where((node) => node.userId.equals(userId))
+                  ..where((node) => node.sessionId.equals(row.id)))
+                .get();
+        final shouldHaveNode =
+            row.status == FocusSessionStatus.completed.storageValue &&
+            FocusRecordDisposition.fromStorage(row.reviewDisposition)
+                .contributesToFocusProgress;
+        if (shouldHaveNode && nodes.isEmpty) {
+          await database
+              .into(database.focusNodes)
+              .insert(
+                db.FocusNodesCompanion.insert(
+                  userId: userId,
+                  id: row.id,
+                  sessionId: row.id,
+                  taskId: row.taskId,
+                  mode: row.mode,
+                  createdAt: row.completedAt ?? row.endsAt,
+                  effectiveSeconds: row.effectiveSeconds,
+                ),
+              );
+          await _queue(
+            'focus_node',
+            row.id,
+            dispositionChangedAtBySession[row.id] ?? _now().toUtc(),
+          );
+        } else if (!shouldHaveNode) {
+          for (final node in nodes) {
+            await (database.delete(database.focusNodes)
+                  ..where((candidate) => candidate.userId.equals(userId))
+                  ..where((candidate) => candidate.id.equals(node.id)))
+                .go();
+          }
+        }
+      }
+
+      for (final mode in modes) {
+        final rows =
+            await (database.select(database.focusSessions)
+                  ..where((row) => row.userId.equals(userId))
+                  ..where((row) => row.mode.equals(mode))
+                  ..where(
+                    (row) => row.status.isIn([
+                      FocusSessionStatus.completed.storageValue,
+                      FocusSessionStatus.failed.storageValue,
+                    ]),
+                  ))
+                .get();
+        rows.sort((left, right) {
+          final leftAt = (left.completedAt ?? left.endsAt).toUtc();
+          final rightAt = (right.completedAt ?? right.endsAt).toUtc();
+          final byTime = leftAt.compareTo(rightAt);
+          return byTime == 0 ? left.id.compareTo(right.id) : byTime;
+        });
+        var current = 0;
+        var best = 0;
+        for (final row in rows) {
+          if (!FocusRecordDisposition.fromStorage(row.reviewDisposition)
+              .contributesToFocusProgress) {
+            continue;
+          }
+          if (row.status == FocusSessionStatus.completed.storageValue) {
+            current++;
+            if (current > best) best = current;
+          } else {
+            current = 0;
+          }
+        }
+        final existing =
+            await (database.select(database.focusChainRecords)
+                  ..where((record) => record.userId.equals(userId))
+                  ..where((record) => record.mode.equals(mode)))
+                .getSingleOrNull();
+        var updatedAt = _now().toUtc();
+        if (existing != null && existing.updatedAt.isAfter(updatedAt)) {
+          updatedAt = existing.updatedAt;
+        }
+        for (final timestamp in dispositionChangedAtBySession.values) {
+          if (timestamp.isAfter(updatedAt)) updatedAt = timestamp;
+        }
+        await database
+            .into(database.focusChainRecords)
+            .insertOnConflictUpdate(
+              db.FocusChainRecordsCompanion.insert(
+                userId: userId,
+                mode: mode,
+                currentConsecutive: Value(current),
+                bestConsecutive: Value(best),
+                updatedAt: updatedAt,
+              ),
+            );
+        await _queue('focus_chain', mode, updatedAt);
+      }
+    });
   }
 
   Future<void> _reconcileTaskFocusProgressFromSessions() async {

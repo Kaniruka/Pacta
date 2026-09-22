@@ -265,6 +265,100 @@ void main() {
     }
   });
 
+  test('远端更改记录归类后同步节点、任务进度和专注链', () async {
+    final task = await createTask('发生归类变更');
+    final completed = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 20),
+    );
+    now = now.add(const Duration(minutes: 20));
+    await focusRepository.getSessions();
+    await focusRepository.sync();
+    expect(await focusRepository.getNodes(), hasLength(1));
+
+    final duplicateAt = now.add(const Duration(minutes: 1));
+    await focusRemote.upsertSessions(
+      userId: 'user-a',
+      sessions: [
+        _settledSession(
+          id: completed.id,
+          taskId: task.id,
+          startedAt: completed.startedAt,
+          seconds: 20 * 60,
+          disposition: FocusRecordDisposition.duplicate,
+          reviewUpdatedAt: duplicateAt,
+        ),
+      ],
+    );
+    await focusRepository.sync();
+
+    expect(await focusRepository.getNodes(), isEmpty);
+    expect(
+      (await focusRepository.getChainRecords())
+          .singleWhere((record) => record.mode == FocusChainMode.regular)
+          .currentConsecutive,
+      0,
+    );
+    expect(
+      (await taskRepository.getGoals())
+          .single
+          .tasks
+          .single
+          .focusProgressSeconds,
+      0,
+    );
+
+    final pendingStart = now.add(const Duration(days: 1));
+    final pendingAt = duplicateAt.add(const Duration(minutes: 1));
+    final pending = _settledSession(
+      id: 'pending-to-accepted',
+      taskId: task.id,
+      startedAt: pendingStart,
+      seconds: 10 * 60,
+      disposition: FocusRecordDisposition.pendingReview,
+      reviewUpdatedAt: pendingAt,
+    );
+    await focusRemote.upsertSessions(userId: 'user-a', sessions: [pending]);
+    await focusRepository.sync();
+    expect(await focusRepository.getNodes(), isEmpty);
+
+    await focusRemote.upsertSessions(
+      userId: 'user-a',
+      sessions: [
+        _settledSession(
+          id: pending.id,
+          taskId: task.id,
+          startedAt: pending.startedAt,
+          seconds: 10 * 60,
+          disposition: FocusRecordDisposition.accepted,
+          reviewUpdatedAt: pendingAt.add(const Duration(minutes: 1)),
+        ),
+      ],
+    );
+    await focusRepository.sync();
+
+    final metrics = await focusRepository.getDashboardMetrics(
+      deviceTimeZoneId: 'Asia/Shanghai',
+    );
+    expect(metrics.totalAcceptedFocusSeconds, 10 * 60);
+    expect(await focusRepository.getNodes(), hasLength(1));
+    expect(
+      (await focusRepository.getChainRecords())
+          .singleWhere((record) => record.mode == FocusChainMode.regular)
+          .currentConsecutive,
+      1,
+    );
+    expect(
+      (await taskRepository.getGoals())
+          .single
+          .tasks
+          .single
+          .focusProgressSeconds,
+      10 * 60,
+    );
+  });
+
   test('待核对与重复来源不计入任务进度或近期活动', () async {
     final task = await createTask('核对中的任务');
     final start = now;
@@ -321,6 +415,7 @@ FocusSession _settledSession({
   required int seconds,
   required FocusRecordDisposition disposition,
   FocusSessionStatus status = FocusSessionStatus.completed,
+  DateTime? reviewUpdatedAt,
 }) {
   final endedAt = startedAt.add(Duration(seconds: seconds));
   return FocusSession(
@@ -337,6 +432,7 @@ FocusSession _settledSession({
       FocusTimeInterval(startedAt: startedAt, endedAt: endedAt),
     ],
     reviewDisposition: disposition,
+    reviewDispositionUpdatedAt: reviewUpdatedAt,
   );
 }
 

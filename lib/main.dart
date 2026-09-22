@@ -516,6 +516,8 @@ class _RecentFocusActivityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final value = metrics;
+    final hasRecentActivity =
+        value?.recentActivity.any((day) => day.activeSeconds > 0) ?? false;
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -561,14 +563,14 @@ class _RecentFocusActivityCard extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 12),
-              if (value.totalAcceptedFocusSeconds == 0)
+              if (!hasRecentActivity)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
                   child: Row(
                     children: [
                       Icon(Icons.timelapse_outlined),
                       SizedBox(width: 10),
-                      Expanded(child: Text('暂无专注活动。完成或失败的会话会按实际投入记录。')),
+                      Expanded(child: Text('近 7 天暂无专注活动。')),
                     ],
                   ),
                 )

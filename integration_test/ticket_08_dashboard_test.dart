@@ -95,6 +95,12 @@ void main() {
       expect(find.textContaining('累计有效专注 30分00秒'), findsOneWidget);
       expect(find.textContaining('9月22日'), findsOneWidget);
       expect(find.textContaining('9月23日'), findsNothing);
+
+      now = now.add(const Duration(days: 8));
+      await focusRepository.setDisplayTimeZonePreference('America/Los_Angeles');
+      await tester.pumpAndSettle();
+      expect(find.text('近 7 天暂无专注活动。'), findsOneWidget);
+      expect(find.textContaining('累计有效专注 30分00秒'), findsOneWidget);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
       await database.close();
