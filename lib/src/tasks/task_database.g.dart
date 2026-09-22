@@ -1430,6 +1430,17 @@ class $FocusSessionsTable extends FocusSessions
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _appointmentIdMeta = const VerificationMeta(
+    'appointmentId',
+  );
+  @override
+  late final GeneratedColumn<String> appointmentId = GeneratedColumn<String>(
+    'appointment_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _taskIdMeta = const VerificationMeta('taskId');
   @override
   late final GeneratedColumn<String> taskId = GeneratedColumn<String>(
@@ -1583,6 +1594,7 @@ class $FocusSessionsTable extends FocusSessions
   List<GeneratedColumn> get $columns => [
     userId,
     id,
+    appointmentId,
     taskId,
     mode,
     durationSeconds,
@@ -1622,6 +1634,15 @@ class $FocusSessionsTable extends FocusSessions
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     } else if (isInserting) {
       context.missing(_idMeta);
+    }
+    if (data.containsKey('appointment_id')) {
+      context.handle(
+        _appointmentIdMeta,
+        appointmentId.isAcceptableOrUnknown(
+          data['appointment_id']!,
+          _appointmentIdMeta,
+        ),
+      );
     }
     if (data.containsKey('task_id')) {
       context.handle(
@@ -1760,6 +1781,10 @@ class $FocusSessionsTable extends FocusSessions
         DriftSqlType.string,
         data['${effectivePrefix}id'],
       )!,
+      appointmentId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}appointment_id'],
+      ),
       taskId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}task_id'],
@@ -1828,6 +1853,7 @@ class $FocusSessionsTable extends FocusSessions
 class FocusSession extends DataClass implements Insertable<FocusSession> {
   final String userId;
   final String id;
+  final String? appointmentId;
   final String taskId;
   final String mode;
   final int durationSeconds;
@@ -1845,6 +1871,7 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
   const FocusSession({
     required this.userId,
     required this.id,
+    this.appointmentId,
     required this.taskId,
     required this.mode,
     required this.durationSeconds,
@@ -1865,6 +1892,9 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     final map = <String, Expression>{};
     map['user_id'] = Variable<String>(userId);
     map['id'] = Variable<String>(id);
+    if (!nullToAbsent || appointmentId != null) {
+      map['appointment_id'] = Variable<String>(appointmentId);
+    }
     map['task_id'] = Variable<String>(taskId);
     map['mode'] = Variable<String>(mode);
     map['duration_seconds'] = Variable<int>(durationSeconds);
@@ -1896,6 +1926,9 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     return FocusSessionsCompanion(
       userId: Value(userId),
       id: Value(id),
+      appointmentId: appointmentId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(appointmentId),
       taskId: Value(taskId),
       mode: Value(mode),
       durationSeconds: Value(durationSeconds),
@@ -1931,6 +1964,7 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     return FocusSession(
       userId: serializer.fromJson<String>(json['userId']),
       id: serializer.fromJson<String>(json['id']),
+      appointmentId: serializer.fromJson<String?>(json['appointmentId']),
       taskId: serializer.fromJson<String>(json['taskId']),
       mode: serializer.fromJson<String>(json['mode']),
       durationSeconds: serializer.fromJson<int>(json['durationSeconds']),
@@ -1955,6 +1989,7 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     return <String, dynamic>{
       'userId': serializer.toJson<String>(userId),
       'id': serializer.toJson<String>(id),
+      'appointmentId': serializer.toJson<String?>(appointmentId),
       'taskId': serializer.toJson<String>(taskId),
       'mode': serializer.toJson<String>(mode),
       'durationSeconds': serializer.toJson<int>(durationSeconds),
@@ -1975,6 +2010,7 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
   FocusSession copyWith({
     String? userId,
     String? id,
+    Value<String?> appointmentId = const Value.absent(),
     String? taskId,
     String? mode,
     int? durationSeconds,
@@ -1992,6 +2028,9 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
   }) => FocusSession(
     userId: userId ?? this.userId,
     id: id ?? this.id,
+    appointmentId: appointmentId.present
+        ? appointmentId.value
+        : this.appointmentId,
     taskId: taskId ?? this.taskId,
     mode: mode ?? this.mode,
     durationSeconds: durationSeconds ?? this.durationSeconds,
@@ -2017,6 +2056,9 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     return FocusSession(
       userId: data.userId.present ? data.userId.value : this.userId,
       id: data.id.present ? data.id.value : this.id,
+      appointmentId: data.appointmentId.present
+          ? data.appointmentId.value
+          : this.appointmentId,
       taskId: data.taskId.present ? data.taskId.value : this.taskId,
       mode: data.mode.present ? data.mode.value : this.mode,
       durationSeconds: data.durationSeconds.present
@@ -2055,6 +2097,7 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     return (StringBuffer('FocusSession(')
           ..write('userId: $userId, ')
           ..write('id: $id, ')
+          ..write('appointmentId: $appointmentId, ')
           ..write('taskId: $taskId, ')
           ..write('mode: $mode, ')
           ..write('durationSeconds: $durationSeconds, ')
@@ -2077,6 +2120,7 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
   int get hashCode => Object.hash(
     userId,
     id,
+    appointmentId,
     taskId,
     mode,
     durationSeconds,
@@ -2098,6 +2142,7 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
       (other is FocusSession &&
           other.userId == this.userId &&
           other.id == this.id &&
+          other.appointmentId == this.appointmentId &&
           other.taskId == this.taskId &&
           other.mode == this.mode &&
           other.durationSeconds == this.durationSeconds &&
@@ -2117,6 +2162,7 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
 class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
   final Value<String> userId;
   final Value<String> id;
+  final Value<String?> appointmentId;
   final Value<String> taskId;
   final Value<String> mode;
   final Value<int> durationSeconds;
@@ -2135,6 +2181,7 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
   const FocusSessionsCompanion({
     this.userId = const Value.absent(),
     this.id = const Value.absent(),
+    this.appointmentId = const Value.absent(),
     this.taskId = const Value.absent(),
     this.mode = const Value.absent(),
     this.durationSeconds = const Value.absent(),
@@ -2154,6 +2201,7 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
   FocusSessionsCompanion.insert({
     required String userId,
     required String id,
+    this.appointmentId = const Value.absent(),
     required String taskId,
     required String mode,
     required int durationSeconds,
@@ -2180,6 +2228,7 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
   static Insertable<FocusSession> custom({
     Expression<String>? userId,
     Expression<String>? id,
+    Expression<String>? appointmentId,
     Expression<String>? taskId,
     Expression<String>? mode,
     Expression<int>? durationSeconds,
@@ -2199,6 +2248,7 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     return RawValuesInsertable({
       if (userId != null) 'user_id': userId,
       if (id != null) 'id': id,
+      if (appointmentId != null) 'appointment_id': appointmentId,
       if (taskId != null) 'task_id': taskId,
       if (mode != null) 'mode': mode,
       if (durationSeconds != null) 'duration_seconds': durationSeconds,
@@ -2221,6 +2271,7 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
   FocusSessionsCompanion copyWith({
     Value<String>? userId,
     Value<String>? id,
+    Value<String?>? appointmentId,
     Value<String>? taskId,
     Value<String>? mode,
     Value<int>? durationSeconds,
@@ -2240,6 +2291,7 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     return FocusSessionsCompanion(
       userId: userId ?? this.userId,
       id: id ?? this.id,
+      appointmentId: appointmentId ?? this.appointmentId,
       taskId: taskId ?? this.taskId,
       mode: mode ?? this.mode,
       durationSeconds: durationSeconds ?? this.durationSeconds,
@@ -2266,6 +2318,9 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     }
     if (id.present) {
       map['id'] = Variable<String>(id.value);
+    }
+    if (appointmentId.present) {
+      map['appointment_id'] = Variable<String>(appointmentId.value);
     }
     if (taskId.present) {
       map['task_id'] = Variable<String>(taskId.value);
@@ -2320,6 +2375,7 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     return (StringBuffer('FocusSessionsCompanion(')
           ..write('userId: $userId, ')
           ..write('id: $id, ')
+          ..write('appointmentId: $appointmentId, ')
           ..write('taskId: $taskId, ')
           ..write('mode: $mode, ')
           ..write('durationSeconds: $durationSeconds, ')
@@ -3844,6 +3900,1044 @@ class FocusPrecedentRulesCompanion extends UpdateCompanion<FocusPrecedentRule> {
   }
 }
 
+class $FocusAppointmentsTable extends FocusAppointments
+    with TableInfo<$FocusAppointmentsTable, FocusAppointment> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FocusAppointmentsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _taskIdMeta = const VerificationMeta('taskId');
+  @override
+  late final GeneratedColumn<String> taskId = GeneratedColumn<String>(
+    'task_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _modeMeta = const VerificationMeta('mode');
+  @override
+  late final GeneratedColumn<String> mode = GeneratedColumn<String>(
+    'mode',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _durationSecondsMeta = const VerificationMeta(
+    'durationSeconds',
+  );
+  @override
+  late final GeneratedColumn<int> durationSeconds = GeneratedColumn<int>(
+    'duration_seconds',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _startedAtMeta = const VerificationMeta(
+    'startedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> startedAt = GeneratedColumn<DateTime>(
+    'started_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _endsAtMeta = const VerificationMeta('endsAt');
+  @override
+  late final GeneratedColumn<DateTime> endsAt = GeneratedColumn<DateTime>(
+    'ends_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _statusMeta = const VerificationMeta('status');
+  @override
+  late final GeneratedColumn<String> status = GeneratedColumn<String>(
+    'status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _settledAtMeta = const VerificationMeta(
+    'settledAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> settledAt = GeneratedColumn<DateTime>(
+    'settled_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sessionIdMeta = const VerificationMeta(
+    'sessionId',
+  );
+  @override
+  late final GeneratedColumn<String> sessionId = GeneratedColumn<String>(
+    'session_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _failureReasonMeta = const VerificationMeta(
+    'failureReason',
+  );
+  @override
+  late final GeneratedColumn<String> failureReason = GeneratedColumn<String>(
+    'failure_reason',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    id,
+    taskId,
+    mode,
+    durationSeconds,
+    startedAt,
+    endsAt,
+    status,
+    settledAt,
+    sessionId,
+    failureReason,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'focus_appointments';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FocusAppointment> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('task_id')) {
+      context.handle(
+        _taskIdMeta,
+        taskId.isAcceptableOrUnknown(data['task_id']!, _taskIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_taskIdMeta);
+    }
+    if (data.containsKey('mode')) {
+      context.handle(
+        _modeMeta,
+        mode.isAcceptableOrUnknown(data['mode']!, _modeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_modeMeta);
+    }
+    if (data.containsKey('duration_seconds')) {
+      context.handle(
+        _durationSecondsMeta,
+        durationSeconds.isAcceptableOrUnknown(
+          data['duration_seconds']!,
+          _durationSecondsMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_durationSecondsMeta);
+    }
+    if (data.containsKey('started_at')) {
+      context.handle(
+        _startedAtMeta,
+        startedAt.isAcceptableOrUnknown(data['started_at']!, _startedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_startedAtMeta);
+    }
+    if (data.containsKey('ends_at')) {
+      context.handle(
+        _endsAtMeta,
+        endsAt.isAcceptableOrUnknown(data['ends_at']!, _endsAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_endsAtMeta);
+    }
+    if (data.containsKey('status')) {
+      context.handle(
+        _statusMeta,
+        status.isAcceptableOrUnknown(data['status']!, _statusMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_statusMeta);
+    }
+    if (data.containsKey('settled_at')) {
+      context.handle(
+        _settledAtMeta,
+        settledAt.isAcceptableOrUnknown(data['settled_at']!, _settledAtMeta),
+      );
+    }
+    if (data.containsKey('session_id')) {
+      context.handle(
+        _sessionIdMeta,
+        sessionId.isAcceptableOrUnknown(data['session_id']!, _sessionIdMeta),
+      );
+    }
+    if (data.containsKey('failure_reason')) {
+      context.handle(
+        _failureReasonMeta,
+        failureReason.isAcceptableOrUnknown(
+          data['failure_reason']!,
+          _failureReasonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId, id};
+  @override
+  FocusAppointment map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FocusAppointment(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      taskId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}task_id'],
+      )!,
+      mode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}mode'],
+      )!,
+      durationSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_seconds'],
+      )!,
+      startedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}started_at'],
+      )!,
+      endsAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}ends_at'],
+      )!,
+      status: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}status'],
+      )!,
+      settledAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}settled_at'],
+      ),
+      sessionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}session_id'],
+      ),
+      failureReason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}failure_reason'],
+      ),
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $FocusAppointmentsTable createAlias(String alias) {
+    return $FocusAppointmentsTable(attachedDatabase, alias);
+  }
+}
+
+class FocusAppointment extends DataClass
+    implements Insertable<FocusAppointment> {
+  final String userId;
+  final String id;
+  final String taskId;
+  final String mode;
+  final int durationSeconds;
+  final DateTime startedAt;
+  final DateTime endsAt;
+  final String status;
+  final DateTime? settledAt;
+  final String? sessionId;
+  final String? failureReason;
+  final DateTime updatedAt;
+  const FocusAppointment({
+    required this.userId,
+    required this.id,
+    required this.taskId,
+    required this.mode,
+    required this.durationSeconds,
+    required this.startedAt,
+    required this.endsAt,
+    required this.status,
+    this.settledAt,
+    this.sessionId,
+    this.failureReason,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['id'] = Variable<String>(id);
+    map['task_id'] = Variable<String>(taskId);
+    map['mode'] = Variable<String>(mode);
+    map['duration_seconds'] = Variable<int>(durationSeconds);
+    map['started_at'] = Variable<DateTime>(startedAt);
+    map['ends_at'] = Variable<DateTime>(endsAt);
+    map['status'] = Variable<String>(status);
+    if (!nullToAbsent || settledAt != null) {
+      map['settled_at'] = Variable<DateTime>(settledAt);
+    }
+    if (!nullToAbsent || sessionId != null) {
+      map['session_id'] = Variable<String>(sessionId);
+    }
+    if (!nullToAbsent || failureReason != null) {
+      map['failure_reason'] = Variable<String>(failureReason);
+    }
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  FocusAppointmentsCompanion toCompanion(bool nullToAbsent) {
+    return FocusAppointmentsCompanion(
+      userId: Value(userId),
+      id: Value(id),
+      taskId: Value(taskId),
+      mode: Value(mode),
+      durationSeconds: Value(durationSeconds),
+      startedAt: Value(startedAt),
+      endsAt: Value(endsAt),
+      status: Value(status),
+      settledAt: settledAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(settledAt),
+      sessionId: sessionId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sessionId),
+      failureReason: failureReason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(failureReason),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory FocusAppointment.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FocusAppointment(
+      userId: serializer.fromJson<String>(json['userId']),
+      id: serializer.fromJson<String>(json['id']),
+      taskId: serializer.fromJson<String>(json['taskId']),
+      mode: serializer.fromJson<String>(json['mode']),
+      durationSeconds: serializer.fromJson<int>(json['durationSeconds']),
+      startedAt: serializer.fromJson<DateTime>(json['startedAt']),
+      endsAt: serializer.fromJson<DateTime>(json['endsAt']),
+      status: serializer.fromJson<String>(json['status']),
+      settledAt: serializer.fromJson<DateTime?>(json['settledAt']),
+      sessionId: serializer.fromJson<String?>(json['sessionId']),
+      failureReason: serializer.fromJson<String?>(json['failureReason']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'id': serializer.toJson<String>(id),
+      'taskId': serializer.toJson<String>(taskId),
+      'mode': serializer.toJson<String>(mode),
+      'durationSeconds': serializer.toJson<int>(durationSeconds),
+      'startedAt': serializer.toJson<DateTime>(startedAt),
+      'endsAt': serializer.toJson<DateTime>(endsAt),
+      'status': serializer.toJson<String>(status),
+      'settledAt': serializer.toJson<DateTime?>(settledAt),
+      'sessionId': serializer.toJson<String?>(sessionId),
+      'failureReason': serializer.toJson<String?>(failureReason),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  FocusAppointment copyWith({
+    String? userId,
+    String? id,
+    String? taskId,
+    String? mode,
+    int? durationSeconds,
+    DateTime? startedAt,
+    DateTime? endsAt,
+    String? status,
+    Value<DateTime?> settledAt = const Value.absent(),
+    Value<String?> sessionId = const Value.absent(),
+    Value<String?> failureReason = const Value.absent(),
+    DateTime? updatedAt,
+  }) => FocusAppointment(
+    userId: userId ?? this.userId,
+    id: id ?? this.id,
+    taskId: taskId ?? this.taskId,
+    mode: mode ?? this.mode,
+    durationSeconds: durationSeconds ?? this.durationSeconds,
+    startedAt: startedAt ?? this.startedAt,
+    endsAt: endsAt ?? this.endsAt,
+    status: status ?? this.status,
+    settledAt: settledAt.present ? settledAt.value : this.settledAt,
+    sessionId: sessionId.present ? sessionId.value : this.sessionId,
+    failureReason: failureReason.present
+        ? failureReason.value
+        : this.failureReason,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  FocusAppointment copyWithCompanion(FocusAppointmentsCompanion data) {
+    return FocusAppointment(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      id: data.id.present ? data.id.value : this.id,
+      taskId: data.taskId.present ? data.taskId.value : this.taskId,
+      mode: data.mode.present ? data.mode.value : this.mode,
+      durationSeconds: data.durationSeconds.present
+          ? data.durationSeconds.value
+          : this.durationSeconds,
+      startedAt: data.startedAt.present ? data.startedAt.value : this.startedAt,
+      endsAt: data.endsAt.present ? data.endsAt.value : this.endsAt,
+      status: data.status.present ? data.status.value : this.status,
+      settledAt: data.settledAt.present ? data.settledAt.value : this.settledAt,
+      sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
+      failureReason: data.failureReason.present
+          ? data.failureReason.value
+          : this.failureReason,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FocusAppointment(')
+          ..write('userId: $userId, ')
+          ..write('id: $id, ')
+          ..write('taskId: $taskId, ')
+          ..write('mode: $mode, ')
+          ..write('durationSeconds: $durationSeconds, ')
+          ..write('startedAt: $startedAt, ')
+          ..write('endsAt: $endsAt, ')
+          ..write('status: $status, ')
+          ..write('settledAt: $settledAt, ')
+          ..write('sessionId: $sessionId, ')
+          ..write('failureReason: $failureReason, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    userId,
+    id,
+    taskId,
+    mode,
+    durationSeconds,
+    startedAt,
+    endsAt,
+    status,
+    settledAt,
+    sessionId,
+    failureReason,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FocusAppointment &&
+          other.userId == this.userId &&
+          other.id == this.id &&
+          other.taskId == this.taskId &&
+          other.mode == this.mode &&
+          other.durationSeconds == this.durationSeconds &&
+          other.startedAt == this.startedAt &&
+          other.endsAt == this.endsAt &&
+          other.status == this.status &&
+          other.settledAt == this.settledAt &&
+          other.sessionId == this.sessionId &&
+          other.failureReason == this.failureReason &&
+          other.updatedAt == this.updatedAt);
+}
+
+class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
+  final Value<String> userId;
+  final Value<String> id;
+  final Value<String> taskId;
+  final Value<String> mode;
+  final Value<int> durationSeconds;
+  final Value<DateTime> startedAt;
+  final Value<DateTime> endsAt;
+  final Value<String> status;
+  final Value<DateTime?> settledAt;
+  final Value<String?> sessionId;
+  final Value<String?> failureReason;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const FocusAppointmentsCompanion({
+    this.userId = const Value.absent(),
+    this.id = const Value.absent(),
+    this.taskId = const Value.absent(),
+    this.mode = const Value.absent(),
+    this.durationSeconds = const Value.absent(),
+    this.startedAt = const Value.absent(),
+    this.endsAt = const Value.absent(),
+    this.status = const Value.absent(),
+    this.settledAt = const Value.absent(),
+    this.sessionId = const Value.absent(),
+    this.failureReason = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  FocusAppointmentsCompanion.insert({
+    required String userId,
+    required String id,
+    required String taskId,
+    required String mode,
+    required int durationSeconds,
+    required DateTime startedAt,
+    required DateTime endsAt,
+    required String status,
+    this.settledAt = const Value.absent(),
+    this.sessionId = const Value.absent(),
+    this.failureReason = const Value.absent(),
+    required DateTime updatedAt,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       id = Value(id),
+       taskId = Value(taskId),
+       mode = Value(mode),
+       durationSeconds = Value(durationSeconds),
+       startedAt = Value(startedAt),
+       endsAt = Value(endsAt),
+       status = Value(status),
+       updatedAt = Value(updatedAt);
+  static Insertable<FocusAppointment> custom({
+    Expression<String>? userId,
+    Expression<String>? id,
+    Expression<String>? taskId,
+    Expression<String>? mode,
+    Expression<int>? durationSeconds,
+    Expression<DateTime>? startedAt,
+    Expression<DateTime>? endsAt,
+    Expression<String>? status,
+    Expression<DateTime>? settledAt,
+    Expression<String>? sessionId,
+    Expression<String>? failureReason,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (id != null) 'id': id,
+      if (taskId != null) 'task_id': taskId,
+      if (mode != null) 'mode': mode,
+      if (durationSeconds != null) 'duration_seconds': durationSeconds,
+      if (startedAt != null) 'started_at': startedAt,
+      if (endsAt != null) 'ends_at': endsAt,
+      if (status != null) 'status': status,
+      if (settledAt != null) 'settled_at': settledAt,
+      if (sessionId != null) 'session_id': sessionId,
+      if (failureReason != null) 'failure_reason': failureReason,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  FocusAppointmentsCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? id,
+    Value<String>? taskId,
+    Value<String>? mode,
+    Value<int>? durationSeconds,
+    Value<DateTime>? startedAt,
+    Value<DateTime>? endsAt,
+    Value<String>? status,
+    Value<DateTime?>? settledAt,
+    Value<String?>? sessionId,
+    Value<String?>? failureReason,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return FocusAppointmentsCompanion(
+      userId: userId ?? this.userId,
+      id: id ?? this.id,
+      taskId: taskId ?? this.taskId,
+      mode: mode ?? this.mode,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      startedAt: startedAt ?? this.startedAt,
+      endsAt: endsAt ?? this.endsAt,
+      status: status ?? this.status,
+      settledAt: settledAt ?? this.settledAt,
+      sessionId: sessionId ?? this.sessionId,
+      failureReason: failureReason ?? this.failureReason,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (taskId.present) {
+      map['task_id'] = Variable<String>(taskId.value);
+    }
+    if (mode.present) {
+      map['mode'] = Variable<String>(mode.value);
+    }
+    if (durationSeconds.present) {
+      map['duration_seconds'] = Variable<int>(durationSeconds.value);
+    }
+    if (startedAt.present) {
+      map['started_at'] = Variable<DateTime>(startedAt.value);
+    }
+    if (endsAt.present) {
+      map['ends_at'] = Variable<DateTime>(endsAt.value);
+    }
+    if (status.present) {
+      map['status'] = Variable<String>(status.value);
+    }
+    if (settledAt.present) {
+      map['settled_at'] = Variable<DateTime>(settledAt.value);
+    }
+    if (sessionId.present) {
+      map['session_id'] = Variable<String>(sessionId.value);
+    }
+    if (failureReason.present) {
+      map['failure_reason'] = Variable<String>(failureReason.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FocusAppointmentsCompanion(')
+          ..write('userId: $userId, ')
+          ..write('id: $id, ')
+          ..write('taskId: $taskId, ')
+          ..write('mode: $mode, ')
+          ..write('durationSeconds: $durationSeconds, ')
+          ..write('startedAt: $startedAt, ')
+          ..write('endsAt: $endsAt, ')
+          ..write('status: $status, ')
+          ..write('settledAt: $settledAt, ')
+          ..write('sessionId: $sessionId, ')
+          ..write('failureReason: $failureReason, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $AppointmentChainRecordsTable extends AppointmentChainRecords
+    with TableInfo<$AppointmentChainRecordsTable, AppointmentChainRecord> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $AppointmentChainRecordsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _currentConsecutiveMeta =
+      const VerificationMeta('currentConsecutive');
+  @override
+  late final GeneratedColumn<int> currentConsecutive = GeneratedColumn<int>(
+    'current_consecutive',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _bestConsecutiveMeta = const VerificationMeta(
+    'bestConsecutive',
+  );
+  @override
+  late final GeneratedColumn<int> bestConsecutive = GeneratedColumn<int>(
+    'best_consecutive',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    currentConsecutive,
+    bestConsecutive,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'appointment_chain_records';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<AppointmentChainRecord> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('current_consecutive')) {
+      context.handle(
+        _currentConsecutiveMeta,
+        currentConsecutive.isAcceptableOrUnknown(
+          data['current_consecutive']!,
+          _currentConsecutiveMeta,
+        ),
+      );
+    }
+    if (data.containsKey('best_consecutive')) {
+      context.handle(
+        _bestConsecutiveMeta,
+        bestConsecutive.isAcceptableOrUnknown(
+          data['best_consecutive']!,
+          _bestConsecutiveMeta,
+        ),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId};
+  @override
+  AppointmentChainRecord map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return AppointmentChainRecord(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      currentConsecutive: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}current_consecutive'],
+      )!,
+      bestConsecutive: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}best_consecutive'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $AppointmentChainRecordsTable createAlias(String alias) {
+    return $AppointmentChainRecordsTable(attachedDatabase, alias);
+  }
+}
+
+class AppointmentChainRecord extends DataClass
+    implements Insertable<AppointmentChainRecord> {
+  final String userId;
+  final int currentConsecutive;
+  final int bestConsecutive;
+  final DateTime updatedAt;
+  const AppointmentChainRecord({
+    required this.userId,
+    required this.currentConsecutive,
+    required this.bestConsecutive,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['current_consecutive'] = Variable<int>(currentConsecutive);
+    map['best_consecutive'] = Variable<int>(bestConsecutive);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  AppointmentChainRecordsCompanion toCompanion(bool nullToAbsent) {
+    return AppointmentChainRecordsCompanion(
+      userId: Value(userId),
+      currentConsecutive: Value(currentConsecutive),
+      bestConsecutive: Value(bestConsecutive),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory AppointmentChainRecord.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return AppointmentChainRecord(
+      userId: serializer.fromJson<String>(json['userId']),
+      currentConsecutive: serializer.fromJson<int>(json['currentConsecutive']),
+      bestConsecutive: serializer.fromJson<int>(json['bestConsecutive']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'currentConsecutive': serializer.toJson<int>(currentConsecutive),
+      'bestConsecutive': serializer.toJson<int>(bestConsecutive),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  AppointmentChainRecord copyWith({
+    String? userId,
+    int? currentConsecutive,
+    int? bestConsecutive,
+    DateTime? updatedAt,
+  }) => AppointmentChainRecord(
+    userId: userId ?? this.userId,
+    currentConsecutive: currentConsecutive ?? this.currentConsecutive,
+    bestConsecutive: bestConsecutive ?? this.bestConsecutive,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  AppointmentChainRecord copyWithCompanion(
+    AppointmentChainRecordsCompanion data,
+  ) {
+    return AppointmentChainRecord(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      currentConsecutive: data.currentConsecutive.present
+          ? data.currentConsecutive.value
+          : this.currentConsecutive,
+      bestConsecutive: data.bestConsecutive.present
+          ? data.bestConsecutive.value
+          : this.bestConsecutive,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AppointmentChainRecord(')
+          ..write('userId: $userId, ')
+          ..write('currentConsecutive: $currentConsecutive, ')
+          ..write('bestConsecutive: $bestConsecutive, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(userId, currentConsecutive, bestConsecutive, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is AppointmentChainRecord &&
+          other.userId == this.userId &&
+          other.currentConsecutive == this.currentConsecutive &&
+          other.bestConsecutive == this.bestConsecutive &&
+          other.updatedAt == this.updatedAt);
+}
+
+class AppointmentChainRecordsCompanion
+    extends UpdateCompanion<AppointmentChainRecord> {
+  final Value<String> userId;
+  final Value<int> currentConsecutive;
+  final Value<int> bestConsecutive;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const AppointmentChainRecordsCompanion({
+    this.userId = const Value.absent(),
+    this.currentConsecutive = const Value.absent(),
+    this.bestConsecutive = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  AppointmentChainRecordsCompanion.insert({
+    required String userId,
+    this.currentConsecutive = const Value.absent(),
+    this.bestConsecutive = const Value.absent(),
+    required DateTime updatedAt,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       updatedAt = Value(updatedAt);
+  static Insertable<AppointmentChainRecord> custom({
+    Expression<String>? userId,
+    Expression<int>? currentConsecutive,
+    Expression<int>? bestConsecutive,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (currentConsecutive != null) 'current_consecutive': currentConsecutive,
+      if (bestConsecutive != null) 'best_consecutive': bestConsecutive,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  AppointmentChainRecordsCompanion copyWith({
+    Value<String>? userId,
+    Value<int>? currentConsecutive,
+    Value<int>? bestConsecutive,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return AppointmentChainRecordsCompanion(
+      userId: userId ?? this.userId,
+      currentConsecutive: currentConsecutive ?? this.currentConsecutive,
+      bestConsecutive: bestConsecutive ?? this.bestConsecutive,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (currentConsecutive.present) {
+      map['current_consecutive'] = Variable<int>(currentConsecutive.value);
+    }
+    if (bestConsecutive.present) {
+      map['best_consecutive'] = Variable<int>(bestConsecutive.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('AppointmentChainRecordsCompanion(')
+          ..write('userId: $userId, ')
+          ..write('currentConsecutive: $currentConsecutive, ')
+          ..write('bestConsecutive: $bestConsecutive, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$PactaDatabase extends GeneratedDatabase {
   _$PactaDatabase(QueryExecutor e) : super(e);
   $PactaDatabaseManager get managers => $PactaDatabaseManager(this);
@@ -3861,6 +4955,10 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   );
   late final $FocusPrecedentRulesTable focusPrecedentRules =
       $FocusPrecedentRulesTable(this);
+  late final $FocusAppointmentsTable focusAppointments =
+      $FocusAppointmentsTable(this);
+  late final $AppointmentChainRecordsTable appointmentChainRecords =
+      $AppointmentChainRecordsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3874,6 +4972,8 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
     focusChainRecords,
     focusPreferences,
     focusPrecedentRules,
+    focusAppointments,
+    appointmentChainRecords,
   ];
 }
 
@@ -4607,6 +5707,7 @@ typedef $$FocusSessionsTableCreateCompanionBuilder =
     FocusSessionsCompanion Function({
       required String userId,
       required String id,
+      Value<String?> appointmentId,
       required String taskId,
       required String mode,
       required int durationSeconds,
@@ -4627,6 +5728,7 @@ typedef $$FocusSessionsTableUpdateCompanionBuilder =
     FocusSessionsCompanion Function({
       Value<String> userId,
       Value<String> id,
+      Value<String?> appointmentId,
       Value<String> taskId,
       Value<String> mode,
       Value<int> durationSeconds,
@@ -4660,6 +5762,11 @@ class $$FocusSessionsTableFilterComposer
 
   ColumnFilters<String> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get appointmentId => $composableBuilder(
+    column: $table.appointmentId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4753,6 +5860,11 @@ class $$FocusSessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get appointmentId => $composableBuilder(
+    column: $table.appointmentId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get taskId => $composableBuilder(
     column: $table.taskId,
     builder: (column) => ColumnOrderings(column),
@@ -4838,6 +5950,11 @@ class $$FocusSessionsTableAnnotationComposer
 
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get appointmentId => $composableBuilder(
+    column: $table.appointmentId,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get taskId =>
       $composableBuilder(column: $table.taskId, builder: (column) => column);
@@ -4933,6 +6050,7 @@ class $$FocusSessionsTableTableManager
               ({
                 Value<String> userId = const Value.absent(),
                 Value<String> id = const Value.absent(),
+                Value<String?> appointmentId = const Value.absent(),
                 Value<String> taskId = const Value.absent(),
                 Value<String> mode = const Value.absent(),
                 Value<int> durationSeconds = const Value.absent(),
@@ -4951,6 +6069,7 @@ class $$FocusSessionsTableTableManager
               }) => FocusSessionsCompanion(
                 userId: userId,
                 id: id,
+                appointmentId: appointmentId,
                 taskId: taskId,
                 mode: mode,
                 durationSeconds: durationSeconds,
@@ -4971,6 +6090,7 @@ class $$FocusSessionsTableTableManager
               ({
                 required String userId,
                 required String id,
+                Value<String?> appointmentId = const Value.absent(),
                 required String taskId,
                 required String mode,
                 required int durationSeconds,
@@ -4989,6 +6109,7 @@ class $$FocusSessionsTableTableManager
               }) => FocusSessionsCompanion.insert(
                 userId: userId,
                 id: id,
+                appointmentId: appointmentId,
                 taskId: taskId,
                 mode: mode,
                 durationSeconds: durationSeconds,
@@ -5891,6 +7012,560 @@ typedef $$FocusPrecedentRulesTableProcessedTableManager =
       FocusPrecedentRule,
       PrefetchHooks Function()
     >;
+typedef $$FocusAppointmentsTableCreateCompanionBuilder =
+    FocusAppointmentsCompanion Function({
+      required String userId,
+      required String id,
+      required String taskId,
+      required String mode,
+      required int durationSeconds,
+      required DateTime startedAt,
+      required DateTime endsAt,
+      required String status,
+      Value<DateTime?> settledAt,
+      Value<String?> sessionId,
+      Value<String?> failureReason,
+      required DateTime updatedAt,
+      Value<int> rowid,
+    });
+typedef $$FocusAppointmentsTableUpdateCompanionBuilder =
+    FocusAppointmentsCompanion Function({
+      Value<String> userId,
+      Value<String> id,
+      Value<String> taskId,
+      Value<String> mode,
+      Value<int> durationSeconds,
+      Value<DateTime> startedAt,
+      Value<DateTime> endsAt,
+      Value<String> status,
+      Value<DateTime?> settledAt,
+      Value<String?> sessionId,
+      Value<String?> failureReason,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$FocusAppointmentsTableFilterComposer
+    extends Composer<_$PactaDatabase, $FocusAppointmentsTable> {
+  $$FocusAppointmentsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get taskId => $composableBuilder(
+    column: $table.taskId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get mode => $composableBuilder(
+    column: $table.mode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationSeconds => $composableBuilder(
+    column: $table.durationSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get startedAt => $composableBuilder(
+    column: $table.startedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get endsAt => $composableBuilder(
+    column: $table.endsAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get settledAt => $composableBuilder(
+    column: $table.settledAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sessionId => $composableBuilder(
+    column: $table.sessionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get failureReason => $composableBuilder(
+    column: $table.failureReason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$FocusAppointmentsTableOrderingComposer
+    extends Composer<_$PactaDatabase, $FocusAppointmentsTable> {
+  $$FocusAppointmentsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get taskId => $composableBuilder(
+    column: $table.taskId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get mode => $composableBuilder(
+    column: $table.mode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationSeconds => $composableBuilder(
+    column: $table.durationSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get startedAt => $composableBuilder(
+    column: $table.startedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get endsAt => $composableBuilder(
+    column: $table.endsAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get status => $composableBuilder(
+    column: $table.status,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get settledAt => $composableBuilder(
+    column: $table.settledAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sessionId => $composableBuilder(
+    column: $table.sessionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get failureReason => $composableBuilder(
+    column: $table.failureReason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$FocusAppointmentsTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $FocusAppointmentsTable> {
+  $$FocusAppointmentsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get taskId =>
+      $composableBuilder(column: $table.taskId, builder: (column) => column);
+
+  GeneratedColumn<String> get mode =>
+      $composableBuilder(column: $table.mode, builder: (column) => column);
+
+  GeneratedColumn<int> get durationSeconds => $composableBuilder(
+    column: $table.durationSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get startedAt =>
+      $composableBuilder(column: $table.startedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get endsAt =>
+      $composableBuilder(column: $table.endsAt, builder: (column) => column);
+
+  GeneratedColumn<String> get status =>
+      $composableBuilder(column: $table.status, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get settledAt =>
+      $composableBuilder(column: $table.settledAt, builder: (column) => column);
+
+  GeneratedColumn<String> get sessionId =>
+      $composableBuilder(column: $table.sessionId, builder: (column) => column);
+
+  GeneratedColumn<String> get failureReason => $composableBuilder(
+    column: $table.failureReason,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$FocusAppointmentsTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $FocusAppointmentsTable,
+          FocusAppointment,
+          $$FocusAppointmentsTableFilterComposer,
+          $$FocusAppointmentsTableOrderingComposer,
+          $$FocusAppointmentsTableAnnotationComposer,
+          $$FocusAppointmentsTableCreateCompanionBuilder,
+          $$FocusAppointmentsTableUpdateCompanionBuilder,
+          (
+            FocusAppointment,
+            BaseReferences<
+              _$PactaDatabase,
+              $FocusAppointmentsTable,
+              FocusAppointment
+            >,
+          ),
+          FocusAppointment,
+          PrefetchHooks Function()
+        > {
+  $$FocusAppointmentsTableTableManager(
+    _$PactaDatabase db,
+    $FocusAppointmentsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FocusAppointmentsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FocusAppointmentsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$FocusAppointmentsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> id = const Value.absent(),
+                Value<String> taskId = const Value.absent(),
+                Value<String> mode = const Value.absent(),
+                Value<int> durationSeconds = const Value.absent(),
+                Value<DateTime> startedAt = const Value.absent(),
+                Value<DateTime> endsAt = const Value.absent(),
+                Value<String> status = const Value.absent(),
+                Value<DateTime?> settledAt = const Value.absent(),
+                Value<String?> sessionId = const Value.absent(),
+                Value<String?> failureReason = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FocusAppointmentsCompanion(
+                userId: userId,
+                id: id,
+                taskId: taskId,
+                mode: mode,
+                durationSeconds: durationSeconds,
+                startedAt: startedAt,
+                endsAt: endsAt,
+                status: status,
+                settledAt: settledAt,
+                sessionId: sessionId,
+                failureReason: failureReason,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                required String id,
+                required String taskId,
+                required String mode,
+                required int durationSeconds,
+                required DateTime startedAt,
+                required DateTime endsAt,
+                required String status,
+                Value<DateTime?> settledAt = const Value.absent(),
+                Value<String?> sessionId = const Value.absent(),
+                Value<String?> failureReason = const Value.absent(),
+                required DateTime updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => FocusAppointmentsCompanion.insert(
+                userId: userId,
+                id: id,
+                taskId: taskId,
+                mode: mode,
+                durationSeconds: durationSeconds,
+                startedAt: startedAt,
+                endsAt: endsAt,
+                status: status,
+                settledAt: settledAt,
+                sessionId: sessionId,
+                failureReason: failureReason,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$FocusAppointmentsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $FocusAppointmentsTable,
+      FocusAppointment,
+      $$FocusAppointmentsTableFilterComposer,
+      $$FocusAppointmentsTableOrderingComposer,
+      $$FocusAppointmentsTableAnnotationComposer,
+      $$FocusAppointmentsTableCreateCompanionBuilder,
+      $$FocusAppointmentsTableUpdateCompanionBuilder,
+      (
+        FocusAppointment,
+        BaseReferences<
+          _$PactaDatabase,
+          $FocusAppointmentsTable,
+          FocusAppointment
+        >,
+      ),
+      FocusAppointment,
+      PrefetchHooks Function()
+    >;
+typedef $$AppointmentChainRecordsTableCreateCompanionBuilder =
+    AppointmentChainRecordsCompanion Function({
+      required String userId,
+      Value<int> currentConsecutive,
+      Value<int> bestConsecutive,
+      required DateTime updatedAt,
+      Value<int> rowid,
+    });
+typedef $$AppointmentChainRecordsTableUpdateCompanionBuilder =
+    AppointmentChainRecordsCompanion Function({
+      Value<String> userId,
+      Value<int> currentConsecutive,
+      Value<int> bestConsecutive,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$AppointmentChainRecordsTableFilterComposer
+    extends Composer<_$PactaDatabase, $AppointmentChainRecordsTable> {
+  $$AppointmentChainRecordsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get currentConsecutive => $composableBuilder(
+    column: $table.currentConsecutive,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get bestConsecutive => $composableBuilder(
+    column: $table.bestConsecutive,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$AppointmentChainRecordsTableOrderingComposer
+    extends Composer<_$PactaDatabase, $AppointmentChainRecordsTable> {
+  $$AppointmentChainRecordsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get currentConsecutive => $composableBuilder(
+    column: $table.currentConsecutive,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get bestConsecutive => $composableBuilder(
+    column: $table.bestConsecutive,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$AppointmentChainRecordsTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $AppointmentChainRecordsTable> {
+  $$AppointmentChainRecordsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<int> get currentConsecutive => $composableBuilder(
+    column: $table.currentConsecutive,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get bestConsecutive => $composableBuilder(
+    column: $table.bestConsecutive,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$AppointmentChainRecordsTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $AppointmentChainRecordsTable,
+          AppointmentChainRecord,
+          $$AppointmentChainRecordsTableFilterComposer,
+          $$AppointmentChainRecordsTableOrderingComposer,
+          $$AppointmentChainRecordsTableAnnotationComposer,
+          $$AppointmentChainRecordsTableCreateCompanionBuilder,
+          $$AppointmentChainRecordsTableUpdateCompanionBuilder,
+          (
+            AppointmentChainRecord,
+            BaseReferences<
+              _$PactaDatabase,
+              $AppointmentChainRecordsTable,
+              AppointmentChainRecord
+            >,
+          ),
+          AppointmentChainRecord,
+          PrefetchHooks Function()
+        > {
+  $$AppointmentChainRecordsTableTableManager(
+    _$PactaDatabase db,
+    $AppointmentChainRecordsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$AppointmentChainRecordsTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$AppointmentChainRecordsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$AppointmentChainRecordsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<int> currentConsecutive = const Value.absent(),
+                Value<int> bestConsecutive = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => AppointmentChainRecordsCompanion(
+                userId: userId,
+                currentConsecutive: currentConsecutive,
+                bestConsecutive: bestConsecutive,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                Value<int> currentConsecutive = const Value.absent(),
+                Value<int> bestConsecutive = const Value.absent(),
+                required DateTime updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => AppointmentChainRecordsCompanion.insert(
+                userId: userId,
+                currentConsecutive: currentConsecutive,
+                bestConsecutive: bestConsecutive,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$AppointmentChainRecordsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $AppointmentChainRecordsTable,
+      AppointmentChainRecord,
+      $$AppointmentChainRecordsTableFilterComposer,
+      $$AppointmentChainRecordsTableOrderingComposer,
+      $$AppointmentChainRecordsTableAnnotationComposer,
+      $$AppointmentChainRecordsTableCreateCompanionBuilder,
+      $$AppointmentChainRecordsTableUpdateCompanionBuilder,
+      (
+        AppointmentChainRecord,
+        BaseReferences<
+          _$PactaDatabase,
+          $AppointmentChainRecordsTable,
+          AppointmentChainRecord
+        >,
+      ),
+      AppointmentChainRecord,
+      PrefetchHooks Function()
+    >;
 
 class $PactaDatabaseManager {
   final _$PactaDatabase _db;
@@ -5911,4 +7586,11 @@ class $PactaDatabaseManager {
       $$FocusPreferencesTableTableManager(_db, _db.focusPreferences);
   $$FocusPrecedentRulesTableTableManager get focusPrecedentRules =>
       $$FocusPrecedentRulesTableTableManager(_db, _db.focusPrecedentRules);
+  $$FocusAppointmentsTableTableManager get focusAppointments =>
+      $$FocusAppointmentsTableTableManager(_db, _db.focusAppointments);
+  $$AppointmentChainRecordsTableTableManager get appointmentChainRecords =>
+      $$AppointmentChainRecordsTableTableManager(
+        _db,
+        _db.appointmentChainRecords,
+      );
 }

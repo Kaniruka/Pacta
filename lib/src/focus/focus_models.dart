@@ -60,6 +60,27 @@ enum FocusSessionCompletionType {
       };
 }
 
+enum AppointmentPreparationStatus {
+  active,
+  succeeded,
+  failed;
+
+  String get storageValue => switch (this) {
+    AppointmentPreparationStatus.active => 'active',
+    AppointmentPreparationStatus.succeeded => 'succeeded',
+    AppointmentPreparationStatus.failed => 'failed',
+  };
+
+  bool get isActive => this == AppointmentPreparationStatus.active;
+
+  static AppointmentPreparationStatus fromStorage(String value) =>
+      switch (value) {
+        'active' => AppointmentPreparationStatus.active,
+        'failed' => AppointmentPreparationStatus.failed,
+        _ => AppointmentPreparationStatus.succeeded,
+      };
+}
+
 class PrecedentRule {
   const PrecedentRule({
     required this.id,
@@ -93,6 +114,7 @@ class FocusSession {
     this.pausedSeconds = 0,
     this.pauseRuleText,
     this.failureReason,
+    this.appointmentId,
   });
 
   final String id;
@@ -110,6 +132,7 @@ class FocusSession {
   final int pausedSeconds;
   final String? pauseRuleText;
   final String? failureReason;
+  final String? appointmentId;
 
   bool get isActive => status == FocusSessionStatus.active;
   bool get isPaused => status == FocusSessionStatus.paused;
@@ -118,6 +141,50 @@ class FocusSession {
   bool get isEarlyCompleted =>
       status == FocusSessionStatus.completed &&
       completionType == FocusSessionCompletionType.precedentRule;
+}
+
+class AppointmentPreparation {
+  const AppointmentPreparation({
+    required this.id,
+    required this.taskId,
+    required this.mode,
+    required this.durationSeconds,
+    required this.startedAt,
+    required this.endsAt,
+    required this.status,
+    required this.settledAt,
+    required this.updatedAt,
+    this.sessionId,
+    this.failureReason,
+  });
+
+  final String id;
+  final String taskId;
+  final FocusChainMode mode;
+  final int durationSeconds;
+  final DateTime startedAt;
+  final DateTime endsAt;
+  final AppointmentPreparationStatus status;
+  final DateTime? settledAt;
+  final DateTime updatedAt;
+  final String? sessionId;
+  final String? failureReason;
+
+  bool get isActive => status.isActive;
+  bool get isSucceeded => status == AppointmentPreparationStatus.succeeded;
+  bool get isFailed => status == AppointmentPreparationStatus.failed;
+}
+
+class AppointmentChainRecord {
+  const AppointmentChainRecord({
+    required this.currentConsecutive,
+    required this.bestConsecutive,
+    required this.updatedAt,
+  });
+
+  final int currentConsecutive;
+  final int bestConsecutive;
+  final DateTime updatedAt;
 }
 
 class FocusNode {

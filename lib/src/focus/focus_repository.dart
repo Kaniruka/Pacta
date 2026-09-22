@@ -10,14 +10,18 @@ import 'focus_models.dart';
 class FocusRemoteSnapshot {
   const FocusRemoteSnapshot({
     this.sessions = const [],
+    this.appointments = const [],
     this.nodes = const [],
     this.records = const [],
+    this.appointmentRecords = const [],
     this.precedentRules = const [],
   });
 
   final List<FocusSession> sessions;
+  final List<AppointmentPreparation> appointments;
   final List<FocusNode> nodes;
   final List<FocusChainRecord> records;
+  final List<AppointmentChainRecord> appointmentRecords;
   final List<PrecedentRule> precedentRules;
 }
 
@@ -29,6 +33,11 @@ abstract interface class FocusRemoteDataSource {
     required List<FocusSession> sessions,
   });
 
+  Future<void> upsertAppointments({
+    required String userId,
+    required List<AppointmentPreparation> appointments,
+  });
+
   Future<void> upsertNodes({
     required String userId,
     required List<FocusNode> nodes,
@@ -37,6 +46,11 @@ abstract interface class FocusRemoteDataSource {
   Future<void> upsertRecords({
     required String userId,
     required List<FocusChainRecord> records,
+  });
+
+  Future<void> upsertAppointmentRecords({
+    required String userId,
+    required List<AppointmentChainRecord> records,
   });
 
   Future<void> upsertPrecedentRules({
@@ -62,6 +76,14 @@ class UnavailableFocusRemoteDataSource implements FocusRemoteDataSource {
   }
 
   @override
+  Future<void> upsertAppointments({
+    required String userId,
+    required List<AppointmentPreparation> appointments,
+  }) async {
+    throw StateError('当前未配置 Supabase，专注记录将先保存在本机。');
+  }
+
+  @override
   Future<void> upsertNodes({
     required String userId,
     required List<FocusNode> nodes,
@@ -73,6 +95,14 @@ class UnavailableFocusRemoteDataSource implements FocusRemoteDataSource {
   Future<void> upsertRecords({
     required String userId,
     required List<FocusChainRecord> records,
+  }) async {
+    throw StateError('当前未配置 Supabase，专注记录将先保存在本机。');
+  }
+
+  @override
+  Future<void> upsertAppointmentRecords({
+    required String userId,
+    required List<AppointmentChainRecord> records,
   }) async {
     throw StateError('当前未配置 Supabase，专注记录将先保存在本机。');
   }
@@ -91,11 +121,32 @@ abstract interface class FocusRepository {
   Future<List<FocusSession>> getSessions();
   Future<FocusSession?> getSession(String sessionId);
   Future<FocusSession?> getActiveSession();
+  Future<List<AppointmentPreparation>> getAppointments();
+  Future<AppointmentPreparation?> getAppointment(String appointmentId);
+  Future<AppointmentPreparation?> getActiveAppointment();
+  Future<AppointmentChainRecord> getAppointmentChainRecord();
   Future<FocusSession> startSession({
     required String taskId,
     required FocusChainMode mode,
     required Duration duration,
   });
+  Future<AppointmentPreparation> startAppointment({
+    required String taskId,
+    required FocusChainMode mode,
+    required Duration duration,
+  });
+  Future<AppointmentPreparation> updateAppointment({
+    required String appointmentId,
+    required String taskId,
+    required FocusChainMode mode,
+    required Duration duration,
+  });
+  Future<FocusSession> enterAppointmentEarly(String appointmentId);
+  Future<AppointmentPreparation> cancelAppointment({
+    required String appointmentId,
+    required String failureReason,
+  });
+  Future<void> settleDueAppointments();
   Future<void> settleDueSessions();
   Future<FocusSession> pauseSession(
     String sessionId, {
@@ -143,6 +194,9 @@ class LocalFocusRepository implements FocusRepository {
   final DateTime Function() _now;
   final _changes = StreamController<List<FocusSession>>.broadcast();
   final _uuid = const Uuid();
+  Future<void>? _appointmentSettlement;
+
+  static const appointmentPreparationDuration = Duration(minutes: 15);
 
   @override
   Stream<List<FocusSession>> watchSessions() async* {
@@ -152,6 +206,7 @@ class LocalFocusRepository implements FocusRepository {
 
   @override
   Future<List<FocusSession>> getSessions() async {
+    await _settleDueAppointments();
     await _settleDueSessions();
     final rows =
         await (database.select(database.focusSessions)
@@ -163,6 +218,7 @@ class LocalFocusRepository implements FocusRepository {
 
   @override
   Future<FocusSession?> getActiveSession() async {
+    await _settleDueAppointments();
     await _settleDueSessions();
     final row =
         await (database.select(database.focusSessions)
@@ -176,6 +232,7 @@ class LocalFocusRepository implements FocusRepository {
 
   @override
   Future<FocusSession?> getSession(String sessionId) async {
+    await _settleDueAppointments();
     await _settleDueSessions();
     final row =
         await (database.select(database.focusSessions)
@@ -184,6 +241,217 @@ class LocalFocusRepository implements FocusRepository {
             .getSingleOrNull();
     return row == null ? null : _sessionFromRow(row);
   }
+
+  @override
+  Future<List<AppointmentPreparation>> getAppointments() async {
+    await _settleDueAppointments();
+    final rows =
+        await (database.select(database.focusAppointments)
+              ..where((appointment) => appointment.userId.equals(userId))
+              ..orderBy([
+                (appointment) => OrderingTerm.desc(appointment.startedAt),
+              ]))
+            .get();
+    return [for (final row in rows) _appointmentFromRow(row)];
+  }
+
+  @override
+  Future<AppointmentPreparation?> getAppointment(String appointmentId) async {
+    await _settleDueAppointments();
+    final row = await _appointmentRow(appointmentId);
+    return row == null ? null : _appointmentFromRow(row);
+  }
+
+  @override
+  Future<AppointmentPreparation?> getActiveAppointment() async {
+    await _settleDueAppointments();
+    final row = await _activeAppointmentRow();
+    return row == null ? null : _appointmentFromRow(row);
+  }
+
+  @override
+  Future<AppointmentChainRecord> getAppointmentChainRecord() async {
+    final row = await (database.select(
+      database.appointmentChainRecords,
+    )..where((record) => record.userId.equals(userId))).getSingleOrNull();
+    return row == null
+        ? AppointmentChainRecord(
+            currentConsecutive: 0,
+            bestConsecutive: 0,
+            updatedAt: _now().toUtc(),
+          )
+        : _appointmentRecordFromRow(row);
+  }
+
+  @override
+  Future<AppointmentPreparation> startAppointment({
+    required String taskId,
+    required FocusChainMode mode,
+    required Duration duration,
+  }) async {
+    _validateDuration(duration);
+    final task = await _taskForStart(taskId);
+    if (task.isComplete) throw StateError('已完成任务不能开始新的预约。');
+
+    await _settleDueAppointments();
+    await _settleDueSessions();
+    final existing = await _activeAppointmentRow();
+    if (existing != null) return _appointmentFromRow(existing);
+    final activeSession = await _activeSessionRow();
+    if (activeSession != null) {
+      throw StateError('已有进行中的专注，请先返回原流程或处理它的结束操作。');
+    }
+
+    final startedAt = _now().toUtc();
+    final appointment = AppointmentPreparation(
+      id: _uuid.v4(),
+      taskId: taskId,
+      mode: mode,
+      durationSeconds: duration.inSeconds,
+      startedAt: startedAt,
+      endsAt: startedAt.add(appointmentPreparationDuration),
+      status: AppointmentPreparationStatus.active,
+      settledAt: null,
+      updatedAt: startedAt,
+    );
+    await database.transaction(() async {
+      await _saveAppointment(appointment);
+      await _queue('focus_appointment', appointment.id, startedAt);
+    });
+    await _publish();
+    return appointment;
+  }
+
+  @override
+  Future<AppointmentPreparation> updateAppointment({
+    required String appointmentId,
+    required String taskId,
+    required FocusChainMode mode,
+    required Duration duration,
+  }) async {
+    _validateDuration(duration);
+    final task = await _taskForStart(taskId);
+    if (task.isComplete) throw StateError('已完成任务不能用于预约。');
+
+    await _settleDueAppointments();
+    final row = await _appointmentRow(appointmentId);
+    if (row == null) throw StateError('预约准备不存在或已不属于当前用户。');
+    if (row.status != AppointmentPreparationStatus.active.storageValue) {
+      throw StateError('预约准备已经结算，不能再修改配置。');
+    }
+    final updatedAt = _now().toUtc();
+    await database.transaction(() async {
+      await (database.update(database.focusAppointments)
+            ..where((appointment) => appointment.userId.equals(userId))
+            ..where((appointment) => appointment.id.equals(appointmentId)))
+          .write(
+            db.FocusAppointmentsCompanion(
+              taskId: Value(taskId),
+              mode: Value(mode.storageValue),
+              durationSeconds: Value(duration.inSeconds),
+              updatedAt: Value(updatedAt),
+            ),
+          );
+      await _queue('focus_appointment', appointmentId, updatedAt);
+    });
+    await _publish();
+    return (await getAppointment(appointmentId))!;
+  }
+
+  @override
+  Future<FocusSession> enterAppointmentEarly(String appointmentId) async {
+    await _settleDueAppointments();
+    final row = await _appointmentRow(appointmentId);
+    if (row == null) throw StateError('预约准备不存在或已不属于当前用户。');
+    if (row.status == AppointmentPreparationStatus.failed.storageValue) {
+      throw StateError('失败的预约不能进入专注。');
+    }
+    if (row.status == AppointmentPreparationStatus.succeeded.storageValue) {
+      final existingSession = await _sessionRow(row.sessionId ?? appointmentId);
+      if (existingSession == null) {
+        throw StateError('预约已成功但对应的专注记录尚未恢复。');
+      }
+      return _sessionFromRow(existingSession);
+    }
+
+    final now = _now().toUtc();
+    final session = FocusSession(
+      id: row.sessionId ?? row.id,
+      appointmentId: row.id,
+      taskId: row.taskId,
+      mode: FocusChainMode.fromStorage(row.mode),
+      durationSeconds: row.durationSeconds,
+      startedAt: now,
+      endsAt: now.add(Duration(seconds: row.durationSeconds)),
+      status: FocusSessionStatus.active,
+      completedAt: null,
+      effectiveSeconds: 0,
+    );
+    await database.transaction(() async {
+      final current = await _appointmentRow(appointmentId);
+      if (current == null ||
+          current.status != AppointmentPreparationStatus.active.storageValue) {
+        return;
+      }
+      await _saveSession(session);
+      final succeeded = await _succeedAppointment(
+        appointmentId,
+        sessionId: session.id,
+        settledAt: now,
+        updatedAt: now,
+      );
+      if (succeeded) await _incrementAppointmentRecord(now);
+    });
+    await _publish();
+    return (await getSession(session.id))!;
+  }
+
+  @override
+  Future<AppointmentPreparation> cancelAppointment({
+    required String appointmentId,
+    required String failureReason,
+  }) async {
+    final reason = _requiredFailureReason(failureReason);
+    await _settleDueAppointments();
+    final row = await _appointmentRow(appointmentId);
+    if (row == null) throw StateError('预约准备不存在或已不属于当前用户。');
+    if (row.status == AppointmentPreparationStatus.succeeded.storageValue) {
+      throw StateError('成功的预约不能取消。');
+    }
+    if (row.status == AppointmentPreparationStatus.failed.storageValue) {
+      return _appointmentFromRow(row);
+    }
+
+    final now = _now().toUtc();
+    await database.transaction(() async {
+      final current = await _appointmentRow(appointmentId);
+      if (current == null ||
+          current.status != AppointmentPreparationStatus.active.storageValue) {
+        return;
+      }
+      final changed =
+          await (database.update(database.focusAppointments)
+                ..where((appointment) => appointment.userId.equals(userId))
+                ..where((appointment) => appointment.id.equals(appointmentId)))
+              .write(
+                db.FocusAppointmentsCompanion(
+                  status: const Value('failed'),
+                  settledAt: Value(now),
+                  failureReason: Value(reason),
+                  updatedAt: Value(now),
+                ),
+              );
+      if (changed == 0) return;
+      await _resetAppointmentRecord(now);
+      await _queue('focus_appointment', appointmentId, now);
+      await _queue('appointment_chain', userId, now);
+    });
+    await _publish();
+    return (await getAppointment(appointmentId))!;
+  }
+
+  @override
+  Future<void> settleDueAppointments() => _settleDueAppointments();
 
   @override
   Future<List<PrecedentRule>> getPrecedentRules() async {
@@ -281,18 +549,16 @@ class LocalFocusRepository implements FocusRepository {
     required FocusChainMode mode,
     required Duration duration,
   }) async {
-    if (duration <= Duration.zero) {
-      throw ArgumentError('专注时长必须大于 0。');
-    }
-    final task =
-        await (database.select(database.localTasks)
-              ..where((task) => task.userId.equals(userId))
-              ..where((task) => task.id.equals(taskId)))
-            .getSingleOrNull();
-    if (task == null) throw StateError('任务不存在或已不属于当前用户。');
+    _validateDuration(duration);
+    final task = await _taskForStart(taskId);
     if (task.isComplete) throw StateError('已完成任务不能开始新的专注。');
 
+    await _settleDueAppointments();
     await _settleDueSessions();
+    final appointment = await _activeAppointmentRow();
+    if (appointment != null) {
+      throw StateError('已有预约准备，请先返回原流程或提前进入/取消预约。');
+    }
     final existing = await getActiveSession();
     if (existing != null) return existing;
 
@@ -324,7 +590,10 @@ class LocalFocusRepository implements FocusRepository {
   }
 
   @override
-  Future<void> settleDueSessions() => _settleDueSessions();
+  Future<void> settleDueSessions() async {
+    await _settleDueAppointments();
+    await _settleDueSessions();
+  }
 
   @override
   Future<FocusSession> pauseSession(
@@ -525,6 +794,154 @@ class LocalFocusRepository implements FocusRepository {
     if (rows.isNotEmpty) await _publish();
   }
 
+  Future<void> _settleDueAppointments() {
+    final inFlight = _appointmentSettlement;
+    if (inFlight != null) return inFlight;
+    final future = _settleDueAppointmentsInternal();
+    _appointmentSettlement = future;
+    return future.whenComplete(() {
+      if (identical(_appointmentSettlement, future)) {
+        _appointmentSettlement = null;
+      }
+    });
+  }
+
+  Future<void> _settleDueAppointmentsInternal() async {
+    final now = _now().toUtc();
+    final rows =
+        await (database.select(database.focusAppointments)
+              ..where((appointment) => appointment.userId.equals(userId))
+              ..where(
+                (appointment) => appointment.status.equals(
+                  AppointmentPreparationStatus.active.storageValue,
+                ),
+              )
+              ..where(
+                (appointment) => appointment.endsAt.isSmallerOrEqualValue(now),
+              ))
+            .get();
+    for (final row in rows) {
+      await database.transaction(() async {
+        final current = await _appointmentRow(row.id);
+        if (current == null ||
+            current.status !=
+                AppointmentPreparationStatus.active.storageValue) {
+          return;
+        }
+        final sessionId = current.sessionId ?? current.id;
+        final existingSession = await _sessionRow(sessionId);
+        if (existingSession == null) {
+          final session = FocusSession(
+            id: sessionId,
+            appointmentId: current.id,
+            taskId: current.taskId,
+            mode: FocusChainMode.fromStorage(current.mode),
+            durationSeconds: current.durationSeconds,
+            startedAt: current.endsAt,
+            endsAt: current.endsAt.add(
+              Duration(seconds: current.durationSeconds),
+            ),
+            status: FocusSessionStatus.active,
+            completedAt: null,
+            effectiveSeconds: 0,
+          );
+          await _saveSession(session);
+        }
+        final succeeded = await _succeedAppointment(
+          current.id,
+          sessionId: sessionId,
+          settledAt: current.endsAt,
+          updatedAt: now,
+        );
+        if (succeeded) {
+          await _incrementAppointmentRecord(current.endsAt);
+        }
+      });
+    }
+    if (rows.isNotEmpty) await _publish();
+  }
+
+  Future<bool> _succeedAppointment(
+    String appointmentId, {
+    required String sessionId,
+    required DateTime settledAt,
+    required DateTime updatedAt,
+  }) async {
+    final changed =
+        await (database.update(database.focusAppointments)
+              ..where((appointment) => appointment.userId.equals(userId))
+              ..where((appointment) => appointment.id.equals(appointmentId))
+              ..where(
+                (appointment) => appointment.status.equals(
+                  AppointmentPreparationStatus.active.storageValue,
+                ),
+              ))
+            .write(
+              db.FocusAppointmentsCompanion(
+                status: const Value('succeeded'),
+                settledAt: Value(settledAt),
+                sessionId: Value(sessionId),
+                updatedAt: Value(updatedAt),
+              ),
+            );
+    if (changed == 0) return false;
+    await _queue('focus_appointment', appointmentId, updatedAt);
+    return true;
+  }
+
+  Future<void> _incrementAppointmentRecord(DateTime updatedAt) async {
+    final current = await (database.select(
+      database.appointmentChainRecords,
+    )..where((record) => record.userId.equals(userId))).getSingleOrNull();
+    final consecutive = (current?.currentConsecutive ?? 0) + 1;
+    final best = consecutive > (current?.bestConsecutive ?? 0)
+        ? consecutive
+        : (current?.bestConsecutive ?? 0);
+    await database
+        .into(database.appointmentChainRecords)
+        .insertOnConflictUpdate(
+          db.AppointmentChainRecordsCompanion.insert(
+            userId: userId,
+            currentConsecutive: Value(consecutive),
+            bestConsecutive: Value(best),
+            updatedAt: updatedAt,
+          ),
+        );
+    await _queue('appointment_chain', userId, updatedAt);
+  }
+
+  Future<void> _resetAppointmentRecord(DateTime updatedAt) async {
+    final current = await (database.select(
+      database.appointmentChainRecords,
+    )..where((record) => record.userId.equals(userId))).getSingleOrNull();
+    await database
+        .into(database.appointmentChainRecords)
+        .insertOnConflictUpdate(
+          db.AppointmentChainRecordsCompanion.insert(
+            userId: userId,
+            currentConsecutive: const Value(0),
+            bestConsecutive: Value(current?.bestConsecutive ?? 0),
+            updatedAt: updatedAt,
+          ),
+        );
+  }
+
+  Future<db.LocalTask> _taskForStart(String taskId) async {
+    final task =
+        await (database.select(database.localTasks)
+              ..where((task) => task.userId.equals(userId))
+              ..where((task) => task.id.equals(taskId)))
+            .getSingleOrNull();
+    if (task == null) throw StateError('任务不存在或已不属于当前用户。');
+    return task;
+  }
+
+  void _validateDuration(Duration duration) {
+    if (duration <= Duration.zero) {
+      throw ArgumentError('专注时长必须大于 0。');
+    }
+  }
+
   Future<void> _completeSession(
     String sessionId, {
     required DateTime now,
@@ -663,8 +1080,20 @@ class LocalFocusRepository implements FocusRepository {
 
   @override
   Future<void> sync() async {
+    await _settleDueAppointments();
     await _settleDueSessions();
     final snapshot = await remote.pull(userId: userId);
+    for (final appointment in snapshot.appointments) {
+      final local = await _appointmentRow(appointment.id);
+      if (local == null ||
+          appointment.updatedAt.isAfter(local.updatedAt) ||
+          (appointment.updatedAt.isAtSameMomentAs(local.updatedAt) &&
+              appointment.status != AppointmentPreparationStatus.active &&
+              local.status ==
+                  AppointmentPreparationStatus.active.storageValue)) {
+        await _saveAppointment(appointment, queue: false);
+      }
+    }
     for (final session in snapshot.sessions) {
       final local =
           await (database.select(database.focusSessions)
@@ -715,6 +1144,23 @@ class LocalFocusRepository implements FocusRepository {
             ),
           );
     }
+    for (final record in snapshot.appointmentRecords) {
+      final local = await (database.select(
+        database.appointmentChainRecords,
+      )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+      if (local == null || record.updatedAt.isAfter(local.updatedAt)) {
+        await database
+            .into(database.appointmentChainRecords)
+            .insertOnConflictUpdate(
+              db.AppointmentChainRecordsCompanion.insert(
+                userId: userId,
+                currentConsecutive: Value(record.currentConsecutive),
+                bestConsecutive: Value(record.bestConsecutive),
+                updatedAt: record.updatedAt,
+              ),
+            );
+      }
+    }
     for (final rule in snapshot.precedentRules) {
       final local =
           await (database.select(database.focusPrecedentRules)
@@ -742,9 +1188,17 @@ class LocalFocusRepository implements FocusRepository {
     }
     await _reconcileTaskFocusProgressFromSessions();
     final sessions = await getSessions();
+    final appointments = await getAppointments();
     final nodes = await getNodes();
     final records = await getChainRecords();
+    final appointmentRecord = await getAppointmentChainRecord();
     final precedentRules = await _getPrecedentRulesIncludingDeleted();
+    if (appointments.isNotEmpty) {
+      await remote.upsertAppointments(
+        userId: userId,
+        appointments: appointments,
+      );
+    }
     if (sessions.isNotEmpty) {
       await remote.upsertSessions(userId: userId, sessions: sessions);
     }
@@ -752,6 +1206,10 @@ class LocalFocusRepository implements FocusRepository {
       await remote.upsertNodes(userId: userId, nodes: nodes);
     }
     await remote.upsertRecords(userId: userId, records: records);
+    await remote.upsertAppointmentRecords(
+      userId: userId,
+      records: [appointmentRecord],
+    );
     await remote.upsertPrecedentRules(userId: userId, rules: precedentRules);
     await _publish();
   }
@@ -766,6 +1224,7 @@ class LocalFocusRepository implements FocusRepository {
           db.FocusSessionsCompanion.insert(
             userId: userId,
             id: session.id,
+            appointmentId: Value(session.appointmentId),
             taskId: session.taskId,
             mode: session.mode.storageValue,
             durationSeconds: session.durationSeconds,
@@ -783,6 +1242,33 @@ class LocalFocusRepository implements FocusRepository {
           ),
         );
     if (queue) await _queue('focus_session', session.id, session.startedAt);
+  }
+
+  Future<void> _saveAppointment(
+    AppointmentPreparation appointment, {
+    bool queue = true,
+  }) async {
+    await database
+        .into(database.focusAppointments)
+        .insertOnConflictUpdate(
+          db.FocusAppointmentsCompanion.insert(
+            userId: userId,
+            id: appointment.id,
+            taskId: appointment.taskId,
+            mode: appointment.mode.storageValue,
+            durationSeconds: appointment.durationSeconds,
+            startedAt: appointment.startedAt,
+            endsAt: appointment.endsAt,
+            status: appointment.status.storageValue,
+            settledAt: Value(appointment.settledAt),
+            sessionId: Value(appointment.sessionId),
+            failureReason: Value(appointment.failureReason),
+            updatedAt: appointment.updatedAt,
+          ),
+        );
+    if (queue) {
+      await _queue('focus_appointment', appointment.id, appointment.updatedAt);
+    }
   }
 
   Future<void> _queue(String type, String id, DateTime updatedAt) async {
@@ -822,6 +1308,35 @@ class LocalFocusRepository implements FocusRepository {
     return (database.select(database.focusSessions)
           ..where((session) => session.userId.equals(userId))
           ..where((session) => session.id.equals(sessionId)))
+        .getSingleOrNull();
+  }
+
+  Future<db.FocusAppointment?> _appointmentRow(String appointmentId) {
+    return (database.select(database.focusAppointments)
+          ..where((appointment) => appointment.userId.equals(userId))
+          ..where((appointment) => appointment.id.equals(appointmentId)))
+        .getSingleOrNull();
+  }
+
+  Future<db.FocusAppointment?> _activeAppointmentRow() {
+    return (database.select(database.focusAppointments)
+          ..where((appointment) => appointment.userId.equals(userId))
+          ..where(
+            (appointment) => appointment.status.equals(
+              AppointmentPreparationStatus.active.storageValue,
+            ),
+          )
+          ..orderBy([(appointment) => OrderingTerm.desc(appointment.startedAt)])
+          ..limit(1))
+        .getSingleOrNull();
+  }
+
+  Future<db.FocusSession?> _activeSessionRow() {
+    return (database.select(database.focusSessions)
+          ..where((session) => session.userId.equals(userId))
+          ..where((session) => session.status.isIn(['active', 'paused']))
+          ..orderBy([(session) => OrderingTerm.desc(session.startedAt)])
+          ..limit(1))
         .getSingleOrNull();
   }
 
@@ -984,6 +1499,7 @@ class LocalFocusRepository implements FocusRepository {
 
   FocusSession _sessionFromRow(db.FocusSession row) => FocusSession(
     id: row.id,
+    appointmentId: row.appointmentId,
     taskId: row.taskId,
     mode: FocusChainMode.fromStorage(row.mode),
     durationSeconds: row.durationSeconds,
@@ -1005,6 +1521,21 @@ class LocalFocusRepository implements FocusRepository {
     failureReason: row.failureReason,
   );
 
+  AppointmentPreparation _appointmentFromRow(db.FocusAppointment row) =>
+      AppointmentPreparation(
+        id: row.id,
+        taskId: row.taskId,
+        mode: FocusChainMode.fromStorage(row.mode),
+        durationSeconds: row.durationSeconds,
+        startedAt: row.startedAt,
+        endsAt: row.endsAt,
+        status: AppointmentPreparationStatus.fromStorage(row.status),
+        settledAt: row.settledAt,
+        updatedAt: row.updatedAt,
+        sessionId: row.sessionId,
+        failureReason: row.failureReason,
+      );
+
   FocusNode _nodeFromRow(db.FocusNode row) => FocusNode(
     id: row.id,
     sessionId: row.sessionId,
@@ -1017,6 +1548,14 @@ class LocalFocusRepository implements FocusRepository {
 
   FocusChainRecord _recordFromRow(db.FocusChainRecord row) => FocusChainRecord(
     mode: FocusChainMode.fromStorage(row.mode),
+    currentConsecutive: row.currentConsecutive,
+    bestConsecutive: row.bestConsecutive,
+    updatedAt: row.updatedAt,
+  );
+
+  AppointmentChainRecord _appointmentRecordFromRow(
+    db.AppointmentChainRecord row,
+  ) => AppointmentChainRecord(
     currentConsecutive: row.currentConsecutive,
     bestConsecutive: row.bestConsecutive,
     updatedAt: row.updatedAt,
@@ -1040,13 +1579,21 @@ class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
   @override
   Future<FocusRemoteSnapshot> pull({required String userId}) async {
     final sessions = await client.from('focus_sessions').select();
+    final appointments = await client.from('focus_appointments').select();
     final nodes = await client.from('focus_nodes').select();
     final records = await client.from('focus_chain_records').select();
+    final appointmentRecords = await client
+        .from('appointment_chain_records')
+        .select();
     final precedentRules = await client.from('focus_precedent_rules').select();
     return FocusRemoteSnapshot(
       sessions: [for (final row in sessions) _sessionFromJson(row)],
+      appointments: [for (final row in appointments) _appointmentFromJson(row)],
       nodes: [for (final row in nodes) _nodeFromJson(row)],
       records: [for (final row in records) _recordFromJson(row)],
+      appointmentRecords: [
+        for (final row in appointmentRecords) _appointmentRecordFromJson(row),
+      ],
       precedentRules: [
         for (final row in precedentRules) _precedentRuleFromJson(row),
       ],
@@ -1063,6 +1610,7 @@ class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
         {
           'id': session.id,
           'user_id': userId,
+          'appointment_id': session.appointmentId,
           'task_id': session.taskId,
           'mode': session.mode.storageValue,
           'duration_seconds': session.durationSeconds,
@@ -1081,6 +1629,32 @@ class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
           'paused_seconds': session.pausedSeconds,
           'pause_rule_text': session.pauseRuleText,
           'failure_reason': session.failureReason,
+        },
+    ], onConflict: 'id');
+  }
+
+  @override
+  Future<void> upsertAppointments({
+    required String userId,
+    required List<AppointmentPreparation> appointments,
+  }) async {
+    await client.from('focus_appointments').upsert([
+      for (final appointment in appointments)
+        {
+          'id': appointment.id,
+          'user_id': userId,
+          'task_id': appointment.taskId,
+          'mode': appointment.mode.storageValue,
+          'duration_seconds': appointment.durationSeconds,
+          'started_at': _utcIso8601(appointment.startedAt),
+          'ends_at': _utcIso8601(appointment.endsAt),
+          'status': appointment.status.storageValue,
+          'settled_at': appointment.settledAt == null
+              ? null
+              : _utcIso8601(appointment.settledAt!),
+          'session_id': appointment.sessionId,
+          'failure_reason': appointment.failureReason,
+          'updated_at': _utcIso8601(appointment.updatedAt),
         },
     ], onConflict: 'id');
   }
@@ -1123,6 +1697,22 @@ class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
   }
 
   @override
+  Future<void> upsertAppointmentRecords({
+    required String userId,
+    required List<AppointmentChainRecord> records,
+  }) async {
+    await client.from('appointment_chain_records').upsert([
+      for (final record in records)
+        {
+          'user_id': userId,
+          'current_consecutive': record.currentConsecutive,
+          'best_consecutive': record.bestConsecutive,
+          'updated_at': _utcIso8601(record.updatedAt),
+        },
+    ], onConflict: 'user_id');
+  }
+
+  @override
   Future<void> upsertPrecedentRules({
     required String userId,
     required List<PrecedentRule> rules,
@@ -1145,6 +1735,7 @@ class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
 
   FocusSession _sessionFromJson(Map<String, dynamic> json) => FocusSession(
     id: json['id'] as String,
+    appointmentId: json['appointment_id'] as String?,
     taskId: json['task_id'] as String,
     mode: FocusChainMode.fromStorage(json['mode'] as String),
     durationSeconds: json['duration_seconds'] as int,
@@ -1172,6 +1763,25 @@ class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
     failureReason: json['failure_reason'] as String?,
   );
 
+  AppointmentPreparation _appointmentFromJson(Map<String, dynamic> json) =>
+      AppointmentPreparation(
+        id: json['id'] as String,
+        taskId: json['task_id'] as String,
+        mode: FocusChainMode.fromStorage(json['mode'] as String),
+        durationSeconds: json['duration_seconds'] as int,
+        startedAt: DateTime.parse(json['started_at'] as String).toUtc(),
+        endsAt: DateTime.parse(json['ends_at'] as String).toUtc(),
+        status: AppointmentPreparationStatus.fromStorage(
+          json['status'] as String,
+        ),
+        settledAt: (json['settled_at'] as String?) == null
+            ? null
+            : DateTime.parse(json['settled_at'] as String).toUtc(),
+        updatedAt: DateTime.parse(json['updated_at'] as String).toUtc(),
+        sessionId: json['session_id'] as String?,
+        failureReason: json['failure_reason'] as String?,
+      );
+
   FocusNode _nodeFromJson(Map<String, dynamic> json) => FocusNode(
     id: json['id'] as String,
     sessionId: json['session_id'] as String,
@@ -1190,6 +1800,14 @@ class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
         updatedAt: DateTime.parse(json['updated_at'] as String).toUtc(),
       );
 
+  AppointmentChainRecord _appointmentRecordFromJson(
+    Map<String, dynamic> json,
+  ) => AppointmentChainRecord(
+    currentConsecutive: json['current_consecutive'] as int,
+    bestConsecutive: json['best_consecutive'] as int,
+    updatedAt: DateTime.parse(json['updated_at'] as String).toUtc(),
+  );
+
   PrecedentRule _precedentRuleFromJson(Map<String, dynamic> json) =>
       PrecedentRule(
         id: json['id'] as String,
@@ -1206,16 +1824,23 @@ String _utcIso8601(DateTime value) => value.toUtc().toIso8601String();
 
 class InMemoryFocusRemote implements FocusRemoteDataSource {
   final _sessions = <String, Map<String, FocusSession>>{};
+  final _appointments = <String, Map<String, AppointmentPreparation>>{};
   final _nodes = <String, Map<String, FocusNode>>{};
   final _records = <String, Map<String, FocusChainRecord>>{};
+  final _appointmentRecords = <String, AppointmentChainRecord>{};
   final _precedentRules = <String, Map<String, PrecedentRule>>{};
 
   @override
   Future<FocusRemoteSnapshot> pull({required String userId}) async {
+    final appointmentRecord = _appointmentRecords[userId];
     return FocusRemoteSnapshot(
       sessions: (_sessions[userId] ?? {}).values.toList(),
+      appointments: (_appointments[userId] ?? {}).values.toList(),
       nodes: (_nodes[userId] ?? {}).values.toList(),
       records: (_records[userId] ?? {}).values.toList(),
+      appointmentRecords: appointmentRecord == null
+          ? const []
+          : [appointmentRecord],
       precedentRules: (_precedentRules[userId] ?? {}).values.toList(),
     );
   }
@@ -1228,6 +1853,17 @@ class InMemoryFocusRemote implements FocusRemoteDataSource {
     final target = _sessions.putIfAbsent(userId, () => {});
     for (final session in sessions) {
       target[session.id] = session;
+    }
+  }
+
+  @override
+  Future<void> upsertAppointments({
+    required String userId,
+    required List<AppointmentPreparation> appointments,
+  }) async {
+    final target = _appointments.putIfAbsent(userId, () => {});
+    for (final appointment in appointments) {
+      target[appointment.id] = appointment;
     }
   }
 
@@ -1251,6 +1887,14 @@ class InMemoryFocusRemote implements FocusRemoteDataSource {
     for (final record in records) {
       target[record.mode.storageValue] = record;
     }
+  }
+
+  @override
+  Future<void> upsertAppointmentRecords({
+    required String userId,
+    required List<AppointmentChainRecord> records,
+  }) async {
+    if (records.isNotEmpty) _appointmentRecords[userId] = records.last;
   }
 
   @override
@@ -1281,11 +1925,57 @@ class UnavailableFocusRepository implements FocusRepository {
   Future<FocusSession?> getActiveSession() async => null;
 
   @override
+  Future<List<AppointmentPreparation>> getAppointments() async => const [];
+
+  @override
+  Future<AppointmentPreparation?> getAppointment(String appointmentId) async =>
+      null;
+
+  @override
+  Future<AppointmentPreparation?> getActiveAppointment() async => null;
+
+  @override
+  Future<AppointmentChainRecord> getAppointmentChainRecord() async =>
+      AppointmentChainRecord(
+        currentConsecutive: 0,
+        bestConsecutive: 0,
+        updatedAt: DateTime.now().toUtc(),
+      );
+
+  @override
   Future<FocusSession> startSession({
     required String taskId,
     required FocusChainMode mode,
     required Duration duration,
   }) => _unavailable();
+
+  @override
+  Future<AppointmentPreparation> startAppointment({
+    required String taskId,
+    required FocusChainMode mode,
+    required Duration duration,
+  }) => _unavailable();
+
+  @override
+  Future<AppointmentPreparation> updateAppointment({
+    required String appointmentId,
+    required String taskId,
+    required FocusChainMode mode,
+    required Duration duration,
+  }) => _unavailable();
+
+  @override
+  Future<FocusSession> enterAppointmentEarly(String appointmentId) =>
+      _unavailable();
+
+  @override
+  Future<AppointmentPreparation> cancelAppointment({
+    required String appointmentId,
+    required String failureReason,
+  }) => _unavailable();
+
+  @override
+  Future<void> settleDueAppointments() async {}
 
   @override
   Future<void> settleDueSessions() async {}

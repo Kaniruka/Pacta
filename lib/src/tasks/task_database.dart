@@ -36,6 +36,7 @@ class LocalTasks extends Table {
 class FocusSessions extends Table {
   TextColumn get userId => text()();
   TextColumn get id => text()();
+  TextColumn get appointmentId => text().nullable()();
   TextColumn get taskId => text()();
   TextColumn get mode => text()();
   IntColumn get durationSeconds => integer()();
@@ -54,6 +55,35 @@ class FocusSessions extends Table {
 
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
+}
+
+class FocusAppointments extends Table {
+  TextColumn get userId => text()();
+  TextColumn get id => text()();
+  TextColumn get taskId => text()();
+  TextColumn get mode => text()();
+  IntColumn get durationSeconds => integer()();
+  DateTimeColumn get startedAt => dateTime()();
+  DateTimeColumn get endsAt => dateTime()();
+  TextColumn get status => text()();
+  DateTimeColumn get settledAt => dateTime().nullable()();
+  TextColumn get sessionId => text().nullable()();
+  TextColumn get failureReason => text().nullable()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId, id};
+}
+
+class AppointmentChainRecords extends Table {
+  TextColumn get userId => text()();
+  IntColumn get currentConsecutive =>
+      integer().withDefault(const Constant(0))();
+  IntColumn get bestConsecutive => integer().withDefault(const Constant(0))();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId};
 }
 
 class FocusNodes extends Table {
@@ -122,6 +152,8 @@ class TaskSyncEntries extends Table {
     FocusChainRecords,
     FocusPreferences,
     FocusPrecedentRules,
+    FocusAppointments,
+    AppointmentChainRecords,
   ],
 )
 class PactaDatabase extends _$PactaDatabase {
@@ -130,7 +162,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -156,6 +188,11 @@ class PactaDatabase extends _$PactaDatabase {
         await m.addColumn(focusSessions, focusSessions.completionType);
         await m.addColumn(focusSessions, focusSessions.completionRuleText);
         await m.createTable(focusPrecedentRules);
+      }
+      if (from < 6) {
+        await m.addColumn(focusSessions, focusSessions.appointmentId);
+        await m.createTable(focusAppointments);
+        await m.createTable(appointmentChainRecords);
       }
     },
   );

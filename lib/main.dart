@@ -539,23 +539,74 @@ class _TaskTile extends ConsumerWidget {
       trailing: IconButton(
         tooltip: '开始专注',
         onPressed: () async {
-          final mode = await ref.read(focusRepositoryProvider).getLastMode();
+          final focusRepository = ref.read(focusRepositoryProvider);
+          final activeAppointment = await focusRepository
+              .getActiveAppointment();
           if (!context.mounted) return;
-          final session = await showDialog<FocusSession>(
+          if (activeAppointment != null) {
+            final goals = await repository.getGoals();
+            if (!context.mounted) return;
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => AppointmentPreparationPage(
+                  appointment: activeAppointment,
+                  taskTitle:
+                      _findTaskTitle(goals, activeAppointment.taskId) ??
+                      '原预约任务',
+                ),
+              ),
+            );
+            return;
+          }
+          final activeSession = await focusRepository.getActiveSession();
+          if (!context.mounted) return;
+          if (activeSession != null) {
+            final goals = await repository.getGoals();
+            if (!context.mounted) return;
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => FocusSessionPage(
+                  session: activeSession,
+                  taskTitle:
+                      _findTaskTitle(goals, activeSession.taskId) ?? '原任务',
+                ),
+              ),
+            );
+            return;
+          }
+          final mode = await focusRepository.getLastMode();
+          if (!context.mounted) return;
+          final result = await showDialog<Object>(
             context: context,
             builder: (_) => FocusSetupDialog(task: task, initialMode: mode),
           );
-          if (session != null && context.mounted) {
+          if (result is FocusSession && context.mounted) {
             var taskTitle = task.title;
-            if (session.taskId != task.id) {
+            if (result.taskId != task.id) {
               final goals = await repository.getGoals();
               if (!context.mounted) return;
-              taskTitle = _findTaskTitle(goals, session.taskId) ?? '原任务';
+              taskTitle = _findTaskTitle(goals, result.taskId) ?? '原任务';
             }
             await Navigator.of(context).push(
               MaterialPageRoute<void>(
                 builder: (_) =>
-                    FocusSessionPage(session: session, taskTitle: taskTitle),
+                    FocusSessionPage(session: result, taskTitle: taskTitle),
+              ),
+            );
+          }
+          if (result is AppointmentPreparation && context.mounted) {
+            var taskTitle = task.title;
+            if (result.taskId != task.id) {
+              final goals = await repository.getGoals();
+              if (!context.mounted) return;
+              taskTitle = _findTaskTitle(goals, result.taskId) ?? '原任务';
+            }
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => AppointmentPreparationPage(
+                  appointment: result,
+                  taskTitle: taskTitle,
+                ),
               ),
             );
           }
@@ -838,12 +889,26 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
   FocusRepository? _projectionRepository;
   String? _projectionSignature;
   late Future<List<FocusChainRecord>> _chainRecordsFuture;
+  late Future<AppointmentPreparation?> _activeAppointmentFuture;
   Future<List<FocusNode>> _nodesFuture = Future.value(const []);
 
   @override
   void initState() {
     super.initState();
+    _activeAppointmentFuture = ref
+        .read(focusRepositoryProvider)
+        .getActiveAppointment();
     unawaited(_loadLastMode());
+  }
+
+  void _refreshActiveAppointment() {
+    if (mounted) {
+      setState(() {
+        _activeAppointmentFuture = ref
+            .read(focusRepositoryProvider)
+            .getActiveAppointment();
+      });
+    }
   }
 
   Future<void> _loadLastMode() async {
@@ -902,6 +967,53 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                     ),
                   ),
                 ],
+                FutureBuilder<AppointmentPreparation?>(
+                  future: _activeAppointmentFuture,
+                  builder: (context, appointmentSnapshot) {
+                    final appointment = appointmentSnapshot.data;
+                    if (appointment == null) return const SizedBox.shrink();
+                    final title = taskTitles[appointment.taskId] ?? '原预约任务';
+                    return Card(
+                      color: Theme.of(context).colorScheme.secondaryContainer,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: const Icon(Icons.event_available),
+                              title: const Text('已有预约准备'),
+                              subtitle: Text(title),
+                            ),
+                            Wrap(
+                              alignment: WrapAlignment.end,
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                OutlinedButton(
+                                  onPressed: () =>
+                                      _openAppointment(appointment, title),
+                                  child: const Text('返回准备'),
+                                ),
+                                FilledButton.tonal(
+                                  onPressed: () =>
+                                      _enterAppointment(appointment, title),
+                                  child: const Text('提前进入专注'),
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      _cancelAppointment(appointment),
+                                  child: const Text('取消预约'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
                 const SizedBox(height: 18),
                 SegmentedButton<TaskClassification?>(
                   segments: const [
@@ -1037,19 +1149,100 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
   };
 
   Future<void> _showSetup(Task task) async {
-    final session = await showDialog<FocusSession>(
+    final repository = ref.read(focusRepositoryProvider);
+    final activeAppointment = await repository.getActiveAppointment();
+    if (activeAppointment != null && mounted) {
+      final goals = await ref.read(taskRepositoryProvider).getGoals();
+      await _openAppointment(
+        activeAppointment,
+        _findTaskTitle(goals, activeAppointment.taskId) ?? task.title,
+      );
+      return;
+    }
+    final activeSession = await repository.getActiveSession();
+    if (activeSession != null && mounted) {
+      final goals = await ref.read(taskRepositoryProvider).getGoals();
+      _openSession(
+        activeSession,
+        _findTaskTitle(goals, activeSession.taskId) ?? task.title,
+      );
+      return;
+    }
+    if (!mounted) return;
+    final result = await showDialog<Object>(
       context: context,
       builder: (_) => FocusSetupDialog(task: task, initialMode: _selectedMode),
     );
-    if (session != null && mounted) {
+    if (result is FocusSession && mounted) {
       final goals = await ref.read(taskRepositoryProvider).getGoals();
-      _openSession(
-        session,
-        _findTaskTitle(goals, session.taskId) ?? task.title,
+      _openSession(result, _findTaskTitle(goals, result.taskId) ?? task.title);
+    }
+    if (result is AppointmentPreparation && mounted) {
+      final goals = await ref.read(taskRepositoryProvider).getGoals();
+      await _openAppointment(
+        result,
+        _findTaskTitle(goals, result.taskId) ?? task.title,
       );
     }
-    if (session != null) {
-      setState(() => _lastMode = session.mode);
+    if (result is FocusSession) {
+      setState(() => _lastMode = result.mode);
+    } else if (result is AppointmentPreparation) {
+      setState(() => _lastMode = result.mode);
+    }
+    _refreshActiveAppointment();
+  }
+
+  Future<void> _openAppointment(
+    AppointmentPreparation appointment,
+    String taskTitle,
+  ) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => AppointmentPreparationPage(
+          appointment: appointment,
+          taskTitle: taskTitle,
+        ),
+      ),
+    );
+    _refreshActiveAppointment();
+  }
+
+  Future<void> _enterAppointment(
+    AppointmentPreparation appointment,
+    String taskTitle,
+  ) async {
+    try {
+      final session = await ref
+          .read(focusRepositoryProvider)
+          .enterAppointmentEarly(appointment.id);
+      if (!mounted) return;
+      _openSession(session, taskTitle);
+    } catch (error) {
+      if (mounted) _showFocusError(context, error);
+    } finally {
+      _refreshActiveAppointment();
+    }
+  }
+
+  Future<void> _cancelAppointment(AppointmentPreparation appointment) async {
+    final reason = await _showTextEditor(
+      context,
+      title: '取消预约准备',
+      label: '失败原因',
+      initial: '',
+      required: true,
+    );
+    if (reason == null || !mounted) return;
+    try {
+      await ref
+          .read(focusRepositoryProvider)
+          .cancelAppointment(
+            appointmentId: appointment.id,
+            failureReason: reason,
+          );
+      _refreshActiveAppointment();
+    } catch (error) {
+      if (mounted) _showFocusError(context, error);
     }
   }
 
@@ -1070,6 +1263,12 @@ String? _findTaskTitle(List<Goal> goals, String taskId) {
     }
   }
   return null;
+}
+
+void _showFocusError(BuildContext context, Object error) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))),
+  );
 }
 
 class _FocusHistoryCard extends StatelessWidget {
@@ -1450,6 +1649,36 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
     }
   }
 
+  Future<void> _startAppointment() async {
+    final minutes = int.tryParse(_duration.text.trim());
+    if (minutes == null || minutes <= 0) {
+      setState(() => _error = '请输入大于 0 的分钟数。');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final appointment = await ref
+          .read(focusRepositoryProvider)
+          .startAppointment(
+            taskId: widget.task.id,
+            mode: _mode,
+            duration: Duration(minutes: minutes),
+          );
+      if (mounted) Navigator.of(context).pop(appointment);
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = error.toString().replaceFirst('Bad state: ', ''),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => AlertDialog(
     title: const Text('开始专注'),
@@ -1483,13 +1712,17 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
           ),
         ],
         const SizedBox(height: 10),
-        const Text('启动信号由你执行，App 不检测现实动作。倒计时归零后自动结算。'),
+        const Text('启动信号由你执行，App 不检测现实动作。可立即开始专注，或先进行固定 15 分钟准备；准备结束会自动进入专注。'),
       ],
     ),
     actions: [
       TextButton(
         onPressed: _busy ? null : () => Navigator.pop(context),
         child: const Text('取消'),
+      ),
+      OutlinedButton(
+        onPressed: _busy ? null : _startAppointment,
+        child: const Text('开始准备（15分钟）'),
       ),
       FilledButton(
         onPressed: _busy ? null : _start,
@@ -1502,6 +1735,341 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
       ),
     ],
   );
+}
+
+class AppointmentPreparationPage extends ConsumerStatefulWidget {
+  const AppointmentPreparationPage({
+    super.key,
+    required this.appointment,
+    required this.taskTitle,
+  });
+
+  final AppointmentPreparation appointment;
+  final String taskTitle;
+
+  @override
+  ConsumerState<AppointmentPreparationPage> createState() =>
+      _AppointmentPreparationPageState();
+}
+
+class _AppointmentPreparationPageState
+    extends ConsumerState<AppointmentPreparationPage> {
+  Timer? _timer;
+  AppointmentPreparation? _current;
+  List<Task>? _tasks;
+  late FocusChainMode _mode;
+  late String _taskId;
+  late final TextEditingController _duration;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _current = widget.appointment;
+    _mode = widget.appointment.mode;
+    _taskId = widget.appointment.taskId;
+    _duration = TextEditingController(
+      text: _minutesFor(widget.appointment.durationSeconds).toString(),
+    );
+    unawaited(_loadTasks());
+    unawaited(_refresh());
+    _timer = Timer.periodic(
+      const Duration(milliseconds: 250),
+      (_) => _refresh(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _duration.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadTasks() async {
+    try {
+      final goals = await ref.read(taskRepositoryProvider).getGoals();
+      final tasks = [
+        for (final goal in goals)
+          for (final task in goal.tasks)
+            if (!task.isComplete || task.id == _taskId) task,
+      ];
+      if (mounted) setState(() => _tasks = tasks);
+    } catch (error) {
+      if (mounted) setState(() => _error = _friendlyFocusError(error));
+    }
+  }
+
+  Future<void> _refresh() async {
+    final current = await ref
+        .read(focusRepositoryProvider)
+        .getAppointment(widget.appointment.id);
+    if (!mounted || current == null) return;
+    if (current.isSucceeded) {
+      final session = await ref
+          .read(focusRepositoryProvider)
+          .getSession(current.sessionId ?? current.id);
+      if (!mounted || session == null) return;
+      _timer?.cancel();
+      await Navigator.of(context).pushReplacement<void, void>(
+        MaterialPageRoute<void>(
+          builder: (_) => FocusSessionPage(
+            session: session,
+            taskTitle: _taskTitle(current.taskId),
+          ),
+        ),
+      );
+      return;
+    }
+    if (current.isFailed) {
+      _timer?.cancel();
+    }
+    if (mounted) setState(() => _current = current);
+  }
+
+  Future<void> _saveConfig() async {
+    final current = _current;
+    final minutes = int.tryParse(_duration.text.trim());
+    if (current == null || !current.isActive) return;
+    if (minutes == null || minutes <= 0) {
+      setState(() => _error = '请输入大于 0 的分钟数。');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final updated = await ref
+          .read(focusRepositoryProvider)
+          .updateAppointment(
+            appointmentId: current.id,
+            taskId: _taskId,
+            mode: _mode,
+            duration: Duration(minutes: minutes),
+          );
+      if (mounted) setState(() => _current = updated);
+    } catch (error) {
+      if (mounted) setState(() => _error = _friendlyFocusError(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _enterEarly() async {
+    final current = _current;
+    if (current == null || !current.isActive || _busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final session = await ref
+          .read(focusRepositoryProvider)
+          .enterAppointmentEarly(current.id);
+      if (!mounted) return;
+      _timer?.cancel();
+      await Navigator.of(context).pushReplacement<void, void>(
+        MaterialPageRoute<void>(
+          builder: (_) => FocusSessionPage(
+            session: session,
+            taskTitle: _taskTitle(session.taskId),
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _error = _friendlyFocusError(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _cancelAppointment() async {
+    final current = _current;
+    if (current == null || !current.isActive || _busy) return;
+    final reason = await _showTextEditor(
+      context,
+      title: '取消预约准备',
+      label: '失败原因',
+      initial: '',
+      required: true,
+    );
+    if (reason == null || !mounted) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await ref
+          .read(focusRepositoryProvider)
+          .cancelAppointment(appointmentId: current.id, failureReason: reason);
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      if (mounted) setState(() => _error = _friendlyFocusError(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _taskTitle(String taskId) {
+    for (final task in _tasks ?? const <Task>[]) {
+      if (task.id == taskId) return task.title;
+    }
+    return taskId == widget.appointment.taskId ? widget.taskTitle : '原预约任务';
+  }
+
+  String _friendlyFocusError(Object error) =>
+      error.toString().replaceFirst('Bad state: ', '');
+
+  @override
+  Widget build(BuildContext context) {
+    final appointment = _current ?? widget.appointment;
+    final now = DateTime.now().toUtc();
+    final remainingSeconds = appointment.isActive
+        ? appointment.endsAt.difference(now).inSeconds.clamp(0, 15 * 60)
+        : 0;
+    final progress = 1 - (remainingSeconds / (15 * 60));
+    final tasks = _tasks;
+    return Scaffold(
+      appBar: AppBar(title: const Text('预约准备')),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              Text(
+                _taskTitle(appointment.taskId),
+                style: Theme.of(context).textTheme.headlineSmall,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                appointment.isActive
+                    ? '准备结束后自动进入专注，不需要再次点击或执行启动信号。'
+                    : appointment.isFailed
+                    ? '预约已取消，预约链当前记录已清零。'
+                    : '预约已成功进入专注。',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 28),
+              Text(
+                appointment.isActive ? _formatClock(remainingSeconds) : '00:00',
+                style: Theme.of(context).textTheme.displayLarge,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              LinearProgressIndicator(value: progress.clamp(0.0, 1.0)),
+              const SizedBox(height: 16),
+              if (appointment.isActive)
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          '准备配置',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 12),
+                        if (tasks == null)
+                          const Center(child: CircularProgressIndicator())
+                        else
+                          DropdownButtonFormField<String>(
+                            initialValue:
+                                tasks.any((task) => task.id == _taskId)
+                                ? _taskId
+                                : null,
+                            decoration: const InputDecoration(labelText: '任务'),
+                            items: [
+                              for (final task in tasks)
+                                DropdownMenuItem(
+                                  value: task.id,
+                                  child: Text(task.title),
+                                ),
+                            ],
+                            onChanged: _busy
+                                ? null
+                                : (value) {
+                                    if (value != null) {
+                                      setState(() => _taskId = value);
+                                    }
+                                  },
+                          ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<FocusChainMode>(
+                          initialValue: _mode,
+                          decoration: const InputDecoration(
+                            labelText: '本次专注模式',
+                          ),
+                          items: [
+                            for (final mode in FocusChainMode.values)
+                              DropdownMenuItem(
+                                value: mode,
+                                child: Text(mode.label),
+                              ),
+                          ],
+                          onChanged: _busy
+                              ? null
+                              : (value) {
+                                  if (value != null) {
+                                    setState(() => _mode = value);
+                                  }
+                                },
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: _duration,
+                          enabled: !_busy,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: '专注时长（分钟）',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton(
+                          onPressed: _busy ? null : _saveConfig,
+                          child: const Text('保存配置（不重置准备时间）'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+              const SizedBox(height: 20),
+              if (appointment.isActive) ...[
+                FilledButton(
+                  onPressed: _busy ? null : _enterEarly,
+                  child: const Text('提前进入专注'),
+                ),
+                TextButton(
+                  onPressed: _busy ? null : _cancelAppointment,
+                  child: const Text('取消预约并填写失败原因'),
+                ),
+                const Text(
+                  '准备阶段不能暂停，也不限制你在现实中的行为。',
+                  textAlign: TextAlign.center,
+                ),
+              ] else
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('返回专注链'),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class FocusSessionPage extends ConsumerStatefulWidget {
@@ -1752,6 +2320,8 @@ String _formatClock(int seconds) {
   final remaining = seconds % 60;
   return '${minutes.toString().padLeft(2, '0')}:${remaining.toString().padLeft(2, '0')}';
 }
+
+int _minutesFor(int seconds) => (seconds / 60).ceil();
 
 class MyPage extends ConsumerStatefulWidget {
   const MyPage({super.key});

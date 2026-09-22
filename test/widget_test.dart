@@ -165,6 +165,101 @@ void main() {
     expect(find.text('打开专注设置'), findsOneWidget);
   });
 
+  testWidgets('专注设置可启动预约准备，准备页改配置不重置时间并可提前进入', (tester) async {
+    final database = PactaDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    var now = DateTime.utc(2026, 9, 22, 8);
+    final taskRepository = LocalTaskRepository(
+      database: database,
+      userId: 'user@example.com',
+      remote: InMemoryTaskRemote(),
+      now: () => now,
+    );
+    final focusRepository = LocalFocusRepository(
+      database: database,
+      userId: 'user@example.com',
+      remote: InMemoryFocusRemote(),
+      now: () => now,
+    );
+    addTearDown(focusRepository.dispose);
+    addTearDown(taskRepository.dispose);
+    final goal = await taskRepository.createGoal(
+      const GoalDraft(title: '交付', classification: TaskClassification.regular),
+    );
+    final task = await taskRepository.createTask(
+      goal.id,
+      const TaskDraft(
+        title: '预约任务',
+        classification: TaskClassification.regular,
+      ),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [focusRepositoryProvider.overrideWithValue(focusRepository)],
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: FilledButton(
+                onPressed: () => showDialog<Object>(
+                  context: context,
+                  builder: (_) => FocusSetupDialog(
+                    task: task,
+                    initialMode: FocusChainMode.regular,
+                  ),
+                ),
+                child: const Text('打开预约设置'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('打开预约设置'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('开始准备（15分钟）'));
+    await tester.pumpAndSettle();
+
+    final appointment = await focusRepository.getActiveAppointment();
+    expect(appointment, isNotNull);
+    final preparationEndsAt = appointment!.endsAt;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [focusRepositoryProvider.overrideWithValue(focusRepository)],
+        child: MaterialApp(
+          key: UniqueKey(),
+          home: AppointmentPreparationPage(
+            appointment: appointment,
+            taskTitle: task.title,
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('预约准备'), findsOneWidget);
+    expect(find.text('保存配置（不重置准备时间）'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '45');
+    await tester.tap(find.text('保存配置（不重置准备时间）'));
+    await tester.pump(const Duration(seconds: 1));
+    final updated = await focusRepository.getActiveAppointment();
+    expect(updated?.durationSeconds, 45 * 60);
+    expect(updated?.endsAt.isAtSameMomentAs(preparationEndsAt), isTrue);
+
+    now = now.add(const Duration(minutes: 5));
+    await tester.drag(find.byType(ListView).last, const Offset(0, -400));
+    await tester.pump();
+    await tester.tap(find.text('提前进入专注'));
+    await tester.pump(const Duration(seconds: 1));
+    expect(await focusRepository.getActiveSession(), isNotNull);
+    expect(find.text('专注进行中', skipOffstage: false), findsOneWidget);
+    expect(
+      (await focusRepository.getActiveSession())?.durationSeconds,
+      45 * 60,
+    );
+  });
+
   testWidgets('我的集中管理共享下必为例规则并可修正删除', (tester) async {
     final database = PactaDatabase(NativeDatabase.memory());
     addTearDown(database.close);
