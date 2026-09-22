@@ -124,7 +124,7 @@ class LocalTaskRepository implements TaskRepository {
   @override
   Future<Goal> createGoal(GoalDraft draft) async {
     final title = _requiredTitle(draft.title, '目标');
-    final timestamp = _now();
+    final timestamp = _nextTimestamp();
     final goal = Goal(
       id: _uuid.v4(),
       title: title,
@@ -143,7 +143,7 @@ class LocalTaskRepository implements TaskRepository {
     final updated = existing.copyWith(
       title: _requiredTitle(draft.title, '目标'),
       classification: draft.classification,
-      updatedAt: _now(),
+      updatedAt: _nextTimestamp(existing.updatedAt),
     );
     await _saveGoal(updated);
     await _publish();
@@ -153,6 +153,7 @@ class LocalTaskRepository implements TaskRepository {
   @override
   Future<Task> createTask(String goalId, TaskDraft draft) async {
     final goal = await _findGoal(goalId);
+    final timestamp = _nextTimestamp();
     final task = Task(
       id: _uuid.v4(),
       goalId: goalId,
@@ -161,8 +162,8 @@ class LocalTaskRepository implements TaskRepository {
       estimatedMinutes: _validEstimatedMinutes(draft.estimatedMinutes),
       deadline: draft.deadline,
       isComplete: false,
-      createdAt: _now(),
-      updatedAt: _now(),
+      createdAt: timestamp,
+      updatedAt: timestamp,
     );
     await _saveTask(task);
     await _publish();
@@ -177,7 +178,7 @@ class LocalTaskRepository implements TaskRepository {
       classification: draft.classification ?? existing.classification,
       estimatedMinutes: _validEstimatedMinutes(draft.estimatedMinutes),
       deadline: draft.deadline,
-      updatedAt: _now(),
+      updatedAt: _nextTimestamp(existing.updatedAt),
     );
     await _saveTask(updated);
     await _publish();
@@ -191,7 +192,10 @@ class LocalTaskRepository implements TaskRepository {
   }) async {
     final existing = await _findTask(taskId);
     await _saveTask(
-      existing.copyWith(isComplete: isComplete, updatedAt: _now()),
+      existing.copyWith(
+        isComplete: isComplete,
+        updatedAt: _nextTimestamp(existing.updatedAt),
+      ),
     );
     await _publish();
   }
@@ -392,6 +396,19 @@ class LocalTaskRepository implements TaskRepository {
     return minutes;
   }
 
+  DateTime _nextTimestamp([DateTime? previous]) {
+    final candidate = _now().toUtc();
+    final second = DateTime.fromMillisecondsSinceEpoch(
+      candidate.millisecondsSinceEpoch - candidate.millisecond,
+      isUtc: true,
+    );
+    if (previous == null) return second;
+    final previousUtc = previous.toUtc();
+    return second.isAfter(previousUtc)
+        ? second
+        : previousUtc.add(const Duration(seconds: 1));
+  }
+
   bool _shouldUpload({
     required String entityType,
     required String entityId,
@@ -439,8 +456,8 @@ class SupabaseTaskRemoteDataSource implements TaskRemoteDataSource {
           'user_id': userId,
           'title': goal.title,
           'classification': goal.classification.storageValue,
-          'created_at': goal.createdAt.toIso8601String(),
-          'updated_at': goal.updatedAt.toIso8601String(),
+          'created_at': _utcIso8601(goal.createdAt),
+          'updated_at': _utcIso8601(goal.updatedAt),
         },
     ], onConflict: 'id');
   }
@@ -459,10 +476,12 @@ class SupabaseTaskRemoteDataSource implements TaskRemoteDataSource {
           'title': task.title,
           'classification': task.classification.storageValue,
           'estimated_minutes': task.estimatedMinutes,
-          'deadline': task.deadline?.toIso8601String(),
+          'deadline': task.deadline == null
+              ? null
+              : _utcIso8601(task.deadline!),
           'is_complete': task.isComplete,
-          'created_at': task.createdAt.toIso8601String(),
-          'updated_at': task.updatedAt.toIso8601String(),
+          'created_at': _utcIso8601(task.createdAt),
+          'updated_at': _utcIso8601(task.updatedAt),
         },
     ], onConflict: 'id');
   }
@@ -493,6 +512,8 @@ class SupabaseTaskRemoteDataSource implements TaskRemoteDataSource {
     updatedAt: DateTime.parse(json['updated_at'] as String).toUtc(),
   );
 }
+
+String _utcIso8601(DateTime value) => value.toUtc().toIso8601String();
 
 class InMemoryTaskRemote implements TaskRemoteDataSource {
   final _goals = <String, Map<String, Goal>>{};

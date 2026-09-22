@@ -92,6 +92,28 @@ void main() {
     );
   });
 
+  test('同一秒内连续编辑仍产生单调更新时间', () async {
+    final goal = await repository.createGoal(
+      const GoalDraft(
+        title: '连续编辑',
+        classification: TaskClassification.regular,
+      ),
+    );
+    final updatedGoal = await repository.updateGoal(
+      goal.id,
+      const GoalDraft(title: '连续编辑后', classification: TaskClassification.elite),
+    );
+    expect(updatedGoal.updatedAt.isAfter(goal.updatedAt), isTrue);
+
+    final task = await repository.createTask(
+      goal.id,
+      const TaskDraft(title: '快速完成', classification: null),
+    );
+    await repository.setTaskCompletion(task.id, isComplete: true);
+    final updatedTask = (await repository.getGoals()).single.tasks.single;
+    expect(updatedTask.updatedAt.isAfter(task.updatedAt), isTrue);
+  });
+
   test('本地写入可重启读取，重复同步不会重复创建', () async {
     final goal = await repository.createGoal(
       const GoalDraft(title: '离线工作', classification: TaskClassification.both),
