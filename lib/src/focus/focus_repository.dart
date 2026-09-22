@@ -1321,17 +1321,24 @@ class LocalFocusRepository implements FocusRepository {
           );
     }
     for (final record in snapshot.records) {
-      await database
-          .into(database.focusChainRecords)
-          .insertOnConflictUpdate(
-            db.FocusChainRecordsCompanion.insert(
-              userId: userId,
-              mode: record.mode.storageValue,
-              currentConsecutive: Value(record.currentConsecutive),
-              bestConsecutive: Value(record.bestConsecutive),
-              updatedAt: record.updatedAt,
-            ),
-          );
+      final local =
+          await (database.select(database.focusChainRecords)
+                ..where((row) => row.userId.equals(userId))
+                ..where((row) => row.mode.equals(record.mode.storageValue)))
+              .getSingleOrNull();
+      if (local == null || record.updatedAt.isAfter(local.updatedAt)) {
+        await database
+            .into(database.focusChainRecords)
+            .insertOnConflictUpdate(
+              db.FocusChainRecordsCompanion.insert(
+                userId: userId,
+                mode: record.mode.storageValue,
+                currentConsecutive: Value(record.currentConsecutive),
+                bestConsecutive: Value(record.bestConsecutive),
+                updatedAt: record.updatedAt,
+              ),
+            );
+      }
     }
     for (final record in snapshot.appointmentRecords) {
       final local = await (database.select(
@@ -1380,8 +1387,8 @@ class LocalFocusRepository implements FocusRepository {
         updates: dispositionUpdates,
       );
     }
-    await _removeNodesForNonAcceptedSessionsAndRemote();
     await _reconcileTaskFocusProgressFromSessions();
+    await _removeNodesForNonAcceptedSessionsAndRemote();
     final sessions = await getSessions();
     final appointments = await getAppointments();
     final nodes = await getNodes();

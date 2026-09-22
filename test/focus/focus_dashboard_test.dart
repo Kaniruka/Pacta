@@ -266,6 +266,15 @@ void main() {
   });
 
   test('远端更改记录归类后同步节点、任务进度和专注链', () async {
+    await focusRepository.dispose();
+    final remote = _TransientNodeDeleteRemote();
+    focusRemote = remote;
+    focusRepository = LocalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      remote: remote,
+      now: () => now,
+    );
     final task = await createTask('发生归类变更');
     final completed = await focusRepository.startSession(
       taskId: task.id,
@@ -291,9 +300,20 @@ void main() {
         ),
       ],
     );
-    await focusRepository.sync();
+    remote.failNextNodeDeletion = true;
+    await expectLater(focusRepository.sync(), throwsA(isA<StateError>()));
 
     expect(await focusRepository.getNodes(), isEmpty);
+    final localTaskAfterDeleteFailure =
+        (await taskRepository.getGoals()).single.tasks.single;
+    expect(localTaskAfterDeleteFailure.focusProgressSeconds, 0);
+    final remoteBeforeRetry = await focusRemote.pull(userId: 'user-a');
+    expect(
+      remoteBeforeRetry.nodes.where((node) => node.sessionId == completed.id),
+      hasLength(1),
+    );
+
+    await focusRepository.sync();
     final remoteAfterDuplicate = await focusRemote.pull(userId: 'user-a');
     expect(
       remoteAfterDuplicate.nodes.where(
@@ -418,6 +438,22 @@ void main() {
       10 * 60,
     );
   });
+}
+
+class _TransientNodeDeleteRemote extends InMemoryFocusRemote {
+  bool failNextNodeDeletion = false;
+
+  @override
+  Future<void> deleteNodes({
+    required String userId,
+    required List<String> sessionIds,
+  }) async {
+    if (failNextNodeDeletion) {
+      failNextNodeDeletion = false;
+      throw StateError('temporary remote node deletion failure');
+    }
+    await super.deleteNodes(userId: userId, sessionIds: sessionIds);
+  }
 }
 
 FocusSession _settledSession({
