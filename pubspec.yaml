@@ -35,7 +35,9 @@ dependencies:
   connectivity_plus: ^7.0.0
   drift: ^2.28.0
   drift_flutter: ^0.2.5
+  flutter_timezone: ^5.1.0
   supabase_flutter: ^2.10.0
+  timezone: ^0.11.1
   uuid: ^4.5.1
 
   # The following adds the Cupertino Icons font to your application.
@@ -44,6 +46,8 @@ dependencies:
 
 dev_dependencies:
   flutter_test:
+    sdk: flutter
+  integration_test:
     sdk: flutter
 
   # The "flutter_lints" package below contains a set of recommended lints to

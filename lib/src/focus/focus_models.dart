@@ -60,6 +60,65 @@ enum FocusSessionCompletionType {
       };
 }
 
+enum FocusRecordDisposition {
+  accepted,
+  pendingReview,
+  duplicate;
+
+  String get storageValue => switch (this) {
+    FocusRecordDisposition.accepted => 'accepted',
+    FocusRecordDisposition.pendingReview => 'pending_review',
+    FocusRecordDisposition.duplicate => 'duplicate',
+  };
+
+  bool get contributesToFocusProgress => this == accepted;
+
+  static FocusRecordDisposition fromStorage(String? value) => switch (value) {
+    'pending_review' => FocusRecordDisposition.pendingReview,
+    'duplicate' => FocusRecordDisposition.duplicate,
+    _ => FocusRecordDisposition.accepted,
+  };
+}
+
+class FocusTimeInterval {
+  const FocusTimeInterval({required this.startedAt, required this.endedAt});
+
+  final DateTime startedAt;
+  final DateTime? endedAt;
+
+  int get durationSeconds {
+    final seconds = endedAt?.difference(startedAt).inSeconds ?? 0;
+    return seconds > 0 ? seconds : 0;
+  }
+
+  FocusTimeInterval copyWith({DateTime? endedAt}) =>
+      FocusTimeInterval(startedAt: startedAt, endedAt: endedAt ?? this.endedAt);
+}
+
+class FocusActivityDay {
+  const FocusActivityDay({required this.date, required this.activeSeconds});
+
+  /// A calendar date stored as a UTC date-only value.
+  final DateTime date;
+  final int activeSeconds;
+}
+
+class FocusDashboardMetrics {
+  const FocusDashboardMetrics({
+    required this.focusProgressSecondsByTask,
+    required this.recentActivity,
+    required this.totalAcceptedFocusSeconds,
+    required this.displayTimeZoneId,
+    required this.followsDeviceTimeZone,
+  });
+
+  final Map<String, int> focusProgressSecondsByTask;
+  final List<FocusActivityDay> recentActivity;
+  final int totalAcceptedFocusSeconds;
+  final String displayTimeZoneId;
+  final bool followsDeviceTimeZone;
+}
+
 enum AppointmentPreparationStatus {
   active,
   succeeded,
@@ -115,6 +174,9 @@ class FocusSession {
     this.pauseRuleText,
     this.failureReason,
     this.appointmentId,
+    this.effectiveIntervals = const [],
+    this.reviewDisposition = FocusRecordDisposition.accepted,
+    this.reviewDispositionUpdatedAt,
   });
 
   final String id;
@@ -133,6 +195,9 @@ class FocusSession {
   final String? pauseRuleText;
   final String? failureReason;
   final String? appointmentId;
+  final List<FocusTimeInterval> effectiveIntervals;
+  final FocusRecordDisposition reviewDisposition;
+  final DateTime? reviewDispositionUpdatedAt;
 
   bool get isActive => status == FocusSessionStatus.active;
   bool get isPaused => status == FocusSessionStatus.paused;

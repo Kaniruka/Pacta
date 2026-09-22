@@ -52,6 +52,11 @@ class FocusSessions extends Table {
   IntColumn get pausedSeconds => integer().withDefault(const Constant(0))();
   TextColumn get pauseRuleText => text().nullable()();
   TextColumn get failureReason => text().nullable()();
+  TextColumn get effectiveIntervals =>
+      text().withDefault(const Constant('[]'))();
+  TextColumn get reviewDisposition =>
+      text().withDefault(const Constant('accepted'))();
+  DateTimeColumn get reviewDispositionUpdatedAt => dateTime().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
@@ -115,6 +120,7 @@ class FocusChainRecords extends Table {
 class FocusPreferences extends Table {
   TextColumn get userId => text()();
   TextColumn get lastMode => text()();
+  TextColumn get displayTimeZoneId => text().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {userId};
@@ -162,7 +168,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -193,6 +199,15 @@ class PactaDatabase extends _$PactaDatabase {
         await m.addColumn(focusSessions, focusSessions.appointmentId);
         await m.createTable(focusAppointments);
         await m.createTable(appointmentChainRecords);
+      }
+      if (from < 7) {
+        await m.addColumn(focusSessions, focusSessions.effectiveIntervals);
+        await m.addColumn(focusSessions, focusSessions.reviewDisposition);
+        await m.addColumn(
+          focusSessions,
+          focusSessions.reviewDispositionUpdatedAt,
+        );
+        await m.addColumn(focusPreferences, focusPreferences.displayTimeZoneId);
       }
     },
   );

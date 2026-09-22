@@ -1590,6 +1590,42 @@ class $FocusSessionsTable extends FocusSessions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _effectiveIntervalsMeta =
+      const VerificationMeta('effectiveIntervals');
+  @override
+  late final GeneratedColumn<String> effectiveIntervals =
+      GeneratedColumn<String>(
+        'effective_intervals',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant('[]'),
+      );
+  static const VerificationMeta _reviewDispositionMeta = const VerificationMeta(
+    'reviewDisposition',
+  );
+  @override
+  late final GeneratedColumn<String> reviewDisposition =
+      GeneratedColumn<String>(
+        'review_disposition',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant('accepted'),
+      );
+  static const VerificationMeta _reviewDispositionUpdatedAtMeta =
+      const VerificationMeta('reviewDispositionUpdatedAt');
+  @override
+  late final GeneratedColumn<DateTime> reviewDispositionUpdatedAt =
+      GeneratedColumn<DateTime>(
+        'review_disposition_updated_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
   @override
   List<GeneratedColumn> get $columns => [
     userId,
@@ -1609,6 +1645,9 @@ class $FocusSessionsTable extends FocusSessions
     pausedSeconds,
     pauseRuleText,
     failureReason,
+    effectiveIntervals,
+    reviewDisposition,
+    reviewDispositionUpdatedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1764,6 +1803,33 @@ class $FocusSessionsTable extends FocusSessions
         ),
       );
     }
+    if (data.containsKey('effective_intervals')) {
+      context.handle(
+        _effectiveIntervalsMeta,
+        effectiveIntervals.isAcceptableOrUnknown(
+          data['effective_intervals']!,
+          _effectiveIntervalsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('review_disposition')) {
+      context.handle(
+        _reviewDispositionMeta,
+        reviewDisposition.isAcceptableOrUnknown(
+          data['review_disposition']!,
+          _reviewDispositionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('review_disposition_updated_at')) {
+      context.handle(
+        _reviewDispositionUpdatedAtMeta,
+        reviewDispositionUpdatedAt.isAcceptableOrUnknown(
+          data['review_disposition_updated_at']!,
+          _reviewDispositionUpdatedAtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1841,6 +1907,18 @@ class $FocusSessionsTable extends FocusSessions
         DriftSqlType.string,
         data['${effectivePrefix}failure_reason'],
       ),
+      effectiveIntervals: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}effective_intervals'],
+      )!,
+      reviewDisposition: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}review_disposition'],
+      )!,
+      reviewDispositionUpdatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}review_disposition_updated_at'],
+      ),
     );
   }
 
@@ -1868,6 +1946,9 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
   final int pausedSeconds;
   final String? pauseRuleText;
   final String? failureReason;
+  final String effectiveIntervals;
+  final String reviewDisposition;
+  final DateTime? reviewDispositionUpdatedAt;
   const FocusSession({
     required this.userId,
     required this.id,
@@ -1886,6 +1967,9 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     required this.pausedSeconds,
     this.pauseRuleText,
     this.failureReason,
+    required this.effectiveIntervals,
+    required this.reviewDisposition,
+    this.reviewDispositionUpdatedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1918,6 +2002,13 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     }
     if (!nullToAbsent || failureReason != null) {
       map['failure_reason'] = Variable<String>(failureReason);
+    }
+    map['effective_intervals'] = Variable<String>(effectiveIntervals);
+    map['review_disposition'] = Variable<String>(reviewDisposition);
+    if (!nullToAbsent || reviewDispositionUpdatedAt != null) {
+      map['review_disposition_updated_at'] = Variable<DateTime>(
+        reviewDispositionUpdatedAt,
+      );
     }
     return map;
   }
@@ -1953,6 +2044,12 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
       failureReason: failureReason == null && nullToAbsent
           ? const Value.absent()
           : Value(failureReason),
+      effectiveIntervals: Value(effectiveIntervals),
+      reviewDisposition: Value(reviewDisposition),
+      reviewDispositionUpdatedAt:
+          reviewDispositionUpdatedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reviewDispositionUpdatedAt),
     );
   }
 
@@ -1981,6 +2078,13 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
       pausedSeconds: serializer.fromJson<int>(json['pausedSeconds']),
       pauseRuleText: serializer.fromJson<String?>(json['pauseRuleText']),
       failureReason: serializer.fromJson<String?>(json['failureReason']),
+      effectiveIntervals: serializer.fromJson<String>(
+        json['effectiveIntervals'],
+      ),
+      reviewDisposition: serializer.fromJson<String>(json['reviewDisposition']),
+      reviewDispositionUpdatedAt: serializer.fromJson<DateTime?>(
+        json['reviewDispositionUpdatedAt'],
+      ),
     );
   }
   @override
@@ -2004,6 +2108,11 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
       'pausedSeconds': serializer.toJson<int>(pausedSeconds),
       'pauseRuleText': serializer.toJson<String?>(pauseRuleText),
       'failureReason': serializer.toJson<String?>(failureReason),
+      'effectiveIntervals': serializer.toJson<String>(effectiveIntervals),
+      'reviewDisposition': serializer.toJson<String>(reviewDisposition),
+      'reviewDispositionUpdatedAt': serializer.toJson<DateTime?>(
+        reviewDispositionUpdatedAt,
+      ),
     };
   }
 
@@ -2025,6 +2134,9 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     int? pausedSeconds,
     Value<String?> pauseRuleText = const Value.absent(),
     Value<String?> failureReason = const Value.absent(),
+    String? effectiveIntervals,
+    String? reviewDisposition,
+    Value<DateTime?> reviewDispositionUpdatedAt = const Value.absent(),
   }) => FocusSession(
     userId: userId ?? this.userId,
     id: id ?? this.id,
@@ -2051,6 +2163,11 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     failureReason: failureReason.present
         ? failureReason.value
         : this.failureReason,
+    effectiveIntervals: effectiveIntervals ?? this.effectiveIntervals,
+    reviewDisposition: reviewDisposition ?? this.reviewDisposition,
+    reviewDispositionUpdatedAt: reviewDispositionUpdatedAt.present
+        ? reviewDispositionUpdatedAt.value
+        : this.reviewDispositionUpdatedAt,
   );
   FocusSession copyWithCompanion(FocusSessionsCompanion data) {
     return FocusSession(
@@ -2089,6 +2206,15 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
       failureReason: data.failureReason.present
           ? data.failureReason.value
           : this.failureReason,
+      effectiveIntervals: data.effectiveIntervals.present
+          ? data.effectiveIntervals.value
+          : this.effectiveIntervals,
+      reviewDisposition: data.reviewDisposition.present
+          ? data.reviewDisposition.value
+          : this.reviewDisposition,
+      reviewDispositionUpdatedAt: data.reviewDispositionUpdatedAt.present
+          ? data.reviewDispositionUpdatedAt.value
+          : this.reviewDispositionUpdatedAt,
     );
   }
 
@@ -2111,7 +2237,10 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
           ..write('pausedAt: $pausedAt, ')
           ..write('pausedSeconds: $pausedSeconds, ')
           ..write('pauseRuleText: $pauseRuleText, ')
-          ..write('failureReason: $failureReason')
+          ..write('failureReason: $failureReason, ')
+          ..write('effectiveIntervals: $effectiveIntervals, ')
+          ..write('reviewDisposition: $reviewDisposition, ')
+          ..write('reviewDispositionUpdatedAt: $reviewDispositionUpdatedAt')
           ..write(')'))
         .toString();
   }
@@ -2135,6 +2264,9 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     pausedSeconds,
     pauseRuleText,
     failureReason,
+    effectiveIntervals,
+    reviewDisposition,
+    reviewDispositionUpdatedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -2156,7 +2288,10 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
           other.pausedAt == this.pausedAt &&
           other.pausedSeconds == this.pausedSeconds &&
           other.pauseRuleText == this.pauseRuleText &&
-          other.failureReason == this.failureReason);
+          other.failureReason == this.failureReason &&
+          other.effectiveIntervals == this.effectiveIntervals &&
+          other.reviewDisposition == this.reviewDisposition &&
+          other.reviewDispositionUpdatedAt == this.reviewDispositionUpdatedAt);
 }
 
 class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
@@ -2177,6 +2312,9 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
   final Value<int> pausedSeconds;
   final Value<String?> pauseRuleText;
   final Value<String?> failureReason;
+  final Value<String> effectiveIntervals;
+  final Value<String> reviewDisposition;
+  final Value<DateTime?> reviewDispositionUpdatedAt;
   final Value<int> rowid;
   const FocusSessionsCompanion({
     this.userId = const Value.absent(),
@@ -2196,6 +2334,9 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     this.pausedSeconds = const Value.absent(),
     this.pauseRuleText = const Value.absent(),
     this.failureReason = const Value.absent(),
+    this.effectiveIntervals = const Value.absent(),
+    this.reviewDisposition = const Value.absent(),
+    this.reviewDispositionUpdatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FocusSessionsCompanion.insert({
@@ -2216,6 +2357,9 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     this.pausedSeconds = const Value.absent(),
     this.pauseRuleText = const Value.absent(),
     this.failureReason = const Value.absent(),
+    this.effectiveIntervals = const Value.absent(),
+    this.reviewDisposition = const Value.absent(),
+    this.reviewDispositionUpdatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
        id = Value(id),
@@ -2243,6 +2387,9 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     Expression<int>? pausedSeconds,
     Expression<String>? pauseRuleText,
     Expression<String>? failureReason,
+    Expression<String>? effectiveIntervals,
+    Expression<String>? reviewDisposition,
+    Expression<DateTime>? reviewDispositionUpdatedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2264,6 +2411,10 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
       if (pausedSeconds != null) 'paused_seconds': pausedSeconds,
       if (pauseRuleText != null) 'pause_rule_text': pauseRuleText,
       if (failureReason != null) 'failure_reason': failureReason,
+      if (effectiveIntervals != null) 'effective_intervals': effectiveIntervals,
+      if (reviewDisposition != null) 'review_disposition': reviewDisposition,
+      if (reviewDispositionUpdatedAt != null)
+        'review_disposition_updated_at': reviewDispositionUpdatedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2286,6 +2437,9 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     Value<int>? pausedSeconds,
     Value<String?>? pauseRuleText,
     Value<String?>? failureReason,
+    Value<String>? effectiveIntervals,
+    Value<String>? reviewDisposition,
+    Value<DateTime?>? reviewDispositionUpdatedAt,
     Value<int>? rowid,
   }) {
     return FocusSessionsCompanion(
@@ -2306,6 +2460,10 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
       pausedSeconds: pausedSeconds ?? this.pausedSeconds,
       pauseRuleText: pauseRuleText ?? this.pauseRuleText,
       failureReason: failureReason ?? this.failureReason,
+      effectiveIntervals: effectiveIntervals ?? this.effectiveIntervals,
+      reviewDisposition: reviewDisposition ?? this.reviewDisposition,
+      reviewDispositionUpdatedAt:
+          reviewDispositionUpdatedAt ?? this.reviewDispositionUpdatedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2364,6 +2522,17 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     if (failureReason.present) {
       map['failure_reason'] = Variable<String>(failureReason.value);
     }
+    if (effectiveIntervals.present) {
+      map['effective_intervals'] = Variable<String>(effectiveIntervals.value);
+    }
+    if (reviewDisposition.present) {
+      map['review_disposition'] = Variable<String>(reviewDisposition.value);
+    }
+    if (reviewDispositionUpdatedAt.present) {
+      map['review_disposition_updated_at'] = Variable<DateTime>(
+        reviewDispositionUpdatedAt.value,
+      );
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2390,6 +2559,9 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
           ..write('pausedSeconds: $pausedSeconds, ')
           ..write('pauseRuleText: $pauseRuleText, ')
           ..write('failureReason: $failureReason, ')
+          ..write('effectiveIntervals: $effectiveIntervals, ')
+          ..write('reviewDisposition: $reviewDisposition, ')
+          ..write('reviewDispositionUpdatedAt: $reviewDispositionUpdatedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3300,8 +3472,20 @@ class $FocusPreferencesTable extends FocusPreferences
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _displayTimeZoneIdMeta = const VerificationMeta(
+    'displayTimeZoneId',
+  );
   @override
-  List<GeneratedColumn> get $columns => [userId, lastMode];
+  late final GeneratedColumn<String> displayTimeZoneId =
+      GeneratedColumn<String>(
+        'display_time_zone_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  @override
+  List<GeneratedColumn> get $columns => [userId, lastMode, displayTimeZoneId];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -3330,6 +3514,15 @@ class $FocusPreferencesTable extends FocusPreferences
     } else if (isInserting) {
       context.missing(_lastModeMeta);
     }
+    if (data.containsKey('display_time_zone_id')) {
+      context.handle(
+        _displayTimeZoneIdMeta,
+        displayTimeZoneId.isAcceptableOrUnknown(
+          data['display_time_zone_id']!,
+          _displayTimeZoneIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -3347,6 +3540,10 @@ class $FocusPreferencesTable extends FocusPreferences
         DriftSqlType.string,
         data['${effectivePrefix}last_mode'],
       )!,
+      displayTimeZoneId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}display_time_zone_id'],
+      ),
     );
   }
 
@@ -3359,12 +3556,20 @@ class $FocusPreferencesTable extends FocusPreferences
 class FocusPreference extends DataClass implements Insertable<FocusPreference> {
   final String userId;
   final String lastMode;
-  const FocusPreference({required this.userId, required this.lastMode});
+  final String? displayTimeZoneId;
+  const FocusPreference({
+    required this.userId,
+    required this.lastMode,
+    this.displayTimeZoneId,
+  });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['user_id'] = Variable<String>(userId);
     map['last_mode'] = Variable<String>(lastMode);
+    if (!nullToAbsent || displayTimeZoneId != null) {
+      map['display_time_zone_id'] = Variable<String>(displayTimeZoneId);
+    }
     return map;
   }
 
@@ -3372,6 +3577,9 @@ class FocusPreference extends DataClass implements Insertable<FocusPreference> {
     return FocusPreferencesCompanion(
       userId: Value(userId),
       lastMode: Value(lastMode),
+      displayTimeZoneId: displayTimeZoneId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(displayTimeZoneId),
     );
   }
 
@@ -3383,6 +3591,9 @@ class FocusPreference extends DataClass implements Insertable<FocusPreference> {
     return FocusPreference(
       userId: serializer.fromJson<String>(json['userId']),
       lastMode: serializer.fromJson<String>(json['lastMode']),
+      displayTimeZoneId: serializer.fromJson<String?>(
+        json['displayTimeZoneId'],
+      ),
     );
   }
   @override
@@ -3391,18 +3602,28 @@ class FocusPreference extends DataClass implements Insertable<FocusPreference> {
     return <String, dynamic>{
       'userId': serializer.toJson<String>(userId),
       'lastMode': serializer.toJson<String>(lastMode),
+      'displayTimeZoneId': serializer.toJson<String?>(displayTimeZoneId),
     };
   }
 
-  FocusPreference copyWith({String? userId, String? lastMode}) =>
-      FocusPreference(
-        userId: userId ?? this.userId,
-        lastMode: lastMode ?? this.lastMode,
-      );
+  FocusPreference copyWith({
+    String? userId,
+    String? lastMode,
+    Value<String?> displayTimeZoneId = const Value.absent(),
+  }) => FocusPreference(
+    userId: userId ?? this.userId,
+    lastMode: lastMode ?? this.lastMode,
+    displayTimeZoneId: displayTimeZoneId.present
+        ? displayTimeZoneId.value
+        : this.displayTimeZoneId,
+  );
   FocusPreference copyWithCompanion(FocusPreferencesCompanion data) {
     return FocusPreference(
       userId: data.userId.present ? data.userId.value : this.userId,
       lastMode: data.lastMode.present ? data.lastMode.value : this.lastMode,
+      displayTimeZoneId: data.displayTimeZoneId.present
+          ? data.displayTimeZoneId.value
+          : this.displayTimeZoneId,
     );
   }
 
@@ -3410,44 +3631,51 @@ class FocusPreference extends DataClass implements Insertable<FocusPreference> {
   String toString() {
     return (StringBuffer('FocusPreference(')
           ..write('userId: $userId, ')
-          ..write('lastMode: $lastMode')
+          ..write('lastMode: $lastMode, ')
+          ..write('displayTimeZoneId: $displayTimeZoneId')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(userId, lastMode);
+  int get hashCode => Object.hash(userId, lastMode, displayTimeZoneId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is FocusPreference &&
           other.userId == this.userId &&
-          other.lastMode == this.lastMode);
+          other.lastMode == this.lastMode &&
+          other.displayTimeZoneId == this.displayTimeZoneId);
 }
 
 class FocusPreferencesCompanion extends UpdateCompanion<FocusPreference> {
   final Value<String> userId;
   final Value<String> lastMode;
+  final Value<String?> displayTimeZoneId;
   final Value<int> rowid;
   const FocusPreferencesCompanion({
     this.userId = const Value.absent(),
     this.lastMode = const Value.absent(),
+    this.displayTimeZoneId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FocusPreferencesCompanion.insert({
     required String userId,
     required String lastMode,
+    this.displayTimeZoneId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
        lastMode = Value(lastMode);
   static Insertable<FocusPreference> custom({
     Expression<String>? userId,
     Expression<String>? lastMode,
+    Expression<String>? displayTimeZoneId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (userId != null) 'user_id': userId,
       if (lastMode != null) 'last_mode': lastMode,
+      if (displayTimeZoneId != null) 'display_time_zone_id': displayTimeZoneId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3455,11 +3683,13 @@ class FocusPreferencesCompanion extends UpdateCompanion<FocusPreference> {
   FocusPreferencesCompanion copyWith({
     Value<String>? userId,
     Value<String>? lastMode,
+    Value<String?>? displayTimeZoneId,
     Value<int>? rowid,
   }) {
     return FocusPreferencesCompanion(
       userId: userId ?? this.userId,
       lastMode: lastMode ?? this.lastMode,
+      displayTimeZoneId: displayTimeZoneId ?? this.displayTimeZoneId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -3473,6 +3703,9 @@ class FocusPreferencesCompanion extends UpdateCompanion<FocusPreference> {
     if (lastMode.present) {
       map['last_mode'] = Variable<String>(lastMode.value);
     }
+    if (displayTimeZoneId.present) {
+      map['display_time_zone_id'] = Variable<String>(displayTimeZoneId.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -3484,6 +3717,7 @@ class FocusPreferencesCompanion extends UpdateCompanion<FocusPreference> {
     return (StringBuffer('FocusPreferencesCompanion(')
           ..write('userId: $userId, ')
           ..write('lastMode: $lastMode, ')
+          ..write('displayTimeZoneId: $displayTimeZoneId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -5722,6 +5956,9 @@ typedef $$FocusSessionsTableCreateCompanionBuilder =
       Value<int> pausedSeconds,
       Value<String?> pauseRuleText,
       Value<String?> failureReason,
+      Value<String> effectiveIntervals,
+      Value<String> reviewDisposition,
+      Value<DateTime?> reviewDispositionUpdatedAt,
       Value<int> rowid,
     });
 typedef $$FocusSessionsTableUpdateCompanionBuilder =
@@ -5743,6 +5980,9 @@ typedef $$FocusSessionsTableUpdateCompanionBuilder =
       Value<int> pausedSeconds,
       Value<String?> pauseRuleText,
       Value<String?> failureReason,
+      Value<String> effectiveIntervals,
+      Value<String> reviewDisposition,
+      Value<DateTime?> reviewDispositionUpdatedAt,
       Value<int> rowid,
     });
 
@@ -5837,6 +6077,21 @@ class $$FocusSessionsTableFilterComposer
 
   ColumnFilters<String> get failureReason => $composableBuilder(
     column: $table.failureReason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get effectiveIntervals => $composableBuilder(
+    column: $table.effectiveIntervals,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reviewDisposition => $composableBuilder(
+    column: $table.reviewDisposition,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get reviewDispositionUpdatedAt => $composableBuilder(
+    column: $table.reviewDispositionUpdatedAt,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -5934,6 +6189,22 @@ class $$FocusSessionsTableOrderingComposer
     column: $table.failureReason,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get effectiveIntervals => $composableBuilder(
+    column: $table.effectiveIntervals,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reviewDisposition => $composableBuilder(
+    column: $table.reviewDisposition,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get reviewDispositionUpdatedAt =>
+      $composableBuilder(
+        column: $table.reviewDispositionUpdatedAt,
+        builder: (column) => ColumnOrderings(column),
+      );
 }
 
 class $$FocusSessionsTableAnnotationComposer
@@ -6013,6 +6284,22 @@ class $$FocusSessionsTableAnnotationComposer
     column: $table.failureReason,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get effectiveIntervals => $composableBuilder(
+    column: $table.effectiveIntervals,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reviewDisposition => $composableBuilder(
+    column: $table.reviewDisposition,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get reviewDispositionUpdatedAt =>
+      $composableBuilder(
+        column: $table.reviewDispositionUpdatedAt,
+        builder: (column) => column,
+      );
 }
 
 class $$FocusSessionsTableTableManager
@@ -6065,6 +6352,10 @@ class $$FocusSessionsTableTableManager
                 Value<int> pausedSeconds = const Value.absent(),
                 Value<String?> pauseRuleText = const Value.absent(),
                 Value<String?> failureReason = const Value.absent(),
+                Value<String> effectiveIntervals = const Value.absent(),
+                Value<String> reviewDisposition = const Value.absent(),
+                Value<DateTime?> reviewDispositionUpdatedAt =
+                    const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FocusSessionsCompanion(
                 userId: userId,
@@ -6084,6 +6375,9 @@ class $$FocusSessionsTableTableManager
                 pausedSeconds: pausedSeconds,
                 pauseRuleText: pauseRuleText,
                 failureReason: failureReason,
+                effectiveIntervals: effectiveIntervals,
+                reviewDisposition: reviewDisposition,
+                reviewDispositionUpdatedAt: reviewDispositionUpdatedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -6105,6 +6399,10 @@ class $$FocusSessionsTableTableManager
                 Value<int> pausedSeconds = const Value.absent(),
                 Value<String?> pauseRuleText = const Value.absent(),
                 Value<String?> failureReason = const Value.absent(),
+                Value<String> effectiveIntervals = const Value.absent(),
+                Value<String> reviewDisposition = const Value.absent(),
+                Value<DateTime?> reviewDispositionUpdatedAt =
+                    const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FocusSessionsCompanion.insert(
                 userId: userId,
@@ -6124,6 +6422,9 @@ class $$FocusSessionsTableTableManager
                 pausedSeconds: pausedSeconds,
                 pauseRuleText: pauseRuleText,
                 failureReason: failureReason,
+                effectiveIntervals: effectiveIntervals,
+                reviewDisposition: reviewDisposition,
+                reviewDispositionUpdatedAt: reviewDispositionUpdatedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -6628,12 +6929,14 @@ typedef $$FocusPreferencesTableCreateCompanionBuilder =
     FocusPreferencesCompanion Function({
       required String userId,
       required String lastMode,
+      Value<String?> displayTimeZoneId,
       Value<int> rowid,
     });
 typedef $$FocusPreferencesTableUpdateCompanionBuilder =
     FocusPreferencesCompanion Function({
       Value<String> userId,
       Value<String> lastMode,
+      Value<String?> displayTimeZoneId,
       Value<int> rowid,
     });
 
@@ -6653,6 +6956,11 @@ class $$FocusPreferencesTableFilterComposer
 
   ColumnFilters<String> get lastMode => $composableBuilder(
     column: $table.lastMode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get displayTimeZoneId => $composableBuilder(
+    column: $table.displayTimeZoneId,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -6675,6 +6983,11 @@ class $$FocusPreferencesTableOrderingComposer
     column: $table.lastMode,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get displayTimeZoneId => $composableBuilder(
+    column: $table.displayTimeZoneId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FocusPreferencesTableAnnotationComposer
@@ -6691,6 +7004,11 @@ class $$FocusPreferencesTableAnnotationComposer
 
   GeneratedColumn<String> get lastMode =>
       $composableBuilder(column: $table.lastMode, builder: (column) => column);
+
+  GeneratedColumn<String> get displayTimeZoneId => $composableBuilder(
+    column: $table.displayTimeZoneId,
+    builder: (column) => column,
+  );
 }
 
 class $$FocusPreferencesTableTableManager
@@ -6732,20 +7050,24 @@ class $$FocusPreferencesTableTableManager
               ({
                 Value<String> userId = const Value.absent(),
                 Value<String> lastMode = const Value.absent(),
+                Value<String?> displayTimeZoneId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FocusPreferencesCompanion(
                 userId: userId,
                 lastMode: lastMode,
+                displayTimeZoneId: displayTimeZoneId,
                 rowid: rowid,
               ),
           createCompanionCallback:
               ({
                 required String userId,
                 required String lastMode,
+                Value<String?> displayTimeZoneId = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FocusPreferencesCompanion.insert(
                 userId: userId,
                 lastMode: lastMode,
+                displayTimeZoneId: displayTimeZoneId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

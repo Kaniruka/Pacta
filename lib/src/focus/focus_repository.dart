@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:timezone/timezone.dart' as timezone;
 import 'package:uuid/uuid.dart';
 
 import '../tasks/task_database.dart' as db;
 import 'focus_models.dart';
+import 'focus_time_zones.dart';
 
 class FocusRemoteSnapshot {
   const FocusRemoteSnapshot({
@@ -118,6 +121,13 @@ class UnavailableFocusRemoteDataSource implements FocusRemoteDataSource {
 
 abstract interface class FocusRepository {
   Stream<List<FocusSession>> watchSessions();
+  Stream<FocusDashboardMetrics> watchDashboardMetrics({
+    required String deviceTimeZoneId,
+  });
+  Future<FocusDashboardMetrics> getDashboardMetrics({
+    required String deviceTimeZoneId,
+  });
+  Future<void> setDisplayTimeZonePreference(String? timeZoneId);
   Future<List<FocusSession>> getSessions();
   Future<FocusSession?> getSession(String sessionId);
   Future<FocusSession?> getActiveSession();
@@ -214,6 +224,116 @@ class LocalFocusRepository implements FocusRepository {
               ..orderBy([(session) => OrderingTerm.desc(session.startedAt)]))
             .get();
     return [for (final row in rows) _sessionFromRow(row)];
+  }
+
+  @override
+  Stream<FocusDashboardMetrics> watchDashboardMetrics({
+    required String deviceTimeZoneId,
+  }) => watchSessions().asyncMap(
+    (_) => getDashboardMetrics(deviceTimeZoneId: deviceTimeZoneId),
+  );
+
+  @override
+  Future<FocusDashboardMetrics> getDashboardMetrics({
+    required String deviceTimeZoneId,
+  }) async {
+    await _settleDueSessions();
+    final preference = await (database.select(
+      database.focusPreferences,
+    )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+    final preferredZone = preference?.displayTimeZoneId;
+    final usesPreference =
+        preferredZone != null && FocusTimeZones.contains(preferredZone);
+    final zoneId = usesPreference
+        ? preferredZone
+        : FocusTimeZones.contains(deviceTimeZoneId)
+        ? deviceTimeZoneId
+        : 'Etc/UTC';
+    final location = FocusTimeZones.location(zoneId);
+    final sessions = await _getSessionsWithoutSettling();
+    final focusProgressByTask = <String, int>{};
+    final secondsByDay = <String, int>{};
+    var totalSeconds = 0;
+
+    for (final session in sessions) {
+      if ((session.status != FocusSessionStatus.completed &&
+              session.status != FocusSessionStatus.failed) ||
+          !session.reviewDisposition.contributesToFocusProgress) {
+        continue;
+      }
+      final intervals = _effectiveIntervalsForProjection(session);
+      final sessionSeconds = intervals.fold<int>(
+        0,
+        (sum, interval) => sum + interval.durationSeconds,
+      );
+      if (sessionSeconds <= 0) continue;
+      focusProgressByTask.update(
+        session.taskId,
+        (seconds) => seconds + sessionSeconds,
+        ifAbsent: () => sessionSeconds,
+      );
+      totalSeconds += sessionSeconds;
+      for (final interval in intervals) {
+        _addIntervalByCalendarDay(interval, location, secondsByDay);
+      }
+    }
+
+    final localNow = timezone.TZDateTime.from(_now().toUtc(), location);
+    final today = timezone.TZDateTime(
+      location,
+      localNow.year,
+      localNow.month,
+      localNow.day,
+    );
+    const dayCount = 7;
+    final recentActivity = [
+      for (var daysAgo = dayCount - 1; daysAgo >= 0; daysAgo--)
+        _activityDay(
+          timezone.TZDateTime(
+            location,
+            today.year,
+            today.month,
+            today.day - daysAgo,
+          ),
+          secondsByDay,
+        ),
+    ];
+
+    return FocusDashboardMetrics(
+      focusProgressSecondsByTask: Map.unmodifiable(focusProgressByTask),
+      recentActivity: List.unmodifiable(recentActivity),
+      totalAcceptedFocusSeconds: totalSeconds,
+      displayTimeZoneId: zoneId,
+      followsDeviceTimeZone: !usesPreference,
+    );
+  }
+
+  @override
+  Future<void> setDisplayTimeZonePreference(String? timeZoneId) async {
+    if (timeZoneId != null && !FocusTimeZones.contains(timeZoneId)) {
+      throw ArgumentError.value(timeZoneId, 'timeZoneId', '未知的时区标识。');
+    }
+    final row = await (database.select(
+      database.focusPreferences,
+    )..where((entry) => entry.userId.equals(userId))).getSingleOrNull();
+    if (row == null) {
+      await database
+          .into(database.focusPreferences)
+          .insert(
+            db.FocusPreferencesCompanion.insert(
+              userId: userId,
+              lastMode: FocusChainMode.regular.storageValue,
+              displayTimeZoneId: Value(timeZoneId),
+            ),
+          );
+    } else {
+      await (database.update(
+        database.focusPreferences,
+      )..where((entry) => entry.userId.equals(userId))).write(
+        db.FocusPreferencesCompanion(displayTimeZoneId: Value(timeZoneId)),
+      );
+    }
+    await _publish();
   }
 
   @override
@@ -386,6 +506,7 @@ class LocalFocusRepository implements FocusRepository {
       status: FocusSessionStatus.active,
       completedAt: null,
       effectiveSeconds: 0,
+      effectiveIntervals: [FocusTimeInterval(startedAt: now, endedAt: null)],
     );
     await database.transaction(() async {
       final current = await _appointmentRow(appointmentId);
@@ -573,17 +694,31 @@ class LocalFocusRepository implements FocusRepository {
       status: FocusSessionStatus.active,
       completedAt: null,
       effectiveSeconds: 0,
+      effectiveIntervals: [
+        FocusTimeInterval(startedAt: startedAt, endedAt: null),
+      ],
     );
     await database.transaction(() async {
       await _saveSession(session);
-      await database
-          .into(database.focusPreferences)
-          .insertOnConflictUpdate(
-            db.FocusPreferencesCompanion.insert(
-              userId: userId,
-              lastMode: mode.storageValue,
-            ),
-          );
+      final preferences = await (database.select(
+        database.focusPreferences,
+      )..where((entry) => entry.userId.equals(userId))).getSingleOrNull();
+      if (preferences == null) {
+        await database
+            .into(database.focusPreferences)
+            .insert(
+              db.FocusPreferencesCompanion.insert(
+                userId: userId,
+                lastMode: mode.storageValue,
+              ),
+            );
+      } else {
+        await (database.update(
+          database.focusPreferences,
+        )..where((entry) => entry.userId.equals(userId))).write(
+          db.FocusPreferencesCompanion(lastMode: Value(mode.storageValue)),
+        );
+      }
     });
     await _publish();
     return session;
@@ -618,6 +753,9 @@ class LocalFocusRepository implements FocusRepository {
               status: const Value('paused'),
               pausedAt: Value(now),
               pauseRuleText: Value(normalizedRule),
+              effectiveIntervals: Value(
+                _encodeIntervals(_closeCurrentInterval(row, now)),
+              ),
             ),
           );
       await _queue('focus_session', sessionId, now);
@@ -639,6 +777,8 @@ class LocalFocusRepository implements FocusRepository {
       final pausedDuration = now.difference(row.pausedAt!);
       final pausedSeconds = pausedDuration.inSeconds;
       final adjustedEndsAt = row.endsAt.add(pausedDuration);
+      final intervals = _closedIntervalsFor(row, row.pausedAt!)
+        ..add(FocusTimeInterval(startedAt: now, endedAt: null));
       await (database.update(database.focusSessions)
             ..where((session) => session.userId.equals(userId))
             ..where((session) => session.id.equals(sessionId)))
@@ -648,6 +788,7 @@ class LocalFocusRepository implements FocusRepository {
               endsAt: Value(adjustedEndsAt),
               pausedAt: const Value(null),
               pausedSeconds: Value(row.pausedSeconds + pausedSeconds),
+              effectiveIntervals: Value(_encodeIntervals(intervals)),
             ),
           );
       await _queue('focus_session', sessionId, now);
@@ -711,6 +852,9 @@ class LocalFocusRepository implements FocusRepository {
               pausedAt: const Value(null),
               effectiveSeconds: Value(effectiveSeconds),
               failureReason: Value(reason),
+              effectiveIntervals: Value(
+                _encodeIntervals(_closeCurrentInterval(row, now)),
+              ),
             ),
           );
       await _addTaskProgress(row.taskId, effectiveSeconds, now);
@@ -844,6 +988,9 @@ class LocalFocusRepository implements FocusRepository {
             status: FocusSessionStatus.active,
             completedAt: null,
             effectiveSeconds: 0,
+            effectiveIntervals: [
+              FocusTimeInterval(startedAt: current.endsAt, endedAt: null),
+            ],
           );
           await _saveSession(session);
         }
@@ -983,6 +1130,9 @@ class LocalFocusRepository implements FocusRepository {
               completionType: Value(completionType.storageValue),
               completionRuleText: Value(completionRuleText),
               pausedAt: const Value(null),
+              effectiveIntervals: Value(
+                _encodeIntervals(_closeCurrentInterval(row, completedAt)),
+              ),
             ),
           );
 
@@ -1099,6 +1249,23 @@ class LocalFocusRepository implements FocusRepository {
                 ..where((row) => row.userId.equals(userId))
                 ..where((row) => row.id.equals(session.id)))
               .getSingleOrNull();
+      final remoteReviewAt = session.reviewDispositionUpdatedAt;
+      if (local != null &&
+          remoteReviewAt != null &&
+          (local.reviewDispositionUpdatedAt == null ||
+              remoteReviewAt.isAfter(local.reviewDispositionUpdatedAt!))) {
+        await (database.update(database.focusSessions)
+              ..where((row) => row.userId.equals(userId))
+              ..where((row) => row.id.equals(session.id)))
+            .write(
+              db.FocusSessionsCompanion(
+                reviewDisposition: Value(
+                  session.reviewDisposition.storageValue,
+                ),
+                reviewDispositionUpdatedAt: Value(remoteReviewAt),
+              ),
+            );
+      }
       final shouldApplyCompletedEffects =
           session.status == FocusSessionStatus.completed &&
           (local == null ||
@@ -1114,7 +1281,15 @@ class LocalFocusRepository implements FocusRepository {
         }
       }
     }
+    final reviewDispositionBySession = {
+      for (final session in snapshot.sessions)
+        session.id: session.reviewDisposition,
+    };
     for (final node in snapshot.nodes) {
+      final disposition = reviewDispositionBySession[node.sessionId];
+      if (disposition != null && !disposition.contributesToFocusProgress) {
+        continue;
+      }
       await database
           .into(database.focusNodes)
           .insertOnConflictUpdate(
@@ -1238,6 +1413,13 @@ class LocalFocusRepository implements FocusRepository {
             pausedSeconds: Value(session.pausedSeconds),
             pauseRuleText: Value(session.pauseRuleText),
             failureReason: Value(session.failureReason),
+            effectiveIntervals: Value(
+              _encodeIntervals(session.effectiveIntervals),
+            ),
+            reviewDisposition: Value(session.reviewDisposition.storageValue),
+            reviewDispositionUpdatedAt: Value(
+              session.reviewDispositionUpdatedAt,
+            ),
           ),
         );
     if (queue) await _queue('focus_session', session.id, session.startedAt);
@@ -1379,21 +1561,22 @@ class LocalFocusRepository implements FocusRepository {
               ))
             .get();
     final secondsByTask = <String, int>{};
-    for (final session in settledRows) {
+    for (final row in settledRows) {
+      final session = _sessionFromRow(row);
+      if (!session.reviewDisposition.contributesToFocusProgress) continue;
+      final effectiveSeconds = _focusSecondsForProjection(session);
+      if (effectiveSeconds <= 0) continue;
       secondsByTask.update(
         session.taskId,
-        (seconds) => seconds + session.effectiveSeconds,
-        ifAbsent: () => session.effectiveSeconds,
+        (seconds) => seconds + effectiveSeconds,
+        ifAbsent: () => effectiveSeconds,
       );
     }
-    if (secondsByTask.isEmpty) return;
-    final taskRows =
-        await (database.select(database.localTasks)
-              ..where((task) => task.userId.equals(userId))
-              ..where((task) => task.id.isIn(secondsByTask.keys)))
-            .get();
+    final taskRows = await (database.select(
+      database.localTasks,
+    )..where((task) => task.userId.equals(userId))).get();
     for (final task in taskRows) {
-      final reconciled = secondsByTask[task.id]!;
+      final reconciled = secondsByTask[task.id] ?? 0;
       if (task.focusProgressSeconds == reconciled) continue;
       await (database.update(database.localTasks)
             ..where((row) => row.userId.equals(userId))
@@ -1406,6 +1589,7 @@ class LocalFocusRepository implements FocusRepository {
   }
 
   Future<void> _applyFailedEffects(FocusSession session) async {
+    if (!session.reviewDisposition.contributesToFocusProgress) return;
     final settledAt = session.completedAt ?? session.endsAt;
     await _addTaskProgress(session.taskId, session.effectiveSeconds, settledAt);
     final record =
@@ -1428,6 +1612,7 @@ class LocalFocusRepository implements FocusRepository {
   }
 
   Future<void> _applyCompletedEffects(FocusSession session) async {
+    if (!session.reviewDisposition.contributesToFocusProgress) return;
     final settledAt = session.completedAt ?? session.endsAt;
     await database.transaction(() async {
       final existingNode =
@@ -1496,6 +1681,48 @@ class LocalFocusRepository implements FocusRepository {
     return normalized;
   }
 
+  List<FocusTimeInterval> _closeCurrentInterval(
+    db.FocusSession row,
+    DateTime endedAt,
+  ) => _closedIntervalsFor(row, endedAt);
+
+  List<FocusTimeInterval> _closedIntervalsFor(
+    db.FocusSession row,
+    DateTime endedAt,
+  ) {
+    final intervals = _decodeIntervals(row.effectiveIntervals);
+    final openIndex = intervals.lastIndexWhere(
+      (interval) => interval.endedAt == null,
+    );
+    if (openIndex >= 0) {
+      final open = intervals[openIndex];
+      final activeEnd = row.status == 'paused' && row.pausedAt != null
+          ? row.pausedAt!
+          : endedAt;
+      if (!activeEnd.isAfter(open.startedAt)) {
+        intervals.removeAt(openIndex);
+      } else {
+        intervals[openIndex] = FocusTimeInterval(
+          startedAt: open.startedAt,
+          endedAt: activeEnd,
+        );
+      }
+      return intervals;
+    }
+    if (intervals.isNotEmpty) return intervals;
+
+    // Older sessions did not retain pause boundaries. Preserve their active
+    // duration by placing the known paused time at the end of the interval.
+    final activeEnd = row.status == 'paused' && row.pausedAt != null
+        ? row.pausedAt!
+        : endedAt;
+    final estimatedEnd = activeEnd.subtract(
+      Duration(seconds: row.pausedSeconds),
+    );
+    if (!estimatedEnd.isAfter(row.startedAt)) return [];
+    return [FocusTimeInterval(startedAt: row.startedAt, endedAt: estimatedEnd)];
+  }
+
   FocusSession _sessionFromRow(db.FocusSession row) => FocusSession(
     id: row.id,
     appointmentId: row.appointmentId,
@@ -1518,6 +1745,11 @@ class LocalFocusRepository implements FocusRepository {
     pausedSeconds: row.pausedSeconds,
     pauseRuleText: row.pauseRuleText,
     failureReason: row.failureReason,
+    effectiveIntervals: _decodeIntervals(row.effectiveIntervals),
+    reviewDisposition: FocusRecordDisposition.fromStorage(
+      row.reviewDisposition,
+    ),
+    reviewDispositionUpdatedAt: row.reviewDispositionUpdatedAt,
   );
 
   AppointmentPreparation _appointmentFromRow(db.FocusAppointment row) =>
@@ -1569,6 +1801,133 @@ class LocalFocusRepository implements FocusRepository {
         deletedAt: row.deletedAt,
       );
 }
+
+List<FocusTimeInterval> _effectiveIntervalsForProjection(FocusSession session) {
+  final closedIntervals = session.effectiveIntervals
+      .where(
+        (interval) => interval.endedAt != null && interval.durationSeconds > 0,
+      )
+      .toList();
+  if (closedIntervals.isNotEmpty) return closedIntervals;
+  if (session.effectiveSeconds <= 0) return const [];
+  return [
+    FocusTimeInterval(
+      startedAt: session.startedAt,
+      endedAt: session.startedAt.add(
+        Duration(seconds: session.effectiveSeconds),
+      ),
+    ),
+  ];
+}
+
+int _focusSecondsForProjection(FocusSession session) =>
+    _effectiveIntervalsForProjection(
+      session,
+    ).fold<int>(0, (seconds, interval) => seconds + interval.durationSeconds);
+
+void _addIntervalByCalendarDay(
+  FocusTimeInterval interval,
+  timezone.Location location,
+  Map<String, int> secondsByDay,
+) {
+  final end = interval.endedAt?.toUtc();
+  if (end == null) return;
+  var cursor = interval.startedAt.toUtc();
+  if (!end.isAfter(cursor)) return;
+  while (cursor.isBefore(end)) {
+    final localCursor = timezone.TZDateTime.from(cursor, location);
+    final nextDay = timezone.TZDateTime(
+      location,
+      localCursor.year,
+      localCursor.month,
+      localCursor.day + 1,
+    ).toUtc();
+    final boundary = nextDay.isAfter(cursor)
+        ? nextDay
+        : cursor.add(const Duration(days: 1));
+    final segmentEnd = end.isBefore(boundary) ? end : boundary;
+    final segmentSeconds = segmentEnd.difference(cursor).inSeconds;
+    if (segmentSeconds > 0) {
+      final key = _calendarDateKey(
+        localCursor.year,
+        localCursor.month,
+        localCursor.day,
+      );
+      secondsByDay.update(
+        key,
+        (seconds) => seconds + segmentSeconds,
+        ifAbsent: () => segmentSeconds,
+      );
+    }
+    cursor = segmentEnd;
+  }
+}
+
+FocusActivityDay _activityDay(
+  timezone.TZDateTime date,
+  Map<String, int> secondsByDay,
+) {
+  final dateOnly = DateTime.utc(date.year, date.month, date.day);
+  return FocusActivityDay(
+    date: dateOnly,
+    activeSeconds:
+        secondsByDay[_calendarDateKey(date.year, date.month, date.day)] ?? 0,
+  );
+}
+
+String _calendarDateKey(int year, int month, int day) =>
+    '${year.toString().padLeft(4, '0')}-'
+    '${month.toString().padLeft(2, '0')}-'
+    '${day.toString().padLeft(2, '0')}';
+
+String _encodeIntervals(List<FocusTimeInterval> intervals) => jsonEncode([
+  for (final interval in intervals)
+    {
+      'started_at': _utcIso8601(interval.startedAt),
+      'ended_at': interval.endedAt == null
+          ? null
+          : _utcIso8601(interval.endedAt!),
+    },
+]);
+
+List<FocusTimeInterval> _decodeIntervals(String encoded) {
+  try {
+    return _intervalsFromJsonValue(jsonDecode(encoded));
+  } on FormatException {
+    return const [];
+  }
+}
+
+List<FocusTimeInterval> _intervalsFromJsonValue(Object? value) {
+  if (value is! List) return const [];
+  final intervals = <FocusTimeInterval>[];
+  for (final raw in value) {
+    if (raw is! Map) continue;
+    final item = Map<String, dynamic>.from(raw);
+    final startedAt = item['started_at'];
+    if (startedAt is! String) continue;
+    final endedAt = item['ended_at'];
+    intervals.add(
+      FocusTimeInterval(
+        startedAt: DateTime.parse(startedAt).toUtc(),
+        endedAt: endedAt is String ? DateTime.parse(endedAt).toUtc() : null,
+      ),
+    );
+  }
+  return intervals;
+}
+
+List<Map<String, Object?>> _intervalsToJson(
+  List<FocusTimeInterval> intervals,
+) => [
+  for (final interval in intervals)
+    {
+      'started_at': _utcIso8601(interval.startedAt),
+      'ended_at': interval.endedAt == null
+          ? null
+          : _utcIso8601(interval.endedAt!),
+    },
+];
 
 class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
   SupabaseFocusRemoteDataSource(this.client);
@@ -1628,6 +1987,12 @@ class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
           'paused_seconds': session.pausedSeconds,
           'pause_rule_text': session.pauseRuleText,
           'failure_reason': session.failureReason,
+          'effective_intervals': _intervalsToJson(session.effectiveIntervals),
+          'review_disposition': session.reviewDisposition.storageValue,
+          'review_disposition_updated_at':
+              session.reviewDispositionUpdatedAt == null
+              ? null
+              : _utcIso8601(session.reviewDispositionUpdatedAt!),
         },
     ], onConflict: 'id');
   }
@@ -1760,6 +2125,15 @@ class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
     pausedSeconds: (json['paused_seconds'] as int?) ?? 0,
     pauseRuleText: json['pause_rule_text'] as String?,
     failureReason: json['failure_reason'] as String?,
+    effectiveIntervals: _intervalsFromJsonValue(json['effective_intervals']),
+    reviewDisposition: FocusRecordDisposition.fromStorage(
+      json['review_disposition'] as String?,
+    ),
+    reviewDispositionUpdatedAt:
+        (json['review_disposition_updated_at'] as String?) == null
+        ? null
+        : DateTime.parse(json['review_disposition_updated_at'] as String)
+              .toUtc(),
   );
 
   AppointmentPreparation _appointmentFromJson(Map<String, dynamic> json) =>
@@ -1908,11 +2282,33 @@ class InMemoryFocusRemote implements FocusRemoteDataSource {
   }
 }
 
+FocusDashboardMetrics _emptyDashboardMetrics(String deviceTimeZoneId) =>
+    FocusDashboardMetrics(
+      focusProgressSecondsByTask: const {},
+      recentActivity: const [],
+      totalAcceptedFocusSeconds: 0,
+      displayTimeZoneId: deviceTimeZoneId,
+      followsDeviceTimeZone: true,
+    );
+
 class UnavailableFocusRepository implements FocusRepository {
   const UnavailableFocusRepository();
 
   @override
   Stream<List<FocusSession>> watchSessions() => Stream.value(const []);
+
+  @override
+  Stream<FocusDashboardMetrics> watchDashboardMetrics({
+    required String deviceTimeZoneId,
+  }) => Stream.value(_emptyDashboardMetrics(deviceTimeZoneId));
+
+  @override
+  Future<FocusDashboardMetrics> getDashboardMetrics({
+    required String deviceTimeZoneId,
+  }) async => _emptyDashboardMetrics(deviceTimeZoneId);
+
+  @override
+  Future<void> setDisplayTimeZonePreference(String? timeZoneId) async {}
 
   @override
   Future<List<FocusSession>> getSessions() async => const [];
