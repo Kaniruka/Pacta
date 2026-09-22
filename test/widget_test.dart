@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/tasks/task_database.dart';
+import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 
 import 'support/fake_auth_repository.dart';
@@ -71,5 +72,40 @@ void main() {
     await tester.tap(find.byType(Checkbox).first);
     await tester.pumpAndSettle();
     expect(find.textContaining('已完成'), findsOneWidget);
+  });
+
+  testWidgets('云端 UTC 截止时间按设备本地时间显示', (tester) async {
+    final database = PactaDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = LocalTaskRepository(
+      database: database,
+      userId: 'user@example.com',
+      remote: InMemoryTaskRemote(),
+    );
+    final goal = await repository.createGoal(
+      const GoalDraft(
+        title: '跨端目标',
+        classification: TaskClassification.regular,
+      ),
+    );
+    final deadline = DateTime.utc(2030, 1, 2, 3, 4);
+    await repository.createTask(
+      goal.id,
+      TaskDraft(title: '云端截止任务', classification: null, deadline: deadline),
+    );
+    final auth = FakeAuthRepository()..signedInUser = 'user@example.com';
+
+    await tester.pumpWidget(
+      PactaApp(authRepository: auth, taskRepositoryFactory: (_) => repository),
+    );
+    await tester.pumpAndSettle();
+
+    String twoDigits(int number) => number.toString().padLeft(2, '0');
+    final localDeadline = deadline.toLocal();
+    final expected =
+        '截止 ${localDeadline.year}-${twoDigits(localDeadline.month)}-'
+        '${twoDigits(localDeadline.day)} ${twoDigits(localDeadline.hour)}:'
+        '${twoDigits(localDeadline.minute)}';
+    expect(find.textContaining(expected), findsOneWidget);
   });
 }

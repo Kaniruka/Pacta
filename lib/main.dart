@@ -477,7 +477,7 @@ class _TaskTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final deadline = task.deadline == null
         ? null
-        : '截止 ${_formatDateTime(task.deadline!)}';
+        : '截止 ${_formatDateTime(task.deadline!.toLocal())}';
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Checkbox(
@@ -625,7 +625,7 @@ class _TaskDialogState extends State<_TaskDialog> {
         widget.initial?.classification ??
         widget.goal?.classification ??
         TaskClassification.regular;
-    _deadline = widget.initial?.deadline;
+    _deadline = widget.initial?.deadline?.toLocal();
   }
 
   @override
