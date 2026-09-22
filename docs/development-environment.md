@@ -2,9 +2,9 @@
 
 ## 当前状态
 
-仓库目前只有规格和设计文档，没有 `pubspec.yaml`、`lib/main.dart`、平台工程、Supabase 迁移或应用测试。根目录 `.env` 是后续 Flutter 工程的配置约定，目前没有代码读取它；创建文件不代表应用或云端已经可以运行。
+仓库已包含 Flutter/Dart 客户端、Android/Windows 平台工程、Supabase 迁移和应用测试。T01 的认证实现使用邮箱-only 注册与密码登录；手机号注册、手机号登录和新手机号资格均不支持。根目录 `.env` 只保存本机验收配置，不纳入版本库。
 
-技术栈依据 ADR 0001 和 0003：Flutter/Dart、Material 3、Riverpod、Drift/SQLite、Supabase Auth/PostgreSQL/RLS。Riverpod 和 Drift 是未来 `pubspec.yaml` 中的依赖，不需要 API Key；设备日历需要平台权限，当前也没有云日历 API Key 的需求。
+技术栈依据 ADR 0001 和 0003：Flutter/Dart、Material 3、Riverpod、Drift/SQLite、Supabase Auth/PostgreSQL/RLS。Riverpod、Drift 和 Supabase Flutter SDK 已在 `pubspec.yaml` 中声明；设备日历需要平台权限，当前也没有云日历 API Key 的需求。
 
 ## 客户端配置
 
@@ -24,9 +24,9 @@ if (!(Test-Path -LiteralPath .env)) { Copy-Item -LiteralPath .env.example -Desti
 
 从 Supabase 项目的 Connect 面板获取真实值。模板留空，避免将占位值误认为可连接的服务。
 
-2026-09-14 检查：当前本机根目录 `.env` 已填写上述两项，`SUPABASE_URL` 指向 Supabase 云端项目（`*.supabase.co`）。本次仅检查配置是否填写及地址类型，尚未验证 key 与项目是否匹配、网络连接或远端数据库状态。实际值只保留在被 Git 忽略的 `.env` 中，不复制到开发文档或模板。
+2026-09-22 检查：当前本机根目录 `.env` 已填写上述变量，`SUPABASE_URL` 指向 Supabase 云端项目（`*.supabase.co`）。应用会在启动时通过 `--dart-define-from-file=.env` 读取 `SUPABASE_URL` 和 `SUPABASE_PUBLISHABLE_KEY`；`TEST_*` 变量仅供人工验收脚本或控制台操作使用。实际值只保留在被 Git 忽略的 `.env` 中，不复制到开发文档或模板。
 
-Flutter 工程建立后，从仓库根目录传入配置：
+从仓库根目录传入配置：
 
 ```powershell
 flutter pub get
@@ -35,7 +35,7 @@ flutter run --dart-define-from-file=.env
 
 Flutter 不会自动加载 `.env`。应用初始化代码需要以 `const String.fromEnvironment('SUPABASE_URL')` 和 `const String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY')` 读取编译期配置，再传给所选版本的 Supabase Flutter SDK。连接云端前应校验必填值和 URL；缺失时显示明确的配置错误。修改 `.env` 后重新运行上述命令，不依赖热重载。
 
-以上是后续接入要求，尚未实现。纯界面和领域逻辑开发可以先使用本地存储或测试替身，但仓库当前还没有实现可用的离线开发模式。
+客户端已实现未配置 Supabase 时的明确错误提示和本地任务缓存；联网同步失败不会清空本地业务数据。纯界面和领域逻辑测试可继续使用测试替身。
 
 客户端编译期配置可以从产物中提取。此文件只用于客户端公开配置，不可放入 `service_role`、`sb_secret_...`、数据库密码、Supabase access token 或签名材料。后台注册资格与用户管理操作需要可信服务端；部署凭据放入服务端环境或 CI secrets，不能随 `--dart-define-from-file` 传给客户端。
 
@@ -68,9 +68,9 @@ Android 的下一步：在 Android Studio 的 SDK Manager → SDK Tools 中安�
 
 ## Supabase 开发路径
 
-2026-09-14 已确定：本项目使用云端 Supabase 进行开发，Flutter 客户端在本机运行，通过根目录 `.env` 连接云端开发项目。日常开发不以本地 Supabase 实例或 Docker 为前提。
+2026-09-22 已确定：本项目使用云端 Supabase 进行开发，Flutter 客户端在本机运行，通过根目录 `.env` 连接云端开发项目。日常开发不以本地 Supabase 实例或 Docker 为前提。远端 Auth 已启用 Email、禁用 Phone；为满足 T01 的无验证邮件约束，Supabase 控制台的 Confirm email 必须关闭。
 
-当前两项配置已为未来客户端接入准备好。下一步是创建 Flutter 工程并接入编译期配置，以及实现、配置和验证数据库表、迁移、RLS 与管理员授予注册资格的流程；客户端 key 不替代这些工作。数据库结构变更应保留为仓库中的迁移文件，后续按云端迁移与部署需要安装 Supabase CLI。若实际登录流程需要 Auth 深链，则在应用标识和流程确定后，同时配置平台工程与 Supabase redirect allow list。
+数据库结构变更保留为仓库中的迁移文件；管理员授予注册资格、资格原子消费、RLS 和用户隔离由远端 Supabase 真实验证。客户端 key 不替代可信服务端权限。当前注册流程不使用 Auth 深链，因为 T01 不发送邮箱验证或恢复消息。
 
 仅在以后明确需要完全本地的后端时，再安装 Supabase CLI 和 Docker 兼容运行时，初始化本仓库的 Supabase 配置并使用本地实例给出的 URL/key。当前仓库没有 `supabase/config.toml`，本地后端不属于当前开发前置步骤。
 
