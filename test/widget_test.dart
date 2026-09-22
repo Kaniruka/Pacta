@@ -164,4 +164,125 @@ void main() {
     expect(await focusRepository.getActiveSession(), isNotNull);
     expect(find.text('打开专注设置'), findsOneWidget);
   });
+
+  testWidgets('我的集中管理共享下必为例规则并可修正删除', (tester) async {
+    final database = PactaDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final focusRepository = LocalFocusRepository(
+      database: database,
+      userId: 'user@example.com',
+      remote: InMemoryFocusRemote(),
+    );
+    addTearDown(focusRepository.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [focusRepositoryProvider.overrideWithValue(focusRepository)],
+        child: const MaterialApp(home: Scaffold(body: PrecedentRulesCard())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('下必为例'), findsOneWidget);
+    await tester.tap(find.text('新建规则'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, '需要喝水时允许离开');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(find.text('需要喝水时允许离开'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('编辑下必为例').first);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, '需要喝水时允许短暂离开');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(find.text('需要喝水时允许短暂离开'), findsOneWidget);
+    expect(find.text('需要喝水时允许离开'), findsNothing);
+
+    await tester.tap(find.byTooltip('删除下必为例').first);
+    await tester.pumpAndSettle();
+    expect(find.text('确认删除下必为例？'), findsOneWidget);
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+    expect(find.text('需要喝水时允许短暂离开'), findsNothing);
+  });
+
+  testWidgets('专注中可选择共享规则暂停继续并依据规则提前完成', (tester) async {
+    final database = PactaDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    var now = DateTime.utc(2026, 9, 22, 8);
+    final taskRepository = LocalTaskRepository(
+      database: database,
+      userId: 'user@example.com',
+      remote: InMemoryTaskRemote(),
+      now: () => now,
+    );
+    final focusRepository = LocalFocusRepository(
+      database: database,
+      userId: 'user@example.com',
+      remote: InMemoryFocusRemote(),
+      now: () => now,
+    );
+    addTearDown(focusRepository.dispose);
+    addTearDown(taskRepository.dispose);
+    final goal = await taskRepository.createGoal(
+      const GoalDraft(title: '交付', classification: TaskClassification.regular),
+    );
+    final task = await taskRepository.createTask(
+      goal.id,
+      const TaskDraft(
+        title: '整理材料',
+        classification: TaskClassification.regular,
+      ),
+    );
+    await focusRepository.createPrecedentRule(text: '需要喝水时允许短暂离开');
+    expect(await focusRepository.getPrecedentRules(), hasLength(1));
+    final session = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 40),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [focusRepositoryProvider.overrideWithValue(focusRepository)],
+        child: MaterialApp(
+          home: FocusSessionPage(session: session, taskTitle: task.title),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(await focusRepository.getPrecedentRules(), hasLength(1));
+
+    now = now.add(const Duration(minutes: 10));
+    await tester.tap(find.text('暂停'));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('选择下必为例'), findsOneWidget);
+    expect(find.text('需要喝水时允许短暂离开'), findsOneWidget);
+    await tester.tap(find.byType(RadioListTile<String>));
+    await tester.pump();
+    await tester.tap(find.text('确认暂停'));
+    await tester.pump(const Duration(seconds: 1));
+    expect((await focusRepository.getSession(session.id))?.isPaused, isTrue);
+
+    now = now.add(const Duration(minutes: 5));
+    await tester.tap(find.text('继续'));
+    await tester.pump(const Duration(seconds: 1));
+    expect((await focusRepository.getSession(session.id))?.isActive, isTrue);
+
+    now = now.add(const Duration(minutes: 10));
+    await tester.tap(find.text('依据规则提前完成'));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.byType(RadioListTile<String>));
+    await tester.pump();
+    await tester.tap(find.text('选择依据'));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('确认提前完成？'), findsOneWidget);
+    await tester.tap(find.text('提前完成'));
+    await tester.pump(const Duration(seconds: 1));
+
+    final completed = await focusRepository.getSession(session.id);
+    expect(completed?.isEarlyCompleted, isTrue);
+    expect(completed?.effectiveSeconds, 20 * 60);
+    expect(await focusRepository.getNodes(), hasLength(1));
+  });
 }

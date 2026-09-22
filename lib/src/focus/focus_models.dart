@@ -44,6 +44,38 @@ enum FocusSessionStatus {
   bool get isFailed => this == FocusSessionStatus.failed;
 }
 
+enum FocusSessionCompletionType {
+  countdown,
+  precedentRule;
+
+  String get storageValue => switch (this) {
+    FocusSessionCompletionType.countdown => 'countdown',
+    FocusSessionCompletionType.precedentRule => 'precedent_rule',
+  };
+
+  static FocusSessionCompletionType fromStorage(String? value) =>
+      switch (value) {
+        'precedent_rule' => FocusSessionCompletionType.precedentRule,
+        _ => FocusSessionCompletionType.countdown,
+      };
+}
+
+class PrecedentRule {
+  const PrecedentRule({
+    required this.id,
+    required this.text,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+  });
+
+  final String id;
+  final String text;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+}
+
 class FocusSession {
   const FocusSession({
     required this.id,
@@ -55,6 +87,8 @@ class FocusSession {
     required this.status,
     required this.completedAt,
     required this.effectiveSeconds,
+    this.completionType = FocusSessionCompletionType.countdown,
+    this.completionRuleText,
     this.pausedAt,
     this.pausedSeconds = 0,
     this.pauseRuleText,
@@ -70,6 +104,8 @@ class FocusSession {
   final FocusSessionStatus status;
   final DateTime? completedAt;
   final int effectiveSeconds;
+  final FocusSessionCompletionType completionType;
+  final String? completionRuleText;
   final DateTime? pausedAt;
   final int pausedSeconds;
   final String? pauseRuleText;
@@ -79,6 +115,9 @@ class FocusSession {
   bool get isPaused => status == FocusSessionStatus.paused;
   bool get isUnfinished => status.isUnfinished;
   bool get isFailed => status.isFailed;
+  bool get isEarlyCompleted =>
+      status == FocusSessionStatus.completed &&
+      completionType == FocusSessionCompletionType.precedentRule;
 }
 
 class FocusNode {

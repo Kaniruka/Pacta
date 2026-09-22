@@ -835,6 +835,10 @@ class FocusChainPage extends ConsumerStatefulWidget {
 class _FocusChainPageState extends ConsumerState<FocusChainPage> {
   TaskClassification? _filter;
   FocusChainMode _lastMode = FocusChainMode.regular;
+  FocusRepository? _projectionRepository;
+  String? _projectionSignature;
+  late Future<List<FocusChainRecord>> _chainRecordsFuture;
+  Future<List<FocusNode>> _nodesFuture = Future.value(const []);
 
   @override
   void initState() {
@@ -869,6 +873,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
           initialData: const [],
           builder: (context, sessionsSnapshot) {
             final sessions = sessionsSnapshot.data ?? const <FocusSession>[];
+            _updateProjectionFutures(focusRepository, sessions);
             final active = sessions
                 .where((session) => session.isUnfinished)
                 .firstOrNull;
@@ -942,7 +947,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                     ),
                 const SizedBox(height: 16),
                 FutureBuilder<List<FocusChainRecord>>(
-                  future: focusRepository.getChainRecords(),
+                  future: _chainRecordsFuture,
                   builder: (context, recordSnapshot) {
                     final records = recordSnapshot.data ?? const [];
                     if (records.isEmpty) return const SizedBox.shrink();
@@ -972,7 +977,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                 ),
                 if (sessions.any((session) => !session.isUnfinished))
                   FutureBuilder<List<FocusNode>>(
-                    future: focusRepository.getNodes(),
+                    future: _nodesFuture,
                     builder: (context, nodeSnapshot) => _FocusHistoryCard(
                       repository: focusRepository,
                       sessions: sessions
@@ -988,6 +993,28 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
         );
       },
     );
+  }
+
+  void _updateProjectionFutures(
+    FocusRepository repository,
+    List<FocusSession> sessions,
+  ) {
+    final signature = sessions
+        .map(
+          (session) =>
+              '${session.id}:${session.status.storageValue}:${session.effectiveSeconds}:${session.completedAt}',
+        )
+        .join('|');
+    if (identical(_projectionRepository, repository) &&
+        _projectionSignature == signature) {
+      return;
+    }
+    _projectionRepository = repository;
+    _projectionSignature = signature;
+    _chainRecordsFuture = repository.getChainRecords();
+    _nodesFuture = sessions.any((session) => !session.isUnfinished)
+        ? repository.getNodes()
+        : Future.value(const []);
   }
 
   bool _matchesFilter(Task task) {
@@ -1076,6 +1103,8 @@ class _FocusHistoryCard extends StatelessWidget {
                 subtitle: Text(
                   session.isFailed
                       ? '失败 · ${_formatDuration(session.effectiveSeconds)}\n原因：${session.failureReason ?? '未填写'}'
+                      : session.isEarlyCompleted
+                      ? '获准提前完成 · ${_formatDuration(session.effectiveSeconds)}\n依据：${session.completionRuleText ?? '未记录'}'
                       : '正常完成 · ${_formatDuration(session.effectiveSeconds)}',
                 ),
                 trailing: Wrap(
@@ -1209,6 +1238,151 @@ class _TextEditorDialogState extends State<_TextEditorDialog> {
         child: const Text('取消'),
       ),
       FilledButton(onPressed: _save, child: const Text('保存')),
+    ],
+  );
+}
+
+Future<String?> _showPrecedentRulePicker(
+  BuildContext context, {
+  required FocusRepository repository,
+  required List<PrecedentRule> rules,
+  required String confirmLabel,
+}) {
+  return showDialog<String>(
+    context: context,
+    builder: (_) => _PrecedentRulePickerDialog(
+      repository: repository,
+      rules: rules,
+      confirmLabel: confirmLabel,
+    ),
+  );
+}
+
+class _PrecedentRulePickerDialog extends StatefulWidget {
+  const _PrecedentRulePickerDialog({
+    required this.repository,
+    required this.rules,
+    required this.confirmLabel,
+  });
+
+  final FocusRepository repository;
+  final List<PrecedentRule> rules;
+  final String confirmLabel;
+
+  @override
+  State<_PrecedentRulePickerDialog> createState() =>
+      _PrecedentRulePickerDialogState();
+}
+
+class _PrecedentRulePickerDialogState
+    extends State<_PrecedentRulePickerDialog> {
+  late List<PrecedentRule> _rules;
+  String? _selectedRuleId;
+  String? _error;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _rules = [...widget.rules];
+  }
+
+  Future<void> _createAndUse() async {
+    final text = await _showTextEditor(
+      context,
+      title: '新建并使用下必为例',
+      label: '下必为例',
+      initial: '',
+      required: true,
+    );
+    if (text == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final rule = await widget.repository.createPrecedentRule(text: text);
+      if (!mounted) return;
+      setState(() {
+        _rules = [rule, ..._rules];
+        _selectedRuleId = rule.id;
+        _error = null;
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = error.toString().replaceFirst('Bad state: ', ''),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('选择下必为例'),
+    content: SizedBox(
+      width: 420,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('选择已有规则，或新建一条并立即使用。'),
+          const SizedBox(height: 12),
+          if (_rules.isEmpty)
+            const Text('还没有共享规则，请先新建。')
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: SingleChildScrollView(
+                child: RadioGroup<String>(
+                  groupValue: _selectedRuleId,
+                  onChanged: _busy
+                      ? (_) {}
+                      : (value) => setState(() => _selectedRuleId = value),
+                  child: Column(
+                    children: [
+                      for (final rule in _rules)
+                        RadioListTile<String>(
+                          value: rule.id,
+                          title: Text(rule.text),
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : _createAndUse,
+            icon: const Icon(Icons.add),
+            label: const Text('新建并使用'),
+          ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: _busy ? null : () => Navigator.pop(context),
+        child: const Text('取消'),
+      ),
+      FilledButton(
+        onPressed: _busy || _selectedRuleId == null
+            ? null
+            : () {
+                final selected = _rules.firstWhere(
+                  (rule) => rule.id == _selectedRuleId,
+                );
+                Navigator.pop(context, selected.text);
+              },
+        child: Text(widget.confirmLabel),
+      ),
     ],
   );
 }
@@ -1373,12 +1547,14 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
     if (session == null || _busy) return;
     String? ruleText;
     if (!session.isPaused) {
-      ruleText = await _showTextEditor(
+      final repository = ref.read(focusRepositoryProvider);
+      final rules = await repository.getPrecedentRules();
+      if (!mounted) return;
+      ruleText = await _showPrecedentRulePicker(
         context,
-        title: '暂停本次专注',
-        label: '下必为例',
-        initial: '',
-        required: true,
+        repository: repository,
+        rules: rules,
+        confirmLabel: '确认暂停',
       );
       if (ruleText == null || !mounted) return;
     }
@@ -1388,6 +1564,50 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
       _current = session.isPaused
           ? await repository.resumeSession(session.id)
           : await repository.pauseSession(session.id, ruleText: ruleText!);
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (mounted) _showError(error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _completeEarly() async {
+    final session = _current;
+    if (session == null || !session.isUnfinished || _busy) return;
+    final repository = ref.read(focusRepositoryProvider);
+    final rules = await repository.getPrecedentRules();
+    if (!mounted) return;
+    final ruleText = await _showPrecedentRulePicker(
+      context,
+      repository: repository,
+      rules: rules,
+      confirmLabel: '选择依据',
+    );
+    if (ruleText == null || !mounted) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('确认提前完成？'),
+        content: Text('本次专注将按实际有效时间完成，并生成一个专注节点。\n依据：$ruleText'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('返回'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('提前完成'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      _current = await ref
+          .read(focusRepositoryProvider)
+          .completeEarlySession(sessionId: session.id, ruleText: ruleText);
       if (mounted) setState(() {});
     } catch (error) {
       if (mounted) _showError(error);
@@ -1476,6 +1696,8 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
                 Text(
                   session.isFailed
                       ? '本次专注已失败，已保留有效投入时间。任务仍需你单独确认完成。\n失败原因：${session.failureReason ?? '未填写'}'
+                      : session.isEarlyCompleted
+                      ? '本次专注已获准提前完成，已生成一个专注节点并记录有效时间。\n依据：${session.completionRuleText ?? '未记录'}'
                       : session.status == FocusSessionStatus.completed
                       ? '本次专注已完成，已生成一个专注节点并记录有效时间。任务仍需你单独确认完成。'
                       : session.isPaused
@@ -1485,8 +1707,10 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
                 ),
                 if (session.isUnfinished) ...[
                   const SizedBox(height: 24),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 12,
+                    runSpacing: 8,
                     children: [
                       OutlinedButton.icon(
                         onPressed: _busy ? null : _togglePause,
@@ -1495,7 +1719,11 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
                         ),
                         label: Text(session.isPaused ? '继续' : '暂停'),
                       ),
-                      const SizedBox(width: 12),
+                      OutlinedButton.icon(
+                        onPressed: _busy ? null : _completeEarly,
+                        icon: const Icon(Icons.check_circle_outline),
+                        label: const Text('依据规则提前完成'),
+                      ),
                       TextButton(
                         onPressed: _busy ? null : _abandon,
                         child: const Text('放弃本次专注'),
@@ -1525,11 +1753,24 @@ String _formatClock(int seconds) {
   return '${minutes.toString().padLeft(2, '0')}:${remaining.toString().padLeft(2, '0')}';
 }
 
-class MyPage extends ConsumerWidget {
+class MyPage extends ConsumerStatefulWidget {
   const MyPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MyPage> createState() => _MyPageState();
+}
+
+class _MyPageState extends ConsumerState<MyPage> {
+  late Future<bool> _isAdministrator;
+
+  @override
+  void initState() {
+    super.initState();
+    _isAdministrator = ref.read(authRepositoryProvider).isAdministrator();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final repository = ref.watch(authRepositoryProvider);
     return ListView(
       padding: const EdgeInsets.all(20),
@@ -1542,7 +1783,7 @@ class MyPage extends ConsumerWidget {
           ),
         ),
         FutureBuilder<bool>(
-          future: repository.isAdministrator(),
+          future: _isAdministrator,
           builder: (context, snapshot) => snapshot.data == true
               ? const Padding(
                   padding: EdgeInsets.only(top: 12),
@@ -1550,6 +1791,8 @@ class MyPage extends ConsumerWidget {
                 )
               : const SizedBox.shrink(),
         ),
+        const SizedBox(height: 12),
+        const PrecedentRulesCard(),
         const SizedBox(height: 12),
         Card(
           child: ListTile(
@@ -1568,6 +1811,174 @@ class MyPage extends ConsumerWidget {
       ],
     );
   }
+}
+
+class PrecedentRulesCard extends ConsumerStatefulWidget {
+  const PrecedentRulesCard({super.key});
+
+  @override
+  ConsumerState<PrecedentRulesCard> createState() => _PrecedentRulesCardState();
+}
+
+class _PrecedentRulesCardState extends ConsumerState<PrecedentRulesCard> {
+  List<PrecedentRule> _rules = const [];
+  bool _loading = true;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final rules = await ref.read(focusRepositoryProvider).getPrecedentRules();
+      if (!mounted) return;
+      setState(() {
+        _rules = rules;
+        _loading = false;
+        _error = null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = _friendlyError(error);
+      });
+    }
+  }
+
+  Future<void> _create() async {
+    final text = await _showTextEditor(
+      context,
+      title: '新建下必为例',
+      label: '下必为例',
+      initial: '',
+      required: true,
+    );
+    if (text == null || !mounted) return;
+    await _run(() async {
+      await ref.read(focusRepositoryProvider).createPrecedentRule(text: text);
+    });
+  }
+
+  Future<void> _edit(PrecedentRule rule) async {
+    final text = await _showTextEditor(
+      context,
+      title: '编辑下必为例',
+      label: '下必为例',
+      initial: rule.text,
+      required: true,
+    );
+    if (text == null || !mounted) return;
+    await _run(() async {
+      await ref
+          .read(focusRepositoryProvider)
+          .updatePrecedentRule(ruleId: rule.id, text: text);
+    });
+  }
+
+  Future<void> _delete(PrecedentRule rule) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('确认删除下必为例？'),
+        content: const Text('删除后不会再出现在新的中断操作中，已经确认的记录保留原文字。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _run(
+      () => ref.read(focusRepositoryProvider).deletePrecedentRule(rule.id),
+    );
+  }
+
+  Future<void> _run(Future<void> Function() action) async {
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await action();
+      await _load();
+    } catch (error) {
+      if (mounted) setState(() => _error = _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  String _friendlyError(Object error) =>
+      error.toString().replaceFirst('Bad state: ', '');
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('下必为例', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 6),
+          const Text('专注中断时可直接选择或新建；规则含义由你自己判断。'),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_rules.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text('还没有共享规则。'),
+            )
+          else
+            for (final rule in _rules)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(rule.text),
+                trailing: Wrap(
+                  children: [
+                    IconButton(
+                      tooltip: '编辑下必为例',
+                      onPressed: _busy ? null : () => _edit(rule),
+                      icon: const Icon(Icons.edit_outlined),
+                    ),
+                    IconButton(
+                      tooltip: '删除下必为例',
+                      onPressed: _busy ? null : () => _delete(rule),
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ],
+                ),
+              ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          FilledButton.icon(
+            onPressed: _busy ? null : _create,
+            icon: const Icon(Icons.add),
+            label: const Text('新建规则'),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class AdminEligibilityCard extends ConsumerStatefulWidget {

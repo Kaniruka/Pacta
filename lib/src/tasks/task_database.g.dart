@@ -1511,6 +1511,29 @@ class $FocusSessionsTable extends FocusSessions
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _completionTypeMeta = const VerificationMeta(
+    'completionType',
+  );
+  @override
+  late final GeneratedColumn<String> completionType = GeneratedColumn<String>(
+    'completion_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('countdown'),
+  );
+  static const VerificationMeta _completionRuleTextMeta =
+      const VerificationMeta('completionRuleText');
+  @override
+  late final GeneratedColumn<String> completionRuleText =
+      GeneratedColumn<String>(
+        'completion_rule_text',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _pausedAtMeta = const VerificationMeta(
     'pausedAt',
   );
@@ -1568,6 +1591,8 @@ class $FocusSessionsTable extends FocusSessions
     status,
     completedAt,
     effectiveSeconds,
+    completionType,
+    completionRuleText,
     pausedAt,
     pausedSeconds,
     pauseRuleText,
@@ -1667,6 +1692,24 @@ class $FocusSessionsTable extends FocusSessions
         ),
       );
     }
+    if (data.containsKey('completion_type')) {
+      context.handle(
+        _completionTypeMeta,
+        completionType.isAcceptableOrUnknown(
+          data['completion_type']!,
+          _completionTypeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('completion_rule_text')) {
+      context.handle(
+        _completionRuleTextMeta,
+        completionRuleText.isAcceptableOrUnknown(
+          data['completion_rule_text']!,
+          _completionRuleTextMeta,
+        ),
+      );
+    }
     if (data.containsKey('paused_at')) {
       context.handle(
         _pausedAtMeta,
@@ -1749,6 +1792,14 @@ class $FocusSessionsTable extends FocusSessions
         DriftSqlType.int,
         data['${effectivePrefix}effective_seconds'],
       )!,
+      completionType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}completion_type'],
+      )!,
+      completionRuleText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}completion_rule_text'],
+      ),
       pausedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}paused_at'],
@@ -1785,6 +1836,8 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
   final String status;
   final DateTime? completedAt;
   final int effectiveSeconds;
+  final String completionType;
+  final String? completionRuleText;
   final DateTime? pausedAt;
   final int pausedSeconds;
   final String? pauseRuleText;
@@ -1800,6 +1853,8 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     required this.status,
     this.completedAt,
     required this.effectiveSeconds,
+    required this.completionType,
+    this.completionRuleText,
     this.pausedAt,
     required this.pausedSeconds,
     this.pauseRuleText,
@@ -1820,6 +1875,10 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
       map['completed_at'] = Variable<DateTime>(completedAt);
     }
     map['effective_seconds'] = Variable<int>(effectiveSeconds);
+    map['completion_type'] = Variable<String>(completionType);
+    if (!nullToAbsent || completionRuleText != null) {
+      map['completion_rule_text'] = Variable<String>(completionRuleText);
+    }
     if (!nullToAbsent || pausedAt != null) {
       map['paused_at'] = Variable<DateTime>(pausedAt);
     }
@@ -1847,6 +1906,10 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
           ? const Value.absent()
           : Value(completedAt),
       effectiveSeconds: Value(effectiveSeconds),
+      completionType: Value(completionType),
+      completionRuleText: completionRuleText == null && nullToAbsent
+          ? const Value.absent()
+          : Value(completionRuleText),
       pausedAt: pausedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(pausedAt),
@@ -1876,6 +1939,10 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
       status: serializer.fromJson<String>(json['status']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
       effectiveSeconds: serializer.fromJson<int>(json['effectiveSeconds']),
+      completionType: serializer.fromJson<String>(json['completionType']),
+      completionRuleText: serializer.fromJson<String?>(
+        json['completionRuleText'],
+      ),
       pausedAt: serializer.fromJson<DateTime?>(json['pausedAt']),
       pausedSeconds: serializer.fromJson<int>(json['pausedSeconds']),
       pauseRuleText: serializer.fromJson<String?>(json['pauseRuleText']),
@@ -1896,6 +1963,8 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
       'status': serializer.toJson<String>(status),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
       'effectiveSeconds': serializer.toJson<int>(effectiveSeconds),
+      'completionType': serializer.toJson<String>(completionType),
+      'completionRuleText': serializer.toJson<String?>(completionRuleText),
       'pausedAt': serializer.toJson<DateTime?>(pausedAt),
       'pausedSeconds': serializer.toJson<int>(pausedSeconds),
       'pauseRuleText': serializer.toJson<String?>(pauseRuleText),
@@ -1914,6 +1983,8 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     String? status,
     Value<DateTime?> completedAt = const Value.absent(),
     int? effectiveSeconds,
+    String? completionType,
+    Value<String?> completionRuleText = const Value.absent(),
     Value<DateTime?> pausedAt = const Value.absent(),
     int? pausedSeconds,
     Value<String?> pauseRuleText = const Value.absent(),
@@ -1929,6 +2000,10 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     status: status ?? this.status,
     completedAt: completedAt.present ? completedAt.value : this.completedAt,
     effectiveSeconds: effectiveSeconds ?? this.effectiveSeconds,
+    completionType: completionType ?? this.completionType,
+    completionRuleText: completionRuleText.present
+        ? completionRuleText.value
+        : this.completionRuleText,
     pausedAt: pausedAt.present ? pausedAt.value : this.pausedAt,
     pausedSeconds: pausedSeconds ?? this.pausedSeconds,
     pauseRuleText: pauseRuleText.present
@@ -1956,6 +2031,12 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
       effectiveSeconds: data.effectiveSeconds.present
           ? data.effectiveSeconds.value
           : this.effectiveSeconds,
+      completionType: data.completionType.present
+          ? data.completionType.value
+          : this.completionType,
+      completionRuleText: data.completionRuleText.present
+          ? data.completionRuleText.value
+          : this.completionRuleText,
       pausedAt: data.pausedAt.present ? data.pausedAt.value : this.pausedAt,
       pausedSeconds: data.pausedSeconds.present
           ? data.pausedSeconds.value
@@ -1982,6 +2063,8 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
           ..write('status: $status, ')
           ..write('completedAt: $completedAt, ')
           ..write('effectiveSeconds: $effectiveSeconds, ')
+          ..write('completionType: $completionType, ')
+          ..write('completionRuleText: $completionRuleText, ')
           ..write('pausedAt: $pausedAt, ')
           ..write('pausedSeconds: $pausedSeconds, ')
           ..write('pauseRuleText: $pauseRuleText, ')
@@ -2002,6 +2085,8 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     status,
     completedAt,
     effectiveSeconds,
+    completionType,
+    completionRuleText,
     pausedAt,
     pausedSeconds,
     pauseRuleText,
@@ -2021,6 +2106,8 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
           other.status == this.status &&
           other.completedAt == this.completedAt &&
           other.effectiveSeconds == this.effectiveSeconds &&
+          other.completionType == this.completionType &&
+          other.completionRuleText == this.completionRuleText &&
           other.pausedAt == this.pausedAt &&
           other.pausedSeconds == this.pausedSeconds &&
           other.pauseRuleText == this.pauseRuleText &&
@@ -2038,6 +2125,8 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
   final Value<String> status;
   final Value<DateTime?> completedAt;
   final Value<int> effectiveSeconds;
+  final Value<String> completionType;
+  final Value<String?> completionRuleText;
   final Value<DateTime?> pausedAt;
   final Value<int> pausedSeconds;
   final Value<String?> pauseRuleText;
@@ -2054,6 +2143,8 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     this.status = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.effectiveSeconds = const Value.absent(),
+    this.completionType = const Value.absent(),
+    this.completionRuleText = const Value.absent(),
     this.pausedAt = const Value.absent(),
     this.pausedSeconds = const Value.absent(),
     this.pauseRuleText = const Value.absent(),
@@ -2071,6 +2162,8 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     required String status,
     this.completedAt = const Value.absent(),
     this.effectiveSeconds = const Value.absent(),
+    this.completionType = const Value.absent(),
+    this.completionRuleText = const Value.absent(),
     this.pausedAt = const Value.absent(),
     this.pausedSeconds = const Value.absent(),
     this.pauseRuleText = const Value.absent(),
@@ -2095,6 +2188,8 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     Expression<String>? status,
     Expression<DateTime>? completedAt,
     Expression<int>? effectiveSeconds,
+    Expression<String>? completionType,
+    Expression<String>? completionRuleText,
     Expression<DateTime>? pausedAt,
     Expression<int>? pausedSeconds,
     Expression<String>? pauseRuleText,
@@ -2112,6 +2207,9 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
       if (status != null) 'status': status,
       if (completedAt != null) 'completed_at': completedAt,
       if (effectiveSeconds != null) 'effective_seconds': effectiveSeconds,
+      if (completionType != null) 'completion_type': completionType,
+      if (completionRuleText != null)
+        'completion_rule_text': completionRuleText,
       if (pausedAt != null) 'paused_at': pausedAt,
       if (pausedSeconds != null) 'paused_seconds': pausedSeconds,
       if (pauseRuleText != null) 'pause_rule_text': pauseRuleText,
@@ -2131,6 +2229,8 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     Value<String>? status,
     Value<DateTime?>? completedAt,
     Value<int>? effectiveSeconds,
+    Value<String>? completionType,
+    Value<String?>? completionRuleText,
     Value<DateTime?>? pausedAt,
     Value<int>? pausedSeconds,
     Value<String?>? pauseRuleText,
@@ -2148,6 +2248,8 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
       status: status ?? this.status,
       completedAt: completedAt ?? this.completedAt,
       effectiveSeconds: effectiveSeconds ?? this.effectiveSeconds,
+      completionType: completionType ?? this.completionType,
+      completionRuleText: completionRuleText ?? this.completionRuleText,
       pausedAt: pausedAt ?? this.pausedAt,
       pausedSeconds: pausedSeconds ?? this.pausedSeconds,
       pauseRuleText: pauseRuleText ?? this.pauseRuleText,
@@ -2189,6 +2291,12 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     if (effectiveSeconds.present) {
       map['effective_seconds'] = Variable<int>(effectiveSeconds.value);
     }
+    if (completionType.present) {
+      map['completion_type'] = Variable<String>(completionType.value);
+    }
+    if (completionRuleText.present) {
+      map['completion_rule_text'] = Variable<String>(completionRuleText.value);
+    }
     if (pausedAt.present) {
       map['paused_at'] = Variable<DateTime>(pausedAt.value);
     }
@@ -2220,6 +2328,8 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
           ..write('status: $status, ')
           ..write('completedAt: $completedAt, ')
           ..write('effectiveSeconds: $effectiveSeconds, ')
+          ..write('completionType: $completionType, ')
+          ..write('completionRuleText: $completionRuleText, ')
           ..write('pausedAt: $pausedAt, ')
           ..write('pausedSeconds: $pausedSeconds, ')
           ..write('pauseRuleText: $pauseRuleText, ')
@@ -3324,6 +3434,416 @@ class FocusPreferencesCompanion extends UpdateCompanion<FocusPreference> {
   }
 }
 
+class $FocusPrecedentRulesTable extends FocusPrecedentRules
+    with TableInfo<$FocusPrecedentRulesTable, FocusPrecedentRule> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FocusPrecedentRulesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _ruleTextMeta = const VerificationMeta(
+    'ruleText',
+  );
+  @override
+  late final GeneratedColumn<String> ruleText = GeneratedColumn<String>(
+    'rule_text',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    id,
+    ruleText,
+    createdAt,
+    updatedAt,
+    deletedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'focus_precedent_rules';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FocusPrecedentRule> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('rule_text')) {
+      context.handle(
+        _ruleTextMeta,
+        ruleText.isAcceptableOrUnknown(data['rule_text']!, _ruleTextMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_ruleTextMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId, id};
+  @override
+  FocusPrecedentRule map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FocusPrecedentRule(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      ruleText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}rule_text'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
+    );
+  }
+
+  @override
+  $FocusPrecedentRulesTable createAlias(String alias) {
+    return $FocusPrecedentRulesTable(attachedDatabase, alias);
+  }
+}
+
+class FocusPrecedentRule extends DataClass
+    implements Insertable<FocusPrecedentRule> {
+  final String userId;
+  final String id;
+  final String ruleText;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final DateTime? deletedAt;
+  const FocusPrecedentRule({
+    required this.userId,
+    required this.id,
+    required this.ruleText,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deletedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['id'] = Variable<String>(id);
+    map['rule_text'] = Variable<String>(ruleText);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
+    return map;
+  }
+
+  FocusPrecedentRulesCompanion toCompanion(bool nullToAbsent) {
+    return FocusPrecedentRulesCompanion(
+      userId: Value(userId),
+      id: Value(id),
+      ruleText: Value(ruleText),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
+    );
+  }
+
+  factory FocusPrecedentRule.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FocusPrecedentRule(
+      userId: serializer.fromJson<String>(json['userId']),
+      id: serializer.fromJson<String>(json['id']),
+      ruleText: serializer.fromJson<String>(json['ruleText']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'id': serializer.toJson<String>(id),
+      'ruleText': serializer.toJson<String>(ruleText),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+    };
+  }
+
+  FocusPrecedentRule copyWith({
+    String? userId,
+    String? id,
+    String? ruleText,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
+  }) => FocusPrecedentRule(
+    userId: userId ?? this.userId,
+    id: id ?? this.id,
+    ruleText: ruleText ?? this.ruleText,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+  );
+  FocusPrecedentRule copyWithCompanion(FocusPrecedentRulesCompanion data) {
+    return FocusPrecedentRule(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      id: data.id.present ? data.id.value : this.id,
+      ruleText: data.ruleText.present ? data.ruleText.value : this.ruleText,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FocusPrecedentRule(')
+          ..write('userId: $userId, ')
+          ..write('id: $id, ')
+          ..write('ruleText: $ruleText, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(userId, id, ruleText, createdAt, updatedAt, deletedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FocusPrecedentRule &&
+          other.userId == this.userId &&
+          other.id == this.id &&
+          other.ruleText == this.ruleText &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt);
+}
+
+class FocusPrecedentRulesCompanion extends UpdateCompanion<FocusPrecedentRule> {
+  final Value<String> userId;
+  final Value<String> id;
+  final Value<String> ruleText;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
+  final Value<int> rowid;
+  const FocusPrecedentRulesCompanion({
+    this.userId = const Value.absent(),
+    this.id = const Value.absent(),
+    this.ruleText = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  FocusPrecedentRulesCompanion.insert({
+    required String userId,
+    required String id,
+    required String ruleText,
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.deletedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       id = Value(id),
+       ruleText = Value(ruleText),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<FocusPrecedentRule> custom({
+    Expression<String>? userId,
+    Expression<String>? id,
+    Expression<String>? ruleText,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<DateTime>? deletedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (id != null) 'id': id,
+      if (ruleText != null) 'rule_text': ruleText,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  FocusPrecedentRulesCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? id,
+    Value<String>? ruleText,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
+    Value<int>? rowid,
+  }) {
+    return FocusPrecedentRulesCompanion(
+      userId: userId ?? this.userId,
+      id: id ?? this.id,
+      ruleText: ruleText ?? this.ruleText,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (ruleText.present) {
+      map['rule_text'] = Variable<String>(ruleText.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FocusPrecedentRulesCompanion(')
+          ..write('userId: $userId, ')
+          ..write('id: $id, ')
+          ..write('ruleText: $ruleText, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$PactaDatabase extends GeneratedDatabase {
   _$PactaDatabase(QueryExecutor e) : super(e);
   $PactaDatabaseManager get managers => $PactaDatabaseManager(this);
@@ -3339,6 +3859,8 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   late final $FocusPreferencesTable focusPreferences = $FocusPreferencesTable(
     this,
   );
+  late final $FocusPrecedentRulesTable focusPrecedentRules =
+      $FocusPrecedentRulesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3351,6 +3873,7 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
     focusNodes,
     focusChainRecords,
     focusPreferences,
+    focusPrecedentRules,
   ];
 }
 
@@ -4092,6 +4615,8 @@ typedef $$FocusSessionsTableCreateCompanionBuilder =
       required String status,
       Value<DateTime?> completedAt,
       Value<int> effectiveSeconds,
+      Value<String> completionType,
+      Value<String?> completionRuleText,
       Value<DateTime?> pausedAt,
       Value<int> pausedSeconds,
       Value<String?> pauseRuleText,
@@ -4110,6 +4635,8 @@ typedef $$FocusSessionsTableUpdateCompanionBuilder =
       Value<String> status,
       Value<DateTime?> completedAt,
       Value<int> effectiveSeconds,
+      Value<String> completionType,
+      Value<String?> completionRuleText,
       Value<DateTime?> pausedAt,
       Value<int> pausedSeconds,
       Value<String?> pauseRuleText,
@@ -4173,6 +4700,16 @@ class $$FocusSessionsTableFilterComposer
 
   ColumnFilters<int> get effectiveSeconds => $composableBuilder(
     column: $table.effectiveSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get completionType => $composableBuilder(
+    column: $table.completionType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get completionRuleText => $composableBuilder(
+    column: $table.completionRuleText,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4256,6 +4793,16 @@ class $$FocusSessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get completionType => $composableBuilder(
+    column: $table.completionType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get completionRuleText => $composableBuilder(
+    column: $table.completionRuleText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get pausedAt => $composableBuilder(
     column: $table.pausedAt,
     builder: (column) => ColumnOrderings(column),
@@ -4322,6 +4869,16 @@ class $$FocusSessionsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get completionType => $composableBuilder(
+    column: $table.completionType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get completionRuleText => $composableBuilder(
+    column: $table.completionRuleText,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<DateTime> get pausedAt =>
       $composableBuilder(column: $table.pausedAt, builder: (column) => column);
 
@@ -4384,6 +4941,8 @@ class $$FocusSessionsTableTableManager
                 Value<String> status = const Value.absent(),
                 Value<DateTime?> completedAt = const Value.absent(),
                 Value<int> effectiveSeconds = const Value.absent(),
+                Value<String> completionType = const Value.absent(),
+                Value<String?> completionRuleText = const Value.absent(),
                 Value<DateTime?> pausedAt = const Value.absent(),
                 Value<int> pausedSeconds = const Value.absent(),
                 Value<String?> pauseRuleText = const Value.absent(),
@@ -4400,6 +4959,8 @@ class $$FocusSessionsTableTableManager
                 status: status,
                 completedAt: completedAt,
                 effectiveSeconds: effectiveSeconds,
+                completionType: completionType,
+                completionRuleText: completionRuleText,
                 pausedAt: pausedAt,
                 pausedSeconds: pausedSeconds,
                 pauseRuleText: pauseRuleText,
@@ -4418,6 +4979,8 @@ class $$FocusSessionsTableTableManager
                 required String status,
                 Value<DateTime?> completedAt = const Value.absent(),
                 Value<int> effectiveSeconds = const Value.absent(),
+                Value<String> completionType = const Value.absent(),
+                Value<String?> completionRuleText = const Value.absent(),
                 Value<DateTime?> pausedAt = const Value.absent(),
                 Value<int> pausedSeconds = const Value.absent(),
                 Value<String?> pauseRuleText = const Value.absent(),
@@ -4434,6 +4997,8 @@ class $$FocusSessionsTableTableManager
                 status: status,
                 completedAt: completedAt,
                 effectiveSeconds: effectiveSeconds,
+                completionType: completionType,
+                completionRuleText: completionRuleText,
                 pausedAt: pausedAt,
                 pausedSeconds: pausedSeconds,
                 pauseRuleText: pauseRuleText,
@@ -5091,6 +5656,241 @@ typedef $$FocusPreferencesTableProcessedTableManager =
       FocusPreference,
       PrefetchHooks Function()
     >;
+typedef $$FocusPrecedentRulesTableCreateCompanionBuilder =
+    FocusPrecedentRulesCompanion Function({
+      required String userId,
+      required String id,
+      required String ruleText,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
+typedef $$FocusPrecedentRulesTableUpdateCompanionBuilder =
+    FocusPrecedentRulesCompanion Function({
+      Value<String> userId,
+      Value<String> id,
+      Value<String> ruleText,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
+
+class $$FocusPrecedentRulesTableFilterComposer
+    extends Composer<_$PactaDatabase, $FocusPrecedentRulesTable> {
+  $$FocusPrecedentRulesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ruleText => $composableBuilder(
+    column: $table.ruleText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$FocusPrecedentRulesTableOrderingComposer
+    extends Composer<_$PactaDatabase, $FocusPrecedentRulesTable> {
+  $$FocusPrecedentRulesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get ruleText => $composableBuilder(
+    column: $table.ruleText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$FocusPrecedentRulesTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $FocusPrecedentRulesTable> {
+  $$FocusPrecedentRulesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get ruleText =>
+      $composableBuilder(column: $table.ruleText, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+}
+
+class $$FocusPrecedentRulesTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $FocusPrecedentRulesTable,
+          FocusPrecedentRule,
+          $$FocusPrecedentRulesTableFilterComposer,
+          $$FocusPrecedentRulesTableOrderingComposer,
+          $$FocusPrecedentRulesTableAnnotationComposer,
+          $$FocusPrecedentRulesTableCreateCompanionBuilder,
+          $$FocusPrecedentRulesTableUpdateCompanionBuilder,
+          (
+            FocusPrecedentRule,
+            BaseReferences<
+              _$PactaDatabase,
+              $FocusPrecedentRulesTable,
+              FocusPrecedentRule
+            >,
+          ),
+          FocusPrecedentRule,
+          PrefetchHooks Function()
+        > {
+  $$FocusPrecedentRulesTableTableManager(
+    _$PactaDatabase db,
+    $FocusPrecedentRulesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FocusPrecedentRulesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FocusPrecedentRulesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$FocusPrecedentRulesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> id = const Value.absent(),
+                Value<String> ruleText = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FocusPrecedentRulesCompanion(
+                userId: userId,
+                id: id,
+                ruleText: ruleText,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                required String id,
+                required String ruleText,
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<DateTime?> deletedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FocusPrecedentRulesCompanion.insert(
+                userId: userId,
+                id: id,
+                ruleText: ruleText,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                deletedAt: deletedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$FocusPrecedentRulesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $FocusPrecedentRulesTable,
+      FocusPrecedentRule,
+      $$FocusPrecedentRulesTableFilterComposer,
+      $$FocusPrecedentRulesTableOrderingComposer,
+      $$FocusPrecedentRulesTableAnnotationComposer,
+      $$FocusPrecedentRulesTableCreateCompanionBuilder,
+      $$FocusPrecedentRulesTableUpdateCompanionBuilder,
+      (
+        FocusPrecedentRule,
+        BaseReferences<
+          _$PactaDatabase,
+          $FocusPrecedentRulesTable,
+          FocusPrecedentRule
+        >,
+      ),
+      FocusPrecedentRule,
+      PrefetchHooks Function()
+    >;
 
 class $PactaDatabaseManager {
   final _$PactaDatabase _db;
@@ -5109,4 +5909,6 @@ class $PactaDatabaseManager {
       $$FocusChainRecordsTableTableManager(_db, _db.focusChainRecords);
   $$FocusPreferencesTableTableManager get focusPreferences =>
       $$FocusPreferencesTableTableManager(_db, _db.focusPreferences);
+  $$FocusPrecedentRulesTableTableManager get focusPrecedentRules =>
+      $$FocusPrecedentRulesTableTableManager(_db, _db.focusPrecedentRules);
 }

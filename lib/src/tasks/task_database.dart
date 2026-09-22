@@ -44,6 +44,9 @@ class FocusSessions extends Table {
   TextColumn get status => text()();
   DateTimeColumn get completedAt => dateTime().nullable()();
   IntColumn get effectiveSeconds => integer().withDefault(const Constant(0))();
+  TextColumn get completionType =>
+      text().withDefault(const Constant('countdown'))();
+  TextColumn get completionRuleText => text().nullable()();
   DateTimeColumn get pausedAt => dateTime().nullable()();
   IntColumn get pausedSeconds => integer().withDefault(const Constant(0))();
   TextColumn get pauseRuleText => text().nullable()();
@@ -87,6 +90,18 @@ class FocusPreferences extends Table {
   Set<Column<Object>> get primaryKey => {userId};
 }
 
+class FocusPrecedentRules extends Table {
+  TextColumn get userId => text()();
+  TextColumn get id => text()();
+  TextColumn get ruleText => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId, id};
+}
+
 class TaskSyncEntries extends Table {
   TextColumn get userId => text()();
   TextColumn get entityType => text()();
@@ -106,6 +121,7 @@ class TaskSyncEntries extends Table {
     FocusNodes,
     FocusChainRecords,
     FocusPreferences,
+    FocusPrecedentRules,
   ],
 )
 class PactaDatabase extends _$PactaDatabase {
@@ -114,7 +130,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -135,6 +151,11 @@ class PactaDatabase extends _$PactaDatabase {
       }
       if (from < 4) {
         await m.addColumn(focusSessions, focusSessions.pauseRuleText);
+      }
+      if (from < 5) {
+        await m.addColumn(focusSessions, focusSessions.completionType);
+        await m.addColumn(focusSessions, focusSessions.completionRuleText);
+        await m.createTable(focusPrecedentRules);
       }
     },
   );

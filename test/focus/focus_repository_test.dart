@@ -142,6 +142,49 @@ void main() {
     expect(await restarted.getNodes(), hasLength(1));
   });
 
+  test('新设备同步已完成专注时补齐任务有效时间', () async {
+    final task = await createTask('同步交付记录');
+    await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 10),
+    );
+    now = now.add(const Duration(minutes: 10));
+    await focusRepository.getSessions();
+    await taskRepository.sync();
+    await focusRepository.sync();
+
+    final secondDatabase = PactaDatabase(NativeDatabase.memory());
+    final secondTaskRepository = LocalTaskRepository(
+      database: secondDatabase,
+      userId: 'user-a',
+      remote: taskRemote,
+      now: () => now,
+    );
+    final secondFocusRepository = LocalFocusRepository(
+      database: secondDatabase,
+      userId: 'user-a',
+      remote: focusRemote,
+      now: () => now,
+    );
+    addTearDown(secondFocusRepository.dispose);
+    addTearDown(secondTaskRepository.dispose);
+    addTearDown(secondDatabase.close);
+
+    await secondTaskRepository.sync();
+    await secondFocusRepository.sync();
+
+    expect(
+      (await secondTaskRepository.getGoals())
+          .single
+          .tasks
+          .single
+          .focusProgressSeconds,
+      10 * 60,
+    );
+    expect(await secondFocusRepository.getNodes(), hasLength(1));
+  });
+
   test('确认放弃记录失败、保留有效时间且只清零本次链记录', () async {
     final task = await createTask('处理反馈');
     await focusRepository.startSession(
@@ -253,6 +296,108 @@ void main() {
           .focusProgressSeconds,
       100,
     );
+  });
+
+  test('共享下必为例规则可管理，已确认暂停保留原文字版本', () async {
+    final task = await createTask('准备会议材料');
+    final rule = await focusRepository.createPrecedentRule(text: '需要喝水时允许短暂离开');
+
+    expect((await focusRepository.getPrecedentRules()).single.text, rule.text);
+
+    final session = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 30),
+    );
+    now = now.add(const Duration(minutes: 10));
+    await focusRepository.pauseSession(session.id, ruleText: rule.text);
+
+    final edited = await focusRepository.updatePrecedentRule(
+      ruleId: rule.id,
+      text: '需要喝水时允许离开座位',
+    );
+    expect(edited.text, '需要喝水时允许离开座位');
+    await focusRepository.deletePrecedentRule(rule.id);
+
+    expect(await focusRepository.getPrecedentRules(), isEmpty);
+    final paused = await focusRepository.getSession(session.id);
+    expect(paused?.isPaused, isTrue);
+    expect(paused?.pauseRuleText, '需要喝水时允许短暂离开');
+
+    now = now.add(const Duration(minutes: 5));
+    final resumed = await focusRepository.resumeSession(session.id);
+    expect(resumed.isActive, isTrue);
+  });
+
+  test('共享规则同步到另一份本地存储，删除也不会重新出现', () async {
+    final remote = focusRemote;
+    final rule = await focusRepository.createPrecedentRule(text: '允许查看必要资料');
+    await focusRepository.sync();
+
+    final secondDatabase = PactaDatabase(NativeDatabase.memory());
+    final secondRepository = LocalFocusRepository(
+      database: secondDatabase,
+      userId: 'user-a',
+      remote: remote,
+      now: () => now,
+    );
+    addTearDown(secondRepository.dispose);
+    addTearDown(secondDatabase.close);
+
+    await secondRepository.sync();
+    expect((await secondRepository.getPrecedentRules()).single.text, rule.text);
+
+    await focusRepository.deletePrecedentRule(rule.id);
+    await focusRepository.sync();
+    await secondRepository.sync();
+    expect(await secondRepository.getPrecedentRules(), isEmpty);
+  });
+
+  test('下必为例可提前完成，保留有效时间并只生成一个节点', () async {
+    final task = await createTask('完成方案');
+    final session = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.elite,
+      duration: const Duration(minutes: 40),
+    );
+
+    now = now.add(const Duration(minutes: 10));
+    await focusRepository.pauseSession(session.id, ruleText: '允许短暂离开');
+    now = now.add(const Duration(minutes: 5));
+    await focusRepository.resumeSession(session.id);
+    now = now.add(const Duration(minutes: 20));
+
+    final completed = await focusRepository.completeEarlySession(
+      sessionId: session.id,
+      ruleText: '允许提前结束并保留已完成的工作',
+    );
+
+    expect(completed.status, FocusSessionStatus.completed);
+    expect(completed.completionType, FocusSessionCompletionType.precedentRule);
+    expect(completed.completionRuleText, '允许提前结束并保留已完成的工作');
+    expect(completed.effectiveSeconds, 30 * 60);
+    expect(await focusRepository.getNodes(), hasLength(1));
+    expect(
+      (await focusRepository.getChainRecords())
+          .singleWhere((record) => record.mode == FocusChainMode.elite)
+          .currentConsecutive,
+      1,
+    );
+    expect(
+      (await taskRepository.getGoals())
+          .single
+          .tasks
+          .single
+          .focusProgressSeconds,
+      30 * 60,
+    );
+
+    final repeated = await focusRepository.completeEarlySession(
+      sessionId: session.id,
+      ruleText: '不应覆盖原依据',
+    );
+    expect(repeated.completionRuleText, '允许提前结束并保留已完成的工作');
+    expect(await focusRepository.getNodes(), hasLength(1));
   });
 
   test('失败原因和正常节点备注可编辑并持久化', () async {

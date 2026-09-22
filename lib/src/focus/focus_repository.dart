@@ -12,11 +12,13 @@ class FocusRemoteSnapshot {
     this.sessions = const [],
     this.nodes = const [],
     this.records = const [],
+    this.precedentRules = const [],
   });
 
   final List<FocusSession> sessions;
   final List<FocusNode> nodes;
   final List<FocusChainRecord> records;
+  final List<PrecedentRule> precedentRules;
 }
 
 abstract interface class FocusRemoteDataSource {
@@ -35,6 +37,11 @@ abstract interface class FocusRemoteDataSource {
   Future<void> upsertRecords({
     required String userId,
     required List<FocusChainRecord> records,
+  });
+
+  Future<void> upsertPrecedentRules({
+    required String userId,
+    required List<PrecedentRule> rules,
   });
 }
 
@@ -69,6 +76,14 @@ class UnavailableFocusRemoteDataSource implements FocusRemoteDataSource {
   }) async {
     throw StateError('当前未配置 Supabase，专注记录将先保存在本机。');
   }
+
+  @override
+  Future<void> upsertPrecedentRules({
+    required String userId,
+    required List<PrecedentRule> rules,
+  }) async {
+    throw StateError('当前未配置 Supabase，专注记录将先保存在本机。');
+  }
 }
 
 abstract interface class FocusRepository {
@@ -87,6 +102,10 @@ abstract interface class FocusRepository {
     required String ruleText,
   });
   Future<FocusSession> resumeSession(String sessionId);
+  Future<FocusSession> completeEarlySession({
+    required String sessionId,
+    required String ruleText,
+  });
   Future<FocusSession> abandonSession({
     required String sessionId,
     required String failureReason,
@@ -98,6 +117,13 @@ abstract interface class FocusRepository {
   Future<void> updateNodeNote({required String nodeId, required String note});
   Future<List<FocusNode>> getNodes();
   Future<List<FocusChainRecord>> getChainRecords();
+  Future<List<PrecedentRule>> getPrecedentRules();
+  Future<PrecedentRule> createPrecedentRule({required String text});
+  Future<PrecedentRule> updatePrecedentRule({
+    required String ruleId,
+    required String text,
+  });
+  Future<void> deletePrecedentRule(String ruleId);
   Future<FocusChainMode> getLastMode();
   Future<void> sync();
   Future<void> dispose();
@@ -157,6 +183,96 @@ class LocalFocusRepository implements FocusRepository {
               ..where((session) => session.id.equals(sessionId)))
             .getSingleOrNull();
     return row == null ? null : _sessionFromRow(row);
+  }
+
+  @override
+  Future<List<PrecedentRule>> getPrecedentRules() async {
+    final rows =
+        await (database.select(database.focusPrecedentRules)
+              ..where((rule) => rule.userId.equals(userId))
+              ..where((rule) => rule.deletedAt.isNull())
+              ..orderBy([(rule) => OrderingTerm.desc(rule.updatedAt)]))
+            .get();
+    return [for (final row in rows) _precedentRuleFromRow(row)];
+  }
+
+  @override
+  Future<PrecedentRule> createPrecedentRule({required String text}) async {
+    final ruleText = _requiredRuleText(text);
+    final now = _now().toUtc();
+    final rule = PrecedentRule(
+      id: _uuid.v4(),
+      text: ruleText,
+      createdAt: now,
+      updatedAt: now,
+    );
+    await database
+        .into(database.focusPrecedentRules)
+        .insert(
+          db.FocusPrecedentRulesCompanion.insert(
+            userId: userId,
+            id: rule.id,
+            ruleText: rule.text,
+            createdAt: rule.createdAt,
+            updatedAt: rule.updatedAt,
+          ),
+        );
+    await _queue('focus_precedent_rule', rule.id, now);
+    return rule;
+  }
+
+  @override
+  Future<PrecedentRule> updatePrecedentRule({
+    required String ruleId,
+    required String text,
+  }) async {
+    final ruleText = _requiredRuleText(text);
+    final row =
+        await (database.select(database.focusPrecedentRules)
+              ..where((rule) => rule.userId.equals(userId))
+              ..where((rule) => rule.id.equals(ruleId)))
+            .getSingleOrNull();
+    if (row == null || row.deletedAt != null) {
+      throw StateError('下必为例不存在或已删除。');
+    }
+    final now = _now().toUtc();
+    await (database.update(database.focusPrecedentRules)
+          ..where((rule) => rule.userId.equals(userId))
+          ..where((rule) => rule.id.equals(ruleId)))
+        .write(
+          db.FocusPrecedentRulesCompanion(
+            ruleText: Value(ruleText),
+            updatedAt: Value(now),
+          ),
+        );
+    await _queue('focus_precedent_rule', ruleId, now);
+    return PrecedentRule(
+      id: row.id,
+      text: ruleText,
+      createdAt: row.createdAt,
+      updatedAt: now,
+    );
+  }
+
+  @override
+  Future<void> deletePrecedentRule(String ruleId) async {
+    final row =
+        await (database.select(database.focusPrecedentRules)
+              ..where((rule) => rule.userId.equals(userId))
+              ..where((rule) => rule.id.equals(ruleId)))
+            .getSingleOrNull();
+    if (row == null || row.deletedAt != null) return;
+    final now = _now().toUtc();
+    await (database.update(database.focusPrecedentRules)
+          ..where((rule) => rule.userId.equals(userId))
+          ..where((rule) => rule.id.equals(ruleId)))
+        .write(
+          db.FocusPrecedentRulesCompanion(
+            updatedAt: Value(now),
+            deletedAt: Value(now),
+          ),
+        );
+    await _queue('focus_precedent_rule', ruleId, now);
   }
 
   @override
@@ -272,6 +388,37 @@ class LocalFocusRepository implements FocusRepository {
   }
 
   @override
+  Future<FocusSession> completeEarlySession({
+    required String sessionId,
+    required String ruleText,
+  }) async {
+    final normalizedRule = _requiredRuleText(ruleText);
+    await _settleDueSessions();
+    final existing = await _sessionRow(sessionId);
+    if (existing == null) {
+      throw StateError('专注会话不存在或已不属于当前用户。');
+    }
+    if (existing.status == 'completed') {
+      if (existing.completionType ==
+          FocusSessionCompletionType.precedentRule.storageValue) {
+        return (await getSession(sessionId))!;
+      }
+      throw StateError('正常完成的专注不能改为提前完成。');
+    }
+    if (existing.status == 'failed') {
+      throw StateError('失败的专注不能改为提前完成。');
+    }
+    await _completeSession(
+      sessionId,
+      now: _now().toUtc(),
+      completionType: FocusSessionCompletionType.precedentRule,
+      completionRuleText: normalizedRule,
+    );
+    await _publish();
+    return (await getSession(sessionId))!;
+  }
+
+  @override
   Future<FocusSession> abandonSession({
     required String sessionId,
     required String failureReason,
@@ -381,6 +528,9 @@ class LocalFocusRepository implements FocusRepository {
   Future<void> _completeSession(
     String sessionId, {
     required DateTime now,
+    FocusSessionCompletionType completionType =
+        FocusSessionCompletionType.countdown,
+    String? completionRuleText,
   }) async {
     await database.transaction(() async {
       final row =
@@ -388,11 +538,23 @@ class LocalFocusRepository implements FocusRepository {
                 ..where((session) => session.userId.equals(userId))
                 ..where((session) => session.id.equals(sessionId)))
               .getSingleOrNull();
-      if (row == null || row.status != 'active' || row.endsAt.isAfter(now)) {
+      final isEarlyCompletion =
+          completionType == FocusSessionCompletionType.precedentRule;
+      if (row == null ||
+          (!isEarlyCompletion &&
+              (row.status != 'active' || row.endsAt.isAfter(now))) ||
+          (isEarlyCompletion &&
+              row.status != 'active' &&
+              row.status != 'paused')) {
         return;
       }
-      final seconds = row.durationSeconds;
-      final completedAt = row.endsAt;
+      final seconds = isEarlyCompletion
+          ? _effectiveSeconds(row, now)
+          : row.durationSeconds;
+      if (isEarlyCompletion && seconds <= 0) {
+        throw StateError('至少需要有有效专注时间才能提前完成。');
+      }
+      final completedAt = isEarlyCompletion ? now : row.endsAt;
       await (database.update(database.focusSessions)
             ..where((session) => session.userId.equals(userId))
             ..where((session) => session.id.equals(sessionId)))
@@ -401,6 +563,8 @@ class LocalFocusRepository implements FocusRepository {
               status: const Value('completed'),
               completedAt: Value(completedAt),
               effectiveSeconds: Value(seconds),
+              completionType: Value(completionType.storageValue),
+              completionRuleText: Value(completionRuleText),
               pausedAt: const Value(null),
             ),
           );
@@ -507,11 +671,19 @@ class LocalFocusRepository implements FocusRepository {
                 ..where((row) => row.userId.equals(userId))
                 ..where((row) => row.id.equals(session.id)))
               .getSingleOrNull();
+      final shouldApplyCompletedEffects =
+          session.status == FocusSessionStatus.completed &&
+          (local == null ||
+              local.status == 'active' ||
+              local.status == 'paused');
       if (local == null ||
           ((local.status == 'active' || local.status == 'paused') &&
               !session.status.isUnfinished)) {
         await _saveSession(session, queue: false);
         if (session.isFailed) await _applyFailedEffects(session);
+        if (shouldApplyCompletedEffects) {
+          await _applyCompletedEffects(session);
+        }
       }
     }
     for (final node in snapshot.nodes) {
@@ -543,9 +715,36 @@ class LocalFocusRepository implements FocusRepository {
             ),
           );
     }
+    for (final rule in snapshot.precedentRules) {
+      final local =
+          await (database.select(database.focusPrecedentRules)
+                ..where((row) => row.userId.equals(userId))
+                ..where((row) => row.id.equals(rule.id)))
+              .getSingleOrNull();
+      if (local == null ||
+          rule.updatedAt.isAfter(local.updatedAt) ||
+          (rule.updatedAt.isAtSameMomentAs(local.updatedAt) &&
+              rule.deletedAt != null &&
+              local.deletedAt == null)) {
+        await database
+            .into(database.focusPrecedentRules)
+            .insertOnConflictUpdate(
+              db.FocusPrecedentRulesCompanion.insert(
+                userId: userId,
+                id: rule.id,
+                ruleText: rule.text,
+                createdAt: rule.createdAt,
+                updatedAt: rule.updatedAt,
+                deletedAt: Value(rule.deletedAt),
+              ),
+            );
+      }
+    }
+    await _reconcileTaskFocusProgressFromSessions();
     final sessions = await getSessions();
     final nodes = await getNodes();
     final records = await getChainRecords();
+    final precedentRules = await _getPrecedentRulesIncludingDeleted();
     if (sessions.isNotEmpty) {
       await remote.upsertSessions(userId: userId, sessions: sessions);
     }
@@ -553,6 +752,7 @@ class LocalFocusRepository implements FocusRepository {
       await remote.upsertNodes(userId: userId, nodes: nodes);
     }
     await remote.upsertRecords(userId: userId, records: records);
+    await remote.upsertPrecedentRules(userId: userId, rules: precedentRules);
     await _publish();
   }
 
@@ -574,6 +774,8 @@ class LocalFocusRepository implements FocusRepository {
             status: session.status.storageValue,
             completedAt: Value(session.completedAt),
             effectiveSeconds: Value(session.effectiveSeconds),
+            completionType: Value(session.completionType.storageValue),
+            completionRuleText: Value(session.completionRuleText),
             pausedAt: Value(session.pausedAt),
             pausedSeconds: Value(session.pausedSeconds),
             pauseRuleText: Value(session.pauseRuleText),
@@ -607,6 +809,13 @@ class LocalFocusRepository implements FocusRepository {
               ..orderBy([(session) => OrderingTerm.desc(session.startedAt)]))
             .get();
     return [for (final row in rows) _sessionFromRow(row)];
+  }
+
+  Future<List<PrecedentRule>> _getPrecedentRulesIncludingDeleted() async {
+    final rows = await (database.select(
+      database.focusPrecedentRules,
+    )..where((rule) => rule.userId.equals(userId))).get();
+    return [for (final row in rows) _precedentRuleFromRow(row)];
   }
 
   Future<db.FocusSession?> _sessionRow(String sessionId) {
@@ -647,6 +856,41 @@ class LocalFocusRepository implements FocusRepository {
     await _queue('task', taskId, updatedAt);
   }
 
+  Future<void> _reconcileTaskFocusProgressFromSessions() async {
+    final settledRows =
+        await (database.select(database.focusSessions)
+              ..where((session) => session.userId.equals(userId))
+              ..where(
+                (session) => session.status.isIn(['completed', 'failed']),
+              ))
+            .get();
+    final secondsByTask = <String, int>{};
+    for (final session in settledRows) {
+      secondsByTask.update(
+        session.taskId,
+        (seconds) => seconds + session.effectiveSeconds,
+        ifAbsent: () => session.effectiveSeconds,
+      );
+    }
+    if (secondsByTask.isEmpty) return;
+    final taskRows =
+        await (database.select(database.localTasks)
+              ..where((task) => task.userId.equals(userId))
+              ..where((task) => task.id.isIn(secondsByTask.keys)))
+            .get();
+    for (final task in taskRows) {
+      final reconciled = secondsByTask[task.id]!;
+      if (task.focusProgressSeconds == reconciled) continue;
+      await (database.update(database.localTasks)
+            ..where((row) => row.userId.equals(userId))
+            ..where((row) => row.id.equals(task.id)))
+          .write(
+            db.LocalTasksCompanion(focusProgressSeconds: Value(reconciled)),
+          );
+      await _queue('task', task.id, _now().toUtc());
+    }
+  }
+
   Future<void> _applyFailedEffects(FocusSession session) async {
     final settledAt = session.completedAt ?? session.endsAt;
     await _addTaskProgress(session.taskId, session.effectiveSeconds, settledAt);
@@ -667,6 +911,61 @@ class LocalFocusRepository implements FocusRepository {
           ),
         );
     await _queue('focus_chain', session.mode.storageValue, settledAt);
+  }
+
+  Future<void> _applyCompletedEffects(FocusSession session) async {
+    final settledAt = session.completedAt ?? session.endsAt;
+    await database.transaction(() async {
+      final existingNode =
+          await (database.select(database.focusNodes)
+                ..where((node) => node.userId.equals(userId))
+                ..where((node) => node.id.equals(session.id)))
+              .getSingleOrNull();
+      if (existingNode == null) {
+        await database
+            .into(database.focusNodes)
+            .insert(
+              db.FocusNodesCompanion.insert(
+                userId: userId,
+                id: session.id,
+                sessionId: session.id,
+                taskId: session.taskId,
+                mode: session.mode.storageValue,
+                createdAt: settledAt,
+                effectiveSeconds: session.effectiveSeconds,
+              ),
+            );
+      }
+      await _addTaskProgress(
+        session.taskId,
+        session.effectiveSeconds,
+        settledAt,
+      );
+      final record =
+          await (database.select(database.focusChainRecords)
+                ..where((entry) => entry.userId.equals(userId))
+                ..where(
+                  (entry) => entry.mode.equals(session.mode.storageValue),
+                ))
+              .getSingleOrNull();
+      final current = (record?.currentConsecutive ?? 0) + 1;
+      final best = current > (record?.bestConsecutive ?? 0)
+          ? current
+          : (record?.bestConsecutive ?? 0);
+      await database
+          .into(database.focusChainRecords)
+          .insertOnConflictUpdate(
+            db.FocusChainRecordsCompanion.insert(
+              userId: userId,
+              mode: session.mode.storageValue,
+              currentConsecutive: Value(current),
+              bestConsecutive: Value(best),
+              updatedAt: settledAt,
+            ),
+          );
+      await _queue('focus_node', session.id, settledAt);
+      await _queue('focus_chain', session.mode.storageValue, settledAt);
+    });
   }
 
   String _requiredFailureReason(String reason) {
@@ -698,6 +997,8 @@ class LocalFocusRepository implements FocusRepository {
     },
     completedAt: row.completedAt,
     effectiveSeconds: row.effectiveSeconds,
+    completionType: FocusSessionCompletionType.fromStorage(row.completionType),
+    completionRuleText: row.completionRuleText,
     pausedAt: row.pausedAt,
     pausedSeconds: row.pausedSeconds,
     pauseRuleText: row.pauseRuleText,
@@ -720,6 +1021,15 @@ class LocalFocusRepository implements FocusRepository {
     bestConsecutive: row.bestConsecutive,
     updatedAt: row.updatedAt,
   );
+
+  PrecedentRule _precedentRuleFromRow(db.FocusPrecedentRule row) =>
+      PrecedentRule(
+        id: row.id,
+        text: row.ruleText,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        deletedAt: row.deletedAt,
+      );
 }
 
 class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
@@ -732,10 +1042,14 @@ class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
     final sessions = await client.from('focus_sessions').select();
     final nodes = await client.from('focus_nodes').select();
     final records = await client.from('focus_chain_records').select();
+    final precedentRules = await client.from('focus_precedent_rules').select();
     return FocusRemoteSnapshot(
       sessions: [for (final row in sessions) _sessionFromJson(row)],
       nodes: [for (final row in nodes) _nodeFromJson(row)],
       records: [for (final row in records) _recordFromJson(row)],
+      precedentRules: [
+        for (final row in precedentRules) _precedentRuleFromJson(row),
+      ],
     );
   }
 
@@ -759,6 +1073,8 @@ class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
               ? null
               : _utcIso8601(session.completedAt!),
           'effective_seconds': session.effectiveSeconds,
+          'completion_type': session.completionType.storageValue,
+          'completion_rule_text': session.completionRuleText,
           'paused_at': session.pausedAt == null
               ? null
               : _utcIso8601(session.pausedAt!),
@@ -806,6 +1122,27 @@ class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
     ], onConflict: 'user_id,mode');
   }
 
+  @override
+  Future<void> upsertPrecedentRules({
+    required String userId,
+    required List<PrecedentRule> rules,
+  }) async {
+    if (rules.isEmpty) return;
+    await client.from('focus_precedent_rules').upsert([
+      for (final rule in rules)
+        {
+          'id': rule.id,
+          'user_id': userId,
+          'rule_text': rule.text,
+          'created_at': _utcIso8601(rule.createdAt),
+          'updated_at': _utcIso8601(rule.updatedAt),
+          'deleted_at': rule.deletedAt == null
+              ? null
+              : _utcIso8601(rule.deletedAt!),
+        },
+    ], onConflict: 'id');
+  }
+
   FocusSession _sessionFromJson(Map<String, dynamic> json) => FocusSession(
     id: json['id'] as String,
     taskId: json['task_id'] as String,
@@ -823,6 +1160,10 @@ class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
         ? null
         : DateTime.parse(json['completed_at'] as String).toUtc(),
     effectiveSeconds: json['effective_seconds'] as int,
+    completionType: FocusSessionCompletionType.fromStorage(
+      json['completion_type'] as String?,
+    ),
+    completionRuleText: json['completion_rule_text'] as String?,
     pausedAt: (json['paused_at'] as String?) == null
         ? null
         : DateTime.parse(json['paused_at'] as String).toUtc(),
@@ -848,6 +1189,17 @@ class SupabaseFocusRemoteDataSource implements FocusRemoteDataSource {
         bestConsecutive: json['best_consecutive'] as int,
         updatedAt: DateTime.parse(json['updated_at'] as String).toUtc(),
       );
+
+  PrecedentRule _precedentRuleFromJson(Map<String, dynamic> json) =>
+      PrecedentRule(
+        id: json['id'] as String,
+        text: json['rule_text'] as String,
+        createdAt: DateTime.parse(json['created_at'] as String).toUtc(),
+        updatedAt: DateTime.parse(json['updated_at'] as String).toUtc(),
+        deletedAt: (json['deleted_at'] as String?) == null
+            ? null
+            : DateTime.parse(json['deleted_at'] as String).toUtc(),
+      );
 }
 
 String _utcIso8601(DateTime value) => value.toUtc().toIso8601String();
@@ -856,6 +1208,7 @@ class InMemoryFocusRemote implements FocusRemoteDataSource {
   final _sessions = <String, Map<String, FocusSession>>{};
   final _nodes = <String, Map<String, FocusNode>>{};
   final _records = <String, Map<String, FocusChainRecord>>{};
+  final _precedentRules = <String, Map<String, PrecedentRule>>{};
 
   @override
   Future<FocusRemoteSnapshot> pull({required String userId}) async {
@@ -863,6 +1216,7 @@ class InMemoryFocusRemote implements FocusRemoteDataSource {
       sessions: (_sessions[userId] ?? {}).values.toList(),
       nodes: (_nodes[userId] ?? {}).values.toList(),
       records: (_records[userId] ?? {}).values.toList(),
+      precedentRules: (_precedentRules[userId] ?? {}).values.toList(),
     );
   }
 
@@ -896,6 +1250,17 @@ class InMemoryFocusRemote implements FocusRemoteDataSource {
     final target = _records.putIfAbsent(userId, () => {});
     for (final record in records) {
       target[record.mode.storageValue] = record;
+    }
+  }
+
+  @override
+  Future<void> upsertPrecedentRules({
+    required String userId,
+    required List<PrecedentRule> rules,
+  }) async {
+    final target = _precedentRules.putIfAbsent(userId, () => {});
+    for (final rule in rules) {
+      target[rule.id] = rule;
     }
   }
 }
@@ -935,6 +1300,12 @@ class UnavailableFocusRepository implements FocusRepository {
   Future<FocusSession> resumeSession(String sessionId) => _unavailable();
 
   @override
+  Future<FocusSession> completeEarlySession({
+    required String sessionId,
+    required String ruleText,
+  }) => _unavailable();
+
+  @override
   Future<FocusSession> abandonSession({
     required String sessionId,
     required String failureReason,
@@ -955,6 +1326,22 @@ class UnavailableFocusRepository implements FocusRepository {
 
   @override
   Future<List<FocusChainRecord>> getChainRecords() async => const [];
+
+  @override
+  Future<List<PrecedentRule>> getPrecedentRules() async => const [];
+
+  @override
+  Future<PrecedentRule> createPrecedentRule({required String text}) =>
+      _unavailable();
+
+  @override
+  Future<PrecedentRule> updatePrecedentRule({
+    required String ruleId,
+    required String text,
+  }) => _unavailable();
+
+  @override
+  Future<void> deletePrecedentRule(String ruleId) => _unavailable();
 
   @override
   Future<FocusChainMode> getLastMode() async => FocusChainMode.regular;
