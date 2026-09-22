@@ -141,4 +141,151 @@ void main() {
     );
     expect(await restarted.getNodes(), hasLength(1));
   });
+
+  test('确认放弃记录失败、保留有效时间且只清零本次链记录', () async {
+    final task = await createTask('处理反馈');
+    await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.elite,
+      duration: const Duration(seconds: 10),
+    );
+    now = now.add(const Duration(seconds: 10));
+    await focusRepository.getSessions();
+
+    await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.elite,
+      duration: const Duration(seconds: 80),
+    );
+    now = now.add(const Duration(seconds: 25));
+    final failed = await focusRepository.abandonSession(
+      sessionId: (await focusRepository.getActiveSession())!.id,
+      failureReason: '注意力被打断',
+    );
+
+    expect(failed.status, FocusSessionStatus.failed);
+    expect(failed.effectiveSeconds, 25);
+    expect(failed.failureReason, '注意力被打断');
+    expect(await focusRepository.getNodes(), hasLength(1));
+    final elite = (await focusRepository.getChainRecords()).singleWhere(
+      (record) => record.mode == FocusChainMode.elite,
+    );
+    expect(elite.currentConsecutive, 0);
+    expect(elite.bestConsecutive, 1);
+    expect(
+      (await taskRepository.getGoals())
+          .single
+          .tasks
+          .single
+          .focusProgressSeconds,
+      35,
+    );
+    expect(
+      (await taskRepository.getGoals()).single.tasks.single.isComplete,
+      isFalse,
+    );
+
+    await focusRepository.abandonSession(
+      sessionId: failed.id,
+      failureReason: '重复操作不应覆盖',
+    );
+    final afterRepeat = (await taskRepository.getGoals()).single.tasks.single;
+    expect(afterRepeat.focusProgressSeconds, 35);
+    expect(
+      (await focusRepository.getSessions())
+          .firstWhere((session) => session.id == failed.id)
+          .failureReason,
+      '注意力被打断',
+    );
+  });
+
+  test('暂停区间不计入失败专注有效时间', () async {
+    final task = await createTask('整理资料');
+    final session = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(seconds: 100),
+    );
+    now = now.add(const Duration(seconds: 40));
+    await focusRepository.pauseSession(session.id, ruleText: '短暂离开时允许暂停');
+    now = now.add(const Duration(seconds: 30));
+    await focusRepository.resumeSession(session.id);
+    now = now.add(const Duration(seconds: 20));
+
+    final failed = await focusRepository.abandonSession(
+      sessionId: session.id,
+      failureReason: '临时离开',
+    );
+    expect(failed.effectiveSeconds, 60);
+    expect(
+      (await taskRepository.getGoals())
+          .single
+          .tasks
+          .single
+          .focusProgressSeconds,
+      60,
+    );
+    expect(await focusRepository.getNodes(), isEmpty);
+  });
+
+  test('暂停后正常完成仍贡献完整的有效专注时长', () async {
+    final task = await createTask('完成阅读');
+    final session = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(seconds: 100),
+    );
+    now = now.add(const Duration(seconds: 40));
+    await focusRepository.pauseSession(session.id, ruleText: '允许暂离');
+    now = now.add(const Duration(seconds: 30));
+    await focusRepository.resumeSession(session.id);
+    now = now.add(const Duration(seconds: 60));
+
+    await focusRepository.getSessions();
+    final completed = (await focusRepository.getSessions()).single;
+    expect(completed.status, FocusSessionStatus.completed);
+    expect(completed.effectiveSeconds, 100);
+    expect(
+      (await taskRepository.getGoals())
+          .single
+          .tasks
+          .single
+          .focusProgressSeconds,
+      100,
+    );
+  });
+
+  test('失败原因和正常节点备注可编辑并持久化', () async {
+    final task = await createTask('写复盘');
+    final session = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(seconds: 10),
+    );
+    now = now.add(const Duration(seconds: 10));
+    await focusRepository.getSessions();
+    await focusRepository.updateNodeNote(nodeId: session.id, note: '完成了关键复盘');
+    expect((await focusRepository.getNodes()).single.note, '完成了关键复盘');
+
+    await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(seconds: 30),
+    );
+    final active = await focusRepository.getActiveSession();
+    final failed = await focusRepository.abandonSession(
+      sessionId: active!.id,
+      failureReason: '初始原因',
+    );
+    await focusRepository.updateFailureReason(
+      sessionId: failed.id,
+      failureReason: '改为更准确的反思',
+    );
+    expect(
+      (await focusRepository.getSessions())
+          .firstWhere((item) => item.id == failed.id)
+          .failureReason,
+      '改为更准确的反思',
+    );
+  });
 }

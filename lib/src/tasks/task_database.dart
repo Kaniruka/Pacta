@@ -44,6 +44,10 @@ class FocusSessions extends Table {
   TextColumn get status => text()();
   DateTimeColumn get completedAt => dateTime().nullable()();
   IntColumn get effectiveSeconds => integer().withDefault(const Constant(0))();
+  DateTimeColumn get pausedAt => dateTime().nullable()();
+  IntColumn get pausedSeconds => integer().withDefault(const Constant(0))();
+  TextColumn get pauseRuleText => text().nullable()();
+  TextColumn get failureReason => text().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
@@ -57,6 +61,7 @@ class FocusNodes extends Table {
   TextColumn get mode => text()();
   DateTimeColumn get createdAt => dateTime()();
   IntColumn get effectiveSeconds => integer()();
+  TextColumn get note => text().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
@@ -109,7 +114,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -121,6 +126,15 @@ class PactaDatabase extends _$PactaDatabase {
         await m.createTable(focusNodes);
         await m.createTable(focusChainRecords);
         await m.createTable(focusPreferences);
+      }
+      if (from < 3) {
+        await m.addColumn(focusSessions, focusSessions.pausedAt);
+        await m.addColumn(focusSessions, focusSessions.pausedSeconds);
+        await m.addColumn(focusSessions, focusSessions.failureReason);
+        await m.addColumn(focusNodes, focusNodes.note);
+      }
+      if (from < 4) {
+        await m.addColumn(focusSessions, focusSessions.pauseRuleText);
       }
     },
   );

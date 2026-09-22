@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide FocusNode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -855,6 +855,10 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
       stream: taskRepository.watchGoals(),
       initialData: const [],
       builder: (context, snapshot) {
+        final taskTitles = <String, String>{
+          for (final goal in snapshot.data ?? const <Goal>[])
+            for (final task in goal.tasks) task.id: task.title,
+        };
         final tasks = [
           for (final goal in snapshot.data ?? const <Goal>[])
             for (final task in goal.tasks)
@@ -864,8 +868,9 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
           stream: focusRepository.watchSessions(),
           initialData: const [],
           builder: (context, sessionsSnapshot) {
-            final active = (sessionsSnapshot.data ?? const <FocusSession>[])
-                .where((session) => session.isActive)
+            final sessions = sessionsSnapshot.data ?? const <FocusSession>[];
+            final active = sessions
+                .where((session) => session.isUnfinished)
                 .firstOrNull;
             final activeTask = active == null
                 ? null
@@ -965,6 +970,18 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                     );
                   },
                 ),
+                if (sessions.any((session) => !session.isUnfinished))
+                  FutureBuilder<List<FocusNode>>(
+                    future: focusRepository.getNodes(),
+                    builder: (context, nodeSnapshot) => _FocusHistoryCard(
+                      repository: focusRepository,
+                      sessions: sessions
+                          .where((session) => !session.isUnfinished)
+                          .toList(),
+                      nodes: nodeSnapshot.data ?? const [],
+                      taskTitles: taskTitles,
+                    ),
+                  ),
               ],
             );
           },
@@ -1026,6 +1043,174 @@ String? _findTaskTitle(List<Goal> goals, String taskId) {
     }
   }
   return null;
+}
+
+class _FocusHistoryCard extends StatelessWidget {
+  const _FocusHistoryCard({
+    required this.repository,
+    required this.sessions,
+    required this.nodes,
+    required this.taskTitles,
+  });
+
+  final FocusRepository repository;
+  final List<FocusSession> sessions;
+  final List<FocusNode> nodes;
+  final Map<String, String> taskTitles;
+
+  @override
+  Widget build(BuildContext context) {
+    final nodesBySession = {for (final node in nodes) node.sessionId: node};
+    return Card(
+      margin: const EdgeInsets.only(top: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('专注历史', style: Theme.of(context).textTheme.titleMedium),
+            for (final session in sessions)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(taskTitles[session.taskId] ?? '原任务'),
+                subtitle: Text(
+                  session.isFailed
+                      ? '失败 · ${_formatDuration(session.effectiveSeconds)}\n原因：${session.failureReason ?? '未填写'}'
+                      : '正常完成 · ${_formatDuration(session.effectiveSeconds)}',
+                ),
+                trailing: Wrap(
+                  children: [
+                    if (session.isFailed)
+                      IconButton(
+                        tooltip: '编辑失败原因',
+                        icon: const Icon(Icons.edit_note_outlined),
+                        onPressed: () async {
+                          final reason = await _showTextEditor(
+                            context,
+                            title: '编辑失败原因',
+                            label: '失败原因',
+                            initial: session.failureReason ?? '',
+                            required: true,
+                          );
+                          if (reason != null) {
+                            await repository.updateFailureReason(
+                              sessionId: session.id,
+                              failureReason: reason,
+                            );
+                          }
+                        },
+                      ),
+                    if (nodesBySession[session.id] case final node?)
+                      IconButton(
+                        tooltip: '编辑节点备注',
+                        icon: const Icon(Icons.sticky_note_2_outlined),
+                        onPressed: () async {
+                          final note = await _showTextEditor(
+                            context,
+                            title: '编辑节点备注',
+                            label: '备注（可选）',
+                            initial: node.note ?? '',
+                          );
+                          if (note != null) {
+                            await repository.updateNodeNote(
+                              nodeId: node.id,
+                              note: note,
+                            );
+                          }
+                        },
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<String?> _showTextEditor(
+  BuildContext context, {
+  required String title,
+  required String label,
+  required String initial,
+  bool required = false,
+}) {
+  return showDialog<String>(
+    context: context,
+    builder: (_) => _TextEditorDialog(
+      title: title,
+      label: label,
+      initial: initial,
+      required: required,
+    ),
+  );
+}
+
+class _TextEditorDialog extends StatefulWidget {
+  const _TextEditorDialog({
+    required this.title,
+    required this.label,
+    required this.initial,
+    this.required = false,
+  });
+
+  final String title;
+  final String label;
+  final String initial;
+  final bool required;
+
+  @override
+  State<_TextEditorDialog> createState() => _TextEditorDialogState();
+}
+
+class _TextEditorDialogState extends State<_TextEditorDialog> {
+  late final TextEditingController _text;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _text = TextEditingController(text: widget.initial);
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final value = _text.text.trim();
+    if (widget.required && value.isEmpty) {
+      setState(() => _error = '请填写${widget.label}。');
+      return;
+    }
+    if (value.length > 500) {
+      setState(() => _error = '内容不能超过 500 字。');
+      return;
+    }
+    Navigator.of(context).pop(value);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.title),
+    content: TextField(
+      controller: _text,
+      autofocus: true,
+      maxLines: 4,
+      maxLength: 500,
+      decoration: InputDecoration(labelText: widget.label, errorText: _error),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('取消'),
+      ),
+      FilledButton(onPressed: _save, child: const Text('保存')),
+    ],
+  );
 }
 
 class FocusSetupDialog extends ConsumerStatefulWidget {
@@ -1161,13 +1346,13 @@ class FocusSessionPage extends ConsumerStatefulWidget {
 
 class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
   Timer? _timer;
-  FocusSession? _active;
-  bool _completed = false;
+  FocusSession? _current;
+  bool _busy = false;
 
   @override
   void initState() {
     super.initState();
-    _active = widget.session.isActive ? widget.session : null;
+    _current = widget.session;
     _refresh();
     _timer = Timer.periodic(
       const Duration(milliseconds: 250),
@@ -1176,12 +1361,69 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
   }
 
   Future<void> _refresh() async {
-    final active = await ref.read(focusRepositoryProvider).getActiveSession();
+    final session = await ref
+        .read(focusRepositoryProvider)
+        .getSession(widget.session.id);
     if (!mounted) return;
-    setState(() {
-      _active = active;
-      _completed = active == null;
-    });
+    if (session != null) setState(() => _current = session);
+  }
+
+  Future<void> _togglePause() async {
+    final session = _current;
+    if (session == null || _busy) return;
+    String? ruleText;
+    if (!session.isPaused) {
+      ruleText = await _showTextEditor(
+        context,
+        title: '暂停本次专注',
+        label: '下必为例',
+        initial: '',
+        required: true,
+      );
+      if (ruleText == null || !mounted) return;
+    }
+    setState(() => _busy = true);
+    try {
+      final repository = ref.read(focusRepositoryProvider);
+      _current = session.isPaused
+          ? await repository.resumeSession(session.id)
+          : await repository.pauseSession(session.id, ruleText: ruleText!);
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (mounted) _showError(error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _abandon() async {
+    final session = _current;
+    if (session == null || !session.isUnfinished || _busy) return;
+    final reason = await _showTextEditor(
+      context,
+      title: '放弃本次专注',
+      label: '失败原因',
+      initial: '',
+      required: true,
+    );
+    if (reason == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      _current = await ref
+          .read(focusRepositoryProvider)
+          .abandonSession(sessionId: session.id, failureReason: reason);
+      if (mounted) setState(() {});
+    } catch (error) {
+      if (mounted) _showError(error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _showError(Object error) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(error.toString().replaceFirst('Bad state: ', ''))),
+    );
   }
 
   @override
@@ -1192,8 +1434,10 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
 
   @override
   Widget build(BuildContext context) {
-    final session = _active ?? widget.session;
-    final remaining = session.endsAt.difference(DateTime.now().toUtc());
+    final session = _current ?? widget.session;
+    final now = DateTime.now().toUtc();
+    final reference = session.isPaused ? (session.pausedAt ?? now) : now;
+    final remaining = session.endsAt.difference(reference);
     final remainingSeconds = remaining.inSeconds.clamp(
       0,
       session.durationSeconds,
@@ -1201,6 +1445,7 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
     final progress = session.durationSeconds == 0
         ? 1.0
         : 1 - (remainingSeconds / session.durationSeconds);
+    final settled = !session.isUnfinished;
     return Scaffold(
       appBar: AppBar(title: const Text('专注进行中')),
       body: Center(
@@ -1221,20 +1466,44 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
                 Text(session.mode.label, textAlign: TextAlign.center),
                 const SizedBox(height: 36),
                 Text(
-                  _completed ? '00:00' : _formatClock(remainingSeconds),
+                  settled ? '00:00' : _formatClock(remainingSeconds),
                   style: Theme.of(context).textTheme.displayLarge,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
-                LinearProgressIndicator(value: _completed ? 1 : progress),
+                LinearProgressIndicator(value: settled ? 1 : progress),
                 const SizedBox(height: 20),
                 Text(
-                  _completed
+                  session.isFailed
+                      ? '本次专注已失败，已保留有效投入时间。任务仍需你单独确认完成。\n失败原因：${session.failureReason ?? '未填写'}'
+                      : session.status == FocusSessionStatus.completed
                       ? '本次专注已完成，已生成一个专注节点并记录有效时间。任务仍需你单独确认完成。'
+                      : session.isPaused
+                      ? '本次专注已暂停，暂停时间不计入有效投入。'
                       : '倒计时归零后自动结算。返回其他页面不会使本次专注失败。',
                   textAlign: TextAlign.center,
                 ),
-                if (_completed) ...[
+                if (session.isUnfinished) ...[
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _busy ? null : _togglePause,
+                        icon: Icon(
+                          session.isPaused ? Icons.play_arrow : Icons.pause,
+                        ),
+                        label: Text(session.isPaused ? '继续' : '暂停'),
+                      ),
+                      const SizedBox(width: 12),
+                      TextButton(
+                        onPressed: _busy ? null : _abandon,
+                        child: const Text('放弃本次专注'),
+                      ),
+                    ],
+                  ),
+                ],
+                if (settled) ...[
                   const SizedBox(height: 20),
                   FilledButton(
                     onPressed: () => Navigator.of(context).pop(),

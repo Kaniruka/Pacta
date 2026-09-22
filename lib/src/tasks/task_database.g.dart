@@ -1511,6 +1511,51 @@ class $FocusSessionsTable extends FocusSessions
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _pausedAtMeta = const VerificationMeta(
+    'pausedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> pausedAt = GeneratedColumn<DateTime>(
+    'paused_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _pausedSecondsMeta = const VerificationMeta(
+    'pausedSeconds',
+  );
+  @override
+  late final GeneratedColumn<int> pausedSeconds = GeneratedColumn<int>(
+    'paused_seconds',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _pauseRuleTextMeta = const VerificationMeta(
+    'pauseRuleText',
+  );
+  @override
+  late final GeneratedColumn<String> pauseRuleText = GeneratedColumn<String>(
+    'pause_rule_text',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _failureReasonMeta = const VerificationMeta(
+    'failureReason',
+  );
+  @override
+  late final GeneratedColumn<String> failureReason = GeneratedColumn<String>(
+    'failure_reason',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     userId,
@@ -1523,6 +1568,10 @@ class $FocusSessionsTable extends FocusSessions
     status,
     completedAt,
     effectiveSeconds,
+    pausedAt,
+    pausedSeconds,
+    pauseRuleText,
+    failureReason,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1618,6 +1667,39 @@ class $FocusSessionsTable extends FocusSessions
         ),
       );
     }
+    if (data.containsKey('paused_at')) {
+      context.handle(
+        _pausedAtMeta,
+        pausedAt.isAcceptableOrUnknown(data['paused_at']!, _pausedAtMeta),
+      );
+    }
+    if (data.containsKey('paused_seconds')) {
+      context.handle(
+        _pausedSecondsMeta,
+        pausedSeconds.isAcceptableOrUnknown(
+          data['paused_seconds']!,
+          _pausedSecondsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('pause_rule_text')) {
+      context.handle(
+        _pauseRuleTextMeta,
+        pauseRuleText.isAcceptableOrUnknown(
+          data['pause_rule_text']!,
+          _pauseRuleTextMeta,
+        ),
+      );
+    }
+    if (data.containsKey('failure_reason')) {
+      context.handle(
+        _failureReasonMeta,
+        failureReason.isAcceptableOrUnknown(
+          data['failure_reason']!,
+          _failureReasonMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1667,6 +1749,22 @@ class $FocusSessionsTable extends FocusSessions
         DriftSqlType.int,
         data['${effectivePrefix}effective_seconds'],
       )!,
+      pausedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}paused_at'],
+      ),
+      pausedSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}paused_seconds'],
+      )!,
+      pauseRuleText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}pause_rule_text'],
+      ),
+      failureReason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}failure_reason'],
+      ),
     );
   }
 
@@ -1687,6 +1785,10 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
   final String status;
   final DateTime? completedAt;
   final int effectiveSeconds;
+  final DateTime? pausedAt;
+  final int pausedSeconds;
+  final String? pauseRuleText;
+  final String? failureReason;
   const FocusSession({
     required this.userId,
     required this.id,
@@ -1698,6 +1800,10 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     required this.status,
     this.completedAt,
     required this.effectiveSeconds,
+    this.pausedAt,
+    required this.pausedSeconds,
+    this.pauseRuleText,
+    this.failureReason,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1714,6 +1820,16 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
       map['completed_at'] = Variable<DateTime>(completedAt);
     }
     map['effective_seconds'] = Variable<int>(effectiveSeconds);
+    if (!nullToAbsent || pausedAt != null) {
+      map['paused_at'] = Variable<DateTime>(pausedAt);
+    }
+    map['paused_seconds'] = Variable<int>(pausedSeconds);
+    if (!nullToAbsent || pauseRuleText != null) {
+      map['pause_rule_text'] = Variable<String>(pauseRuleText);
+    }
+    if (!nullToAbsent || failureReason != null) {
+      map['failure_reason'] = Variable<String>(failureReason);
+    }
     return map;
   }
 
@@ -1731,6 +1847,16 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
           ? const Value.absent()
           : Value(completedAt),
       effectiveSeconds: Value(effectiveSeconds),
+      pausedAt: pausedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(pausedAt),
+      pausedSeconds: Value(pausedSeconds),
+      pauseRuleText: pauseRuleText == null && nullToAbsent
+          ? const Value.absent()
+          : Value(pauseRuleText),
+      failureReason: failureReason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(failureReason),
     );
   }
 
@@ -1750,6 +1876,10 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
       status: serializer.fromJson<String>(json['status']),
       completedAt: serializer.fromJson<DateTime?>(json['completedAt']),
       effectiveSeconds: serializer.fromJson<int>(json['effectiveSeconds']),
+      pausedAt: serializer.fromJson<DateTime?>(json['pausedAt']),
+      pausedSeconds: serializer.fromJson<int>(json['pausedSeconds']),
+      pauseRuleText: serializer.fromJson<String?>(json['pauseRuleText']),
+      failureReason: serializer.fromJson<String?>(json['failureReason']),
     );
   }
   @override
@@ -1766,6 +1896,10 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
       'status': serializer.toJson<String>(status),
       'completedAt': serializer.toJson<DateTime?>(completedAt),
       'effectiveSeconds': serializer.toJson<int>(effectiveSeconds),
+      'pausedAt': serializer.toJson<DateTime?>(pausedAt),
+      'pausedSeconds': serializer.toJson<int>(pausedSeconds),
+      'pauseRuleText': serializer.toJson<String?>(pauseRuleText),
+      'failureReason': serializer.toJson<String?>(failureReason),
     };
   }
 
@@ -1780,6 +1914,10 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     String? status,
     Value<DateTime?> completedAt = const Value.absent(),
     int? effectiveSeconds,
+    Value<DateTime?> pausedAt = const Value.absent(),
+    int? pausedSeconds,
+    Value<String?> pauseRuleText = const Value.absent(),
+    Value<String?> failureReason = const Value.absent(),
   }) => FocusSession(
     userId: userId ?? this.userId,
     id: id ?? this.id,
@@ -1791,6 +1929,14 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     status: status ?? this.status,
     completedAt: completedAt.present ? completedAt.value : this.completedAt,
     effectiveSeconds: effectiveSeconds ?? this.effectiveSeconds,
+    pausedAt: pausedAt.present ? pausedAt.value : this.pausedAt,
+    pausedSeconds: pausedSeconds ?? this.pausedSeconds,
+    pauseRuleText: pauseRuleText.present
+        ? pauseRuleText.value
+        : this.pauseRuleText,
+    failureReason: failureReason.present
+        ? failureReason.value
+        : this.failureReason,
   );
   FocusSession copyWithCompanion(FocusSessionsCompanion data) {
     return FocusSession(
@@ -1810,6 +1956,16 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
       effectiveSeconds: data.effectiveSeconds.present
           ? data.effectiveSeconds.value
           : this.effectiveSeconds,
+      pausedAt: data.pausedAt.present ? data.pausedAt.value : this.pausedAt,
+      pausedSeconds: data.pausedSeconds.present
+          ? data.pausedSeconds.value
+          : this.pausedSeconds,
+      pauseRuleText: data.pauseRuleText.present
+          ? data.pauseRuleText.value
+          : this.pauseRuleText,
+      failureReason: data.failureReason.present
+          ? data.failureReason.value
+          : this.failureReason,
     );
   }
 
@@ -1825,7 +1981,11 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
           ..write('endsAt: $endsAt, ')
           ..write('status: $status, ')
           ..write('completedAt: $completedAt, ')
-          ..write('effectiveSeconds: $effectiveSeconds')
+          ..write('effectiveSeconds: $effectiveSeconds, ')
+          ..write('pausedAt: $pausedAt, ')
+          ..write('pausedSeconds: $pausedSeconds, ')
+          ..write('pauseRuleText: $pauseRuleText, ')
+          ..write('failureReason: $failureReason')
           ..write(')'))
         .toString();
   }
@@ -1842,6 +2002,10 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
     status,
     completedAt,
     effectiveSeconds,
+    pausedAt,
+    pausedSeconds,
+    pauseRuleText,
+    failureReason,
   );
   @override
   bool operator ==(Object other) =>
@@ -1856,7 +2020,11 @@ class FocusSession extends DataClass implements Insertable<FocusSession> {
           other.endsAt == this.endsAt &&
           other.status == this.status &&
           other.completedAt == this.completedAt &&
-          other.effectiveSeconds == this.effectiveSeconds);
+          other.effectiveSeconds == this.effectiveSeconds &&
+          other.pausedAt == this.pausedAt &&
+          other.pausedSeconds == this.pausedSeconds &&
+          other.pauseRuleText == this.pauseRuleText &&
+          other.failureReason == this.failureReason);
 }
 
 class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
@@ -1870,6 +2038,10 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
   final Value<String> status;
   final Value<DateTime?> completedAt;
   final Value<int> effectiveSeconds;
+  final Value<DateTime?> pausedAt;
+  final Value<int> pausedSeconds;
+  final Value<String?> pauseRuleText;
+  final Value<String?> failureReason;
   final Value<int> rowid;
   const FocusSessionsCompanion({
     this.userId = const Value.absent(),
@@ -1882,6 +2054,10 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     this.status = const Value.absent(),
     this.completedAt = const Value.absent(),
     this.effectiveSeconds = const Value.absent(),
+    this.pausedAt = const Value.absent(),
+    this.pausedSeconds = const Value.absent(),
+    this.pauseRuleText = const Value.absent(),
+    this.failureReason = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FocusSessionsCompanion.insert({
@@ -1895,6 +2071,10 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     required String status,
     this.completedAt = const Value.absent(),
     this.effectiveSeconds = const Value.absent(),
+    this.pausedAt = const Value.absent(),
+    this.pausedSeconds = const Value.absent(),
+    this.pauseRuleText = const Value.absent(),
+    this.failureReason = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
        id = Value(id),
@@ -1915,6 +2095,10 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     Expression<String>? status,
     Expression<DateTime>? completedAt,
     Expression<int>? effectiveSeconds,
+    Expression<DateTime>? pausedAt,
+    Expression<int>? pausedSeconds,
+    Expression<String>? pauseRuleText,
+    Expression<String>? failureReason,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1928,6 +2112,10 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
       if (status != null) 'status': status,
       if (completedAt != null) 'completed_at': completedAt,
       if (effectiveSeconds != null) 'effective_seconds': effectiveSeconds,
+      if (pausedAt != null) 'paused_at': pausedAt,
+      if (pausedSeconds != null) 'paused_seconds': pausedSeconds,
+      if (pauseRuleText != null) 'pause_rule_text': pauseRuleText,
+      if (failureReason != null) 'failure_reason': failureReason,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1943,6 +2131,10 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     Value<String>? status,
     Value<DateTime?>? completedAt,
     Value<int>? effectiveSeconds,
+    Value<DateTime?>? pausedAt,
+    Value<int>? pausedSeconds,
+    Value<String?>? pauseRuleText,
+    Value<String?>? failureReason,
     Value<int>? rowid,
   }) {
     return FocusSessionsCompanion(
@@ -1956,6 +2148,10 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
       status: status ?? this.status,
       completedAt: completedAt ?? this.completedAt,
       effectiveSeconds: effectiveSeconds ?? this.effectiveSeconds,
+      pausedAt: pausedAt ?? this.pausedAt,
+      pausedSeconds: pausedSeconds ?? this.pausedSeconds,
+      pauseRuleText: pauseRuleText ?? this.pauseRuleText,
+      failureReason: failureReason ?? this.failureReason,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1993,6 +2189,18 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
     if (effectiveSeconds.present) {
       map['effective_seconds'] = Variable<int>(effectiveSeconds.value);
     }
+    if (pausedAt.present) {
+      map['paused_at'] = Variable<DateTime>(pausedAt.value);
+    }
+    if (pausedSeconds.present) {
+      map['paused_seconds'] = Variable<int>(pausedSeconds.value);
+    }
+    if (pauseRuleText.present) {
+      map['pause_rule_text'] = Variable<String>(pauseRuleText.value);
+    }
+    if (failureReason.present) {
+      map['failure_reason'] = Variable<String>(failureReason.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2012,6 +2220,10 @@ class FocusSessionsCompanion extends UpdateCompanion<FocusSession> {
           ..write('status: $status, ')
           ..write('completedAt: $completedAt, ')
           ..write('effectiveSeconds: $effectiveSeconds, ')
+          ..write('pausedAt: $pausedAt, ')
+          ..write('pausedSeconds: $pausedSeconds, ')
+          ..write('pauseRuleText: $pauseRuleText, ')
+          ..write('failureReason: $failureReason, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -2093,6 +2305,15 @@ class $FocusNodesTable extends FocusNodes
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _noteMeta = const VerificationMeta('note');
+  @override
+  late final GeneratedColumn<String> note = GeneratedColumn<String>(
+    'note',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     userId,
@@ -2102,6 +2323,7 @@ class $FocusNodesTable extends FocusNodes
     mode,
     createdAt,
     effectiveSeconds,
+    note,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2171,6 +2393,12 @@ class $FocusNodesTable extends FocusNodes
     } else if (isInserting) {
       context.missing(_effectiveSecondsMeta);
     }
+    if (data.containsKey('note')) {
+      context.handle(
+        _noteMeta,
+        note.isAcceptableOrUnknown(data['note']!, _noteMeta),
+      );
+    }
     return context;
   }
 
@@ -2208,6 +2436,10 @@ class $FocusNodesTable extends FocusNodes
         DriftSqlType.int,
         data['${effectivePrefix}effective_seconds'],
       )!,
+      note: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}note'],
+      ),
     );
   }
 
@@ -2225,6 +2457,7 @@ class FocusNode extends DataClass implements Insertable<FocusNode> {
   final String mode;
   final DateTime createdAt;
   final int effectiveSeconds;
+  final String? note;
   const FocusNode({
     required this.userId,
     required this.id,
@@ -2233,6 +2466,7 @@ class FocusNode extends DataClass implements Insertable<FocusNode> {
     required this.mode,
     required this.createdAt,
     required this.effectiveSeconds,
+    this.note,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2244,6 +2478,9 @@ class FocusNode extends DataClass implements Insertable<FocusNode> {
     map['mode'] = Variable<String>(mode);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['effective_seconds'] = Variable<int>(effectiveSeconds);
+    if (!nullToAbsent || note != null) {
+      map['note'] = Variable<String>(note);
+    }
     return map;
   }
 
@@ -2256,6 +2493,7 @@ class FocusNode extends DataClass implements Insertable<FocusNode> {
       mode: Value(mode),
       createdAt: Value(createdAt),
       effectiveSeconds: Value(effectiveSeconds),
+      note: note == null && nullToAbsent ? const Value.absent() : Value(note),
     );
   }
 
@@ -2272,6 +2510,7 @@ class FocusNode extends DataClass implements Insertable<FocusNode> {
       mode: serializer.fromJson<String>(json['mode']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       effectiveSeconds: serializer.fromJson<int>(json['effectiveSeconds']),
+      note: serializer.fromJson<String?>(json['note']),
     );
   }
   @override
@@ -2285,6 +2524,7 @@ class FocusNode extends DataClass implements Insertable<FocusNode> {
       'mode': serializer.toJson<String>(mode),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'effectiveSeconds': serializer.toJson<int>(effectiveSeconds),
+      'note': serializer.toJson<String?>(note),
     };
   }
 
@@ -2296,6 +2536,7 @@ class FocusNode extends DataClass implements Insertable<FocusNode> {
     String? mode,
     DateTime? createdAt,
     int? effectiveSeconds,
+    Value<String?> note = const Value.absent(),
   }) => FocusNode(
     userId: userId ?? this.userId,
     id: id ?? this.id,
@@ -2304,6 +2545,7 @@ class FocusNode extends DataClass implements Insertable<FocusNode> {
     mode: mode ?? this.mode,
     createdAt: createdAt ?? this.createdAt,
     effectiveSeconds: effectiveSeconds ?? this.effectiveSeconds,
+    note: note.present ? note.value : this.note,
   );
   FocusNode copyWithCompanion(FocusNodesCompanion data) {
     return FocusNode(
@@ -2316,6 +2558,7 @@ class FocusNode extends DataClass implements Insertable<FocusNode> {
       effectiveSeconds: data.effectiveSeconds.present
           ? data.effectiveSeconds.value
           : this.effectiveSeconds,
+      note: data.note.present ? data.note.value : this.note,
     );
   }
 
@@ -2328,7 +2571,8 @@ class FocusNode extends DataClass implements Insertable<FocusNode> {
           ..write('taskId: $taskId, ')
           ..write('mode: $mode, ')
           ..write('createdAt: $createdAt, ')
-          ..write('effectiveSeconds: $effectiveSeconds')
+          ..write('effectiveSeconds: $effectiveSeconds, ')
+          ..write('note: $note')
           ..write(')'))
         .toString();
   }
@@ -2342,6 +2586,7 @@ class FocusNode extends DataClass implements Insertable<FocusNode> {
     mode,
     createdAt,
     effectiveSeconds,
+    note,
   );
   @override
   bool operator ==(Object other) =>
@@ -2353,7 +2598,8 @@ class FocusNode extends DataClass implements Insertable<FocusNode> {
           other.taskId == this.taskId &&
           other.mode == this.mode &&
           other.createdAt == this.createdAt &&
-          other.effectiveSeconds == this.effectiveSeconds);
+          other.effectiveSeconds == this.effectiveSeconds &&
+          other.note == this.note);
 }
 
 class FocusNodesCompanion extends UpdateCompanion<FocusNode> {
@@ -2364,6 +2610,7 @@ class FocusNodesCompanion extends UpdateCompanion<FocusNode> {
   final Value<String> mode;
   final Value<DateTime> createdAt;
   final Value<int> effectiveSeconds;
+  final Value<String?> note;
   final Value<int> rowid;
   const FocusNodesCompanion({
     this.userId = const Value.absent(),
@@ -2373,6 +2620,7 @@ class FocusNodesCompanion extends UpdateCompanion<FocusNode> {
     this.mode = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.effectiveSeconds = const Value.absent(),
+    this.note = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FocusNodesCompanion.insert({
@@ -2383,6 +2631,7 @@ class FocusNodesCompanion extends UpdateCompanion<FocusNode> {
     required String mode,
     required DateTime createdAt,
     required int effectiveSeconds,
+    this.note = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
        id = Value(id),
@@ -2399,6 +2648,7 @@ class FocusNodesCompanion extends UpdateCompanion<FocusNode> {
     Expression<String>? mode,
     Expression<DateTime>? createdAt,
     Expression<int>? effectiveSeconds,
+    Expression<String>? note,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2409,6 +2659,7 @@ class FocusNodesCompanion extends UpdateCompanion<FocusNode> {
       if (mode != null) 'mode': mode,
       if (createdAt != null) 'created_at': createdAt,
       if (effectiveSeconds != null) 'effective_seconds': effectiveSeconds,
+      if (note != null) 'note': note,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2421,6 +2672,7 @@ class FocusNodesCompanion extends UpdateCompanion<FocusNode> {
     Value<String>? mode,
     Value<DateTime>? createdAt,
     Value<int>? effectiveSeconds,
+    Value<String?>? note,
     Value<int>? rowid,
   }) {
     return FocusNodesCompanion(
@@ -2431,6 +2683,7 @@ class FocusNodesCompanion extends UpdateCompanion<FocusNode> {
       mode: mode ?? this.mode,
       createdAt: createdAt ?? this.createdAt,
       effectiveSeconds: effectiveSeconds ?? this.effectiveSeconds,
+      note: note ?? this.note,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2459,6 +2712,9 @@ class FocusNodesCompanion extends UpdateCompanion<FocusNode> {
     if (effectiveSeconds.present) {
       map['effective_seconds'] = Variable<int>(effectiveSeconds.value);
     }
+    if (note.present) {
+      map['note'] = Variable<String>(note.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2475,6 +2731,7 @@ class FocusNodesCompanion extends UpdateCompanion<FocusNode> {
           ..write('mode: $mode, ')
           ..write('createdAt: $createdAt, ')
           ..write('effectiveSeconds: $effectiveSeconds, ')
+          ..write('note: $note, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3835,6 +4092,10 @@ typedef $$FocusSessionsTableCreateCompanionBuilder =
       required String status,
       Value<DateTime?> completedAt,
       Value<int> effectiveSeconds,
+      Value<DateTime?> pausedAt,
+      Value<int> pausedSeconds,
+      Value<String?> pauseRuleText,
+      Value<String?> failureReason,
       Value<int> rowid,
     });
 typedef $$FocusSessionsTableUpdateCompanionBuilder =
@@ -3849,6 +4110,10 @@ typedef $$FocusSessionsTableUpdateCompanionBuilder =
       Value<String> status,
       Value<DateTime?> completedAt,
       Value<int> effectiveSeconds,
+      Value<DateTime?> pausedAt,
+      Value<int> pausedSeconds,
+      Value<String?> pauseRuleText,
+      Value<String?> failureReason,
       Value<int> rowid,
     });
 
@@ -3908,6 +4173,26 @@ class $$FocusSessionsTableFilterComposer
 
   ColumnFilters<int> get effectiveSeconds => $composableBuilder(
     column: $table.effectiveSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get pausedAt => $composableBuilder(
+    column: $table.pausedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get pausedSeconds => $composableBuilder(
+    column: $table.pausedSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get pauseRuleText => $composableBuilder(
+    column: $table.pauseRuleText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get failureReason => $composableBuilder(
+    column: $table.failureReason,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -3970,6 +4255,26 @@ class $$FocusSessionsTableOrderingComposer
     column: $table.effectiveSeconds,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<DateTime> get pausedAt => $composableBuilder(
+    column: $table.pausedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get pausedSeconds => $composableBuilder(
+    column: $table.pausedSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get pauseRuleText => $composableBuilder(
+    column: $table.pauseRuleText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get failureReason => $composableBuilder(
+    column: $table.failureReason,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FocusSessionsTableAnnotationComposer
@@ -4014,6 +4319,24 @@ class $$FocusSessionsTableAnnotationComposer
 
   GeneratedColumn<int> get effectiveSeconds => $composableBuilder(
     column: $table.effectiveSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get pausedAt =>
+      $composableBuilder(column: $table.pausedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get pausedSeconds => $composableBuilder(
+    column: $table.pausedSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get pauseRuleText => $composableBuilder(
+    column: $table.pauseRuleText,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get failureReason => $composableBuilder(
+    column: $table.failureReason,
     builder: (column) => column,
   );
 }
@@ -4061,6 +4384,10 @@ class $$FocusSessionsTableTableManager
                 Value<String> status = const Value.absent(),
                 Value<DateTime?> completedAt = const Value.absent(),
                 Value<int> effectiveSeconds = const Value.absent(),
+                Value<DateTime?> pausedAt = const Value.absent(),
+                Value<int> pausedSeconds = const Value.absent(),
+                Value<String?> pauseRuleText = const Value.absent(),
+                Value<String?> failureReason = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FocusSessionsCompanion(
                 userId: userId,
@@ -4073,6 +4400,10 @@ class $$FocusSessionsTableTableManager
                 status: status,
                 completedAt: completedAt,
                 effectiveSeconds: effectiveSeconds,
+                pausedAt: pausedAt,
+                pausedSeconds: pausedSeconds,
+                pauseRuleText: pauseRuleText,
+                failureReason: failureReason,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -4087,6 +4418,10 @@ class $$FocusSessionsTableTableManager
                 required String status,
                 Value<DateTime?> completedAt = const Value.absent(),
                 Value<int> effectiveSeconds = const Value.absent(),
+                Value<DateTime?> pausedAt = const Value.absent(),
+                Value<int> pausedSeconds = const Value.absent(),
+                Value<String?> pauseRuleText = const Value.absent(),
+                Value<String?> failureReason = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FocusSessionsCompanion.insert(
                 userId: userId,
@@ -4099,6 +4434,10 @@ class $$FocusSessionsTableTableManager
                 status: status,
                 completedAt: completedAt,
                 effectiveSeconds: effectiveSeconds,
+                pausedAt: pausedAt,
+                pausedSeconds: pausedSeconds,
+                pauseRuleText: pauseRuleText,
+                failureReason: failureReason,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -4135,6 +4474,7 @@ typedef $$FocusNodesTableCreateCompanionBuilder =
       required String mode,
       required DateTime createdAt,
       required int effectiveSeconds,
+      Value<String?> note,
       Value<int> rowid,
     });
 typedef $$FocusNodesTableUpdateCompanionBuilder =
@@ -4146,6 +4486,7 @@ typedef $$FocusNodesTableUpdateCompanionBuilder =
       Value<String> mode,
       Value<DateTime> createdAt,
       Value<int> effectiveSeconds,
+      Value<String?> note,
       Value<int> rowid,
     });
 
@@ -4190,6 +4531,11 @@ class $$FocusNodesTableFilterComposer
 
   ColumnFilters<int> get effectiveSeconds => $composableBuilder(
     column: $table.effectiveSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get note => $composableBuilder(
+    column: $table.note,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -4237,6 +4583,11 @@ class $$FocusNodesTableOrderingComposer
     column: $table.effectiveSeconds,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get note => $composableBuilder(
+    column: $table.note,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FocusNodesTableAnnotationComposer
@@ -4270,6 +4621,9 @@ class $$FocusNodesTableAnnotationComposer
     column: $table.effectiveSeconds,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get note =>
+      $composableBuilder(column: $table.note, builder: (column) => column);
 }
 
 class $$FocusNodesTableTableManager
@@ -4310,6 +4664,7 @@ class $$FocusNodesTableTableManager
                 Value<String> mode = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<int> effectiveSeconds = const Value.absent(),
+                Value<String?> note = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FocusNodesCompanion(
                 userId: userId,
@@ -4319,6 +4674,7 @@ class $$FocusNodesTableTableManager
                 mode: mode,
                 createdAt: createdAt,
                 effectiveSeconds: effectiveSeconds,
+                note: note,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -4330,6 +4686,7 @@ class $$FocusNodesTableTableManager
                 required String mode,
                 required DateTime createdAt,
                 required int effectiveSeconds,
+                Value<String?> note = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FocusNodesCompanion.insert(
                 userId: userId,
@@ -4339,6 +4696,7 @@ class $$FocusNodesTableTableManager
                 mode: mode,
                 createdAt: createdAt,
                 effectiveSeconds: effectiveSeconds,
+                note: note,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

@@ -28,12 +28,20 @@ enum FocusChainMode {
 
 enum FocusSessionStatus {
   active,
-  completed;
+  paused,
+  completed,
+  failed;
 
   String get storageValue => switch (this) {
     FocusSessionStatus.active => 'active',
+    FocusSessionStatus.paused => 'paused',
     FocusSessionStatus.completed => 'completed',
+    FocusSessionStatus.failed => 'failed',
   };
+
+  bool get isUnfinished => this == active || this == paused;
+
+  bool get isFailed => this == FocusSessionStatus.failed;
 }
 
 class FocusSession {
@@ -47,6 +55,10 @@ class FocusSession {
     required this.status,
     required this.completedAt,
     required this.effectiveSeconds,
+    this.pausedAt,
+    this.pausedSeconds = 0,
+    this.pauseRuleText,
+    this.failureReason,
   });
 
   final String id;
@@ -58,8 +70,15 @@ class FocusSession {
   final FocusSessionStatus status;
   final DateTime? completedAt;
   final int effectiveSeconds;
+  final DateTime? pausedAt;
+  final int pausedSeconds;
+  final String? pauseRuleText;
+  final String? failureReason;
 
   bool get isActive => status == FocusSessionStatus.active;
+  bool get isPaused => status == FocusSessionStatus.paused;
+  bool get isUnfinished => status.isUnfinished;
+  bool get isFailed => status.isFailed;
 }
 
 class FocusNode {
@@ -70,6 +89,7 @@ class FocusNode {
     required this.mode,
     required this.createdAt,
     required this.effectiveSeconds,
+    this.note,
   });
 
   final String id;
@@ -78,6 +98,7 @@ class FocusNode {
   final FocusChainMode mode;
   final DateTime createdAt;
   final int effectiveSeconds;
+  final String? note;
 }
 
 class FocusChainRecord {
