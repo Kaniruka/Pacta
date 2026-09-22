@@ -3,21 +3,15 @@ abstract interface class AuthRepository {
   String? get currentUserIdentifier;
   String? get currentUserId;
 
-  Future<void> signIn({required String identifier, required String password});
+  Future<void> signIn({required String email, required String password});
 
-  Future<void> signUp({required String identifier, required String password});
+  Future<void> signUp({required String email, required String password});
 
   Future<void> signOut();
 
   Future<bool> isAdministrator();
 
-  Future<void> grantEligibility({
-    required String identifier,
-    required String type,
-  });
+  Future<void> grantEligibility({required String email});
 
-  Future<bool> revokeEligibility({
-    required String identifier,
-    required String type,
-  });
+  Future<bool> revokeEligibility({required String email});
 }

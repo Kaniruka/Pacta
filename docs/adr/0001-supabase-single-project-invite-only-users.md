@@ -16,3 +16,14 @@ Pacta will use one Supabase project to support multiple users, without introduci
 ## Registration eligibility clarification — 2026-09-14
 
 Administrators add a specified email address or phone number to a registration allowlist in the administration interface. The operator informs users externally; the App sends no invitation email, SMS, verification code, or invitation link. Users register with an approved identifier and a password, then log in using that identifier and password. The server checks registration eligibility, rejects unapproved identifiers and duplicate registration, and marks successfully consumed eligibility as used. Unused eligibility does not expire by default and may be revoked by an administrator. Revoking unused eligibility is distinct from suspending a registered user. Eligibility checks do not verify actual ownership of the email address or phone number. Forgotten passwords are reset by an administrator after manual verification; there is no email or SMS recovery flow. The term invite-only refers to administrator-issued registration eligibility, not an App-operated messaging or ownership-verification system. This replaces earlier email-invitation proposals without changing per-user isolation or trusted-server administration.
+
+## Authentication identifier revision — 2026-09-22
+
+The supported registration and password-login identifier is now email only. New
+phone eligibility, phone registration, and phone login are disabled. Existing
+phone-based Auth identities and their `user_id`-owned business data are not
+deleted or recreated; each affected identity requires an explicit trusted
+server migration to a unique email before Phone Auth is disabled. Historical
+phone eligibility rows may be retained for audit, but cannot be consumed for
+new registration. The existing no-App-operated-ownership-verification and
+administrator-assisted recovery decisions remain unchanged.

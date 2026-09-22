@@ -121,7 +121,7 @@ class AuthScreen extends ConsumerStatefulWidget {
 }
 
 class _AuthScreenState extends ConsumerState<AuthScreen> {
-  final _identifier = TextEditingController();
+  final _email = TextEditingController();
   final _password = TextEditingController();
   bool _isRegistering = false;
   bool _busy = false;
@@ -129,17 +129,17 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
   @override
   void dispose() {
-    _identifier.dispose();
+    _email.dispose();
     _password.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
     FocusManager.instance.primaryFocus?.unfocus();
-    final identifier = _identifier.text.trim();
+    final email = _email.text.trim();
     final password = _password.text;
-    if (identifier.isEmpty || password.length < 8) {
-      setState(() => _error = '请输入邮箱或手机号，以及至少 8 位密码。');
+    if (!email.contains('@') || password.length < 8) {
+      setState(() => _error = '请输入有效邮箱，以及至少 8 位密码。');
       return;
     }
     setState(() {
@@ -149,9 +149,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     try {
       final repository = ref.read(authRepositoryProvider);
       if (_isRegistering) {
-        await repository.signUp(identifier: identifier, password: password);
+        await repository.signUp(email: email, password: password);
       } else {
-        await repository.signIn(identifier: identifier, password: password);
+        await repository.signIn(email: email, password: password);
       }
     } catch (error) {
       if (!mounted) return;
@@ -199,9 +199,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     ),
                     const SizedBox(height: 28),
                     TextField(
-                      controller: _identifier,
+                      controller: _email,
                       keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(labelText: '邮箱或手机号'),
+                      decoration: const InputDecoration(labelText: '邮箱'),
                     ),
                     const SizedBox(height: 14),
                     TextField(
@@ -824,14 +824,13 @@ class AdminEligibilityCard extends ConsumerStatefulWidget {
 }
 
 class _AdminEligibilityCardState extends ConsumerState<AdminEligibilityCard> {
-  final _identifier = TextEditingController();
-  String _type = 'email';
+  final _email = TextEditingController();
   String? _message;
   bool _busy = false;
 
   @override
   void dispose() {
-    _identifier.dispose();
+    _email.dispose();
     super.dispose();
   }
 
@@ -839,7 +838,7 @@ class _AdminEligibilityCardState extends ConsumerState<AdminEligibilityCard> {
     await _run(
       () => ref
           .read(authRepositoryProvider)
-          .grantEligibility(identifier: _identifier.text.trim(), type: _type),
+          .grantEligibility(email: _email.text.trim()),
       '资格已发放',
     );
   }
@@ -848,13 +847,17 @@ class _AdminEligibilityCardState extends ConsumerState<AdminEligibilityCard> {
     await _run(() async {
       final changed = await ref
           .read(authRepositoryProvider)
-          .revokeEligibility(identifier: _identifier.text.trim(), type: _type);
+          .revokeEligibility(email: _email.text.trim());
       if (!changed) throw StateError('资格不存在、已使用或已被撤销。');
     }, '资格已撤销');
   }
 
   Future<void> _run(Future<void> Function() action, String success) async {
-    if (_identifier.text.trim().isEmpty) return;
+    final email = _email.text.trim();
+    if (!email.contains('@')) {
+      setState(() => _message = '请输入有效的邮箱地址。');
+      return;
+    }
     setState(() {
       _busy = true;
       _message = null;
@@ -890,20 +893,9 @@ class _AdminEligibilityCardState extends ConsumerState<AdminEligibilityCard> {
             children: [
               Expanded(
                 child: TextField(
-                  controller: _identifier,
-                  decoration: const InputDecoration(labelText: '邮箱或手机号'),
+                  controller: _email,
+                  decoration: const InputDecoration(labelText: '邮箱'),
                 ),
-              ),
-              const SizedBox(width: 8),
-              DropdownButton<String>(
-                value: _type,
-                items: const [
-                  DropdownMenuItem(value: 'email', child: Text('邮箱')),
-                  DropdownMenuItem(value: 'phone', child: Text('手机号')),
-                ],
-                onChanged: _busy
-                    ? null
-                    : (value) => setState(() => _type = value!),
               ),
             ],
           ),

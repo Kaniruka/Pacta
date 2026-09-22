@@ -18,7 +18,6 @@ if (!(Test-Path -LiteralPath .env)) { Copy-Item -LiteralPath .env.example -Desti
 | --- | --- | --- |
 | `SUPABASE_URL` | 开发用 Supabase 项目的 URL | 登录和云端同步 |
 | `SUPABASE_PUBLISHABLE_KEY` | 同一项目的 publishable key，或兼容的旧 anon key | 登录和云端同步 |
-| `TEST_REGISTRATION_PHONE` | 本地注册验收使用的手机号 | 仅本机测试，不由客户端读取 |
 | `TEST_REGISTRATION_EMAIL` | 本地注册验收使用的邮箱 | 仅本机测试，不由客户端读取 |
 | `TEST_ADMIN_EMAIL` | 本地 Supabase 管理员验收账号 | 仅本机测试，不由客户端读取 |
 | `TEST_ADMIN_PASSWORD` | 本地管理员验收密码 | 仅本机测试，禁止提交、记录到公开文档或传给 Flutter |

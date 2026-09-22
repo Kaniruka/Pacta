@@ -161,18 +161,18 @@ The App uses one Supabase project to serve multiple users. It does not create an
 - Every business row is associated with `user_id`.
 - Row Level Security ensures that a user can only read or modify their own rows.
 - A separate `app_admins` table identifies the administrator identities.
-- Registration eligibility records control which email addresses or phone numbers may register.
+- Registration eligibility records control which email addresses may register; phone numbers are not supported as new login identifiers.
 
 The administrator should have an in-App user-management screen for:
 
-- granting and revoking unused registration eligibility for an email address or phone number;
+- granting and revoking unused registration eligibility for an email address;
 - reviewing unused and used registration eligibility;
 - resetting forgotten passwords after manual verification;
 - viewing active users and last activity;
 - suspending or restoring users;
 - purging users after the retention period.
 
-Administrators add a specified email address or phone number to a registration allowlist in the administration interface. The operator informs users externally; the App sends no invitation email, SMS, verification code, or invitation link. Users register with an approved identifier and a password, then log in using that identifier and password. The server checks registration eligibility, rejects unapproved identifiers and duplicate registration, and marks successfully consumed eligibility as used. Unused eligibility does not expire by default and may be revoked by an administrator. Revoking unused eligibility is distinct from suspending a registered user. Eligibility checks do not verify actual ownership of the email address or phone number. Forgotten passwords are reset by an administrator after manual verification; there is no email or SMS recovery flow. Server-side eligibility enforcement is required; hiding client controls is insufficient.
+Administrators add a specified email address to a registration allowlist in the administration interface. The operator informs users externally; the App sends no invitation email, SMS, verification code, or invitation link. Users register with an approved email and password, then log in using that email and password. The server checks registration eligibility, rejects unapproved identifiers and duplicate registration, and marks successfully consumed eligibility as used. Unused eligibility does not expire by default and may be revoked by an administrator. Revoking unused eligibility is distinct from suspending a registered user. The App does not verify email ownership. Forgotten passwords are reset by an administrator after manual verification; there is no App-operated email or SMS recovery flow. Server-side eligibility enforcement is required; hiding client controls is insufficient.
 
 ## 4. User lifecycle
 
@@ -194,7 +194,7 @@ The retention period is 30 days from the current suspension. On expiry mark the 
 - After restoration, synchronize retained records, including records created offline before the device learned of suspension, using original occurrence times, deduplication, and reconciliation. Neither suspension nor delayed upload directly establishes failure. National Focus continues to follow its checkpoint rules; valid offline confirmations do not become invalid because of late upload.
 - After cloud purge, reject uploads by the old identity and do not recreate it from local records. Delete that identity's local business cache and pending uploads only after receiving a trustworthy, explicit server result that this old identity has been purged. Network errors, failed login, expired credentials, and ordinary permission denials are never sufficient evidence for local deletion.
 - Offline-device data cannot be guaranteed remotely erased; clean it locally when the device later receives trustworthy confirmation of purge.
-- Reusing the same email address or phone number requires fresh registration eligibility and creates a new user identity. Never automatically inherit, associate, or upload the old identity's data.
+- Reusing the same email address requires fresh registration eligibility and creates a new user identity. Never automatically inherit, associate, or upload the old identity's data. Existing phone-only identities are migrated to an email on the same `user_id` rather than recreated.
 
 ## 5. Persistence and synchronization
 
@@ -250,7 +250,7 @@ The currently committed platforms are Android and Windows only. Initial acceptan
 
 The first useful version should contain:
 
-1. password registration and login with server-enforced administrator-issued eligibility for email addresses or phone numbers;
+1. password registration and login with server-enforced administrator-issued eligibility for email addresses;
 2. per-user task list;
 3. the three fixed chain records and focus-session execution;
 4. a minimal National Focus Tree;

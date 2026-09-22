@@ -13,19 +13,13 @@ class FakeAuthRepository implements AuthRepository {
   String? get currentUserId => signedInUser;
 
   @override
-  Future<void> signIn({
-    required String identifier,
-    required String password,
-  }) async {
-    signedInUser = identifier;
+  Future<void> signIn({required String email, required String password}) async {
+    signedInUser = email;
   }
 
   @override
-  Future<void> signUp({
-    required String identifier,
-    required String password,
-  }) async {
-    signedInUser = identifier;
+  Future<void> signUp({required String email, required String password}) async {
+    signedInUser = email;
   }
 
   @override
@@ -37,14 +31,8 @@ class FakeAuthRepository implements AuthRepository {
   Future<bool> isAdministrator() async => false;
 
   @override
-  Future<void> grantEligibility({
-    required String identifier,
-    required String type,
-  }) async {}
+  Future<void> grantEligibility({required String email}) async {}
 
   @override
-  Future<bool> revokeEligibility({
-    required String identifier,
-    required String type,
-  }) async => false;
+  Future<bool> revokeEligibility({required String email}) async => false;
 }

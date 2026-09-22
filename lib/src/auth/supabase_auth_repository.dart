@@ -8,47 +8,28 @@ class SupabaseAuthRepository implements AuthRepository {
   final SupabaseClient _client;
 
   @override
-  Stream<String?> get authState => _client.auth.onAuthStateChange.map(
-    (event) => event.session?.user.email ?? event.session?.user.phone,
-  );
+  Stream<String?> get authState =>
+      _client.auth.onAuthStateChange.map((event) => event.session?.user.email);
 
   @override
   String? get currentUserIdentifier {
     final user = _client.auth.currentUser;
-    return user?.email ?? user?.phone;
+    return user?.email;
   }
 
   @override
   String? get currentUserId => _client.auth.currentUser?.id;
 
   @override
-  Future<void> signIn({
-    required String identifier,
-    required String password,
-  }) async {
-    if (_isEmail(identifier)) {
-      await _client.auth.signInWithPassword(
-        email: identifier,
-        password: password,
-      );
-    } else {
-      await _client.auth.signInWithPassword(
-        phone: identifier,
-        password: password,
-      );
-    }
+  Future<void> signIn({required String email, required String password}) async {
+    _requireEmail(email);
+    await _client.auth.signInWithPassword(email: email, password: password);
   }
 
   @override
-  Future<void> signUp({
-    required String identifier,
-    required String password,
-  }) async {
-    if (_isEmail(identifier)) {
-      await _client.auth.signUp(email: identifier, password: password);
-    } else {
-      await _client.auth.signUp(phone: identifier, password: password);
-    }
+  Future<void> signUp({required String email, required String password}) async {
+    _requireEmail(email);
+    await _client.auth.signUp(email: email, password: password);
   }
 
   @override
@@ -67,28 +48,26 @@ class SupabaseAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<void> grantEligibility({
-    required String identifier,
-    required String type,
-  }) async {
+  Future<void> grantEligibility({required String email}) async {
     await _client.rpc(
       'admin_grant_registration_eligibility',
-      params: {'p_identifier': identifier, 'p_identifier_type': type},
+      params: {'p_identifier': email, 'p_identifier_type': 'email'},
     );
   }
 
   @override
-  Future<bool> revokeEligibility({
-    required String identifier,
-    required String type,
-  }) async {
+  Future<bool> revokeEligibility({required String email}) async {
     return await _client.rpc(
       'admin_revoke_registration_eligibility',
-      params: {'p_identifier': identifier, 'p_identifier_type': type},
+      params: {'p_identifier': email, 'p_identifier_type': 'email'},
     ) as bool;
   }
 
-  bool _isEmail(String value) => value.contains('@');
+  void _requireEmail(String value) {
+    if (!value.contains('@')) {
+      throw const FormatException('请输入有效的邮箱地址。');
+    }
+  }
 }
 
 class UnavailableAuthRepository implements AuthRepository {
@@ -106,18 +85,12 @@ class UnavailableAuthRepository implements AuthRepository {
   String? get currentUserId => null;
 
   @override
-  Future<void> signIn({
-    required String identifier,
-    required String password,
-  }) async {
+  Future<void> signIn({required String email, required String password}) async {
     throw StateError(message);
   }
 
   @override
-  Future<void> signUp({
-    required String identifier,
-    required String password,
-  }) async {
+  Future<void> signUp({required String email, required String password}) async {
     throw StateError(message);
   }
 
@@ -128,18 +101,12 @@ class UnavailableAuthRepository implements AuthRepository {
   Future<bool> isAdministrator() async => false;
 
   @override
-  Future<void> grantEligibility({
-    required String identifier,
-    required String type,
-  }) async {
+  Future<void> grantEligibility({required String email}) async {
     throw StateError(message);
   }
 
   @override
-  Future<bool> revokeEligibility({
-    required String identifier,
-    required String type,
-  }) async {
+  Future<bool> revokeEligibility({required String email}) async {
     throw StateError(message);
   }
 }
