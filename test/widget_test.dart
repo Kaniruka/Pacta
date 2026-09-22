@@ -1,8 +1,11 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
-import 'package:pacta/src/tasks/task_database.dart';
+import 'package:pacta/src/focus/focus_models.dart';
+import 'package:pacta/src/focus/focus_repository.dart';
+import 'package:pacta/src/tasks/task_database.dart' show PactaDatabase;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 
@@ -33,7 +36,7 @@ void main() {
 
     await tester.tap(find.text('专注链'));
     await tester.pumpAndSettle();
-    expect(find.text('从任务开始一次专注'), findsOneWidget);
+    expect(find.text('当前筛选下没有可开始的任务。'), findsOneWidget);
 
     await tester.tap(find.text('我的'));
     await tester.pumpAndSettle();
@@ -107,5 +110,58 @@ void main() {
         '${twoDigits(localDeadline.day)} ${twoDigits(localDeadline.hour)}:'
         '${twoDigits(localDeadline.minute)}';
     expect(find.textContaining(expected), findsOneWidget);
+  });
+
+  testWidgets('专注设置界面选择模式和时长后启动会话', (tester) async {
+    final database = PactaDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final focusRemote = InMemoryFocusRemote();
+    final taskRepository = LocalTaskRepository(
+      database: database,
+      userId: 'user@example.com',
+      remote: InMemoryTaskRemote(),
+    );
+    final focusRepository = LocalFocusRepository(
+      database: database,
+      userId: 'user@example.com',
+      remote: focusRemote,
+    );
+    addTearDown(focusRepository.dispose);
+    final goal = await taskRepository.createGoal(
+      const GoalDraft(title: '交付', classification: TaskClassification.regular),
+    );
+    final task = await taskRepository.createTask(
+      goal.id,
+      const TaskDraft(title: '写报告', classification: TaskClassification.regular),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [focusRepositoryProvider.overrideWithValue(focusRepository)],
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: FilledButton(
+                onPressed: () => showDialog<FocusSession>(
+                  context: context,
+                  builder: (_) => FocusSetupDialog(
+                    task: task,
+                    initialMode: FocusChainMode.regular,
+                  ),
+                ),
+                child: const Text('打开专注设置'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('打开专注设置'));
+    await tester.pumpAndSettle();
+    expect(find.text('开始专注'), findsOneWidget);
+    await tester.tap(find.text('开始倒计时'));
+    await tester.pumpAndSettle();
+    expect(await focusRepository.getActiveSession(), isNotNull);
+    expect(find.text('打开专注设置'), findsOneWidget);
   });
 }

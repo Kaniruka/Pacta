@@ -7,7 +7,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'src/auth/auth_repository.dart';
 import 'src/auth/supabase_auth_repository.dart';
-import 'src/tasks/task_database.dart';
+import 'src/focus/focus_models.dart';
+import 'src/focus/focus_repository.dart';
+import 'src/tasks/task_database.dart' show PactaDatabase;
 import 'src/tasks/task_models.dart';
 import 'src/tasks/task_repository.dart';
 
@@ -18,10 +20,12 @@ Future<void> main() async {
   AuthRepository repository = const UnavailableAuthRepository();
   final database = PactaDatabase.open();
   TaskRemoteDataSource remote = const UnavailableTaskRemoteDataSource();
+  FocusRemoteDataSource focusRemote = const UnavailableFocusRemoteDataSource();
   if (url.isNotEmpty && key.isNotEmpty) {
     await Supabase.initialize(url: url, publishableKey: key);
     repository = SupabaseAuthRepository(Supabase.instance.client);
     remote = SupabaseTaskRemoteDataSource(Supabase.instance.client);
+    focusRemote = SupabaseFocusRemoteDataSource(Supabase.instance.client);
   }
   runApp(
     PactaApp(
@@ -30,6 +34,11 @@ Future<void> main() async {
         database: database,
         userId: userId,
         remote: remote,
+      ),
+      focusRepositoryFactory: (userId) => LocalFocusRepository(
+        database: database,
+        userId: userId,
+        remote: focusRemote,
       ),
     ),
   );
@@ -40,10 +49,12 @@ class PactaApp extends StatelessWidget {
     super.key,
     required this.authRepository,
     this.taskRepositoryFactory,
+    this.focusRepositoryFactory,
   });
 
   final AuthRepository authRepository;
   final TaskRepository Function(String userId)? taskRepositoryFactory;
+  final FocusRepository Function(String userId)? focusRepositoryFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +63,9 @@ class PactaApp extends StatelessWidget {
         authRepositoryProvider.overrideWithValue(authRepository),
         taskRepositoryFactoryProvider.overrideWithValue(
           taskRepositoryFactory ?? (_) => const UnavailableTaskRepository(),
+        ),
+        focusRepositoryFactoryProvider.overrideWithValue(
+          focusRepositoryFactory ?? (_) => const UnavailableFocusRepository(),
         ),
       ],
       child: MaterialApp(
@@ -83,10 +97,23 @@ final taskRepositoryFactoryProvider =
       return (_) => const UnavailableTaskRepository();
     });
 
+final focusRepositoryFactoryProvider =
+    Provider<FocusRepository Function(String userId)>((ref) {
+      return (_) => const UnavailableFocusRepository();
+    });
+
 final taskRepositoryProvider = Provider.autoDispose<TaskRepository>((ref) {
   final userId = ref.watch(authRepositoryProvider).currentUserId;
   if (userId == null) return const UnavailableTaskRepository();
   final repository = ref.watch(taskRepositoryFactoryProvider)(userId);
+  ref.onDispose(repository.dispose);
+  return repository;
+});
+
+final focusRepositoryProvider = Provider.autoDispose<FocusRepository>((ref) {
+  final userId = ref.watch(authRepositoryProvider).currentUserId;
+  if (userId == null) return const UnavailableFocusRepository();
+  final repository = ref.watch(focusRepositoryFactoryProvider)(userId);
   ref.onDispose(repository.dispose);
   return repository;
 });
@@ -284,6 +311,12 @@ class _AppShellState extends ConsumerState<AppShell>
 
   Future<void> _syncTasks() async {
     try {
+      await ref.read(focusRepositoryProvider).settleDueSessions();
+      await ref.read(focusRepositoryProvider).sync();
+    } catch (_) {
+      // Focus records remain local and are retried on resume or reconnect.
+    }
+    try {
       await ref.read(taskRepositoryProvider).sync();
     } catch (_) {
       // Offline edits stay local and are retried on resume or reconnect.
@@ -467,14 +500,14 @@ class _GoalCard extends StatelessWidget {
   }
 }
 
-class _TaskTile extends StatelessWidget {
+class _TaskTile extends ConsumerWidget {
   const _TaskTile({required this.repository, required this.task});
 
   final TaskRepository repository;
   final Task task;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final deadline = task.deadline == null
         ? null
         : '截止 ${_formatDateTime(task.deadline!.toLocal())}';
@@ -498,8 +531,36 @@ class _TaskTile extends StatelessWidget {
         [
           task.classification.label,
           if (task.estimatedMinutes != null) '${task.estimatedMinutes} 分钟',
+          if (task.focusProgressSeconds > 0)
+            '已专注 ${_formatDuration(task.focusProgressSeconds)}',
           ?deadline,
         ].join(' · '),
+      ),
+      trailing: IconButton(
+        tooltip: '开始专注',
+        onPressed: () async {
+          final mode = await ref.read(focusRepositoryProvider).getLastMode();
+          if (!context.mounted) return;
+          final session = await showDialog<FocusSession>(
+            context: context,
+            builder: (_) => FocusSetupDialog(task: task, initialMode: mode),
+          );
+          if (session != null && context.mounted) {
+            var taskTitle = task.title;
+            if (session.taskId != task.id) {
+              final goals = await repository.getGoals();
+              if (!context.mounted) return;
+              taskTitle = _findTaskTitle(goals, session.taskId) ?? '原任务';
+            }
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    FocusSessionPage(session: session, taskTitle: taskTitle),
+              ),
+            );
+          }
+        },
+        icon: const Icon(Icons.play_arrow_rounded),
       ),
       onTap: () async {
         final draft = await _showTaskDialog(context, task: task);
@@ -746,6 +807,12 @@ String _formatDateTime(DateTime value) {
       '${twoDigits(value.hour)}:${twoDigits(value.minute)}';
 }
 
+String _formatDuration(int seconds) {
+  final minutes = seconds ~/ 60;
+  final remainingSeconds = seconds % 60;
+  return '$minutes分${remainingSeconds.toString().padLeft(2, '0')}秒';
+}
+
 class NationalFocusPage extends StatelessWidget {
   const NationalFocusPage({super.key});
 
@@ -758,16 +825,435 @@ class NationalFocusPage extends StatelessWidget {
   );
 }
 
-class FocusChainPage extends StatelessWidget {
+class FocusChainPage extends ConsumerStatefulWidget {
   const FocusChainPage({super.key});
 
   @override
-  Widget build(BuildContext context) => const _EmptyPage(
-    title: '专注链',
-    message: '从任务开始一次专注',
-    detail: '选择任务后，可以设置本次模式和时长。当前没有可选择的任务。',
-    icon: Icons.bolt_outlined,
+  ConsumerState<FocusChainPage> createState() => _FocusChainPageState();
+}
+
+class _FocusChainPageState extends ConsumerState<FocusChainPage> {
+  TaskClassification? _filter;
+  FocusChainMode _lastMode = FocusChainMode.regular;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadLastMode());
+  }
+
+  Future<void> _loadLastMode() async {
+    final mode = await ref.read(focusRepositoryProvider).getLastMode();
+    if (mounted) setState(() => _lastMode = mode);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final taskRepository = ref.watch(taskRepositoryProvider);
+    final focusRepository = ref.watch(focusRepositoryProvider);
+    return StreamBuilder<List<Goal>>(
+      stream: taskRepository.watchGoals(),
+      initialData: const [],
+      builder: (context, snapshot) {
+        final tasks = [
+          for (final goal in snapshot.data ?? const <Goal>[])
+            for (final task in goal.tasks)
+              if (!task.isComplete && _matchesFilter(task)) task,
+        ];
+        return StreamBuilder<List<FocusSession>>(
+          stream: focusRepository.watchSessions(),
+          initialData: const [],
+          builder: (context, sessionsSnapshot) {
+            final active = (sessionsSnapshot.data ?? const <FocusSession>[])
+                .where((session) => session.isActive)
+                .firstOrNull;
+            final activeTask = active == null
+                ? null
+                : tasks.where((task) => task.id == active.taskId).firstOrNull;
+            return ListView(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+              children: [
+                Text('专注链', style: Theme.of(context).textTheme.headlineSmall),
+                const SizedBox(height: 6),
+                const Text('选择一个未完成任务，设定本次模式和时长。'),
+                if (active != null) ...[
+                  const SizedBox(height: 16),
+                  Card(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    child: ListTile(
+                      leading: const Icon(Icons.timer_outlined),
+                      title: const Text('已有进行中的专注'),
+                      subtitle: Text(activeTask?.title ?? '原任务'),
+                      trailing: FilledButton(
+                        onPressed: () =>
+                            _openSession(active, activeTask?.title ?? '原任务'),
+                        child: const Text('返回专注'),
+                      ),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 18),
+                SegmentedButton<TaskClassification?>(
+                  segments: const [
+                    ButtonSegment<TaskClassification?>(
+                      value: null,
+                      label: Text('全部'),
+                    ),
+                    ButtonSegment<TaskClassification?>(
+                      value: TaskClassification.elite,
+                      label: Text('精锐'),
+                    ),
+                    ButtonSegment<TaskClassification?>(
+                      value: TaskClassification.regular,
+                      label: Text('普通'),
+                    ),
+                  ],
+                  selected: {_filter},
+                  onSelectionChanged: (values) =>
+                      setState(() => _filter = values.single),
+                ),
+                const SizedBox(height: 12),
+                if (tasks.isEmpty)
+                  const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text('当前筛选下没有可开始的任务。'),
+                    ),
+                  )
+                else
+                  for (final task in tasks)
+                    Card(
+                      child: ListTile(
+                        title: Text(task.title),
+                        subtitle: Text(
+                          '${task.classification.label} · 已专注 '
+                          '${_formatDuration(task.focusProgressSeconds)}',
+                        ),
+                        trailing: FilledButton.tonal(
+                          onPressed: () => _showSetup(task),
+                          child: const Text('开始'),
+                        ),
+                      ),
+                    ),
+                const SizedBox(height: 16),
+                FutureBuilder<List<FocusChainRecord>>(
+                  future: focusRepository.getChainRecords(),
+                  builder: (context, recordSnapshot) {
+                    final records = recordSnapshot.data ?? const [];
+                    if (records.isEmpty) return const SizedBox.shrink();
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text(
+                              '连续记录',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            for (final record in records)
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(record.mode.label),
+                                trailing: Text(
+                                  '${record.currentConsecutive} 次 · 最佳 ${record.bestConsecutive} 次',
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  bool _matchesFilter(Task task) {
+    return switch (_filter) {
+      null => true,
+      TaskClassification.elite =>
+        task.classification == TaskClassification.elite ||
+            task.classification == TaskClassification.both,
+      TaskClassification.regular =>
+        task.classification == TaskClassification.regular ||
+            task.classification == TaskClassification.both,
+      TaskClassification.both => true,
+    };
+  }
+
+  FocusChainMode get _selectedMode => switch (_filter) {
+    TaskClassification.elite => FocusChainMode.elite,
+    TaskClassification.regular => FocusChainMode.regular,
+    _ => _lastMode,
+  };
+
+  Future<void> _showSetup(Task task) async {
+    final session = await showDialog<FocusSession>(
+      context: context,
+      builder: (_) => FocusSetupDialog(task: task, initialMode: _selectedMode),
+    );
+    if (session != null && mounted) {
+      final goals = await ref.read(taskRepositoryProvider).getGoals();
+      _openSession(
+        session,
+        _findTaskTitle(goals, session.taskId) ?? task.title,
+      );
+    }
+    if (session != null) {
+      setState(() => _lastMode = session.mode);
+    }
+  }
+
+  void _openSession(FocusSession session, String taskTitle) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            FocusSessionPage(session: session, taskTitle: taskTitle),
+      ),
+    );
+  }
+}
+
+String? _findTaskTitle(List<Goal> goals, String taskId) {
+  for (final goal in goals) {
+    for (final task in goal.tasks) {
+      if (task.id == taskId) return task.title;
+    }
+  }
+  return null;
+}
+
+class FocusSetupDialog extends ConsumerStatefulWidget {
+  const FocusSetupDialog({
+    super.key,
+    required this.task,
+    required this.initialMode,
+  });
+
+  final Task task;
+  final FocusChainMode initialMode;
+
+  @override
+  ConsumerState<FocusSetupDialog> createState() => _FocusSetupDialogState();
+}
+
+class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
+  late FocusChainMode _mode;
+  late final TextEditingController _duration;
+  String? _error;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _mode = widget.initialMode;
+    _duration = TextEditingController(text: '25');
+  }
+
+  @override
+  void dispose() {
+    _duration.dispose();
+    super.dispose();
+  }
+
+  Future<void> _start() async {
+    final minutes = int.tryParse(_duration.text.trim());
+    if (minutes == null || minutes <= 0) {
+      setState(() => _error = '请输入大于 0 的分钟数。');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final session = await ref
+          .read(focusRepositoryProvider)
+          .startSession(
+            taskId: widget.task.id,
+            mode: _mode,
+            duration: Duration(minutes: minutes),
+          );
+      if (mounted) Navigator.of(context).pop(session);
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = error.toString().replaceFirst('Bad state: ', ''),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('开始专注'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(widget.task.title, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 14),
+        DropdownButtonFormField<FocusChainMode>(
+          initialValue: _mode,
+          decoration: const InputDecoration(labelText: '本次专注模式'),
+          items: [
+            for (final mode in FocusChainMode.values)
+              DropdownMenuItem(value: mode, child: Text(mode.label)),
+          ],
+          onChanged: _busy ? null : (value) => setState(() => _mode = value!),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _duration,
+          enabled: !_busy,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: '时长（分钟）'),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 10),
+          Text(
+            _error!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ],
+        const SizedBox(height: 10),
+        const Text('启动信号由你执行，App 不检测现实动作。倒计时归零后自动结算。'),
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: _busy ? null : () => Navigator.pop(context),
+        child: const Text('取消'),
+      ),
+      FilledButton(
+        onPressed: _busy ? null : _start,
+        child: _busy
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Text('开始倒计时'),
+      ),
+    ],
   );
+}
+
+class FocusSessionPage extends ConsumerStatefulWidget {
+  const FocusSessionPage({
+    super.key,
+    required this.session,
+    required this.taskTitle,
+  });
+
+  final FocusSession session;
+  final String taskTitle;
+
+  @override
+  ConsumerState<FocusSessionPage> createState() => _FocusSessionPageState();
+}
+
+class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
+  Timer? _timer;
+  FocusSession? _active;
+  bool _completed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _active = widget.session.isActive ? widget.session : null;
+    _refresh();
+    _timer = Timer.periodic(
+      const Duration(milliseconds: 250),
+      (_) => _refresh(),
+    );
+  }
+
+  Future<void> _refresh() async {
+    final active = await ref.read(focusRepositoryProvider).getActiveSession();
+    if (!mounted) return;
+    setState(() {
+      _active = active;
+      _completed = active == null;
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final session = _active ?? widget.session;
+    final remaining = session.endsAt.difference(DateTime.now().toUtc());
+    final remainingSeconds = remaining.inSeconds.clamp(
+      0,
+      session.durationSeconds,
+    );
+    final progress = session.durationSeconds == 0
+        ? 1.0
+        : 1 - (remainingSeconds / session.durationSeconds);
+    return Scaffold(
+      appBar: AppBar(title: const Text('专注进行中')),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  widget.taskTitle,
+                  style: Theme.of(context).textTheme.headlineSmall,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(session.mode.label, textAlign: TextAlign.center),
+                const SizedBox(height: 36),
+                Text(
+                  _completed ? '00:00' : _formatClock(remainingSeconds),
+                  style: Theme.of(context).textTheme.displayLarge,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                LinearProgressIndicator(value: _completed ? 1 : progress),
+                const SizedBox(height: 20),
+                Text(
+                  _completed
+                      ? '本次专注已完成，已生成一个专注节点并记录有效时间。任务仍需你单独确认完成。'
+                      : '倒计时归零后自动结算。返回其他页面不会使本次专注失败。',
+                  textAlign: TextAlign.center,
+                ),
+                if (_completed) ...[
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('返回专注链'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _formatClock(int seconds) {
+  final minutes = seconds ~/ 60;
+  final remaining = seconds % 60;
+  return '${minutes.toString().padLeft(2, '0')}:${remaining.toString().padLeft(2, '0')}';
 }
 
 class MyPage extends ConsumerWidget {

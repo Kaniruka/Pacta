@@ -69,6 +69,7 @@ class Task {
     required this.estimatedMinutes,
     required this.deadline,
     required this.isComplete,
+    this.focusProgressSeconds = 0,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -80,6 +81,7 @@ class Task {
   final int? estimatedMinutes;
   final DateTime? deadline;
   final bool isComplete;
+  final int focusProgressSeconds;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -89,6 +91,7 @@ class Task {
     Object? estimatedMinutes = _unchanged,
     Object? deadline = _unchanged,
     bool? isComplete,
+    int? focusProgressSeconds,
     DateTime? updatedAt,
   }) {
     return Task(
@@ -103,6 +106,7 @@ class Task {
           ? this.deadline
           : deadline as DateTime?,
       isComplete: isComplete ?? this.isComplete,
+      focusProgressSeconds: focusProgressSeconds ?? this.focusProgressSeconds,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

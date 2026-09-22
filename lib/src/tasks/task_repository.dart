@@ -291,6 +291,7 @@ class LocalTaskRepository implements TaskRepository {
             estimatedMinutes: Value(task.estimatedMinutes),
             deadline: Value(task.deadline),
             isComplete: Value(task.isComplete),
+            focusProgressSeconds: Value(task.focusProgressSeconds),
             createdAt: task.createdAt,
             updatedAt: task.updatedAt,
           ),
@@ -379,6 +380,7 @@ class LocalTaskRepository implements TaskRepository {
     estimatedMinutes: row.estimatedMinutes,
     deadline: row.deadline,
     isComplete: row.isComplete,
+    focusProgressSeconds: row.focusProgressSeconds,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   );
@@ -480,6 +482,7 @@ class SupabaseTaskRemoteDataSource implements TaskRemoteDataSource {
               ? null
               : _utcIso8601(task.deadline!),
           'is_complete': task.isComplete,
+          'focus_progress_seconds': task.focusProgressSeconds,
           'created_at': _utcIso8601(task.createdAt),
           'updated_at': _utcIso8601(task.updatedAt),
         },
@@ -508,6 +511,7 @@ class SupabaseTaskRemoteDataSource implements TaskRemoteDataSource {
         ? null
         : DateTime.parse(json['deadline'] as String).toUtc(),
     isComplete: json['is_complete'] as bool,
+    focusProgressSeconds: (json['focus_progress_seconds'] as int?) ?? 0,
     createdAt: DateTime.parse(json['created_at'] as String).toUtc(),
     updatedAt: DateTime.parse(json['updated_at'] as String).toUtc(),
   );
