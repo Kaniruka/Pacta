@@ -428,6 +428,15 @@ void main() {
     );
     expect(metrics.focusProgressSecondsByTask[task.id], 10 * 60);
     expect(metrics.totalAcceptedFocusSeconds, 10 * 60);
+    expect(metrics.hasPendingReview, isTrue);
+    expect(metrics.pendingReviewTaskIds, contains(task.id));
+    final records = await focusRepository.getChainRecords();
+    expect(
+      records
+          .singleWhere((record) => record.mode == FocusChainMode.regular)
+          .hasPendingReview,
+      isTrue,
+    );
     expect(await focusRepository.getNodes(), hasLength(1));
     expect(
       (await taskRepository.getGoals())

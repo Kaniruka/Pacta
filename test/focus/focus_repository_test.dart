@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/focus/focus_models.dart';
@@ -566,7 +567,7 @@ void main() {
     expect(await focusRepository.getActiveAppointment(), isNotNull);
   });
 
-  test('预约和自动交接可离线同步到另一份本地存储且不重复预约成功', () async {
+  test('T10 两端接续同一预约、暂停和专注并重复同步不重复结算', () async {
     final task = await createTask('跨设备预约');
     final appointment = await focusRepository.startAppointment(
       taskId: task.id,
@@ -602,22 +603,345 @@ void main() {
     await secondFocusRepository.sync();
     final syncedSession = await secondFocusRepository.getActiveSession();
     expect(syncedSession?.id, appointment.id);
+    expect(syncedSession?.taskId, task.id);
+    expect(syncedSession?.mode, FocusChainMode.regular);
+    expect(
+      syncedSession?.startedAt.isAtSameMomentAs(appointment.endsAt),
+      isTrue,
+    );
     expect(
       (await secondFocusRepository.getAppointmentChainRecord())
           .currentConsecutive,
       1,
+    );
+
+    final originalSessionEnd = syncedSession!.endsAt;
+    now = syncedSession.startedAt.add(const Duration(minutes: 2));
+    final paused = await focusRepository.pauseSession(
+      syncedSession.id,
+      ruleText: '两端共享的暂停依据',
+    );
+    await focusRepository.sync();
+    await secondFocusRepository.sync();
+    final syncedPause = await secondFocusRepository.getSession(
+      syncedSession.id,
+    );
+    expect(syncedPause?.id, syncedSession.id);
+    expect(syncedPause?.status, FocusSessionStatus.paused);
+    expect(syncedPause?.pauseRuleText, '两端共享的暂停依据');
+    expect(syncedPause?.pausedAt?.isAtSameMomentAs(paused.pausedAt!), isTrue);
+
+    now = now.add(const Duration(minutes: 5));
+    final resumed = await secondFocusRepository.resumeSession(syncedSession.id);
+    await secondFocusRepository.sync();
+    await focusRepository.sync();
+    final syncedResume = await focusRepository.getActiveSession();
+    expect(resumed.id, appointment.id);
+    expect(syncedResume?.id, appointment.id);
+    expect(
+      syncedResume?.endsAt.isAtSameMomentAs(
+        originalSessionEnd.add(const Duration(minutes: 5)),
+      ),
+      isTrue,
+    );
+
+    now = syncedResume!.endsAt;
+    await secondFocusRepository.settleDueSessions();
+    await secondFocusRepository.sync();
+    await focusRepository.sync();
+    final completed = await focusRepository.getSession(appointment.id);
+    expect(completed?.status, FocusSessionStatus.completed);
+    expect(completed?.effectiveSeconds, const Duration(minutes: 10).inSeconds);
+    expect(await focusRepository.getNodes(), hasLength(1));
+
+    final sourceCount = (await focusRemote.pull(userId: 'user-a')).sources
+        .where((source) => source.entityId == appointment.id)
+        .length;
+    await focusRepository.sync();
+    await secondFocusRepository.sync();
+    await focusRepository.sync();
+    final finalSourceCount = (await focusRemote.pull(userId: 'user-a')).sources
+        .where((source) => source.entityId == appointment.id)
+        .length;
+    expect(finalSourceCount, sourceCount);
+    expect(
+      (await focusRepository.getAppointments())
+          .singleWhere((item) => item.id == appointment.id)
+          .status,
+      AppointmentPreparationStatus.succeeded,
+    );
+    expect(
+      (await focusRepository.getChainRecords())
+          .singleWhere((record) => record.mode == FocusChainMode.regular)
+          .currentConsecutive,
+      1,
+    );
+    expect(
+      (await focusRepository.getAppointmentChainRecord()).currentConsecutive,
+      1,
+    );
+    expect(
+      (await secondFocusRepository.getAppointmentChainRecord())
+          .currentConsecutive,
+      1,
+    );
+    expect(
+      (await secondFocusRepository.getSessions()).where(
+        (session) => session.appointmentId == appointment.id,
+      ),
+      hasLength(1),
+    );
+    expect(await secondFocusRepository.getNodes(), hasLength(1));
+  });
+  test('T10 并发修改同一预约配置保留本地来源并标记待核对', () async {
+    final initialTask = await createTask('原预约任务');
+    final firstBranchTask = await createTask('第一台设备选择的任务');
+    final secondBranchTask = await createTask('第二台设备选择的任务');
+    await taskRepository.sync();
+    for (var index = 0; index < 3; index++) {
+      final startedAt = now.subtract(Duration(days: 3 - index));
+      await database
+          .into(database.focusAppointments)
+          .insert(
+            FocusAppointmentsCompanion.insert(
+              userId: 'user-a',
+              id: 'prior-accepted-appointment-$index',
+              taskId: initialTask.id,
+              mode: FocusChainMode.regular.storageValue,
+              durationSeconds: const Duration(minutes: 30).inSeconds,
+              startedAt: startedAt,
+              endsAt: startedAt.add(const Duration(minutes: 30)),
+              status: AppointmentPreparationStatus.succeeded.storageValue,
+              settledAt: Value(startedAt.add(const Duration(minutes: 30))),
+              updatedAt: startedAt.add(const Duration(minutes: 30)),
+            ),
+          );
+    }
+    await focusRepository.sync();
+
+    final secondDatabase = PactaDatabase(NativeDatabase.memory());
+    final secondTaskRepository = LocalTaskRepository(
+      database: secondDatabase,
+      userId: 'user-a',
+      remote: taskRemote,
+      now: () => now,
+    );
+    var secondNow = now;
+    final secondFocusRepository = LocalFocusRepository(
+      database: secondDatabase,
+      userId: 'user-a',
+      remote: focusRemote,
+      now: () => secondNow,
+    );
+    addTearDown(secondFocusRepository.dispose);
+    addTearDown(secondTaskRepository.dispose);
+    addTearDown(secondDatabase.close);
+
+    await secondTaskRepository.sync();
+    await secondFocusRepository.sync();
+    final appointment = await focusRepository.startAppointment(
+      taskId: initialTask.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 30),
+    );
+    await focusRepository.sync();
+    await secondFocusRepository.sync();
+
+    await focusRepository.updateAppointment(
+      appointmentId: appointment.id,
+      taskId: firstBranchTask.id,
+      mode: FocusChainMode.elite,
+      duration: const Duration(minutes: 20),
+    );
+    secondNow = now;
+    await secondFocusRepository.updateAppointment(
+      appointmentId: appointment.id,
+      taskId: secondBranchTask.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 45),
+    );
+
+    await secondFocusRepository.sync();
+    await focusRepository.sync();
+    await secondFocusRepository.sync();
+
+    secondNow = appointment.endsAt.add(const Duration(seconds: 1));
+    await secondFocusRepository.settleDueAppointments();
+    final localBranch = (await secondFocusRepository.getAppointments())
+        .firstWhere((candidate) => candidate.id == appointment.id);
+    expect(localBranch.taskId, secondBranchTask.id);
+    expect(localBranch.mode, FocusChainMode.regular);
+    expect(localBranch.durationSeconds, const Duration(minutes: 45).inSeconds);
+    expect(localBranch.status, AppointmentPreparationStatus.active);
+    expect(localBranch.reviewDisposition, FocusRecordDisposition.pendingReview);
+    final configurationSources = await secondFocusRepository
+        .getAppointmentConfigurationSources(appointment.id);
+    expect(
+      configurationSources.map((source) => source.taskId),
+      containsAll([firstBranchTask.id, secondBranchTask.id]),
+    );
+    final firstBranchSource = configurationSources.firstWhere(
+      (source) => source.taskId == firstBranchTask.id,
+    );
+    final selectedConfiguration = await secondFocusRepository
+        .selectAppointmentConfigurationSource(
+          appointmentId: appointment.id,
+          sourceId: firstBranchSource.sourceId,
+        );
+    expect(selectedConfiguration.taskId, firstBranchTask.id);
+    expect(selectedConfiguration.mode, FocusChainMode.elite);
+    expect(
+      selectedConfiguration.durationSeconds,
+      const Duration(minutes: 20).inSeconds,
+    );
+    expect(
+      selectedConfiguration.reviewDisposition,
+      FocusRecordDisposition.pendingReview,
+    );
+    final pendingSession = await secondFocusRepository.enterAppointmentEarly(
+      appointment.id,
+    );
+    expect(pendingSession.taskId, firstBranchTask.id);
+    expect(
+      pendingSession.reviewDisposition,
+      FocusRecordDisposition.pendingReview,
+    );
+    expect(
+      (await secondFocusRepository.getAppointmentChainRecord())
+          .currentConsecutive,
+      3,
+    );
+    expect(
+      (await secondFocusRepository.getAppointmentChainRecord())
+          .hasPendingReview,
+      isTrue,
+    );
+    final pendingChainRecords = await secondFocusRepository.getChainRecords();
+    expect(
+      pendingChainRecords
+          .singleWhere((record) => record.mode == FocusChainMode.elite)
+          .hasPendingReview,
+      isTrue,
+    );
+    expect(
+      pendingChainRecords
+          .singleWhere((record) => record.mode == FocusChainMode.regular)
+          .hasPendingReview,
+      isTrue,
+    );
+    final pendingMetrics = await secondFocusRepository.getDashboardMetrics(
+      deviceTimeZoneId: 'Etc/UTC',
+    );
+    expect(
+      pendingMetrics.pendingReviewTaskIds,
+      containsAll([firstBranchTask.id, secondBranchTask.id]),
+    );
+    final pausedPendingSession = await secondFocusRepository.pauseSession(
+      pendingSession.id,
+      ruleText: '继续专注前需要先暂停处理事情',
+    );
+    expect(pausedPendingSession.isPaused, isTrue);
+    expect(
+      pausedPendingSession.reviewDisposition,
+      FocusRecordDisposition.pendingReview,
+    );
+    final resumedPendingSession = await secondFocusRepository.resumeSession(
+      pendingSession.id,
+    );
+    expect(resumedPendingSession.isActive, isTrue);
+    expect(
+      resumedPendingSession.reviewDisposition,
+      FocusRecordDisposition.pendingReview,
+    );
+
+    await secondFocusRepository.sync();
+    now = appointment.endsAt.add(const Duration(seconds: 1));
+    await focusRepository.sync();
+    final firstDevice = (await focusRepository.getAppointments()).firstWhere(
+      (candidate) => candidate.id == appointment.id,
+    );
+    expect(firstDevice.taskId, firstBranchTask.id);
+    expect(firstDevice.configurationBasisSourceId, firstBranchSource.sourceId);
+    expect(firstDevice.reviewDisposition, FocusRecordDisposition.pendingReview);
+    expect(
+      (await focusRepository.getAppointmentChainRecord()).currentConsecutive,
+      3,
     );
 
     await secondFocusRepository.sync();
     expect(
-      (await secondFocusRepository.getAppointmentChainRecord())
-          .currentConsecutive,
-      1,
+      (await secondFocusRepository.getSession(appointment.id))
+          ?.reviewDisposition,
+      FocusRecordDisposition.pendingReview,
     );
+    expect(await secondFocusRepository.getNodes(), isEmpty);
+  });
+
+  test('T10 并发结算保留两个设备结果并将会话标为待核对', () async {
+    final task = await createTask('冲突会话');
+    await taskRepository.sync();
+    await focusRepository.sync();
+
+    final secondDatabase = PactaDatabase(NativeDatabase.memory());
+    final secondTaskRepository = LocalTaskRepository(
+      database: secondDatabase,
+      userId: 'user-a',
+      remote: taskRemote,
+      now: () => now,
+    );
+    var secondNow = now;
+    final secondFocusRepository = LocalFocusRepository(
+      database: secondDatabase,
+      userId: 'user-a',
+      remote: focusRemote,
+      now: () => secondNow,
+    );
+    addTearDown(secondFocusRepository.dispose);
+    addTearDown(secondTaskRepository.dispose);
+    addTearDown(secondDatabase.close);
+
+    await secondTaskRepository.sync();
+    await secondFocusRepository.sync();
+    final session = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(hours: 1),
+    );
+    await focusRepository.sync();
+    await secondFocusRepository.sync();
 
     now = now.add(const Duration(minutes: 10));
-    await secondFocusRepository.getSessions();
-    expect((await secondFocusRepository.getNodes()), hasLength(1));
+    await focusRepository.abandonSession(
+      sessionId: session.id,
+      failureReason: '第一台设备记录为失败',
+    );
+    secondNow = now.add(const Duration(minutes: 2));
+    await secondFocusRepository.completeEarlySession(
+      sessionId: session.id,
+      ruleText: '第二台设备按规则提前完成',
+    );
+
+    await focusRepository.sync();
+    await secondFocusRepository.sync();
+
+    final sourceReports = (await focusRemote.pull(userId: 'user-a')).sources
+        .where((source) => source.entityId == session.id)
+        .toList();
+    expect(sourceReports, hasLength(3));
+
+    // The first device learns about the second branch on its next sync.
+    await focusRepository.sync();
+
+    expect(
+      (await focusRepository.getSession(session.id))?.reviewDisposition,
+      FocusRecordDisposition.pendingReview,
+    );
+    expect(
+      (await secondFocusRepository.getSession(session.id))?.reviewDisposition,
+      FocusRecordDisposition.pendingReview,
+    );
+    expect(await focusRepository.getNodes(), isEmpty);
+    expect(await secondFocusRepository.getNodes(), isEmpty);
   });
 
   test('进程重启后预约按原时间线交接并完成，重复恢复不重复记账', () async {

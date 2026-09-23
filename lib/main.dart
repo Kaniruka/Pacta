@@ -480,6 +480,7 @@ class _BoardContent extends StatelessWidget {
               repository: repository,
               goal: goal,
               focusProgressSecondsByTask: metrics?.focusProgressSecondsByTask,
+              pendingReviewTaskIds: metrics?.pendingReviewTaskIds ?? const {},
             ),
         const SizedBox(height: 12),
         _RecentFocusActivityCard(
@@ -562,6 +563,11 @@ class _RecentFocusActivityCard extends StatelessWidget {
                 '${_formatDuration(value.totalAcceptedFocusSeconds)}',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
+              if (value.hasPendingReview)
+                const Padding(
+                  padding: EdgeInsets.only(top: 4),
+                  child: Text('存在待核对专注记录；争议部分暂不计入上述统计。'),
+                ),
               const SizedBox(height: 12),
               if (!hasRecentActivity)
                 const Padding(
@@ -761,11 +767,13 @@ class _GoalCard extends StatelessWidget {
     required this.repository,
     required this.goal,
     required this.focusProgressSecondsByTask,
+    required this.pendingReviewTaskIds,
   });
 
   final TaskRepository repository;
   final Goal goal;
   final Map<String, int>? focusProgressSecondsByTask;
+  final Set<String> pendingReviewTaskIds;
 
   Future<void> _confirmDeleteGoal(BuildContext context) async {
     final confirmed = await showDialog<bool>(
@@ -847,6 +855,7 @@ class _GoalCard extends StatelessWidget {
                           focusProgressSeconds:
                               focusProgressSecondsByTask![task.id] ?? 0,
                         ),
+                  hasPendingReview: pendingReviewTaskIds.contains(task.id),
                 ),
             Align(
               alignment: Alignment.centerLeft,
@@ -869,10 +878,15 @@ class _GoalCard extends StatelessWidget {
 }
 
 class _TaskTile extends ConsumerWidget {
-  const _TaskTile({required this.repository, required this.task});
+  const _TaskTile({
+    required this.repository,
+    required this.task,
+    this.hasPendingReview = false,
+  });
 
   final TaskRepository repository;
   final Task task;
+  final bool hasPendingReview;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -901,6 +915,7 @@ class _TaskTile extends ConsumerWidget {
           if (task.estimatedMinutes != null) '${task.estimatedMinutes} 分钟',
           if (task.focusProgressSeconds > 0)
             '已专注 ${_formatDuration(task.focusProgressSeconds)}',
+          if (hasPendingReview) '待核对（争议部分暂不计入专注统计）',
           ?deadline,
         ].join(' · '),
       ),
@@ -1257,6 +1272,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
   FocusRepository? _projectionRepository;
   String? _projectionSignature;
   late Future<List<FocusChainRecord>> _chainRecordsFuture;
+  late Future<AppointmentChainRecord> _appointmentChainRecordFuture;
   late Future<AppointmentPreparation?> _activeAppointmentFuture;
   Future<List<FocusNode>> _nodesFuture = Future.value(const []);
 
@@ -1272,9 +1288,9 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
   void _refreshActiveAppointment() {
     if (mounted) {
       setState(() {
-        _activeAppointmentFuture = ref
-            .read(focusRepositoryProvider)
-            .getActiveAppointment();
+        final repository = ref.read(focusRepositoryProvider);
+        _activeAppointmentFuture = repository.getActiveAppointment();
+        _appointmentChainRecordFuture = repository.getAppointmentChainRecord();
       });
     }
   }
@@ -1363,7 +1379,11 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                               contentPadding: EdgeInsets.zero,
                               leading: const Icon(Icons.event_available),
                               title: const Text('已有预约准备'),
-                              subtitle: Text(title),
+                              subtitle: Text(
+                                appointment.isPendingReview
+                                    ? '$title · 待核对'
+                                    : title,
+                              ),
                             ),
                             Wrap(
                               alignment: WrapAlignment.end,
@@ -1457,9 +1477,35 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                                 contentPadding: EdgeInsets.zero,
                                 title: Text(record.mode.label),
                                 trailing: Text(
-                                  '${record.currentConsecutive} 次 · 最佳 ${record.bestConsecutive} 次',
+                                  record.hasPendingReview
+                                      ? '待核对'
+                                      : '${record.currentConsecutive} 次 · 最佳 ${record.bestConsecutive} 次',
                                 ),
+                                subtitle: record.hasPendingReview
+                                    ? const Text('争议结果暂不计入连续记录。')
+                                    : null,
                               ),
+                            FutureBuilder<AppointmentChainRecord>(
+                              future: _appointmentChainRecordFuture,
+                              builder: (context, appointmentSnapshot) {
+                                final record = appointmentSnapshot.data;
+                                if (record == null) {
+                                  return const SizedBox.shrink();
+                                }
+                                return ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  title: const Text('预约链'),
+                                  trailing: Text(
+                                    record.hasPendingReview
+                                        ? '待核对'
+                                        : '${record.currentConsecutive} 次 · 最佳 ${record.bestConsecutive} 次',
+                                  ),
+                                  subtitle: record.hasPendingReview
+                                      ? const Text('争议结果暂不计入连续记录。')
+                                      : null,
+                                );
+                              },
+                            ),
                           ],
                         ),
                       ),
@@ -1493,7 +1539,9 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
     final signature = sessions
         .map(
           (session) =>
-              '${session.id}:${session.status.storageValue}:${session.effectiveSeconds}:${session.completedAt}',
+              '${session.id}:${session.taskId}:${session.mode.storageValue}:'
+              '${session.status.storageValue}:${session.reviewDisposition.storageValue}:'
+              '${session.effectiveSeconds}:${session.completedAt}',
         )
         .join('|');
     if (identical(_projectionRepository, repository) &&
@@ -1503,6 +1551,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
     _projectionRepository = repository;
     _projectionSignature = signature;
     _chainRecordsFuture = repository.getChainRecords();
+    _appointmentChainRecordFuture = repository.getAppointmentChainRecord();
     _nodesFuture = sessions.any((session) => !session.isUnfinished)
         ? repository.getNodes()
         : Future.value(const []);
@@ -2147,10 +2196,13 @@ class _AppointmentPreparationPageState
   Timer? _timer;
   AppointmentPreparation? _current;
   List<Task>? _tasks;
+  List<FocusAppointmentSourceOption> _configurationSources = const [];
   late FocusChainMode _mode;
   late String _taskId;
   late final TextEditingController _duration;
   bool _busy = false;
+  bool _loadingConfigurationSources = false;
+  bool _configurationSourcesRequested = false;
   String? _error;
 
   @override
@@ -2199,7 +2251,7 @@ class _AppointmentPreparationPageState
         .read(focusRepositoryProvider)
         .getAppointment(widget.appointment.id);
     if (!mounted || current == null) return;
-    if (current.isSucceeded) {
+    if (current.isSucceeded && !current.isPendingReview) {
       final session = await ref
           .read(focusRepositoryProvider)
           .getSession(current.sessionId ?? current.id);
@@ -2219,6 +2271,58 @@ class _AppointmentPreparationPageState
       _timer?.cancel();
     }
     if (mounted) setState(() => _current = current);
+    if (current.isPendingReview && !_configurationSourcesRequested) {
+      unawaited(_loadConfigurationSources());
+    }
+  }
+
+  Future<void> _loadConfigurationSources({bool force = false}) async {
+    if (_loadingConfigurationSources ||
+        (!force && _configurationSourcesRequested)) {
+      return;
+    }
+    _configurationSourcesRequested = true;
+    _loadingConfigurationSources = true;
+    if (mounted) setState(() {});
+    try {
+      final sources = await ref
+          .read(focusRepositoryProvider)
+          .getAppointmentConfigurationSources(widget.appointment.id);
+      if (mounted) setState(() => _configurationSources = sources);
+    } catch (error) {
+      if (mounted) setState(() => _error = _friendlyFocusError(error));
+    } finally {
+      _loadingConfigurationSources = false;
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _selectConfigurationSource(
+    FocusAppointmentSourceOption source,
+  ) async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final updated = await ref
+          .read(focusRepositoryProvider)
+          .selectAppointmentConfigurationSource(
+            appointmentId: widget.appointment.id,
+            sourceId: source.sourceId,
+          );
+      _taskId = updated.taskId;
+      _mode = updated.mode;
+      _duration.text = _minutesFor(updated.durationSeconds).toString();
+      if (mounted) setState(() => _current = updated);
+      _configurationSourcesRequested = false;
+      await _loadConfigurationSources(force: true);
+    } catch (error) {
+      if (mounted) setState(() => _error = _friendlyFocusError(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _saveConfig() async {
@@ -2324,6 +2428,8 @@ class _AppointmentPreparationPageState
         : 0;
     final progress = 1 - (remainingSeconds / (15 * 60));
     final tasks = _tasks;
+    final canEdit = !_busy && !appointment.isPendingReview;
+    final canProceed = !_busy;
     return Scaffold(
       appBar: AppBar(title: const Text('预约准备')),
       body: Center(
@@ -2339,7 +2445,9 @@ class _AppointmentPreparationPageState
               ),
               const SizedBox(height: 8),
               Text(
-                appointment.isActive
+                appointment.isPendingReview
+                    ? '两端对这份预约的配置存在分歧，自动交接已暂停，当前来源待核对。你仍可继续此预约或取消。'
+                    : appointment.isActive
                     ? '准备结束后自动进入专注，不需要再次点击或执行启动信号。'
                     : appointment.isFailed
                     ? '预约已取消，预约链当前记录已清零。'
@@ -2355,6 +2463,52 @@ class _AppointmentPreparationPageState
               const SizedBox(height: 16),
               LinearProgressIndicator(value: progress.clamp(0.0, 1.0)),
               const SizedBox(height: 16),
+              if (appointment.isPendingReview)
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          '配置来源对比',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        if (_loadingConfigurationSources)
+                          const Center(child: CircularProgressIndicator())
+                        else if (_configurationSources.isEmpty)
+                          const Text('当前待核对记录没有不同的预约配置来源。')
+                        else
+                          for (final source in _configurationSources) ...[
+                            const Divider(),
+                            Text(
+                              '设备 ${source.deviceId.substring(0, source.deviceId.length < 8 ? source.deviceId.length : 8)} · ${source.occurredAt.toLocal()}',
+                            ),
+                            Text('任务：${_taskTitle(source.taskId)}'),
+                            Text(
+                              '模式：${source.mode.label} · 时长：${_minutesFor(source.durationSeconds)} 分钟',
+                            ),
+                            OutlinedButton(
+                              onPressed:
+                                  _busy ||
+                                      appointment.configurationBasisSourceId ==
+                                          source.sourceId
+                                  ? null
+                                  : () => _selectConfigurationSource(source),
+                              child: Text(
+                                appointment.configurationBasisSourceId ==
+                                        source.sourceId
+                                    ? '当前配置依据'
+                                    : '采用此来源作为配置依据',
+                              ),
+                            ),
+                          ],
+                      ],
+                    ),
+                  ),
+                ),
+              if (appointment.isPendingReview) const SizedBox(height: 16),
               if (appointment.isActive)
                 Card(
                   child: Padding(
@@ -2383,7 +2537,7 @@ class _AppointmentPreparationPageState
                                   child: Text(task.title),
                                 ),
                             ],
-                            onChanged: _busy
+                            onChanged: !canEdit
                                 ? null
                                 : (value) {
                                     if (value != null) {
@@ -2404,7 +2558,7 @@ class _AppointmentPreparationPageState
                                 child: Text(mode.label),
                               ),
                           ],
-                          onChanged: _busy
+                          onChanged: !canEdit
                               ? null
                               : (value) {
                                   if (value != null) {
@@ -2415,7 +2569,7 @@ class _AppointmentPreparationPageState
                         const SizedBox(height: 12),
                         TextField(
                           controller: _duration,
-                          enabled: !_busy,
+                          enabled: canEdit,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
                             labelText: '专注时长（分钟）',
@@ -2423,7 +2577,7 @@ class _AppointmentPreparationPageState
                         ),
                         const SizedBox(height: 12),
                         OutlinedButton(
-                          onPressed: _busy ? null : _saveConfig,
+                          onPressed: canEdit ? _saveConfig : null,
                           child: const Text('保存配置（不重置准备时间）'),
                         ),
                       ],
@@ -2441,11 +2595,11 @@ class _AppointmentPreparationPageState
               const SizedBox(height: 20),
               if (appointment.isActive) ...[
                 FilledButton(
-                  onPressed: _busy ? null : _enterEarly,
+                  onPressed: canProceed ? _enterEarly : null,
                   child: const Text('提前进入专注'),
                 ),
                 TextButton(
-                  onPressed: _busy ? null : _cancelAppointment,
+                  onPressed: canProceed ? _cancelAppointment : null,
                   child: const Text('取消预约并填写失败原因'),
                 ),
                 const Text(
@@ -2627,6 +2781,8 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
         ? 1.0
         : 1 - (remainingSeconds / session.durationSeconds);
     final settled = !session.isUnfinished;
+    final needsReview =
+        session.reviewDisposition == FocusRecordDisposition.pendingReview;
     return Scaffold(
       appBar: AppBar(title: const Text('专注进行中')),
       body: Center(
@@ -2655,7 +2811,9 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
                 LinearProgressIndicator(value: settled ? 1 : progress),
                 const SizedBox(height: 20),
                 Text(
-                  session.isFailed
+                  needsReview
+                      ? '两端对这次专注的记录存在分歧，当前结果和计时已暂停，待核对来源。'
+                      : session.isFailed
                       ? '本次专注已失败，已保留有效投入时间。任务仍需你单独确认完成。\n失败原因：${session.failureReason ?? '未填写'}'
                       : session.isEarlyCompleted
                       ? '本次专注已获准提前完成，已生成一个专注节点并记录有效时间。\n依据：${session.completionRuleText ?? '未记录'}'

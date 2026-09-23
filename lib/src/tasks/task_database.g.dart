@@ -4364,6 +4364,41 @@ class $FocusAppointmentsTable extends FocusAppointments
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _reviewDispositionMeta = const VerificationMeta(
+    'reviewDisposition',
+  );
+  @override
+  late final GeneratedColumn<String> reviewDisposition =
+      GeneratedColumn<String>(
+        'review_disposition',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant('accepted'),
+      );
+  static const VerificationMeta _reviewDispositionUpdatedAtMeta =
+      const VerificationMeta('reviewDispositionUpdatedAt');
+  @override
+  late final GeneratedColumn<DateTime> reviewDispositionUpdatedAt =
+      GeneratedColumn<DateTime>(
+        'review_disposition_updated_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _configurationBasisSourceIdMeta =
+      const VerificationMeta('configurationBasisSourceId');
+  @override
+  late final GeneratedColumn<String> configurationBasisSourceId =
+      GeneratedColumn<String>(
+        'configuration_basis_source_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   @override
   List<GeneratedColumn> get $columns => [
     userId,
@@ -4378,6 +4413,9 @@ class $FocusAppointmentsTable extends FocusAppointments
     sessionId,
     failureReason,
     updatedAt,
+    reviewDisposition,
+    reviewDispositionUpdatedAt,
+    configurationBasisSourceId,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4484,6 +4522,33 @@ class $FocusAppointmentsTable extends FocusAppointments
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
+    if (data.containsKey('review_disposition')) {
+      context.handle(
+        _reviewDispositionMeta,
+        reviewDisposition.isAcceptableOrUnknown(
+          data['review_disposition']!,
+          _reviewDispositionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('review_disposition_updated_at')) {
+      context.handle(
+        _reviewDispositionUpdatedAtMeta,
+        reviewDispositionUpdatedAt.isAcceptableOrUnknown(
+          data['review_disposition_updated_at']!,
+          _reviewDispositionUpdatedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('configuration_basis_source_id')) {
+      context.handle(
+        _configurationBasisSourceIdMeta,
+        configurationBasisSourceId.isAcceptableOrUnknown(
+          data['configuration_basis_source_id']!,
+          _configurationBasisSourceIdMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -4541,6 +4606,18 @@ class $FocusAppointmentsTable extends FocusAppointments
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
       )!,
+      reviewDisposition: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}review_disposition'],
+      )!,
+      reviewDispositionUpdatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}review_disposition_updated_at'],
+      ),
+      configurationBasisSourceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}configuration_basis_source_id'],
+      ),
     );
   }
 
@@ -4564,6 +4641,9 @@ class FocusAppointment extends DataClass
   final String? sessionId;
   final String? failureReason;
   final DateTime updatedAt;
+  final String reviewDisposition;
+  final DateTime? reviewDispositionUpdatedAt;
+  final String? configurationBasisSourceId;
   const FocusAppointment({
     required this.userId,
     required this.id,
@@ -4577,6 +4657,9 @@ class FocusAppointment extends DataClass
     this.sessionId,
     this.failureReason,
     required this.updatedAt,
+    required this.reviewDisposition,
+    this.reviewDispositionUpdatedAt,
+    this.configurationBasisSourceId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -4599,6 +4682,17 @@ class FocusAppointment extends DataClass
       map['failure_reason'] = Variable<String>(failureReason);
     }
     map['updated_at'] = Variable<DateTime>(updatedAt);
+    map['review_disposition'] = Variable<String>(reviewDisposition);
+    if (!nullToAbsent || reviewDispositionUpdatedAt != null) {
+      map['review_disposition_updated_at'] = Variable<DateTime>(
+        reviewDispositionUpdatedAt,
+      );
+    }
+    if (!nullToAbsent || configurationBasisSourceId != null) {
+      map['configuration_basis_source_id'] = Variable<String>(
+        configurationBasisSourceId,
+      );
+    }
     return map;
   }
 
@@ -4622,6 +4716,15 @@ class FocusAppointment extends DataClass
           ? const Value.absent()
           : Value(failureReason),
       updatedAt: Value(updatedAt),
+      reviewDisposition: Value(reviewDisposition),
+      reviewDispositionUpdatedAt:
+          reviewDispositionUpdatedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reviewDispositionUpdatedAt),
+      configurationBasisSourceId:
+          configurationBasisSourceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(configurationBasisSourceId),
     );
   }
 
@@ -4643,6 +4746,13 @@ class FocusAppointment extends DataClass
       sessionId: serializer.fromJson<String?>(json['sessionId']),
       failureReason: serializer.fromJson<String?>(json['failureReason']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      reviewDisposition: serializer.fromJson<String>(json['reviewDisposition']),
+      reviewDispositionUpdatedAt: serializer.fromJson<DateTime?>(
+        json['reviewDispositionUpdatedAt'],
+      ),
+      configurationBasisSourceId: serializer.fromJson<String?>(
+        json['configurationBasisSourceId'],
+      ),
     );
   }
   @override
@@ -4661,6 +4771,13 @@ class FocusAppointment extends DataClass
       'sessionId': serializer.toJson<String?>(sessionId),
       'failureReason': serializer.toJson<String?>(failureReason),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'reviewDisposition': serializer.toJson<String>(reviewDisposition),
+      'reviewDispositionUpdatedAt': serializer.toJson<DateTime?>(
+        reviewDispositionUpdatedAt,
+      ),
+      'configurationBasisSourceId': serializer.toJson<String?>(
+        configurationBasisSourceId,
+      ),
     };
   }
 
@@ -4677,6 +4794,9 @@ class FocusAppointment extends DataClass
     Value<String?> sessionId = const Value.absent(),
     Value<String?> failureReason = const Value.absent(),
     DateTime? updatedAt,
+    String? reviewDisposition,
+    Value<DateTime?> reviewDispositionUpdatedAt = const Value.absent(),
+    Value<String?> configurationBasisSourceId = const Value.absent(),
   }) => FocusAppointment(
     userId: userId ?? this.userId,
     id: id ?? this.id,
@@ -4692,6 +4812,13 @@ class FocusAppointment extends DataClass
         ? failureReason.value
         : this.failureReason,
     updatedAt: updatedAt ?? this.updatedAt,
+    reviewDisposition: reviewDisposition ?? this.reviewDisposition,
+    reviewDispositionUpdatedAt: reviewDispositionUpdatedAt.present
+        ? reviewDispositionUpdatedAt.value
+        : this.reviewDispositionUpdatedAt,
+    configurationBasisSourceId: configurationBasisSourceId.present
+        ? configurationBasisSourceId.value
+        : this.configurationBasisSourceId,
   );
   FocusAppointment copyWithCompanion(FocusAppointmentsCompanion data) {
     return FocusAppointment(
@@ -4711,6 +4838,15 @@ class FocusAppointment extends DataClass
           ? data.failureReason.value
           : this.failureReason,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      reviewDisposition: data.reviewDisposition.present
+          ? data.reviewDisposition.value
+          : this.reviewDisposition,
+      reviewDispositionUpdatedAt: data.reviewDispositionUpdatedAt.present
+          ? data.reviewDispositionUpdatedAt.value
+          : this.reviewDispositionUpdatedAt,
+      configurationBasisSourceId: data.configurationBasisSourceId.present
+          ? data.configurationBasisSourceId.value
+          : this.configurationBasisSourceId,
     );
   }
 
@@ -4728,7 +4864,10 @@ class FocusAppointment extends DataClass
           ..write('settledAt: $settledAt, ')
           ..write('sessionId: $sessionId, ')
           ..write('failureReason: $failureReason, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('reviewDisposition: $reviewDisposition, ')
+          ..write('reviewDispositionUpdatedAt: $reviewDispositionUpdatedAt, ')
+          ..write('configurationBasisSourceId: $configurationBasisSourceId')
           ..write(')'))
         .toString();
   }
@@ -4747,6 +4886,9 @@ class FocusAppointment extends DataClass
     sessionId,
     failureReason,
     updatedAt,
+    reviewDisposition,
+    reviewDispositionUpdatedAt,
+    configurationBasisSourceId,
   );
   @override
   bool operator ==(Object other) =>
@@ -4763,7 +4905,10 @@ class FocusAppointment extends DataClass
           other.settledAt == this.settledAt &&
           other.sessionId == this.sessionId &&
           other.failureReason == this.failureReason &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.reviewDisposition == this.reviewDisposition &&
+          other.reviewDispositionUpdatedAt == this.reviewDispositionUpdatedAt &&
+          other.configurationBasisSourceId == this.configurationBasisSourceId);
 }
 
 class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
@@ -4779,6 +4924,9 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
   final Value<String?> sessionId;
   final Value<String?> failureReason;
   final Value<DateTime> updatedAt;
+  final Value<String> reviewDisposition;
+  final Value<DateTime?> reviewDispositionUpdatedAt;
+  final Value<String?> configurationBasisSourceId;
   final Value<int> rowid;
   const FocusAppointmentsCompanion({
     this.userId = const Value.absent(),
@@ -4793,6 +4941,9 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
     this.sessionId = const Value.absent(),
     this.failureReason = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.reviewDisposition = const Value.absent(),
+    this.reviewDispositionUpdatedAt = const Value.absent(),
+    this.configurationBasisSourceId = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FocusAppointmentsCompanion.insert({
@@ -4808,6 +4959,9 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
     this.sessionId = const Value.absent(),
     this.failureReason = const Value.absent(),
     required DateTime updatedAt,
+    this.reviewDisposition = const Value.absent(),
+    this.reviewDispositionUpdatedAt = const Value.absent(),
+    this.configurationBasisSourceId = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
        id = Value(id),
@@ -4831,6 +4985,9 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
     Expression<String>? sessionId,
     Expression<String>? failureReason,
     Expression<DateTime>? updatedAt,
+    Expression<String>? reviewDisposition,
+    Expression<DateTime>? reviewDispositionUpdatedAt,
+    Expression<String>? configurationBasisSourceId,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -4846,6 +5003,11 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
       if (sessionId != null) 'session_id': sessionId,
       if (failureReason != null) 'failure_reason': failureReason,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (reviewDisposition != null) 'review_disposition': reviewDisposition,
+      if (reviewDispositionUpdatedAt != null)
+        'review_disposition_updated_at': reviewDispositionUpdatedAt,
+      if (configurationBasisSourceId != null)
+        'configuration_basis_source_id': configurationBasisSourceId,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -4863,6 +5025,9 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
     Value<String?>? sessionId,
     Value<String?>? failureReason,
     Value<DateTime>? updatedAt,
+    Value<String>? reviewDisposition,
+    Value<DateTime?>? reviewDispositionUpdatedAt,
+    Value<String?>? configurationBasisSourceId,
     Value<int>? rowid,
   }) {
     return FocusAppointmentsCompanion(
@@ -4878,6 +5043,11 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
       sessionId: sessionId ?? this.sessionId,
       failureReason: failureReason ?? this.failureReason,
       updatedAt: updatedAt ?? this.updatedAt,
+      reviewDisposition: reviewDisposition ?? this.reviewDisposition,
+      reviewDispositionUpdatedAt:
+          reviewDispositionUpdatedAt ?? this.reviewDispositionUpdatedAt,
+      configurationBasisSourceId:
+          configurationBasisSourceId ?? this.configurationBasisSourceId,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4921,6 +5091,19 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
+    if (reviewDisposition.present) {
+      map['review_disposition'] = Variable<String>(reviewDisposition.value);
+    }
+    if (reviewDispositionUpdatedAt.present) {
+      map['review_disposition_updated_at'] = Variable<DateTime>(
+        reviewDispositionUpdatedAt.value,
+      );
+    }
+    if (configurationBasisSourceId.present) {
+      map['configuration_basis_source_id'] = Variable<String>(
+        configurationBasisSourceId.value,
+      );
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4942,6 +5125,9 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
           ..write('sessionId: $sessionId, ')
           ..write('failureReason: $failureReason, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('reviewDisposition: $reviewDisposition, ')
+          ..write('reviewDispositionUpdatedAt: $reviewDispositionUpdatedAt, ')
+          ..write('configurationBasisSourceId: $configurationBasisSourceId, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -5276,6 +5462,750 @@ class AppointmentChainRecordsCompanion
   }
 }
 
+class $FocusSourceDevicesTable extends FocusSourceDevices
+    with TableInfo<$FocusSourceDevicesTable, FocusSourceDevice> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FocusSourceDevicesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deviceIdMeta = const VerificationMeta(
+    'deviceId',
+  );
+  @override
+  late final GeneratedColumn<String> deviceId = GeneratedColumn<String>(
+    'device_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [userId, deviceId];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'focus_source_devices';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FocusSourceDevice> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('device_id')) {
+      context.handle(
+        _deviceIdMeta,
+        deviceId.isAcceptableOrUnknown(data['device_id']!, _deviceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deviceIdMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId};
+  @override
+  FocusSourceDevice map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FocusSourceDevice(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      deviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}device_id'],
+      )!,
+    );
+  }
+
+  @override
+  $FocusSourceDevicesTable createAlias(String alias) {
+    return $FocusSourceDevicesTable(attachedDatabase, alias);
+  }
+}
+
+class FocusSourceDevice extends DataClass
+    implements Insertable<FocusSourceDevice> {
+  final String userId;
+  final String deviceId;
+  const FocusSourceDevice({required this.userId, required this.deviceId});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['device_id'] = Variable<String>(deviceId);
+    return map;
+  }
+
+  FocusSourceDevicesCompanion toCompanion(bool nullToAbsent) {
+    return FocusSourceDevicesCompanion(
+      userId: Value(userId),
+      deviceId: Value(deviceId),
+    );
+  }
+
+  factory FocusSourceDevice.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FocusSourceDevice(
+      userId: serializer.fromJson<String>(json['userId']),
+      deviceId: serializer.fromJson<String>(json['deviceId']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'deviceId': serializer.toJson<String>(deviceId),
+    };
+  }
+
+  FocusSourceDevice copyWith({String? userId, String? deviceId}) =>
+      FocusSourceDevice(
+        userId: userId ?? this.userId,
+        deviceId: deviceId ?? this.deviceId,
+      );
+  FocusSourceDevice copyWithCompanion(FocusSourceDevicesCompanion data) {
+    return FocusSourceDevice(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      deviceId: data.deviceId.present ? data.deviceId.value : this.deviceId,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FocusSourceDevice(')
+          ..write('userId: $userId, ')
+          ..write('deviceId: $deviceId')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(userId, deviceId);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FocusSourceDevice &&
+          other.userId == this.userId &&
+          other.deviceId == this.deviceId);
+}
+
+class FocusSourceDevicesCompanion extends UpdateCompanion<FocusSourceDevice> {
+  final Value<String> userId;
+  final Value<String> deviceId;
+  final Value<int> rowid;
+  const FocusSourceDevicesCompanion({
+    this.userId = const Value.absent(),
+    this.deviceId = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  FocusSourceDevicesCompanion.insert({
+    required String userId,
+    required String deviceId,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       deviceId = Value(deviceId);
+  static Insertable<FocusSourceDevice> custom({
+    Expression<String>? userId,
+    Expression<String>? deviceId,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (deviceId != null) 'device_id': deviceId,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  FocusSourceDevicesCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? deviceId,
+    Value<int>? rowid,
+  }) {
+    return FocusSourceDevicesCompanion(
+      userId: userId ?? this.userId,
+      deviceId: deviceId ?? this.deviceId,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (deviceId.present) {
+      map['device_id'] = Variable<String>(deviceId.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FocusSourceDevicesCompanion(')
+          ..write('userId: $userId, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $FocusSyncSourcesTable extends FocusSyncSources
+    with TableInfo<$FocusSyncSourcesTable, FocusSyncSource> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FocusSyncSourcesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceIdMeta = const VerificationMeta(
+    'sourceId',
+  );
+  @override
+  late final GeneratedColumn<String> sourceId = GeneratedColumn<String>(
+    'source_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _deviceIdMeta = const VerificationMeta(
+    'deviceId',
+  );
+  @override
+  late final GeneratedColumn<String> deviceId = GeneratedColumn<String>(
+    'device_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entityTypeMeta = const VerificationMeta(
+    'entityType',
+  );
+  @override
+  late final GeneratedColumn<String> entityType = GeneratedColumn<String>(
+    'entity_type',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _entityIdMeta = const VerificationMeta(
+    'entityId',
+  );
+  @override
+  late final GeneratedColumn<String> entityId = GeneratedColumn<String>(
+    'entity_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _parentSourceIdMeta = const VerificationMeta(
+    'parentSourceId',
+  );
+  @override
+  late final GeneratedColumn<String> parentSourceId = GeneratedColumn<String>(
+    'parent_source_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _occurredAtMeta = const VerificationMeta(
+    'occurredAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> occurredAt = GeneratedColumn<DateTime>(
+    'occurred_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _payloadMeta = const VerificationMeta(
+    'payload',
+  );
+  @override
+  late final GeneratedColumn<String> payload = GeneratedColumn<String>(
+    'payload',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    sourceId,
+    deviceId,
+    entityType,
+    entityId,
+    parentSourceId,
+    occurredAt,
+    payload,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'focus_sync_sources';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FocusSyncSource> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('source_id')) {
+      context.handle(
+        _sourceIdMeta,
+        sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceIdMeta);
+    }
+    if (data.containsKey('device_id')) {
+      context.handle(
+        _deviceIdMeta,
+        deviceId.isAcceptableOrUnknown(data['device_id']!, _deviceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_deviceIdMeta);
+    }
+    if (data.containsKey('entity_type')) {
+      context.handle(
+        _entityTypeMeta,
+        entityType.isAcceptableOrUnknown(data['entity_type']!, _entityTypeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityTypeMeta);
+    }
+    if (data.containsKey('entity_id')) {
+      context.handle(
+        _entityIdMeta,
+        entityId.isAcceptableOrUnknown(data['entity_id']!, _entityIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_entityIdMeta);
+    }
+    if (data.containsKey('parent_source_id')) {
+      context.handle(
+        _parentSourceIdMeta,
+        parentSourceId.isAcceptableOrUnknown(
+          data['parent_source_id']!,
+          _parentSourceIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('occurred_at')) {
+      context.handle(
+        _occurredAtMeta,
+        occurredAt.isAcceptableOrUnknown(data['occurred_at']!, _occurredAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_occurredAtMeta);
+    }
+    if (data.containsKey('payload')) {
+      context.handle(
+        _payloadMeta,
+        payload.isAcceptableOrUnknown(data['payload']!, _payloadMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_payloadMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId, sourceId};
+  @override
+  FocusSyncSource map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FocusSyncSource(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      sourceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_id'],
+      )!,
+      deviceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}device_id'],
+      )!,
+      entityType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entity_type'],
+      )!,
+      entityId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}entity_id'],
+      )!,
+      parentSourceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}parent_source_id'],
+      ),
+      occurredAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}occurred_at'],
+      )!,
+      payload: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payload'],
+      )!,
+    );
+  }
+
+  @override
+  $FocusSyncSourcesTable createAlias(String alias) {
+    return $FocusSyncSourcesTable(attachedDatabase, alias);
+  }
+}
+
+class FocusSyncSource extends DataClass implements Insertable<FocusSyncSource> {
+  final String userId;
+  final String sourceId;
+  final String deviceId;
+  final String entityType;
+  final String entityId;
+  final String? parentSourceId;
+  final DateTime occurredAt;
+  final String payload;
+  const FocusSyncSource({
+    required this.userId,
+    required this.sourceId,
+    required this.deviceId,
+    required this.entityType,
+    required this.entityId,
+    this.parentSourceId,
+    required this.occurredAt,
+    required this.payload,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['source_id'] = Variable<String>(sourceId);
+    map['device_id'] = Variable<String>(deviceId);
+    map['entity_type'] = Variable<String>(entityType);
+    map['entity_id'] = Variable<String>(entityId);
+    if (!nullToAbsent || parentSourceId != null) {
+      map['parent_source_id'] = Variable<String>(parentSourceId);
+    }
+    map['occurred_at'] = Variable<DateTime>(occurredAt);
+    map['payload'] = Variable<String>(payload);
+    return map;
+  }
+
+  FocusSyncSourcesCompanion toCompanion(bool nullToAbsent) {
+    return FocusSyncSourcesCompanion(
+      userId: Value(userId),
+      sourceId: Value(sourceId),
+      deviceId: Value(deviceId),
+      entityType: Value(entityType),
+      entityId: Value(entityId),
+      parentSourceId: parentSourceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(parentSourceId),
+      occurredAt: Value(occurredAt),
+      payload: Value(payload),
+    );
+  }
+
+  factory FocusSyncSource.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FocusSyncSource(
+      userId: serializer.fromJson<String>(json['userId']),
+      sourceId: serializer.fromJson<String>(json['sourceId']),
+      deviceId: serializer.fromJson<String>(json['deviceId']),
+      entityType: serializer.fromJson<String>(json['entityType']),
+      entityId: serializer.fromJson<String>(json['entityId']),
+      parentSourceId: serializer.fromJson<String?>(json['parentSourceId']),
+      occurredAt: serializer.fromJson<DateTime>(json['occurredAt']),
+      payload: serializer.fromJson<String>(json['payload']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'sourceId': serializer.toJson<String>(sourceId),
+      'deviceId': serializer.toJson<String>(deviceId),
+      'entityType': serializer.toJson<String>(entityType),
+      'entityId': serializer.toJson<String>(entityId),
+      'parentSourceId': serializer.toJson<String?>(parentSourceId),
+      'occurredAt': serializer.toJson<DateTime>(occurredAt),
+      'payload': serializer.toJson<String>(payload),
+    };
+  }
+
+  FocusSyncSource copyWith({
+    String? userId,
+    String? sourceId,
+    String? deviceId,
+    String? entityType,
+    String? entityId,
+    Value<String?> parentSourceId = const Value.absent(),
+    DateTime? occurredAt,
+    String? payload,
+  }) => FocusSyncSource(
+    userId: userId ?? this.userId,
+    sourceId: sourceId ?? this.sourceId,
+    deviceId: deviceId ?? this.deviceId,
+    entityType: entityType ?? this.entityType,
+    entityId: entityId ?? this.entityId,
+    parentSourceId: parentSourceId.present
+        ? parentSourceId.value
+        : this.parentSourceId,
+    occurredAt: occurredAt ?? this.occurredAt,
+    payload: payload ?? this.payload,
+  );
+  FocusSyncSource copyWithCompanion(FocusSyncSourcesCompanion data) {
+    return FocusSyncSource(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
+      deviceId: data.deviceId.present ? data.deviceId.value : this.deviceId,
+      entityType: data.entityType.present
+          ? data.entityType.value
+          : this.entityType,
+      entityId: data.entityId.present ? data.entityId.value : this.entityId,
+      parentSourceId: data.parentSourceId.present
+          ? data.parentSourceId.value
+          : this.parentSourceId,
+      occurredAt: data.occurredAt.present
+          ? data.occurredAt.value
+          : this.occurredAt,
+      payload: data.payload.present ? data.payload.value : this.payload,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FocusSyncSource(')
+          ..write('userId: $userId, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('entityType: $entityType, ')
+          ..write('entityId: $entityId, ')
+          ..write('parentSourceId: $parentSourceId, ')
+          ..write('occurredAt: $occurredAt, ')
+          ..write('payload: $payload')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    userId,
+    sourceId,
+    deviceId,
+    entityType,
+    entityId,
+    parentSourceId,
+    occurredAt,
+    payload,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FocusSyncSource &&
+          other.userId == this.userId &&
+          other.sourceId == this.sourceId &&
+          other.deviceId == this.deviceId &&
+          other.entityType == this.entityType &&
+          other.entityId == this.entityId &&
+          other.parentSourceId == this.parentSourceId &&
+          other.occurredAt == this.occurredAt &&
+          other.payload == this.payload);
+}
+
+class FocusSyncSourcesCompanion extends UpdateCompanion<FocusSyncSource> {
+  final Value<String> userId;
+  final Value<String> sourceId;
+  final Value<String> deviceId;
+  final Value<String> entityType;
+  final Value<String> entityId;
+  final Value<String?> parentSourceId;
+  final Value<DateTime> occurredAt;
+  final Value<String> payload;
+  final Value<int> rowid;
+  const FocusSyncSourcesCompanion({
+    this.userId = const Value.absent(),
+    this.sourceId = const Value.absent(),
+    this.deviceId = const Value.absent(),
+    this.entityType = const Value.absent(),
+    this.entityId = const Value.absent(),
+    this.parentSourceId = const Value.absent(),
+    this.occurredAt = const Value.absent(),
+    this.payload = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  FocusSyncSourcesCompanion.insert({
+    required String userId,
+    required String sourceId,
+    required String deviceId,
+    required String entityType,
+    required String entityId,
+    this.parentSourceId = const Value.absent(),
+    required DateTime occurredAt,
+    required String payload,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       sourceId = Value(sourceId),
+       deviceId = Value(deviceId),
+       entityType = Value(entityType),
+       entityId = Value(entityId),
+       occurredAt = Value(occurredAt),
+       payload = Value(payload);
+  static Insertable<FocusSyncSource> custom({
+    Expression<String>? userId,
+    Expression<String>? sourceId,
+    Expression<String>? deviceId,
+    Expression<String>? entityType,
+    Expression<String>? entityId,
+    Expression<String>? parentSourceId,
+    Expression<DateTime>? occurredAt,
+    Expression<String>? payload,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (sourceId != null) 'source_id': sourceId,
+      if (deviceId != null) 'device_id': deviceId,
+      if (entityType != null) 'entity_type': entityType,
+      if (entityId != null) 'entity_id': entityId,
+      if (parentSourceId != null) 'parent_source_id': parentSourceId,
+      if (occurredAt != null) 'occurred_at': occurredAt,
+      if (payload != null) 'payload': payload,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  FocusSyncSourcesCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? sourceId,
+    Value<String>? deviceId,
+    Value<String>? entityType,
+    Value<String>? entityId,
+    Value<String?>? parentSourceId,
+    Value<DateTime>? occurredAt,
+    Value<String>? payload,
+    Value<int>? rowid,
+  }) {
+    return FocusSyncSourcesCompanion(
+      userId: userId ?? this.userId,
+      sourceId: sourceId ?? this.sourceId,
+      deviceId: deviceId ?? this.deviceId,
+      entityType: entityType ?? this.entityType,
+      entityId: entityId ?? this.entityId,
+      parentSourceId: parentSourceId ?? this.parentSourceId,
+      occurredAt: occurredAt ?? this.occurredAt,
+      payload: payload ?? this.payload,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (sourceId.present) {
+      map['source_id'] = Variable<String>(sourceId.value);
+    }
+    if (deviceId.present) {
+      map['device_id'] = Variable<String>(deviceId.value);
+    }
+    if (entityType.present) {
+      map['entity_type'] = Variable<String>(entityType.value);
+    }
+    if (entityId.present) {
+      map['entity_id'] = Variable<String>(entityId.value);
+    }
+    if (parentSourceId.present) {
+      map['parent_source_id'] = Variable<String>(parentSourceId.value);
+    }
+    if (occurredAt.present) {
+      map['occurred_at'] = Variable<DateTime>(occurredAt.value);
+    }
+    if (payload.present) {
+      map['payload'] = Variable<String>(payload.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FocusSyncSourcesCompanion(')
+          ..write('userId: $userId, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('deviceId: $deviceId, ')
+          ..write('entityType: $entityType, ')
+          ..write('entityId: $entityId, ')
+          ..write('parentSourceId: $parentSourceId, ')
+          ..write('occurredAt: $occurredAt, ')
+          ..write('payload: $payload, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$PactaDatabase extends GeneratedDatabase {
   _$PactaDatabase(QueryExecutor e) : super(e);
   $PactaDatabaseManager get managers => $PactaDatabaseManager(this);
@@ -5297,6 +6227,11 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
       $FocusAppointmentsTable(this);
   late final $AppointmentChainRecordsTable appointmentChainRecords =
       $AppointmentChainRecordsTable(this);
+  late final $FocusSourceDevicesTable focusSourceDevices =
+      $FocusSourceDevicesTable(this);
+  late final $FocusSyncSourcesTable focusSyncSources = $FocusSyncSourcesTable(
+    this,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -5312,6 +6247,8 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
     focusPrecedentRules,
     focusAppointments,
     appointmentChainRecords,
+    focusSourceDevices,
+    focusSyncSources,
   ];
 }
 
@@ -7490,6 +8427,9 @@ typedef $$FocusAppointmentsTableCreateCompanionBuilder =
       Value<String?> sessionId,
       Value<String?> failureReason,
       required DateTime updatedAt,
+      Value<String> reviewDisposition,
+      Value<DateTime?> reviewDispositionUpdatedAt,
+      Value<String?> configurationBasisSourceId,
       Value<int> rowid,
     });
 typedef $$FocusAppointmentsTableUpdateCompanionBuilder =
@@ -7506,6 +8446,9 @@ typedef $$FocusAppointmentsTableUpdateCompanionBuilder =
       Value<String?> sessionId,
       Value<String?> failureReason,
       Value<DateTime> updatedAt,
+      Value<String> reviewDisposition,
+      Value<DateTime?> reviewDispositionUpdatedAt,
+      Value<String?> configurationBasisSourceId,
       Value<int> rowid,
     });
 
@@ -7575,6 +8518,21 @@ class $$FocusAppointmentsTableFilterComposer
 
   ColumnFilters<DateTime> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reviewDisposition => $composableBuilder(
+    column: $table.reviewDisposition,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get reviewDispositionUpdatedAt => $composableBuilder(
+    column: $table.reviewDispositionUpdatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get configurationBasisSourceId => $composableBuilder(
+    column: $table.configurationBasisSourceId,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -7647,6 +8605,22 @@ class $$FocusAppointmentsTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get reviewDisposition => $composableBuilder(
+    column: $table.reviewDisposition,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get reviewDispositionUpdatedAt =>
+      $composableBuilder(
+        column: $table.reviewDispositionUpdatedAt,
+        builder: (column) => ColumnOrderings(column),
+      );
+
+  ColumnOrderings<String> get configurationBasisSourceId => $composableBuilder(
+    column: $table.configurationBasisSourceId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FocusAppointmentsTableAnnotationComposer
@@ -7697,6 +8671,22 @@ class $$FocusAppointmentsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get reviewDisposition => $composableBuilder(
+    column: $table.reviewDisposition,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get reviewDispositionUpdatedAt =>
+      $composableBuilder(
+        column: $table.reviewDispositionUpdatedAt,
+        builder: (column) => column,
+      );
+
+  GeneratedColumn<String> get configurationBasisSourceId => $composableBuilder(
+    column: $table.configurationBasisSourceId,
+    builder: (column) => column,
+  );
 }
 
 class $$FocusAppointmentsTableTableManager
@@ -7751,6 +8741,11 @@ class $$FocusAppointmentsTableTableManager
                 Value<String?> sessionId = const Value.absent(),
                 Value<String?> failureReason = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<String> reviewDisposition = const Value.absent(),
+                Value<DateTime?> reviewDispositionUpdatedAt =
+                    const Value.absent(),
+                Value<String?> configurationBasisSourceId =
+                    const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FocusAppointmentsCompanion(
                 userId: userId,
@@ -7765,6 +8760,9 @@ class $$FocusAppointmentsTableTableManager
                 sessionId: sessionId,
                 failureReason: failureReason,
                 updatedAt: updatedAt,
+                reviewDisposition: reviewDisposition,
+                reviewDispositionUpdatedAt: reviewDispositionUpdatedAt,
+                configurationBasisSourceId: configurationBasisSourceId,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -7781,6 +8779,11 @@ class $$FocusAppointmentsTableTableManager
                 Value<String?> sessionId = const Value.absent(),
                 Value<String?> failureReason = const Value.absent(),
                 required DateTime updatedAt,
+                Value<String> reviewDisposition = const Value.absent(),
+                Value<DateTime?> reviewDispositionUpdatedAt =
+                    const Value.absent(),
+                Value<String?> configurationBasisSourceId =
+                    const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FocusAppointmentsCompanion.insert(
                 userId: userId,
@@ -7795,6 +8798,9 @@ class $$FocusAppointmentsTableTableManager
                 sessionId: sessionId,
                 failureReason: failureReason,
                 updatedAt: updatedAt,
+                reviewDisposition: reviewDisposition,
+                reviewDispositionUpdatedAt: reviewDispositionUpdatedAt,
+                configurationBasisSourceId: configurationBasisSourceId,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -8030,6 +9036,435 @@ typedef $$AppointmentChainRecordsTableProcessedTableManager =
       AppointmentChainRecord,
       PrefetchHooks Function()
     >;
+typedef $$FocusSourceDevicesTableCreateCompanionBuilder =
+    FocusSourceDevicesCompanion Function({
+      required String userId,
+      required String deviceId,
+      Value<int> rowid,
+    });
+typedef $$FocusSourceDevicesTableUpdateCompanionBuilder =
+    FocusSourceDevicesCompanion Function({
+      Value<String> userId,
+      Value<String> deviceId,
+      Value<int> rowid,
+    });
+
+class $$FocusSourceDevicesTableFilterComposer
+    extends Composer<_$PactaDatabase, $FocusSourceDevicesTable> {
+  $$FocusSourceDevicesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$FocusSourceDevicesTableOrderingComposer
+    extends Composer<_$PactaDatabase, $FocusSourceDevicesTable> {
+  $$FocusSourceDevicesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$FocusSourceDevicesTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $FocusSourceDevicesTable> {
+  $$FocusSourceDevicesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get deviceId =>
+      $composableBuilder(column: $table.deviceId, builder: (column) => column);
+}
+
+class $$FocusSourceDevicesTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $FocusSourceDevicesTable,
+          FocusSourceDevice,
+          $$FocusSourceDevicesTableFilterComposer,
+          $$FocusSourceDevicesTableOrderingComposer,
+          $$FocusSourceDevicesTableAnnotationComposer,
+          $$FocusSourceDevicesTableCreateCompanionBuilder,
+          $$FocusSourceDevicesTableUpdateCompanionBuilder,
+          (
+            FocusSourceDevice,
+            BaseReferences<
+              _$PactaDatabase,
+              $FocusSourceDevicesTable,
+              FocusSourceDevice
+            >,
+          ),
+          FocusSourceDevice,
+          PrefetchHooks Function()
+        > {
+  $$FocusSourceDevicesTableTableManager(
+    _$PactaDatabase db,
+    $FocusSourceDevicesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FocusSourceDevicesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FocusSourceDevicesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$FocusSourceDevicesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> deviceId = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FocusSourceDevicesCompanion(
+                userId: userId,
+                deviceId: deviceId,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                required String deviceId,
+                Value<int> rowid = const Value.absent(),
+              }) => FocusSourceDevicesCompanion.insert(
+                userId: userId,
+                deviceId: deviceId,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$FocusSourceDevicesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $FocusSourceDevicesTable,
+      FocusSourceDevice,
+      $$FocusSourceDevicesTableFilterComposer,
+      $$FocusSourceDevicesTableOrderingComposer,
+      $$FocusSourceDevicesTableAnnotationComposer,
+      $$FocusSourceDevicesTableCreateCompanionBuilder,
+      $$FocusSourceDevicesTableUpdateCompanionBuilder,
+      (
+        FocusSourceDevice,
+        BaseReferences<
+          _$PactaDatabase,
+          $FocusSourceDevicesTable,
+          FocusSourceDevice
+        >,
+      ),
+      FocusSourceDevice,
+      PrefetchHooks Function()
+    >;
+typedef $$FocusSyncSourcesTableCreateCompanionBuilder =
+    FocusSyncSourcesCompanion Function({
+      required String userId,
+      required String sourceId,
+      required String deviceId,
+      required String entityType,
+      required String entityId,
+      Value<String?> parentSourceId,
+      required DateTime occurredAt,
+      required String payload,
+      Value<int> rowid,
+    });
+typedef $$FocusSyncSourcesTableUpdateCompanionBuilder =
+    FocusSyncSourcesCompanion Function({
+      Value<String> userId,
+      Value<String> sourceId,
+      Value<String> deviceId,
+      Value<String> entityType,
+      Value<String> entityId,
+      Value<String?> parentSourceId,
+      Value<DateTime> occurredAt,
+      Value<String> payload,
+      Value<int> rowid,
+    });
+
+class $$FocusSyncSourcesTableFilterComposer
+    extends Composer<_$PactaDatabase, $FocusSyncSourcesTable> {
+  $$FocusSyncSourcesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceId => $composableBuilder(
+    column: $table.sourceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entityType => $composableBuilder(
+    column: $table.entityType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get entityId => $composableBuilder(
+    column: $table.entityId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get parentSourceId => $composableBuilder(
+    column: $table.parentSourceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get occurredAt => $composableBuilder(
+    column: $table.occurredAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$FocusSyncSourcesTableOrderingComposer
+    extends Composer<_$PactaDatabase, $FocusSyncSourcesTable> {
+  $$FocusSyncSourcesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceId => $composableBuilder(
+    column: $table.sourceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get deviceId => $composableBuilder(
+    column: $table.deviceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entityType => $composableBuilder(
+    column: $table.entityType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get entityId => $composableBuilder(
+    column: $table.entityId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get parentSourceId => $composableBuilder(
+    column: $table.parentSourceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get occurredAt => $composableBuilder(
+    column: $table.occurredAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$FocusSyncSourcesTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $FocusSyncSourcesTable> {
+  $$FocusSyncSourcesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceId =>
+      $composableBuilder(column: $table.sourceId, builder: (column) => column);
+
+  GeneratedColumn<String> get deviceId =>
+      $composableBuilder(column: $table.deviceId, builder: (column) => column);
+
+  GeneratedColumn<String> get entityType => $composableBuilder(
+    column: $table.entityType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get entityId =>
+      $composableBuilder(column: $table.entityId, builder: (column) => column);
+
+  GeneratedColumn<String> get parentSourceId => $composableBuilder(
+    column: $table.parentSourceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get occurredAt => $composableBuilder(
+    column: $table.occurredAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get payload =>
+      $composableBuilder(column: $table.payload, builder: (column) => column);
+}
+
+class $$FocusSyncSourcesTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $FocusSyncSourcesTable,
+          FocusSyncSource,
+          $$FocusSyncSourcesTableFilterComposer,
+          $$FocusSyncSourcesTableOrderingComposer,
+          $$FocusSyncSourcesTableAnnotationComposer,
+          $$FocusSyncSourcesTableCreateCompanionBuilder,
+          $$FocusSyncSourcesTableUpdateCompanionBuilder,
+          (
+            FocusSyncSource,
+            BaseReferences<
+              _$PactaDatabase,
+              $FocusSyncSourcesTable,
+              FocusSyncSource
+            >,
+          ),
+          FocusSyncSource,
+          PrefetchHooks Function()
+        > {
+  $$FocusSyncSourcesTableTableManager(
+    _$PactaDatabase db,
+    $FocusSyncSourcesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FocusSyncSourcesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$FocusSyncSourcesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$FocusSyncSourcesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> sourceId = const Value.absent(),
+                Value<String> deviceId = const Value.absent(),
+                Value<String> entityType = const Value.absent(),
+                Value<String> entityId = const Value.absent(),
+                Value<String?> parentSourceId = const Value.absent(),
+                Value<DateTime> occurredAt = const Value.absent(),
+                Value<String> payload = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FocusSyncSourcesCompanion(
+                userId: userId,
+                sourceId: sourceId,
+                deviceId: deviceId,
+                entityType: entityType,
+                entityId: entityId,
+                parentSourceId: parentSourceId,
+                occurredAt: occurredAt,
+                payload: payload,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                required String sourceId,
+                required String deviceId,
+                required String entityType,
+                required String entityId,
+                Value<String?> parentSourceId = const Value.absent(),
+                required DateTime occurredAt,
+                required String payload,
+                Value<int> rowid = const Value.absent(),
+              }) => FocusSyncSourcesCompanion.insert(
+                userId: userId,
+                sourceId: sourceId,
+                deviceId: deviceId,
+                entityType: entityType,
+                entityId: entityId,
+                parentSourceId: parentSourceId,
+                occurredAt: occurredAt,
+                payload: payload,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$FocusSyncSourcesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $FocusSyncSourcesTable,
+      FocusSyncSource,
+      $$FocusSyncSourcesTableFilterComposer,
+      $$FocusSyncSourcesTableOrderingComposer,
+      $$FocusSyncSourcesTableAnnotationComposer,
+      $$FocusSyncSourcesTableCreateCompanionBuilder,
+      $$FocusSyncSourcesTableUpdateCompanionBuilder,
+      (
+        FocusSyncSource,
+        BaseReferences<
+          _$PactaDatabase,
+          $FocusSyncSourcesTable,
+          FocusSyncSource
+        >,
+      ),
+      FocusSyncSource,
+      PrefetchHooks Function()
+    >;
 
 class $PactaDatabaseManager {
   final _$PactaDatabase _db;
@@ -8057,4 +9492,8 @@ class $PactaDatabaseManager {
         _db,
         _db.appointmentChainRecords,
       );
+  $$FocusSourceDevicesTableTableManager get focusSourceDevices =>
+      $$FocusSourceDevicesTableTableManager(_db, _db.focusSourceDevices);
+  $$FocusSyncSourcesTableTableManager get focusSyncSources =>
+      $$FocusSyncSourcesTableTableManager(_db, _db.focusSyncSources);
 }

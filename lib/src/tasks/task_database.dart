@@ -77,9 +77,35 @@ class FocusAppointments extends Table {
   TextColumn get sessionId => text().nullable()();
   TextColumn get failureReason => text().nullable()();
   DateTimeColumn get updatedAt => dateTime()();
+  TextColumn get reviewDisposition =>
+      text().withDefault(const Constant('accepted'))();
+  DateTimeColumn get reviewDispositionUpdatedAt => dateTime().nullable()();
+  TextColumn get configurationBasisSourceId => text().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
+}
+
+class FocusSourceDevices extends Table {
+  TextColumn get userId => text()();
+  TextColumn get deviceId => text()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId};
+}
+
+class FocusSyncSources extends Table {
+  TextColumn get userId => text()();
+  TextColumn get sourceId => text()();
+  TextColumn get deviceId => text()();
+  TextColumn get entityType => text()();
+  TextColumn get entityId => text()();
+  TextColumn get parentSourceId => text().nullable()();
+  DateTimeColumn get occurredAt => dateTime()();
+  TextColumn get payload => text()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId, sourceId};
 }
 
 class AppointmentChainRecords extends Table {
@@ -162,6 +188,8 @@ class TaskSyncEntries extends Table {
     FocusPrecedentRules,
     FocusAppointments,
     AppointmentChainRecords,
+    FocusSourceDevices,
+    FocusSyncSources,
   ],
 )
 class PactaDatabase extends _$PactaDatabase {
@@ -170,7 +198,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 11;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -214,6 +242,26 @@ class PactaDatabase extends _$PactaDatabase {
       if (from < 8) {
         await m.addColumn(localGoals, localGoals.deletedAt);
         await m.addColumn(localTasks, localTasks.deletedAt);
+      }
+      if (from < 9) {
+        await m.createTable(focusSourceDevices);
+        await m.createTable(focusSyncSources);
+      }
+      if (from < 10) {
+        await m.addColumn(
+          focusAppointments,
+          focusAppointments.reviewDisposition,
+        );
+        await m.addColumn(
+          focusAppointments,
+          focusAppointments.reviewDispositionUpdatedAt,
+        );
+      }
+      if (from < 11) {
+        await m.addColumn(
+          focusAppointments,
+          focusAppointments.configurationBasisSourceId,
+        );
       }
     },
   );
