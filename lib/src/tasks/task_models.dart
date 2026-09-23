@@ -30,6 +30,7 @@ class Goal {
     required this.classification,
     required this.createdAt,
     required this.updatedAt,
+    this.deletedAt,
     this.tasks = const [],
   });
 
@@ -38,16 +39,19 @@ class Goal {
   final TaskClassification classification;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final DateTime? deletedAt;
   final List<Task> tasks;
 
   bool get isComplete =>
       tasks.isNotEmpty && tasks.every((task) => task.isComplete);
+  bool get isDeleted => deletedAt != null;
 
   Goal copyWith({
     String? title,
     TaskClassification? classification,
     DateTime? updatedAt,
     List<Task>? tasks,
+    Object? deletedAt = _unchanged,
   }) {
     return Goal(
       id: id,
@@ -55,6 +59,9 @@ class Goal {
       classification: classification ?? this.classification,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: identical(deletedAt, _unchanged)
+          ? this.deletedAt
+          : deletedAt as DateTime?,
       tasks: tasks ?? this.tasks,
     );
   }
@@ -72,6 +79,7 @@ class Task {
     this.focusProgressSeconds = 0,
     required this.createdAt,
     required this.updatedAt,
+    this.deletedAt,
   });
 
   final String id;
@@ -84,6 +92,9 @@ class Task {
   final int focusProgressSeconds;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final DateTime? deletedAt;
+
+  bool get isDeleted => deletedAt != null;
 
   Task copyWith({
     String? title,
@@ -93,6 +104,7 @@ class Task {
     bool? isComplete,
     int? focusProgressSeconds,
     DateTime? updatedAt,
+    Object? deletedAt = _unchanged,
   }) {
     return Task(
       id: id,
@@ -109,6 +121,9 @@ class Task {
       focusProgressSeconds: focusProgressSeconds ?? this.focusProgressSeconds,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: identical(deletedAt, _unchanged)
+          ? this.deletedAt
+          : deletedAt as DateTime?,
     );
   }
 }

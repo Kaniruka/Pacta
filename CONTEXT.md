@@ -113,7 +113,7 @@ A short explanation of a failed attempt or National Focus event: required for fo
 _Avoid_: Excuse, diagnostic
 
 **Goal (目标)**:
-A broader intended outcome that groups multiple executable Tasks. In the first version, the hierarchy is limited to Goal -> Task: a Task does not contain nested child Tasks, and every Task in a Goal is required. A Goal may contain Tasks classified for different Focus Chain modes, and its progress is composed from those Tasks; a nonempty Goal is complete only when all of its Tasks are explicitly complete; an empty Goal is not complete.
+A broader intended outcome that groups executable Tasks in the first-version Goal -> Task hierarchy, with no nested Tasks; its progress includes differently classified Tasks, and a nonempty Goal completes only when every Task is explicitly complete (an empty Goal is incomplete). A deleted Goal and its Tasks cannot be restored; existing Focus Sessions and Appointments remain valid, with their original Task identities retained and marked as deleted in history.
 _Avoid_: Project, Focus Chain
 
 **Task Chain Classification (任务链分类)**:
@@ -125,7 +125,7 @@ The Elite or Regular mode adopted for the current attempt, determining its focus
 _Avoid_: Task classification, start-time chain pairing
 
 **Task (任务)**:
-An executable subtask belonging to one Goal, without cross-Goal movement, with enough information to connect it to a deadline or a Focus Session. In the first version, a Task has no nested child Tasks. A Task has a Task Chain Classification and may have an estimated duration and accumulated Focus Progress; Focus Progress is only evidence of work performed, and completing a Focus Session does not by itself complete the Task or its Goal. Task completion is recorded separately by explicit user confirmation.
+An executable subtask belonging to one Goal, without cross-Goal movement or nested child Tasks, with a Task Chain Classification and enough information to connect it to a deadline or Focus Session. It may have an estimated duration and Focus Progress; progress records work but does not complete the Task, which requires explicit confirmation. A deleted Task cannot be restored or chosen for a new Focus Session or Appointment, and its original name and existing history remain available marked as deleted.
 _Avoid_: To-do item, ticket
 
 **Calendar Block (日历块)**:

@@ -48,10 +48,11 @@ class UnavailableTaskRemoteDataSource implements TaskRemoteDataSource {
 }
 
 abstract interface class TaskRepository {
-  Stream<List<Goal>> watchGoals();
-  Future<List<Goal>> getGoals();
+  Stream<List<Goal>> watchGoals({bool includeDeleted = false});
+  Future<List<Goal>> getGoals({bool includeDeleted = false});
   Future<Goal> createGoal(GoalDraft draft);
   Future<Goal> updateGoal(String goalId, GoalDraft draft);
+  Future<void> deleteGoal(String goalId);
   Future<Task> createTask(String goalId, TaskDraft draft);
   Future<Task> updateTask(String taskId, TaskDraft draft);
   Future<void> setTaskCompletion(String taskId, {required bool isComplete});
@@ -71,17 +72,19 @@ class LocalTaskRepository implements TaskRepository {
   final String userId;
   final TaskRemoteDataSource remote;
   final DateTime Function() _now;
-  final _changes = StreamController<List<Goal>>.broadcast();
+  final _changes = StreamController<void>.broadcast();
   final _uuid = const Uuid();
 
   @override
-  Stream<List<Goal>> watchGoals() async* {
-    yield await getGoals();
-    yield* _changes.stream;
+  Stream<List<Goal>> watchGoals({bool includeDeleted = false}) async* {
+    yield await getGoals(includeDeleted: includeDeleted);
+    await for (final _ in _changes.stream) {
+      yield await getGoals(includeDeleted: includeDeleted);
+    }
   }
 
   @override
-  Future<List<Goal>> getGoals() async {
+  Future<List<Goal>> getGoals({bool includeDeleted = false}) async {
     final goalRows =
         await (database.select(database.localGoals)
               ..where((goal) => goal.userId.equals(userId))
@@ -94,11 +97,13 @@ class LocalTaskRepository implements TaskRepository {
             .get();
     final tasksByGoal = <String, List<Task>>{};
     for (final row in taskRows) {
+      if (!includeDeleted && row.deletedAt != null) continue;
       tasksByGoal.putIfAbsent(row.goalId, () => []).add(_taskFromRow(row));
     }
     final goals = [
       for (final row in goalRows)
-        _goalFromRow(row, tasks: tasksByGoal[row.id] ?? const []),
+        if (includeDeleted || row.deletedAt == null)
+          _goalFromRow(row, tasks: tasksByGoal[row.id] ?? const []),
     ];
     for (final tasks in tasksByGoal.values) {
       tasks.sort((left, right) {
@@ -148,6 +153,46 @@ class LocalTaskRepository implements TaskRepository {
     await _saveGoal(updated);
     await _publish();
     return (await getGoals()).firstWhere((goal) => goal.id == goalId);
+  }
+
+  @override
+  Future<void> deleteGoal(String goalId) async {
+    final existing = await _findGoalIncludingDeleted(goalId);
+    if (existing.isDeleted) return;
+
+    final deletedAt = _nextTimestamp(existing.updatedAt);
+    await database.transaction(() async {
+      final taskRows =
+          await (database.select(database.localTasks)
+                ..where((task) => task.userId.equals(userId))
+                ..where((task) => task.goalId.equals(goalId)))
+              .get();
+      for (final row in taskRows) {
+        if (row.deletedAt != null) continue;
+        final updatedAt = _nextTimestamp(row.updatedAt);
+        await (database.update(database.localTasks)
+              ..where((task) => task.userId.equals(userId))
+              ..where((task) => task.id.equals(row.id)))
+            .write(
+              LocalTasksCompanion(
+                deletedAt: Value(deletedAt),
+                updatedAt: Value(updatedAt),
+              ),
+            );
+        await _queue('task', row.id, updatedAt);
+      }
+      await (database.update(database.localGoals)
+            ..where((goal) => goal.userId.equals(userId))
+            ..where((goal) => goal.id.equals(goalId)))
+          .write(
+            LocalGoalsCompanion(
+              deletedAt: Value(deletedAt),
+              updatedAt: Value(deletedAt),
+            ),
+          );
+      await _queue('goal', goalId, deletedAt);
+    });
+    await _publish();
   }
 
   @override
@@ -212,19 +257,38 @@ class LocalTaskRepository implements TaskRepository {
       for (final entry in queued) '${entry.entityType}:${entry.entityId}',
     };
 
+    final remoteGoalsById = _byId(snapshot.goals);
+    final remoteTasksById = _byId(snapshot.tasks);
     for (final goal in snapshot.goals) {
       final local = localGoals[goal.id];
-      if (local == null || goal.updatedAt.isAfter(local.updatedAt)) {
-        await _saveGoal(goal, queue: false);
-        localGoals[goal.id] = goal;
+      final merged = local == null ? goal : _mergeGoal(local, goal);
+      await _saveGoal(merged, queue: false);
+      localGoals[goal.id] = merged;
+      if (merged.isDeleted && goal.deletedAt == null) {
+        await _queue('goal', goal.id, merged.updatedAt);
+        queuedKeys.add('goal:${goal.id}');
       }
     }
     for (final task in snapshot.tasks) {
       final local = localTasks[task.id];
-      if (local == null || task.updatedAt.isAfter(local.updatedAt)) {
-        await _saveTask(task, queue: false);
-        localTasks[task.id] = task;
+      final deletedAt = localGoals[task.goalId]?.deletedAt;
+      final incoming = deletedAt == null ? task : _markDeleted(task, deletedAt);
+      final merged = local == null ? incoming : _mergeTask(local, incoming);
+      await _saveTask(merged, queue: false);
+      localTasks[task.id] = merged;
+      if (merged.isDeleted && task.deletedAt == null) {
+        await _queue('task', task.id, merged.updatedAt);
+        queuedKeys.add('task:${task.id}');
       }
+    }
+
+    for (final task in localTasks.values.toList()) {
+      final deletedAt = localGoals[task.goalId]?.deletedAt;
+      if (deletedAt == null || task.isDeleted) continue;
+      final deleted = _markDeleted(task, deletedAt);
+      await _saveTask(deleted);
+      localTasks[task.id] = deleted;
+      queuedKeys.add('task:${task.id}');
     }
 
     final goalsToUpload = [
@@ -233,7 +297,7 @@ class LocalTaskRepository implements TaskRepository {
           entityType: 'goal',
           entityId: goal.id,
           local: goal.updatedAt,
-          remote: _byId(snapshot.goals)[goal.id]?.updatedAt,
+          remote: remoteGoalsById[goal.id]?.updatedAt,
           queuedKeys: queuedKeys,
         ))
           goal,
@@ -244,7 +308,7 @@ class LocalTaskRepository implements TaskRepository {
           entityType: 'task',
           entityId: task.id,
           local: task.updatedAt,
-          remote: _byId(snapshot.tasks)[task.id]?.updatedAt,
+          remote: remoteTasksById[task.id]?.updatedAt,
           queuedKeys: queuedKeys,
         ))
           task,
@@ -273,6 +337,7 @@ class LocalTaskRepository implements TaskRepository {
             classification: goal.classification.storageValue,
             createdAt: goal.createdAt,
             updatedAt: goal.updatedAt,
+            deletedAt: Value(goal.deletedAt),
           ),
         );
     if (queue) await _queue('goal', goal.id, goal.updatedAt);
@@ -294,6 +359,7 @@ class LocalTaskRepository implements TaskRepository {
             focusProgressSeconds: Value(task.focusProgressSeconds),
             createdAt: task.createdAt,
             updatedAt: task.updatedAt,
+            deletedAt: Value(task.deletedAt),
           ),
         );
     if (queue) await _queue('task', task.id, task.updatedAt);
@@ -332,6 +398,18 @@ class LocalTaskRepository implements TaskRepository {
               ..where((goal) => goal.userId.equals(userId))
               ..where((goal) => goal.id.equals(goalId)))
             .getSingleOrNull();
+    if (row == null || row.deletedAt != null) {
+      throw StateError('目标不存在或已删除。');
+    }
+    return _goalFromRow(row);
+  }
+
+  Future<Goal> _findGoalIncludingDeleted(String goalId) async {
+    final row =
+        await (database.select(database.localGoals)
+              ..where((goal) => goal.userId.equals(userId))
+              ..where((goal) => goal.id.equals(goalId)))
+            .getSingleOrNull();
     if (row == null) throw StateError('目标不存在或已不属于当前用户。');
     return _goalFromRow(row);
   }
@@ -342,12 +420,14 @@ class LocalTaskRepository implements TaskRepository {
               ..where((task) => task.userId.equals(userId))
               ..where((task) => task.id.equals(taskId)))
             .getSingleOrNull();
-    if (row == null) throw StateError('任务不存在或已不属于当前用户。');
+    if (row == null || row.deletedAt != null) {
+      throw StateError('任务不存在或已删除。');
+    }
     return _taskFromRow(row);
   }
 
   Future<Map<String, Goal>> _localGoalsById() async {
-    final goals = await getGoals();
+    final goals = await getGoals(includeDeleted: true);
     return {for (final goal in goals) goal.id: goal};
   }
 
@@ -360,7 +440,7 @@ class LocalTaskRepository implements TaskRepository {
 
   Future<void> _publish() async {
     if (!_changes.hasListener) return;
-    _changes.add(await getGoals());
+    _changes.add(null);
   }
 
   Goal _goalFromRow(LocalGoal row, {List<Task> tasks = const []}) => Goal(
@@ -369,6 +449,7 @@ class LocalTaskRepository implements TaskRepository {
     classification: TaskClassification.fromStorage(row.classification),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
     tasks: tasks,
   );
 
@@ -383,7 +464,46 @@ class LocalTaskRepository implements TaskRepository {
     focusProgressSeconds: row.focusProgressSeconds,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    deletedAt: row.deletedAt,
   );
+
+  Goal _mergeGoal(Goal local, Goal remote) {
+    final preferred = remote.updatedAt.isAfter(local.updatedAt)
+        ? remote
+        : local;
+    final deletedAt = _retainedDeletion(local.deletedAt, remote.deletedAt);
+    if (deletedAt == null) return preferred;
+    return preferred.copyWith(
+      deletedAt: deletedAt,
+      updatedAt: _laterDate(preferred.updatedAt, deletedAt),
+    );
+  }
+
+  Task _mergeTask(Task local, Task remote) {
+    final preferred = remote.updatedAt.isAfter(local.updatedAt)
+        ? remote
+        : local;
+    final deletedAt = _retainedDeletion(local.deletedAt, remote.deletedAt);
+    if (deletedAt == null) return preferred;
+    return preferred.copyWith(
+      deletedAt: deletedAt,
+      updatedAt: _laterDate(preferred.updatedAt, deletedAt),
+    );
+  }
+
+  Task _markDeleted(Task task, DateTime deletedAt) => task.copyWith(
+    deletedAt: _retainedDeletion(task.deletedAt, deletedAt),
+    updatedAt: _laterDate(task.updatedAt, deletedAt),
+  );
+
+  DateTime? _retainedDeletion(DateTime? local, DateTime? remote) {
+    if (local == null) return remote;
+    if (remote == null || local.isBefore(remote)) return local;
+    return remote;
+  }
+
+  DateTime _laterDate(DateTime first, DateTime second) =>
+      first.isAfter(second) ? first : second;
 
   String _requiredTitle(String title, String kind) {
     final normalized = title.trim();
@@ -460,6 +580,9 @@ class SupabaseTaskRemoteDataSource implements TaskRemoteDataSource {
           'classification': goal.classification.storageValue,
           'created_at': _utcIso8601(goal.createdAt),
           'updated_at': _utcIso8601(goal.updatedAt),
+          'deleted_at': goal.deletedAt == null
+              ? null
+              : _utcIso8601(goal.deletedAt!),
         },
     ], onConflict: 'id');
   }
@@ -485,6 +608,9 @@ class SupabaseTaskRemoteDataSource implements TaskRemoteDataSource {
           'focus_progress_seconds': task.focusProgressSeconds,
           'created_at': _utcIso8601(task.createdAt),
           'updated_at': _utcIso8601(task.updatedAt),
+          'deleted_at': task.deletedAt == null
+              ? null
+              : _utcIso8601(task.deletedAt!),
         },
     ], onConflict: 'id');
   }
@@ -497,6 +623,9 @@ class SupabaseTaskRemoteDataSource implements TaskRemoteDataSource {
     ),
     createdAt: DateTime.parse(json['created_at'] as String).toUtc(),
     updatedAt: DateTime.parse(json['updated_at'] as String).toUtc(),
+    deletedAt: (json['deleted_at'] as String?) == null
+        ? null
+        : DateTime.parse(json['deleted_at'] as String).toUtc(),
   );
 
   Task _taskFromJson(Map<String, dynamic> json) => Task(
@@ -514,6 +643,9 @@ class SupabaseTaskRemoteDataSource implements TaskRemoteDataSource {
     focusProgressSeconds: (json['focus_progress_seconds'] as int?) ?? 0,
     createdAt: DateTime.parse(json['created_at'] as String).toUtc(),
     updatedAt: DateTime.parse(json['updated_at'] as String).toUtc(),
+    deletedAt: (json['deleted_at'] as String?) == null
+        ? null
+        : DateTime.parse(json['deleted_at'] as String).toUtc(),
   );
 }
 
@@ -541,7 +673,11 @@ class InMemoryTaskRemote implements TaskRemoteDataSource {
   }) async {
     final target = _goals.putIfAbsent(userId, () => {});
     for (final goal in goals) {
-      target[goal.id] = goal;
+      final previous = target[goal.id];
+      final deletedAt = previous?.deletedAt;
+      target[goal.id] = deletedAt == null
+          ? goal
+          : goal.copyWith(deletedAt: deletedAt);
     }
   }
 
@@ -552,7 +688,11 @@ class InMemoryTaskRemote implements TaskRemoteDataSource {
   }) async {
     final target = _tasks.putIfAbsent(userId, () => {});
     for (final task in tasks) {
-      target[task.id] = task;
+      final previous = target[task.id];
+      final deletedAt = previous?.deletedAt;
+      target[task.id] = deletedAt == null
+          ? task
+          : task.copyWith(deletedAt: deletedAt);
     }
   }
 }
@@ -561,16 +701,20 @@ class UnavailableTaskRepository implements TaskRepository {
   const UnavailableTaskRepository();
 
   @override
-  Stream<List<Goal>> watchGoals() => Stream.value(const []);
+  Stream<List<Goal>> watchGoals({bool includeDeleted = false}) =>
+      Stream.value(const []);
 
   @override
-  Future<List<Goal>> getGoals() async => const [];
+  Future<List<Goal>> getGoals({bool includeDeleted = false}) async => const [];
 
   @override
   Future<Goal> createGoal(GoalDraft draft) => _unavailable();
 
   @override
   Future<Goal> updateGoal(String goalId, GoalDraft draft) => _unavailable();
+
+  @override
+  Future<void> deleteGoal(String goalId) => _unavailable();
 
   @override
   Future<Task> createTask(String goalId, TaskDraft draft) => _unavailable();

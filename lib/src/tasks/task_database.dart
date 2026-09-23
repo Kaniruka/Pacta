@@ -10,6 +10,7 @@ class LocalGoals extends Table {
   TextColumn get classification => text()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
@@ -28,6 +29,7 @@ class LocalTasks extends Table {
       integer().withDefault(const Constant(0))();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
@@ -168,7 +170,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -208,6 +210,10 @@ class PactaDatabase extends _$PactaDatabase {
           focusSessions.reviewDispositionUpdatedAt,
         );
         await m.addColumn(focusPreferences, focusPreferences.displayTimeZoneId);
+      }
+      if (from < 8) {
+        await m.addColumn(localGoals, localGoals.deletedAt);
+        await m.addColumn(localTasks, localTasks.deletedAt);
       }
     },
   );

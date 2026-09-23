@@ -463,15 +463,17 @@ class LocalFocusRepository implements FocusRepository {
     required Duration duration,
   }) async {
     _validateDuration(duration);
-    final task = await _taskForStart(taskId);
-    if (task.isComplete) throw StateError('已完成任务不能用于预约。');
-
     await _settleDueAppointments();
     final row = await _appointmentRow(appointmentId);
     if (row == null) throw StateError('预约准备不存在或已不属于当前用户。');
     if (row.status != AppointmentPreparationStatus.active.storageValue) {
       throw StateError('预约准备已经结算，不能再修改配置。');
     }
+    final task = await _taskForStart(
+      taskId,
+      allowDeleted: taskId == row.taskId,
+    );
+    if (task.isComplete) throw StateError('已完成任务不能用于预约。');
     final updatedAt = _now().toUtc();
     await database.transaction(() async {
       await (database.update(database.focusAppointments)
@@ -1086,13 +1088,18 @@ class LocalFocusRepository implements FocusRepository {
         );
   }
 
-  Future<db.LocalTask> _taskForStart(String taskId) async {
+  Future<db.LocalTask> _taskForStart(
+    String taskId, {
+    bool allowDeleted = false,
+  }) async {
     final task =
         await (database.select(database.localTasks)
               ..where((task) => task.userId.equals(userId))
               ..where((task) => task.id.equals(taskId)))
             .getSingleOrNull();
-    if (task == null) throw StateError('任务不存在或已不属于当前用户。');
+    if (task == null || (!allowDeleted && task.deletedAt != null)) {
+      throw StateError('任务不存在或已删除。');
+    }
     return task;
   }
 

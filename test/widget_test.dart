@@ -77,6 +77,74 @@ void main() {
     expect(find.textContaining('已完成'), findsOneWidget);
   });
 
+  testWidgets('删除目标保留活动专注历史并阻止新开始', (tester) async {
+    final database = PactaDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final taskRepository = LocalTaskRepository(
+      database: database,
+      userId: 'user@example.com',
+      remote: InMemoryTaskRemote(),
+    );
+    final focusRepository = LocalFocusRepository(
+      database: database,
+      userId: 'user@example.com',
+      remote: InMemoryFocusRemote(),
+    );
+    final goal = await taskRepository.createGoal(
+      const GoalDraft(
+        title: '可删除目标',
+        classification: TaskClassification.regular,
+      ),
+    );
+    final task = await taskRepository.createTask(
+      goal.id,
+      const TaskDraft(title: '保留名称的专注', classification: null),
+    );
+    final session = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    final auth = FakeAuthRepository()..signedInUser = 'user@example.com';
+
+    await tester.pumpWidget(
+      PactaApp(
+        authRepository: auth,
+        taskRepositoryFactory: (_) => taskRepository,
+        focusRepositoryFactory: (_) => focusRepository,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('删除目标'));
+    await tester.pumpAndSettle();
+    expect(find.text('删除目标和任务？'), findsOneWidget);
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('可删除目标'), findsNothing);
+    expect(await focusRepository.getActiveSession(), isNotNull);
+    expect(
+      (await taskRepository.getGoals(includeDeleted: true))
+          .single
+          .tasks
+          .single
+          .isDeleted,
+      isTrue,
+    );
+
+    await tester.tap(find.text('专注链').last);
+    await tester.pumpAndSettle();
+    expect(find.text('当前筛选下没有可开始的任务。'), findsOneWidget);
+    expect(find.text('保留名称的专注（已删除）'), findsOneWidget);
+    expect(find.text('保留名称的专注'), findsNothing);
+
+    await tester.tap(find.text('返回专注'));
+    await tester.pumpAndSettle();
+    expect(find.text('专注进行中'), findsOneWidget);
+    expect(find.text('保留名称的专注（已删除）'), findsOneWidget);
+    expect((await focusRepository.getActiveSession())?.id, session.id);
+  });
+
   testWidgets('云端 UTC 截止时间按设备本地时间显示', (tester) async {
     final database = PactaDatabase(NativeDatabase.memory());
     addTearDown(database.close);

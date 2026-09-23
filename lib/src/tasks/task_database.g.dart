@@ -69,6 +69,17 @@ class $LocalGoalsTable extends LocalGoals
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     userId,
@@ -77,6 +88,7 @@ class $LocalGoalsTable extends LocalGoals
     classification,
     createdAt,
     updatedAt,
+    deletedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -138,6 +150,12 @@ class $LocalGoalsTable extends LocalGoals
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
     return context;
   }
 
@@ -171,6 +189,10 @@ class $LocalGoalsTable extends LocalGoals
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
       )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
     );
   }
 
@@ -187,6 +209,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
   final String classification;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final DateTime? deletedAt;
   const LocalGoal({
     required this.userId,
     required this.id,
@@ -194,6 +217,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
     required this.classification,
     required this.createdAt,
     required this.updatedAt,
+    this.deletedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -204,6 +228,9 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
     map['classification'] = Variable<String>(classification);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
     return map;
   }
 
@@ -215,6 +242,9 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
       classification: Value(classification),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
     );
   }
 
@@ -230,6 +260,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
       classification: serializer.fromJson<String>(json['classification']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
     );
   }
   @override
@@ -242,6 +273,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
       'classification': serializer.toJson<String>(classification),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
     };
   }
 
@@ -252,6 +284,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
     String? classification,
     DateTime? createdAt,
     DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
   }) => LocalGoal(
     userId: userId ?? this.userId,
     id: id ?? this.id,
@@ -259,6 +292,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
     classification: classification ?? this.classification,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
   );
   LocalGoal copyWithCompanion(LocalGoalsCompanion data) {
     return LocalGoal(
@@ -270,6 +304,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
           : this.classification,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
     );
   }
 
@@ -281,14 +316,22 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
           ..write('title: $title, ')
           ..write('classification: $classification, ')
           ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(userId, id, title, classification, createdAt, updatedAt);
+  int get hashCode => Object.hash(
+    userId,
+    id,
+    title,
+    classification,
+    createdAt,
+    updatedAt,
+    deletedAt,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -298,7 +341,8 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
           other.title == this.title &&
           other.classification == this.classification &&
           other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt);
 }
 
 class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
@@ -308,6 +352,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
   final Value<String> classification;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
   final Value<int> rowid;
   const LocalGoalsCompanion({
     this.userId = const Value.absent(),
@@ -316,6 +361,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
     this.classification = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   LocalGoalsCompanion.insert({
@@ -325,6 +371,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
     required String classification,
     required DateTime createdAt,
     required DateTime updatedAt,
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
        id = Value(id),
@@ -339,6 +386,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
     Expression<String>? classification,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
+    Expression<DateTime>? deletedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -348,6 +396,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
       if (classification != null) 'classification': classification,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -359,6 +408,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
     Value<String>? classification,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
     Value<int>? rowid,
   }) {
     return LocalGoalsCompanion(
@@ -368,6 +418,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
       classification: classification ?? this.classification,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -393,6 +444,9 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -408,6 +462,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
           ..write('classification: $classification, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -537,6 +592,17 @@ class $LocalTasksTable extends LocalTasks
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _deletedAtMeta = const VerificationMeta(
+    'deletedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> deletedAt = GeneratedColumn<DateTime>(
+    'deleted_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     userId,
@@ -550,6 +616,7 @@ class $LocalTasksTable extends LocalTasks
     focusProgressSeconds,
     createdAt,
     updatedAt,
+    deletedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -649,6 +716,12 @@ class $LocalTasksTable extends LocalTasks
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
+    if (data.containsKey('deleted_at')) {
+      context.handle(
+        _deletedAtMeta,
+        deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
+      );
+    }
     return context;
   }
 
@@ -702,6 +775,10 @@ class $LocalTasksTable extends LocalTasks
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
       )!,
+      deletedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}deleted_at'],
+      ),
     );
   }
 
@@ -723,6 +800,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
   final int focusProgressSeconds;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final DateTime? deletedAt;
   const LocalTask({
     required this.userId,
     required this.id,
@@ -735,6 +813,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
     required this.focusProgressSeconds,
     required this.createdAt,
     required this.updatedAt,
+    this.deletedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -754,6 +833,9 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
     map['focus_progress_seconds'] = Variable<int>(focusProgressSeconds);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
+    if (!nullToAbsent || deletedAt != null) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
     return map;
   }
 
@@ -774,6 +856,9 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
       focusProgressSeconds: Value(focusProgressSeconds),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
+      deletedAt: deletedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(deletedAt),
     );
   }
 
@@ -796,6 +881,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
       ),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
     );
   }
   @override
@@ -813,6 +899,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
       'focusProgressSeconds': serializer.toJson<int>(focusProgressSeconds),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'deletedAt': serializer.toJson<DateTime?>(deletedAt),
     };
   }
 
@@ -828,6 +915,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
     int? focusProgressSeconds,
     DateTime? createdAt,
     DateTime? updatedAt,
+    Value<DateTime?> deletedAt = const Value.absent(),
   }) => LocalTask(
     userId: userId ?? this.userId,
     id: id ?? this.id,
@@ -842,6 +930,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
     focusProgressSeconds: focusProgressSeconds ?? this.focusProgressSeconds,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
   );
   LocalTask copyWithCompanion(LocalTasksCompanion data) {
     return LocalTask(
@@ -864,6 +953,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
           : this.focusProgressSeconds,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
     );
   }
 
@@ -880,7 +970,8 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
           ..write('isComplete: $isComplete, ')
           ..write('focusProgressSeconds: $focusProgressSeconds, ')
           ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt')
           ..write(')'))
         .toString();
   }
@@ -898,6 +989,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
     focusProgressSeconds,
     createdAt,
     updatedAt,
+    deletedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -913,7 +1005,8 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
           other.isComplete == this.isComplete &&
           other.focusProgressSeconds == this.focusProgressSeconds &&
           other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.deletedAt == this.deletedAt);
 }
 
 class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
@@ -928,6 +1021,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
   final Value<int> focusProgressSeconds;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
+  final Value<DateTime?> deletedAt;
   final Value<int> rowid;
   const LocalTasksCompanion({
     this.userId = const Value.absent(),
@@ -941,6 +1035,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
     this.focusProgressSeconds = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   LocalTasksCompanion.insert({
@@ -955,6 +1050,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
     this.focusProgressSeconds = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
+    this.deletedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
        id = Value(id),
@@ -975,6 +1071,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
     Expression<int>? focusProgressSeconds,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
+    Expression<DateTime>? deletedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -990,6 +1087,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
         'focus_progress_seconds': focusProgressSeconds,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (deletedAt != null) 'deleted_at': deletedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1006,6 +1104,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
     Value<int>? focusProgressSeconds,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
+    Value<DateTime?>? deletedAt,
     Value<int>? rowid,
   }) {
     return LocalTasksCompanion(
@@ -1020,6 +1119,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
       focusProgressSeconds: focusProgressSeconds ?? this.focusProgressSeconds,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      deletedAt: deletedAt ?? this.deletedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1060,6 +1160,9 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
+    if (deletedAt.present) {
+      map['deleted_at'] = Variable<DateTime>(deletedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1080,6 +1183,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
           ..write('focusProgressSeconds: $focusProgressSeconds, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('deletedAt: $deletedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -5219,6 +5323,7 @@ typedef $$LocalGoalsTableCreateCompanionBuilder =
       required String classification,
       required DateTime createdAt,
       required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
       Value<int> rowid,
     });
 typedef $$LocalGoalsTableUpdateCompanionBuilder =
@@ -5229,6 +5334,7 @@ typedef $$LocalGoalsTableUpdateCompanionBuilder =
       Value<String> classification,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
       Value<int> rowid,
     });
 
@@ -5268,6 +5374,11 @@ class $$LocalGoalsTableFilterComposer
 
   ColumnFilters<DateTime> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -5310,6 +5421,11 @@ class $$LocalGoalsTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$LocalGoalsTableAnnotationComposer
@@ -5340,6 +5456,9 @@ class $$LocalGoalsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 }
 
 class $$LocalGoalsTableTableManager
@@ -5379,6 +5498,7 @@ class $$LocalGoalsTableTableManager
                 Value<String> classification = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalGoalsCompanion(
                 userId: userId,
@@ -5387,6 +5507,7 @@ class $$LocalGoalsTableTableManager
                 classification: classification,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                deletedAt: deletedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -5397,6 +5518,7 @@ class $$LocalGoalsTableTableManager
                 required String classification,
                 required DateTime createdAt,
                 required DateTime updatedAt,
+                Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalGoalsCompanion.insert(
                 userId: userId,
@@ -5405,6 +5527,7 @@ class $$LocalGoalsTableTableManager
                 classification: classification,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                deletedAt: deletedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -5442,6 +5565,7 @@ typedef $$LocalTasksTableCreateCompanionBuilder =
       Value<int> focusProgressSeconds,
       required DateTime createdAt,
       required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
       Value<int> rowid,
     });
 typedef $$LocalTasksTableUpdateCompanionBuilder =
@@ -5457,6 +5581,7 @@ typedef $$LocalTasksTableUpdateCompanionBuilder =
       Value<int> focusProgressSeconds,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
       Value<int> rowid,
     });
 
@@ -5521,6 +5646,11 @@ class $$LocalTasksTableFilterComposer
 
   ColumnFilters<DateTime> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -5588,6 +5718,11 @@ class $$LocalTasksTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<DateTime> get deletedAt => $composableBuilder(
+    column: $table.deletedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$LocalTasksTableAnnotationComposer
@@ -5639,6 +5774,9 @@ class $$LocalTasksTableAnnotationComposer
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get deletedAt =>
+      $composableBuilder(column: $table.deletedAt, builder: (column) => column);
 }
 
 class $$LocalTasksTableTableManager
@@ -5683,6 +5821,7 @@ class $$LocalTasksTableTableManager
                 Value<int> focusProgressSeconds = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalTasksCompanion(
                 userId: userId,
@@ -5696,6 +5835,7 @@ class $$LocalTasksTableTableManager
                 focusProgressSeconds: focusProgressSeconds,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                deletedAt: deletedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -5711,6 +5851,7 @@ class $$LocalTasksTableTableManager
                 Value<int> focusProgressSeconds = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
+                Value<DateTime?> deletedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalTasksCompanion.insert(
                 userId: userId,
@@ -5724,6 +5865,7 @@ class $$LocalTasksTableTableManager
                 focusProgressSeconds: focusProgressSeconds,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
+                deletedAt: deletedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

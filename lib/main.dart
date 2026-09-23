@@ -767,6 +767,30 @@ class _GoalCard extends StatelessWidget {
   final Goal goal;
   final Map<String, int>? focusProgressSecondsByTask;
 
+  Future<void> _confirmDeleteGoal(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除目标和任务？'),
+        content: Text(
+          '“${goal.title}”及其全部任务将从工作清单移除，且不能恢复。'
+          '已有预约、专注和暂停会继续有效，历史会保留原任务名称并标记为已删除。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await repository.deleteGoal(goal.id);
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = goal.tasks.isEmpty
@@ -785,15 +809,27 @@ class _GoalCard extends StatelessWidget {
               contentPadding: EdgeInsets.zero,
               title: Text(goal.title),
               subtitle: Text('${goal.classification.label} · $status'),
-              trailing: IconButton(
-                tooltip: '编辑目标',
-                onPressed: () async {
-                  final draft = await _showGoalDialog(context, initial: goal);
-                  if (draft != null) {
-                    await repository.updateGoal(goal.id, draft);
-                  }
-                },
-                icon: const Icon(Icons.edit_outlined),
+              trailing: Wrap(
+                children: [
+                  IconButton(
+                    tooltip: '编辑目标',
+                    onPressed: () async {
+                      final draft = await _showGoalDialog(
+                        context,
+                        initial: goal,
+                      );
+                      if (draft != null) {
+                        await repository.updateGoal(goal.id, draft);
+                      }
+                    },
+                    icon: const Icon(Icons.edit_outlined),
+                  ),
+                  IconButton(
+                    tooltip: '删除目标',
+                    onPressed: () => _confirmDeleteGoal(context),
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+                ],
               ),
             ),
             if (goal.tasks.isEmpty)
@@ -876,7 +912,7 @@ class _TaskTile extends ConsumerWidget {
               .getActiveAppointment();
           if (!context.mounted) return;
           if (activeAppointment != null) {
-            final goals = await repository.getGoals();
+            final goals = await repository.getGoals(includeDeleted: true);
             if (!context.mounted) return;
             await Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -893,7 +929,7 @@ class _TaskTile extends ConsumerWidget {
           final activeSession = await focusRepository.getActiveSession();
           if (!context.mounted) return;
           if (activeSession != null) {
-            final goals = await repository.getGoals();
+            final goals = await repository.getGoals(includeDeleted: true);
             if (!context.mounted) return;
             await Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -915,7 +951,7 @@ class _TaskTile extends ConsumerWidget {
           if (result is FocusSession && context.mounted) {
             var taskTitle = task.title;
             if (result.taskId != task.id) {
-              final goals = await repository.getGoals();
+              final goals = await repository.getGoals(includeDeleted: true);
               if (!context.mounted) return;
               taskTitle = _findTaskTitle(goals, result.taskId) ?? '原任务';
             }
@@ -929,7 +965,7 @@ class _TaskTile extends ConsumerWidget {
           if (result is AppointmentPreparation && context.mounted) {
             var taskTitle = task.title;
             if (result.taskId != task.id) {
-              final goals = await repository.getGoals();
+              final goals = await repository.getGoals(includeDeleted: true);
               if (!context.mounted) return;
               taskTitle = _findTaskTitle(goals, result.taskId) ?? '原任务';
             }
@@ -1253,17 +1289,20 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
     final taskRepository = ref.watch(taskRepositoryProvider);
     final focusRepository = ref.watch(focusRepositoryProvider);
     return StreamBuilder<List<Goal>>(
-      stream: taskRepository.watchGoals(),
+      stream: taskRepository.watchGoals(includeDeleted: true),
       initialData: const [],
       builder: (context, snapshot) {
         final taskTitles = <String, String>{
           for (final goal in snapshot.data ?? const <Goal>[])
-            for (final task in goal.tasks) task.id: task.title,
+            for (final task in goal.tasks) task.id: _taskDisplayTitle(task),
         };
+        final allTasks = [
+          for (final goal in snapshot.data ?? const <Goal>[]) ...goal.tasks,
+        ];
         final tasks = [
-          for (final goal in snapshot.data ?? const <Goal>[])
-            for (final task in goal.tasks)
-              if (!task.isComplete && _matchesFilter(task)) task,
+          for (final task in allTasks)
+            if (!task.isDeleted && !task.isComplete && _matchesFilter(task))
+              task,
         ];
         return StreamBuilder<List<FocusSession>>(
           stream: focusRepository.watchSessions(),
@@ -1276,7 +1315,9 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                 .firstOrNull;
             final activeTask = active == null
                 ? null
-                : tasks.where((task) => task.id == active.taskId).firstOrNull;
+                : allTasks
+                      .where((task) => task.id == active.taskId)
+                      .firstOrNull;
             return ListView(
               padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
               children: [
@@ -1290,10 +1331,16 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                     child: ListTile(
                       leading: const Icon(Icons.timer_outlined),
                       title: const Text('已有进行中的专注'),
-                      subtitle: Text(activeTask?.title ?? '原任务'),
+                      subtitle: Text(
+                        activeTask == null
+                            ? '原任务'
+                            : _taskDisplayTitle(activeTask),
+                      ),
                       trailing: FilledButton(
-                        onPressed: () =>
-                            _openSession(active, activeTask?.title ?? '原任务'),
+                        onPressed: () => _openSession(
+                          active,
+                          taskTitles[active.taskId] ?? '原任务',
+                        ),
                         child: const Text('返回专注'),
                       ),
                     ),
@@ -1484,7 +1531,9 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
     final repository = ref.read(focusRepositoryProvider);
     final activeAppointment = await repository.getActiveAppointment();
     if (activeAppointment != null && mounted) {
-      final goals = await ref.read(taskRepositoryProvider).getGoals();
+      final goals = await ref
+          .read(taskRepositoryProvider)
+          .getGoals(includeDeleted: true);
       await _openAppointment(
         activeAppointment,
         _findTaskTitle(goals, activeAppointment.taskId) ?? task.title,
@@ -1493,7 +1542,9 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
     }
     final activeSession = await repository.getActiveSession();
     if (activeSession != null && mounted) {
-      final goals = await ref.read(taskRepositoryProvider).getGoals();
+      final goals = await ref
+          .read(taskRepositoryProvider)
+          .getGoals(includeDeleted: true);
       _openSession(
         activeSession,
         _findTaskTitle(goals, activeSession.taskId) ?? task.title,
@@ -1506,11 +1557,15 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
       builder: (_) => FocusSetupDialog(task: task, initialMode: _selectedMode),
     );
     if (result is FocusSession && mounted) {
-      final goals = await ref.read(taskRepositoryProvider).getGoals();
+      final goals = await ref
+          .read(taskRepositoryProvider)
+          .getGoals(includeDeleted: true);
       _openSession(result, _findTaskTitle(goals, result.taskId) ?? task.title);
     }
     if (result is AppointmentPreparation && mounted) {
-      final goals = await ref.read(taskRepositoryProvider).getGoals();
+      final goals = await ref
+          .read(taskRepositoryProvider)
+          .getGoals(includeDeleted: true);
       await _openAppointment(
         result,
         _findTaskTitle(goals, result.taskId) ?? task.title,
@@ -1591,11 +1646,14 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
 String? _findTaskTitle(List<Goal> goals, String taskId) {
   for (final goal in goals) {
     for (final task in goal.tasks) {
-      if (task.id == taskId) return task.title;
+      if (task.id == taskId) return _taskDisplayTitle(task);
     }
   }
   return null;
 }
+
+String _taskDisplayTitle(Task task) =>
+    task.isDeleted ? '${task.title}（已删除）' : task.title;
 
 void _showFocusError(BuildContext context, Object error) {
   ScaffoldMessenger.of(context).showSnackBar(
@@ -2121,11 +2179,14 @@ class _AppointmentPreparationPageState
 
   Future<void> _loadTasks() async {
     try {
-      final goals = await ref.read(taskRepositoryProvider).getGoals();
+      final goals = await ref
+          .read(taskRepositoryProvider)
+          .getGoals(includeDeleted: true);
       final tasks = [
         for (final goal in goals)
           for (final task in goal.tasks)
-            if (!task.isComplete || task.id == _taskId) task,
+            if ((!task.isComplete && !task.isDeleted) || task.id == _taskId)
+              task,
       ];
       if (mounted) setState(() => _tasks = tasks);
     } catch (error) {
@@ -2246,7 +2307,7 @@ class _AppointmentPreparationPageState
 
   String _taskTitle(String taskId) {
     for (final task in _tasks ?? const <Task>[]) {
-      if (task.id == taskId) return task.title;
+      if (task.id == taskId) return _taskDisplayTitle(task);
     }
     return taskId == widget.appointment.taskId ? widget.taskTitle : '原预约任务';
   }

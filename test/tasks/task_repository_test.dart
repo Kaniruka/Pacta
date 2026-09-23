@@ -180,4 +180,112 @@ void main() {
 
     expect((await repository.getGoals()).single.title, '另一端较新版本');
   });
+
+  test('删除目标会隐藏目标和任务并永久保留带删除标记的历史名称', () async {
+    final goal = await repository.createGoal(
+      const GoalDraft(
+        title: '待删除目标',
+        classification: TaskClassification.regular,
+      ),
+    );
+    final firstTask = await repository.createTask(
+      goal.id,
+      const TaskDraft(title: '保留名称的任务', classification: null),
+    );
+    await repository.createTask(
+      goal.id,
+      const TaskDraft(title: '另一项历史任务', classification: null),
+    );
+
+    await repository.deleteGoal(goal.id);
+
+    expect(await repository.getGoals(), isEmpty);
+    final history = await repository.getGoals(includeDeleted: true);
+    expect(history, hasLength(1));
+    expect(history.single.title, '待删除目标');
+    expect(history.single.isDeleted, isTrue);
+    expect(
+      history.single.tasks.map((task) => (task.title, task.isDeleted)),
+      containsAll([('保留名称的任务', true), ('另一项历史任务', true)]),
+    );
+
+    await expectLater(
+      repository.updateTask(
+        firstTask.id,
+        const TaskDraft(title: '不能编辑', classification: null),
+      ),
+      throwsStateError,
+    );
+    await expectLater(
+      repository.createTask(
+        goal.id,
+        const TaskDraft(title: '不能新建', classification: null),
+      ),
+      throwsStateError,
+    );
+
+    final deletedAt = history.single.deletedAt;
+    await repository.deleteGoal(goal.id);
+    expect(
+      (await repository.getGoals(includeDeleted: true)).single.deletedAt,
+      deletedAt,
+    );
+
+    await repository.sync();
+    expect(remote.goals.single.isDeleted, isTrue);
+    expect(remote.tasks, hasLength(2));
+    expect(remote.tasks.every((task) => task.isDeleted), isTrue);
+  });
+
+  test('另一端较新的离线编辑不能覆盖目标和任务删除', () async {
+    final goal = await repository.createGoal(
+      const GoalDraft(
+        title: '跨端删除目标',
+        classification: TaskClassification.regular,
+      ),
+    );
+    final task = await repository.createTask(
+      goal.id,
+      const TaskDraft(title: '跨端历史任务', classification: null),
+    );
+    await repository.sync();
+
+    final secondDatabase = PactaDatabase(NativeDatabase.memory());
+    addTearDown(secondDatabase.close);
+    final secondRepository = LocalTaskRepository(
+      database: secondDatabase,
+      userId: 'user-a',
+      remote: remote,
+      now: () => now,
+    );
+    addTearDown(secondRepository.dispose);
+    await secondRepository.sync();
+    await secondRepository.updateGoal(
+      goal.id,
+      const GoalDraft(
+        title: '另一端离线编辑的目标',
+        classification: TaskClassification.elite,
+      ),
+    );
+    await secondRepository.updateTask(
+      task.id,
+      const TaskDraft(title: '另一端离线编辑的任务', classification: null),
+    );
+
+    await repository.deleteGoal(goal.id);
+    await repository.sync();
+    await secondRepository.sync();
+
+    expect(await secondRepository.getGoals(), isEmpty);
+    final history = (await secondRepository.getGoals(includeDeleted: true))
+        .single;
+    expect(history.isDeleted, isTrue);
+    expect(history.tasks.single.isDeleted, isTrue);
+    expect(remote.goals.single.isDeleted, isTrue);
+    expect(remote.tasks.single.isDeleted, isTrue);
+
+    await secondRepository.sync();
+    expect(remote.goals.single.isDeleted, isTrue);
+    expect(remote.tasks.single.isDeleted, isTrue);
+  });
 }

@@ -971,4 +971,85 @@ void main() {
       '改为更准确的反思',
     );
   });
+
+  test('删除目标后预约仍自动交接，但不能从已删除任务新建流程', () async {
+    final task = await createTask('保留的预约任务');
+    final appointment = await focusRepository.startAppointment(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 20),
+    );
+
+    await taskRepository.deleteGoal(task.goalId);
+    expect(await focusRepository.getActiveAppointment(), isNotNull);
+    await expectLater(
+      focusRepository.startAppointment(
+        taskId: task.id,
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 20),
+      ),
+      throwsStateError,
+    );
+    await expectLater(
+      focusRepository.startSession(
+        taskId: task.id,
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 20),
+      ),
+      throwsStateError,
+    );
+
+    now = appointment.endsAt;
+    final session = await focusRepository.getActiveSession();
+    expect(session, isNotNull);
+    expect(session?.appointmentId, appointment.id);
+    expect(session?.taskId, task.id);
+    expect(
+      (await focusRepository.getAppointment(appointment.id))?.isSucceeded,
+      isTrue,
+    );
+  });
+
+  test('删除目标后活动和批准暂停的专注仍按原时长结算', () async {
+    final task = await createTask('保留的专注任务');
+    final session = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 5),
+    );
+    now = now.add(const Duration(seconds: 30));
+    await focusRepository.pauseSession(session.id, ruleText: '允许暂停');
+    await taskRepository.deleteGoal(task.goalId);
+
+    await expectLater(
+      focusRepository.startSession(
+        taskId: task.id,
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 5),
+      ),
+      throwsStateError,
+    );
+    now = now.add(const Duration(hours: 8));
+    final resumed = await focusRepository.resumeSession(session.id);
+    expect(resumed.status, FocusSessionStatus.active);
+    expect(
+      resumed.endsAt.difference(now),
+      const Duration(minutes: 4, seconds: 30),
+    );
+
+    now = resumed.endsAt;
+    final completed = (await focusRepository.getSessions()).single;
+    expect(completed.status, FocusSessionStatus.completed);
+    expect(completed.effectiveSeconds, const Duration(minutes: 5).inSeconds);
+    expect(await focusRepository.getNodes(), hasLength(1));
+    final deletedTask = (await taskRepository.getGoals(includeDeleted: true))
+        .single
+        .tasks
+        .single;
+    expect(deletedTask.isDeleted, isTrue);
+    expect(
+      deletedTask.focusProgressSeconds,
+      const Duration(minutes: 5).inSeconds,
+    );
+  });
 }
