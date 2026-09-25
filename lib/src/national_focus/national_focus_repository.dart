@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../tasks/task_database.dart';
@@ -39,13 +40,107 @@ abstract interface class NationalFocusRepository {
     required String batchId,
     required String? explanation,
   });
+  Future<void> sync();
   Future<void> dispose();
 }
+
+abstract interface class NationalFocusRemoteDataSource {
+  Future<List<NationalFocusSyncSource>> pull({required String userId});
+  Future<void> upsertSources({
+    required String userId,
+    required List<NationalFocusSyncSource> sources,
+  });
+}
+
+class InMemoryNationalFocusRemoteDataSource
+    implements NationalFocusRemoteDataSource {
+  final Map<String, Map<String, NationalFocusSyncSource>> _sourcesByUser = {};
+
+  @override
+  Future<List<NationalFocusSyncSource>> pull({required String userId}) async =>
+      List.unmodifiable(_sourcesByUser[userId]?.values ?? const []);
+
+  @override
+  Future<void> upsertSources({
+    required String userId,
+    required List<NationalFocusSyncSource> sources,
+  }) async {
+    final byId = _sourcesByUser.putIfAbsent(userId, () => {});
+    for (final source in sources) {
+      byId.putIfAbsent(source.sourceId, () => source);
+    }
+  }
+}
+
+class SupabaseNationalFocusRemoteDataSource
+    implements NationalFocusRemoteDataSource {
+  SupabaseNationalFocusRemoteDataSource(this.client);
+
+  final SupabaseClient client;
+
+  @override
+  Future<List<NationalFocusSyncSource>> pull({required String userId}) async {
+    const pageSize = 500;
+    final sources = <NationalFocusSyncSource>[];
+    for (var offset = 0; ; offset += pageSize) {
+      final page = await client
+          .from('focus_sync_sources')
+          .select()
+          .eq('user_id', userId)
+          .eq('entity_type', 'national_focus_tree')
+          .eq('entity_id', _nationalFocusTreeEntityId)
+          .order('occurred_at')
+          .order('source_id')
+          .range(offset, offset + pageSize - 1);
+      sources.addAll(page.map(_nationalFocusSourceFromJson));
+      if (page.length < pageSize) break;
+    }
+    return sources;
+  }
+
+  @override
+  Future<void> upsertSources({
+    required String userId,
+    required List<NationalFocusSyncSource> sources,
+  }) async {
+    for (var offset = 0; offset < sources.length; offset += 200) {
+      final chunk = sources.skip(offset).take(200);
+      await client
+          .from('focus_sync_sources')
+          .upsert(
+            [
+              for (final source in chunk)
+                _nationalFocusSourceToJson(source, userId: userId),
+            ],
+            onConflict: 'source_id',
+            ignoreDuplicates: true,
+          );
+    }
+  }
+}
+
+class UnavailableNationalFocusRemoteDataSource
+    implements NationalFocusRemoteDataSource {
+  const UnavailableNationalFocusRemoteDataSource();
+
+  @override
+  Future<List<NationalFocusSyncSource>> pull({required String userId}) async =>
+      const [];
+
+  @override
+  Future<void> upsertSources({
+    required String userId,
+    required List<NationalFocusSyncSource> sources,
+  }) async {}
+}
+
+const _nationalFocusTreeEntityId = '00000000-0000-4000-8000-000000000018';
 
 class LocalNationalFocusRepository implements NationalFocusRepository {
   LocalNationalFocusRepository({
     required this.database,
     required this.userId,
+    this.remote = const UnavailableNationalFocusRemoteDataSource(),
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now {
     if (userId.trim().isEmpty) {
@@ -55,8 +150,10 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
 
   final PactaDatabase database;
   final String userId;
+  final NationalFocusRemoteDataSource remote;
   final DateTime Function() _now;
   final _uuid = const Uuid();
+  Future<void> _syncQueue = Future<void>.value();
 
   @override
   Stream<List<NationalFocusCard>> watchTreeCards() =>
@@ -171,6 +268,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
               effectiveFrom: timestamp,
             ),
           );
+      await _recordSyncSnapshot(operation: 'create_card');
     });
     return card;
   }
@@ -188,8 +286,9 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       throw ArgumentError('至少填写一项强化要求；留空字段会沿用基础要求。');
     }
 
-    return database.transaction(() async {
+    final savedLevel = await database.transaction(() async {
       final card = await _findCardRow(cardId);
+      _requireResolvedCard(card);
       if (card.deletedAt != null) {
         throw StateError('已删除的国策卡需要先恢复到卡片库。');
       }
@@ -287,12 +386,14 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
         card,
         LocalNationalFocusCardsCompanion(updatedAt: Value(timestamp)),
       );
+      await _recordSyncSnapshot(operation: 'edit_strengthening_level');
       return NationalFocusStrengtheningLevel(
         levelNumber: targetLevelNumber,
         triggerCondition: triggerOverride,
         action: actionOverride,
       );
     });
+    return savedLevel;
   }
 
   @override
@@ -303,6 +404,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     await settleDueCheckpoints();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
+      _requireResolvedCard(card);
       if (card.deletedAt != null) {
         throw StateError('已删除的国策卡需要先恢复到卡片库。');
       }
@@ -345,6 +447,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
           updatedAt: Value(timestamp),
         ),
       );
+      await _recordSyncSnapshot(operation: 'select_strengthening_level');
     });
   }
 
@@ -462,6 +565,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     await settleDueCheckpoints();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
+      _requireResolvedCard(card);
       if (card.deletedAt != null) {
         throw StateError('已删除的国策卡需要先恢复到卡片库。');
       }
@@ -526,6 +630,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
               updatedAt: Value(updatedAt),
             ),
           );
+      await _recordSyncSnapshot(operation: 'place_card');
     });
   }
 
@@ -546,6 +651,11 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
                 ..where((candidate) => candidate.isInTree.equals(true)))
               .get();
       final branch = [card, ..._descendantsOf(card.id, treeCards)];
+      if (branch.any(
+        (branchCard) => branchCard.reviewDisposition == 'pending_review',
+      )) {
+        throw StateError('同步分歧待核对；请先核对这条分支。');
+      }
       for (final branchCard in branch) {
         final state = NationalFocusCardState.fromStorage(branchCard.state);
         final priorCascadeState = branchCard.cascadePriorState == null
@@ -573,13 +683,14 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
           ),
         );
       }
+      await _recordSyncSnapshot(operation: 'move_card_to_library');
     });
   }
 
   @override
   Future<NationalFocusCardDeletion> deleteCard(String cardId) async {
     await settleDueCheckpoints();
-    return database.transaction(() async {
+    final deletion = await database.transaction(() async {
       final card =
           await (database.select(database.localNationalFocusCards)
                 ..where((candidate) => candidate.userId.equals(userId))
@@ -591,6 +702,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       if (card.deletedAt != null) {
         return NationalFocusCardDeletion.softDeleted;
       }
+      _requireResolvedCard(card);
       if (card.isInTree) {
         throw StateError('请先把国策卡移入卡片库，再删除。');
       }
@@ -645,6 +757,10 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
               ..where((candidate) => candidate.userId.equals(userId))
               ..where((candidate) => candidate.id.equals(cardId)))
             .go();
+        await _recordSyncSnapshot(
+          operation: 'permanently_delete_card',
+          deletedCardIds: {cardId},
+        );
         return NationalFocusCardDeletion.permanentlyDeleted;
       }
 
@@ -656,8 +772,10 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
           updatedAt: Value(deletedAt),
         ),
       );
+      await _recordSyncSnapshot(operation: 'soft_delete_card');
       return NationalFocusCardDeletion.softDeleted;
     });
+    return deletion;
   }
 
   @override
@@ -665,6 +783,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     await settleDueCheckpoints();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
+      _requireResolvedCard(card);
       if (card.deletedAt == null && !card.isInTree) return;
       if (card.deletedAt == null || card.isInTree) {
         throw StateError('已删除列表中找不到这张国策卡。');
@@ -678,6 +797,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
           updatedAt: Value(_nextTimestamp(card.updatedAt)),
         ),
       );
+      await _recordSyncSnapshot(operation: 'restore_deleted_card');
     });
   }
 
@@ -686,6 +806,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     await settleDueCheckpoints();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
+      _requireResolvedCard(card);
       if (card.deletedAt != null) {
         throw StateError('已删除的国策卡需要先恢复到卡片库。');
       }
@@ -730,6 +851,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
           updatedAt: Value(_nextTimestamp(card.updatedAt)),
         ),
       );
+      await _recordSyncSnapshot(operation: 'light_card');
     });
   }
 
@@ -741,6 +863,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     await settleDueCheckpoints();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
+      _requireResolvedCard(card);
       if (card.deletedAt != null) {
         throw StateError('已删除的国策卡需要先恢复到卡片库。');
       }
@@ -765,6 +888,11 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
                 ..where((candidate) => candidate.isInTree.equals(true)))
               .get();
       final descendants = _descendantsOf(card.id, treeCards);
+      if (descendants.any(
+        (descendant) => descendant.reviewDisposition == 'pending_review',
+      )) {
+        throw StateError('同步分歧待核对；请先核对这条分支。');
+      }
       for (final descendant in descendants) {
         final state = NationalFocusCardState.fromStorage(descendant.state);
         final hasExistingCascade = descendant.cascadeSourceCardId != null;
@@ -788,17 +916,20 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
           ),
         );
       }
+      await _recordSyncSnapshot(operation: 'extinguish_card');
     });
   }
 
   @override
   Future<int> confirmToday() async {
     await settleDueCheckpoints();
-    return database.transaction(() async {
+    final confirmedCardIds = <String>[];
+    final confirmedCount = await database.transaction(() async {
       final pendingCards =
           await (database.select(database.localNationalFocusCards)
                 ..where((card) => card.userId.equals(userId))
                 ..where((card) => card.isInTree.equals(true))
+                ..where((card) => card.reviewDisposition.equals('accepted'))
                 ..where(
                   (card) => card.state.equals(
                     NationalFocusCardState
@@ -815,7 +946,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
               .get();
       final cardsById = {for (final card in treeCards) card.id: card};
 
-      var confirmedCount = 0;
+      var count = 0;
       for (final card in pendingCards) {
         if (_hasExtinguishedAncestor(card, cardsById)) continue;
         await _updateCard(
@@ -826,10 +957,19 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
             updatedAt: Value(_nextTimestamp(card.updatedAt)),
           ),
         );
-        confirmedCount++;
+        confirmedCardIds.add(card.id);
+        count++;
       }
-      return confirmedCount;
+      if (confirmedCardIds.isNotEmpty) {
+        await _recordSyncSnapshot(
+          operation: 'confirm_today',
+          checkpointAt: nextNationalFocusCheckpoint(_now().toUtc()),
+          confirmedCardIds: confirmedCardIds,
+        );
+      }
+      return count;
     });
+    return confirmedCount;
   }
 
   @override
@@ -848,6 +988,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
                 lastSettledCheckpointAt: nationalFocusCheckpointAtOrBefore(now),
               ),
             );
+        await _recordSyncSnapshot(operation: 'initialize_checkpoints');
         return;
       }
 
@@ -862,6 +1003,20 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
           LocalNationalFocusMaintenanceCompanion(
             lastSettledCheckpointAt: Value(checkpoint),
           ),
+        );
+        final checkpointFailures = await (database.select(
+          database.localNationalFocusFailures,
+        )..where((failure) => failure.userId.equals(userId))).get();
+        await _recordSyncSnapshot(
+          operation: 'settle_checkpoint',
+          checkpointAt: checkpoint,
+          missedConfirmationCardIds: [
+            for (final failure in checkpointFailures)
+              if (failure.checkpointAt.isAtSameMomentAs(checkpoint) &&
+                  failure.cause ==
+                      NationalFocusFailureCause.missedConfirmation.storageValue)
+                failure.cardId,
+          ],
         );
         checkpoint = checkpoint.add(nationalFocusCheckpointPeriod);
       }
@@ -878,7 +1033,11 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
               ]))
             .get();
     final cards = storedCards
-        .where((card) => card.isInTree || card.maintenanceCycleStarted)
+        .where(
+          (card) =>
+              card.reviewDisposition != 'pending_review' &&
+              (card.isInTree || card.maintenanceCycleStarted),
+        )
         .toList(growable: false);
     if (cards.isEmpty) return;
 
@@ -1015,18 +1174,781 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     if (normalized != null && normalized.length > 500) {
       throw ArgumentError('补充说明不能超过 500 个字符。');
     }
-    final updated =
-        await (database.update(database.localNationalFocusFailures)
-              ..where((failure) => failure.userId.equals(userId))
-              ..where((failure) => failure.batchId.equals(batchId)))
-            .write(
-              LocalNationalFocusFailuresCompanion(
-                sharedExplanation: Value(normalized),
+    await database.transaction(() async {
+      final updated =
+          await (database.update(database.localNationalFocusFailures)
+                ..where((failure) => failure.userId.equals(userId))
+                ..where((failure) => failure.batchId.equals(batchId)))
+              .write(
+                LocalNationalFocusFailuresCompanion(
+                  sharedExplanation: Value(normalized),
+                ),
+              );
+      if (updated == 0) {
+        throw StateError('找不到这组国策失败记录。');
+      }
+      await _recordSyncSnapshot(operation: 'edit_failure_explanation');
+    });
+  }
+
+  @override
+  Future<void> sync() {
+    final nextSync = _syncQueue
+        .catchError((Object _) {})
+        .then((_) => _syncOnce());
+    _syncQueue = nextSync;
+    return nextSync;
+  }
+
+  Future<void> _syncOnce() async {
+    await settleDueCheckpoints();
+    await _recordLocalStateRecoveryIfNeeded();
+    final remoteSources = await remote.pull(userId: userId);
+    for (final source in remoteSources) {
+      await database
+          .into(database.focusSyncSources)
+          .insert(
+            FocusSyncSourcesCompanion.insert(
+              userId: userId,
+              sourceId: source.sourceId,
+              deviceId: source.deviceId,
+              entityType: 'national_focus_tree',
+              entityId: _nationalFocusTreeEntityId,
+              parentSourceId: Value(
+                source.parentSourceIds.isEmpty
+                    ? null
+                    : source.parentSourceIds.first,
+              ),
+              parentSourceIds: Value(jsonEncode(source.parentSourceIds)),
+              occurredAt: source.occurredAt.toUtc(),
+              payload: source.payload,
+            ),
+            mode: InsertMode.insertOrIgnore,
+          );
+    }
+
+    final sources = await _getNationalFocusSyncSources();
+    if (sources.isEmpty) return;
+    final heads = _nationalFocusSourceHeads(sources);
+    if (heads.isEmpty) return;
+    final mergedSnapshot = _mergeNationalFocusSnapshots(sources, heads);
+    await _applyNationalFocusSnapshot(mergedSnapshot);
+    if (heads.length > 1) {
+      await _recordSyncSnapshot(
+        operation: 'synchronization_merge',
+        parentSourceIds: [for (final head in heads) head.sourceId],
+      );
+    }
+    await remote.upsertSources(
+      userId: userId,
+      sources: await _getNationalFocusSyncSources(),
+    );
+  }
+
+  Future<void> _recordLocalStateRecoveryIfNeeded() async {
+    final sources = await _getNationalFocusSyncSources();
+    final heads = _nationalFocusSourceHeads(sources);
+    final localSnapshot = await _currentNationalFocusSnapshot();
+    final tombstones = <String>{};
+    for (final source in sources) {
+      final values = _nationalFocusPayload(source)['tombstones'];
+      if (values is List) tombstones.addAll(values.whereType<String>());
+    }
+    localSnapshot['tombstones'] = tombstones.toList()..sort();
+    final localSignature = _nationalFocusStateSignature(localSnapshot);
+    if (heads.any(
+      (head) =>
+          _nationalFocusStateSignature(_nationalFocusPayload(head)) ==
+          localSignature,
+    )) {
+      return;
+    }
+    await _recordSyncSnapshot(
+      operation: sources.isEmpty ? 'initial_snapshot' : 'local_state_recovery',
+      parentSourceIds: [for (final head in heads) head.sourceId],
+    );
+  }
+
+  Future<List<NationalFocusSyncSource>> _getNationalFocusSyncSources() async {
+    final rows =
+        await (database.select(database.focusSyncSources)
+              ..where((row) => row.userId.equals(userId))
+              ..where((row) => row.entityType.equals('national_focus_tree'))
+              ..where((row) => row.entityId.equals(_nationalFocusTreeEntityId))
+              ..orderBy([
+                (row) => OrderingTerm.asc(row.occurredAt),
+                (row) => OrderingTerm.asc(row.sourceId),
+              ]))
+            .get();
+    return [
+      for (final row in rows)
+        NationalFocusSyncSource(
+          sourceId: row.sourceId,
+          deviceId: row.deviceId,
+          parentSourceIds: _decodeNationalFocusSourceParents(
+            row.parentSourceId,
+            row.parentSourceIds,
+          ),
+          occurredAt: row.occurredAt.toUtc(),
+          payload: row.payload,
+        ),
+    ];
+  }
+
+  Future<void> _recordSyncSnapshot({
+    required String operation,
+    DateTime? checkpointAt,
+    Iterable<String> confirmedCardIds = const [],
+    Iterable<String> missedConfirmationCardIds = const [],
+    Set<String> deletedCardIds = const {},
+    List<String>? parentSourceIds,
+  }) async {
+    final existingSources = await _getNationalFocusSyncSources();
+    final tombstones = <String>{...deletedCardIds};
+    for (final source in existingSources) {
+      final previous = _nationalFocusPayload(source)['tombstones'];
+      if (previous is List) tombstones.addAll(previous.whereType<String>());
+    }
+    final resolvedParents =
+        (parentSourceIds ??
+                [
+                  for (final head in _nationalFocusSourceHeads(existingSources))
+                    head.sourceId,
+                ])
+            .toSet()
+            .toList()
+          ..sort();
+    final snapshot = await _currentNationalFocusSnapshot();
+    final payload = {
+      ...snapshot,
+      'operation': operation,
+      'checkpointAt': checkpointAt?.toUtc().toIso8601String(),
+      'confirmedCardIds': confirmedCardIds.toSet().toList()..sort(),
+      'missedConfirmationCardIds': missedConfirmationCardIds.toSet().toList()
+        ..sort(),
+      'tombstones': tombstones.toList()..sort(),
+    };
+    final deviceId = await _getNationalFocusDeviceId();
+    final source = NationalFocusSyncSource(
+      sourceId: _uuid.v4(),
+      deviceId: deviceId,
+      parentSourceIds: resolvedParents,
+      occurredAt: _now().toUtc(),
+      payload: jsonEncode(payload),
+    );
+    await database
+        .into(database.focusSyncSources)
+        .insert(
+          FocusSyncSourcesCompanion.insert(
+            userId: userId,
+            sourceId: source.sourceId,
+            deviceId: source.deviceId,
+            entityType: 'national_focus_tree',
+            entityId: _nationalFocusTreeEntityId,
+            parentSourceId: Value(
+              resolvedParents.isEmpty ? null : resolvedParents.first,
+            ),
+            parentSourceIds: Value(jsonEncode(resolvedParents)),
+            occurredAt: source.occurredAt,
+            payload: source.payload,
+          ),
+          mode: InsertMode.insertOrIgnore,
+        );
+  }
+
+  Future<String> _getNationalFocusDeviceId() async {
+    final existing = await (database.select(
+      database.focusSourceDevices,
+    )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+    if (existing != null) return existing.deviceId;
+    final deviceId = _uuid.v4();
+    await database
+        .into(database.focusSourceDevices)
+        .insertOnConflictUpdate(
+          FocusSourceDevicesCompanion.insert(
+            userId: userId,
+            deviceId: deviceId,
+          ),
+        );
+    return deviceId;
+  }
+
+  Future<Map<String, dynamic>> _currentNationalFocusSnapshot() async {
+    final cardRows =
+        await (database.select(database.localNationalFocusCards)
+              ..where((row) => row.userId.equals(userId))
+              ..orderBy([
+                (row) => OrderingTerm.asc(row.createdAt),
+                (row) => OrderingTerm.asc(row.id),
+              ]))
+            .get();
+    final cards = <Map<String, dynamic>>[];
+    for (final card in cardRows) {
+      final levels =
+          await (database.select(
+                database.localNationalFocusStrengtheningLevels,
+              )..where(
+                (level) =>
+                    level.userId.equals(userId) & level.cardId.equals(card.id),
+              ))
+              .get();
+      final versions =
+          await (database.select(database.localNationalFocusRequirementVersions)
+                ..where(
+                  (version) =>
+                      version.userId.equals(userId) &
+                      version.cardId.equals(card.id),
+                ))
+              .get();
+      cards.add({
+        'id': card.id,
+        'triggerCondition': card.triggerCondition,
+        'action': card.action,
+        'scope': card.scope,
+        'exceptionNotes': card.exceptionNotes,
+        'isInTree': card.isInTree,
+        'parentId': card.parentId,
+        'state': card.state,
+        'successfulDays': card.successfulDays,
+        'currentConsecutiveDays': card.currentConsecutiveDays,
+        'bestConsecutiveDays': card.bestConsecutiveDays,
+        'maintenanceCycleStarted': card.maintenanceCycleStarted,
+        'failureReason': card.failureReason,
+        'cascadeSourceCardId': card.cascadeSourceCardId,
+        'cascadePriorState': card.cascadePriorState,
+        'activeStrengtheningLevel': card.activeStrengtheningLevel,
+        'reviewDisposition': card.reviewDisposition,
+        'createdAt': card.createdAt.toUtc().toIso8601String(),
+        'updatedAt': card.updatedAt.toUtc().toIso8601String(),
+        'deletedAt': card.deletedAt?.toUtc().toIso8601String(),
+        'strengtheningLevels': [
+          for (final level in levels)
+            {
+              'levelNumber': level.levelNumber,
+              'triggerConditionOverride': level.triggerConditionOverride,
+              'actionOverride': level.actionOverride,
+              'createdAt': level.createdAt.toUtc().toIso8601String(),
+              'updatedAt': level.updatedAt.toUtc().toIso8601String(),
+            },
+        ],
+        'requirementVersions': [
+          for (final version in versions)
+            {
+              'id': version.id,
+              'versionNumber': version.versionNumber,
+              'strengtheningLevelNumber': version.strengtheningLevelNumber,
+              'effectiveTriggerCondition': version.effectiveTriggerCondition,
+              'effectiveAction': version.effectiveAction,
+              'scope': version.scope,
+              'exceptionNotes': version.exceptionNotes,
+              'effectiveFrom': version.effectiveFrom.toUtc().toIso8601String(),
+              'effectiveUntil': version.effectiveUntil
+                  ?.toUtc()
+                  .toIso8601String(),
+            },
+        ],
+      });
+    }
+
+    final failureRows = await (database.select(
+      database.localNationalFocusFailures,
+    )..where((row) => row.userId.equals(userId))).get();
+    final maintenance = await (database.select(
+      database.localNationalFocusMaintenance,
+    )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+    return {
+      'schemaVersion': 1,
+      'cards': cards,
+      'failures': [
+        for (final failure in failureRows)
+          {
+            'id': failure.id,
+            'batchId': failure.batchId,
+            'cardId': failure.cardId,
+            'checkpointAt': failure.checkpointAt.toUtc().toIso8601String(),
+            'cause': failure.cause,
+            'failureReason': failure.failureReason,
+            'sharedExplanation': failure.sharedExplanation,
+            'treeSnapshot': failure.treeSnapshot,
+          },
+      ],
+      'maintenance': maintenance == null
+          ? null
+          : {
+              'lastSettledCheckpointAt': maintenance.lastSettledCheckpointAt
+                  .toUtc()
+                  .toIso8601String(),
+            },
+    };
+  }
+
+  Map<String, dynamic> _mergeNationalFocusSnapshots(
+    List<NationalFocusSyncSource> sources,
+    List<NationalFocusSyncSource> heads,
+  ) {
+    final sourcesById = {for (final source in sources) source.sourceId: source};
+    final payloadsById = {
+      for (final source in sources)
+        source.sourceId: _nationalFocusPayload(source),
+    };
+    final ancestorsByHead = {
+      for (final head in heads)
+        head.sourceId: _nationalFocusAncestors(head.sourceId, sourcesById),
+    };
+    final commonAncestors = heads
+        .map((head) => ancestorsByHead[head.sourceId]!)
+        .reduce((left, right) => left.intersection(right));
+    String? baseSourceId;
+    var baseDepth = -1;
+    for (final candidateId in commonAncestors) {
+      final depth = _nationalFocusSourceDepth(candidateId, sourcesById);
+      if (depth > baseDepth ||
+          (depth == baseDepth &&
+              (baseSourceId == null ||
+                  candidateId.compareTo(baseSourceId) < 0))) {
+        baseSourceId = candidateId;
+        baseDepth = depth;
+      }
+    }
+    final baseSnapshot = baseSourceId == null
+        ? <String, dynamic>{}
+        : payloadsById[baseSourceId]!;
+    final baseCards = _nationalFocusCardsById(baseSnapshot);
+    final headSnapshots = {
+      for (final head in heads) head.sourceId: payloadsById[head.sourceId]!,
+    };
+
+    final validConfirmations = <String>{};
+    for (final source in sources) {
+      final payload = payloadsById[source.sourceId]!;
+      if (payload['operation'] != 'confirm_today') continue;
+      final rawCheckpoint = payload['checkpointAt'];
+      if (rawCheckpoint is! String) continue;
+      final checkpoint = DateTime.parse(rawCheckpoint).toUtc();
+      if (source.occurredAt.isAfter(checkpoint)) continue;
+      final confirmed = payload['confirmedCardIds'];
+      if (confirmed is! List) continue;
+      for (final cardId in confirmed.whereType<String>()) {
+        validConfirmations.add(_nationalFocusCheckpointKey(cardId, checkpoint));
+      }
+    }
+
+    final allCardIds = <String>{...baseCards.keys};
+    for (final snapshot in headSnapshots.values) {
+      allCardIds.addAll(_nationalFocusCardsById(snapshot).keys);
+    }
+    final mergedCards = <Map<String, dynamic>>[];
+    final conflictingCardIds = <String>{};
+    final tombstones = <String>{};
+    for (final source in sources) {
+      final values = payloadsById[source.sourceId]!['tombstones'];
+      if (values is List) tombstones.addAll(values.whereType<String>());
+    }
+
+    for (final cardId in allCardIds.toList()..sort()) {
+      final relevantHeads = <NationalFocusSyncSource>[];
+      for (final head in heads) {
+        final headFailures = headSnapshots[head.sourceId]!['failures'];
+        final branchHasMissedFailure =
+            headFailures is List &&
+            headFailures.whereType<Map>().any((failure) {
+              if (failure['cardId'] != cardId ||
+                  failure['cause'] !=
+                      NationalFocusFailureCause
+                          .missedConfirmation
+                          .storageValue ||
+                  failure['checkpointAt'] is! String) {
+                return false;
+              }
+              final checkpoint = DateTime.parse(
+                failure['checkpointAt'] as String,
+              ).toUtc();
+              return validConfirmations.contains(
+                _nationalFocusCheckpointKey(cardId, checkpoint),
+              );
+            });
+        if (!branchHasMissedFailure) relevantHeads.add(head);
+      }
+
+      final baseCard = baseCards[cardId];
+      final baseSignature = _nationalFocusCardSignature(baseCard);
+      final changedValues = <String, Map<String, dynamic>?>{};
+      final valuesBySignature = <String, Map<String, dynamic>?>{};
+      for (final head in relevantHeads) {
+        final card = _nationalFocusCardsById(
+          headSnapshots[head.sourceId]!,
+        )[cardId];
+        final signature = _nationalFocusCardSignature(card);
+        valuesBySignature.putIfAbsent(signature, () => card);
+        if (signature != baseSignature) {
+          changedValues.putIfAbsent(signature, () => card);
+        }
+      }
+
+      Map<String, dynamic>? selected;
+      var isConflict = changedValues.length > 1;
+      if (changedValues.isEmpty) {
+        selected = baseCard;
+      } else if (changedValues.length == 1) {
+        selected = changedValues.values.single;
+      } else {
+        selected =
+            baseCard ??
+            valuesBySignature.values.firstWhere(
+              (value) => value != null,
+              orElse: () => null,
+            );
+      }
+      if (selected == null) continue;
+
+      final inheritedReview = relevantHeads.any((head) {
+        final value = _nationalFocusCardsById(
+          headSnapshots[head.sourceId]!,
+        )[cardId];
+        return value?['reviewDisposition'] == 'pending_review';
+      });
+      final cardValue = Map<String, dynamic>.from(selected);
+      cardValue['reviewDisposition'] = isConflict || inheritedReview
+          ? 'pending_review'
+          : 'accepted';
+      if (isConflict) conflictingCardIds.add(cardId);
+      mergedCards.add(cardValue);
+    }
+
+    final mergedCardsById = {
+      for (final card in mergedCards) card['id'] as String: card,
+    };
+    final invalidTreeCardIds = <String>{};
+    for (final card in mergedCards) {
+      final cardId = card['id'] as String;
+      final parentId = card['parentId'] as String?;
+      if (!(card['isInTree'] as bool) && parentId != null) {
+        invalidTreeCardIds.add(cardId);
+        invalidTreeCardIds.add(parentId);
+        continue;
+      }
+      final visited = <String>{cardId};
+      var ancestorId = parentId;
+      while (ancestorId != null) {
+        if (!visited.add(ancestorId)) {
+          invalidTreeCardIds.addAll(visited);
+          invalidTreeCardIds.add(ancestorId);
+          break;
+        }
+        final ancestor = mergedCardsById[ancestorId];
+        if (ancestor == null ||
+            !(ancestor['isInTree'] as bool) ||
+            ancestor['deletedAt'] != null) {
+          invalidTreeCardIds.add(cardId);
+          invalidTreeCardIds.add(ancestorId);
+          break;
+        }
+        ancestorId = ancestor['parentId'] as String?;
+      }
+    }
+    for (final cardId in invalidTreeCardIds) {
+      final prior = baseCards[cardId] ?? mergedCardsById[cardId];
+      if (prior == null) continue;
+      final reviewed = Map<String, dynamic>.from(prior)
+        ..['reviewDisposition'] = 'pending_review';
+      mergedCardsById[cardId] = reviewed;
+      conflictingCardIds.add(cardId);
+    }
+    mergedCards
+      ..clear()
+      ..addAll(
+        mergedCardsById.values.toList()..sort(
+          (left, right) =>
+              (left['id'] as String).compareTo(right['id'] as String),
+        ),
+      );
+
+    for (final cardId in conflictingCardIds) {
+      tombstones.remove(cardId);
+    }
+
+    final failuresById = <String, Map<String, dynamic>>{};
+    for (final snapshot in headSnapshots.values) {
+      final failures = snapshot['failures'];
+      if (failures is! List) continue;
+      for (final rawFailure in failures) {
+        if (rawFailure is! Map) continue;
+        final failure = Map<String, dynamic>.from(rawFailure);
+        final failureId = failure['id'];
+        if (failureId is! String) continue;
+        final existing = failuresById[failureId];
+        if (existing == null ||
+            (existing['sharedExplanation'] == null &&
+                failure['sharedExplanation'] != null)) {
+          failuresById[failureId] = failure;
+        }
+      }
+    }
+    failuresById.removeWhere((_, failure) {
+      if (failure['cause'] !=
+          NationalFocusFailureCause.missedConfirmation.storageValue) {
+        return false;
+      }
+      final cardId = failure['cardId'];
+      final checkpointAt = failure['checkpointAt'];
+      if (cardId is! String || checkpointAt is! String) return false;
+      return validConfirmations.contains(
+        _nationalFocusCheckpointKey(
+          cardId,
+          DateTime.parse(checkpointAt).toUtc(),
+        ),
+      );
+    });
+
+    DateTime? lastSettledCheckpointAt;
+    for (final snapshot in headSnapshots.values) {
+      final maintenance = snapshot['maintenance'];
+      if (maintenance is! Map ||
+          maintenance['lastSettledCheckpointAt'] is! String) {
+        continue;
+      }
+      final checkpoint = DateTime.parse(
+        maintenance['lastSettledCheckpointAt'] as String,
+      ).toUtc();
+      if (lastSettledCheckpointAt == null ||
+          checkpoint.isAfter(lastSettledCheckpointAt)) {
+        lastSettledCheckpointAt = checkpoint;
+      }
+    }
+
+    return {
+      'schemaVersion': 1,
+      'operation': 'synchronization_merge',
+      'cards': mergedCards,
+      'failures': failuresById.values.toList(),
+      'maintenance': lastSettledCheckpointAt == null
+          ? null
+          : {
+              'lastSettledCheckpointAt': lastSettledCheckpointAt
+                  .toIso8601String(),
+            },
+      'tombstones': tombstones.toList()..sort(),
+    };
+  }
+
+  Future<void> _applyNationalFocusSnapshot(
+    Map<String, dynamic> snapshot,
+  ) async {
+    final rawCards = snapshot['cards'];
+    final rawFailures = snapshot['failures'];
+    final rawTombstones = snapshot['tombstones'];
+    final cardMaps = rawCards is List
+        ? rawCards.whereType<Map>().map(Map<String, dynamic>.from).toList()
+        : <Map<String, dynamic>>[];
+    final failureMaps = rawFailures is List
+        ? rawFailures.whereType<Map>().map(Map<String, dynamic>.from).toList()
+        : <Map<String, dynamic>>[];
+    final tombstones = rawTombstones is List
+        ? rawTombstones.whereType<String>().toSet()
+        : <String>{};
+
+    await database.transaction(() async {
+      for (final card in cardMaps) {
+        final cardId = card['id'] as String;
+        final createdAt = DateTime.parse(card['createdAt'] as String).toUtc();
+        await database
+            .into(database.localNationalFocusCards)
+            .insertOnConflictUpdate(
+              LocalNationalFocusCardsCompanion.insert(
+                userId: userId,
+                id: cardId,
+                triggerCondition: card['triggerCondition'] as String,
+                action: card['action'] as String,
+                scope: Value(card['scope'] as String?),
+                exceptionNotes: Value(card['exceptionNotes'] as String?),
+                isInTree: Value(card['isInTree'] as bool),
+                parentId: Value(card['parentId'] as String?),
+                state: Value(card['state'] as String),
+                successfulDays: Value(card['successfulDays'] as int),
+                currentConsecutiveDays: Value(
+                  card['currentConsecutiveDays'] as int,
+                ),
+                bestConsecutiveDays: Value(card['bestConsecutiveDays'] as int),
+                maintenanceCycleStarted: Value(
+                  card['maintenanceCycleStarted'] as bool,
+                ),
+                failureReason: Value(card['failureReason'] as String?),
+                cascadeSourceCardId: Value(
+                  card['cascadeSourceCardId'] as String?,
+                ),
+                cascadePriorState: Value(card['cascadePriorState'] as String?),
+                reviewDisposition: Value(
+                  (card['reviewDisposition'] as String?) ?? 'accepted',
+                ),
+                activeStrengtheningLevel: Value(
+                  card['activeStrengtheningLevel'] as int?,
+                ),
+                createdAt: createdAt,
+                updatedAt: DateTime.parse(card['updatedAt'] as String).toUtc(),
+                deletedAt: Value(_optionalNationalFocusDate(card['deletedAt'])),
               ),
             );
-    if (updated == 0) {
-      throw StateError('找不到这组国策失败记录。');
-    }
+
+        await (database.delete(database.localNationalFocusStrengtheningLevels)
+              ..where(
+                (level) =>
+                    level.userId.equals(userId) & level.cardId.equals(cardId),
+              ))
+            .go();
+        final rawLevels = card['strengtheningLevels'];
+        if (rawLevels is List) {
+          for (final rawLevel in rawLevels.whereType<Map>()) {
+            final level = Map<String, dynamic>.from(rawLevel);
+            await database
+                .into(database.localNationalFocusStrengtheningLevels)
+                .insert(
+                  LocalNationalFocusStrengtheningLevelsCompanion.insert(
+                    userId: userId,
+                    cardId: cardId,
+                    levelNumber: level['levelNumber'] as int,
+                    triggerConditionOverride: Value(
+                      level['triggerConditionOverride'] as String?,
+                    ),
+                    actionOverride: Value(level['actionOverride'] as String?),
+                    createdAt: DateTime.parse(level['createdAt'] as String)
+                        .toUtc(),
+                    updatedAt: DateTime.parse(level['updatedAt'] as String)
+                        .toUtc(),
+                  ),
+                );
+          }
+        }
+
+        await (database.delete(
+              database.localNationalFocusRequirementVersions,
+            )..where(
+              (version) =>
+                  version.userId.equals(userId) & version.cardId.equals(cardId),
+            ))
+            .go();
+        final rawVersions = card['requirementVersions'];
+        if (rawVersions is List) {
+          for (final rawVersion in rawVersions.whereType<Map>()) {
+            final version = Map<String, dynamic>.from(rawVersion);
+            await database
+                .into(database.localNationalFocusRequirementVersions)
+                .insert(
+                  LocalNationalFocusRequirementVersionsCompanion.insert(
+                    userId: userId,
+                    id: version['id'] as String,
+                    cardId: cardId,
+                    versionNumber: version['versionNumber'] as int,
+                    strengtheningLevelNumber: Value(
+                      version['strengtheningLevelNumber'] as int?,
+                    ),
+                    effectiveTriggerCondition:
+                        version['effectiveTriggerCondition'] as String,
+                    effectiveAction: version['effectiveAction'] as String,
+                    scope: Value(version['scope'] as String?),
+                    exceptionNotes: Value(version['exceptionNotes'] as String?),
+                    effectiveFrom: DateTime.parse(
+                      version['effectiveFrom'] as String,
+                    ).toUtc(),
+                    effectiveUntil: Value(
+                      _optionalNationalFocusDate(version['effectiveUntil']),
+                    ),
+                  ),
+                );
+          }
+        }
+      }
+
+      await (database.delete(
+        database.localNationalFocusFailures,
+      )..where((failure) => failure.userId.equals(userId))).go();
+      for (final failure in failureMaps) {
+        await database
+            .into(database.localNationalFocusFailures)
+            .insert(
+              LocalNationalFocusFailuresCompanion.insert(
+                userId: userId,
+                id: failure['id'] as String,
+                batchId: failure['batchId'] as String,
+                cardId: failure['cardId'] as String,
+                checkpointAt: DateTime.parse(failure['checkpointAt'] as String)
+                    .toUtc(),
+                cause: failure['cause'] as String,
+                failureReason: Value(failure['failureReason'] as String?),
+                sharedExplanation: Value(
+                  failure['sharedExplanation'] as String?,
+                ),
+                treeSnapshot: failure['treeSnapshot'] as String,
+              ),
+            );
+      }
+
+      final maintenance = snapshot['maintenance'];
+      if (maintenance is Map &&
+          maintenance['lastSettledCheckpointAt'] is String) {
+        await database
+            .into(database.localNationalFocusMaintenance)
+            .insertOnConflictUpdate(
+              LocalNationalFocusMaintenanceCompanion.insert(
+                userId: userId,
+                lastSettledCheckpointAt: DateTime.parse(
+                  maintenance['lastSettledCheckpointAt'] as String,
+                ).toUtc(),
+              ),
+            );
+      }
+
+      for (final cardId in tombstones) {
+        final isReferenced = failureMaps.any((failure) {
+          if (failure['cardId'] == cardId) return true;
+          final rawSnapshot = failure['treeSnapshot'];
+          if (rawSnapshot is! String) return false;
+          try {
+            final tree = jsonDecode(rawSnapshot) as List<dynamic>;
+            return tree.any(
+              (entry) => (entry as Map<String, dynamic>)['id'] == cardId,
+            );
+          } on FormatException {
+            return true;
+          } on TypeError {
+            return true;
+          }
+        });
+        final row =
+            await (database.select(database.localNationalFocusCards)..where(
+                  (card) => card.userId.equals(userId) & card.id.equals(cardId),
+                ))
+                .getSingleOrNull();
+        if (isReferenced && row != null) {
+          await _updateCard(
+            row,
+            LocalNationalFocusCardsCompanion(
+              isInTree: const Value(false),
+              parentId: const Value(null),
+              deletedAt: Value(row.deletedAt ?? row.updatedAt),
+              reviewDisposition: const Value('accepted'),
+            ),
+          );
+          continue;
+        }
+        await (database.delete(database.localNationalFocusStrengtheningLevels)
+              ..where(
+                (level) =>
+                    level.userId.equals(userId) & level.cardId.equals(cardId),
+              ))
+            .go();
+        await (database.delete(
+              database.localNationalFocusRequirementVersions,
+            )..where(
+              (version) =>
+                  version.userId.equals(userId) & version.cardId.equals(cardId),
+            ))
+            .go();
+        await (database.delete(database.localNationalFocusCards)
+              ..where((card) => card.userId.equals(userId))
+              ..where((card) => card.id.equals(cardId)))
+            .go();
+      }
+    });
   }
 
   @override
@@ -1061,6 +1983,12 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       throw StateError('国策卡不存在或不属于当前用户。');
     }
     return row;
+  }
+
+  void _requireResolvedCard(LocalNationalFocusCard card) {
+    if (card.reviewDisposition == 'pending_review') {
+      throw StateError('同步分歧待核对；请先核对这张国策卡。');
+    }
   }
 
   List<LocalNationalFocusCard> _descendantsOf(
@@ -1286,6 +2214,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
           ? null
           : NationalFocusCardState.fromStorage(row.cascadePriorState!),
       deletedAt: row.deletedAt,
+      hasPendingReview: row.reviewDisposition == 'pending_review',
       strengtheningLevels: levelRows
           .map(
             (level) => NationalFocusStrengtheningLevel(
@@ -1516,9 +2445,154 @@ class UnavailableNationalFocusRepository implements NationalFocusRepository {
   }) => _unavailable();
 
   @override
+  Future<void> sync() async {}
+
+  @override
   Future<void> dispose() async {}
 
   Future<T> _unavailable<T>() async {
     throw StateError('当前用户的国策卡片存储尚未配置。');
   }
 }
+
+Map<String, dynamic> _nationalFocusSourceToJson(
+  NationalFocusSyncSource source, {
+  required String userId,
+}) => {
+  'source_id': source.sourceId,
+  'user_id': userId,
+  'device_id': source.deviceId,
+  'entity_type': 'national_focus_tree',
+  'entity_id': _nationalFocusTreeEntityId,
+  'parent_source_id': source.parentSourceIds.isEmpty
+      ? null
+      : source.parentSourceIds.first,
+  'parent_source_ids': source.parentSourceIds,
+  'occurred_at': source.occurredAt.toUtc().toIso8601String(),
+  'payload': jsonDecode(source.payload),
+};
+
+NationalFocusSyncSource _nationalFocusSourceFromJson(
+  Map<String, dynamic> json,
+) {
+  final primaryParent = json['parent_source_id'] as String?;
+  final rawParents = json['parent_source_ids'];
+  final parentIds = <String>{};
+  if (rawParents is List) parentIds.addAll(rawParents.whereType<String>());
+  if (primaryParent != null) parentIds.add(primaryParent);
+  return NationalFocusSyncSource(
+    sourceId: json['source_id'] as String,
+    deviceId: json['device_id'] as String,
+    parentSourceIds: parentIds.toList()..sort(),
+    occurredAt: DateTime.parse(json['occurred_at'] as String).toUtc(),
+    payload: jsonEncode(json['payload']),
+  );
+}
+
+Map<String, dynamic> _nationalFocusPayload(NationalFocusSyncSource source) =>
+    Map<String, dynamic>.from(jsonDecode(source.payload) as Map);
+
+List<String> _decodeNationalFocusSourceParents(
+  String? primaryParentId,
+  String encodedParents,
+) {
+  final decoded = jsonDecode(encodedParents);
+  final parentIds = <String>{};
+  if (decoded is List) parentIds.addAll(decoded.whereType<String>());
+  if (primaryParentId != null) parentIds.add(primaryParentId);
+  return parentIds.toList()..sort();
+}
+
+List<NationalFocusSyncSource> _nationalFocusSourceHeads(
+  List<NationalFocusSyncSource> sources,
+) {
+  final sourceIds = sources.map((source) => source.sourceId).toSet();
+  final parentedIds = <String>{
+    for (final source in sources)
+      for (final parentId in source.parentSourceIds)
+        if (sourceIds.contains(parentId)) parentId,
+  };
+  final heads =
+      sources.where((source) => !parentedIds.contains(source.sourceId)).toList()
+        ..sort((left, right) => left.sourceId.compareTo(right.sourceId));
+  return heads;
+}
+
+Set<String> _nationalFocusAncestors(
+  String sourceId,
+  Map<String, NationalFocusSyncSource> sourcesById,
+) {
+  final found = <String>{};
+  final pending = <String>[sourceId];
+  while (pending.isNotEmpty) {
+    final currentId = pending.removeLast();
+    if (!found.add(currentId)) continue;
+    pending.addAll(sourcesById[currentId]?.parentSourceIds ?? const []);
+  }
+  return found;
+}
+
+int _nationalFocusSourceDepth(
+  String sourceId,
+  Map<String, NationalFocusSyncSource> sourcesById, [
+  Set<String>? visiting,
+]) {
+  final path = visiting ?? <String>{};
+  if (!path.add(sourceId)) return 0;
+  final source = sourcesById[sourceId];
+  if (source == null || source.parentSourceIds.isEmpty) return 0;
+  var parentDepth = 0;
+  for (final parentId in source.parentSourceIds) {
+    final depth = _nationalFocusSourceDepth(parentId, sourcesById, {...path});
+    if (depth > parentDepth) parentDepth = depth;
+  }
+  return parentDepth + 1;
+}
+
+Map<String, Map<String, dynamic>> _nationalFocusCardsById(
+  Map<String, dynamic> snapshot,
+) {
+  final rawCards = snapshot['cards'];
+  if (rawCards is! List) return {};
+  return {
+    for (final rawCard in rawCards.whereType<Map>())
+      if (rawCard['id'] is String)
+        rawCard['id'] as String: Map<String, dynamic>.from(rawCard),
+  };
+}
+
+String _nationalFocusCardSignature(Map<String, dynamic>? card) {
+  if (card == null) return '<missing>';
+  final comparable = Map<String, dynamic>.from(card)
+    ..remove('reviewDisposition');
+  return jsonEncode(_canonicalNationalFocusJson(comparable));
+}
+
+String _nationalFocusStateSignature(Map<String, dynamic> snapshot) =>
+    jsonEncode(
+      _canonicalNationalFocusJson({
+        'cards': snapshot['cards'] ?? const [],
+        'failures': snapshot['failures'] ?? const [],
+        'maintenance': snapshot['maintenance'],
+        'tombstones': snapshot['tombstones'] ?? const [],
+      }),
+    );
+
+Object? _canonicalNationalFocusJson(Object? value) {
+  if (value is Map) {
+    final keys = value.keys.cast<String>().toList()..sort();
+    return {
+      for (final key in keys) key: _canonicalNationalFocusJson(value[key]),
+    };
+  }
+  if (value is Iterable) {
+    return value.map(_canonicalNationalFocusJson).toList();
+  }
+  return value;
+}
+
+String _nationalFocusCheckpointKey(String cardId, DateTime checkpoint) =>
+    '$cardId:${checkpoint.toUtc().millisecondsSinceEpoch}';
+
+DateTime? _optionalNationalFocusDate(Object? value) =>
+    value == null ? null : DateTime.parse(value as String).toUtc();

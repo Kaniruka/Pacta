@@ -62,6 +62,7 @@ class NationalFocusCard {
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
+    this.hasPendingReview = false,
     this.successfulDays = 0,
     this.currentConsecutiveDays = 0,
     this.bestConsecutiveDays = 0,
@@ -88,6 +89,7 @@ class NationalFocusCard {
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
+  final bool hasPendingReview;
   final int successfulDays;
   final int currentConsecutiveDays;
   final int bestConsecutiveDays;
@@ -117,6 +119,22 @@ class NationalFocusCard {
 
   double get internalizationProgress =>
       100 * (1 - math.exp(-successfulDays / 60));
+}
+
+class NationalFocusSyncSource {
+  const NationalFocusSyncSource({
+    required this.sourceId,
+    required this.deviceId,
+    required this.parentSourceIds,
+    required this.occurredAt,
+    required this.payload,
+  });
+
+  final String sourceId;
+  final String deviceId;
+  final List<String> parentSourceIds;
+  final DateTime occurredAt;
+  final String payload;
 }
 
 class NationalFocusStrengtheningLevel {

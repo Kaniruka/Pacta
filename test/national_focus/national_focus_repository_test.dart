@@ -757,6 +757,26 @@ void main() {
             VALUES ('user-a', 'legacy-pending-child', '旧待确认子节点', '旧行动',
                     1, 'legacy-parent', 'pending_today_confirmation', 0, 0)
           ''');
+          rawDatabase.execute('''
+            CREATE TABLE focus_source_devices (
+              user_id TEXT NOT NULL PRIMARY KEY,
+              device_id TEXT NOT NULL
+            )
+          ''');
+          rawDatabase.execute('''
+            CREATE TABLE focus_sync_sources (
+              user_id TEXT NOT NULL,
+              source_id TEXT NOT NULL,
+              device_id TEXT NOT NULL,
+              entity_type TEXT NOT NULL,
+              entity_id TEXT NOT NULL,
+              parent_source_id TEXT,
+              parent_source_ids TEXT NOT NULL DEFAULT '[]',
+              occurred_at INTEGER NOT NULL,
+              payload TEXT NOT NULL,
+              PRIMARY KEY (user_id, source_id)
+            )
+          ''');
           rawDatabase.execute('PRAGMA user_version = 13');
         },
       ),
@@ -886,6 +906,26 @@ void main() {
             VALUES ('user-a', 'parent-failure', 'parent-batch', 'failed-parent',
                     ${lastSettledCheckpoint.millisecondsSinceEpoch},
                     'missed_confirmation', '[]')
+          ''');
+          rawDatabase.execute('''
+            CREATE TABLE focus_source_devices (
+              user_id TEXT NOT NULL PRIMARY KEY,
+              device_id TEXT NOT NULL
+            )
+          ''');
+          rawDatabase.execute('''
+            CREATE TABLE focus_sync_sources (
+              user_id TEXT NOT NULL,
+              source_id TEXT NOT NULL,
+              device_id TEXT NOT NULL,
+              entity_type TEXT NOT NULL,
+              entity_id TEXT NOT NULL,
+              parent_source_id TEXT,
+              parent_source_ids TEXT NOT NULL DEFAULT '[]',
+              occurred_at INTEGER NOT NULL,
+              payload TEXT NOT NULL,
+              PRIMARY KEY (user_id, source_id)
+            )
           ''');
           rawDatabase.execute('PRAGMA user_version = 14');
         },

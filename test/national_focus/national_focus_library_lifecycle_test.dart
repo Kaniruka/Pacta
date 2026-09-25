@@ -269,6 +269,26 @@ void main() {
             )
           ''');
           rawDatabase.execute('''
+            CREATE TABLE focus_source_devices (
+              user_id TEXT NOT NULL PRIMARY KEY,
+              device_id TEXT NOT NULL
+            )
+          ''');
+          rawDatabase.execute('''
+            CREATE TABLE focus_sync_sources (
+              user_id TEXT NOT NULL,
+              source_id TEXT NOT NULL,
+              device_id TEXT NOT NULL,
+              entity_type TEXT NOT NULL,
+              entity_id TEXT NOT NULL,
+              parent_source_id TEXT,
+              parent_source_ids TEXT NOT NULL DEFAULT '[]',
+              occurred_at INTEGER NOT NULL,
+              payload TEXT NOT NULL,
+              PRIMARY KEY (user_id, source_id)
+            )
+          ''');
+          rawDatabase.execute('''
             INSERT INTO local_national_focus_cards (
               user_id, id, trigger_condition, action, is_in_tree, state,
               successful_days, current_consecutive_days, best_consecutive_days,

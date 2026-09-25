@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'national_focus_models.dart';
@@ -87,6 +89,7 @@ class _NationalFocusStrengtheningPageState
     });
     try {
       await operation();
+      unawaited(widget.repository.sync().catchError((Object _) {}));
       await _reload();
     } catch (error) {
       if (mounted) setState(() => _error = _friendlyError(error));

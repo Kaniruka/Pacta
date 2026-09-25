@@ -10,6 +10,10 @@ import 'national_focus_models.dart';
 import 'national_focus_repository.dart';
 import 'national_focus_strengthening_page.dart';
 
+void _syncNationalFocusInBackground(NationalFocusRepository repository) {
+  unawaited(repository.sync().catchError((Object _) {}));
+}
+
 Future<void> _openStrengtheningManager({
   required BuildContext context,
   required NationalFocusRepository repository,
@@ -89,6 +93,10 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     if (mounted) setState(() {});
   }
 
+  void _syncInBackground() {
+    _syncNationalFocusInBackground(widget.repository);
+  }
+
   Future<void> _confirmToday() async {
     if (_confirming) return;
     setState(() {
@@ -97,6 +105,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     });
     try {
       final count = await widget.repository.confirmToday();
+      _syncInBackground();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -118,6 +127,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     setState(() => _error = null);
     try {
       await widget.repository.lightCard(card.id);
+      _syncInBackground();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -168,6 +178,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
         cardId: card.id,
         failureReason: reason,
       );
+      _syncInBackground();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('已熄灭「${card.effectiveTriggerCondition}」。')),
@@ -238,6 +249,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     setState(() => _error = null);
     try {
       await widget.repository.placeCard(cardId: card.id, parentId: parentId);
+      _syncInBackground();
       if (!mounted) return;
       setState(() => _placementCard = null);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -297,6 +309,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     setState(() => _error = null);
     try {
       await widget.repository.moveCardToLibrary(card.id);
+      _syncInBackground();
       if (mounted) {
         final message = descendantCount == 0
             ? '已将「${card.effectiveTriggerCondition}」移入卡片库。'
@@ -529,6 +542,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     final isBlocked =
         blockedParentIds.contains(card.id) ||
         (placementContainsActiveCard && targetBranchIsExtinguished);
+    final reviewBlocked = card.hasPendingReview;
     final selecting = _placementCard != null;
     final branch = _NationalFocusTreeNode(
       card: card,
@@ -541,22 +555,27 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
           ? null
           : cardsById[card.cascadeSourceCardId]?.effectiveTriggerCondition ??
                 '父节点',
-      onSelect: selecting && !isBlocked ? () => _placeAt(card.id) : null,
-      onManageStrengthening: selecting
+      onSelect: selecting && !isBlocked && !reviewBlocked
+          ? () => _placeAt(card.id)
+          : null,
+      onManageStrengthening: selecting || reviewBlocked
           ? null
           : () => _openStrengtheningManager(
               context: context,
               repository: widget.repository,
               cardId: card.id,
             ),
-      onRelocate: () => _beginPlacement(card),
-      onMoveToLibrary: selecting || _busyCardIds.contains(card.id)
+      onRelocate: reviewBlocked ? null : () => _beginPlacement(card),
+      onMoveToLibrary:
+          selecting || reviewBlocked || _busyCardIds.contains(card.id)
           ? null
           : () => _moveBranchToLibrary(card),
-      onLight: selecting || hasExtinguishedAncestor
+      onLight: selecting || hasExtinguishedAncestor || reviewBlocked
           ? null
           : () => _lightCard(card),
-      onExtinguish: selecting ? null : () => _extinguishCard(card),
+      onExtinguish: selecting || reviewBlocked
+          ? null
+          : () => _extinguishCard(card),
       busy: _busyCardIds.contains(card.id),
     );
     return Padding(
@@ -648,6 +667,7 @@ class _NationalFocusCardLibraryPageState
     if (confirmed != true) return;
     try {
       final result = await widget.repository.deleteCard(card.id);
+      _syncNationalFocusInBackground(widget.repository);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -668,6 +688,7 @@ class _NationalFocusCardLibraryPageState
   Future<void> _restoreCard(NationalFocusCard card) async {
     try {
       await widget.repository.restoreDeletedCard(card.id);
+      _syncNationalFocusInBackground(widget.repository);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -768,9 +789,15 @@ class _LibraryCardList extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, index) => _LibraryCard(
               card: cards[index],
-              onPlace: () => onPlace(cards[index]),
-              onDelete: () => onDelete(cards[index]),
-              onManageStrengthening: () => onManageStrengthening(cards[index]),
+              onPlace: cards[index].hasPendingReview
+                  ? null
+                  : () => onPlace(cards[index]),
+              onDelete: cards[index].hasPendingReview
+                  ? null
+                  : () => onDelete(cards[index]),
+              onManageStrengthening: cards[index].hasPendingReview
+                  ? null
+                  : () => onManageStrengthening(cards[index]),
             ),
           ),
         ),
@@ -824,7 +851,9 @@ class _DeletedNationalFocusCardList extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, index) => _DeletedLibraryCard(
               card: cards[index],
-              onRestore: () => onRestore(cards[index]),
+              onRestore: cards[index].hasPendingReview
+                  ? null
+                  : () => onRestore(cards[index]),
             ),
           ),
         ),
@@ -878,6 +907,7 @@ class _NationalFocusCardEditorPageState
           exceptionNotes: _exceptionNotes.text,
         ),
       );
+      _syncNationalFocusInBackground(widget.repository);
       if (mounted) Navigator.of(context).pop(true);
     } catch (error) {
       if (mounted) setState(() => _error = _friendlyError(error));
@@ -984,6 +1014,36 @@ class _NationalFocusCardEditorPageState
   );
 }
 
+class _NationalFocusReviewNotice extends StatelessWidget {
+  const _NationalFocusReviewNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.errorContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            Icon(Icons.sync_problem, color: colors.onErrorContainer),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '同步操作存在分歧，状态和统计待核对；核对前暂不能修改这张卡。',
+                style: TextStyle(color: colors.onErrorContainer),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _LibraryCard extends StatelessWidget {
   const _LibraryCard({
     required this.card,
@@ -993,9 +1053,9 @@ class _LibraryCard extends StatelessWidget {
   });
 
   final NationalFocusCard card;
-  final VoidCallback onPlace;
-  final VoidCallback onDelete;
-  final VoidCallback onManageStrengthening;
+  final VoidCallback? onPlace;
+  final VoidCallback? onDelete;
+  final VoidCallback? onManageStrengthening;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -1021,6 +1081,10 @@ class _LibraryCard extends StatelessWidget {
           if (card.exceptionNotes != null) ...[
             const SizedBox(height: 12),
             _FieldText(label: '例外说明', value: card.exceptionNotes!),
+          ],
+          if (card.hasPendingReview) ...[
+            const SizedBox(height: 12),
+            const _NationalFocusReviewNotice(),
           ],
           const SizedBox(height: 12),
           _NationalFocusRecordSummary(card: card),
@@ -1059,7 +1123,7 @@ class _DeletedLibraryCard extends StatelessWidget {
   const _DeletedLibraryCard({required this.card, required this.onRestore});
 
   final NationalFocusCard card;
-  final VoidCallback onRestore;
+  final VoidCallback? onRestore;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -1073,6 +1137,10 @@ class _DeletedLibraryCard extends StatelessWidget {
           _FieldText(label: '当前行动', value: card.effectiveAction),
           const SizedBox(height: 12),
           _NationalFocusRecordSummary(card: card),
+          if (card.hasPendingReview) ...[
+            const SizedBox(height: 12),
+            const _NationalFocusReviewNotice(),
+          ],
           const SizedBox(height: 8),
           Text(
             '恢复后会回到卡片库；树位置和点亮状态需要重新选择。',
@@ -1120,7 +1188,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
   final String? cascadeSourceLabel;
   final VoidCallback? onSelect;
   final VoidCallback? onManageStrengthening;
-  final VoidCallback onRelocate;
+  final VoidCallback? onRelocate;
   final VoidCallback? onMoveToLibrary;
   final VoidCallback? onLight;
   final VoidCallback? onExtinguish;
@@ -1222,7 +1290,8 @@ class _StructureTreeCard extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  '节点 $path · ${card.state.label}',
+                  '节点 $path · '
+                  '${card.hasPendingReview ? '待核对 · ' : ''}${card.state.label}',
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
@@ -1240,7 +1309,8 @@ class _StructureTreeCard extends StatelessWidget {
             ],
           ),
         ),
-        if (onLight != null ||
+        if (card.hasPendingReview ||
+            onLight != null ||
             onExtinguish != null ||
             onMoveToLibrary != null) ...[
           const Divider(height: 1),
@@ -1324,7 +1394,7 @@ class _DetailedTreeCard extends StatelessWidget {
   final String? cascadeSourceLabel;
   final VoidCallback? onMoveToLibrary;
   final VoidCallback? onManageStrengthening;
-  final VoidCallback onRelocate;
+  final VoidCallback? onRelocate;
   final VoidCallback? onLight;
   final VoidCallback? onExtinguish;
   final bool busy;
@@ -1343,7 +1413,10 @@ class _DetailedTreeCard extends StatelessWidget {
                 style: Theme.of(context).textTheme.titleMedium,
               ),
             ),
-            _StateChip(state: card.state),
+            _StateChip(
+              state: card.state,
+              hasPendingReview: card.hasPendingReview,
+            ),
           ],
         ),
         const SizedBox(height: 16),
@@ -1375,6 +1448,7 @@ class _DetailedTreeCard extends StatelessWidget {
             lightBlocked: lightBlocked,
           ),
         ],
+        if (card.hasPendingReview) const _NationalFocusReviewNotice(),
         if (!selecting) ...[
           if (onManageStrengthening != null) ...[
             const SizedBox(height: 12),
@@ -1740,6 +1814,7 @@ class _NationalFocusFailureHistorySheetState
         batchId: failure.batchId,
         explanation: explanation,
       );
+      _syncNationalFocusInBackground(widget.repository);
       if (mounted) setState(_reload);
     } catch (error) {
       if (mounted) {
@@ -2028,35 +2103,39 @@ class _PlacementBanner extends StatelessWidget {
 }
 
 class _StateChip extends StatelessWidget {
-  const _StateChip({required this.state});
+  const _StateChip({required this.state, this.hasPendingReview = false});
 
   final NationalFocusCardState state;
+  final bool hasPendingReview;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final (icon, background, foreground) = switch (state) {
-      NationalFocusCardState.lit => (
-        Icons.lightbulb,
-        colors.primaryContainer,
-        colors.onPrimaryContainer,
-      ),
-      NationalFocusCardState.pendingTodayConfirmation => (
-        Icons.hourglass_top,
-        colors.tertiaryContainer,
-        colors.onTertiaryContainer,
-      ),
-      NationalFocusCardState.extinguished => (
-        Icons.lightbulb_outline,
-        colors.surfaceContainerHighest,
-        colors.onSurfaceVariant,
-      ),
-    };
+    final (icon, background, foreground) = hasPendingReview
+        ? (Icons.sync_problem, colors.errorContainer, colors.onErrorContainer)
+        : switch (state) {
+            NationalFocusCardState.lit => (
+              Icons.lightbulb,
+              colors.primaryContainer,
+              colors.onPrimaryContainer,
+            ),
+            NationalFocusCardState.pendingTodayConfirmation => (
+              Icons.hourglass_top,
+              colors.tertiaryContainer,
+              colors.onTertiaryContainer,
+            ),
+            NationalFocusCardState.extinguished => (
+              Icons.lightbulb_outline,
+              colors.surfaceContainerHighest,
+              colors.onSurfaceVariant,
+            ),
+          };
+    final label = hasPendingReview ? '待核对 · ${state.label}' : state.label;
     return Semantics(
-      label: '卡片状态：${state.label}',
+      label: '卡片状态：$label',
       child: Chip(
         avatar: Icon(icon, size: 18, color: foreground),
-        label: Text(state.label),
+        label: Text(label),
         backgroundColor: background,
         side: BorderSide.none,
         visualDensity: VisualDensity.compact,

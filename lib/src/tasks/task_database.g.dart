@@ -1373,6 +1373,19 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
         type: DriftSqlType.string,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _reviewDispositionMeta = const VerificationMeta(
+    'reviewDisposition',
+  );
+  @override
+  late final GeneratedColumn<String> reviewDisposition =
+      GeneratedColumn<String>(
+        'review_disposition',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant('accepted'),
+      );
   static const VerificationMeta _activeStrengtheningLevelMeta =
       const VerificationMeta('activeStrengtheningLevel');
   @override
@@ -1435,6 +1448,7 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
     failureReason,
     cascadeSourceCardId,
     cascadePriorState,
+    reviewDisposition,
     activeStrengtheningLevel,
     createdAt,
     updatedAt,
@@ -1580,6 +1594,15 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
         ),
       );
     }
+    if (data.containsKey('review_disposition')) {
+      context.handle(
+        _reviewDispositionMeta,
+        reviewDisposition.isAcceptableOrUnknown(
+          data['review_disposition']!,
+          _reviewDispositionMeta,
+        ),
+      );
+    }
     if (data.containsKey('active_strengthening_level')) {
       context.handle(
         _activeStrengtheningLevelMeta,
@@ -1684,6 +1707,10 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
         DriftSqlType.string,
         data['${effectivePrefix}cascade_prior_state'],
       ),
+      reviewDisposition: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}review_disposition'],
+      )!,
       activeStrengtheningLevel: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}active_strengthening_level'],
@@ -1727,6 +1754,7 @@ class LocalNationalFocusCard extends DataClass
   final String? failureReason;
   final String? cascadeSourceCardId;
   final String? cascadePriorState;
+  final String reviewDisposition;
   final int? activeStrengtheningLevel;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -1748,6 +1776,7 @@ class LocalNationalFocusCard extends DataClass
     this.failureReason,
     this.cascadeSourceCardId,
     this.cascadePriorState,
+    required this.reviewDisposition,
     this.activeStrengtheningLevel,
     required this.createdAt,
     required this.updatedAt,
@@ -1784,6 +1813,7 @@ class LocalNationalFocusCard extends DataClass
     if (!nullToAbsent || cascadePriorState != null) {
       map['cascade_prior_state'] = Variable<String>(cascadePriorState);
     }
+    map['review_disposition'] = Variable<String>(reviewDisposition);
     if (!nullToAbsent || activeStrengtheningLevel != null) {
       map['active_strengthening_level'] = Variable<int>(
         activeStrengtheningLevel,
@@ -1827,6 +1857,7 @@ class LocalNationalFocusCard extends DataClass
       cascadePriorState: cascadePriorState == null && nullToAbsent
           ? const Value.absent()
           : Value(cascadePriorState),
+      reviewDisposition: Value(reviewDisposition),
       activeStrengtheningLevel: activeStrengtheningLevel == null && nullToAbsent
           ? const Value.absent()
           : Value(activeStrengtheningLevel),
@@ -1870,6 +1901,7 @@ class LocalNationalFocusCard extends DataClass
       cascadePriorState: serializer.fromJson<String?>(
         json['cascadePriorState'],
       ),
+      reviewDisposition: serializer.fromJson<String>(json['reviewDisposition']),
       activeStrengtheningLevel: serializer.fromJson<int?>(
         json['activeStrengtheningLevel'],
       ),
@@ -1900,6 +1932,7 @@ class LocalNationalFocusCard extends DataClass
       'failureReason': serializer.toJson<String?>(failureReason),
       'cascadeSourceCardId': serializer.toJson<String?>(cascadeSourceCardId),
       'cascadePriorState': serializer.toJson<String?>(cascadePriorState),
+      'reviewDisposition': serializer.toJson<String>(reviewDisposition),
       'activeStrengtheningLevel': serializer.toJson<int?>(
         activeStrengtheningLevel,
       ),
@@ -1926,6 +1959,7 @@ class LocalNationalFocusCard extends DataClass
     Value<String?> failureReason = const Value.absent(),
     Value<String?> cascadeSourceCardId = const Value.absent(),
     Value<String?> cascadePriorState = const Value.absent(),
+    String? reviewDisposition,
     Value<int?> activeStrengtheningLevel = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -1957,6 +1991,7 @@ class LocalNationalFocusCard extends DataClass
     cascadePriorState: cascadePriorState.present
         ? cascadePriorState.value
         : this.cascadePriorState,
+    reviewDisposition: reviewDisposition ?? this.reviewDisposition,
     activeStrengtheningLevel: activeStrengtheningLevel.present
         ? activeStrengtheningLevel.value
         : this.activeStrengtheningLevel,
@@ -2002,6 +2037,9 @@ class LocalNationalFocusCard extends DataClass
       cascadePriorState: data.cascadePriorState.present
           ? data.cascadePriorState.value
           : this.cascadePriorState,
+      reviewDisposition: data.reviewDisposition.present
+          ? data.reviewDisposition.value
+          : this.reviewDisposition,
       activeStrengtheningLevel: data.activeStrengtheningLevel.present
           ? data.activeStrengtheningLevel.value
           : this.activeStrengtheningLevel,
@@ -2030,6 +2068,7 @@ class LocalNationalFocusCard extends DataClass
           ..write('failureReason: $failureReason, ')
           ..write('cascadeSourceCardId: $cascadeSourceCardId, ')
           ..write('cascadePriorState: $cascadePriorState, ')
+          ..write('reviewDisposition: $reviewDisposition, ')
           ..write('activeStrengtheningLevel: $activeStrengtheningLevel, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -2039,7 +2078,7 @@ class LocalNationalFocusCard extends DataClass
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     userId,
     id,
     triggerCondition,
@@ -2056,11 +2095,12 @@ class LocalNationalFocusCard extends DataClass
     failureReason,
     cascadeSourceCardId,
     cascadePriorState,
+    reviewDisposition,
     activeStrengtheningLevel,
     createdAt,
     updatedAt,
     deletedAt,
-  );
+  ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2081,6 +2121,7 @@ class LocalNationalFocusCard extends DataClass
           other.failureReason == this.failureReason &&
           other.cascadeSourceCardId == this.cascadeSourceCardId &&
           other.cascadePriorState == this.cascadePriorState &&
+          other.reviewDisposition == this.reviewDisposition &&
           other.activeStrengtheningLevel == this.activeStrengtheningLevel &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
@@ -2105,6 +2146,7 @@ class LocalNationalFocusCardsCompanion
   final Value<String?> failureReason;
   final Value<String?> cascadeSourceCardId;
   final Value<String?> cascadePriorState;
+  final Value<String> reviewDisposition;
   final Value<int?> activeStrengtheningLevel;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
@@ -2127,6 +2169,7 @@ class LocalNationalFocusCardsCompanion
     this.failureReason = const Value.absent(),
     this.cascadeSourceCardId = const Value.absent(),
     this.cascadePriorState = const Value.absent(),
+    this.reviewDisposition = const Value.absent(),
     this.activeStrengtheningLevel = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -2150,6 +2193,7 @@ class LocalNationalFocusCardsCompanion
     this.failureReason = const Value.absent(),
     this.cascadeSourceCardId = const Value.absent(),
     this.cascadePriorState = const Value.absent(),
+    this.reviewDisposition = const Value.absent(),
     this.activeStrengtheningLevel = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
@@ -2178,6 +2222,7 @@ class LocalNationalFocusCardsCompanion
     Expression<String>? failureReason,
     Expression<String>? cascadeSourceCardId,
     Expression<String>? cascadePriorState,
+    Expression<String>? reviewDisposition,
     Expression<int>? activeStrengtheningLevel,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
@@ -2205,6 +2250,7 @@ class LocalNationalFocusCardsCompanion
       if (cascadeSourceCardId != null)
         'cascade_source_card_id': cascadeSourceCardId,
       if (cascadePriorState != null) 'cascade_prior_state': cascadePriorState,
+      if (reviewDisposition != null) 'review_disposition': reviewDisposition,
       if (activeStrengtheningLevel != null)
         'active_strengthening_level': activeStrengtheningLevel,
       if (createdAt != null) 'created_at': createdAt,
@@ -2231,6 +2277,7 @@ class LocalNationalFocusCardsCompanion
     Value<String?>? failureReason,
     Value<String?>? cascadeSourceCardId,
     Value<String?>? cascadePriorState,
+    Value<String>? reviewDisposition,
     Value<int?>? activeStrengtheningLevel,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
@@ -2256,6 +2303,7 @@ class LocalNationalFocusCardsCompanion
       failureReason: failureReason ?? this.failureReason,
       cascadeSourceCardId: cascadeSourceCardId ?? this.cascadeSourceCardId,
       cascadePriorState: cascadePriorState ?? this.cascadePriorState,
+      reviewDisposition: reviewDisposition ?? this.reviewDisposition,
       activeStrengtheningLevel:
           activeStrengtheningLevel ?? this.activeStrengtheningLevel,
       createdAt: createdAt ?? this.createdAt,
@@ -2322,6 +2370,9 @@ class LocalNationalFocusCardsCompanion
     if (cascadePriorState.present) {
       map['cascade_prior_state'] = Variable<String>(cascadePriorState.value);
     }
+    if (reviewDisposition.present) {
+      map['review_disposition'] = Variable<String>(reviewDisposition.value);
+    }
     if (activeStrengtheningLevel.present) {
       map['active_strengthening_level'] = Variable<int>(
         activeStrengtheningLevel.value,
@@ -2361,6 +2412,7 @@ class LocalNationalFocusCardsCompanion
           ..write('failureReason: $failureReason, ')
           ..write('cascadeSourceCardId: $cascadeSourceCardId, ')
           ..write('cascadePriorState: $cascadePriorState, ')
+          ..write('reviewDisposition: $reviewDisposition, ')
           ..write('activeStrengtheningLevel: $activeStrengtheningLevel, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -10309,6 +10361,7 @@ typedef $$LocalNationalFocusCardsTableCreateCompanionBuilder =
       Value<String?> failureReason,
       Value<String?> cascadeSourceCardId,
       Value<String?> cascadePriorState,
+      Value<String> reviewDisposition,
       Value<int?> activeStrengtheningLevel,
       required DateTime createdAt,
       required DateTime updatedAt,
@@ -10333,6 +10386,7 @@ typedef $$LocalNationalFocusCardsTableUpdateCompanionBuilder =
       Value<String?> failureReason,
       Value<String?> cascadeSourceCardId,
       Value<String?> cascadePriorState,
+      Value<String> reviewDisposition,
       Value<int?> activeStrengtheningLevel,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
@@ -10426,6 +10480,11 @@ class $$LocalNationalFocusCardsTableFilterComposer
 
   ColumnFilters<String> get cascadePriorState => $composableBuilder(
     column: $table.cascadePriorState,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reviewDisposition => $composableBuilder(
+    column: $table.reviewDisposition,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -10539,6 +10598,11 @@ class $$LocalNationalFocusCardsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get reviewDisposition => $composableBuilder(
+    column: $table.reviewDisposition,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get activeStrengtheningLevel => $composableBuilder(
     column: $table.activeStrengtheningLevel,
     builder: (column) => ColumnOrderings(column),
@@ -10635,6 +10699,11 @@ class $$LocalNationalFocusCardsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get reviewDisposition => $composableBuilder(
+    column: $table.reviewDisposition,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<int> get activeStrengtheningLevel => $composableBuilder(
     column: $table.activeStrengtheningLevel,
     builder: (column) => column,
@@ -10712,6 +10781,7 @@ class $$LocalNationalFocusCardsTableTableManager
                 Value<String?> failureReason = const Value.absent(),
                 Value<String?> cascadeSourceCardId = const Value.absent(),
                 Value<String?> cascadePriorState = const Value.absent(),
+                Value<String> reviewDisposition = const Value.absent(),
                 Value<int?> activeStrengtheningLevel = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
@@ -10734,6 +10804,7 @@ class $$LocalNationalFocusCardsTableTableManager
                 failureReason: failureReason,
                 cascadeSourceCardId: cascadeSourceCardId,
                 cascadePriorState: cascadePriorState,
+                reviewDisposition: reviewDisposition,
                 activeStrengtheningLevel: activeStrengtheningLevel,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -10758,6 +10829,7 @@ class $$LocalNationalFocusCardsTableTableManager
                 Value<String?> failureReason = const Value.absent(),
                 Value<String?> cascadeSourceCardId = const Value.absent(),
                 Value<String?> cascadePriorState = const Value.absent(),
+                Value<String> reviewDisposition = const Value.absent(),
                 Value<int?> activeStrengtheningLevel = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
@@ -10780,6 +10852,7 @@ class $$LocalNationalFocusCardsTableTableManager
                 failureReason: failureReason,
                 cascadeSourceCardId: cascadeSourceCardId,
                 cascadePriorState: cascadePriorState,
+                reviewDisposition: reviewDisposition,
                 activeStrengtheningLevel: activeStrengtheningLevel,
                 createdAt: createdAt,
                 updatedAt: updatedAt,

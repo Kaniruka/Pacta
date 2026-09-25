@@ -27,11 +27,16 @@ Future<void> main() async {
   final database = PactaDatabase.open();
   TaskRemoteDataSource remote = const UnavailableTaskRemoteDataSource();
   FocusRemoteDataSource focusRemote = const UnavailableFocusRemoteDataSource();
+  NationalFocusRemoteDataSource nationalFocusRemote =
+      const UnavailableNationalFocusRemoteDataSource();
   if (url.isNotEmpty && key.isNotEmpty) {
     await Supabase.initialize(url: url, publishableKey: key);
     repository = SupabaseAuthRepository(Supabase.instance.client);
     remote = SupabaseTaskRemoteDataSource(Supabase.instance.client);
     focusRemote = SupabaseFocusRemoteDataSource(Supabase.instance.client);
+    nationalFocusRemote = SupabaseNationalFocusRemoteDataSource(
+      Supabase.instance.client,
+    );
   }
   runApp(
     PactaApp(
@@ -46,8 +51,11 @@ Future<void> main() async {
         userId: userId,
         remote: focusRemote,
       ),
-      nationalFocusRepositoryFactory: (userId) =>
-          LocalNationalFocusRepository(database: database, userId: userId),
+      nationalFocusRepositoryFactory: (userId) => LocalNationalFocusRepository(
+        database: database,
+        userId: userId,
+        remote: nationalFocusRemote,
+      ),
     ),
   );
 }
@@ -350,6 +358,11 @@ class _AppShellState extends ConsumerState<AppShell>
       await ref.read(taskRepositoryProvider).sync();
     } catch (_) {
       // Offline edits stay local and are retried on resume or reconnect.
+    }
+    try {
+      await ref.read(nationalFocusRepositoryProvider).sync();
+    } catch (_) {
+      // National Focus edits stay local and are retried on resume or reconnect.
     }
   }
 

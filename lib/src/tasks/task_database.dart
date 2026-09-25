@@ -55,6 +55,8 @@ class LocalNationalFocusCards extends Table {
   TextColumn get failureReason => text().nullable()();
   TextColumn get cascadeSourceCardId => text().nullable()();
   TextColumn get cascadePriorState => text().nullable()();
+  TextColumn get reviewDisposition =>
+      text().withDefault(const Constant('accepted'))();
   IntColumn get activeStrengtheningLevel => integer().nullable()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
@@ -288,7 +290,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 17;
+  int get schemaVersion => 18;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -397,7 +399,6 @@ class PactaDatabase extends _$PactaDatabase {
           localNationalFocusCards,
           localNationalFocusCards.cascadePriorState,
         );
-        await _cascadeLegacyActiveDescendants(this);
       }
       if (from < 16) {
         await m.addColumn(
@@ -412,6 +413,15 @@ class PactaDatabase extends _$PactaDatabase {
         );
         await m.createTable(localNationalFocusStrengtheningLevels);
         await m.createTable(localNationalFocusRequirementVersions);
+      }
+      if (from < 18) {
+        await m.addColumn(
+          localNationalFocusCards,
+          localNationalFocusCards.reviewDisposition,
+        );
+      }
+      if (from < 15) {
+        await _cascadeLegacyActiveDescendants(this);
       }
     },
   );
