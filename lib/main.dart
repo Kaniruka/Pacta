@@ -440,7 +440,7 @@ class _AppShellState extends ConsumerState<AppShell>
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
       _,
     ) {
-      unawaited(_syncTasks());
+      unawaited(_syncPendingData());
     });
     _notificationOpenSubscription = ref
         .read(focusNotificationServiceProvider)
@@ -450,7 +450,7 @@ class _AppShellState extends ConsumerState<AppShell>
           unawaited(_openFocusFlow(payload));
         });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_syncTasks());
+      unawaited(_syncPendingData());
       final request = ref
           .read(focusNotificationServiceProvider)
           .takePendingOpenRequest();
@@ -460,10 +460,10 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_syncTasks());
+    if (state == AppLifecycleState.resumed) unawaited(_syncPendingData());
   }
 
-  Future<void> _syncTasks() async {
+  Future<void> _syncPendingData() async {
     try {
       await ref.read(userLifecycleStatusRepositoryProvider).refresh();
     } catch (_) {

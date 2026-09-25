@@ -65,3 +65,26 @@ tell the user the new password through a secure external channel. The App sends
 no email or SMS and does not claim to validate email ownership. No user or
 administrator password is returned by the function or written to Pacta business
 tables; Supabase Auth applies its own credential storage for the new password.
+
+## User suspension
+
+Ticket T26 adds `202609260003_user_suspension.sql`. Apply it after the preceding
+business-data migrations. It adds administrator management RPCs, a signed-in
+user status RPC, and restrictive write policies for business tables; it never
+deletes users or business data. A suspension becomes eligible for purge after
+30 days, but this ticket does not perform a purge. Restoring a user ends that
+suspension period, and a later suspension starts a new 30-day period.
+
+The client stores the last server lifecycle status locally. Once it knows the
+user is suspended, it blocks new business writes and keeps pending local data
+for retry after restoration. A device with no known suspension status remains
+available for offline work until it next checks with the server.
+
+The rollback-only server access probe requires one administrator and one
+non-administrator account in an isolated test project. It checks administrator
+RPC authorization, business-write denial, retained data, day-30 eligibility,
+and restoration/re-suspension behavior, then rolls back its test changes:
+
+```powershell
+supabase db query --linked -f supabase/tests/user_suspension_access.sql
+```

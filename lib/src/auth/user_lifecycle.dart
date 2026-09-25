@@ -36,14 +36,7 @@ class LocalUserLifecycleAccess implements UserLifecycleAccess {
     final row = await (database.select(
       database.localUserLifecycleStates,
     )..where((state) => state.userId.equals(userId))).getSingleOrNull();
-    if (row == null) return null;
-    return UserLifecycleStatus(
-      isSuspended: row.isSuspended,
-      suspendedAt: row.suspendedAt,
-      purgeEligibleAt: row.purgeEligibleAt,
-      isEligibleForPurge: row.isEligibleForPurge,
-      checkedAt: row.checkedAt,
-    );
+    return row == null ? null : _statusFromRow(row);
   }
 
   Stream<UserLifecycleStatus?> watchStatus() async* {
@@ -51,17 +44,18 @@ class LocalUserLifecycleAccess implements UserLifecycleAccess {
       ..where((state) => state.userId.equals(userId));
     await for (final rows in query.watch()) {
       final row = rows.isEmpty ? null : rows.single;
-      yield row == null
-          ? null
-          : UserLifecycleStatus(
-              isSuspended: row.isSuspended,
-              suspendedAt: row.suspendedAt,
-              purgeEligibleAt: row.purgeEligibleAt,
-              isEligibleForPurge: row.isEligibleForPurge,
-              checkedAt: row.checkedAt,
-            );
+      yield row == null ? null : _statusFromRow(row);
     }
   }
+
+  UserLifecycleStatus _statusFromRow(LocalUserLifecycleState row) =>
+      UserLifecycleStatus(
+        isSuspended: row.isSuspended,
+        suspendedAt: row.suspendedAt,
+        purgeEligibleAt: row.purgeEligibleAt,
+        isEligibleForPurge: row.isEligibleForPurge,
+        checkedAt: row.checkedAt,
+      );
 
   Future<void> saveStatus(UserLifecycleStatus status) async {
     await database
