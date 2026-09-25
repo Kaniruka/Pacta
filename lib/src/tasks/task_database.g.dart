@@ -1290,6 +1290,66 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
     requiredDuringInsert: false,
     defaultValue: const Constant('extinguished'),
   );
+  static const VerificationMeta _successfulDaysMeta = const VerificationMeta(
+    'successfulDays',
+  );
+  @override
+  late final GeneratedColumn<int> successfulDays = GeneratedColumn<int>(
+    'successful_days',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _currentConsecutiveDaysMeta =
+      const VerificationMeta('currentConsecutiveDays');
+  @override
+  late final GeneratedColumn<int> currentConsecutiveDays = GeneratedColumn<int>(
+    'current_consecutive_days',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _bestConsecutiveDaysMeta =
+      const VerificationMeta('bestConsecutiveDays');
+  @override
+  late final GeneratedColumn<int> bestConsecutiveDays = GeneratedColumn<int>(
+    'best_consecutive_days',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _maintenanceCycleStartedMeta =
+      const VerificationMeta('maintenanceCycleStarted');
+  @override
+  late final GeneratedColumn<bool> maintenanceCycleStarted =
+      GeneratedColumn<bool>(
+        'maintenance_cycle_started',
+        aliasedName,
+        false,
+        type: DriftSqlType.bool,
+        requiredDuringInsert: false,
+        defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("maintenance_cycle_started" IN (0, 1))',
+        ),
+        defaultValue: const Constant(false),
+      );
+  static const VerificationMeta _failureReasonMeta = const VerificationMeta(
+    'failureReason',
+  );
+  @override
+  late final GeneratedColumn<String> failureReason = GeneratedColumn<String>(
+    'failure_reason',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1323,6 +1383,11 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
     isInTree,
     parentId,
     state,
+    successfulDays,
+    currentConsecutiveDays,
+    bestConsecutiveDays,
+    maintenanceCycleStarted,
+    failureReason,
     createdAt,
     updatedAt,
   ];
@@ -1403,6 +1468,51 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
         state.isAcceptableOrUnknown(data['state']!, _stateMeta),
       );
     }
+    if (data.containsKey('successful_days')) {
+      context.handle(
+        _successfulDaysMeta,
+        successfulDays.isAcceptableOrUnknown(
+          data['successful_days']!,
+          _successfulDaysMeta,
+        ),
+      );
+    }
+    if (data.containsKey('current_consecutive_days')) {
+      context.handle(
+        _currentConsecutiveDaysMeta,
+        currentConsecutiveDays.isAcceptableOrUnknown(
+          data['current_consecutive_days']!,
+          _currentConsecutiveDaysMeta,
+        ),
+      );
+    }
+    if (data.containsKey('best_consecutive_days')) {
+      context.handle(
+        _bestConsecutiveDaysMeta,
+        bestConsecutiveDays.isAcceptableOrUnknown(
+          data['best_consecutive_days']!,
+          _bestConsecutiveDaysMeta,
+        ),
+      );
+    }
+    if (data.containsKey('maintenance_cycle_started')) {
+      context.handle(
+        _maintenanceCycleStartedMeta,
+        maintenanceCycleStarted.isAcceptableOrUnknown(
+          data['maintenance_cycle_started']!,
+          _maintenanceCycleStartedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('failure_reason')) {
+      context.handle(
+        _failureReasonMeta,
+        failureReason.isAcceptableOrUnknown(
+          data['failure_reason']!,
+          _failureReasonMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1464,6 +1574,26 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
         DriftSqlType.string,
         data['${effectivePrefix}state'],
       )!,
+      successfulDays: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}successful_days'],
+      )!,
+      currentConsecutiveDays: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}current_consecutive_days'],
+      )!,
+      bestConsecutiveDays: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}best_consecutive_days'],
+      )!,
+      maintenanceCycleStarted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}maintenance_cycle_started'],
+      )!,
+      failureReason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}failure_reason'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -1492,6 +1622,11 @@ class LocalNationalFocusCard extends DataClass
   final bool isInTree;
   final String? parentId;
   final String state;
+  final int successfulDays;
+  final int currentConsecutiveDays;
+  final int bestConsecutiveDays;
+  final bool maintenanceCycleStarted;
+  final String? failureReason;
   final DateTime createdAt;
   final DateTime updatedAt;
   const LocalNationalFocusCard({
@@ -1504,6 +1639,11 @@ class LocalNationalFocusCard extends DataClass
     required this.isInTree,
     this.parentId,
     required this.state,
+    required this.successfulDays,
+    required this.currentConsecutiveDays,
+    required this.bestConsecutiveDays,
+    required this.maintenanceCycleStarted,
+    this.failureReason,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -1525,6 +1665,13 @@ class LocalNationalFocusCard extends DataClass
       map['parent_id'] = Variable<String>(parentId);
     }
     map['state'] = Variable<String>(state);
+    map['successful_days'] = Variable<int>(successfulDays);
+    map['current_consecutive_days'] = Variable<int>(currentConsecutiveDays);
+    map['best_consecutive_days'] = Variable<int>(bestConsecutiveDays);
+    map['maintenance_cycle_started'] = Variable<bool>(maintenanceCycleStarted);
+    if (!nullToAbsent || failureReason != null) {
+      map['failure_reason'] = Variable<String>(failureReason);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -1547,6 +1694,13 @@ class LocalNationalFocusCard extends DataClass
           ? const Value.absent()
           : Value(parentId),
       state: Value(state),
+      successfulDays: Value(successfulDays),
+      currentConsecutiveDays: Value(currentConsecutiveDays),
+      bestConsecutiveDays: Value(bestConsecutiveDays),
+      maintenanceCycleStarted: Value(maintenanceCycleStarted),
+      failureReason: failureReason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(failureReason),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -1567,6 +1721,17 @@ class LocalNationalFocusCard extends DataClass
       isInTree: serializer.fromJson<bool>(json['isInTree']),
       parentId: serializer.fromJson<String?>(json['parentId']),
       state: serializer.fromJson<String>(json['state']),
+      successfulDays: serializer.fromJson<int>(json['successfulDays']),
+      currentConsecutiveDays: serializer.fromJson<int>(
+        json['currentConsecutiveDays'],
+      ),
+      bestConsecutiveDays: serializer.fromJson<int>(
+        json['bestConsecutiveDays'],
+      ),
+      maintenanceCycleStarted: serializer.fromJson<bool>(
+        json['maintenanceCycleStarted'],
+      ),
+      failureReason: serializer.fromJson<String?>(json['failureReason']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -1584,6 +1749,13 @@ class LocalNationalFocusCard extends DataClass
       'isInTree': serializer.toJson<bool>(isInTree),
       'parentId': serializer.toJson<String?>(parentId),
       'state': serializer.toJson<String>(state),
+      'successfulDays': serializer.toJson<int>(successfulDays),
+      'currentConsecutiveDays': serializer.toJson<int>(currentConsecutiveDays),
+      'bestConsecutiveDays': serializer.toJson<int>(bestConsecutiveDays),
+      'maintenanceCycleStarted': serializer.toJson<bool>(
+        maintenanceCycleStarted,
+      ),
+      'failureReason': serializer.toJson<String?>(failureReason),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -1599,6 +1771,11 @@ class LocalNationalFocusCard extends DataClass
     bool? isInTree,
     Value<String?> parentId = const Value.absent(),
     String? state,
+    int? successfulDays,
+    int? currentConsecutiveDays,
+    int? bestConsecutiveDays,
+    bool? maintenanceCycleStarted,
+    Value<String?> failureReason = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => LocalNationalFocusCard(
@@ -1613,6 +1790,15 @@ class LocalNationalFocusCard extends DataClass
     isInTree: isInTree ?? this.isInTree,
     parentId: parentId.present ? parentId.value : this.parentId,
     state: state ?? this.state,
+    successfulDays: successfulDays ?? this.successfulDays,
+    currentConsecutiveDays:
+        currentConsecutiveDays ?? this.currentConsecutiveDays,
+    bestConsecutiveDays: bestConsecutiveDays ?? this.bestConsecutiveDays,
+    maintenanceCycleStarted:
+        maintenanceCycleStarted ?? this.maintenanceCycleStarted,
+    failureReason: failureReason.present
+        ? failureReason.value
+        : this.failureReason,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -1633,6 +1819,21 @@ class LocalNationalFocusCard extends DataClass
       isInTree: data.isInTree.present ? data.isInTree.value : this.isInTree,
       parentId: data.parentId.present ? data.parentId.value : this.parentId,
       state: data.state.present ? data.state.value : this.state,
+      successfulDays: data.successfulDays.present
+          ? data.successfulDays.value
+          : this.successfulDays,
+      currentConsecutiveDays: data.currentConsecutiveDays.present
+          ? data.currentConsecutiveDays.value
+          : this.currentConsecutiveDays,
+      bestConsecutiveDays: data.bestConsecutiveDays.present
+          ? data.bestConsecutiveDays.value
+          : this.bestConsecutiveDays,
+      maintenanceCycleStarted: data.maintenanceCycleStarted.present
+          ? data.maintenanceCycleStarted.value
+          : this.maintenanceCycleStarted,
+      failureReason: data.failureReason.present
+          ? data.failureReason.value
+          : this.failureReason,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -1650,6 +1851,11 @@ class LocalNationalFocusCard extends DataClass
           ..write('isInTree: $isInTree, ')
           ..write('parentId: $parentId, ')
           ..write('state: $state, ')
+          ..write('successfulDays: $successfulDays, ')
+          ..write('currentConsecutiveDays: $currentConsecutiveDays, ')
+          ..write('bestConsecutiveDays: $bestConsecutiveDays, ')
+          ..write('maintenanceCycleStarted: $maintenanceCycleStarted, ')
+          ..write('failureReason: $failureReason, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -1667,6 +1873,11 @@ class LocalNationalFocusCard extends DataClass
     isInTree,
     parentId,
     state,
+    successfulDays,
+    currentConsecutiveDays,
+    bestConsecutiveDays,
+    maintenanceCycleStarted,
+    failureReason,
     createdAt,
     updatedAt,
   );
@@ -1683,6 +1894,11 @@ class LocalNationalFocusCard extends DataClass
           other.isInTree == this.isInTree &&
           other.parentId == this.parentId &&
           other.state == this.state &&
+          other.successfulDays == this.successfulDays &&
+          other.currentConsecutiveDays == this.currentConsecutiveDays &&
+          other.bestConsecutiveDays == this.bestConsecutiveDays &&
+          other.maintenanceCycleStarted == this.maintenanceCycleStarted &&
+          other.failureReason == this.failureReason &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -1698,6 +1914,11 @@ class LocalNationalFocusCardsCompanion
   final Value<bool> isInTree;
   final Value<String?> parentId;
   final Value<String> state;
+  final Value<int> successfulDays;
+  final Value<int> currentConsecutiveDays;
+  final Value<int> bestConsecutiveDays;
+  final Value<bool> maintenanceCycleStarted;
+  final Value<String?> failureReason;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -1711,6 +1932,11 @@ class LocalNationalFocusCardsCompanion
     this.isInTree = const Value.absent(),
     this.parentId = const Value.absent(),
     this.state = const Value.absent(),
+    this.successfulDays = const Value.absent(),
+    this.currentConsecutiveDays = const Value.absent(),
+    this.bestConsecutiveDays = const Value.absent(),
+    this.maintenanceCycleStarted = const Value.absent(),
+    this.failureReason = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -1725,6 +1951,11 @@ class LocalNationalFocusCardsCompanion
     this.isInTree = const Value.absent(),
     this.parentId = const Value.absent(),
     this.state = const Value.absent(),
+    this.successfulDays = const Value.absent(),
+    this.currentConsecutiveDays = const Value.absent(),
+    this.bestConsecutiveDays = const Value.absent(),
+    this.maintenanceCycleStarted = const Value.absent(),
+    this.failureReason = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
@@ -1744,6 +1975,11 @@ class LocalNationalFocusCardsCompanion
     Expression<bool>? isInTree,
     Expression<String>? parentId,
     Expression<String>? state,
+    Expression<int>? successfulDays,
+    Expression<int>? currentConsecutiveDays,
+    Expression<int>? bestConsecutiveDays,
+    Expression<bool>? maintenanceCycleStarted,
+    Expression<String>? failureReason,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -1758,6 +1994,14 @@ class LocalNationalFocusCardsCompanion
       if (isInTree != null) 'is_in_tree': isInTree,
       if (parentId != null) 'parent_id': parentId,
       if (state != null) 'state': state,
+      if (successfulDays != null) 'successful_days': successfulDays,
+      if (currentConsecutiveDays != null)
+        'current_consecutive_days': currentConsecutiveDays,
+      if (bestConsecutiveDays != null)
+        'best_consecutive_days': bestConsecutiveDays,
+      if (maintenanceCycleStarted != null)
+        'maintenance_cycle_started': maintenanceCycleStarted,
+      if (failureReason != null) 'failure_reason': failureReason,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -1774,6 +2018,11 @@ class LocalNationalFocusCardsCompanion
     Value<bool>? isInTree,
     Value<String?>? parentId,
     Value<String>? state,
+    Value<int>? successfulDays,
+    Value<int>? currentConsecutiveDays,
+    Value<int>? bestConsecutiveDays,
+    Value<bool>? maintenanceCycleStarted,
+    Value<String?>? failureReason,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -1788,6 +2037,13 @@ class LocalNationalFocusCardsCompanion
       isInTree: isInTree ?? this.isInTree,
       parentId: parentId ?? this.parentId,
       state: state ?? this.state,
+      successfulDays: successfulDays ?? this.successfulDays,
+      currentConsecutiveDays:
+          currentConsecutiveDays ?? this.currentConsecutiveDays,
+      bestConsecutiveDays: bestConsecutiveDays ?? this.bestConsecutiveDays,
+      maintenanceCycleStarted:
+          maintenanceCycleStarted ?? this.maintenanceCycleStarted,
+      failureReason: failureReason ?? this.failureReason,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -1824,6 +2080,25 @@ class LocalNationalFocusCardsCompanion
     if (state.present) {
       map['state'] = Variable<String>(state.value);
     }
+    if (successfulDays.present) {
+      map['successful_days'] = Variable<int>(successfulDays.value);
+    }
+    if (currentConsecutiveDays.present) {
+      map['current_consecutive_days'] = Variable<int>(
+        currentConsecutiveDays.value,
+      );
+    }
+    if (bestConsecutiveDays.present) {
+      map['best_consecutive_days'] = Variable<int>(bestConsecutiveDays.value);
+    }
+    if (maintenanceCycleStarted.present) {
+      map['maintenance_cycle_started'] = Variable<bool>(
+        maintenanceCycleStarted.value,
+      );
+    }
+    if (failureReason.present) {
+      map['failure_reason'] = Variable<String>(failureReason.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -1848,8 +2123,852 @@ class LocalNationalFocusCardsCompanion
           ..write('isInTree: $isInTree, ')
           ..write('parentId: $parentId, ')
           ..write('state: $state, ')
+          ..write('successfulDays: $successfulDays, ')
+          ..write('currentConsecutiveDays: $currentConsecutiveDays, ')
+          ..write('bestConsecutiveDays: $bestConsecutiveDays, ')
+          ..write('maintenanceCycleStarted: $maintenanceCycleStarted, ')
+          ..write('failureReason: $failureReason, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $LocalNationalFocusMaintenanceTable extends LocalNationalFocusMaintenance
+    with
+        TableInfo<
+          $LocalNationalFocusMaintenanceTable,
+          LocalNationalFocusMaintenanceData
+        > {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalNationalFocusMaintenanceTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _lastSettledCheckpointAtMeta =
+      const VerificationMeta('lastSettledCheckpointAt');
+  @override
+  late final GeneratedColumn<DateTime> lastSettledCheckpointAt =
+      GeneratedColumn<DateTime>(
+        'last_settled_checkpoint_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: true,
+      );
+  @override
+  List<GeneratedColumn> get $columns => [userId, lastSettledCheckpointAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_national_focus_maintenance';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalNationalFocusMaintenanceData> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('last_settled_checkpoint_at')) {
+      context.handle(
+        _lastSettledCheckpointAtMeta,
+        lastSettledCheckpointAt.isAcceptableOrUnknown(
+          data['last_settled_checkpoint_at']!,
+          _lastSettledCheckpointAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_lastSettledCheckpointAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId};
+  @override
+  LocalNationalFocusMaintenanceData map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalNationalFocusMaintenanceData(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      lastSettledCheckpointAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}last_settled_checkpoint_at'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalNationalFocusMaintenanceTable createAlias(String alias) {
+    return $LocalNationalFocusMaintenanceTable(attachedDatabase, alias);
+  }
+}
+
+class LocalNationalFocusMaintenanceData extends DataClass
+    implements Insertable<LocalNationalFocusMaintenanceData> {
+  final String userId;
+  final DateTime lastSettledCheckpointAt;
+  const LocalNationalFocusMaintenanceData({
+    required this.userId,
+    required this.lastSettledCheckpointAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['last_settled_checkpoint_at'] = Variable<DateTime>(
+      lastSettledCheckpointAt,
+    );
+    return map;
+  }
+
+  LocalNationalFocusMaintenanceCompanion toCompanion(bool nullToAbsent) {
+    return LocalNationalFocusMaintenanceCompanion(
+      userId: Value(userId),
+      lastSettledCheckpointAt: Value(lastSettledCheckpointAt),
+    );
+  }
+
+  factory LocalNationalFocusMaintenanceData.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalNationalFocusMaintenanceData(
+      userId: serializer.fromJson<String>(json['userId']),
+      lastSettledCheckpointAt: serializer.fromJson<DateTime>(
+        json['lastSettledCheckpointAt'],
+      ),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'lastSettledCheckpointAt': serializer.toJson<DateTime>(
+        lastSettledCheckpointAt,
+      ),
+    };
+  }
+
+  LocalNationalFocusMaintenanceData copyWith({
+    String? userId,
+    DateTime? lastSettledCheckpointAt,
+  }) => LocalNationalFocusMaintenanceData(
+    userId: userId ?? this.userId,
+    lastSettledCheckpointAt:
+        lastSettledCheckpointAt ?? this.lastSettledCheckpointAt,
+  );
+  LocalNationalFocusMaintenanceData copyWithCompanion(
+    LocalNationalFocusMaintenanceCompanion data,
+  ) {
+    return LocalNationalFocusMaintenanceData(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      lastSettledCheckpointAt: data.lastSettledCheckpointAt.present
+          ? data.lastSettledCheckpointAt.value
+          : this.lastSettledCheckpointAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalNationalFocusMaintenanceData(')
+          ..write('userId: $userId, ')
+          ..write('lastSettledCheckpointAt: $lastSettledCheckpointAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(userId, lastSettledCheckpointAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalNationalFocusMaintenanceData &&
+          other.userId == this.userId &&
+          other.lastSettledCheckpointAt == this.lastSettledCheckpointAt);
+}
+
+class LocalNationalFocusMaintenanceCompanion
+    extends UpdateCompanion<LocalNationalFocusMaintenanceData> {
+  final Value<String> userId;
+  final Value<DateTime> lastSettledCheckpointAt;
+  final Value<int> rowid;
+  const LocalNationalFocusMaintenanceCompanion({
+    this.userId = const Value.absent(),
+    this.lastSettledCheckpointAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalNationalFocusMaintenanceCompanion.insert({
+    required String userId,
+    required DateTime lastSettledCheckpointAt,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       lastSettledCheckpointAt = Value(lastSettledCheckpointAt);
+  static Insertable<LocalNationalFocusMaintenanceData> custom({
+    Expression<String>? userId,
+    Expression<DateTime>? lastSettledCheckpointAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (lastSettledCheckpointAt != null)
+        'last_settled_checkpoint_at': lastSettledCheckpointAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalNationalFocusMaintenanceCompanion copyWith({
+    Value<String>? userId,
+    Value<DateTime>? lastSettledCheckpointAt,
+    Value<int>? rowid,
+  }) {
+    return LocalNationalFocusMaintenanceCompanion(
+      userId: userId ?? this.userId,
+      lastSettledCheckpointAt:
+          lastSettledCheckpointAt ?? this.lastSettledCheckpointAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (lastSettledCheckpointAt.present) {
+      map['last_settled_checkpoint_at'] = Variable<DateTime>(
+        lastSettledCheckpointAt.value,
+      );
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalNationalFocusMaintenanceCompanion(')
+          ..write('userId: $userId, ')
+          ..write('lastSettledCheckpointAt: $lastSettledCheckpointAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $LocalNationalFocusFailuresTable extends LocalNationalFocusFailures
+    with
+        TableInfo<$LocalNationalFocusFailuresTable, LocalNationalFocusFailure> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalNationalFocusFailuresTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _batchIdMeta = const VerificationMeta(
+    'batchId',
+  );
+  @override
+  late final GeneratedColumn<String> batchId = GeneratedColumn<String>(
+    'batch_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _cardIdMeta = const VerificationMeta('cardId');
+  @override
+  late final GeneratedColumn<String> cardId = GeneratedColumn<String>(
+    'card_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _checkpointAtMeta = const VerificationMeta(
+    'checkpointAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> checkpointAt = GeneratedColumn<DateTime>(
+    'checkpoint_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _causeMeta = const VerificationMeta('cause');
+  @override
+  late final GeneratedColumn<String> cause = GeneratedColumn<String>(
+    'cause',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _failureReasonMeta = const VerificationMeta(
+    'failureReason',
+  );
+  @override
+  late final GeneratedColumn<String> failureReason = GeneratedColumn<String>(
+    'failure_reason',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sharedExplanationMeta = const VerificationMeta(
+    'sharedExplanation',
+  );
+  @override
+  late final GeneratedColumn<String> sharedExplanation =
+      GeneratedColumn<String>(
+        'shared_explanation',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _treeSnapshotMeta = const VerificationMeta(
+    'treeSnapshot',
+  );
+  @override
+  late final GeneratedColumn<String> treeSnapshot = GeneratedColumn<String>(
+    'tree_snapshot',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    id,
+    batchId,
+    cardId,
+    checkpointAt,
+    cause,
+    failureReason,
+    sharedExplanation,
+    treeSnapshot,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_national_focus_failures';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalNationalFocusFailure> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('batch_id')) {
+      context.handle(
+        _batchIdMeta,
+        batchId.isAcceptableOrUnknown(data['batch_id']!, _batchIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_batchIdMeta);
+    }
+    if (data.containsKey('card_id')) {
+      context.handle(
+        _cardIdMeta,
+        cardId.isAcceptableOrUnknown(data['card_id']!, _cardIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_cardIdMeta);
+    }
+    if (data.containsKey('checkpoint_at')) {
+      context.handle(
+        _checkpointAtMeta,
+        checkpointAt.isAcceptableOrUnknown(
+          data['checkpoint_at']!,
+          _checkpointAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_checkpointAtMeta);
+    }
+    if (data.containsKey('cause')) {
+      context.handle(
+        _causeMeta,
+        cause.isAcceptableOrUnknown(data['cause']!, _causeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_causeMeta);
+    }
+    if (data.containsKey('failure_reason')) {
+      context.handle(
+        _failureReasonMeta,
+        failureReason.isAcceptableOrUnknown(
+          data['failure_reason']!,
+          _failureReasonMeta,
+        ),
+      );
+    }
+    if (data.containsKey('shared_explanation')) {
+      context.handle(
+        _sharedExplanationMeta,
+        sharedExplanation.isAcceptableOrUnknown(
+          data['shared_explanation']!,
+          _sharedExplanationMeta,
+        ),
+      );
+    }
+    if (data.containsKey('tree_snapshot')) {
+      context.handle(
+        _treeSnapshotMeta,
+        treeSnapshot.isAcceptableOrUnknown(
+          data['tree_snapshot']!,
+          _treeSnapshotMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_treeSnapshotMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId, id};
+  @override
+  LocalNationalFocusFailure map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalNationalFocusFailure(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      batchId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}batch_id'],
+      )!,
+      cardId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}card_id'],
+      )!,
+      checkpointAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}checkpoint_at'],
+      )!,
+      cause: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cause'],
+      )!,
+      failureReason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}failure_reason'],
+      ),
+      sharedExplanation: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}shared_explanation'],
+      ),
+      treeSnapshot: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tree_snapshot'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalNationalFocusFailuresTable createAlias(String alias) {
+    return $LocalNationalFocusFailuresTable(attachedDatabase, alias);
+  }
+}
+
+class LocalNationalFocusFailure extends DataClass
+    implements Insertable<LocalNationalFocusFailure> {
+  final String userId;
+  final String id;
+  final String batchId;
+  final String cardId;
+  final DateTime checkpointAt;
+  final String cause;
+  final String? failureReason;
+  final String? sharedExplanation;
+  final String treeSnapshot;
+  const LocalNationalFocusFailure({
+    required this.userId,
+    required this.id,
+    required this.batchId,
+    required this.cardId,
+    required this.checkpointAt,
+    required this.cause,
+    this.failureReason,
+    this.sharedExplanation,
+    required this.treeSnapshot,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['id'] = Variable<String>(id);
+    map['batch_id'] = Variable<String>(batchId);
+    map['card_id'] = Variable<String>(cardId);
+    map['checkpoint_at'] = Variable<DateTime>(checkpointAt);
+    map['cause'] = Variable<String>(cause);
+    if (!nullToAbsent || failureReason != null) {
+      map['failure_reason'] = Variable<String>(failureReason);
+    }
+    if (!nullToAbsent || sharedExplanation != null) {
+      map['shared_explanation'] = Variable<String>(sharedExplanation);
+    }
+    map['tree_snapshot'] = Variable<String>(treeSnapshot);
+    return map;
+  }
+
+  LocalNationalFocusFailuresCompanion toCompanion(bool nullToAbsent) {
+    return LocalNationalFocusFailuresCompanion(
+      userId: Value(userId),
+      id: Value(id),
+      batchId: Value(batchId),
+      cardId: Value(cardId),
+      checkpointAt: Value(checkpointAt),
+      cause: Value(cause),
+      failureReason: failureReason == null && nullToAbsent
+          ? const Value.absent()
+          : Value(failureReason),
+      sharedExplanation: sharedExplanation == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sharedExplanation),
+      treeSnapshot: Value(treeSnapshot),
+    );
+  }
+
+  factory LocalNationalFocusFailure.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalNationalFocusFailure(
+      userId: serializer.fromJson<String>(json['userId']),
+      id: serializer.fromJson<String>(json['id']),
+      batchId: serializer.fromJson<String>(json['batchId']),
+      cardId: serializer.fromJson<String>(json['cardId']),
+      checkpointAt: serializer.fromJson<DateTime>(json['checkpointAt']),
+      cause: serializer.fromJson<String>(json['cause']),
+      failureReason: serializer.fromJson<String?>(json['failureReason']),
+      sharedExplanation: serializer.fromJson<String?>(
+        json['sharedExplanation'],
+      ),
+      treeSnapshot: serializer.fromJson<String>(json['treeSnapshot']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'id': serializer.toJson<String>(id),
+      'batchId': serializer.toJson<String>(batchId),
+      'cardId': serializer.toJson<String>(cardId),
+      'checkpointAt': serializer.toJson<DateTime>(checkpointAt),
+      'cause': serializer.toJson<String>(cause),
+      'failureReason': serializer.toJson<String?>(failureReason),
+      'sharedExplanation': serializer.toJson<String?>(sharedExplanation),
+      'treeSnapshot': serializer.toJson<String>(treeSnapshot),
+    };
+  }
+
+  LocalNationalFocusFailure copyWith({
+    String? userId,
+    String? id,
+    String? batchId,
+    String? cardId,
+    DateTime? checkpointAt,
+    String? cause,
+    Value<String?> failureReason = const Value.absent(),
+    Value<String?> sharedExplanation = const Value.absent(),
+    String? treeSnapshot,
+  }) => LocalNationalFocusFailure(
+    userId: userId ?? this.userId,
+    id: id ?? this.id,
+    batchId: batchId ?? this.batchId,
+    cardId: cardId ?? this.cardId,
+    checkpointAt: checkpointAt ?? this.checkpointAt,
+    cause: cause ?? this.cause,
+    failureReason: failureReason.present
+        ? failureReason.value
+        : this.failureReason,
+    sharedExplanation: sharedExplanation.present
+        ? sharedExplanation.value
+        : this.sharedExplanation,
+    treeSnapshot: treeSnapshot ?? this.treeSnapshot,
+  );
+  LocalNationalFocusFailure copyWithCompanion(
+    LocalNationalFocusFailuresCompanion data,
+  ) {
+    return LocalNationalFocusFailure(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      id: data.id.present ? data.id.value : this.id,
+      batchId: data.batchId.present ? data.batchId.value : this.batchId,
+      cardId: data.cardId.present ? data.cardId.value : this.cardId,
+      checkpointAt: data.checkpointAt.present
+          ? data.checkpointAt.value
+          : this.checkpointAt,
+      cause: data.cause.present ? data.cause.value : this.cause,
+      failureReason: data.failureReason.present
+          ? data.failureReason.value
+          : this.failureReason,
+      sharedExplanation: data.sharedExplanation.present
+          ? data.sharedExplanation.value
+          : this.sharedExplanation,
+      treeSnapshot: data.treeSnapshot.present
+          ? data.treeSnapshot.value
+          : this.treeSnapshot,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalNationalFocusFailure(')
+          ..write('userId: $userId, ')
+          ..write('id: $id, ')
+          ..write('batchId: $batchId, ')
+          ..write('cardId: $cardId, ')
+          ..write('checkpointAt: $checkpointAt, ')
+          ..write('cause: $cause, ')
+          ..write('failureReason: $failureReason, ')
+          ..write('sharedExplanation: $sharedExplanation, ')
+          ..write('treeSnapshot: $treeSnapshot')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    userId,
+    id,
+    batchId,
+    cardId,
+    checkpointAt,
+    cause,
+    failureReason,
+    sharedExplanation,
+    treeSnapshot,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalNationalFocusFailure &&
+          other.userId == this.userId &&
+          other.id == this.id &&
+          other.batchId == this.batchId &&
+          other.cardId == this.cardId &&
+          other.checkpointAt == this.checkpointAt &&
+          other.cause == this.cause &&
+          other.failureReason == this.failureReason &&
+          other.sharedExplanation == this.sharedExplanation &&
+          other.treeSnapshot == this.treeSnapshot);
+}
+
+class LocalNationalFocusFailuresCompanion
+    extends UpdateCompanion<LocalNationalFocusFailure> {
+  final Value<String> userId;
+  final Value<String> id;
+  final Value<String> batchId;
+  final Value<String> cardId;
+  final Value<DateTime> checkpointAt;
+  final Value<String> cause;
+  final Value<String?> failureReason;
+  final Value<String?> sharedExplanation;
+  final Value<String> treeSnapshot;
+  final Value<int> rowid;
+  const LocalNationalFocusFailuresCompanion({
+    this.userId = const Value.absent(),
+    this.id = const Value.absent(),
+    this.batchId = const Value.absent(),
+    this.cardId = const Value.absent(),
+    this.checkpointAt = const Value.absent(),
+    this.cause = const Value.absent(),
+    this.failureReason = const Value.absent(),
+    this.sharedExplanation = const Value.absent(),
+    this.treeSnapshot = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalNationalFocusFailuresCompanion.insert({
+    required String userId,
+    required String id,
+    required String batchId,
+    required String cardId,
+    required DateTime checkpointAt,
+    required String cause,
+    this.failureReason = const Value.absent(),
+    this.sharedExplanation = const Value.absent(),
+    required String treeSnapshot,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       id = Value(id),
+       batchId = Value(batchId),
+       cardId = Value(cardId),
+       checkpointAt = Value(checkpointAt),
+       cause = Value(cause),
+       treeSnapshot = Value(treeSnapshot);
+  static Insertable<LocalNationalFocusFailure> custom({
+    Expression<String>? userId,
+    Expression<String>? id,
+    Expression<String>? batchId,
+    Expression<String>? cardId,
+    Expression<DateTime>? checkpointAt,
+    Expression<String>? cause,
+    Expression<String>? failureReason,
+    Expression<String>? sharedExplanation,
+    Expression<String>? treeSnapshot,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (id != null) 'id': id,
+      if (batchId != null) 'batch_id': batchId,
+      if (cardId != null) 'card_id': cardId,
+      if (checkpointAt != null) 'checkpoint_at': checkpointAt,
+      if (cause != null) 'cause': cause,
+      if (failureReason != null) 'failure_reason': failureReason,
+      if (sharedExplanation != null) 'shared_explanation': sharedExplanation,
+      if (treeSnapshot != null) 'tree_snapshot': treeSnapshot,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalNationalFocusFailuresCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? id,
+    Value<String>? batchId,
+    Value<String>? cardId,
+    Value<DateTime>? checkpointAt,
+    Value<String>? cause,
+    Value<String?>? failureReason,
+    Value<String?>? sharedExplanation,
+    Value<String>? treeSnapshot,
+    Value<int>? rowid,
+  }) {
+    return LocalNationalFocusFailuresCompanion(
+      userId: userId ?? this.userId,
+      id: id ?? this.id,
+      batchId: batchId ?? this.batchId,
+      cardId: cardId ?? this.cardId,
+      checkpointAt: checkpointAt ?? this.checkpointAt,
+      cause: cause ?? this.cause,
+      failureReason: failureReason ?? this.failureReason,
+      sharedExplanation: sharedExplanation ?? this.sharedExplanation,
+      treeSnapshot: treeSnapshot ?? this.treeSnapshot,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (batchId.present) {
+      map['batch_id'] = Variable<String>(batchId.value);
+    }
+    if (cardId.present) {
+      map['card_id'] = Variable<String>(cardId.value);
+    }
+    if (checkpointAt.present) {
+      map['checkpoint_at'] = Variable<DateTime>(checkpointAt.value);
+    }
+    if (cause.present) {
+      map['cause'] = Variable<String>(cause.value);
+    }
+    if (failureReason.present) {
+      map['failure_reason'] = Variable<String>(failureReason.value);
+    }
+    if (sharedExplanation.present) {
+      map['shared_explanation'] = Variable<String>(sharedExplanation.value);
+    }
+    if (treeSnapshot.present) {
+      map['tree_snapshot'] = Variable<String>(treeSnapshot.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalNationalFocusFailuresCompanion(')
+          ..write('userId: $userId, ')
+          ..write('id: $id, ')
+          ..write('batchId: $batchId, ')
+          ..write('cardId: $cardId, ')
+          ..write('checkpointAt: $checkpointAt, ')
+          ..write('cause: $cause, ')
+          ..write('failureReason: $failureReason, ')
+          ..write('sharedExplanation: $sharedExplanation, ')
+          ..write('treeSnapshot: $treeSnapshot, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -7058,6 +8177,10 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   late final $LocalTasksTable localTasks = $LocalTasksTable(this);
   late final $LocalNationalFocusCardsTable localNationalFocusCards =
       $LocalNationalFocusCardsTable(this);
+  late final $LocalNationalFocusMaintenanceTable localNationalFocusMaintenance =
+      $LocalNationalFocusMaintenanceTable(this);
+  late final $LocalNationalFocusFailuresTable localNationalFocusFailures =
+      $LocalNationalFocusFailuresTable(this);
   late final $TaskSyncEntriesTable taskSyncEntries = $TaskSyncEntriesTable(
     this,
   );
@@ -7087,6 +8210,8 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
     localGoals,
     localTasks,
     localNationalFocusCards,
+    localNationalFocusMaintenance,
+    localNationalFocusFailures,
     taskSyncEntries,
     focusSessions,
     focusNodes,
@@ -7686,6 +8811,11 @@ typedef $$LocalNationalFocusCardsTableCreateCompanionBuilder =
       Value<bool> isInTree,
       Value<String?> parentId,
       Value<String> state,
+      Value<int> successfulDays,
+      Value<int> currentConsecutiveDays,
+      Value<int> bestConsecutiveDays,
+      Value<bool> maintenanceCycleStarted,
+      Value<String?> failureReason,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<int> rowid,
@@ -7701,6 +8831,11 @@ typedef $$LocalNationalFocusCardsTableUpdateCompanionBuilder =
       Value<bool> isInTree,
       Value<String?> parentId,
       Value<String> state,
+      Value<int> successfulDays,
+      Value<int> currentConsecutiveDays,
+      Value<int> bestConsecutiveDays,
+      Value<bool> maintenanceCycleStarted,
+      Value<String?> failureReason,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -7757,6 +8892,31 @@ class $$LocalNationalFocusCardsTableFilterComposer
 
   ColumnFilters<String> get state => $composableBuilder(
     column: $table.state,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get successfulDays => $composableBuilder(
+    column: $table.successfulDays,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get currentConsecutiveDays => $composableBuilder(
+    column: $table.currentConsecutiveDays,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get bestConsecutiveDays => $composableBuilder(
+    column: $table.bestConsecutiveDays,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get maintenanceCycleStarted => $composableBuilder(
+    column: $table.maintenanceCycleStarted,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get failureReason => $composableBuilder(
+    column: $table.failureReason,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -7825,6 +8985,31 @@ class $$LocalNationalFocusCardsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get successfulDays => $composableBuilder(
+    column: $table.successfulDays,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get currentConsecutiveDays => $composableBuilder(
+    column: $table.currentConsecutiveDays,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get bestConsecutiveDays => $composableBuilder(
+    column: $table.bestConsecutiveDays,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get maintenanceCycleStarted => $composableBuilder(
+    column: $table.maintenanceCycleStarted,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get failureReason => $composableBuilder(
+    column: $table.failureReason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -7875,6 +9060,31 @@ class $$LocalNationalFocusCardsTableAnnotationComposer
 
   GeneratedColumn<String> get state =>
       $composableBuilder(column: $table.state, builder: (column) => column);
+
+  GeneratedColumn<int> get successfulDays => $composableBuilder(
+    column: $table.successfulDays,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get currentConsecutiveDays => $composableBuilder(
+    column: $table.currentConsecutiveDays,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get bestConsecutiveDays => $composableBuilder(
+    column: $table.bestConsecutiveDays,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get maintenanceCycleStarted => $composableBuilder(
+    column: $table.maintenanceCycleStarted,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get failureReason => $composableBuilder(
+    column: $table.failureReason,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -7938,6 +9148,11 @@ class $$LocalNationalFocusCardsTableTableManager
                 Value<bool> isInTree = const Value.absent(),
                 Value<String?> parentId = const Value.absent(),
                 Value<String> state = const Value.absent(),
+                Value<int> successfulDays = const Value.absent(),
+                Value<int> currentConsecutiveDays = const Value.absent(),
+                Value<int> bestConsecutiveDays = const Value.absent(),
+                Value<bool> maintenanceCycleStarted = const Value.absent(),
+                Value<String?> failureReason = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -7951,6 +9166,11 @@ class $$LocalNationalFocusCardsTableTableManager
                 isInTree: isInTree,
                 parentId: parentId,
                 state: state,
+                successfulDays: successfulDays,
+                currentConsecutiveDays: currentConsecutiveDays,
+                bestConsecutiveDays: bestConsecutiveDays,
+                maintenanceCycleStarted: maintenanceCycleStarted,
+                failureReason: failureReason,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -7966,6 +9186,11 @@ class $$LocalNationalFocusCardsTableTableManager
                 Value<bool> isInTree = const Value.absent(),
                 Value<String?> parentId = const Value.absent(),
                 Value<String> state = const Value.absent(),
+                Value<int> successfulDays = const Value.absent(),
+                Value<int> currentConsecutiveDays = const Value.absent(),
+                Value<int> bestConsecutiveDays = const Value.absent(),
+                Value<bool> maintenanceCycleStarted = const Value.absent(),
+                Value<String?> failureReason = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -7979,6 +9204,11 @@ class $$LocalNationalFocusCardsTableTableManager
                 isInTree: isInTree,
                 parentId: parentId,
                 state: state,
+                successfulDays: successfulDays,
+                currentConsecutiveDays: currentConsecutiveDays,
+                bestConsecutiveDays: bestConsecutiveDays,
+                maintenanceCycleStarted: maintenanceCycleStarted,
+                failureReason: failureReason,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -8010,6 +9240,473 @@ typedef $$LocalNationalFocusCardsTableProcessedTableManager =
         >,
       ),
       LocalNationalFocusCard,
+      PrefetchHooks Function()
+    >;
+typedef $$LocalNationalFocusMaintenanceTableCreateCompanionBuilder =
+    LocalNationalFocusMaintenanceCompanion Function({
+      required String userId,
+      required DateTime lastSettledCheckpointAt,
+      Value<int> rowid,
+    });
+typedef $$LocalNationalFocusMaintenanceTableUpdateCompanionBuilder =
+    LocalNationalFocusMaintenanceCompanion Function({
+      Value<String> userId,
+      Value<DateTime> lastSettledCheckpointAt,
+      Value<int> rowid,
+    });
+
+class $$LocalNationalFocusMaintenanceTableFilterComposer
+    extends Composer<_$PactaDatabase, $LocalNationalFocusMaintenanceTable> {
+  $$LocalNationalFocusMaintenanceTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get lastSettledCheckpointAt => $composableBuilder(
+    column: $table.lastSettledCheckpointAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalNationalFocusMaintenanceTableOrderingComposer
+    extends Composer<_$PactaDatabase, $LocalNationalFocusMaintenanceTable> {
+  $$LocalNationalFocusMaintenanceTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get lastSettledCheckpointAt => $composableBuilder(
+    column: $table.lastSettledCheckpointAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalNationalFocusMaintenanceTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $LocalNationalFocusMaintenanceTable> {
+  $$LocalNationalFocusMaintenanceTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get lastSettledCheckpointAt => $composableBuilder(
+    column: $table.lastSettledCheckpointAt,
+    builder: (column) => column,
+  );
+}
+
+class $$LocalNationalFocusMaintenanceTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $LocalNationalFocusMaintenanceTable,
+          LocalNationalFocusMaintenanceData,
+          $$LocalNationalFocusMaintenanceTableFilterComposer,
+          $$LocalNationalFocusMaintenanceTableOrderingComposer,
+          $$LocalNationalFocusMaintenanceTableAnnotationComposer,
+          $$LocalNationalFocusMaintenanceTableCreateCompanionBuilder,
+          $$LocalNationalFocusMaintenanceTableUpdateCompanionBuilder,
+          (
+            LocalNationalFocusMaintenanceData,
+            BaseReferences<
+              _$PactaDatabase,
+              $LocalNationalFocusMaintenanceTable,
+              LocalNationalFocusMaintenanceData
+            >,
+          ),
+          LocalNationalFocusMaintenanceData,
+          PrefetchHooks Function()
+        > {
+  $$LocalNationalFocusMaintenanceTableTableManager(
+    _$PactaDatabase db,
+    $LocalNationalFocusMaintenanceTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalNationalFocusMaintenanceTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$LocalNationalFocusMaintenanceTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$LocalNationalFocusMaintenanceTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<DateTime> lastSettledCheckpointAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalNationalFocusMaintenanceCompanion(
+                userId: userId,
+                lastSettledCheckpointAt: lastSettledCheckpointAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                required DateTime lastSettledCheckpointAt,
+                Value<int> rowid = const Value.absent(),
+              }) => LocalNationalFocusMaintenanceCompanion.insert(
+                userId: userId,
+                lastSettledCheckpointAt: lastSettledCheckpointAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalNationalFocusMaintenanceTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $LocalNationalFocusMaintenanceTable,
+      LocalNationalFocusMaintenanceData,
+      $$LocalNationalFocusMaintenanceTableFilterComposer,
+      $$LocalNationalFocusMaintenanceTableOrderingComposer,
+      $$LocalNationalFocusMaintenanceTableAnnotationComposer,
+      $$LocalNationalFocusMaintenanceTableCreateCompanionBuilder,
+      $$LocalNationalFocusMaintenanceTableUpdateCompanionBuilder,
+      (
+        LocalNationalFocusMaintenanceData,
+        BaseReferences<
+          _$PactaDatabase,
+          $LocalNationalFocusMaintenanceTable,
+          LocalNationalFocusMaintenanceData
+        >,
+      ),
+      LocalNationalFocusMaintenanceData,
+      PrefetchHooks Function()
+    >;
+typedef $$LocalNationalFocusFailuresTableCreateCompanionBuilder =
+    LocalNationalFocusFailuresCompanion Function({
+      required String userId,
+      required String id,
+      required String batchId,
+      required String cardId,
+      required DateTime checkpointAt,
+      required String cause,
+      Value<String?> failureReason,
+      Value<String?> sharedExplanation,
+      required String treeSnapshot,
+      Value<int> rowid,
+    });
+typedef $$LocalNationalFocusFailuresTableUpdateCompanionBuilder =
+    LocalNationalFocusFailuresCompanion Function({
+      Value<String> userId,
+      Value<String> id,
+      Value<String> batchId,
+      Value<String> cardId,
+      Value<DateTime> checkpointAt,
+      Value<String> cause,
+      Value<String?> failureReason,
+      Value<String?> sharedExplanation,
+      Value<String> treeSnapshot,
+      Value<int> rowid,
+    });
+
+class $$LocalNationalFocusFailuresTableFilterComposer
+    extends Composer<_$PactaDatabase, $LocalNationalFocusFailuresTable> {
+  $$LocalNationalFocusFailuresTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get batchId => $composableBuilder(
+    column: $table.batchId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get cardId => $composableBuilder(
+    column: $table.cardId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get checkpointAt => $composableBuilder(
+    column: $table.checkpointAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get cause => $composableBuilder(
+    column: $table.cause,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get failureReason => $composableBuilder(
+    column: $table.failureReason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sharedExplanation => $composableBuilder(
+    column: $table.sharedExplanation,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get treeSnapshot => $composableBuilder(
+    column: $table.treeSnapshot,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalNationalFocusFailuresTableOrderingComposer
+    extends Composer<_$PactaDatabase, $LocalNationalFocusFailuresTable> {
+  $$LocalNationalFocusFailuresTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get batchId => $composableBuilder(
+    column: $table.batchId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get cardId => $composableBuilder(
+    column: $table.cardId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get checkpointAt => $composableBuilder(
+    column: $table.checkpointAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get cause => $composableBuilder(
+    column: $table.cause,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get failureReason => $composableBuilder(
+    column: $table.failureReason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sharedExplanation => $composableBuilder(
+    column: $table.sharedExplanation,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get treeSnapshot => $composableBuilder(
+    column: $table.treeSnapshot,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalNationalFocusFailuresTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $LocalNationalFocusFailuresTable> {
+  $$LocalNationalFocusFailuresTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get batchId =>
+      $composableBuilder(column: $table.batchId, builder: (column) => column);
+
+  GeneratedColumn<String> get cardId =>
+      $composableBuilder(column: $table.cardId, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get checkpointAt => $composableBuilder(
+    column: $table.checkpointAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get cause =>
+      $composableBuilder(column: $table.cause, builder: (column) => column);
+
+  GeneratedColumn<String> get failureReason => $composableBuilder(
+    column: $table.failureReason,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sharedExplanation => $composableBuilder(
+    column: $table.sharedExplanation,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get treeSnapshot => $composableBuilder(
+    column: $table.treeSnapshot,
+    builder: (column) => column,
+  );
+}
+
+class $$LocalNationalFocusFailuresTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $LocalNationalFocusFailuresTable,
+          LocalNationalFocusFailure,
+          $$LocalNationalFocusFailuresTableFilterComposer,
+          $$LocalNationalFocusFailuresTableOrderingComposer,
+          $$LocalNationalFocusFailuresTableAnnotationComposer,
+          $$LocalNationalFocusFailuresTableCreateCompanionBuilder,
+          $$LocalNationalFocusFailuresTableUpdateCompanionBuilder,
+          (
+            LocalNationalFocusFailure,
+            BaseReferences<
+              _$PactaDatabase,
+              $LocalNationalFocusFailuresTable,
+              LocalNationalFocusFailure
+            >,
+          ),
+          LocalNationalFocusFailure,
+          PrefetchHooks Function()
+        > {
+  $$LocalNationalFocusFailuresTableTableManager(
+    _$PactaDatabase db,
+    $LocalNationalFocusFailuresTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalNationalFocusFailuresTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$LocalNationalFocusFailuresTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$LocalNationalFocusFailuresTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> id = const Value.absent(),
+                Value<String> batchId = const Value.absent(),
+                Value<String> cardId = const Value.absent(),
+                Value<DateTime> checkpointAt = const Value.absent(),
+                Value<String> cause = const Value.absent(),
+                Value<String?> failureReason = const Value.absent(),
+                Value<String?> sharedExplanation = const Value.absent(),
+                Value<String> treeSnapshot = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalNationalFocusFailuresCompanion(
+                userId: userId,
+                id: id,
+                batchId: batchId,
+                cardId: cardId,
+                checkpointAt: checkpointAt,
+                cause: cause,
+                failureReason: failureReason,
+                sharedExplanation: sharedExplanation,
+                treeSnapshot: treeSnapshot,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                required String id,
+                required String batchId,
+                required String cardId,
+                required DateTime checkpointAt,
+                required String cause,
+                Value<String?> failureReason = const Value.absent(),
+                Value<String?> sharedExplanation = const Value.absent(),
+                required String treeSnapshot,
+                Value<int> rowid = const Value.absent(),
+              }) => LocalNationalFocusFailuresCompanion.insert(
+                userId: userId,
+                id: id,
+                batchId: batchId,
+                cardId: cardId,
+                checkpointAt: checkpointAt,
+                cause: cause,
+                failureReason: failureReason,
+                sharedExplanation: sharedExplanation,
+                treeSnapshot: treeSnapshot,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalNationalFocusFailuresTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $LocalNationalFocusFailuresTable,
+      LocalNationalFocusFailure,
+      $$LocalNationalFocusFailuresTableFilterComposer,
+      $$LocalNationalFocusFailuresTableOrderingComposer,
+      $$LocalNationalFocusFailuresTableAnnotationComposer,
+      $$LocalNationalFocusFailuresTableCreateCompanionBuilder,
+      $$LocalNationalFocusFailuresTableUpdateCompanionBuilder,
+      (
+        LocalNationalFocusFailure,
+        BaseReferences<
+          _$PactaDatabase,
+          $LocalNationalFocusFailuresTable,
+          LocalNationalFocusFailure
+        >,
+      ),
+      LocalNationalFocusFailure,
       PrefetchHooks Function()
     >;
 typedef $$TaskSyncEntriesTableCreateCompanionBuilder =
@@ -10727,6 +12424,18 @@ class $PactaDatabaseManager {
       $$LocalNationalFocusCardsTableTableManager(
         _db,
         _db.localNationalFocusCards,
+      );
+  $$LocalNationalFocusMaintenanceTableTableManager
+  get localNationalFocusMaintenance =>
+      $$LocalNationalFocusMaintenanceTableTableManager(
+        _db,
+        _db.localNationalFocusMaintenance,
+      );
+  $$LocalNationalFocusFailuresTableTableManager
+  get localNationalFocusFailures =>
+      $$LocalNationalFocusFailuresTableTableManager(
+        _db,
+        _db.localNationalFocusFailures,
       );
   $$TaskSyncEntriesTableTableManager get taskSyncEntries =>
       $$TaskSyncEntriesTableTableManager(_db, _db.taskSyncEntries);

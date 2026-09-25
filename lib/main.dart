@@ -363,9 +363,19 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   Widget build(BuildContext context) {
     final nationalFocusRepository = ref.watch(nationalFocusRepositoryProvider);
+    final focusRepository = ref.watch(focusRepositoryProvider);
     final pages = [
       const BoardPage(),
-      NationalFocusTreePage(repository: nationalFocusRepository),
+      NationalFocusTreePage(
+        repository: nationalFocusRepository,
+        displayTimeZoneLoader: () async {
+          final deviceZone = await FlutterTimezone.getLocalTimezone();
+          final dashboard = await focusRepository.getDashboardMetrics(
+            deviceTimeZoneId: deviceZone.identifier,
+          );
+          return dashboard.displayTimeZoneId;
+        },
+      ),
       const FocusChainPage(),
       const MyPage(),
     ];

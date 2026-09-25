@@ -45,8 +45,39 @@ class LocalNationalFocusCards extends Table {
   BoolColumn get isInTree => boolean().withDefault(const Constant(false))();
   TextColumn get parentId => text().nullable()();
   TextColumn get state => text().withDefault(const Constant('extinguished'))();
+  IntColumn get successfulDays => integer().withDefault(const Constant(0))();
+  IntColumn get currentConsecutiveDays =>
+      integer().withDefault(const Constant(0))();
+  IntColumn get bestConsecutiveDays =>
+      integer().withDefault(const Constant(0))();
+  BoolColumn get maintenanceCycleStarted =>
+      boolean().withDefault(const Constant(false))();
+  TextColumn get failureReason => text().nullable()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId, id};
+}
+
+class LocalNationalFocusMaintenance extends Table {
+  TextColumn get userId => text()();
+  DateTimeColumn get lastSettledCheckpointAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId};
+}
+
+class LocalNationalFocusFailures extends Table {
+  TextColumn get userId => text()();
+  TextColumn get id => text()();
+  TextColumn get batchId => text()();
+  TextColumn get cardId => text()();
+  DateTimeColumn get checkpointAt => dateTime()();
+  TextColumn get cause => text()();
+  TextColumn get failureReason => text().nullable()();
+  TextColumn get sharedExplanation => text().nullable()();
+  TextColumn get treeSnapshot => text()();
 
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
@@ -201,6 +232,8 @@ class TaskSyncEntries extends Table {
     LocalGoals,
     LocalTasks,
     LocalNationalFocusCards,
+    LocalNationalFocusMaintenance,
+    LocalNationalFocusFailures,
     TaskSyncEntries,
     FocusSessions,
     FocusNodes,
@@ -219,7 +252,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 13;
+  int get schemaVersion => 14;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -294,6 +327,30 @@ class PactaDatabase extends _$PactaDatabase {
       }
       if (from < 13) {
         await m.createTable(localNationalFocusCards);
+      }
+      if (from < 14) {
+        await m.addColumn(
+          localNationalFocusCards,
+          localNationalFocusCards.successfulDays,
+        );
+        await m.addColumn(
+          localNationalFocusCards,
+          localNationalFocusCards.currentConsecutiveDays,
+        );
+        await m.addColumn(
+          localNationalFocusCards,
+          localNationalFocusCards.bestConsecutiveDays,
+        );
+        await m.addColumn(
+          localNationalFocusCards,
+          localNationalFocusCards.maintenanceCycleStarted,
+        );
+        await m.addColumn(
+          localNationalFocusCards,
+          localNationalFocusCards.failureReason,
+        );
+        await m.createTable(localNationalFocusMaintenance);
+        await m.createTable(localNationalFocusFailures);
       }
     },
   );

@@ -1,16 +1,27 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:timezone/timezone.dart' as timezone;
 
+import '../focus/focus_time_zones.dart';
+import 'national_focus_checkpoints.dart';
 import 'national_focus_models.dart';
 import 'national_focus_repository.dart';
 
 /// The National Focus destination body. The app shell owns the app bar and
 /// bottom navigation; this widget owns the tree canvas and its local flows.
 class NationalFocusTreePage extends StatefulWidget {
-  const NationalFocusTreePage({super.key, required this.repository});
+  const NationalFocusTreePage({
+    super.key,
+    required this.repository,
+    this.displayTimeZoneLoader,
+    this.now,
+  });
 
   final NationalFocusRepository repository;
+  final Future<String?> Function()? displayTimeZoneLoader;
+  final DateTime Function()? now;
 
   @override
   State<NationalFocusTreePage> createState() => _NationalFocusTreePageState();
@@ -20,6 +31,155 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   bool _detailed = false;
   NationalFocusCard? _placementCard;
   String? _error;
+  String _displayTimeZoneId = 'Etc/UTC';
+  late DateTime _now;
+  final Set<String> _busyCardIds = {};
+  bool _confirming = false;
+  Timer? _settlementTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _now = (widget.now?.call() ?? DateTime.now()).toUtc();
+    _loadDisplayTimeZone();
+    _settlementTimer = Timer.periodic(
+      const Duration(minutes: 1),
+      (_) => _refreshCheckpointState(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _settlementTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadDisplayTimeZone() async {
+    try {
+      final zoneId = await widget.displayTimeZoneLoader?.call();
+      if (!mounted || zoneId == null || !FocusTimeZones.contains(zoneId)) {
+        return;
+      }
+      setState(() => _displayTimeZoneId = zoneId);
+    } catch (_) {
+      // UTC remains a clear fallback if the device zone cannot be read.
+    }
+  }
+
+  Future<void> _refreshCheckpointState() async {
+    _now = (widget.now?.call() ?? DateTime.now()).toUtc();
+    try {
+      await widget.repository.settleDueCheckpoints();
+    } catch (_) {
+      // Keep the last readable tree visible; the next repository operation
+      // retries settlement and reports any actionable error.
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _confirmToday() async {
+    if (_confirming) return;
+    setState(() {
+      _confirming = true;
+      _error = null;
+    });
+    try {
+      final count = await widget.repository.confirmToday();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              count == 0 ? '当前没有待确认节点。' : '已确认 $count 个国策节点今日继续有效。',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _confirming = false);
+    }
+  }
+
+  Future<void> _lightCard(NationalFocusCard card) async {
+    if (!_busyCardIds.add(card.id)) return;
+    setState(() => _error = null);
+    try {
+      await widget.repository.lightCard(card.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              card.state == NationalFocusCardState.pendingTodayConfirmation
+                  ? '已确认「${card.triggerCondition}」今日继续有效。'
+                  : '已点亮「${card.triggerCondition}」。',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = _friendlyError(error));
+    } finally {
+      _busyCardIds.remove(card.id);
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _extinguishCard(NationalFocusCard card) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (_) => _ExtinguishReasonDialog(card: card),
+    );
+    if (reason == null || !mounted || !_busyCardIds.add(card.id)) return;
+
+    setState(() => _error = null);
+    try {
+      await widget.repository.extinguishCard(
+        cardId: card.id,
+        failureReason: reason,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已熄灭「${card.triggerCondition}」。')),
+        );
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = _friendlyError(error));
+    } finally {
+      _busyCardIds.remove(card.id);
+      if (mounted) setState(() {});
+    }
+  }
+
+  Future<void> _openFailureHistory() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => NationalFocusFailureHistorySheet(
+        repository: widget.repository,
+        displayTimeZoneId: _displayTimeZoneId,
+      ),
+    );
+  }
+
+  String _formatCheckpoint(DateTime now, String timeZoneId) {
+    final checkpoint = nextNationalFocusCheckpoint(now);
+    final localTime = FocusTimeZones.contains(timeZoneId)
+        ? timezone.TZDateTime.from(
+            checkpoint,
+            FocusTimeZones.location(timeZoneId),
+          )
+        : checkpoint.toLocal();
+    final date =
+        '${localTime.year}-'
+        '${localTime.month.toString().padLeft(2, '0')}-'
+        '${localTime.day.toString().padLeft(2, '0')}';
+    final time =
+        '${localTime.hour.toString().padLeft(2, '0')}:'
+        '${localTime.minute.toString().padLeft(2, '0')}';
+    return '下次检查点：$date $time · $timeZoneId';
+  }
 
   Future<void> _openLibrary() async {
     final card = await Navigator.of(context).push<NationalFocusCard>(
@@ -85,6 +245,12 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
           return const Center(child: CircularProgressIndicator());
         }
         final cards = snapshot.data!;
+        final pendingCount = cards
+            .where(
+              (card) =>
+                  card.state == NationalFocusCardState.pendingTodayConfirmation,
+            )
+            .length;
         final childrenByParent = <String, List<NationalFocusCard>>{};
         final roots = <NationalFocusCard>[];
         for (final card in cards) {
@@ -117,7 +283,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '按当前结构查看国策卡，卡片状态由你手动判断。',
+                          '确认节点今日继续有效，并查看连续记录与内化进度。',
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ],
@@ -130,6 +296,17 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                     label: const Text('卡片库'),
                   ),
                 ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: _MaintenanceSummary(
+                nextCheckpoint: _formatCheckpoint(_now, _displayTimeZoneId),
+                displayTimeZoneId: _displayTimeZoneId,
+                pendingCount: pendingCount,
+                confirming: _confirming,
+                onConfirm: _placementCard == null ? _confirmToday : null,
+                onOpenHistory: _openFailureHistory,
               ),
             ),
             if (_placementCard case final card?)
@@ -251,6 +428,9 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
       blocked: isBlocked,
       onSelect: selecting && !isBlocked ? () => _placeAt(card.id) : null,
       onRelocate: () => _beginPlacement(card),
+      onLight: selecting ? null : () => _lightCard(card),
+      onExtinguish: selecting ? null : () => _extinguishCard(card),
+      busy: _busyCardIds.contains(card.id),
     );
     return Padding(
       padding: EdgeInsets.only(left: math.min(depth, 6) * 12.0),
@@ -566,6 +746,9 @@ class _NationalFocusTreeNode extends StatelessWidget {
     required this.blocked,
     required this.onSelect,
     required this.onRelocate,
+    required this.onLight,
+    required this.onExtinguish,
+    required this.busy,
   });
 
   final NationalFocusCard card;
@@ -575,6 +758,9 @@ class _NationalFocusTreeNode extends StatelessWidget {
   final bool blocked;
   final VoidCallback? onSelect;
   final VoidCallback onRelocate;
+  final VoidCallback? onLight;
+  final VoidCallback? onExtinguish;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -587,10 +773,20 @@ class _NationalFocusTreeNode extends StatelessWidget {
             selecting: selecting,
             blocked: blocked,
             onRelocate: onRelocate,
+            onLight: onLight,
+            onExtinguish: onExtinguish,
+            busy: busy,
           )
-        : _StructureTreeCard(path: path, blocked: selecting && blocked);
+        : _StructureTreeCard(
+            card: card,
+            path: path,
+            blocked: selecting && blocked,
+            onLight: onLight,
+            onExtinguish: onExtinguish,
+            busy: busy,
+          );
 
-    if (!selecting) return content;
+    if (!selecting) return Card(child: content);
     return Semantics(
       button: !blocked,
       enabled: !blocked,
@@ -608,51 +804,85 @@ class _NationalFocusTreeNode extends StatelessWidget {
 }
 
 class _StructureTreeCard extends StatelessWidget {
-  const _StructureTreeCard({required this.path, required this.blocked});
+  const _StructureTreeCard({
+    required this.card,
+    required this.path,
+    required this.blocked,
+    required this.onLight,
+    required this.onExtinguish,
+    required this.busy,
+  });
 
+  final NationalFocusCard card;
   final String path;
   final bool blocked;
+  final VoidCallback? onLight;
+  final VoidCallback? onExtinguish;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 20,
-            backgroundColor: blocked
-                ? colors.surfaceContainerHighest
-                : colors.primaryContainer,
-            child: Icon(
-              Icons.account_tree_outlined,
-              color: blocked
-                  ? colors.onSurfaceVariant
-                  : colors.onPrimaryContainer,
-              size: 21,
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: blocked
+                    ? colors.surfaceContainerHighest
+                    : colors.primaryContainer,
+                child: Icon(
+                  Icons.account_tree_outlined,
+                  color: blocked
+                      ? colors.onSurfaceVariant
+                      : colors.onPrimaryContainer,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '节点 $path · ${card.state.label}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              if (blocked)
+                const Tooltip(
+                  message: '不能选择本人或其后代作为父节点',
+                  child: Icon(Icons.block_outlined),
+                )
+              else
+                Icon(
+                  Icons.chevron_right,
+                  color: colors.onSurfaceVariant,
+                  semanticLabel: '树节点',
+                ),
+            ],
+          ),
+        ),
+        if (onLight != null || onExtinguish != null) ...[
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _NationalFocusRecordSummary(card: card),
+                const SizedBox(height: 12),
+                _NodeMaintenanceAction(
+                  card: card,
+                  onLight: onLight,
+                  onExtinguish: onExtinguish,
+                  busy: busy,
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              '节点 $path',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-          ),
-          if (blocked)
-            const Tooltip(
-              message: '不能选择本人或其后代作为父节点',
-              child: Icon(Icons.block_outlined),
-            )
-          else
-            Icon(
-              Icons.chevron_right,
-              color: colors.onSurfaceVariant,
-              semanticLabel: '树节点',
-            ),
         ],
-      ),
+      ],
     );
   }
 }
@@ -664,6 +894,9 @@ class _DetailedTreeCard extends StatelessWidget {
     required this.selecting,
     required this.blocked,
     required this.onRelocate,
+    required this.onLight,
+    required this.onExtinguish,
+    required this.busy,
   });
 
   final NationalFocusCard card;
@@ -671,6 +904,9 @@ class _DetailedTreeCard extends StatelessWidget {
   final bool selecting;
   final bool blocked;
   final VoidCallback onRelocate;
+  final VoidCallback? onLight;
+  final VoidCallback? onExtinguish;
+  final bool busy;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -701,8 +937,17 @@ class _DetailedTreeCard extends StatelessWidget {
           const SizedBox(height: 12),
           _FieldText(label: '例外说明', value: card.exceptionNotes!),
         ],
+        const SizedBox(height: 16),
+        _NationalFocusRecordSummary(card: card),
         if (!selecting) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
+          _NodeMaintenanceAction(
+            card: card,
+            onLight: onLight,
+            onExtinguish: onExtinguish,
+            busy: busy,
+          ),
+          const SizedBox(height: 4),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
@@ -723,6 +968,460 @@ class _DetailedTreeCard extends StatelessWidget {
       ],
     ),
   );
+}
+
+class _MaintenanceSummary extends StatelessWidget {
+  const _MaintenanceSummary({
+    required this.nextCheckpoint,
+    required this.displayTimeZoneId,
+    required this.pendingCount,
+    required this.confirming,
+    required this.onConfirm,
+    required this.onOpenHistory,
+  });
+
+  final String nextCheckpoint;
+  final String displayTimeZoneId;
+  final int pendingCount;
+  final bool confirming;
+  final VoidCallback? onConfirm;
+  final VoidCallback onOpenHistory;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    color: Theme.of(context).colorScheme.surfaceContainerLow,
+    margin: EdgeInsets.zero,
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.schedule_outlined),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      nextCheckpoint,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '固定规则为北京时间 04:00；显示时区 $displayTimeZoneId 不会移动结算边界。',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            pendingCount == 0 ? '今日没有待确认节点。' : '待今日确认：$pendingCount 个节点',
+            style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.tonalIcon(
+                onPressed: onConfirm == null || pendingCount == 0 || confirming
+                    ? null
+                    : onConfirm,
+                icon: confirming
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.done_all),
+                label: Text(confirming ? '正在确认' : '一键确认今日'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onOpenHistory,
+                icon: const Icon(Icons.history),
+                label: const Text('查看失败记录'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _NationalFocusRecordSummary extends StatelessWidget {
+  const _NationalFocusRecordSummary({required this.card});
+
+  final NationalFocusCard card;
+
+  @override
+  Widget build(BuildContext context) {
+    final progress = card.internalizationProgress.clamp(0.0, 100.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '当前连续 ${card.currentConsecutiveDays} 天 · 历史最高 '
+          '${card.bestConsecutiveDays} 天 · 成功日 ${card.successfulDays} 天',
+          style: Theme.of(context).textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 8),
+        Semantics(
+          label: '内化进度 ${progress.toStringAsFixed(1)}%',
+          child: LinearProgressIndicator(value: progress / 100),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '内化进度 ${progress.toStringAsFixed(1)}% · 按成功日累计计算',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
+}
+
+class _NodeMaintenanceAction extends StatelessWidget {
+  const _NodeMaintenanceAction({
+    required this.card,
+    required this.onLight,
+    required this.onExtinguish,
+    required this.busy,
+  });
+
+  final NationalFocusCard card;
+  final VoidCallback? onLight;
+  final VoidCallback? onExtinguish;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    if (card.state == NationalFocusCardState.lit) {
+      return OutlinedButton.icon(
+        onPressed: busy ? null : onExtinguish,
+        icon: const Icon(Icons.lightbulb_outline),
+        label: const Text('主动熄灭'),
+      );
+    }
+    if (card.state == NationalFocusCardState.pendingTodayConfirmation) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          FilledButton.tonalIcon(
+            onPressed: busy ? null : onLight,
+            icon: const Icon(Icons.check_circle_outline),
+            label: const Text('确认今日继续有效'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: busy ? null : onExtinguish,
+            icon: const Icon(Icons.lightbulb_outline),
+            label: const Text('主动熄灭'),
+          ),
+        ],
+      );
+    }
+    return FilledButton.tonalIcon(
+      onPressed: busy ? null : onLight,
+      icon: const Icon(Icons.lightbulb),
+      label: const Text('点亮'),
+    );
+  }
+}
+
+class _ExtinguishReasonDialog extends StatefulWidget {
+  const _ExtinguishReasonDialog({required this.card});
+
+  final NationalFocusCard card;
+
+  @override
+  State<_ExtinguishReasonDialog> createState() =>
+      _ExtinguishReasonDialogState();
+}
+
+class _ExtinguishReasonDialogState extends State<_ExtinguishReasonDialog> {
+  String _reason = '';
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    scrollable: true,
+    title: const Text('主动熄灭这个节点？'),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('「${widget.card.triggerCondition}」会在下一检查点结算；此前重新点亮可保留当前连续记录。'),
+        const SizedBox(height: 16),
+        TextField(
+          autofocus: true,
+          maxLength: 300,
+          minLines: 1,
+          maxLines: 3,
+          onChanged: (value) => _reason = value,
+          decoration: const InputDecoration(
+            labelText: '失败原因（可选）',
+            hintText: '可以留空，之后再补充说明',
+          ),
+        ),
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('取消'),
+      ),
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(''),
+        child: const Text('暂不填写'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.of(context).pop(_reason),
+        child: const Text('保存原因并熄灭'),
+      ),
+    ],
+  );
+}
+
+class _FailureExplanationDialog extends StatefulWidget {
+  const _FailureExplanationDialog({required this.initialExplanation});
+
+  final String? initialExplanation;
+
+  @override
+  State<_FailureExplanationDialog> createState() =>
+      _FailureExplanationDialogState();
+}
+
+class _FailureExplanationDialogState extends State<_FailureExplanationDialog> {
+  late String _explanation = widget.initialExplanation ?? '';
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    scrollable: true,
+    title: const Text('补充失败记录说明'),
+    content: TextFormField(
+      initialValue: _explanation,
+      autofocus: true,
+      maxLength: 500,
+      minLines: 2,
+      maxLines: 5,
+      onChanged: (value) => _explanation = value,
+      decoration: const InputDecoration(
+        labelText: '说明（可选）',
+        hintText: '可以补充背景，也可以留空清除已有说明',
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('取消'),
+      ),
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(''),
+        child: const Text('清除说明'),
+      ),
+      FilledButton(
+        onPressed: () => Navigator.of(context).pop(_explanation),
+        child: const Text('保存'),
+      ),
+    ],
+  );
+}
+
+class NationalFocusFailureHistorySheet extends StatefulWidget {
+  const NationalFocusFailureHistorySheet({
+    super.key,
+    required this.repository,
+    required this.displayTimeZoneId,
+  });
+
+  final NationalFocusRepository repository;
+  final String displayTimeZoneId;
+
+  @override
+  State<NationalFocusFailureHistorySheet> createState() =>
+      _NationalFocusFailureHistorySheetState();
+}
+
+class _NationalFocusFailureHistorySheetState
+    extends State<NationalFocusFailureHistorySheet> {
+  late Future<List<NationalFocusFailure>> _failures;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  void _reload() {
+    _failures = widget.repository.getFailures();
+  }
+
+  Future<void> _editExplanation(NationalFocusFailure failure) async {
+    final explanation = await showDialog<String>(
+      context: context,
+      builder: (_) => _FailureExplanationDialog(
+        initialExplanation: failure.sharedExplanation,
+      ),
+    );
+    if (explanation == null || !mounted) return;
+    try {
+      await widget.repository.updateFailureExplanation(
+        batchId: failure.batchId,
+        explanation: explanation,
+      );
+      if (mounted) setState(_reload);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(_friendlyError(error))));
+      }
+    }
+  }
+
+  String _formatCheckpoint(DateTime checkpoint) {
+    final local = FocusTimeZones.contains(widget.displayTimeZoneId)
+        ? timezone.TZDateTime.from(
+            checkpoint,
+            FocusTimeZones.location(widget.displayTimeZoneId),
+          )
+        : checkpoint.toLocal();
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-'
+        '${local.day.toString().padLeft(2, '0')} '
+        '${local.hour.toString().padLeft(2, '0')}:'
+        '${local.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: FractionallySizedBox(
+      heightFactor: 0.9,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('国策失败记录', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 12),
+            Expanded(
+              child: FutureBuilder<List<NationalFocusFailure>>(
+                future: _failures,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(child: Text(_friendlyError(snapshot.error!)));
+                  }
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final grouped = <String, List<NationalFocusFailure>>{};
+                  for (final failure in snapshot.data!) {
+                    grouped.putIfAbsent(failure.batchId, () => []).add(failure);
+                  }
+                  if (grouped.isEmpty) {
+                    return const Center(child: Text('还没有国策失败记录。'));
+                  }
+                  final batches = grouped.values.toList(growable: false);
+                  return ListView.separated(
+                    itemCount: batches.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) => _FailureBatchCard(
+                      failures: batches[index],
+                      checkpointLabel: _formatCheckpoint(
+                        batches[index].first.checkpointAt,
+                      ),
+                      onEditExplanation: () =>
+                          _editExplanation(batches[index].first),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _FailureBatchCard extends StatelessWidget {
+  const _FailureBatchCard({
+    required this.failures,
+    required this.checkpointLabel,
+    required this.onEditExplanation,
+  });
+
+  final List<NationalFocusFailure> failures;
+  final String checkpointLabel;
+  final VoidCallback onEditExplanation;
+
+  @override
+  Widget build(BuildContext context) {
+    final representative = failures.first;
+    return Card(
+      child: Column(
+        children: [
+          ExpansionTile(
+            title: Text('$checkpointLabel · ${failures.length} 个节点'),
+            subtitle: Text(representative.cause.label),
+            children: [
+              for (final failure in failures)
+                ListTile(
+                  leading: const Icon(Icons.account_tree_outlined),
+                  title: Text(_snapshotName(failure)),
+                  subtitle: Text(failure.failureReason ?? '主动熄灭时未填写原因'),
+                ),
+              const Divider(),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      '检查点时的完整树快照',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                    for (final card in representative.treeSnapshot)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          '${card.triggerCondition} · ${card.state.label} · '
+                          '连续 ${card.currentConsecutiveDays} 天 · '
+                          '最高 ${card.bestConsecutiveDays} 天',
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: onEditExplanation,
+                icon: const Icon(Icons.edit_note),
+                label: Text(
+                  representative.sharedExplanation == null ? '补充说明' : '编辑共同说明',
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _snapshotName(NationalFocusFailure failure) =>
+      failure.treeSnapshot
+          .where((card) => card.id == failure.cardId)
+          .map((card) => card.triggerCondition)
+          .firstOrNull ??
+      '已移除的国策卡';
 }
 
 class _TopLevelPosition extends StatelessWidget {
