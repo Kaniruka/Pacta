@@ -92,6 +92,10 @@ _Avoid_: Current streak, Task progress, completion percentage
 A user-defined stricter set of requirements for a National Focus Card, expressed through concrete Trigger Condition and/or Action content; for example, changing a trigger from before 02:00 to before 01:00. A card retains its base requirements and supports up to five user-created strengthening levels, each with its own concrete requirements; the base is not counted toward this limit. Levels are defined independently of Internalization Progress and are not automatically earned upgrades.
 _Avoid_: Internalization Progress, automatic upgrade, numeric-only bonus
 
+**National Focus Requirement Version (国策要求版本)**:
+An immutable snapshot of a National Focus Card's effective Trigger Condition, Action, Scope, and Exception Notes, tied to the period when that combination governed the card. Selecting another Strengthening Level or editing the active level starts a new version without changing prior versions or National Focus records.
+_Avoid_: Card revision, automatic evaluation
+
 **National Focus Daily Confirmation (国策每日确认)**:
 The user's acknowledgment that a node remains valid today (确认今日继续有效), performed by individually lighting pending nodes or by One-click Confirm Today. The batch lights only Pending Today Confirmation nodes and leaves Lit and Extinguished nodes unchanged.
 _Avoid_: Yesterday-success acknowledgment, automatic daily confirmation
