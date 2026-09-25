@@ -93,6 +93,7 @@ void main() {
         await tester.tap(relocateChild);
         await tester.pumpAndSettle();
         await _scrollTreeToTop(tester);
+        await _reveal(tester, find.text('主父卡', skipOffstage: false));
         expect(find.text('主父卡'), findsOneWidget);
         await tester.tap(nodeCard('主父卡'));
         await tester.pumpAndSettle();
@@ -100,9 +101,7 @@ void main() {
       expect((await repository.getCard(child.id)).parentId, mainRoot.id);
       expect((await repository.getCard(grandchild.id)).parentId, child.id);
 
-      if (Platform.isWindows) {
-        await _reveal(tester, find.text('主父卡', skipOffstage: false));
-      }
+      await _reveal(tester, find.text('主父卡', skipOffstage: false));
       final moveBranch = find.descendant(
         of: nodeCard('主父卡'),
         matching: find.text('移入卡片库'),
