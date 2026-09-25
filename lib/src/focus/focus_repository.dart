@@ -149,6 +149,13 @@ class UnavailableFocusRemoteDataSource implements FocusRemoteDataSource {
 
 abstract interface class FocusRepository {
   Stream<List<FocusSession>> watchSessions();
+  Stream<List<FocusReconciliationCase>> watchFocusReconciliations();
+  Future<List<FocusReconciliationCase>> getFocusReconciliations();
+  Future<void> resolveFocusReconciliation({
+    required String caseId,
+    required Map<String, FocusSessionReconciliationSelection> sessionSelections,
+    String? adoptedSessionId,
+  });
   Stream<FocusDashboardMetrics> watchDashboardMetrics({
     required String deviceTimeZoneId,
   });
@@ -261,6 +268,12 @@ class LocalFocusRepository implements FocusRepository {
   }
 
   @override
+  Stream<List<FocusReconciliationCase>> watchFocusReconciliations() async* {
+    yield await getFocusReconciliations();
+    yield* _changes.stream.asyncMap((_) => getFocusReconciliations());
+  }
+
+  @override
   Future<List<FocusSession>> getSessions() async {
     await _settleDueAppointments();
     await _settleDueSessions();
@@ -270,6 +283,347 @@ class LocalFocusRepository implements FocusRepository {
               ..orderBy([(session) => OrderingTerm.desc(session.startedAt)]))
             .get();
     return [for (final row in rows) _sessionFromRow(row)];
+  }
+
+  @override
+  Future<List<FocusReconciliationCase>> getFocusReconciliations() async {
+    final sessions = await _getSessionsWithoutSettling();
+    if (sessions.isEmpty) return const [];
+    final sources = await _getSyncSources();
+    final sourceById = {for (final source in sources) source.sourceId: source};
+    final headsBySession = _focusSourceHeadGroups(
+      sources,
+      entityType: 'focus_session',
+    );
+    final conflictingIds = _conflictingFocusEntityIds(
+      sources,
+      entityType: 'focus_session',
+    );
+    final comparisonSessions = <FocusSession>[];
+    for (final session in sessions) {
+      final variants = [
+        for (final source in headsBySession[session.id] ?? const [])
+          _focusSessionFromJson(
+            jsonDecode(source.payload) as Map<String, dynamic>,
+          ),
+      ];
+      comparisonSessions.add(
+        variants.isEmpty
+            ? session
+            : _sessionWithUnionedIntervals(session, variants),
+      );
+    }
+
+    final includedIds = <String>{};
+    final cases = <FocusReconciliationCase>[];
+    for (final overlapping in _overlappingFocusSessionGroups(
+      comparisonSessions,
+    )) {
+      final groupIds = overlapping.map((session) => session.id).toSet();
+      final needsReview = overlapping.any(
+        (session) =>
+            session.isPendingReview ||
+            conflictingIds.contains(session.id) ||
+            session.reviewDispositionUpdatedAt != null ||
+            session.reviewDisposition == FocusRecordDisposition.duplicate,
+      );
+      if (!needsReview) continue;
+      includedIds.addAll(groupIds);
+      cases.add(
+        _reconciliationCase(
+          id: _reconciliationCaseId(groupIds),
+          sessions: [
+            for (final id in groupIds)
+              comparisonSessions.singleWhere((session) => session.id == id),
+          ],
+          headsBySession: headsBySession,
+          conflictingIds: conflictingIds,
+          sourceById: sourceById,
+        ),
+      );
+    }
+
+    for (final session in sessions) {
+      if (includedIds.contains(session.id)) continue;
+      if (!session.isPendingReview &&
+          !conflictingIds.contains(session.id) &&
+          session.reviewDispositionUpdatedAt == null &&
+          session.reviewDisposition != FocusRecordDisposition.duplicate) {
+        continue;
+      }
+      cases.add(
+        _reconciliationCase(
+          id: _reconciliationCaseId({session.id}),
+          sessions: [
+            comparisonSessions.singleWhere(
+              (candidate) => candidate.id == session.id,
+            ),
+          ],
+          headsBySession: headsBySession,
+          conflictingIds: conflictingIds,
+          sourceById: sourceById,
+        ),
+      );
+    }
+    cases.sort((left, right) {
+      if (left.isPendingReview != right.isPendingReview) {
+        return left.isPendingReview ? -1 : 1;
+      }
+      final leftAt = left.sessions
+          .map((entry) => entry.session.startedAt)
+          .reduce((a, b) => a.isBefore(b) ? a : b);
+      final rightAt = right.sessions
+          .map((entry) => entry.session.startedAt)
+          .reduce((a, b) => a.isBefore(b) ? a : b);
+      return rightAt.compareTo(leftAt);
+    });
+    return List.unmodifiable(cases);
+  }
+
+  FocusReconciliationCase _reconciliationCase({
+    required String id,
+    required List<FocusSession> sessions,
+    required Map<String, List<FocusSyncSource>> headsBySession,
+    required Set<String> conflictingIds,
+    required Map<String, FocusSyncSource> sourceById,
+  }) {
+    final sessionEntries = <FocusReconciliationSession>[];
+    for (final session in sessions) {
+      final heads = headsBySession[session.id] ?? const <FocusSyncSource>[];
+      final options = [
+        for (final source in heads)
+          FocusSessionSourceOption(
+            sourceId: source.sourceId,
+            deviceId: source.deviceId,
+            occurredAt: source.occurredAt,
+            session: _focusSessionFromJson(
+              jsonDecode(source.payload) as Map<String, dynamic>,
+            ),
+          ),
+      ]..sort((left, right) => left.occurredAt.compareTo(right.occurredAt));
+      final variants = options.map((option) => option.session).toList();
+      final displaySession = variants.isEmpty
+          ? session
+          : _sessionWithUnionedIntervals(session, variants);
+      final configSignatures = variants
+          .map(_focusConfigurationSignature)
+          .toSet();
+      final outcomeSignatures = variants.map(_focusOutcomeSignature).toSet();
+      sessionEntries.add(
+        FocusReconciliationSession(
+          session: displaySession,
+          availableSources: List.unmodifiable(options),
+          selectedConfigurationSource:
+              sourceById[session.configurationBasisSourceId ??
+                      (options.length == 1 ? options.single.sourceId : '')] ==
+                  null
+              ? null
+              : _sourceOption(
+                  sourceById[session.configurationBasisSourceId ??
+                      options.single.sourceId]!,
+                ),
+          selectedOutcomeSource:
+              sourceById[session.outcomeBasisSourceId ??
+                      (options.length == 1 ? options.single.sourceId : '')] ==
+                  null
+              ? null
+              : _sourceOption(
+                  sourceById[session.outcomeBasisSourceId ??
+                      options.single.sourceId]!,
+                ),
+          requiresConfigurationChoice:
+              conflictingIds.contains(session.id) &&
+              configSignatures.length > 1,
+          requiresOutcomeChoice:
+              conflictingIds.contains(session.id) &&
+              outcomeSignatures.length > 1,
+        ),
+      );
+    }
+    sessionEntries.sort((left, right) {
+      final byStart = left.session.startedAt.compareTo(right.session.startedAt);
+      return byStart == 0
+          ? left.session.id.compareTo(right.session.id)
+          : byStart;
+    });
+    return FocusReconciliationCase(id: id, sessions: sessionEntries);
+  }
+
+  FocusSessionSourceOption _sourceOption(FocusSyncSource source) =>
+      FocusSessionSourceOption(
+        sourceId: source.sourceId,
+        deviceId: source.deviceId,
+        occurredAt: source.occurredAt,
+        session: _focusSessionFromJson(
+          jsonDecode(source.payload) as Map<String, dynamic>,
+        ),
+      );
+
+  @override
+  Future<void> resolveFocusReconciliation({
+    required String caseId,
+    required Map<String, FocusSessionReconciliationSelection> sessionSelections,
+    String? adoptedSessionId,
+  }) async {
+    final cases = await getFocusReconciliations();
+    FocusReconciliationCase? reconciliation;
+    for (final candidate in cases) {
+      if (candidate.id == caseId) {
+        reconciliation = candidate;
+        break;
+      }
+    }
+    if (reconciliation == null) throw StateError('这组专注记录已不存在。');
+    if (!reconciliation.isPendingReview) return;
+
+    final sessionIds = reconciliation.sessions
+        .map((entry) => entry.session.id)
+        .toSet();
+    if (!sessionSelections.keys.toSet().containsAll(sessionIds)) {
+      throw StateError('请为这组中的每条专注记录选择核对结果。');
+    }
+    if (reconciliation.hasOverlappingSessions &&
+        (adoptedSessionId == null || !sessionIds.contains(adoptedSessionId))) {
+      throw StateError('请先选择实际采用的专注记录。');
+    }
+    if (!reconciliation.hasOverlappingSessions && adoptedSessionId != null) {
+      throw StateError('这组记录不需要选择重复记录。');
+    }
+
+    final sources = await _getSyncSources();
+    final headsBySession = _focusSourceHeadGroups(
+      sources,
+      entityType: 'focus_session',
+    );
+    final now = _now().toUtc();
+    final updates = <String, FocusSession>{};
+    final sourceUpdates = <({FocusSession session, List<String> parents})>[];
+
+    for (final entry in reconciliation.sessions) {
+      final currentRow = await _sessionRow(entry.session.id);
+      if (currentRow == null) throw StateError('专注记录已不存在。');
+      final current = _sessionFromRow(currentRow);
+      final options = entry.availableSources;
+      if (options.isEmpty) {
+        throw StateError('专注记录缺少可核对的原始来源。');
+      }
+      final selection = sessionSelections[entry.session.id]!;
+      final optionIds = options.map((option) => option.sourceId).toSet();
+      if (entry.requiresConfigurationChoice &&
+          (selection.configurationSourceId == null ||
+              !optionIds.contains(selection.configurationSourceId))) {
+        throw StateError('请从本组来源中选择配置依据。');
+      }
+      if (entry.requiresOutcomeChoice &&
+          (selection.outcomeSourceId == null ||
+              !optionIds.contains(selection.outcomeSourceId))) {
+        throw StateError('请从本组来源中选择结果依据。');
+      }
+
+      final configurationOption = _selectedSourceOption(
+        options,
+        requestedSourceId: selection.configurationSourceId,
+        rememberedSourceId: current.configurationBasisSourceId,
+        configurationSignature: _focusConfigurationSignature,
+      );
+      final outcomeOption = _selectedSourceOption(
+        options,
+        requestedSourceId: selection.outcomeSourceId,
+        rememberedSourceId: current.outcomeBasisSourceId,
+        configurationSignature: _focusOutcomeSignature,
+      );
+      final outcome = outcomeOption.session;
+      if (outcome.status != FocusSessionStatus.completed &&
+          outcome.status != FocusSessionStatus.failed) {
+        throw StateError('未结束的专注仍由原流程接续，不能在此核对结果。');
+      }
+      final intervals = _unionFocusIntervals([
+        for (final option in options) option.session,
+      ]);
+      final effectiveSeconds = intervals.isEmpty
+          ? outcome.effectiveSeconds
+          : intervals.fold<int>(
+              0,
+              (seconds, interval) => seconds + interval.durationSeconds,
+            );
+      final isAdopted =
+          !reconciliation.hasOverlappingSessions ||
+          entry.session.id == adoptedSessionId;
+      final updated = FocusSession(
+        id: current.id,
+        appointmentId: outcome.appointmentId,
+        taskId: configurationOption.session.taskId,
+        mode: configurationOption.session.mode,
+        durationSeconds: configurationOption.session.durationSeconds,
+        startedAt: outcome.startedAt,
+        endsAt: outcome.endsAt,
+        status: outcome.status,
+        completedAt: outcome.completedAt,
+        effectiveSeconds: effectiveSeconds,
+        completionType: outcome.completionType,
+        completionRuleText: outcome.completionRuleText,
+        pausedAt: outcome.pausedAt,
+        pausedSeconds: outcome.pausedSeconds,
+        pauseRuleText: outcome.pauseRuleText,
+        failureReason: outcome.failureReason,
+        effectiveIntervals: intervals,
+        reviewDisposition: isAdopted
+            ? FocusRecordDisposition.accepted
+            : FocusRecordDisposition.duplicate,
+        reviewDispositionUpdatedAt: now,
+        configurationBasisSourceId:
+            configurationOption.session.configurationBasisSourceId ??
+            configurationOption.sourceId,
+        outcomeBasisSourceId:
+            outcomeOption.session.outcomeBasisSourceId ??
+            outcomeOption.sourceId,
+      );
+      updates[updated.id] = updated;
+      sourceUpdates.add((
+        session: updated,
+        parents: headsBySession[updated.id]!
+            .map((source) => source.sourceId)
+            .toList(),
+      ));
+    }
+
+    await database.transaction(() async {
+      for (final session in updates.values) {
+        await _saveSession(session, queue: false);
+      }
+      for (final update in sourceUpdates) {
+        await _recordSyncSource(
+          entityType: 'focus_session',
+          entityId: update.session.id,
+          occurredAt: now,
+          parentSourceIds: update.parents,
+          payload: jsonEncode(_focusSessionToJson(update.session)),
+        );
+      }
+    });
+    await _reconcileFocusEffectsAfterDispositionChanges(updates: updates);
+    await _reconcileTaskFocusProgressFromSessions();
+    await _removeNodesForNonAcceptedSessionsAndRemote();
+    await _publish();
+  }
+
+  FocusSessionSourceOption _selectedSourceOption(
+    List<FocusSessionSourceOption> options, {
+    required String? requestedSourceId,
+    required String? rememberedSourceId,
+    required String Function(FocusSession) configurationSignature,
+  }) {
+    final selectedId = requestedSourceId ?? rememberedSourceId;
+    if (selectedId != null) {
+      for (final option in options) {
+        if (option.sourceId == selectedId) return option;
+      }
+    }
+    final signatures = options
+        .map((option) => configurationSignature(option.session))
+        .toSet();
+    if (signatures.length == 1) return options.first;
+    throw StateError('请明确选择专注记录的来源。');
   }
 
   @override
@@ -1529,6 +1883,7 @@ class LocalFocusRepository implements FocusRepository {
               entityType: source.entityType,
               entityId: source.entityId,
               parentSourceId: Value(source.parentSourceId),
+              parentSourceIds: Value(jsonEncode(source.parentSourceIds)),
               occurredAt: source.occurredAt,
               payload: source.payload,
             ),
@@ -1776,6 +2131,7 @@ class LocalFocusRepository implements FocusRepository {
         }
       }
     }
+    await _markNewOverlappingSessionsPending(dispositionUpdates);
     final reviewDispositionBySession = {
       for (final session in await _getSessionsWithoutSettling())
         session.id: session.reviewDisposition,
@@ -1903,6 +2259,59 @@ class LocalFocusRepository implements FocusRepository {
     await _publish();
   }
 
+  Future<void> _markNewOverlappingSessionsPending(
+    Map<String, FocusSession> dispositionUpdates,
+  ) async {
+    final sessions = await _getSessionsWithoutSettling();
+    final sources = await _getSyncSources();
+    final headsBySession = _focusSourceHeadGroups(
+      sources,
+      entityType: 'focus_session',
+    );
+    final sessionsById = {for (final session in sessions) session.id: session};
+    final comparisonSessions = [
+      for (final session in sessions)
+        _sessionWithUnionedIntervals(session, [
+          for (final source in headsBySession[session.id] ?? const [])
+            _focusSessionFromJson(
+              jsonDecode(source.payload) as Map<String, dynamic>,
+            ),
+        ]),
+    ];
+    for (final group in _overlappingFocusSessionGroups(comparisonSessions)) {
+      final hasUnreviewedSession = group.any(
+        (session) =>
+            session.reviewDispositionUpdatedAt == null &&
+            session.reviewDisposition != FocusRecordDisposition.duplicate,
+      );
+      if (!hasUnreviewedSession) continue;
+      for (final comparedSession in group) {
+        final session = sessionsById[comparedSession.id]!;
+        if (session.reviewDisposition == FocusRecordDisposition.duplicate ||
+            session.reviewDisposition == FocusRecordDisposition.pendingReview) {
+          continue;
+        }
+        final reviewedAt = _now().toUtc();
+        final pending = session.copyWithReviewDisposition(
+          disposition: FocusRecordDisposition.pendingReview,
+          reviewedAt: reviewedAt,
+        );
+        await (database.update(database.focusSessions)
+              ..where((row) => row.userId.equals(userId))
+              ..where((row) => row.id.equals(session.id)))
+            .write(
+              db.FocusSessionsCompanion(
+                reviewDisposition: Value(
+                  FocusRecordDisposition.pendingReview.storageValue,
+                ),
+                reviewDispositionUpdatedAt: Value(reviewedAt),
+              ),
+            );
+        dispositionUpdates[session.id] = pending;
+      }
+    }
+  }
+
   @override
   Future<void> dispose() => _changes.close();
 
@@ -1935,6 +2344,10 @@ class LocalFocusRepository implements FocusRepository {
             reviewDispositionUpdatedAt: Value(
               session.reviewDispositionUpdatedAt,
             ),
+            configurationBasisSourceId: Value(
+              session.configurationBasisSourceId,
+            ),
+            outcomeBasisSourceId: Value(session.outcomeBasisSourceId),
           ),
         );
     if (queue) await _queue('focus_session', session.id, session.startedAt);
@@ -2025,23 +2438,35 @@ class LocalFocusRepository implements FocusRepository {
     required DateTime occurredAt,
     required String payload,
     String? parentSourceId,
+    List<String>? parentSourceIds,
   }) async {
     final deviceId = await _getDeviceId();
-    final parent = parentSourceId == null
-        ? await (database.select(database.focusSyncSources)
-                ..where((source) => source.userId.equals(userId))
-                ..where((source) => source.entityType.equals(entityType))
-                ..where((source) => source.entityId.equals(entityId))
-                ..orderBy([
-                  (source) => OrderingTerm.desc(source.occurredAt),
-                  (source) => OrderingTerm.desc(source.sourceId),
-                ])
-                ..limit(1))
-              .getSingleOrNull()
-        : await (database.select(database.focusSyncSources)
-                ..where((source) => source.userId.equals(userId))
-                ..where((source) => source.sourceId.equals(parentSourceId)))
-              .getSingleOrNull();
+    final parents = parentSourceIds == null
+        ? parentSourceId == null
+              ? await (database.select(database.focusSyncSources)
+                      ..where((source) => source.userId.equals(userId))
+                      ..where((source) => source.entityType.equals(entityType))
+                      ..where((source) => source.entityId.equals(entityId))
+                      ..orderBy([
+                        (source) => OrderingTerm.desc(source.occurredAt),
+                        (source) => OrderingTerm.desc(source.sourceId),
+                      ])
+                      ..limit(1))
+                    .getSingleOrNull()
+              : await (database.select(database.focusSyncSources)
+                      ..where((source) => source.userId.equals(userId))
+                      ..where(
+                        (source) => source.sourceId.equals(parentSourceId),
+                      ))
+                    .getSingleOrNull()
+        : null;
+    final resolvedParentIds = parentSourceIds != null
+        ? parentSourceIds.toSet().toList()
+        : parentSourceId != null
+        ? [parentSourceId]
+        : parents == null
+        ? <String>[]
+        : [parents.sourceId];
     await database
         .into(database.focusSyncSources)
         .insert(
@@ -2051,7 +2476,10 @@ class LocalFocusRepository implements FocusRepository {
             deviceId: deviceId,
             entityType: entityType,
             entityId: entityId,
-            parentSourceId: Value(parent?.sourceId),
+            parentSourceId: Value(
+              resolvedParentIds.isEmpty ? null : resolvedParentIds.first,
+            ),
+            parentSourceIds: Value(jsonEncode(resolvedParentIds)),
             occurredAt: occurredAt.toUtc(),
             payload: payload,
           ),
@@ -2087,6 +2515,10 @@ class LocalFocusRepository implements FocusRepository {
           entityType: row.entityType,
           entityId: row.entityId,
           parentSourceId: row.parentSourceId,
+          parentSourceIds: _decodeParentSourceIds(
+            row.parentSourceId,
+            row.parentSourceIds,
+          ),
           occurredAt: row.occurredAt,
           payload: row.payload,
         ),
@@ -2204,7 +2636,9 @@ class LocalFocusRepository implements FocusRepository {
                 ..where((row) => row.userId.equals(userId))
                 ..where((row) => row.id.isIn(updates.keys)))
               .get();
-      final modes = changedRows.map((row) => row.mode).toSet();
+      final modes = FocusChainMode.values
+          .map((mode) => mode.storageValue)
+          .toSet();
       final dispositionChangedAtBySession = {
         for (final row in changedRows)
           if (row.reviewDispositionUpdatedAt != null)
@@ -2220,10 +2654,11 @@ class LocalFocusRepository implements FocusRepository {
             row.status == FocusSessionStatus.completed.storageValue &&
             FocusRecordDisposition.fromStorage(row.reviewDisposition)
                 .contributesToFocusProgress;
-        if (shouldHaveNode && nodes.isEmpty) {
+        if (shouldHaveNode) {
+          final note = nodes.isEmpty ? null : nodes.first.note;
           await database
               .into(database.focusNodes)
-              .insert(
+              .insertOnConflictUpdate(
                 db.FocusNodesCompanion.insert(
                   userId: userId,
                   id: row.id,
@@ -2232,6 +2667,7 @@ class LocalFocusRepository implements FocusRepository {
                   mode: row.mode,
                   createdAt: row.completedAt ?? row.endsAt,
                   effectiveSeconds: row.effectiveSeconds,
+                  note: Value(note),
                 ),
               );
           await _queue(
@@ -2589,6 +3025,8 @@ class LocalFocusRepository implements FocusRepository {
       row.reviewDisposition,
     ),
     reviewDispositionUpdatedAt: row.reviewDispositionUpdatedAt,
+    configurationBasisSourceId: row.configurationBasisSourceId,
+    outcomeBasisSourceId: row.outcomeBasisSourceId,
   );
 
   AppointmentPreparation _appointmentFromRow(db.FocusAppointment row) =>
@@ -2765,6 +3203,174 @@ List<Map<String, Object?>> _intervalsToJson(
     },
 ];
 
+String _focusConfigurationSignature(FocusSession session) => _canonicalJson({
+  'task_id': session.taskId,
+  'mode': session.mode.storageValue,
+  'duration_seconds': session.durationSeconds,
+});
+
+String _focusOutcomeSignature(FocusSession session) => _canonicalJson({
+  'status': session.status.storageValue,
+  'completed_at': session.completedAt == null
+      ? null
+      : _utcIso8601(session.completedAt!),
+  'completion_type': session.completionType.storageValue,
+  'completion_rule_text': session.completionRuleText,
+  'failure_reason': session.failureReason,
+});
+
+List<FocusTimeInterval> _unionFocusIntervals(Iterable<FocusSession> sessions) {
+  final intervals = <FocusTimeInterval>[];
+  for (final session in sessions) {
+    for (final interval in session.effectiveIntervals) {
+      final end = interval.endedAt ?? session.completedAt ?? session.endsAt;
+      if (!end.isAfter(interval.startedAt)) continue;
+      intervals.add(
+        FocusTimeInterval(startedAt: interval.startedAt, endedAt: end),
+      );
+    }
+  }
+  intervals.sort((left, right) {
+    final byStart = left.startedAt.compareTo(right.startedAt);
+    if (byStart != 0) return byStart;
+    return left.endedAt!.compareTo(right.endedAt!);
+  });
+  final merged = <FocusTimeInterval>[];
+  for (final interval in intervals) {
+    if (merged.isEmpty) {
+      merged.add(interval);
+      continue;
+    }
+    final previous = merged.last;
+    if (!interval.startedAt.isAfter(previous.endedAt!)) {
+      if (interval.endedAt!.isAfter(previous.endedAt!)) {
+        merged[merged.length - 1] = FocusTimeInterval(
+          startedAt: previous.startedAt,
+          endedAt: interval.endedAt,
+        );
+      }
+    } else {
+      merged.add(interval);
+    }
+  }
+  return List.unmodifiable(merged);
+}
+
+FocusSession _sessionWithUnionedIntervals(
+  FocusSession base,
+  Iterable<FocusSession> variants,
+) {
+  final intervals = _unionFocusIntervals(variants);
+  if (intervals.isEmpty) return base;
+  final seconds = intervals.fold<int>(
+    0,
+    (total, interval) => total + interval.durationSeconds,
+  );
+  return FocusSession(
+    id: base.id,
+    appointmentId: base.appointmentId,
+    taskId: base.taskId,
+    mode: base.mode,
+    durationSeconds: base.durationSeconds,
+    startedAt: base.startedAt,
+    endsAt: base.endsAt,
+    status: base.status,
+    completedAt: base.completedAt,
+    effectiveSeconds: seconds,
+    completionType: base.completionType,
+    completionRuleText: base.completionRuleText,
+    pausedAt: base.pausedAt,
+    pausedSeconds: base.pausedSeconds,
+    pauseRuleText: base.pauseRuleText,
+    failureReason: base.failureReason,
+    effectiveIntervals: intervals,
+    reviewDisposition: base.reviewDisposition,
+    reviewDispositionUpdatedAt: base.reviewDispositionUpdatedAt,
+    configurationBasisSourceId: base.configurationBasisSourceId,
+    outcomeBasisSourceId: base.outcomeBasisSourceId,
+  );
+}
+
+List<List<FocusSession>> _overlappingFocusSessionGroups(
+  Iterable<FocusSession> sessions,
+) {
+  final settled = sessions
+      .where(
+        (session) =>
+            session.status == FocusSessionStatus.completed ||
+            session.status == FocusSessionStatus.failed,
+      )
+      .toList();
+  final intervalsById = {
+    for (final session in settled) session.id: _unionFocusIntervals([session]),
+  };
+  final adjacentIds = <String, Set<String>>{
+    for (final session in settled) session.id: <String>{},
+  };
+  for (var leftIndex = 0; leftIndex < settled.length; leftIndex++) {
+    final left = settled[leftIndex];
+    for (
+      var rightIndex = leftIndex + 1;
+      rightIndex < settled.length;
+      rightIndex++
+    ) {
+      final right = settled[rightIndex];
+      if (_intervalsOverlap(
+        intervalsById[left.id]!,
+        intervalsById[right.id]!,
+      )) {
+        adjacentIds[left.id]!.add(right.id);
+        adjacentIds[right.id]!.add(left.id);
+      }
+    }
+  }
+
+  final sessionsById = {for (final session in settled) session.id: session};
+  final visited = <String>{};
+  final groups = <List<FocusSession>>[];
+  for (final session in settled) {
+    if (!visited.add(session.id) || adjacentIds[session.id]!.isEmpty) continue;
+    final pending = <String>[session.id];
+    final ids = <String>{};
+    while (pending.isNotEmpty) {
+      final id = pending.removeLast();
+      if (!ids.add(id)) continue;
+      for (final neighbor in adjacentIds[id]!) {
+        if (!ids.contains(neighbor)) pending.add(neighbor);
+      }
+    }
+    final group = [for (final id in ids) sessionsById[id]!]
+      ..sort((left, right) {
+        final byTime = left.startedAt.compareTo(right.startedAt);
+        return byTime == 0 ? left.id.compareTo(right.id) : byTime;
+      });
+    visited.addAll(ids);
+    groups.add(group);
+  }
+  groups.sort(
+    (left, right) => left.first.startedAt.compareTo(right.first.startedAt),
+  );
+  return groups;
+}
+
+bool _intervalsOverlap(
+  List<FocusTimeInterval> left,
+  List<FocusTimeInterval> right,
+) {
+  for (final first in left) {
+    for (final second in right) {
+      if (first.startedAt.isBefore(second.endedAt!) &&
+          second.startedAt.isBefore(first.endedAt!)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+String _reconciliationCaseId(Set<String> sessionIds) =>
+    (sessionIds.toList()..sort()).join('|');
+
 Map<String, dynamic> _focusSessionToJson(FocusSession session) => {
   'id': session.id,
   'appointment_id': session.appointmentId,
@@ -2789,6 +3395,8 @@ Map<String, dynamic> _focusSessionToJson(FocusSession session) => {
   'review_disposition_updated_at': session.reviewDispositionUpdatedAt == null
       ? null
       : _utcIso8601(session.reviewDispositionUpdatedAt!),
+  'configuration_basis_source_id': session.configurationBasisSourceId,
+  'outcome_basis_source_id': session.outcomeBasisSourceId,
 };
 
 FocusSession _focusSessionFromJson(Map<String, dynamic> json) => FocusSession(
@@ -2827,6 +3435,8 @@ FocusSession _focusSessionFromJson(Map<String, dynamic> json) => FocusSession(
       (json['review_disposition_updated_at'] as String?) == null
       ? null
       : DateTime.parse(json['review_disposition_updated_at'] as String).toUtc(),
+  configurationBasisSourceId: json['configuration_basis_source_id'] as String?,
+  outcomeBasisSourceId: json['outcome_basis_source_id'] as String?,
 );
 
 Map<String, dynamic> _focusAppointmentToJson(
@@ -2904,6 +3514,7 @@ Map<String, dynamic> _focusSourceRowToJson(
   'entity_type': source.entityType,
   'entity_id': source.entityId,
   'parent_source_id': source.parentSourceId,
+  'parent_source_ids': source.parentSourceIds,
   'occurred_at': _utcIso8601(source.occurredAt),
   'payload': jsonDecode(source.payload),
 };
@@ -2915,6 +3526,10 @@ FocusSyncSource _focusSourceFromJson(Map<String, dynamic> json) =>
       entityType: json['entity_type'] as String,
       entityId: json['entity_id'] as String,
       parentSourceId: json['parent_source_id'] as String?,
+      parentSourceIds: _parentSourceIdsFromJson(
+        json['parent_source_id'] as String?,
+        json['parent_source_ids'],
+      ),
       occurredAt: DateTime.parse(json['occurred_at'] as String).toUtc(),
       payload: jsonEncode(json['payload']),
     );
@@ -2922,18 +3537,52 @@ FocusSyncSource _focusSourceFromJson(Map<String, dynamic> json) =>
 String _focusSourceSignature(FocusSyncSource source) {
   return _focusPayloadSignature(
     Map<String, dynamic>.from(jsonDecode(source.payload) as Map),
+    includeReviewDisposition: source.entityType == 'focus_session',
   );
 }
 
-String _focusPayloadSignature(Map<String, dynamic> payload) {
+String _focusPayloadSignature(
+  Map<String, dynamic> payload, {
+  bool includeReviewDisposition = false,
+}) {
   final state = Map<String, dynamic>.from(payload)
     ..removeWhere(
       (key, _) =>
-          key == 'review_disposition' ||
+          (!includeReviewDisposition && key == 'review_disposition') ||
           key == 'review_disposition_updated_at' ||
           key == 'updated_at',
     );
   return _canonicalJson(state);
+}
+
+List<String> _sourceParents(FocusSyncSource source) => {
+  if (source.parentSourceId != null) source.parentSourceId!,
+  ...source.parentSourceIds,
+}.toList();
+
+List<String> _decodeParentSourceIds(String? primaryId, String encodedIds) {
+  final decoded = jsonDecode(encodedIds);
+  final ids = decoded is List
+      ? decoded.whereType<String>().toList()
+      : <String>[];
+  if (primaryId != null && !ids.contains(primaryId)) ids.insert(0, primaryId);
+  return ids.toSet().toList();
+}
+
+List<String> _parentSourceIdsFromJson(String? primaryId, Object? values) {
+  final ids = <String>[];
+  if (values is List) {
+    ids.addAll(values.whereType<String>());
+  } else if (values is String) {
+    try {
+      final decoded = jsonDecode(values);
+      if (decoded is List) ids.addAll(decoded.whereType<String>());
+    } on FormatException {
+      // Older remotes may not expose the new parent list as JSON.
+    }
+  }
+  if (primaryId != null) ids.insert(0, primaryId);
+  return ids.toSet().toList();
 }
 
 String _appointmentConfigurationSignature(AppointmentPreparation appointment) =>
@@ -2962,8 +3611,8 @@ Map<String, List<FocusSyncSource>> _focusSourceHeadGroups(
   };
   final childrenBySourceId = <String, int>{};
   for (final source in entitySources) {
-    final parentId = source.parentSourceId;
-    if (parentId != null && sourcesById.containsKey(parentId)) {
+    for (final parentId in _sourceParents(source)) {
+      if (!sourcesById.containsKey(parentId)) continue;
       childrenBySourceId.update(
         parentId,
         (count) => count + 1,
@@ -2985,15 +3634,18 @@ Map<String, List<FocusSyncSource>> _focusSourceHeadGroups(
       var supersededByEquivalentAncestor = false;
       for (final descendant in entry.value) {
         if (descendant.sourceId == source.sourceId) continue;
-        var parentId = descendant.parentSourceId;
-        while (parentId != null) {
+        final pendingParentIds = _sourceParents(descendant);
+        final visited = <String>{};
+        while (pendingParentIds.isNotEmpty) {
+          final parentId = pendingParentIds.removeLast();
+          if (!visited.add(parentId)) continue;
           final parent = sourcesById[parentId];
-          if (parent == null) break;
+          if (parent == null) continue;
           if (_focusSourceSignature(parent) == signature) {
             supersededByEquivalentAncestor = true;
             break;
           }
-          parentId = parent.parentSourceId;
+          pendingParentIds.addAll(_sourceParents(parent));
         }
         if (supersededByEquivalentAncestor) break;
       }
@@ -3054,26 +3706,34 @@ bool _sourceHeadDescendsFromLocal(
   required FocusSyncSource sourceHead,
   required List<FocusSyncSource> sources,
 }) {
-  final localSignature = _focusPayloadSignature(localPayload);
+  final localSignatureWithDisposition = _focusPayloadSignature(
+    localPayload,
+    includeReviewDisposition: entityType == 'focus_session',
+  );
   final localSourceIds = sources
       .where(
         (source) =>
             source.entityType == entityType &&
             source.entityId == entityId &&
-            _focusSourceSignature(source) == localSignature,
+            _focusSourceSignature(source) == localSignatureWithDisposition,
       )
       .map((source) => source.sourceId)
       .toSet();
   if (localSourceIds.contains(sourceHead.sourceId)) return true;
 
   final sourceById = {for (final source in sources) source.sourceId: source};
-  var parentId = sourceHead.parentSourceId;
-  while (parentId != null) {
+  final pendingParentIds = _sourceParents(sourceHead);
+  final visited = <String>{};
+  while (pendingParentIds.isNotEmpty) {
+    final parentId = pendingParentIds.removeLast();
+    if (!visited.add(parentId)) continue;
     if (localSourceIds.contains(parentId)) return true;
     final parent = sourceById[parentId];
-    if (parent == null) break;
-    if (_focusSourceSignature(parent) == localSignature) return true;
-    parentId = parent.parentSourceId;
+    if (parent == null) continue;
+    if (_focusSourceSignature(parent) == localSignatureWithDisposition) {
+      return true;
+    }
+    pendingParentIds.addAll(_sourceParents(parent));
   }
   return false;
 }
@@ -3085,10 +3745,7 @@ FocusSession _focusSessionWithRemoteReview(
   final remoteAt = remoteRow.reviewDispositionUpdatedAt;
   final sessionAt = session.reviewDispositionUpdatedAt;
   if (remoteAt != null && (sessionAt == null || remoteAt.isAfter(sessionAt))) {
-    return session.copyWithReviewDisposition(
-      disposition: remoteRow.reviewDisposition,
-      reviewedAt: remoteAt,
-    );
+    return remoteRow;
   }
   return session;
 }
@@ -3417,6 +4074,21 @@ class UnavailableFocusRepository implements FocusRepository {
 
   @override
   Stream<List<FocusSession>> watchSessions() => Stream.value(const []);
+
+  @override
+  Stream<List<FocusReconciliationCase>> watchFocusReconciliations() =>
+      Stream.value(const []);
+
+  @override
+  Future<List<FocusReconciliationCase>> getFocusReconciliations() async =>
+      const [];
+
+  @override
+  Future<void> resolveFocusReconciliation({
+    required String caseId,
+    required Map<String, FocusSessionReconciliationSelection> sessionSelections,
+    String? adoptedSessionId,
+  }) => _unavailable();
 
   @override
   Stream<FocusDashboardMetrics> watchDashboardMetrics({

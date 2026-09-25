@@ -10,6 +10,7 @@ import 'src/auth/auth_repository.dart';
 import 'src/auth/supabase_auth_repository.dart';
 import 'src/focus/focus_models.dart';
 import 'src/focus/focus_repository.dart';
+import 'src/focus/focus_reconciliation_page.dart';
 import 'src/focus/focus_time_zones.dart';
 import 'src/tasks/task_database.dart' show PactaDatabase;
 import 'src/tasks/task_models.dart';
@@ -366,6 +367,49 @@ class _Destination {
   final IconData selectedIcon;
 }
 
+class _FocusReconciliationPrompt extends StatelessWidget {
+  const _FocusReconciliationPrompt({
+    required this.focusRepository,
+    required this.taskRepository,
+  });
+
+  final FocusRepository focusRepository;
+  final TaskRepository taskRepository;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<FocusReconciliationCase>>(
+      stream: focusRepository.watchFocusReconciliations(),
+      builder: (context, snapshot) {
+        final pendingCount = (snapshot.data ?? const [])
+            .where((item) => item.isPendingReview)
+            .length;
+        if (pendingCount == 0) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Card(
+            color: Theme.of(context).colorScheme.tertiaryContainer,
+            child: ListTile(
+              leading: const Icon(Icons.fact_check_outlined),
+              title: Text('$pendingCount 组专注记录待核对'),
+              subtitle: const Text('争议记录暂不计入统计，其他任务仍可继续。'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => FocusReconciliationPage(
+                    focusRepository: focusRepository,
+                    taskRepository: taskRepository,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class BoardPage extends ConsumerStatefulWidget {
   const BoardPage({super.key});
 
@@ -459,6 +503,10 @@ class _BoardContent extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
+        _FocusReconciliationPrompt(
+          focusRepository: focusRepository,
+          taskRepository: repository,
+        ),
         if (goals.isEmpty)
           const Card(
             child: Padding(
@@ -2916,6 +2964,8 @@ class _MyPageState extends ConsumerState<MyPage> {
               : const SizedBox.shrink(),
         ),
         const SizedBox(height: 12),
+        const _FocusReconciliationPageLink(),
+        const SizedBox(height: 12),
         const PrecedentRulesCard(),
         const SizedBox(height: 12),
         Card(
@@ -2933,6 +2983,44 @@ class _MyPageState extends ConsumerState<MyPage> {
           label: const Text('退出登录'),
         ),
       ],
+    );
+  }
+}
+
+class _FocusReconciliationPageLink extends ConsumerWidget {
+  const _FocusReconciliationPageLink();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final focusRepository = ref.watch(focusRepositoryProvider);
+    final taskRepository = ref.watch(taskRepositoryProvider);
+    return StreamBuilder<List<FocusReconciliationCase>>(
+      stream: focusRepository.watchFocusReconciliations(),
+      builder: (context, snapshot) {
+        final pendingCount = (snapshot.data ?? const [])
+            .where((item) => item.isPendingReview)
+            .length;
+        return Card(
+          child: ListTile(
+            leading: const Icon(Icons.fact_check_outlined),
+            title: const Text('专注记录核对'),
+            subtitle: Text(
+              pendingCount == 0
+                  ? '查看已完成的核对结果和来源依据'
+                  : '$pendingCount 组待核对 · 争议部分暂不计入统计',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => FocusReconciliationPage(
+                  focusRepository: focusRepository,
+                  taskRepository: taskRepository,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

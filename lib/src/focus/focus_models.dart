@@ -181,6 +181,8 @@ class FocusSession {
     this.effectiveIntervals = const [],
     this.reviewDisposition = FocusRecordDisposition.accepted,
     this.reviewDispositionUpdatedAt,
+    this.configurationBasisSourceId,
+    this.outcomeBasisSourceId,
   });
 
   final String id;
@@ -202,6 +204,8 @@ class FocusSession {
   final List<FocusTimeInterval> effectiveIntervals;
   final FocusRecordDisposition reviewDisposition;
   final DateTime? reviewDispositionUpdatedAt;
+  final String? configurationBasisSourceId;
+  final String? outcomeBasisSourceId;
 
   bool get isActive => status == FocusSessionStatus.active;
   bool get isPaused => status == FocusSessionStatus.paused;
@@ -236,6 +240,8 @@ class FocusSession {
     effectiveIntervals: effectiveIntervals,
     reviewDisposition: disposition,
     reviewDispositionUpdatedAt: reviewedAt,
+    configurationBasisSourceId: configurationBasisSourceId,
+    outcomeBasisSourceId: outcomeBasisSourceId,
   );
 }
 
@@ -251,6 +257,7 @@ class FocusSyncSource {
     required this.occurredAt,
     required this.payload,
     this.parentSourceId,
+    this.parentSourceIds = const [],
   });
 
   final String sourceId;
@@ -258,8 +265,62 @@ class FocusSyncSource {
   final String entityType;
   final String entityId;
   final String? parentSourceId;
+  final List<String> parentSourceIds;
   final DateTime occurredAt;
   final String payload;
+}
+
+class FocusSessionSourceOption {
+  const FocusSessionSourceOption({
+    required this.sourceId,
+    required this.deviceId,
+    required this.occurredAt,
+    required this.session,
+  });
+
+  final String sourceId;
+  final String deviceId;
+  final DateTime occurredAt;
+  final FocusSession session;
+}
+
+class FocusReconciliationSession {
+  const FocusReconciliationSession({
+    required this.session,
+    required this.availableSources,
+    required this.selectedConfigurationSource,
+    required this.selectedOutcomeSource,
+    required this.requiresConfigurationChoice,
+    required this.requiresOutcomeChoice,
+  });
+
+  final FocusSession session;
+  final List<FocusSessionSourceOption> availableSources;
+  final FocusSessionSourceOption? selectedConfigurationSource;
+  final FocusSessionSourceOption? selectedOutcomeSource;
+  final bool requiresConfigurationChoice;
+  final bool requiresOutcomeChoice;
+}
+
+class FocusReconciliationCase {
+  const FocusReconciliationCase({required this.id, required this.sessions});
+
+  final String id;
+  final List<FocusReconciliationSession> sessions;
+
+  bool get isPendingReview =>
+      sessions.any((entry) => entry.session.isPendingReview);
+  bool get hasOverlappingSessions => sessions.length > 1;
+}
+
+class FocusSessionReconciliationSelection {
+  const FocusSessionReconciliationSelection({
+    this.configurationSourceId,
+    this.outcomeSourceId,
+  });
+
+  final String? configurationSourceId;
+  final String? outcomeSourceId;
 }
 
 class FocusAppointmentSourceOption {

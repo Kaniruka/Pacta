@@ -59,6 +59,8 @@ class FocusSessions extends Table {
   TextColumn get reviewDisposition =>
       text().withDefault(const Constant('accepted'))();
   DateTimeColumn get reviewDispositionUpdatedAt => dateTime().nullable()();
+  TextColumn get configurationBasisSourceId => text().nullable()();
+  TextColumn get outcomeBasisSourceId => text().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
@@ -101,6 +103,7 @@ class FocusSyncSources extends Table {
   TextColumn get entityType => text()();
   TextColumn get entityId => text()();
   TextColumn get parentSourceId => text().nullable()();
+  TextColumn get parentSourceIds => text().withDefault(const Constant('[]'))();
   DateTimeColumn get occurredAt => dateTime()();
   TextColumn get payload => text()();
 
@@ -198,7 +201,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -262,6 +265,14 @@ class PactaDatabase extends _$PactaDatabase {
           focusAppointments,
           focusAppointments.configurationBasisSourceId,
         );
+      }
+      if (from < 12) {
+        await m.addColumn(
+          focusSessions,
+          focusSessions.configurationBasisSourceId,
+        );
+        await m.addColumn(focusSessions, focusSessions.outcomeBasisSourceId);
+        await m.addColumn(focusSyncSources, focusSyncSources.parentSourceIds);
       }
     },
   );
