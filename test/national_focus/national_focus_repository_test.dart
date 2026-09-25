@@ -97,6 +97,28 @@ void main() {
     expect(tree.singleWhere((card) => card.id == child.id).parentId, root.id);
   });
 
+  test('拒绝把仍在点亮的卡片重新挂到熄灭父节点下', () async {
+    final extinguishedParent = await repository.createCard(
+      draft('开始休息前', '关闭工作页面'),
+    );
+    final activeRoot = await repository.createCard(draft('坐到书桌前', '先写下第一步'));
+    await repository.placeCard(cardId: extinguishedParent.id, parentId: null);
+    await repository.placeCard(cardId: activeRoot.id, parentId: null);
+    await repository.lightCard(activeRoot.id);
+
+    await expectLater(
+      repository.placeCard(
+        cardId: activeRoot.id,
+        parentId: extinguishedParent.id,
+      ),
+      throwsStateError,
+    );
+
+    final unchanged = await repository.getCard(activeRoot.id);
+    expect(unchanged.parentId, isNull);
+    expect(unchanged.state, NationalFocusCardState.lit);
+  });
+
   test('卡片放在顶层后只获得结构位置，不会因此点亮', () async {
     final card = await repository.createCard(draft('完成早餐后', '复习单词'));
     await repository.placeCard(cardId: card.id, parentId: null);
@@ -105,6 +127,230 @@ void main() {
     expect(placed.isInTree, isTrue);
     expect(placed.isTopLevel, isTrue);
     expect(placed.state, NationalFocusCardState.extinguished);
+  });
+
+  test('主动熄灭父节点会级联熄灭后代，父恢复后后代仍需逐个点亮', () async {
+    final parent = await repository.createCard(draft('开始工作前', '打开计划'));
+    final child = await repository.createCard(draft('计划打开后', '先做第一项'));
+    final grandchild = await repository.createCard(draft('第一项完成后', '记录结果'));
+    await repository.placeCard(cardId: parent.id, parentId: null);
+    await repository.placeCard(cardId: child.id, parentId: parent.id);
+    await repository.placeCard(cardId: grandchild.id, parentId: child.id);
+    for (final card in [parent, child, grandchild]) {
+      await repository.lightCard(card.id);
+    }
+
+    await repository.extinguishCard(cardId: parent.id);
+    for (final card in [parent, child, grandchild]) {
+      expect(
+        (await repository.getCard(card.id)).state,
+        NationalFocusCardState.extinguished,
+      );
+    }
+    final cascadedChild = await repository.getCard(child.id);
+    expect(cascadedChild.cascadeSourceCardId, parent.id);
+    expect(cascadedChild.cascadePriorState, NationalFocusCardState.lit);
+
+    await repository.dispose();
+    repository = LocalNationalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      now: () => now,
+    );
+    expect((await repository.getCard(child.id)).cascadeSourceCardId, parent.id);
+    await expectLater(repository.lightCard(child.id), throwsStateError);
+
+    await repository.lightCard(parent.id);
+    expect(
+      (await repository.getCard(child.id)).state,
+      NationalFocusCardState.extinguished,
+    );
+    await repository.lightCard(child.id);
+    await repository.lightCard(grandchild.id);
+
+    now = DateTime.utc(2026, 9, 25, 20);
+    await repository.settleDueCheckpoints();
+    for (final card in [parent, child, grandchild]) {
+      final recovered = await repository.getCard(card.id);
+      expect(recovered.state, NationalFocusCardState.pendingTodayConfirmation);
+      expect(recovered.successfulDays, 1);
+      expect(recovered.currentConsecutiveDays, 1);
+    }
+    expect(await repository.getFailures(), isEmpty);
+  });
+
+  test('父漏确认会连带熄灭已确认的子且子当天不增加成功日', () async {
+    final parent = await repository.createCard(draft('开始工作前', '打开计划'));
+    final child = await repository.createCard(draft('计划打开后', '先做第一项'));
+    await repository.placeCard(cardId: parent.id, parentId: null);
+    await repository.placeCard(cardId: child.id, parentId: parent.id);
+    await repository.lightCard(parent.id);
+    await repository.lightCard(child.id);
+
+    now = DateTime.utc(2026, 9, 25, 20);
+    await repository.settleDueCheckpoints();
+    await repository.lightCard(child.id);
+    now = DateTime.utc(2026, 9, 26, 20);
+    await repository.settleDueCheckpoints();
+
+    final parentAfterFailure = await repository.getCard(parent.id);
+    final childAfterFailure = await repository.getCard(child.id);
+    expect(parentAfterFailure.state, NationalFocusCardState.extinguished);
+    expect(childAfterFailure.state, NationalFocusCardState.extinguished);
+    expect(parentAfterFailure.successfulDays, 1);
+    expect(childAfterFailure.successfulDays, 1);
+    expect(childAfterFailure.currentConsecutiveDays, 0);
+
+    final failures = await repository.getFailures();
+    expect(failures, hasLength(1));
+    expect(failures.single.cardId, parent.id);
+    expect(failures.single.cause, NationalFocusFailureCause.missedConfirmation);
+    expect(failures.single.treeSnapshot, hasLength(2));
+    final parentSnapshot = failures.single.treeSnapshot.singleWhere(
+      (card) => card.id == parent.id,
+    );
+    final childSnapshot = failures.single.treeSnapshot.singleWhere(
+      (card) => card.id == child.id,
+    );
+    expect(parentSnapshot.failureSourceCardId, parent.id);
+    expect(childSnapshot.failureSourceCardId, parent.id);
+    expect(childSnapshot.state, NationalFocusCardState.lit);
+    expect(childSnapshot.successfulDays, 1);
+    await repository.settleDueCheckpoints();
+    expect(await repository.getFailures(), hasLength(1));
+
+    await repository.lightCard(parent.id);
+    await repository.lightCard(child.id);
+    final immutableSnapshot = (await repository.getFailures())
+        .single
+        .treeSnapshot
+        .singleWhere((card) => card.id == child.id);
+    expect(immutableSnapshot.failureSourceCardId, parent.id);
+    expect(immutableSnapshot.state, NationalFocusCardState.lit);
+
+    await repository.dispose();
+    repository = LocalNationalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      now: () => now,
+    );
+    final restoredSnapshot = (await repository.getFailures())
+        .single
+        .treeSnapshot
+        .singleWhere((card) => card.id == child.id);
+    expect(restoredSnapshot.failureSourceCardId, parent.id);
+    expect(restoredSnapshot.state, NationalFocusCardState.lit);
+  });
+
+  test('漏确认的子保留独立失败，已确认的子只记录父节点级联影响', () async {
+    final parent = await repository.createCard(draft('开始工作前', '打开计划'));
+    final missedChild = await repository.createCard(draft('计划打开后', '先做第一项'));
+    final confirmedChild = await repository.createCard(draft('第一项完成后', '记录结果'));
+    final unrelated = await repository.createCard(draft('午饭后', '散步十分钟'));
+    await repository.placeCard(cardId: parent.id, parentId: null);
+    await repository.placeCard(cardId: missedChild.id, parentId: parent.id);
+    await repository.placeCard(cardId: confirmedChild.id, parentId: parent.id);
+    await repository.placeCard(cardId: unrelated.id, parentId: null);
+    for (final card in [parent, missedChild, confirmedChild, unrelated]) {
+      await repository.lightCard(card.id);
+    }
+
+    now = DateTime.utc(2026, 9, 25, 20);
+    await repository.settleDueCheckpoints();
+    await repository.lightCard(confirmedChild.id);
+    now = DateTime.utc(2026, 9, 26, 20);
+    await repository.settleDueCheckpoints();
+
+    final failures = await repository.getFailures();
+    expect(failures, hasLength(3));
+    expect(failures.map((failure) => failure.cardId).toSet(), {
+      parent.id,
+      missedChild.id,
+      unrelated.id,
+    });
+    expect(
+      failures.every(
+        (failure) =>
+            failure.cause == NationalFocusFailureCause.missedConfirmation,
+      ),
+      isTrue,
+    );
+    expect(failures.map((failure) => failure.batchId).toSet(), hasLength(1));
+    final snapshot = failures.first.treeSnapshot;
+    expect(
+      snapshot.singleWhere((card) => card.id == parent.id).failureSourceCardId,
+      parent.id,
+    );
+    expect(
+      snapshot
+          .singleWhere((card) => card.id == missedChild.id)
+          .failureSourceCardId,
+      missedChild.id,
+    );
+    expect(
+      snapshot
+          .singleWhere((card) => card.id == confirmedChild.id)
+          .failureSourceCardId,
+      parent.id,
+    );
+    expect(
+      snapshot
+          .singleWhere((card) => card.id == unrelated.id)
+          .failureSourceCardId,
+      unrelated.id,
+    );
+    expect((await repository.getCard(confirmedChild.id)).successfulDays, 1);
+    expect(
+      (await repository.getCard(confirmedChild.id)).state,
+      NationalFocusCardState.extinguished,
+    );
+
+    await repository.updateFailureExplanation(
+      batchId: failures.first.batchId,
+      explanation: '这组节点当天未完成确认',
+    );
+    expect(
+      (await repository.getFailures()).every(
+        (failure) => failure.sharedExplanation == '这组节点当天未完成确认',
+      ),
+      isTrue,
+    );
+  });
+
+  test('先主动熄灭子再熄灭父时两个独立失败来源都只结算一次', () async {
+    final parent = await repository.createCard(draft('开始工作前', '打开计划'));
+    final child = await repository.createCard(draft('计划打开后', '先做第一项'));
+    await repository.placeCard(cardId: parent.id, parentId: null);
+    await repository.placeCard(cardId: child.id, parentId: parent.id);
+    await repository.lightCard(parent.id);
+    await repository.lightCard(child.id);
+    await repository.extinguishCard(
+      cardId: child.id,
+      failureReason: '子节点要求不再适用',
+    );
+    await repository.extinguishCard(
+      cardId: parent.id,
+      failureReason: '父节点要求不再适用',
+    );
+
+    now = DateTime.utc(2026, 9, 25, 20);
+    await repository.settleDueCheckpoints();
+    final failures = await repository.getFailures();
+    expect(failures, hasLength(2));
+    expect(failures.map((failure) => failure.cardId).toSet(), {
+      parent.id,
+      child.id,
+    });
+    expect(
+      failures.every(
+        (failure) =>
+            failure.cause == NationalFocusFailureCause.activeExtinguish,
+      ),
+      isTrue,
+    );
+
+    await repository.settleDueCheckpoints();
+    expect(await repository.getFailures(), hasLength(2));
   });
 
   test('北京时间 03:59 首次点亮可在固定检查点计为一天且不会重复累计', () async {
@@ -349,6 +595,20 @@ void main() {
             VALUES ('user-a', 'legacy-card', '旧触发条件', '旧行动', 1,
                     'extinguished', 0, 0)
           ''');
+          rawDatabase.execute('''
+            INSERT INTO local_national_focus_cards
+              (user_id, id, trigger_condition, action, is_in_tree, parent_id,
+               state, created_at, updated_at)
+            VALUES ('user-a', 'legacy-parent', '旧父节点', '旧行动', 1, NULL,
+                    'extinguished', 0, 0)
+          ''');
+          rawDatabase.execute('''
+            INSERT INTO local_national_focus_cards
+              (user_id, id, trigger_condition, action, is_in_tree, parent_id,
+               state, created_at, updated_at)
+            VALUES ('user-a', 'legacy-pending-child', '旧待确认子节点', '旧行动',
+                    1, 'legacy-parent', 'pending_today_confirmation', 0, 0)
+          ''');
           rawDatabase.execute('PRAGMA user_version = 13');
         },
       ),
@@ -371,10 +631,138 @@ void main() {
     expect(migrated.bestConsecutiveDays, 0);
     expect(migrated.maintenanceCycleStarted, isFalse);
 
+    final migratedChild = await migratedRepository.getCard(
+      'legacy-pending-child',
+    );
+    expect(migratedChild.state, NationalFocusCardState.extinguished);
+    expect(migratedChild.cascadeSourceCardId, 'legacy-parent');
+    expect(
+      migratedChild.cascadePriorState,
+      NationalFocusCardState.pendingTodayConfirmation,
+    );
+    expect(await migratedRepository.confirmToday(), 0);
+
     await migratedRepository.lightCard(migrated.id);
     expect(
       (await migratedRepository.getCard(migrated.id)).state,
       NationalFocusCardState.lit,
     );
+  });
+
+  test('从 T14 升级时清理已失败父节点下的旧活动状态而不补造子失败', () async {
+    final lastSettledCheckpoint = DateTime.utc(2026, 9, 24, 20);
+    var migrationNow = lastSettledCheckpoint;
+    final oldDatabase = PactaDatabase(
+      NativeDatabase.memory(
+        setup: (rawDatabase) {
+          rawDatabase.execute('''
+            CREATE TABLE local_national_focus_cards (
+              user_id TEXT NOT NULL,
+              id TEXT NOT NULL,
+              trigger_condition TEXT NOT NULL,
+              action TEXT NOT NULL,
+              scope TEXT,
+              exception_notes TEXT,
+              is_in_tree INTEGER NOT NULL DEFAULT 0,
+              parent_id TEXT,
+              state TEXT NOT NULL DEFAULT 'extinguished',
+              successful_days INTEGER NOT NULL DEFAULT 0,
+              current_consecutive_days INTEGER NOT NULL DEFAULT 0,
+              best_consecutive_days INTEGER NOT NULL DEFAULT 0,
+              maintenance_cycle_started INTEGER NOT NULL DEFAULT 0,
+              failure_reason TEXT,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL,
+              PRIMARY KEY (user_id, id)
+            )
+          ''');
+          rawDatabase.execute('''
+            CREATE TABLE local_national_focus_maintenance (
+              user_id TEXT NOT NULL PRIMARY KEY,
+              last_settled_checkpoint_at INTEGER NOT NULL
+            )
+          ''');
+          rawDatabase.execute('''
+            CREATE TABLE local_national_focus_failures (
+              user_id TEXT NOT NULL,
+              id TEXT NOT NULL,
+              batch_id TEXT NOT NULL,
+              card_id TEXT NOT NULL,
+              checkpoint_at INTEGER NOT NULL,
+              cause TEXT NOT NULL,
+              failure_reason TEXT,
+              shared_explanation TEXT,
+              tree_snapshot TEXT NOT NULL,
+              PRIMARY KEY (user_id, id)
+            )
+          ''');
+          rawDatabase.execute('''
+            INSERT INTO local_national_focus_cards
+              (user_id, id, trigger_condition, action, is_in_tree, parent_id,
+               state, successful_days, current_consecutive_days,
+               best_consecutive_days, maintenance_cycle_started,
+               created_at, updated_at)
+            VALUES ('user-a', 'support-root', '有效上级', '维持行动', 1, NULL,
+                    'lit', 1, 1, 1, 1, 0,
+                    ${lastSettledCheckpoint.millisecondsSinceEpoch})
+          ''');
+          rawDatabase.execute('''
+            INSERT INTO local_national_focus_cards
+              (user_id, id, trigger_condition, action, is_in_tree, parent_id,
+               state, successful_days, current_consecutive_days,
+               best_consecutive_days, maintenance_cycle_started,
+               created_at, updated_at)
+            VALUES ('user-a', 'failed-parent', '旧父节点', '旧行动', 1,
+                    'support-root',
+                    'extinguished', 2, 0, 2, 0, 0, ${lastSettledCheckpoint.millisecondsSinceEpoch + 120000})
+          ''');
+          rawDatabase.execute('''
+            INSERT INTO local_national_focus_cards
+              (user_id, id, trigger_condition, action, is_in_tree, parent_id,
+               state, successful_days, current_consecutive_days,
+               best_consecutive_days, maintenance_cycle_started,
+               created_at, updated_at)
+            VALUES ('user-a', 'pending-child', '旧待确认子节点', '旧行动', 1,
+                    'failed-parent', 'pending_today_confirmation', 4, 2, 5, 1,
+                    0, ${lastSettledCheckpoint.millisecondsSinceEpoch + 60000})
+          ''');
+          rawDatabase.execute('''
+            INSERT INTO local_national_focus_maintenance
+              (user_id, last_settled_checkpoint_at)
+            VALUES ('user-a', ${lastSettledCheckpoint.millisecondsSinceEpoch})
+          ''');
+          rawDatabase.execute('''
+            INSERT INTO local_national_focus_failures
+              (user_id, id, batch_id, card_id, checkpoint_at, cause,
+               tree_snapshot)
+            VALUES ('user-a', 'parent-failure', 'parent-batch', 'failed-parent',
+                    ${lastSettledCheckpoint.millisecondsSinceEpoch},
+                    'missed_confirmation', '[]')
+          ''');
+          rawDatabase.execute('PRAGMA user_version = 14');
+        },
+      ),
+    );
+    final migratedRepository = LocalNationalFocusRepository(
+      database: oldDatabase,
+      userId: 'user-a',
+      now: () => migrationNow,
+    );
+    addTearDown(migratedRepository.dispose);
+    addTearDown(oldDatabase.close);
+
+    final migratedChild = await migratedRepository.getCard('pending-child');
+    expect(migratedChild.state, NationalFocusCardState.extinguished);
+    expect(migratedChild.cascadeSourceCardId, 'failed-parent');
+    expect(migratedChild.cascadePriorState, NationalFocusCardState.lit);
+    expect(migratedChild.successfulDays, 4);
+    expect(migratedChild.currentConsecutiveDays, 0);
+    expect(migratedChild.maintenanceCycleStarted, isFalse);
+
+    migrationNow = lastSettledCheckpoint.add(const Duration(hours: 24));
+    await migratedRepository.settleDueCheckpoints();
+    final failures = await migratedRepository.getFailures();
+    expect(failures, hasLength(1));
+    expect(failures.single.cardId, 'failed-parent');
   });
 }

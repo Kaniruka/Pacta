@@ -62,6 +62,8 @@ class NationalFocusCard {
     this.bestConsecutiveDays = 0,
     this.maintenanceCycleStarted = false,
     this.failureReason,
+    this.cascadeSourceCardId,
+    this.cascadePriorState,
     this.scope,
     this.exceptionNotes,
     this.parentId,
@@ -82,6 +84,8 @@ class NationalFocusCard {
   final int bestConsecutiveDays;
   final bool maintenanceCycleStarted;
   final String? failureReason;
+  final String? cascadeSourceCardId;
+  final NationalFocusCardState? cascadePriorState;
 
   bool get isInLibrary => !isInTree;
   bool get isTopLevel => isInTree && parentId == null;
@@ -106,6 +110,9 @@ class NationalFocusCardSnapshot {
     this.scope,
     this.exceptionNotes,
     this.failureReason,
+    this.cascadeSourceCardId,
+    this.cascadePriorState,
+    this.failureSourceCardId,
   });
 
   final String id;
@@ -121,6 +128,9 @@ class NationalFocusCardSnapshot {
   final int bestConsecutiveDays;
   final bool maintenanceCycleStarted;
   final String? failureReason;
+  final String? cascadeSourceCardId;
+  final NationalFocusCardState? cascadePriorState;
+  final String? failureSourceCardId;
   final DateTime createdAt;
   final DateTime updatedAt;
 }

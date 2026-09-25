@@ -126,9 +126,27 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   }
 
   Future<void> _extinguishCard(NationalFocusCard card) async {
+    late final List<NationalFocusCard> treeCards;
+    try {
+      treeCards = await widget.repository.getTreeCards();
+    } catch (error) {
+      if (mounted) setState(() => _error = _friendlyError(error));
+      return;
+    }
+    if (!mounted) return;
+    final childrenByParent = <String, List<NationalFocusCard>>{};
+    for (final treeCard in treeCards) {
+      final parentId = treeCard.parentId;
+      if (parentId != null) {
+        childrenByParent.putIfAbsent(parentId, () => []).add(treeCard);
+      }
+    }
     final reason = await showDialog<String>(
       context: context,
-      builder: (_) => _ExtinguishReasonDialog(card: card),
+      builder: (_) => _ExtinguishReasonDialog(
+        card: card,
+        descendantCount: _descendantsOf(card.id, childrenByParent).length,
+      ),
     );
     if (reason == null || !mounted || !_busyCardIds.add(card.id)) return;
 
@@ -245,6 +263,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
           return const Center(child: CircularProgressIndicator());
         }
         final cards = snapshot.data!;
+        final cardsById = {for (final card in cards) card.id: card};
         final pendingCount = cards
             .where(
               (card) =>
@@ -266,6 +285,13 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
           childrenByParent,
         );
         if (_placementCard != null) blockedParentIds.add(_placementCard!.id);
+        final placementContainsActiveCard =
+            _placementCard != null &&
+            _subtreeContainsActiveCard(
+              _placementCard!.id,
+              childrenByParent,
+              cardsById,
+            );
 
         return Column(
           children: [
@@ -386,6 +412,10 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                               depth: 0,
                               childrenByParent: childrenByParent,
                               blockedParentIds: blockedParentIds,
+                              cardsById: cardsById,
+                              placementContainsActiveCard:
+                                  placementContainsActiveCard,
+                              hasExtinguishedAncestor: false,
                             ),
                         ],
                       ),
@@ -416,9 +446,17 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     required int depth,
     required Map<String, List<NationalFocusCard>> childrenByParent,
     required Set<String> blockedParentIds,
+    required Map<String, NationalFocusCard> cardsById,
+    required bool placementContainsActiveCard,
+    required bool hasExtinguishedAncestor,
   }) {
     final children = childrenByParent[card.id] ?? const [];
-    final isBlocked = blockedParentIds.contains(card.id);
+    final targetBranchIsExtinguished =
+        hasExtinguishedAncestor ||
+        card.state == NationalFocusCardState.extinguished;
+    final isBlocked =
+        blockedParentIds.contains(card.id) ||
+        (placementContainsActiveCard && targetBranchIsExtinguished);
     final selecting = _placementCard != null;
     final branch = _NationalFocusTreeNode(
       card: card,
@@ -426,9 +464,15 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
       detailed: _detailed,
       selecting: selecting,
       blocked: isBlocked,
+      lightBlocked: hasExtinguishedAncestor,
+      cascadeSourceLabel: card.cascadeSourceCardId == null
+          ? null
+          : cardsById[card.cascadeSourceCardId]?.triggerCondition ?? '父节点',
       onSelect: selecting && !isBlocked ? () => _placeAt(card.id) : null,
       onRelocate: () => _beginPlacement(card),
-      onLight: selecting ? null : () => _lightCard(card),
+      onLight: selecting || hasExtinguishedAncestor
+          ? null
+          : () => _lightCard(card),
       onExtinguish: selecting ? null : () => _extinguishCard(card),
       busy: _busyCardIds.contains(card.id),
     );
@@ -460,6 +504,11 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                       depth: depth + 1,
                       childrenByParent: childrenByParent,
                       blockedParentIds: blockedParentIds,
+                      cardsById: cardsById,
+                      placementContainsActiveCard: placementContainsActiveCard,
+                      hasExtinguishedAncestor:
+                          hasExtinguishedAncestor ||
+                          card.state == NationalFocusCardState.extinguished,
                     ),
                 ],
               ),
@@ -744,6 +793,8 @@ class _NationalFocusTreeNode extends StatelessWidget {
     required this.detailed,
     required this.selecting,
     required this.blocked,
+    required this.lightBlocked,
+    required this.cascadeSourceLabel,
     required this.onSelect,
     required this.onRelocate,
     required this.onLight,
@@ -756,6 +807,8 @@ class _NationalFocusTreeNode extends StatelessWidget {
   final bool detailed;
   final bool selecting;
   final bool blocked;
+  final bool lightBlocked;
+  final String? cascadeSourceLabel;
   final VoidCallback? onSelect;
   final VoidCallback onRelocate;
   final VoidCallback? onLight;
@@ -772,6 +825,8 @@ class _NationalFocusTreeNode extends StatelessWidget {
             path: path,
             selecting: selecting,
             blocked: blocked,
+            lightBlocked: lightBlocked,
+            cascadeSourceLabel: cascadeSourceLabel,
             onRelocate: onRelocate,
             onLight: onLight,
             onExtinguish: onExtinguish,
@@ -781,6 +836,8 @@ class _NationalFocusTreeNode extends StatelessWidget {
             card: card,
             path: path,
             blocked: selecting && blocked,
+            lightBlocked: lightBlocked,
+            cascadeSourceLabel: cascadeSourceLabel,
             onLight: onLight,
             onExtinguish: onExtinguish,
             busy: busy,
@@ -808,6 +865,8 @@ class _StructureTreeCard extends StatelessWidget {
     required this.card,
     required this.path,
     required this.blocked,
+    required this.lightBlocked,
+    required this.cascadeSourceLabel,
     required this.onLight,
     required this.onExtinguish,
     required this.busy,
@@ -816,6 +875,8 @@ class _StructureTreeCard extends StatelessWidget {
   final NationalFocusCard card;
   final String path;
   final bool blocked;
+  final bool lightBlocked;
+  final String? cascadeSourceLabel;
   final VoidCallback? onLight;
   final VoidCallback? onExtinguish;
   final bool busy;
@@ -851,7 +912,7 @@ class _StructureTreeCard extends StatelessWidget {
               ),
               if (blocked)
                 const Tooltip(
-                  message: '不能选择本人或其后代作为父节点',
+                  message: '不能把有效分支放到本人、后代或熄灭分支下',
                   child: Icon(Icons.block_outlined),
                 )
               else
@@ -871,6 +932,13 @@ class _StructureTreeCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _NationalFocusRecordSummary(card: card),
+                if (cascadeSourceLabel != null) ...[
+                  const SizedBox(height: 8),
+                  _CascadeStatusNote(
+                    sourceLabel: cascadeSourceLabel!,
+                    lightBlocked: lightBlocked,
+                  ),
+                ],
                 const SizedBox(height: 12),
                 _NodeMaintenanceAction(
                   card: card,
@@ -887,12 +955,30 @@ class _StructureTreeCard extends StatelessWidget {
   }
 }
 
+class _CascadeStatusNote extends StatelessWidget {
+  const _CascadeStatusNote({
+    required this.sourceLabel,
+    required this.lightBlocked,
+  });
+
+  final String sourceLabel;
+  final bool lightBlocked;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    lightBlocked ? '因「$sourceLabel」连带熄灭；父节点恢复后仍需单独点亮。' : '父节点已恢复；此节点仍需单独点亮。',
+    style: Theme.of(context).textTheme.bodySmall,
+  );
+}
+
 class _DetailedTreeCard extends StatelessWidget {
   const _DetailedTreeCard({
     required this.card,
     required this.path,
     required this.selecting,
     required this.blocked,
+    required this.lightBlocked,
+    required this.cascadeSourceLabel,
     required this.onRelocate,
     required this.onLight,
     required this.onExtinguish,
@@ -903,6 +989,8 @@ class _DetailedTreeCard extends StatelessWidget {
   final String path;
   final bool selecting;
   final bool blocked;
+  final bool lightBlocked;
+  final String? cascadeSourceLabel;
   final VoidCallback onRelocate;
   final VoidCallback? onLight;
   final VoidCallback? onExtinguish;
@@ -939,6 +1027,13 @@ class _DetailedTreeCard extends StatelessWidget {
         ],
         const SizedBox(height: 16),
         _NationalFocusRecordSummary(card: card),
+        if (cascadeSourceLabel != null) ...[
+          const SizedBox(height: 8),
+          _CascadeStatusNote(
+            sourceLabel: cascadeSourceLabel!,
+            lightBlocked: lightBlocked,
+          ),
+        ],
         if (!selecting) ...[
           const SizedBox(height: 12),
           _NodeMaintenanceAction(
@@ -959,7 +1054,7 @@ class _DetailedTreeCard extends StatelessWidget {
         ] else if (blocked) ...[
           const SizedBox(height: 8),
           Text(
-            '本人及其后代不能作为父节点。',
+            '不能把有效分支放到本人、后代或熄灭分支下。',
             style: TextStyle(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
@@ -1134,9 +1229,13 @@ class _NodeMaintenanceAction extends StatelessWidget {
 }
 
 class _ExtinguishReasonDialog extends StatefulWidget {
-  const _ExtinguishReasonDialog({required this.card});
+  const _ExtinguishReasonDialog({
+    required this.card,
+    required this.descendantCount,
+  });
 
   final NationalFocusCard card;
+  final int descendantCount;
 
   @override
   State<_ExtinguishReasonDialog> createState() =>
@@ -1155,6 +1254,10 @@ class _ExtinguishReasonDialogState extends State<_ExtinguishReasonDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('「${widget.card.triggerCondition}」会在下一检查点结算；此前重新点亮可保留当前连续记录。'),
+        if (widget.descendantCount > 0) ...[
+          const SizedBox(height: 8),
+          Text('此操作也会熄灭 ${widget.descendantCount} 个后代。父节点恢复后，后代仍需逐个点亮。'),
+        ],
         const SizedBox(height: 16),
         TextField(
           autofocus: true,
@@ -1361,6 +1464,18 @@ class _FailureBatchCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final representative = failures.first;
+    final snapshotById = {
+      for (final card in representative.treeSnapshot) card.id: card,
+    };
+    final snapshotCards = [...representative.treeSnapshot]
+      ..sort((first, second) {
+        final depthOrder = _snapshotDepth(
+          first,
+          snapshotById,
+        ).compareTo(_snapshotDepth(second, snapshotById));
+        if (depthOrder != 0) return depthOrder;
+        return first.triggerCondition.compareTo(second.triggerCondition);
+      });
     return Card(
       child: Column(
         children: [
@@ -1372,7 +1487,10 @@ class _FailureBatchCard extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Icons.account_tree_outlined),
                   title: Text(_snapshotName(failure)),
-                  subtitle: Text(failure.failureReason ?? '主动熄灭时未填写原因'),
+                  subtitle: Text(
+                    '${failure.cause.label} · '
+                    '${failure.failureReason ?? '原因未填写'}',
+                  ),
                 ),
               const Divider(),
               Padding(
@@ -1384,13 +1502,17 @@ class _FailureBatchCard extends StatelessWidget {
                       '检查点时的完整树快照',
                       style: Theme.of(context).textTheme.titleSmall,
                     ),
-                    for (final card in representative.treeSnapshot)
+                    for (final card in snapshotCards)
                       Padding(
-                        padding: const EdgeInsets.only(top: 6),
+                        padding: EdgeInsets.only(
+                          top: 6,
+                          left: _snapshotDepth(card, snapshotById) * 14,
+                        ),
                         child: Text(
                           '${card.triggerCondition} · ${card.state.label} · '
                           '连续 ${card.currentConsecutiveDays} 天 · '
-                          '最高 ${card.bestConsecutiveDays} 天',
+                          '最高 ${card.bestConsecutiveDays} 天'
+                          '${_snapshotFailureAnnotation(card, snapshotById)}',
                         ),
                       ),
                   ],
@@ -1422,6 +1544,33 @@ class _FailureBatchCard extends StatelessWidget {
           .map((card) => card.triggerCondition)
           .firstOrNull ??
       '已移除的国策卡';
+
+  int _snapshotDepth(
+    NationalFocusCardSnapshot card,
+    Map<String, NationalFocusCardSnapshot> cardsById,
+  ) {
+    var depth = 0;
+    var parentId = card.parentId;
+    final visited = <String>{card.id};
+    while (parentId != null && visited.add(parentId)) {
+      final parent = cardsById[parentId];
+      if (parent == null) break;
+      depth++;
+      parentId = parent.parentId;
+    }
+    return depth;
+  }
+
+  String _snapshotFailureAnnotation(
+    NationalFocusCardSnapshot card,
+    Map<String, NationalFocusCardSnapshot> cardsById,
+  ) {
+    final sourceId = card.failureSourceCardId;
+    if (sourceId == null) return '';
+    if (sourceId == card.id) return ' · 独立失败来源';
+    final source = cardsById[sourceId];
+    return ' · 因「${source?.triggerCondition ?? '父节点'}」连带熄灭';
+  }
 }
 
 class _TopLevelPosition extends StatelessWidget {
@@ -1637,6 +1786,21 @@ Set<String> _descendantsOf(
     pending.addAll(childrenByParent[next]?.map((card) => card.id) ?? const []);
   }
   return result;
+}
+
+bool _subtreeContainsActiveCard(
+  String cardId,
+  Map<String, List<NationalFocusCard>> childrenByParent,
+  Map<String, NationalFocusCard> cardsById,
+) {
+  final branchIds = <String>{
+    cardId,
+    ..._descendantsOf(cardId, childrenByParent),
+  };
+  return branchIds.any((id) {
+    final card = cardsById[id];
+    return card != null && card.state != NationalFocusCardState.extinguished;
+  });
 }
 
 String? _requiredFieldError(String? value, String label) =>

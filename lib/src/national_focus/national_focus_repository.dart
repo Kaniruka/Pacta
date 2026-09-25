@@ -122,6 +122,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
         database.localNationalFocusCards,
       )..where((candidate) => candidate.userId.equals(userId))).get();
       final cardsById = {for (final row in rows) row.id: row};
+      var targetBranchHasExtinguishedAncestor = false;
 
       if (parentId != null) {
         if (parentId == cardId) {
@@ -145,7 +146,24 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
           if (ancestor == null || !ancestor.isInTree) {
             throw StateError('所选父节点的树结构无效，无法继续放置。');
           }
+          if (ancestor.state ==
+              NationalFocusCardState.extinguished.storageValue) {
+            targetBranchHasExtinguishedAncestor = true;
+          }
           ancestorId = ancestor.parentId;
+        }
+      }
+
+      if (targetBranchHasExtinguishedAncestor) {
+        final treeCards = rows.where((row) => row.isInTree).toList();
+        final movedBranch = [card, ..._descendantsOf(card.id, treeCards)];
+        if (movedBranch.any(
+          (candidate) =>
+              candidate.state == NationalFocusCardState.lit.storageValue ||
+              candidate.state ==
+                  NationalFocusCardState.pendingTodayConfirmation.storageValue,
+        )) {
+          throw StateError('不能把仍在点亮或待确认的分支放到熄灭父节点下。');
         }
       }
 
@@ -172,6 +190,28 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       if (!card.isInTree) {
         throw StateError('卡片需要先放入国策树才能点亮。');
       }
+      final cards = await (database.select(
+        database.localNationalFocusCards,
+      )..where((candidate) => candidate.userId.equals(userId))).get();
+      final cardsById = {
+        for (final candidate in cards) candidate.id: candidate,
+      };
+      var ancestorId = card.parentId;
+      final visitedAncestors = <String>{};
+      while (ancestorId != null) {
+        if (!visitedAncestors.add(ancestorId)) {
+          throw StateError('现有国策树结构无效，无法点亮节点。');
+        }
+        final ancestor = cardsById[ancestorId];
+        if (ancestor == null || !ancestor.isInTree) {
+          throw StateError('父节点不存在或不在当前用户的树中。');
+        }
+        if (ancestor.state ==
+            NationalFocusCardState.extinguished.storageValue) {
+          throw StateError('父节点熄灭期间不能点亮子节点。');
+        }
+        ancestorId = ancestor.parentId;
+      }
       if (card.state == NationalFocusCardState.lit.storageValue) return;
 
       await _updateCard(
@@ -183,6 +223,8 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
           ),
           maintenanceCycleStarted: const Value(true),
           failureReason: const Value(null),
+          cascadeSourceCardId: const Value(null),
+          cascadePriorState: const Value(null),
           updatedAt: Value(_nextTimestamp(card.updatedAt)),
         ),
       );
@@ -211,6 +253,36 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
           updatedAt: Value(_nextTimestamp(card.updatedAt)),
         ),
       );
+
+      final treeCards =
+          await (database.select(database.localNationalFocusCards)
+                ..where((candidate) => candidate.userId.equals(userId))
+                ..where((candidate) => candidate.isInTree.equals(true)))
+              .get();
+      final descendants = _descendantsOf(card.id, treeCards);
+      for (final descendant in descendants) {
+        final state = NationalFocusCardState.fromStorage(descendant.state);
+        final hasExistingCascade = descendant.cascadeSourceCardId != null;
+        if (state == NationalFocusCardState.extinguished &&
+            !hasExistingCascade) {
+          // Preserve a child's own already-pending failure as an independent
+          // source, and leave a previously settled failure untouched.
+          continue;
+        }
+        final stateBeforeCascade = descendant.cascadePriorState == null
+            ? state
+            : NationalFocusCardState.fromStorage(descendant.cascadePriorState!);
+        await _updateCard(
+          descendant,
+          LocalNationalFocusCardsCompanion(
+            state: Value(NationalFocusCardState.extinguished.storageValue),
+            failureReason: const Value(null),
+            cascadeSourceCardId: Value(card.id),
+            cascadePriorState: Value(stateBeforeCascade.storageValue),
+            updatedAt: Value(_nextTimestamp(descendant.updatedAt)),
+          ),
+        );
+      }
     });
   }
 
@@ -230,8 +302,16 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
                   ),
                 ))
               .get();
+      final treeCards =
+          await (database.select(database.localNationalFocusCards)
+                ..where((card) => card.userId.equals(userId))
+                ..where((card) => card.isInTree.equals(true)))
+              .get();
+      final cardsById = {for (final card in treeCards) card.id: card};
 
+      var confirmedCount = 0;
       for (final card in pendingCards) {
+        if (_hasExtinguishedAncestor(card, cardsById)) continue;
         await _updateCard(
           card,
           LocalNationalFocusCardsCompanion(
@@ -240,8 +320,9 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
             updatedAt: Value(_nextTimestamp(card.updatedAt)),
           ),
         );
+        confirmedCount++;
       }
-      return pendingCards.length;
+      return confirmedCount;
     });
   }
 
@@ -293,19 +374,65 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
             .get();
     if (cards.isEmpty) return;
 
-    final snapshotJson = jsonEncode(cards.map(_snapshotJson).toList());
-    final pending = cards
-        .where(
-          (card) =>
-              card.state ==
-              NationalFocusCardState.pendingTodayConfirmation.storageValue,
+    final plannedFailures = _planIndependentFailures(cards);
+    final failureSourceCardIds = _failureSourceCardIds(cards, plannedFailures);
+    final snapshotJson = jsonEncode(
+      cards
+          .map(
+            (card) => _snapshotJson(
+              card,
+              failureSourceCardId: failureSourceCardIds[card.id],
+            ),
+          )
+          .toList(growable: false),
+    );
+    final missedConfirmationBatchId =
+        plannedFailures.values.any(
+          (failure) =>
+              failure.cause == NationalFocusFailureCause.missedConfirmation,
         )
-        .toList(growable: false);
-    final missedConfirmationBatchId = pending.isEmpty ? null : _uuid.v4();
+        ? _uuid.v4()
+        : null;
 
     for (final card in cards) {
+      final plannedFailure = plannedFailures[card.id];
+      if (plannedFailure == null) continue;
+      await _recordFailure(
+        card: card,
+        checkpoint: checkpoint,
+        cause: plannedFailure.cause,
+        failureReason: plannedFailure.failureReason,
+        batchId:
+            plannedFailure.cause == NationalFocusFailureCause.missedConfirmation
+            ? missedConfirmationBatchId!
+            : _uuid.v4(),
+        snapshotJson: snapshotJson,
+      );
+    }
+
+    for (final card in cards) {
+      final failureSourceId = failureSourceCardIds[card.id];
       final state = NationalFocusCardState.fromStorage(card.state);
-      if (state == NationalFocusCardState.lit) {
+      if (failureSourceId != null ||
+          state == NationalFocusCardState.extinguished) {
+        if (state == NationalFocusCardState.extinguished &&
+            !card.maintenanceCycleStarted &&
+            card.cascadeSourceCardId == null) {
+          continue;
+        }
+        await _updateCard(
+          card,
+          LocalNationalFocusCardsCompanion(
+            state: Value(NationalFocusCardState.extinguished.storageValue),
+            currentConsecutiveDays: const Value(0),
+            maintenanceCycleStarted: const Value(false),
+            failureReason: const Value(null),
+            cascadeSourceCardId: const Value(null),
+            cascadePriorState: const Value(null),
+            updatedAt: Value(checkpoint),
+          ),
+        );
+      } else if (state == NationalFocusCardState.lit) {
         final currentConsecutive = card.currentConsecutiveDays + 1;
         await _updateCard(
           card,
@@ -321,26 +448,11 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
                   : card.bestConsecutiveDays,
             ),
             maintenanceCycleStarted: const Value(true),
+            failureReason: const Value(null),
+            cascadeSourceCardId: const Value(null),
+            cascadePriorState: const Value(null),
             updatedAt: Value(checkpoint),
           ),
-        );
-      } else if (state == NationalFocusCardState.pendingTodayConfirmation) {
-        await _recordFailure(
-          card: card,
-          checkpoint: checkpoint,
-          cause: NationalFocusFailureCause.missedConfirmation,
-          failureReason: NationalFocusFailureCause.missedConfirmation.label,
-          batchId: missedConfirmationBatchId!,
-          snapshotJson: snapshotJson,
-        );
-      } else if (card.maintenanceCycleStarted) {
-        await _recordFailure(
-          card: card,
-          checkpoint: checkpoint,
-          cause: NationalFocusFailureCause.activeExtinguish,
-          failureReason: card.failureReason,
-          batchId: _uuid.v4(),
-          snapshotJson: snapshotJson,
         );
       }
     }
@@ -369,16 +481,6 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
             treeSnapshot: snapshotJson,
           ),
         );
-    await _updateCard(
-      card,
-      LocalNationalFocusCardsCompanion(
-        state: Value(NationalFocusCardState.extinguished.storageValue),
-        currentConsecutiveDays: const Value(0),
-        maintenanceCycleStarted: const Value(false),
-        failureReason: const Value(null),
-        updatedAt: Value(checkpoint),
-      ),
-    );
   }
 
   @override
@@ -447,6 +549,163 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     return row;
   }
 
+  List<LocalNationalFocusCard> _descendantsOf(
+    String parentId,
+    List<LocalNationalFocusCard> cards,
+  ) {
+    final childrenByParent = <String, List<LocalNationalFocusCard>>{};
+    for (final card in cards) {
+      final cardParentId = card.parentId;
+      if (cardParentId != null) {
+        childrenByParent.putIfAbsent(cardParentId, () => []).add(card);
+      }
+    }
+
+    final descendants = <LocalNationalFocusCard>[];
+    final pending = <String>[parentId];
+    final visited = <String>{parentId};
+    while (pending.isNotEmpty) {
+      final nextParentId = pending.removeLast();
+      for (final child in childrenByParent[nextParentId] ?? const []) {
+        if (!visited.add(child.id)) continue;
+        descendants.add(child);
+        pending.add(child.id);
+      }
+    }
+    return descendants;
+  }
+
+  bool _hasExtinguishedAncestor(
+    LocalNationalFocusCard card,
+    Map<String, LocalNationalFocusCard> cardsById,
+  ) {
+    var ancestorId = card.parentId;
+    final visited = <String>{card.id};
+    while (ancestorId != null && visited.add(ancestorId)) {
+      final ancestor = cardsById[ancestorId];
+      if (ancestor == null || !ancestor.isInTree) return true;
+      if (ancestor.state == NationalFocusCardState.extinguished.storageValue) {
+        return true;
+      }
+      ancestorId = ancestor.parentId;
+    }
+    return false;
+  }
+
+  Map<String, _PlannedNationalFocusFailure> _planIndependentFailures(
+    List<LocalNationalFocusCard> cards,
+  ) {
+    final planned = <String, _PlannedNationalFocusFailure>{};
+    for (final card in cards) {
+      final state = NationalFocusCardState.fromStorage(card.state);
+      if (state == NationalFocusCardState.pendingTodayConfirmation) {
+        planned[card.id] = _PlannedNationalFocusFailure(
+          NationalFocusFailureCause.missedConfirmation,
+          NationalFocusFailureCause.missedConfirmation.label,
+        );
+      } else if (state == NationalFocusCardState.extinguished &&
+          card.maintenanceCycleStarted) {
+        final priorState = card.cascadePriorState == null
+            ? null
+            : NationalFocusCardState.fromStorage(card.cascadePriorState!);
+        if (card.cascadeSourceCardId == null) {
+          planned[card.id] = _PlannedNationalFocusFailure(
+            NationalFocusFailureCause.activeExtinguish,
+            card.failureReason,
+          );
+        } else if (priorState ==
+            NationalFocusCardState.pendingTodayConfirmation) {
+          // A parent's manual failure does not erase the child's own missed
+          // confirmation obligation.
+          planned[card.id] = _PlannedNationalFocusFailure(
+            NationalFocusFailureCause.missedConfirmation,
+            NationalFocusFailureCause.missedConfirmation.label,
+          );
+        }
+      }
+    }
+
+    final cardsById = {for (final card in cards) card.id: card};
+    final orphanedCascades =
+        cards
+            .where(
+              (card) =>
+                  card.cascadeSourceCardId != null &&
+                  card.maintenanceCycleStarted &&
+                  !planned.containsKey(card.id),
+            )
+            .toList(growable: false)
+          ..sort(
+            (first, second) => _treeDepth(
+              first,
+              cardsById,
+            ).compareTo(_treeDepth(second, cardsById)),
+          );
+    for (final card in orphanedCascades) {
+      if (_nearestFailingAncestorId(card, cardsById, planned) != null) {
+        continue;
+      }
+      // If the original parent was restored but this node stayed extinguished,
+      // the remaining unlit branch now has its own pending failure source.
+      planned[card.id] = _PlannedNationalFocusFailure(
+        NationalFocusFailureCause.activeExtinguish,
+        card.failureReason,
+      );
+    }
+    return planned;
+  }
+
+  Map<String, String> _failureSourceCardIds(
+    List<LocalNationalFocusCard> cards,
+    Map<String, _PlannedNationalFocusFailure> plannedFailures,
+  ) {
+    final cardsById = {for (final card in cards) card.id: card};
+    final sources = <String, String>{};
+    for (final card in cards) {
+      if (plannedFailures.containsKey(card.id)) {
+        sources[card.id] = card.id;
+        continue;
+      }
+      final ancestorId = _nearestFailingAncestorId(
+        card,
+        cardsById,
+        plannedFailures,
+      );
+      if (ancestorId != null) sources[card.id] = ancestorId;
+    }
+    return sources;
+  }
+
+  String? _nearestFailingAncestorId(
+    LocalNationalFocusCard card,
+    Map<String, LocalNationalFocusCard> cardsById,
+    Map<String, _PlannedNationalFocusFailure> plannedFailures,
+  ) {
+    var ancestorId = card.parentId;
+    final visited = <String>{card.id};
+    while (ancestorId != null && visited.add(ancestorId)) {
+      if (plannedFailures.containsKey(ancestorId)) return ancestorId;
+      ancestorId = cardsById[ancestorId]?.parentId;
+    }
+    return null;
+  }
+
+  int _treeDepth(
+    LocalNationalFocusCard card,
+    Map<String, LocalNationalFocusCard> cardsById,
+  ) {
+    var depth = 0;
+    var ancestorId = card.parentId;
+    final visited = <String>{card.id};
+    while (ancestorId != null && visited.add(ancestorId)) {
+      final ancestor = cardsById[ancestorId];
+      if (ancestor == null) break;
+      depth++;
+      ancestorId = ancestor.parentId;
+    }
+    return depth;
+  }
+
   Future<void> _updateCard(
     LocalNationalFocusCard card,
     LocalNationalFocusCardsCompanion update,
@@ -477,9 +736,16 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
         bestConsecutiveDays: row.bestConsecutiveDays,
         maintenanceCycleStarted: row.maintenanceCycleStarted,
         failureReason: row.failureReason,
+        cascadeSourceCardId: row.cascadeSourceCardId,
+        cascadePriorState: row.cascadePriorState == null
+            ? null
+            : NationalFocusCardState.fromStorage(row.cascadePriorState!),
       );
 
-  Map<String, Object?> _snapshotJson(LocalNationalFocusCard row) => {
+  Map<String, Object?> _snapshotJson(
+    LocalNationalFocusCard row, {
+    String? failureSourceCardId,
+  }) => {
     'id': row.id,
     'triggerCondition': row.triggerCondition,
     'action': row.action,
@@ -493,6 +759,9 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     'bestConsecutiveDays': row.bestConsecutiveDays,
     'maintenanceCycleStarted': row.maintenanceCycleStarted,
     'failureReason': row.failureReason,
+    'cascadeSourceCardId': row.cascadeSourceCardId,
+    'cascadePriorState': row.cascadePriorState,
+    'failureSourceCardId': failureSourceCardId,
     'createdAt': row.createdAt.toUtc().toIso8601String(),
     'updatedAt': row.updatedAt.toUtc().toIso8601String(),
   };
@@ -516,6 +785,13 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
             bestConsecutiveDays: item['bestConsecutiveDays'] as int,
             maintenanceCycleStarted: item['maintenanceCycleStarted'] as bool,
             failureReason: item['failureReason'] as String?,
+            cascadeSourceCardId: item['cascadeSourceCardId'] as String?,
+            cascadePriorState: item['cascadePriorState'] == null
+                ? null
+                : NationalFocusCardState.fromStorage(
+                    item['cascadePriorState'] as String,
+                  ),
+            failureSourceCardId: item['failureSourceCardId'] as String?,
             createdAt: DateTime.parse(item['createdAt'] as String),
             updatedAt: DateTime.parse(item['updatedAt'] as String),
           );
@@ -556,6 +832,13 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
         ? second
         : previousUtc.add(const Duration(seconds: 1));
   }
+}
+
+class _PlannedNationalFocusFailure {
+  const _PlannedNationalFocusFailure(this.cause, this.failureReason);
+
+  final NationalFocusFailureCause cause;
+  final String? failureReason;
 }
 
 class UnavailableNationalFocusRepository implements NationalFocusRepository {

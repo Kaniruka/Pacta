@@ -53,6 +53,8 @@ class LocalNationalFocusCards extends Table {
   BoolColumn get maintenanceCycleStarted =>
       boolean().withDefault(const Constant(false))();
   TextColumn get failureReason => text().nullable()();
+  TextColumn get cascadeSourceCardId => text().nullable()();
+  TextColumn get cascadePriorState => text().nullable()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
@@ -252,7 +254,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -352,6 +354,88 @@ class PactaDatabase extends _$PactaDatabase {
         await m.createTable(localNationalFocusMaintenance);
         await m.createTable(localNationalFocusFailures);
       }
+      if (from < 15) {
+        await m.addColumn(
+          localNationalFocusCards,
+          localNationalFocusCards.cascadeSourceCardId,
+        );
+        await m.addColumn(
+          localNationalFocusCards,
+          localNationalFocusCards.cascadePriorState,
+        );
+        await _cascadeLegacyActiveDescendants(this);
+      }
     },
   );
+}
+
+Future<void> _cascadeLegacyActiveDescendants(PactaDatabase database) async {
+  final cards = await (database.select(
+    database.localNationalFocusCards,
+  )..where((card) => card.isInTree.equals(true))).get();
+  final failures = await database
+      .select(database.localNationalFocusFailures)
+      .get();
+  final latestFailureByCard = <String, Map<String, DateTime>>{};
+  for (final failure in failures) {
+    final userFailures = latestFailureByCard.putIfAbsent(
+      failure.userId,
+      () => {},
+    );
+    final previous = userFailures[failure.cardId];
+    if (previous == null || failure.checkpointAt.isAfter(previous)) {
+      userFailures[failure.cardId] = failure.checkpointAt;
+    }
+  }
+  final cardsByUser = <String, Map<String, LocalNationalFocusCard>>{};
+  for (final card in cards) {
+    cardsByUser.putIfAbsent(card.userId, () => {})[card.id] = card;
+  }
+
+  for (final card in cards) {
+    if (card.state != 'lit' && card.state != 'pending_today_confirmation') {
+      continue;
+    }
+
+    final userCards = cardsByUser[card.userId]!;
+    final visited = <String>{card.id};
+    var ancestorId = card.parentId;
+    String? sourceCardId;
+    LocalNationalFocusCard? sourceCard;
+    while (ancestorId != null && visited.add(ancestorId)) {
+      final ancestor = userCards[ancestorId];
+      if (ancestor == null) break;
+      if (ancestor.state == 'extinguished') {
+        sourceCardId = ancestor.id;
+        sourceCard = ancestor;
+        break;
+      }
+      ancestorId = ancestor.parentId;
+    }
+    if (sourceCardId == null) continue;
+
+    final sourceFailureAt = latestFailureByCard[card.userId]?[sourceCardId];
+    final sourceFailureWasSettled =
+        sourceFailureAt != null && !sourceCard!.maintenanceCycleStarted;
+
+    await (database.update(database.localNationalFocusCards)
+          ..where((candidate) => candidate.userId.equals(card.userId))
+          ..where((candidate) => candidate.id.equals(card.id)))
+        .write(
+          LocalNationalFocusCardsCompanion(
+            state: const Value('extinguished'),
+            currentConsecutiveDays: Value(
+              sourceFailureWasSettled ? 0 : card.currentConsecutiveDays,
+            ),
+            maintenanceCycleStarted: Value(
+              sourceFailureWasSettled ? false : card.maintenanceCycleStarted,
+            ),
+            failureReason: const Value(null),
+            cascadeSourceCardId: Value(sourceCardId),
+            cascadePriorState: Value(
+              sourceFailureWasSettled ? 'lit' : card.state,
+            ),
+          ),
+        );
+  }
 }

@@ -1350,6 +1350,29 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _cascadeSourceCardIdMeta =
+      const VerificationMeta('cascadeSourceCardId');
+  @override
+  late final GeneratedColumn<String> cascadeSourceCardId =
+      GeneratedColumn<String>(
+        'cascade_source_card_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _cascadePriorStateMeta = const VerificationMeta(
+    'cascadePriorState',
+  );
+  @override
+  late final GeneratedColumn<String> cascadePriorState =
+      GeneratedColumn<String>(
+        'cascade_prior_state',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1388,6 +1411,8 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
     bestConsecutiveDays,
     maintenanceCycleStarted,
     failureReason,
+    cascadeSourceCardId,
+    cascadePriorState,
     createdAt,
     updatedAt,
   ];
@@ -1513,6 +1538,24 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
         ),
       );
     }
+    if (data.containsKey('cascade_source_card_id')) {
+      context.handle(
+        _cascadeSourceCardIdMeta,
+        cascadeSourceCardId.isAcceptableOrUnknown(
+          data['cascade_source_card_id']!,
+          _cascadeSourceCardIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('cascade_prior_state')) {
+      context.handle(
+        _cascadePriorStateMeta,
+        cascadePriorState.isAcceptableOrUnknown(
+          data['cascade_prior_state']!,
+          _cascadePriorStateMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1594,6 +1637,14 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
         DriftSqlType.string,
         data['${effectivePrefix}failure_reason'],
       ),
+      cascadeSourceCardId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cascade_source_card_id'],
+      ),
+      cascadePriorState: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cascade_prior_state'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -1627,6 +1678,8 @@ class LocalNationalFocusCard extends DataClass
   final int bestConsecutiveDays;
   final bool maintenanceCycleStarted;
   final String? failureReason;
+  final String? cascadeSourceCardId;
+  final String? cascadePriorState;
   final DateTime createdAt;
   final DateTime updatedAt;
   const LocalNationalFocusCard({
@@ -1644,6 +1697,8 @@ class LocalNationalFocusCard extends DataClass
     required this.bestConsecutiveDays,
     required this.maintenanceCycleStarted,
     this.failureReason,
+    this.cascadeSourceCardId,
+    this.cascadePriorState,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -1671,6 +1726,12 @@ class LocalNationalFocusCard extends DataClass
     map['maintenance_cycle_started'] = Variable<bool>(maintenanceCycleStarted);
     if (!nullToAbsent || failureReason != null) {
       map['failure_reason'] = Variable<String>(failureReason);
+    }
+    if (!nullToAbsent || cascadeSourceCardId != null) {
+      map['cascade_source_card_id'] = Variable<String>(cascadeSourceCardId);
+    }
+    if (!nullToAbsent || cascadePriorState != null) {
+      map['cascade_prior_state'] = Variable<String>(cascadePriorState);
     }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -1701,6 +1762,12 @@ class LocalNationalFocusCard extends DataClass
       failureReason: failureReason == null && nullToAbsent
           ? const Value.absent()
           : Value(failureReason),
+      cascadeSourceCardId: cascadeSourceCardId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cascadeSourceCardId),
+      cascadePriorState: cascadePriorState == null && nullToAbsent
+          ? const Value.absent()
+          : Value(cascadePriorState),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -1732,6 +1799,12 @@ class LocalNationalFocusCard extends DataClass
         json['maintenanceCycleStarted'],
       ),
       failureReason: serializer.fromJson<String?>(json['failureReason']),
+      cascadeSourceCardId: serializer.fromJson<String?>(
+        json['cascadeSourceCardId'],
+      ),
+      cascadePriorState: serializer.fromJson<String?>(
+        json['cascadePriorState'],
+      ),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -1756,6 +1829,8 @@ class LocalNationalFocusCard extends DataClass
         maintenanceCycleStarted,
       ),
       'failureReason': serializer.toJson<String?>(failureReason),
+      'cascadeSourceCardId': serializer.toJson<String?>(cascadeSourceCardId),
+      'cascadePriorState': serializer.toJson<String?>(cascadePriorState),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -1776,6 +1851,8 @@ class LocalNationalFocusCard extends DataClass
     int? bestConsecutiveDays,
     bool? maintenanceCycleStarted,
     Value<String?> failureReason = const Value.absent(),
+    Value<String?> cascadeSourceCardId = const Value.absent(),
+    Value<String?> cascadePriorState = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => LocalNationalFocusCard(
@@ -1799,6 +1876,12 @@ class LocalNationalFocusCard extends DataClass
     failureReason: failureReason.present
         ? failureReason.value
         : this.failureReason,
+    cascadeSourceCardId: cascadeSourceCardId.present
+        ? cascadeSourceCardId.value
+        : this.cascadeSourceCardId,
+    cascadePriorState: cascadePriorState.present
+        ? cascadePriorState.value
+        : this.cascadePriorState,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -1834,6 +1917,12 @@ class LocalNationalFocusCard extends DataClass
       failureReason: data.failureReason.present
           ? data.failureReason.value
           : this.failureReason,
+      cascadeSourceCardId: data.cascadeSourceCardId.present
+          ? data.cascadeSourceCardId.value
+          : this.cascadeSourceCardId,
+      cascadePriorState: data.cascadePriorState.present
+          ? data.cascadePriorState.value
+          : this.cascadePriorState,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -1856,6 +1945,8 @@ class LocalNationalFocusCard extends DataClass
           ..write('bestConsecutiveDays: $bestConsecutiveDays, ')
           ..write('maintenanceCycleStarted: $maintenanceCycleStarted, ')
           ..write('failureReason: $failureReason, ')
+          ..write('cascadeSourceCardId: $cascadeSourceCardId, ')
+          ..write('cascadePriorState: $cascadePriorState, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -1878,6 +1969,8 @@ class LocalNationalFocusCard extends DataClass
     bestConsecutiveDays,
     maintenanceCycleStarted,
     failureReason,
+    cascadeSourceCardId,
+    cascadePriorState,
     createdAt,
     updatedAt,
   );
@@ -1899,6 +1992,8 @@ class LocalNationalFocusCard extends DataClass
           other.bestConsecutiveDays == this.bestConsecutiveDays &&
           other.maintenanceCycleStarted == this.maintenanceCycleStarted &&
           other.failureReason == this.failureReason &&
+          other.cascadeSourceCardId == this.cascadeSourceCardId &&
+          other.cascadePriorState == this.cascadePriorState &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -1919,6 +2014,8 @@ class LocalNationalFocusCardsCompanion
   final Value<int> bestConsecutiveDays;
   final Value<bool> maintenanceCycleStarted;
   final Value<String?> failureReason;
+  final Value<String?> cascadeSourceCardId;
+  final Value<String?> cascadePriorState;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -1937,6 +2034,8 @@ class LocalNationalFocusCardsCompanion
     this.bestConsecutiveDays = const Value.absent(),
     this.maintenanceCycleStarted = const Value.absent(),
     this.failureReason = const Value.absent(),
+    this.cascadeSourceCardId = const Value.absent(),
+    this.cascadePriorState = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -1956,6 +2055,8 @@ class LocalNationalFocusCardsCompanion
     this.bestConsecutiveDays = const Value.absent(),
     this.maintenanceCycleStarted = const Value.absent(),
     this.failureReason = const Value.absent(),
+    this.cascadeSourceCardId = const Value.absent(),
+    this.cascadePriorState = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
@@ -1980,6 +2081,8 @@ class LocalNationalFocusCardsCompanion
     Expression<int>? bestConsecutiveDays,
     Expression<bool>? maintenanceCycleStarted,
     Expression<String>? failureReason,
+    Expression<String>? cascadeSourceCardId,
+    Expression<String>? cascadePriorState,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -2002,6 +2105,9 @@ class LocalNationalFocusCardsCompanion
       if (maintenanceCycleStarted != null)
         'maintenance_cycle_started': maintenanceCycleStarted,
       if (failureReason != null) 'failure_reason': failureReason,
+      if (cascadeSourceCardId != null)
+        'cascade_source_card_id': cascadeSourceCardId,
+      if (cascadePriorState != null) 'cascade_prior_state': cascadePriorState,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -2023,6 +2129,8 @@ class LocalNationalFocusCardsCompanion
     Value<int>? bestConsecutiveDays,
     Value<bool>? maintenanceCycleStarted,
     Value<String?>? failureReason,
+    Value<String?>? cascadeSourceCardId,
+    Value<String?>? cascadePriorState,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -2044,6 +2152,8 @@ class LocalNationalFocusCardsCompanion
       maintenanceCycleStarted:
           maintenanceCycleStarted ?? this.maintenanceCycleStarted,
       failureReason: failureReason ?? this.failureReason,
+      cascadeSourceCardId: cascadeSourceCardId ?? this.cascadeSourceCardId,
+      cascadePriorState: cascadePriorState ?? this.cascadePriorState,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -2099,6 +2209,14 @@ class LocalNationalFocusCardsCompanion
     if (failureReason.present) {
       map['failure_reason'] = Variable<String>(failureReason.value);
     }
+    if (cascadeSourceCardId.present) {
+      map['cascade_source_card_id'] = Variable<String>(
+        cascadeSourceCardId.value,
+      );
+    }
+    if (cascadePriorState.present) {
+      map['cascade_prior_state'] = Variable<String>(cascadePriorState.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -2128,6 +2246,8 @@ class LocalNationalFocusCardsCompanion
           ..write('bestConsecutiveDays: $bestConsecutiveDays, ')
           ..write('maintenanceCycleStarted: $maintenanceCycleStarted, ')
           ..write('failureReason: $failureReason, ')
+          ..write('cascadeSourceCardId: $cascadeSourceCardId, ')
+          ..write('cascadePriorState: $cascadePriorState, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -8225,28 +8345,26 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   ];
 }
 
-typedef $$LocalGoalsTableCreateCompanionBuilder =
-    LocalGoalsCompanion Function({
-      required String userId,
-      required String id,
-      required String title,
-      required String classification,
-      required DateTime createdAt,
-      required DateTime updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
-typedef $$LocalGoalsTableUpdateCompanionBuilder =
-    LocalGoalsCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> title,
-      Value<String> classification,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
+typedef $$LocalGoalsTableCreateCompanionBuilder = LocalGoalsCompanion Function({
+  required String userId,
+  required String id,
+  required String title,
+  required String classification,
+  required DateTime createdAt,
+  required DateTime updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
+typedef $$LocalGoalsTableUpdateCompanionBuilder = LocalGoalsCompanion Function({
+  Value<String> userId,
+  Value<String> id,
+  Value<String> title,
+  Value<String> classification,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
 
 class $$LocalGoalsTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalGoalsTable> {
@@ -8462,38 +8580,36 @@ typedef $$LocalGoalsTableProcessedTableManager =
       LocalGoal,
       PrefetchHooks Function()
     >;
-typedef $$LocalTasksTableCreateCompanionBuilder =
-    LocalTasksCompanion Function({
-      required String userId,
-      required String id,
-      required String goalId,
-      required String title,
-      required String classification,
-      Value<int?> estimatedMinutes,
-      Value<DateTime?> deadline,
-      Value<bool> isComplete,
-      Value<int> focusProgressSeconds,
-      required DateTime createdAt,
-      required DateTime updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
-typedef $$LocalTasksTableUpdateCompanionBuilder =
-    LocalTasksCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> goalId,
-      Value<String> title,
-      Value<String> classification,
-      Value<int?> estimatedMinutes,
-      Value<DateTime?> deadline,
-      Value<bool> isComplete,
-      Value<int> focusProgressSeconds,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
+typedef $$LocalTasksTableCreateCompanionBuilder = LocalTasksCompanion Function({
+  required String userId,
+  required String id,
+  required String goalId,
+  required String title,
+  required String classification,
+  Value<int?> estimatedMinutes,
+  Value<DateTime?> deadline,
+  Value<bool> isComplete,
+  Value<int> focusProgressSeconds,
+  required DateTime createdAt,
+  required DateTime updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
+typedef $$LocalTasksTableUpdateCompanionBuilder = LocalTasksCompanion Function({
+  Value<String> userId,
+  Value<String> id,
+  Value<String> goalId,
+  Value<String> title,
+  Value<String> classification,
+  Value<int?> estimatedMinutes,
+  Value<DateTime?> deadline,
+  Value<bool> isComplete,
+  Value<int> focusProgressSeconds,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
 
 class $$LocalTasksTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalTasksTable> {
@@ -8816,6 +8932,8 @@ typedef $$LocalNationalFocusCardsTableCreateCompanionBuilder =
       Value<int> bestConsecutiveDays,
       Value<bool> maintenanceCycleStarted,
       Value<String?> failureReason,
+      Value<String?> cascadeSourceCardId,
+      Value<String?> cascadePriorState,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<int> rowid,
@@ -8836,6 +8954,8 @@ typedef $$LocalNationalFocusCardsTableUpdateCompanionBuilder =
       Value<int> bestConsecutiveDays,
       Value<bool> maintenanceCycleStarted,
       Value<String?> failureReason,
+      Value<String?> cascadeSourceCardId,
+      Value<String?> cascadePriorState,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -8917,6 +9037,16 @@ class $$LocalNationalFocusCardsTableFilterComposer
 
   ColumnFilters<String> get failureReason => $composableBuilder(
     column: $table.failureReason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get cascadeSourceCardId => $composableBuilder(
+    column: $table.cascadeSourceCardId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get cascadePriorState => $composableBuilder(
+    column: $table.cascadePriorState,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -9010,6 +9140,16 @@ class $$LocalNationalFocusCardsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get cascadeSourceCardId => $composableBuilder(
+    column: $table.cascadeSourceCardId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get cascadePriorState => $composableBuilder(
+    column: $table.cascadePriorState,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -9086,6 +9226,16 @@ class $$LocalNationalFocusCardsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get cascadeSourceCardId => $composableBuilder(
+    column: $table.cascadeSourceCardId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get cascadePriorState => $composableBuilder(
+    column: $table.cascadePriorState,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -9153,6 +9303,8 @@ class $$LocalNationalFocusCardsTableTableManager
                 Value<int> bestConsecutiveDays = const Value.absent(),
                 Value<bool> maintenanceCycleStarted = const Value.absent(),
                 Value<String?> failureReason = const Value.absent(),
+                Value<String?> cascadeSourceCardId = const Value.absent(),
+                Value<String?> cascadePriorState = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -9171,6 +9323,8 @@ class $$LocalNationalFocusCardsTableTableManager
                 bestConsecutiveDays: bestConsecutiveDays,
                 maintenanceCycleStarted: maintenanceCycleStarted,
                 failureReason: failureReason,
+                cascadeSourceCardId: cascadeSourceCardId,
+                cascadePriorState: cascadePriorState,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -9191,6 +9345,8 @@ class $$LocalNationalFocusCardsTableTableManager
                 Value<int> bestConsecutiveDays = const Value.absent(),
                 Value<bool> maintenanceCycleStarted = const Value.absent(),
                 Value<String?> failureReason = const Value.absent(),
+                Value<String?> cascadeSourceCardId = const Value.absent(),
+                Value<String?> cascadePriorState = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -9209,6 +9365,8 @@ class $$LocalNationalFocusCardsTableTableManager
                 bestConsecutiveDays: bestConsecutiveDays,
                 maintenanceCycleStarted: maintenanceCycleStarted,
                 failureReason: failureReason,
+                cascadeSourceCardId: cascadeSourceCardId,
+                cascadePriorState: cascadePriorState,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -10457,30 +10615,28 @@ typedef $$FocusSessionsTableProcessedTableManager =
       FocusSession,
       PrefetchHooks Function()
     >;
-typedef $$FocusNodesTableCreateCompanionBuilder =
-    FocusNodesCompanion Function({
-      required String userId,
-      required String id,
-      required String sessionId,
-      required String taskId,
-      required String mode,
-      required DateTime createdAt,
-      required int effectiveSeconds,
-      Value<String?> note,
-      Value<int> rowid,
-    });
-typedef $$FocusNodesTableUpdateCompanionBuilder =
-    FocusNodesCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> sessionId,
-      Value<String> taskId,
-      Value<String> mode,
-      Value<DateTime> createdAt,
-      Value<int> effectiveSeconds,
-      Value<String?> note,
-      Value<int> rowid,
-    });
+typedef $$FocusNodesTableCreateCompanionBuilder = FocusNodesCompanion Function({
+  required String userId,
+  required String id,
+  required String sessionId,
+  required String taskId,
+  required String mode,
+  required DateTime createdAt,
+  required int effectiveSeconds,
+  Value<String?> note,
+  Value<int> rowid,
+});
+typedef $$FocusNodesTableUpdateCompanionBuilder = FocusNodesCompanion Function({
+  Value<String> userId,
+  Value<String> id,
+  Value<String> sessionId,
+  Value<String> taskId,
+  Value<String> mode,
+  Value<DateTime> createdAt,
+  Value<int> effectiveSeconds,
+  Value<String?> note,
+  Value<int> rowid,
+});
 
 class $$FocusNodesTableFilterComposer
     extends Composer<_$PactaDatabase, $FocusNodesTable> {
