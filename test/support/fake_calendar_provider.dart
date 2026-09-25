@@ -7,6 +7,8 @@ class FakeCalendarProvider implements CalendarProvider {
     required this.permission,
     this.events = const [],
     this.supported = true,
+    this.failPermissionCheck = false,
+    this.failSourceListing = false,
   });
 
   factory FakeCalendarProvider.unsupported() => FakeCalendarProvider(
@@ -19,6 +21,9 @@ class FakeCalendarProvider implements CalendarProvider {
   CalendarPermissionState permission;
   List<CalendarEventOccurrence> events;
   final bool supported;
+  bool failPermissionCheck;
+  bool failSourceListing;
+  final Set<String> failingReadSourceIds = {};
 
   @override
   bool get isSupported => supported;
@@ -27,16 +32,32 @@ class FakeCalendarProvider implements CalendarProvider {
   Future<CalendarPermissionState> requestPermission() async => permission;
 
   @override
-  Future<CalendarPermissionState> permissionStatus() async => permission;
+  Future<CalendarPermissionState> permissionStatus() async {
+    if (failPermissionCheck) throw StateError('Permission state unavailable.');
+    return permission;
+  }
 
   @override
-  Future<List<CalendarSource>> listCalendars() async => sources;
+  Future<List<CalendarSource>> listCalendars() async {
+    if (failSourceListing) {
+      throw StateError('Calendar source list unavailable.');
+    }
+    return sources;
+  }
 
   @override
   Future<List<CalendarEventOccurrence>> readEvents({
     required Set<String> sourceIds,
     required DateTime from,
     required DateTime to,
-  }) async =>
-      events.where((event) => sourceIds.contains(event.sourceId)).toList();
+  }) async => await _readEvents(sourceIds);
+
+  Future<List<CalendarEventOccurrence>> _readEvents(
+    Set<String> sourceIds,
+  ) async {
+    if (sourceIds.any(failingReadSourceIds.contains)) {
+      throw StateError('Calendar event query failed.');
+    }
+    return events.where((event) => sourceIds.contains(event.sourceId)).toList();
+  }
 }

@@ -39,6 +39,15 @@ class CalendarAgendaCard extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (agenda?.isStale == true)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Semantics(
+                      liveRegion: true,
+                      label: '日历块尚未更新，已保留本地缓存。',
+                      child: const Text('日历块尚未更新，已保留本地缓存。'),
+                    ),
+                  ),
                 if (snapshot.connectionState == ConnectionState.waiting &&
                     agenda == null)
                   const Padding(
@@ -179,7 +188,14 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
         if (!mounted) return;
         setState(() => _state = state);
       }
-      if (state!.permission != CalendarPermissionState.granted) {
+      if (state!.permission == CalendarPermissionState.unknown) {
+        setState(() {
+          _working = false;
+          _message = '日历权限状态暂时无法确认。已有缓存已保留并标记未更新。';
+        });
+        return;
+      }
+      if (state.permission != CalendarPermissionState.granted) {
         setState(() {
           _working = false;
           _message = '尚未获得读取日历权限。你仍可照常使用目标、任务和专注功能。';
@@ -213,9 +229,11 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       setState(() {
         _state = refreshed;
         _working = false;
-        _message = result.synced
-            ? '已导入 ${result.importedOccurrences} 个日历发生次并同步。'
-            : '已在本机保存 ${result.importedOccurrences} 个发生次，云端同步暂未成功；恢复连接后会重试。';
+        _message = !result.synced
+            ? '本机缓存已保留，云端同步暂未成功；恢复连接后会重试。'
+            : result.isStale
+            ? '日历来源暂未更新，已有缓存已保留。'
+            : '已导入 ${result.importedOccurrences} 个日历发生次并同步。';
       });
     } catch (_) {
       if (!mounted) return;
@@ -299,17 +317,85 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
     });
     try {
       await widget.repository.sync();
+      final state = await widget.repository.loadImportState();
       if (!mounted) return;
       setState(() {
+        _state = state;
         _working = false;
-        _message = '日历块已同步。';
+        _message = state.hasPendingUpdates ? '部分日历数据尚未更新，已有缓存已保留。' : '日历块已同步。';
       });
-      await _load();
     } catch (_) {
       if (!mounted) return;
+      final state = await widget.repository.loadImportState();
       setState(() {
+        _state = state;
         _working = false;
-        _message = '云端暂时不可用，已同步的日历块仍保留在本机。';
+        _message = '云端暂时不可用，已有缓存已保留并标记未更新。';
+      });
+    }
+  }
+
+  Future<void> _removeSource(CalendarSource source) => _removeSources(
+    {source.id},
+    title: '取消导入日历？',
+    content: '将移除“${source.displayName}”及其日历块，并同步到其他设备。',
+    confirmLabel: '取消导入',
+  );
+
+  Future<void> _confirmPermissionRevocation() => _removeSources(
+    _state!.importedSourceIds,
+    title: '移除所有已导入日历？',
+    content: '设备日历权限已关闭。确认后会移除缓存的日历来源和日历块，并在云端可用时同步到其他设备。目标、任务和历史记录不受影响。',
+    confirmLabel: '确认移除',
+  );
+
+  Future<void> _removeSources(
+    Set<String> sourceIds, {
+    required String title,
+    required String content,
+    required String confirmLabel,
+  }) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(content),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('保留'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || sourceIds.isEmpty) return;
+
+    setState(() {
+      _working = true;
+      _message = null;
+    });
+    try {
+      await widget.repository.removeSources(sourceIds);
+      final state = await widget.repository.loadImportState();
+      if (!mounted) return;
+      setState(() {
+        _state = state;
+        _working = false;
+        _message = state.hasPendingUpdates
+            ? '已在本机移除；云端更新待连接后同步。'
+            : '日历来源已移除并同步。';
+      });
+    } catch (_) {
+      final state = await widget.repository.loadImportState();
+      if (!mounted) return;
+      setState(() {
+        _state = state;
+        _working = false;
+        _message = '已在本机移除；云端暂未更新，连接恢复后会重试。';
       });
     }
   }
@@ -334,11 +420,23 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
           else if (widget.isAndroid)
             _androidImportStatus(state)
           else
-            const Card(
+            Card(
               child: ListTile(
                 leading: Icon(Icons.sync_outlined),
                 title: Text('从 Android 同步日历块'),
                 subtitle: Text('Windows 只显示已选择并同步的日历来源。'),
+              ),
+            ),
+          if (state?.hasPendingUpdates == true)
+            Card(
+              child: Semantics(
+                liveRegion: true,
+                label: '部分日历数据尚未更新，已有缓存已保留。',
+                child: const ListTile(
+                  leading: Icon(Icons.cloud_off_outlined),
+                  title: Text('日历数据未更新'),
+                  subtitle: Text('已有缓存已保留；连接或权限恢复后可以重试。'),
+                ),
               ),
             ),
           if (imported.isNotEmpty) ...[
@@ -350,8 +448,22 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
                   key: ValueKey('source-${source.id}'),
                   leading: const Icon(Icons.event_available_outlined),
                   title: Text(source.displayName),
-                  subtitle: Text(source.timeZoneId),
-                  trailing: const Icon(Icons.check_circle_outline),
+                  subtitle: Text(
+                    '${source.timeZoneId} · ${source.isStale ? '未更新' : '已同步'}',
+                  ),
+                  trailing: widget.isAndroid
+                      ? IconButton(
+                          tooltip: '取消导入 ${source.displayName}',
+                          onPressed: _working
+                              ? null
+                              : () => _removeSource(source),
+                          icon: const Icon(Icons.remove_circle_outline),
+                        )
+                      : Icon(
+                          source.isStale
+                              ? Icons.cloud_off_outlined
+                              : Icons.check_circle_outline,
+                        ),
                 ),
               ),
           ],
@@ -375,13 +487,12 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
                     ? '选择其他日历'
                     : '允许并选择日历',
               ),
-            )
-          else
-            OutlinedButton.icon(
-              onPressed: _working ? null : _sync,
-              icon: const Icon(Icons.sync),
-              label: const Text('立即同步'),
             ),
+          OutlinedButton.icon(
+            onPressed: _working ? null : _sync,
+            icon: const Icon(Icons.sync),
+            label: const Text('立即同步'),
+          ),
         ],
       ),
     );
@@ -389,12 +500,53 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
 
   Widget _androidImportStatus(CalendarImportState? state) {
     if (state?.permission == CalendarPermissionState.granted) {
+      final hasStaleSource = state!.importedSources.any(
+        (source) => source.isStale,
+      );
+      return Card(
+        child: ListTile(
+          leading: Icon(
+            hasStaleSource
+                ? Icons.cloud_off_outlined
+                : Icons.verified_user_outlined,
+          ),
+          title: Text(hasStaleSource ? '日历来源未更新' : '已允许读取日历'),
+          subtitle: Text(
+            hasStaleSource
+                ? '读取或云端同步暂未成功，Pacta 已保留已有缓存。'
+                : 'Pacta 只读取你选择的日历，不会修改源日历。',
+          ),
+        ),
+      );
+    }
+    if (state?.permission == CalendarPermissionState.unknown) {
       return const Card(
         child: ListTile(
-          leading: Icon(Icons.verified_user_outlined),
-          title: Text('已允许读取日历'),
-          subtitle: Text('Pacta 只读取你选择的日历，不会修改源日历。'),
+          leading: Icon(Icons.cloud_off_outlined),
+          title: Text('日历权限状态暂不可用'),
+          subtitle: Text('已保留已有缓存并标记未更新。确认权限状态前不会删除日历块。'),
         ),
+      );
+    }
+    if (state?.permission == CalendarPermissionState.denied &&
+        state!.importedSources.isNotEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Card(
+            child: ListTile(
+              leading: Icon(Icons.info_outline),
+              title: Text('设备日历权限已关闭'),
+              subtitle: Text('已保留缓存并标记未更新。只有你确认后才会移除已导入来源。'),
+            ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _working ? null : _confirmPermissionRevocation,
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('确认撤权并移除所有来源'),
+          ),
+        ],
       );
     }
     return const Card(

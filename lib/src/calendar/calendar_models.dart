@@ -11,7 +11,7 @@ enum CalendarAvailability {
   );
 }
 
-enum CalendarPermissionState { granted, denied, unsupported }
+enum CalendarPermissionState { granted, denied, unknown, unsupported }
 
 class CalendarSource {
   const CalendarSource({
@@ -19,6 +19,7 @@ class CalendarSource {
     required this.displayName,
     required this.timeZoneId,
     this.localCalendarId,
+    this.isStale = false,
   });
 
   /// A stable, opaque identifier shared by devices for the same calendar.
@@ -28,6 +29,7 @@ class CalendarSource {
 
   /// Android Calendar Provider's local row id. Never sent to the remote store.
   final String? localCalendarId;
+  final bool isStale;
 }
 
 class CalendarEventOccurrence {
@@ -124,9 +126,11 @@ class CalendarAgenda {
     required this.blocks,
     required DateTime from,
     required DateTime to,
+    this.isStale = false,
   }) : occupiedDuration = _unionBusyDuration(blocks, from.toUtc(), to.toUtc());
 
   final List<CalendarBlock> blocks;
+  final bool isStale;
   final Duration occupiedDuration;
 }
 
@@ -135,11 +139,13 @@ class CalendarImportState {
     required this.permission,
     required this.availableSources,
     required this.importedSources,
+    this.hasPendingUpdates = false,
   });
 
   final CalendarPermissionState permission;
   final List<CalendarSource> availableSources;
   final List<CalendarSource> importedSources;
+  final bool hasPendingUpdates;
 
   Set<String> get importedSourceIds => {
     for (final source in importedSources) source.id,
@@ -150,10 +156,12 @@ class CalendarImportResult {
   const CalendarImportResult({
     required this.importedOccurrences,
     required this.synced,
+    this.isStale = false,
   });
 
   final int importedOccurrences;
   final bool synced;
+  final bool isStale;
 }
 
 Duration _unionBusyDuration(

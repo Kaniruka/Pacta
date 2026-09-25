@@ -56,6 +56,31 @@ void main() {
     expect(find.text('立即同步'), findsOneWidget);
   });
 
+  testWidgets('Android exposes a retry action for calendar reconciliation', (
+    tester,
+  ) async {
+    await repository.dispose();
+    repository = LocalCalendarRepository(
+      database: database,
+      userId: 'user-a',
+      provider: FakeCalendarProvider(
+        sources: const [],
+        permission: CalendarPermissionState.granted,
+      ),
+      remote: remote,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CalendarSourcesPage(repository: repository, isAndroid: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('立即同步'), findsOneWidget);
+    expect(find.text('选择其他日历'), findsOneWidget);
+  });
+
   testWidgets('Board shows remote events and their merged busy occupancy', (
     tester,
   ) async {
@@ -210,5 +235,94 @@ void main() {
     expect(find.text('日历权限尚未开启'), findsOneWidget);
     expect(find.textContaining('任务和专注功能'), findsOneWidget);
     expect(find.text('允许并选择日历'), findsOneWidget);
+  });
+
+  testWidgets('Windows clearly marks stale synchronized sources', (
+    tester,
+  ) async {
+    await remote.upsertSources(
+      userId: 'user-a',
+      sources: const [
+        CalendarSource(
+          id: 'stale-source',
+          displayName: '未更新的日历',
+          timeZoneId: 'Asia/Shanghai',
+          isStale: true,
+        ),
+      ],
+    );
+    await repository.sync();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CalendarSourcesPage(repository: repository, isAndroid: false),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('日历数据未更新'), findsOneWidget);
+    expect(find.textContaining('未更新'), findsWidgets);
+  });
+
+  testWidgets('撤销设备权限后保留缓存，用户确认才移除来源', (tester) async {
+    await repository.dispose();
+    final provider = FakeCalendarProvider(
+      sources: const [
+        CalendarSource(
+          id: 'revoked-source',
+          displayName: '权限撤销日历',
+          timeZoneId: 'Asia/Shanghai',
+          localCalendarId: '9',
+        ),
+      ],
+      permission: CalendarPermissionState.granted,
+      events: [
+        CalendarEventOccurrence(
+          sourceId: 'revoked-source',
+          sourceEventId: 'event-one',
+          occurrenceId: 'event-one',
+          eventIdentity: 'event-one',
+          title: '仍保留的缓存活动',
+          startsAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
+          endsAt: DateTime.now().toUtc().add(const Duration(hours: 2)),
+          allDay: false,
+          availability: CalendarAvailability.busy,
+          timeZoneId: 'Asia/Shanghai',
+        ),
+      ],
+    );
+    repository = LocalCalendarRepository(
+      database: database,
+      userId: 'user-a',
+      provider: provider,
+      remote: remote,
+    );
+    await repository.requestAccess();
+    await repository.importCalendars({'revoked-source'});
+    provider.permission = CalendarPermissionState.denied;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CalendarSourcesPage(repository: repository, isAndroid: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('设备日历权限已关闭'), findsOneWidget);
+    expect(find.text('仍保留的缓存活动'), findsNothing);
+    expect(find.text('权限撤销日历'), findsOneWidget);
+    expect(find.textContaining('未更新'), findsWidgets);
+
+    await tester.tap(find.text('确认撤权并移除所有来源'));
+    await tester.pumpAndSettle();
+    expect(find.text('移除所有已导入日历？'), findsOneWidget);
+    expect(find.text('仍保留的缓存活动'), findsNothing);
+
+    await tester.tap(find.text('确认移除'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('权限撤销日历'), findsNothing);
+    expect(find.text('日历来源已移除并同步。'), findsOneWidget);
+    expect((await remote.pull(userId: 'user-a')).events, isEmpty);
   });
 }

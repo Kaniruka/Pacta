@@ -27,6 +27,15 @@ abstract interface class CalendarRemoteDataSource {
     required String userId,
     required List<CalendarEventOccurrence> events,
   });
+  Future<void> deleteSources({
+    required String userId,
+    required Set<String> sourceIds,
+  });
+  Future<void> deleteEvents({
+    required String userId,
+    required String sourceId,
+    required Set<String> occurrenceIds,
+  });
 }
 
 class UnavailableCalendarRemoteDataSource implements CalendarRemoteDataSource {
@@ -49,12 +58,26 @@ class UnavailableCalendarRemoteDataSource implements CalendarRemoteDataSource {
     required String userId,
     required List<CalendarEventOccurrence> events,
   }) async => throw _notConfigured();
+
+  @override
+  Future<void> deleteSources({
+    required String userId,
+    required Set<String> sourceIds,
+  }) async => throw _notConfigured();
+
+  @override
+  Future<void> deleteEvents({
+    required String userId,
+    required String sourceId,
+    required Set<String> occurrenceIds,
+  }) async => throw _notConfigured();
 }
 
 abstract interface class CalendarRepository {
   Future<CalendarImportState> loadImportState();
   Future<CalendarImportState> requestAccess();
   Future<CalendarImportResult> importCalendars(Set<String> sourceIds);
+  Future<void> removeSources(Set<String> sourceIds);
   Future<CalendarAgenda> getAgenda({
     required DateTime from,
     required DateTime to,
@@ -83,6 +106,10 @@ class UnavailableCalendarRepository implements CalendarRepository {
 
   @override
   Future<CalendarImportResult> importCalendars(Set<String> sourceIds) async =>
+      throw UnsupportedError('当前日历功能暂不可用。');
+
+  @override
+  Future<void> removeSources(Set<String> sourceIds) async =>
       throw UnsupportedError('当前日历功能暂不可用。');
 
   @override
@@ -123,36 +150,46 @@ class LocalCalendarRepository implements CalendarRepository {
   final _changes = StreamController<void>.broadcast();
 
   @override
-  Future<CalendarImportState> loadImportState() async {
-    final permission = provider.isSupported
-        ? await provider.permissionStatus()
-        : CalendarPermissionState.unsupported;
-    final availableSources = permission == CalendarPermissionState.granted
-        ? await provider.listCalendars()
-        : const <CalendarSource>[];
-    return CalendarImportState(
-      permission: permission,
-      availableSources: availableSources,
-      importedSources: provider.isSupported
-          ? await _selectedSources()
-          : await _allSources(),
-    );
-  }
+  Future<CalendarImportState> loadImportState() =>
+      _loadImportState(requestPermission: false);
 
   @override
-  Future<CalendarImportState> requestAccess() async {
-    final permission = provider.isSupported
-        ? await provider.requestPermission()
-        : CalendarPermissionState.unsupported;
-    final availableSources = permission == CalendarPermissionState.granted
-        ? await provider.listCalendars()
-        : const <CalendarSource>[];
+  Future<CalendarImportState> requestAccess() =>
+      _loadImportState(requestPermission: true);
+
+  Future<CalendarImportState> _loadImportState({
+    required bool requestPermission,
+  }) async {
+    var permission = CalendarPermissionState.unsupported;
+    var availableSources = const <CalendarSource>[];
+    if (provider.isSupported) {
+      try {
+        permission = requestPermission
+            ? await provider.requestPermission()
+            : await provider.permissionStatus();
+        if (permission == CalendarPermissionState.granted) {
+          try {
+            availableSources = await provider.listCalendars();
+          } catch (_) {
+            permission = CalendarPermissionState.unknown;
+            await _setSelectedSourcesStale();
+          }
+        } else {
+          await _setSelectedSourcesStale();
+        }
+      } catch (_) {
+        permission = CalendarPermissionState.unknown;
+        await _setSelectedSourcesStale();
+      }
+    }
+    final importedSources = provider.isSupported
+        ? await _selectedSources()
+        : await _allSources();
     return CalendarImportState(
       permission: permission,
       availableSources: availableSources,
-      importedSources: provider.isSupported
-          ? await _selectedSources()
-          : await _allSources(),
+      importedSources: importedSources,
+      hasPendingUpdates: await _hasPendingUpdates(),
     );
   }
 
@@ -164,11 +201,25 @@ class LocalCalendarRepository implements CalendarRepository {
     if (sourceIds.isEmpty) {
       return const CalendarImportResult(importedOccurrences: 0, synced: true);
     }
-    if (await provider.permissionStatus() != CalendarPermissionState.granted) {
+    CalendarPermissionState permission;
+    try {
+      permission = await provider.permissionStatus();
+    } catch (_) {
+      await _setSelectedSourcesStale();
+      throw StateError('日历权限状态暂不可用。');
+    }
+    if (permission != CalendarPermissionState.granted) {
+      await _setSelectedSourcesStale();
       throw StateError('尚未获得读取日历权限。');
     }
 
-    final available = await provider.listCalendars();
+    List<CalendarSource> available;
+    try {
+      available = await provider.listCalendars();
+    } catch (_) {
+      await _setSelectedSourcesStale();
+      throw StateError('系统日历暂时无法读取。');
+    }
     final selected = [
       for (final source in available)
         if (sourceIds.contains(source.id)) source,
@@ -180,50 +231,75 @@ class LocalCalendarRepository implements CalendarRepository {
     final importAt = _now().toUtc();
     await database.transaction(() async {
       for (final source in selected) {
-        await _saveSource(source, isSelected: true, updatedAt: importAt);
-      }
-    });
-
-    final from = DateTime(
-      _now().year,
-      _now().month,
-      _now().day,
-    ).subtract(const Duration(days: 30));
-    final to = DateTime(
-      _now().year,
-      _now().month,
-      _now().day,
-    ).add(const Duration(days: 91));
-    final imported = await provider.readEvents(
-      sourceIds: {for (final source in selected) source.id},
-      from: from,
-      to: to,
-    );
-    final selectedIds = {for (final source in selected) source.id};
-    final sourcesById = {for (final source in selected) source.id: source};
-    await database.transaction(() async {
-      for (final event in imported) {
-        if (!selectedIds.contains(event.sourceId) ||
-            !sourcesById.containsKey(event.sourceId)) {
-          continue;
-        }
-        _validateOccurrence(event);
-        await _saveEvent(event, updatedAt: importAt);
+        await _saveSource(
+          source,
+          isSelected: true,
+          isDeleted: false,
+          isStale: true,
+          updatedAt: importAt,
+        );
       }
     });
     await _publish();
 
-    // Event-source removal and change reconciliation are handled by Ticket 21.
     var synced = true;
     try {
       await sync();
     } catch (_) {
       synced = false;
     }
+    final range = _readRange();
+    final eventRows = await (database.select(
+      database.localCalendarBlocks,
+    )..where((event) => event.userId.equals(userId))).get();
+    final importedCount = eventRows
+        .map(_occurrenceFromRow)
+        .where(
+          (event) =>
+              sourceIds.contains(event.sourceId) &&
+              _overlaps(event, range.from, range.to),
+        )
+        .length;
+    final currentSources = await _selectedSources();
     return CalendarImportResult(
-      importedOccurrences: imported.length,
+      importedOccurrences: importedCount,
       synced: synced,
+      isStale:
+          !synced ||
+          currentSources.any(
+            (source) => sourceIds.contains(source.id) && source.isStale,
+          ),
     );
+  }
+
+  @override
+  Future<void> removeSources(Set<String> sourceIds) async {
+    if (sourceIds.isEmpty) return;
+    if (!provider.isSupported) {
+      throw UnsupportedError('请在 Android 设备上管理系统日历来源。');
+    }
+    final selected = await _selectedSourceRows();
+    final selectedIds = {
+      for (final source in selected)
+        if (sourceIds.contains(source.sourceId)) source.sourceId,
+    };
+    if (selectedIds.isEmpty) return;
+
+    await database.transaction(() async {
+      for (final sourceId in selectedIds) {
+        await _markSourceDeleted(sourceId);
+      }
+    });
+    await _publish();
+    try {
+      await remote.deleteSources(userId: userId, sourceIds: selectedIds);
+      await _deleteLocalSourceRows(selectedIds);
+      await _publish();
+    } catch (_) {
+      await _setSourcesStale(selectedIds);
+      await _publish();
+      rethrow;
+    }
   }
 
   @override
@@ -237,6 +313,9 @@ class LocalCalendarRepository implements CalendarRepository {
     final sourceNames = {
       for (final row in sourceRows) row.sourceId: row.displayName,
     };
+    final isStale = sourceRows.any(
+      (source) => source.isStale || source.isDeleted,
+    );
     final eventRows =
         await (database.select(database.localCalendarBlocks)
               ..where((event) => event.userId.equals(userId))
@@ -280,7 +359,7 @@ class LocalCalendarRepository implements CalendarRepository {
             : right.startsAt;
         return leftStart.compareTo(rightStart);
       });
-    return CalendarAgenda(blocks: blocks, from: from, to: to);
+    return CalendarAgenda(blocks: blocks, from: from, to: to, isStale: isStale);
   }
 
   @override
@@ -296,48 +375,270 @@ class LocalCalendarRepository implements CalendarRepository {
 
   @override
   Future<void> sync() async {
-    final sourceRows = await (database.select(
-      database.localCalendarSources,
-    )..where((source) => source.userId.equals(userId))).get();
-    final eventRows = await (database.select(
-      database.localCalendarBlocks,
-    )..where((event) => event.userId.equals(userId))).get();
-    final localSources = [for (final row in sourceRows) _sourceFromRow(row)];
-    final localEvents = [for (final row in eventRows) _occurrenceFromRow(row)];
+    final refreshedEvents = provider.isSupported
+        ? await _refreshSelectedSources()
+        : <String, List<CalendarEventOccurrence>>{};
+    final failedSourceIds = provider.isSupported
+        ? (await _selectedSources())
+              .where((source) => source.isStale)
+              .map((source) => source.id)
+              .toSet()
+        : <String>{};
 
-    // Upload first so a newly imported offline Calendar Block reaches another
-    // device before applying the remote snapshot to this local cache.
-    if (localSources.isNotEmpty) {
-      await remote.upsertSources(userId: userId, sources: localSources);
-    }
-    if (localEvents.isNotEmpty) {
-      await remote.upsertEvents(userId: userId, events: localEvents);
-    }
-    final snapshot = await remote.pull(userId: userId);
-    await database.transaction(() async {
-      for (final source in snapshot.sources) {
-        await _saveSource(source, updatedAt: _now().toUtc());
+    try {
+      final before = await remote.pull(userId: userId);
+      final localRows = await _localSourceRows();
+      final removedSourceIds = {
+        for (final row in localRows)
+          if (row.isDeleted) row.sourceId,
+      };
+      if (removedSourceIds.isNotEmpty) {
+        await remote.deleteSources(userId: userId, sourceIds: removedSourceIds);
       }
-      for (final event in snapshot.events) {
-        _validateOccurrence(event);
-        final existing = await _findEvent(event.sourceId, event.occurrenceId);
-        if (existing == null) {
+
+      if (provider.isSupported) {
+        final activeSources = await _selectedSources();
+        if (activeSources.isNotEmpty) {
+          await remote.upsertSources(userId: userId, sources: activeSources);
+        }
+        final range = _readRange();
+        for (final entry in refreshedEvents.entries) {
+          final sourceId = entry.key;
+          final current = entry.value;
+          final currentIds = {
+            for (final event in current)
+              if (_overlaps(event, range.from, range.to)) event.occurrenceId,
+          };
+          final obsoleteIds = {
+            for (final event in before.events)
+              if (event.sourceId == sourceId &&
+                  _overlaps(event, range.from, range.to) &&
+                  !currentIds.contains(event.occurrenceId))
+                event.occurrenceId,
+          };
+          if (obsoleteIds.isNotEmpty) {
+            await remote.deleteEvents(
+              userId: userId,
+              sourceId: sourceId,
+              occurrenceIds: obsoleteIds,
+            );
+          }
+          final eventsToUpload = current
+              .where((event) => _overlaps(event, range.from, range.to))
+              .toList();
+          if (eventsToUpload.isNotEmpty) {
+            await remote.upsertEvents(userId: userId, events: eventsToUpload);
+          }
+        }
+      }
+
+      final snapshot = await remote.pull(userId: userId);
+      await _applyRemoteSnapshot(
+        snapshot,
+        failedSourceIds: failedSourceIds,
+        removedSourceIds: removedSourceIds,
+      );
+      if (removedSourceIds.isNotEmpty) {
+        await _deleteLocalSourceRows(removedSourceIds);
+      }
+      await _publish();
+    } catch (_) {
+      await _setVisibleSourcesStale();
+      await _publish();
+      rethrow;
+    }
+  }
+
+  Future<Map<String, List<CalendarEventOccurrence>>>
+  _refreshSelectedSources() async {
+    final selected = await _selectedSourceRows();
+    if (selected.isEmpty) return {};
+
+    CalendarPermissionState permission;
+    try {
+      permission = await provider.permissionStatus();
+    } catch (_) {
+      await _setSelectedSourcesStale();
+      return {};
+    }
+    if (permission != CalendarPermissionState.granted) {
+      await _setSelectedSourcesStale();
+      return {};
+    }
+
+    List<CalendarSource> available;
+    try {
+      available = await provider.listCalendars();
+    } catch (_) {
+      await _setSelectedSourcesStale();
+      return {};
+    }
+    final availableById = {for (final source in available) source.id: source};
+    final range = _readRange();
+    final refreshed = <String, List<CalendarEventOccurrence>>{};
+
+    for (final localSource in selected) {
+      final source = availableById[localSource.sourceId];
+      if (source == null) {
+        await database.transaction(
+          () => _markSourceDeleted(localSource.sourceId),
+        );
+        continue;
+      }
+      try {
+        final events = await provider.readEvents(
+          sourceIds: {source.id},
+          from: range.from,
+          to: range.to,
+        );
+        for (final event in events) {
+          if (event.sourceId != source.id) {
+            throw StateError('系统日历返回了其他来源的活动。');
+          }
+          _validateOccurrence(event);
+        }
+        final inRange = events
+            .where((event) => _overlaps(event, range.from, range.to))
+            .toList();
+        await database.transaction(() async {
+          await _saveSource(
+            source,
+            isSelected: true,
+            isStale: false,
+            isDeleted: false,
+            updatedAt: _now().toUtc(),
+          );
+          await _replaceLocalEventsInRange(
+            source.id,
+            inRange,
+            from: range.from,
+            to: range.to,
+          );
+        });
+        refreshed[source.id] = inRange;
+      } catch (_) {
+        await _setSourcesStale({source.id});
+      }
+    }
+    await _publish();
+    return refreshed;
+  }
+
+  Future<void> _replaceLocalEventsInRange(
+    String sourceId,
+    List<CalendarEventOccurrence> events, {
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final existingRows =
+        await (database.select(database.localCalendarBlocks)..where(
+              (event) =>
+                  event.userId.equals(userId) & event.sourceId.equals(sourceId),
+            ))
+            .get();
+    final currentIds = {for (final event in events) event.occurrenceId};
+    for (final row in existingRows) {
+      final event = _occurrenceFromRow(row);
+      if (_overlaps(event, from, to) &&
+          !currentIds.contains(event.occurrenceId)) {
+        await (database.delete(database.localCalendarBlocks)..where(
+              (candidate) =>
+                  candidate.userId.equals(userId) &
+                  candidate.sourceId.equals(sourceId) &
+                  candidate.occurrenceId.equals(event.occurrenceId),
+            ))
+            .go();
+      }
+    }
+    for (final event in events) {
+      await _saveEvent(event, updatedAt: _now().toUtc());
+    }
+  }
+
+  Future<void> _applyRemoteSnapshot(
+    CalendarRemoteSnapshot snapshot, {
+    required Set<String> failedSourceIds,
+    required Set<String> removedSourceIds,
+  }) async {
+    final remoteSources = [
+      for (final source in snapshot.sources)
+        if (!removedSourceIds.contains(source.id)) source,
+    ];
+    final remoteSourceIds = {for (final source in remoteSources) source.id};
+    final existingRows = await _localSourceRows();
+    final existingById = {
+      for (final source in existingRows) source.sourceId: source,
+    };
+
+    await database.transaction(() async {
+      for (final source in remoteSources) {
+        final existing = existingById[source.id];
+        await _saveSource(
+          source,
+          isSelected: existing?.isSelected ?? false,
+          isStale: failedSourceIds.contains(source.id) || source.isStale,
+          isDeleted: false,
+          updatedAt: _now().toUtc(),
+        );
+      }
+
+      for (final existing in existingRows) {
+        if (existing.isDeleted ||
+            removedSourceIds.contains(existing.sourceId)) {
+          continue;
+        }
+        if (!remoteSourceIds.contains(existing.sourceId) &&
+            !(existing.isSelected &&
+                failedSourceIds.contains(existing.sourceId))) {
+          await _deleteLocalSourceRows({existing.sourceId});
+        }
+      }
+
+      for (final sourceId in remoteSourceIds) {
+        if (failedSourceIds.contains(sourceId)) continue;
+        final remoteEvents = snapshot.events
+            .where((event) => event.sourceId == sourceId)
+            .toList();
+        final remoteOccurrenceIds = {
+          for (final event in remoteEvents) event.occurrenceId,
+        };
+        final localEvents =
+            await (database.select(database.localCalendarBlocks)..where(
+                  (event) =>
+                      event.userId.equals(userId) &
+                      event.sourceId.equals(sourceId),
+                ))
+                .get();
+        for (final localEvent in localEvents) {
+          if (!remoteOccurrenceIds.contains(localEvent.occurrenceId)) {
+            await (database.delete(database.localCalendarBlocks)..where(
+                  (event) =>
+                      event.userId.equals(userId) &
+                      event.sourceId.equals(sourceId) &
+                      event.occurrenceId.equals(localEvent.occurrenceId),
+                ))
+                .go();
+          }
+        }
+        for (final event in remoteEvents) {
+          _validateOccurrence(event);
           await _saveEvent(event, updatedAt: _now().toUtc());
         }
       }
     });
-    await _publish();
+  }
+
+  ({DateTime from, DateTime to}) _readRange() {
+    final now = _now();
+    final today = DateTime(now.year, now.month, now.day);
+    return (
+      from: today.subtract(const Duration(days: 30)),
+      to: today.add(const Duration(days: 91)),
+    );
   }
 
   Future<List<CalendarSource>> _selectedSources() async {
-    final rows =
-        await (database.select(database.localCalendarSources)
-              ..where((source) => source.userId.equals(userId))
-              ..where((source) => source.isSelected.equals(true))
-              ..orderBy([
-                (source) => OrderingTerm(expression: source.displayName),
-              ]))
-            .get();
+    final rows = await _selectedSourceRows();
     return [for (final row in rows) _sourceFromRow(row)];
   }
 
@@ -345,6 +646,7 @@ class LocalCalendarRepository implements CalendarRepository {
     final rows =
         await (database.select(database.localCalendarSources)
               ..where((source) => source.userId.equals(userId))
+              ..where((source) => source.isDeleted.equals(false))
               ..orderBy([
                 (source) => OrderingTerm(expression: source.displayName),
               ]))
@@ -352,9 +654,91 @@ class LocalCalendarRepository implements CalendarRepository {
     return [for (final row in rows) _sourceFromRow(row)];
   }
 
+  Future<List<LocalCalendarSource>> _localSourceRows() => (database.select(
+    database.localCalendarSources,
+  )..where((source) => source.userId.equals(userId))).get();
+
+  Future<List<LocalCalendarSource>> _selectedSourceRows() =>
+      (database.select(database.localCalendarSources)
+            ..where((source) => source.userId.equals(userId))
+            ..where((source) => source.isSelected.equals(true))
+            ..where((source) => source.isDeleted.equals(false))
+            ..orderBy([
+              (source) => OrderingTerm(expression: source.displayName),
+            ]))
+          .get();
+
+  Future<bool> _hasPendingUpdates() async => (await _localSourceRows()).any(
+    (source) => source.isStale || source.isDeleted,
+  );
+
+  Future<void> _setSelectedSourcesStale() async {
+    final sources = await _selectedSourceRows();
+    await _setSourcesStale({for (final source in sources) source.sourceId});
+  }
+
+  Future<void> _setVisibleSourcesStale() async {
+    final sources = provider.isSupported
+        ? await _selectedSourceRows()
+        : (await _localSourceRows())
+              .where((source) => !source.isDeleted)
+              .toList();
+    await _setSourcesStale({for (final source in sources) source.sourceId});
+  }
+
+  Future<void> _setSourcesStale(Set<String> sourceIds) async {
+    if (sourceIds.isEmpty) return;
+    await (database.update(database.localCalendarSources)..where(
+          (source) =>
+              source.userId.equals(userId) & source.sourceId.isIn(sourceIds),
+        ))
+        .write(
+          LocalCalendarSourcesCompanion(
+            isStale: const Value(true),
+            updatedAt: Value(_now().toUtc()),
+          ),
+        );
+  }
+
+  Future<void> _markSourceDeleted(String sourceId) async {
+    await (database.delete(database.localCalendarBlocks)..where(
+          (event) =>
+              event.userId.equals(userId) & event.sourceId.equals(sourceId),
+        ))
+        .go();
+    await (database.update(database.localCalendarSources)..where(
+          (source) =>
+              source.userId.equals(userId) & source.sourceId.equals(sourceId),
+        ))
+        .write(
+          LocalCalendarSourcesCompanion(
+            isSelected: const Value(false),
+            isStale: const Value(false),
+            isDeleted: const Value(true),
+            updatedAt: Value(_now().toUtc()),
+          ),
+        );
+  }
+
+  Future<void> _deleteLocalSourceRows(Set<String> sourceIds) async {
+    if (sourceIds.isEmpty) return;
+    await (database.delete(database.localCalendarBlocks)..where(
+          (event) =>
+              event.userId.equals(userId) & event.sourceId.isIn(sourceIds),
+        ))
+        .go();
+    await (database.delete(database.localCalendarSources)..where(
+          (source) =>
+              source.userId.equals(userId) & source.sourceId.isIn(sourceIds),
+        ))
+        .go();
+  }
+
   Future<void> _saveSource(
     CalendarSource source, {
     bool? isSelected,
+    bool? isStale,
+    bool? isDeleted,
     required DateTime updatedAt,
   }) async {
     final existing =
@@ -374,6 +758,8 @@ class LocalCalendarRepository implements CalendarRepository {
               source.localCalendarId ?? existing?.localCalendarId,
             ),
             isSelected: Value(isSelected ?? existing?.isSelected ?? false),
+            isStale: Value(isStale ?? source.isStale),
+            isDeleted: Value(isDeleted ?? existing?.isDeleted ?? false),
             updatedAt: updatedAt,
           ),
         );
@@ -404,16 +790,6 @@ class LocalCalendarRepository implements CalendarRepository {
           ),
         );
   }
-
-  Future<LocalCalendarBlock?> _findEvent(
-    String sourceId,
-    String occurrenceId,
-  ) =>
-      (database.select(database.localCalendarBlocks)
-            ..where((event) => event.userId.equals(userId))
-            ..where((event) => event.sourceId.equals(sourceId))
-            ..where((event) => event.occurrenceId.equals(occurrenceId)))
-          .getSingleOrNull();
 
   Future<void> _publish() async {
     if (!_changes.isClosed) _changes.add(null);
@@ -452,6 +828,7 @@ class LocalCalendarRepository implements CalendarRepository {
     displayName: row.displayName,
     timeZoneId: row.timeZoneId,
     localCalendarId: row.localCalendarId,
+    isStale: row.isStale,
   );
 
   CalendarEventOccurrence _occurrenceFromRow(LocalCalendarBlock row) =>
@@ -490,6 +867,7 @@ class SupabaseCalendarRemoteDataSource implements CalendarRemoteDataSource {
             id: row['source_id'] as String,
             displayName: row['display_name'] as String,
             timeZoneId: row['time_zone_id'] as String,
+            isStale: row['is_stale'] as bool? ?? false,
           ),
       ],
       events: [for (final row in eventRows) _eventFromJson(row)],
@@ -530,6 +908,7 @@ class SupabaseCalendarRemoteDataSource implements CalendarRemoteDataSource {
             'source_id': source.id,
             'display_name': source.displayName,
             'time_zone_id': source.timeZoneId,
+            'is_stale': source.isStale,
           },
       ], onConflict: 'user_id,source_id');
     }
@@ -563,6 +942,34 @@ class SupabaseCalendarRemoteDataSource implements CalendarRemoteDataSource {
     }
   }
 
+  @override
+  Future<void> deleteSources({
+    required String userId,
+    required Set<String> sourceIds,
+  }) async {
+    if (sourceIds.isEmpty) return;
+    await client
+        .from('calendar_sources')
+        .delete()
+        .eq('user_id', userId)
+        .inFilter('source_id', sourceIds.toList());
+  }
+
+  @override
+  Future<void> deleteEvents({
+    required String userId,
+    required String sourceId,
+    required Set<String> occurrenceIds,
+  }) async {
+    if (occurrenceIds.isEmpty) return;
+    await client
+        .from('calendar_blocks')
+        .delete()
+        .eq('user_id', userId)
+        .eq('source_id', sourceId)
+        .inFilter('occurrence_id', occurrenceIds.toList());
+  }
+
   CalendarEventOccurrence _eventFromJson(Map<String, dynamic> row) =>
       CalendarEventOccurrence(
         sourceId: row['source_id'] as String,
@@ -583,25 +990,34 @@ class SupabaseCalendarRemoteDataSource implements CalendarRemoteDataSource {
 class InMemoryCalendarRemote implements CalendarRemoteDataSource {
   final _sources = <String, Map<String, CalendarSource>>{};
   final _events = <String, Map<String, CalendarEventOccurrence>>{};
+  bool available = true;
+
+  void _ensureAvailable() {
+    if (!available) throw StateError('Cloud calendar sync is offline.');
+  }
 
   @override
-  Future<CalendarRemoteSnapshot> pull({required String userId}) async =>
-      CalendarRemoteSnapshot(
-        sources: (_sources[userId] ?? {}).values.toList(),
-        events: (_events[userId] ?? {}).values.toList(),
-      );
+  Future<CalendarRemoteSnapshot> pull({required String userId}) async {
+    _ensureAvailable();
+    return CalendarRemoteSnapshot(
+      sources: (_sources[userId] ?? {}).values.toList(),
+      events: (_events[userId] ?? {}).values.toList(),
+    );
+  }
 
   @override
   Future<void> upsertSources({
     required String userId,
     required List<CalendarSource> sources,
   }) async {
+    _ensureAvailable();
     final target = _sources.putIfAbsent(userId, () => {});
     for (final source in sources) {
       target[source.id] = CalendarSource(
         id: source.id,
         displayName: source.displayName,
         timeZoneId: source.timeZoneId,
+        isStale: source.isStale,
       );
     }
   }
@@ -611,10 +1027,41 @@ class InMemoryCalendarRemote implements CalendarRemoteDataSource {
     required String userId,
     required List<CalendarEventOccurrence> events,
   }) async {
+    _ensureAvailable();
     final target = _events.putIfAbsent(userId, () => {});
     for (final event in events) {
       target['${event.sourceId}:${event.occurrenceId}'] = event;
     }
+  }
+
+  @override
+  Future<void> deleteSources({
+    required String userId,
+    required Set<String> sourceIds,
+  }) async {
+    _ensureAvailable();
+    if (sourceIds.isEmpty) return;
+    final sources = _sources[userId];
+    final events = _events[userId];
+    for (final sourceId in sourceIds) {
+      sources?.remove(sourceId);
+      events?.removeWhere((_, event) => event.sourceId == sourceId);
+    }
+  }
+
+  @override
+  Future<void> deleteEvents({
+    required String userId,
+    required String sourceId,
+    required Set<String> occurrenceIds,
+  }) async {
+    _ensureAvailable();
+    final events = _events[userId];
+    events?.removeWhere(
+      (_, event) =>
+          event.sourceId == sourceId &&
+          occurrenceIds.contains(event.occurrenceId),
+    );
   }
 }
 

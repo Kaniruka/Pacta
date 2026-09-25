@@ -104,8 +104,9 @@ class AndroidCalendarProvider implements CalendarProvider {
 
   CalendarPermissionState _permission(String? value) => switch (value) {
     'granted' => CalendarPermissionState.granted,
+    'denied' => CalendarPermissionState.denied,
     'unsupported' => CalendarPermissionState.unsupported,
-    _ => CalendarPermissionState.denied,
+    _ => CalendarPermissionState.unknown,
   };
 }
 

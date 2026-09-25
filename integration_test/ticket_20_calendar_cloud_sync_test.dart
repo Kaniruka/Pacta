@@ -59,7 +59,7 @@ void main() {
   ].every((key) => env[key]?.isNotEmpty ?? false);
 
   testWidgets(
-    'T20 synthetic Android-side import syncs through Supabase and renders on Windows (requires .env)',
+    'T20/T21 synthetic Android-side calendar changes reconcile through Supabase on Windows (requires .env)',
     (tester) async {
       final url = env['SUPABASE_URL']!;
       final publishableKey = env['SUPABASE_PUBLISHABLE_KEY']!;
@@ -72,8 +72,15 @@ void main() {
       PactaDatabase? windowsDatabase;
       LocalCalendarRepository? androidRepository;
       LocalCalendarRepository? windowsRepository;
+      FakeCalendarProvider? androidProvider;
+      CalendarEventOccurrence? firstRecurringOccurrence;
+      CalendarEventOccurrence? secondRecurringOccurrence;
+      String? firstRecurringIdentity;
+      DateTime? dayStart;
       String? userId;
       String? sourceId;
+      String? duplicateSourceId;
+      var remoteStage = 'client setup';
       var remoteWriteAttempted = false;
       Object? sanitizedFailure;
 
@@ -102,7 +109,7 @@ void main() {
                   .from('calendar_sources')
                   .delete()
                   .eq('user_id', userId!)
-                  .eq('source_id', sourceId!);
+                  .inFilter('source_id', [sourceId!, duplicateSourceId!]);
             }
           });
         } catch (error) {
@@ -148,6 +155,7 @@ void main() {
         androidClient = SupabaseClient(url, publishableKey);
         windowsClient = SupabaseClient(url, publishableKey);
         try {
+          remoteStage = 'admin sign-in';
           await androidClient!.auth.signInWithPassword(
             email: email,
             password: password,
@@ -160,45 +168,83 @@ void main() {
           );
           expect(windowsClient!.auth.currentUser?.id, userId);
 
+          remoteStage = 'synthetic calendar setup';
           final now = DateTime.now();
-          final dayStart = DateTime(now.year, now.month, now.day);
+          final currentDayStart = DateTime(now.year, now.month, now.day);
+          dayStart = currentDayStart;
           final stamp = now.microsecondsSinceEpoch;
           sourceId = 't20-cloud-acceptance-$stamp';
+          duplicateSourceId = 't21-cloud-duplicate-$stamp';
           final source = CalendarSource(
             id: sourceId!,
             displayName: 'Ticket-20 临时验收来源',
             timeZoneId: 'Asia/Shanghai',
           );
-          final event = CalendarEventOccurrence(
+          final duplicateSource = CalendarSource(
+            id: duplicateSourceId!,
+            displayName: 'Ticket-21 重复日程验收来源',
+            timeZoneId: 'Asia/Shanghai',
+          );
+          final firstOccurrence = CalendarEventOccurrence(
             sourceId: source.id,
-            sourceEventId: 't20-event-$stamp',
-            occurrenceId: 't20-occurrence-$stamp',
-            eventIdentity: 't20-identity-$stamp',
+            sourceEventId: 't21-recurring-$stamp',
+            occurrenceId: 't21-recurring-first-$stamp',
+            eventIdentity: 't21-recurring-first-identity-$stamp',
             title: 'Ticket-20 跨端验收样例',
-            startsAt: dayStart.toUtc().add(const Duration(hours: 10)),
-            endsAt: dayStart.toUtc().add(const Duration(hours: 11)),
+            startsAt: currentDayStart.toUtc().add(const Duration(hours: 10)),
+            endsAt: currentDayStart.toUtc().add(const Duration(hours: 11)),
             allDay: false,
             availability: CalendarAvailability.busy,
             timeZoneId: 'Asia/Shanghai',
+          );
+          firstRecurringOccurrence = firstOccurrence;
+          firstRecurringIdentity = firstOccurrence.eventIdentity;
+          final secondOccurrence = CalendarEventOccurrence(
+            sourceId: source.id,
+            sourceEventId: 't21-recurring-$stamp',
+            occurrenceId: 't21-recurring-second-$stamp',
+            eventIdentity: 't21-recurring-second-identity-$stamp',
+            title: 'Ticket-20 跨端验收样例',
+            startsAt: currentDayStart.toUtc().add(const Duration(hours: 12)),
+            endsAt: currentDayStart.toUtc().add(const Duration(hours: 13)),
+            allDay: false,
+            availability: CalendarAvailability.busy,
+            timeZoneId: 'Asia/Shanghai',
+          );
+          secondRecurringOccurrence = secondOccurrence;
+          final duplicateOccurrence = CalendarEventOccurrence(
+            sourceId: duplicateSource.id,
+            sourceEventId: 't21-duplicate-$stamp',
+            occurrenceId: firstOccurrence.occurrenceId,
+            eventIdentity: firstOccurrence.eventIdentity,
+            title: firstOccurrence.title,
+            startsAt: firstOccurrence.startsAt,
+            endsAt: firstOccurrence.endsAt,
+            allDay: false,
+            availability: CalendarAvailability.busy,
+            timeZoneId: 'Asia/Shanghai',
+          );
+          androidProvider = FakeCalendarProvider(
+            sources: [source, duplicateSource],
+            events: [firstOccurrence, secondOccurrence, duplicateOccurrence],
+            permission: CalendarPermissionState.granted,
           );
 
           androidDatabase = PactaDatabase(NativeDatabase.memory());
           androidRepository = LocalCalendarRepository(
             database: androidDatabase!,
             userId: userId!,
-            provider: FakeCalendarProvider(
-              sources: [source],
-              events: [event],
-              permission: CalendarPermissionState.granted,
-            ),
+            provider: androidProvider!,
             remote: SupabaseCalendarRemoteDataSource(androidClient!),
           );
           await androidRepository!.requestAccess();
           remoteWriteAttempted = true;
+          remoteStage = 'Supabase import';
           final imported = await androidRepository!.importCalendars({
             source.id,
+            duplicateSource.id,
           });
-          expect(imported.importedOccurrences, 1);
+          expect(imported.importedOccurrences, 3);
           expect(imported.synced, isTrue);
 
           windowsDatabase = PactaDatabase(NativeDatabase.memory());
@@ -208,15 +254,34 @@ void main() {
             provider: const UnsupportedCalendarProvider(),
             remote: SupabaseCalendarRemoteDataSource(windowsClient!),
           );
+          remoteStage = 'Windows Supabase sync';
           await windowsRepository!.sync();
+          remoteStage = 'Windows initial agenda';
           final agenda = await windowsRepository!.getAgenda(
-            from: dayStart,
-            to: dayStart.add(const Duration(days: 1)),
+            from: currentDayStart,
+            to: currentDayStart.add(const Duration(days: 1)),
           );
-          expect(agenda.blocks.single.title, event.title);
-          expect(agenda.blocks.single.sourceIds, contains(source.id));
-        } catch (error) {
-          sanitizedFailure = error.runtimeType;
+          expect(agenda.blocks, hasLength(2));
+          final sharedOccurrence = agenda.blocks.singleWhere(
+            (block) => block.eventIdentity == firstRecurringIdentity,
+          );
+          expect(
+            sharedOccurrence.sourceIds,
+            containsAll([source.id, duplicateSource.id]),
+          );
+          expect(
+            agenda.blocks
+                .singleWhere(
+                  (block) =>
+                      block.eventIdentity ==
+                      secondRecurringOccurrence!.eventIdentity,
+                )
+                .sourceIds,
+            [source.id],
+          );
+        } catch (error, stackTrace) {
+          final frames = stackTrace.toString().split('\n').take(5).join(' ');
+          sanitizedFailure = '$remoteStage:${error.runtimeType}:$frames';
         }
       });
       if (sanitizedFailure != null) {
@@ -233,7 +298,126 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      expect(find.text('Ticket-20 跨端验收样例'), findsNWidgets(2));
+
+      Object? reconciliationFailure;
+      try {
+        await tester.runAsync(() async {
+          try {
+            final previous = secondRecurringOccurrence!;
+            final updated = CalendarEventOccurrence(
+              sourceId: previous.sourceId,
+              sourceEventId: previous.sourceEventId,
+              occurrenceId: previous.occurrenceId,
+              eventIdentity: previous.eventIdentity,
+              title: 'Ticket-21 改期后的跨端验收样例',
+              startsAt: previous.startsAt.add(const Duration(hours: 2)),
+              endsAt: previous.endsAt.add(const Duration(hours: 2)),
+              allDay: previous.allDay,
+              availability: previous.availability,
+              timeZoneId: previous.timeZoneId,
+            );
+            androidProvider!.events = [
+              firstRecurringOccurrence!,
+              updated,
+              ...androidProvider!.events.where(
+                (event) => event.sourceId == duplicateSourceId,
+              ),
+            ];
+            await androidRepository!.sync();
+            await windowsRepository!.sync();
+            final agenda = await windowsRepository!.getAgenda(
+              from: dayStart!,
+              to: dayStart!.add(const Duration(days: 1)),
+            );
+            expect(agenda.blocks, hasLength(2));
+            final updatedBlock = agenda.blocks.singleWhere(
+              (block) => block.eventIdentity == updated.eventIdentity,
+            );
+            expect(updatedBlock.title, updated.title);
+            expect(updatedBlock.startsAt, updated.startsAt);
+          } catch (error) {
+            reconciliationFailure = error.runtimeType;
+          }
+        });
+      } catch (error) {
+        reconciliationFailure ??= error.runtimeType;
+      }
+      if (reconciliationFailure != null) {
+        fail(
+          'T21 云端改期同步失败（${reconciliationFailure.toString()}）；敏感凭据和日历内容不会写入测试输出。',
+        );
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('Ticket-21 改期后的跨端验收样例'), findsOneWidget);
+
+      Object? occurrenceCancellationFailure;
+      try {
+        await tester.runAsync(() async {
+          try {
+            androidProvider!.events = androidProvider!.events
+                .where(
+                  (event) =>
+                      event.sourceId != sourceId ||
+                      event.occurrenceId !=
+                          firstRecurringOccurrence!.occurrenceId,
+                )
+                .toList();
+            await androidRepository!.sync();
+            await windowsRepository!.sync();
+            final agenda = await windowsRepository!.getAgenda(
+              from: dayStart!,
+              to: dayStart!.add(const Duration(days: 1)),
+            );
+            expect(agenda.blocks, hasLength(2));
+            final canceledFromA = agenda.blocks.singleWhere(
+              (block) => block.eventIdentity == firstRecurringIdentity,
+            );
+            expect(canceledFromA.sourceIds, [duplicateSourceId]);
+            final remainingFromA = agenda.blocks.singleWhere(
+              (block) => block.title == 'Ticket-21 改期后的跨端验收样例',
+            );
+            expect(remainingFromA.sourceIds, [sourceId]);
+          } catch (error) {
+            occurrenceCancellationFailure = error.runtimeType;
+          }
+        });
+      } catch (error) {
+        occurrenceCancellationFailure ??= error.runtimeType;
+      }
+      if (occurrenceCancellationFailure != null) {
+        fail(
+          'T21 单个重复日程取消同步失败（${occurrenceCancellationFailure.toString()}）；敏感凭据和日历内容不会写入测试输出。',
+        );
+      }
+      await tester.pumpAndSettle();
       expect(find.text('Ticket-20 跨端验收样例'), findsOneWidget);
+
+      Object? removalFailure;
+      try {
+        await tester.runAsync(() async {
+          try {
+            await androidRepository!.removeSources({sourceId!});
+            await windowsRepository!.sync();
+            final agenda = await windowsRepository!.getAgenda(
+              from: dayStart!,
+              to: dayStart!.add(const Duration(days: 1)),
+            );
+            expect(agenda.blocks, hasLength(1));
+            expect(agenda.blocks.single.sourceIds, [duplicateSourceId]);
+          } catch (error) {
+            removalFailure = error.runtimeType;
+          }
+        });
+      } catch (error) {
+        removalFailure ??= error.runtimeType;
+      }
+      if (removalFailure != null) {
+        fail('T21 云端撤源同步失败（${removalFailure.toString()}）；敏感凭据和日历内容不会写入测试输出。');
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('Ticket-21 改期后的跨端验收样例'), findsNothing);
+
       await tester.pumpWidget(
         MaterialApp(
           theme: ThemeData(platform: TargetPlatform.windows),
@@ -244,7 +428,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Ticket-20 临时验收来源'), findsOneWidget);
+      expect(find.text('Ticket-20 临时验收来源'), findsNothing);
+      expect(find.text('Ticket-21 重复日程验收来源'), findsOneWidget);
     },
     skip: !hasSupabaseConfiguration,
   );

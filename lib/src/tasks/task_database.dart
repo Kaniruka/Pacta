@@ -272,6 +272,8 @@ class LocalCalendarSources extends Table {
   TextColumn get timeZoneId => text()();
   TextColumn get localCalendarId => text().nullable()();
   BoolColumn get isSelected => boolean().withDefault(const Constant(false))();
+  BoolColumn get isStale => boolean().withDefault(const Constant(false))();
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
   DateTimeColumn get updatedAt => dateTime()();
 
   @override
@@ -327,7 +329,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 20;
+  int get schemaVersion => 21;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -466,6 +468,10 @@ class PactaDatabase extends _$PactaDatabase {
       if (from < 20) {
         await m.createTable(localCalendarSources);
         await m.createTable(localCalendarBlocks);
+      }
+      if (from >= 20 && from < 21) {
+        await m.addColumn(localCalendarSources, localCalendarSources.isStale);
+        await m.addColumn(localCalendarSources, localCalendarSources.isDeleted);
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);

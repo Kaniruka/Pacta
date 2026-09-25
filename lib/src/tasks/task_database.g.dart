@@ -9831,6 +9831,36 @@ class $LocalCalendarSourcesTable extends LocalCalendarSources
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _isStaleMeta = const VerificationMeta(
+    'isStale',
+  );
+  @override
+  late final GeneratedColumn<bool> isStale = GeneratedColumn<bool>(
+    'is_stale',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_stale" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _isDeletedMeta = const VerificationMeta(
+    'isDeleted',
+  );
+  @override
+  late final GeneratedColumn<bool> isDeleted = GeneratedColumn<bool>(
+    'is_deleted',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_deleted" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   static const VerificationMeta _updatedAtMeta = const VerificationMeta(
     'updatedAt',
   );
@@ -9850,6 +9880,8 @@ class $LocalCalendarSourcesTable extends LocalCalendarSources
     timeZoneId,
     localCalendarId,
     isSelected,
+    isStale,
+    isDeleted,
     updatedAt,
   ];
   @override
@@ -9917,6 +9949,18 @@ class $LocalCalendarSourcesTable extends LocalCalendarSources
         isSelected.isAcceptableOrUnknown(data['is_selected']!, _isSelectedMeta),
       );
     }
+    if (data.containsKey('is_stale')) {
+      context.handle(
+        _isStaleMeta,
+        isStale.isAcceptableOrUnknown(data['is_stale']!, _isStaleMeta),
+      );
+    }
+    if (data.containsKey('is_deleted')) {
+      context.handle(
+        _isDeletedMeta,
+        isDeleted.isAcceptableOrUnknown(data['is_deleted']!, _isDeletedMeta),
+      );
+    }
     if (data.containsKey('updated_at')) {
       context.handle(
         _updatedAtMeta,
@@ -9958,6 +10002,14 @@ class $LocalCalendarSourcesTable extends LocalCalendarSources
         DriftSqlType.bool,
         data['${effectivePrefix}is_selected'],
       )!,
+      isStale: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_stale'],
+      )!,
+      isDeleted: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_deleted'],
+      )!,
       updatedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
@@ -9979,6 +10031,8 @@ class LocalCalendarSource extends DataClass
   final String timeZoneId;
   final String? localCalendarId;
   final bool isSelected;
+  final bool isStale;
+  final bool isDeleted;
   final DateTime updatedAt;
   const LocalCalendarSource({
     required this.userId,
@@ -9987,6 +10041,8 @@ class LocalCalendarSource extends DataClass
     required this.timeZoneId,
     this.localCalendarId,
     required this.isSelected,
+    required this.isStale,
+    required this.isDeleted,
     required this.updatedAt,
   });
   @override
@@ -10000,6 +10056,8 @@ class LocalCalendarSource extends DataClass
       map['local_calendar_id'] = Variable<String>(localCalendarId);
     }
     map['is_selected'] = Variable<bool>(isSelected);
+    map['is_stale'] = Variable<bool>(isStale);
+    map['is_deleted'] = Variable<bool>(isDeleted);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
   }
@@ -10014,6 +10072,8 @@ class LocalCalendarSource extends DataClass
           ? const Value.absent()
           : Value(localCalendarId),
       isSelected: Value(isSelected),
+      isStale: Value(isStale),
+      isDeleted: Value(isDeleted),
       updatedAt: Value(updatedAt),
     );
   }
@@ -10030,6 +10090,8 @@ class LocalCalendarSource extends DataClass
       timeZoneId: serializer.fromJson<String>(json['timeZoneId']),
       localCalendarId: serializer.fromJson<String?>(json['localCalendarId']),
       isSelected: serializer.fromJson<bool>(json['isSelected']),
+      isStale: serializer.fromJson<bool>(json['isStale']),
+      isDeleted: serializer.fromJson<bool>(json['isDeleted']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
   }
@@ -10043,6 +10105,8 @@ class LocalCalendarSource extends DataClass
       'timeZoneId': serializer.toJson<String>(timeZoneId),
       'localCalendarId': serializer.toJson<String?>(localCalendarId),
       'isSelected': serializer.toJson<bool>(isSelected),
+      'isStale': serializer.toJson<bool>(isStale),
+      'isDeleted': serializer.toJson<bool>(isDeleted),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
   }
@@ -10054,6 +10118,8 @@ class LocalCalendarSource extends DataClass
     String? timeZoneId,
     Value<String?> localCalendarId = const Value.absent(),
     bool? isSelected,
+    bool? isStale,
+    bool? isDeleted,
     DateTime? updatedAt,
   }) => LocalCalendarSource(
     userId: userId ?? this.userId,
@@ -10064,6 +10130,8 @@ class LocalCalendarSource extends DataClass
         ? localCalendarId.value
         : this.localCalendarId,
     isSelected: isSelected ?? this.isSelected,
+    isStale: isStale ?? this.isStale,
+    isDeleted: isDeleted ?? this.isDeleted,
     updatedAt: updatedAt ?? this.updatedAt,
   );
   LocalCalendarSource copyWithCompanion(LocalCalendarSourcesCompanion data) {
@@ -10082,6 +10150,8 @@ class LocalCalendarSource extends DataClass
       isSelected: data.isSelected.present
           ? data.isSelected.value
           : this.isSelected,
+      isStale: data.isStale.present ? data.isStale.value : this.isStale,
+      isDeleted: data.isDeleted.present ? data.isDeleted.value : this.isDeleted,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
   }
@@ -10095,6 +10165,8 @@ class LocalCalendarSource extends DataClass
           ..write('timeZoneId: $timeZoneId, ')
           ..write('localCalendarId: $localCalendarId, ')
           ..write('isSelected: $isSelected, ')
+          ..write('isStale: $isStale, ')
+          ..write('isDeleted: $isDeleted, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
         .toString();
@@ -10108,6 +10180,8 @@ class LocalCalendarSource extends DataClass
     timeZoneId,
     localCalendarId,
     isSelected,
+    isStale,
+    isDeleted,
     updatedAt,
   );
   @override
@@ -10120,6 +10194,8 @@ class LocalCalendarSource extends DataClass
           other.timeZoneId == this.timeZoneId &&
           other.localCalendarId == this.localCalendarId &&
           other.isSelected == this.isSelected &&
+          other.isStale == this.isStale &&
+          other.isDeleted == this.isDeleted &&
           other.updatedAt == this.updatedAt);
 }
 
@@ -10131,6 +10207,8 @@ class LocalCalendarSourcesCompanion
   final Value<String> timeZoneId;
   final Value<String?> localCalendarId;
   final Value<bool> isSelected;
+  final Value<bool> isStale;
+  final Value<bool> isDeleted;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
   const LocalCalendarSourcesCompanion({
@@ -10140,6 +10218,8 @@ class LocalCalendarSourcesCompanion
     this.timeZoneId = const Value.absent(),
     this.localCalendarId = const Value.absent(),
     this.isSelected = const Value.absent(),
+    this.isStale = const Value.absent(),
+    this.isDeleted = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -10150,6 +10230,8 @@ class LocalCalendarSourcesCompanion
     required String timeZoneId,
     this.localCalendarId = const Value.absent(),
     this.isSelected = const Value.absent(),
+    this.isStale = const Value.absent(),
+    this.isDeleted = const Value.absent(),
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
@@ -10164,6 +10246,8 @@ class LocalCalendarSourcesCompanion
     Expression<String>? timeZoneId,
     Expression<String>? localCalendarId,
     Expression<bool>? isSelected,
+    Expression<bool>? isStale,
+    Expression<bool>? isDeleted,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
   }) {
@@ -10174,6 +10258,8 @@ class LocalCalendarSourcesCompanion
       if (timeZoneId != null) 'time_zone_id': timeZoneId,
       if (localCalendarId != null) 'local_calendar_id': localCalendarId,
       if (isSelected != null) 'is_selected': isSelected,
+      if (isStale != null) 'is_stale': isStale,
+      if (isDeleted != null) 'is_deleted': isDeleted,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -10186,6 +10272,8 @@ class LocalCalendarSourcesCompanion
     Value<String>? timeZoneId,
     Value<String?>? localCalendarId,
     Value<bool>? isSelected,
+    Value<bool>? isStale,
+    Value<bool>? isDeleted,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
   }) {
@@ -10196,6 +10284,8 @@ class LocalCalendarSourcesCompanion
       timeZoneId: timeZoneId ?? this.timeZoneId,
       localCalendarId: localCalendarId ?? this.localCalendarId,
       isSelected: isSelected ?? this.isSelected,
+      isStale: isStale ?? this.isStale,
+      isDeleted: isDeleted ?? this.isDeleted,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
     );
@@ -10222,6 +10312,12 @@ class LocalCalendarSourcesCompanion
     if (isSelected.present) {
       map['is_selected'] = Variable<bool>(isSelected.value);
     }
+    if (isStale.present) {
+      map['is_stale'] = Variable<bool>(isStale.value);
+    }
+    if (isDeleted.present) {
+      map['is_deleted'] = Variable<bool>(isDeleted.value);
+    }
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
@@ -10240,6 +10336,8 @@ class LocalCalendarSourcesCompanion
           ..write('timeZoneId: $timeZoneId, ')
           ..write('localCalendarId: $localCalendarId, ')
           ..write('isSelected: $isSelected, ')
+          ..write('isStale: $isStale, ')
+          ..write('isDeleted: $isDeleted, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -16101,6 +16199,8 @@ typedef $$LocalCalendarSourcesTableCreateCompanionBuilder =
       required String timeZoneId,
       Value<String?> localCalendarId,
       Value<bool> isSelected,
+      Value<bool> isStale,
+      Value<bool> isDeleted,
       required DateTime updatedAt,
       Value<int> rowid,
     });
@@ -16112,6 +16212,8 @@ typedef $$LocalCalendarSourcesTableUpdateCompanionBuilder =
       Value<String> timeZoneId,
       Value<String?> localCalendarId,
       Value<bool> isSelected,
+      Value<bool> isStale,
+      Value<bool> isDeleted,
       Value<DateTime> updatedAt,
       Value<int> rowid,
     });
@@ -16152,6 +16254,16 @@ class $$LocalCalendarSourcesTableFilterComposer
 
   ColumnFilters<bool> get isSelected => $composableBuilder(
     column: $table.isSelected,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isStale => $composableBuilder(
+    column: $table.isStale,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isDeleted => $composableBuilder(
+    column: $table.isDeleted,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -16200,6 +16312,16 @@ class $$LocalCalendarSourcesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get isStale => $composableBuilder(
+    column: $table.isStale,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isDeleted => $composableBuilder(
+    column: $table.isDeleted,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
@@ -16240,6 +16362,12 @@ class $$LocalCalendarSourcesTableAnnotationComposer
     column: $table.isSelected,
     builder: (column) => column,
   );
+
+  GeneratedColumn<bool> get isStale =>
+      $composableBuilder(column: $table.isStale, builder: (column) => column);
+
+  GeneratedColumn<bool> get isDeleted =>
+      $composableBuilder(column: $table.isDeleted, builder: (column) => column);
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
@@ -16294,6 +16422,8 @@ class $$LocalCalendarSourcesTableTableManager
                 Value<String> timeZoneId = const Value.absent(),
                 Value<String?> localCalendarId = const Value.absent(),
                 Value<bool> isSelected = const Value.absent(),
+                Value<bool> isStale = const Value.absent(),
+                Value<bool> isDeleted = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalCalendarSourcesCompanion(
@@ -16303,6 +16433,8 @@ class $$LocalCalendarSourcesTableTableManager
                 timeZoneId: timeZoneId,
                 localCalendarId: localCalendarId,
                 isSelected: isSelected,
+                isStale: isStale,
+                isDeleted: isDeleted,
                 updatedAt: updatedAt,
                 rowid: rowid,
               ),
@@ -16314,6 +16446,8 @@ class $$LocalCalendarSourcesTableTableManager
                 required String timeZoneId,
                 Value<String?> localCalendarId = const Value.absent(),
                 Value<bool> isSelected = const Value.absent(),
+                Value<bool> isStale = const Value.absent(),
+                Value<bool> isDeleted = const Value.absent(),
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
               }) => LocalCalendarSourcesCompanion.insert(
@@ -16323,6 +16457,8 @@ class $$LocalCalendarSourcesTableTableManager
                 timeZoneId: timeZoneId,
                 localCalendarId: localCalendarId,
                 isSelected: isSelected,
+                isStale: isStale,
+                isDeleted: isDeleted,
                 updatedAt: updatedAt,
                 rowid: rowid,
               ),
