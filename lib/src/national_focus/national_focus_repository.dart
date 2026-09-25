@@ -217,7 +217,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
         throw StateError('已删除的国策卡需要先恢复到卡片库。');
       }
       if (!card.isInTree) {
-        throw StateError('只有树中的国策卡可以移入卡片库。');
+        return;
       }
       final treeCards =
           await (database.select(database.localNationalFocusCards)
@@ -259,9 +259,16 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   Future<NationalFocusCardDeletion> deleteCard(String cardId) async {
     await settleDueCheckpoints();
     return database.transaction(() async {
-      final card = await _findCardRow(cardId);
+      final card =
+          await (database.select(database.localNationalFocusCards)
+                ..where((candidate) => candidate.userId.equals(userId))
+                ..where((candidate) => candidate.id.equals(cardId)))
+              .getSingleOrNull();
+      if (card == null) {
+        return NationalFocusCardDeletion.permanentlyDeleted;
+      }
       if (card.deletedAt != null) {
-        throw StateError('这张国策卡已在已删除列表中。');
+        return NationalFocusCardDeletion.softDeleted;
       }
       if (card.isInTree) {
         throw StateError('请先把国策卡移入卡片库，再删除。');
@@ -324,6 +331,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     await settleDueCheckpoints();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
+      if (card.deletedAt == null && !card.isInTree) return;
       if (card.deletedAt == null || card.isInTree) {
         throw StateError('已删除列表中找不到这张国策卡。');
       }

@@ -28,6 +28,25 @@ void main() {
     NationalFocusCardDraft(triggerCondition: trigger, action: '执行行动'),
   );
 
+  test('重复移入卡片库和删除已不存在的卡片可安全重试', () async {
+    final card = await createCard('可重试卡片');
+    await repository.placeCard(cardId: card.id, parentId: null);
+
+    await repository.moveCardToLibrary(card.id);
+    final movedCard = await repository.getCard(card.id);
+    await repository.moveCardToLibrary(card.id);
+
+    expect((await repository.getCard(card.id)).updatedAt, movedCard.updatedAt);
+    expect(
+      await repository.deleteCard(card.id),
+      NationalFocusCardDeletion.permanentlyDeleted,
+    );
+    expect(
+      await repository.deleteCard(card.id),
+      NationalFocusCardDeletion.permanentlyDeleted,
+    );
+  });
+
   test('将父卡移入卡片库会拆散整支分支，逐卡放回时保留记录', () async {
     final parent = await createCard('父卡');
     final child = await createCard('子卡');
@@ -152,6 +171,15 @@ void main() {
       await repository.deleteCard(historical.id),
       NationalFocusCardDeletion.softDeleted,
     );
+    final deleted = (await repository.getDeletedCards()).single;
+    expect(
+      await repository.deleteCard(historical.id),
+      NationalFocusCardDeletion.softDeleted,
+    );
+    expect(
+      (await repository.getDeletedCards()).single.deletedAt,
+      deleted.deletedAt,
+    );
     expect((await repository.getLibraryCards()).single.id, historicalParent.id);
     expect((await repository.getDeletedCards()).single.id, historical.id);
 
@@ -165,6 +193,11 @@ void main() {
     expect(restored.parentId, isNull);
     expect(restored.successfulDays, originalSnapshot.successfulDays);
     expect(restored.bestConsecutiveDays, originalSnapshot.bestConsecutiveDays);
+    await repository.restoreDeletedCard(historical.id);
+    expect(
+      (await repository.getCard(historical.id)).updatedAt,
+      restored.updatedAt,
+    );
     final preservedFailure = (await repository.getFailures()).single;
     final preservedSnapshot = preservedFailure.treeSnapshot.singleWhere(
       (card) => card.id == originalSnapshot.id,
