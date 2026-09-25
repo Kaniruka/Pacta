@@ -3,21 +3,6 @@
 
 begin;
 
--- Exercise the migration contract in this same rollback-only transaction.
-alter table public.focus_sync_sources
-  add column if not exists parent_source_ids uuid[] not null default '{}';
-alter table public.focus_sync_sources
-  drop constraint if exists focus_sync_sources_entity_type_check;
-alter table public.focus_sync_sources
-  add constraint focus_sync_sources_entity_type_check
-  check (
-    entity_type in (
-      'focus_session',
-      'focus_appointment',
-      'national_focus_tree'
-    )
-  );
-
 do $setup$
 declare
   test_owner_id uuid;
