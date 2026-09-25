@@ -10,6 +10,17 @@ import 'national_focus_models.dart';
 import 'national_focus_repository.dart';
 import 'national_focus_strengthening_page.dart';
 
+Future<void> _openStrengtheningManager({
+  required BuildContext context,
+  required NationalFocusRepository repository,
+  required String cardId,
+}) => Navigator.of(context).push<void>(
+  MaterialPageRoute<void>(
+    builder: (_) =>
+        NationalFocusStrengtheningPage(repository: repository, cardId: cardId),
+  ),
+);
+
 /// The National Focus destination body. The app shell owns the app bar and
 /// bottom navigation; this widget owns the tree canvas and its local flows.
 class NationalFocusTreePage extends StatefulWidget {
@@ -212,17 +223,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
       _placementCard = card;
       _error = null;
     });
-  }
-
-  Future<void> _manageStrengthening(NationalFocusCard card) async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => NationalFocusStrengtheningPage(
-          repository: widget.repository,
-          cardId: card.id,
-        ),
-      ),
-    );
   }
 
   void _beginPlacement(NationalFocusCard card) {
@@ -544,7 +544,11 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
       onSelect: selecting && !isBlocked ? () => _placeAt(card.id) : null,
       onManageStrengthening: selecting
           ? null
-          : () => _manageStrengthening(card),
+          : () => _openStrengtheningManager(
+              context: context,
+              repository: widget.repository,
+              cardId: card.id,
+            ),
       onRelocate: () => _beginPlacement(card),
       onMoveToLibrary: selecting || _busyCardIds.contains(card.id)
           ? null
@@ -623,17 +627,6 @@ class _NationalFocusCardLibraryPageState
     }
   }
 
-  Future<void> _manageStrengthening(NationalFocusCard card) async {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => NationalFocusStrengtheningPage(
-          repository: widget.repository,
-          cardId: card.id,
-        ),
-      ),
-    );
-  }
-
   Future<void> _deleteCard(NationalFocusCard card) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -705,7 +698,11 @@ class _NationalFocusCardLibraryPageState
             repository: widget.repository,
             onPlace: (card) => Navigator.of(context).pop(card),
             onDelete: _deleteCard,
-            onManageStrengthening: _manageStrengthening,
+            onManageStrengthening: (card) => _openStrengtheningManager(
+              context: context,
+              repository: widget.repository,
+              cardId: card.id,
+            ),
           ),
           _DeletedNationalFocusCardList(
             repository: widget.repository,
