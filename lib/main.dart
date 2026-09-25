@@ -19,12 +19,16 @@ import 'src/focus/focus_reconciliation_page.dart';
 import 'src/focus/focus_time_zones.dart';
 import 'src/national_focus/national_focus_repository.dart';
 import 'src/national_focus/national_focus_tree_page.dart';
+import 'src/notifications/focus_notification_service.dart';
+import 'src/notifications/focus_notification_settings_page.dart';
 import 'src/tasks/task_database.dart' show PactaDatabase;
 import 'src/tasks/task_models.dart';
 import 'src/tasks/task_repository.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final focusNotificationService = FocusNotificationService();
+  await focusNotificationService.initialize();
   final url = const String.fromEnvironment('SUPABASE_URL');
   final key = const String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
   AuthRepository repository = const UnavailableAuthRepository();
@@ -48,6 +52,7 @@ Future<void> main() async {
   runApp(
     PactaApp(
       authRepository: repository,
+      focusNotificationService: focusNotificationService,
       taskRepositoryFactory: (userId) => LocalTaskRepository(
         database: database,
         userId: userId,
@@ -79,6 +84,7 @@ class PactaApp extends StatelessWidget {
   const PactaApp({
     super.key,
     required this.authRepository,
+    this.focusNotificationService,
     this.taskRepositoryFactory,
     this.focusRepositoryFactory,
     this.nationalFocusRepositoryFactory,
@@ -86,6 +92,7 @@ class PactaApp extends StatelessWidget {
   });
 
   final AuthRepository authRepository;
+  final FocusNotificationService? focusNotificationService;
   final TaskRepository Function(String userId)? taskRepositoryFactory;
   final FocusRepository Function(String userId)? focusRepositoryFactory;
   final NationalFocusRepository Function(String userId)?
@@ -97,6 +104,9 @@ class PactaApp extends StatelessWidget {
     return ProviderScope(
       overrides: [
         authRepositoryProvider.overrideWithValue(authRepository),
+        focusNotificationServiceProvider.overrideWithValue(
+          focusNotificationService ?? DisabledFocusNotificationService(),
+        ),
         taskRepositoryFactoryProvider.overrideWithValue(
           taskRepositoryFactory ?? (_) => const UnavailableTaskRepository(),
         ),
@@ -134,6 +144,12 @@ class PactaApp extends StatelessWidget {
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return const UnavailableAuthRepository();
+});
+
+final focusNotificationServiceProvider = Provider<FocusNotificationService>((
+  ref,
+) {
+  return DisabledFocusNotificationService();
 });
 
 final taskRepositoryFactoryProvider =
@@ -359,6 +375,7 @@ class _AppShellState extends ConsumerState<AppShell>
   int _index = 0;
   late final StreamSubscription<List<ConnectivityResult>>
   _connectivitySubscription;
+  late final StreamSubscription<String> _notificationOpenSubscription;
 
   static const _destinations = [
     _Destination('看板', Icons.dashboard_outlined, Icons.dashboard),
@@ -376,7 +393,20 @@ class _AppShellState extends ConsumerState<AppShell>
     ) {
       unawaited(_syncTasks());
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncTasks());
+    _notificationOpenSubscription = ref
+        .read(focusNotificationServiceProvider)
+        .openFlowRequests
+        .listen((payload) {
+          ref.read(focusNotificationServiceProvider).takePendingOpenRequest();
+          unawaited(_openFocusFlow(payload));
+        });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_syncTasks());
+      final request = ref
+          .read(focusNotificationServiceProvider)
+          .takePendingOpenRequest();
+      if (request != null) unawaited(_openFocusFlow(request));
+    });
   }
 
   @override
@@ -390,6 +420,7 @@ class _AppShellState extends ConsumerState<AppShell>
     } catch (_) {
       // Focus records remain local and are retried on resume or reconnect.
     }
+    await _syncFocusStatus();
     try {
       await ref.read(taskRepositoryProvider).sync();
     } catch (_) {
@@ -407,10 +438,82 @@ class _AppShellState extends ConsumerState<AppShell>
     }
   }
 
+  Future<void> _syncFocusStatus() async {
+    try {
+      final focusRepository = ref.read(focusRepositoryProvider);
+      final activeSession = await focusRepository.getActiveSession();
+      final activeAppointment = activeSession == null
+          ? await focusRepository.getActiveAppointment()
+          : null;
+      final taskId = activeSession?.taskId ?? activeAppointment?.taskId;
+      final goals = await ref.read(taskRepositoryProvider).getGoals();
+      await ref
+          .read(focusNotificationServiceProvider)
+          .sync(
+            appointment: activeAppointment,
+            session: activeSession,
+            taskTitle: taskId == null
+                ? '当前任务'
+                : _findTaskTitle(goals, taskId) ?? '当前任务',
+          );
+    } catch (_) {
+      // A local focus flow stays usable when the notification adapter is unavailable.
+    }
+  }
+
+  Future<void> _openFocusFlow(String payload) async {
+    if (!mounted) return;
+    final separator = payload.indexOf(':');
+    if (separator <= 0 || separator == payload.length - 1) return;
+    final kind = payload.substring(0, separator);
+    final id = payload.substring(separator + 1);
+    final focusRepository = ref.read(focusRepositoryProvider);
+    final taskRepository = ref.read(taskRepositoryProvider);
+    try {
+      FocusSession? session;
+      AppointmentPreparation? appointment;
+      if (kind == 'session') {
+        session = await focusRepository.getSession(id);
+      } else if (kind == 'appointment') {
+        await focusRepository.settleDueAppointments();
+        appointment = await focusRepository.getAppointment(id);
+        final sessionId = appointment?.sessionId;
+        if (sessionId != null) {
+          session = await focusRepository.getSession(sessionId);
+        }
+      }
+      final taskId = session?.taskId ?? appointment?.taskId;
+      if (taskId == null || !mounted) return;
+      final goals = await taskRepository.getGoals();
+      if (!mounted) return;
+      final title = _findTaskTitle(goals, taskId) ?? '已删除的任务';
+      if (session != null) {
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                FocusSessionPage(session: session!, taskTitle: title),
+          ),
+        );
+      } else if (appointment != null && appointment.isActive) {
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => AppointmentPreparationPage(
+              appointment: appointment!,
+              taskTitle: title,
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      // Opening a stale notification never changes a settled focus record.
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _connectivitySubscription.cancel();
+    _notificationOpenSubscription.cancel();
     super.dispose();
   }
 
@@ -1830,6 +1933,15 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
           .read(focusRepositoryProvider)
           .enterAppointmentEarly(appointment.id);
       if (!mounted) return;
+      await ref
+          .read(focusNotificationServiceProvider)
+          .appointmentEnteredFocus(
+            appointmentId: appointment.id,
+            taskTitle: taskTitle,
+          );
+      await ref
+          .read(focusNotificationServiceProvider)
+          .sync(session: session, taskTitle: taskTitle);
       _openSession(session, taskTitle);
     } catch (error) {
       if (mounted) _showFocusError(context, error);
@@ -1854,6 +1966,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
             appointmentId: appointment.id,
             failureReason: reason,
           );
+      await ref.read(focusNotificationServiceProvider).sync(taskTitle: '当前任务');
       _refreshActiveAppointment();
     } catch (error) {
       if (mounted) _showFocusError(context, error);
@@ -2392,6 +2505,7 @@ class _AppointmentPreparationPageState
     _duration = TextEditingController(
       text: _minutesFor(widget.appointment.durationSeconds).toString(),
     );
+    unawaited(_syncAppointmentNotification(widget.appointment));
     unawaited(_loadTasks());
     unawaited(_refresh());
     _timer = Timer.periodic(
@@ -2434,6 +2548,14 @@ class _AppointmentPreparationPageState
           .read(focusRepositoryProvider)
           .getSession(current.sessionId ?? current.id);
       if (!mounted || session == null) return;
+      await ref
+          .read(focusNotificationServiceProvider)
+          .appointmentEnteredFocus(
+            appointmentId: current.id,
+            taskTitle: _taskTitle(current.taskId),
+          );
+      if (!mounted) return;
+      unawaited(_syncFocusNotification(session));
       _timer?.cancel();
       await Navigator.of(context).pushReplacement<void, void>(
         MaterialPageRoute<void>(
@@ -2447,10 +2569,41 @@ class _AppointmentPreparationPageState
     }
     if (current.isFailed) {
       _timer?.cancel();
+      unawaited(_syncAppointmentNotification(null));
     }
     if (mounted) setState(() => _current = current);
     if (current.isPendingReview && !_configurationSourcesRequested) {
       unawaited(_loadConfigurationSources());
+    }
+  }
+
+  Future<void> _syncAppointmentNotification(
+    AppointmentPreparation? appointment,
+  ) async {
+    try {
+      await ref
+          .read(focusNotificationServiceProvider)
+          .sync(
+            appointment: appointment?.isActive == true ? appointment : null,
+            taskTitle: appointment == null
+                ? widget.taskTitle
+                : _taskTitle(appointment.taskId),
+          );
+    } catch (_) {
+      // A notification failure does not affect the appointment flow.
+    }
+  }
+
+  Future<void> _syncFocusNotification(FocusSession session) async {
+    try {
+      await ref
+          .read(focusNotificationServiceProvider)
+          .sync(
+            session: session.isUnfinished ? session : null,
+            taskTitle: _taskTitle(session.taskId),
+          );
+    } catch (_) {
+      // A notification failure does not affect the focus session.
     }
   }
 
@@ -2494,6 +2647,7 @@ class _AppointmentPreparationPageState
       _mode = updated.mode;
       _duration.text = _minutesFor(updated.durationSeconds).toString();
       if (mounted) setState(() => _current = updated);
+      unawaited(_syncAppointmentNotification(updated));
       _configurationSourcesRequested = false;
       await _loadConfigurationSources(force: true);
     } catch (error) {
@@ -2525,6 +2679,7 @@ class _AppointmentPreparationPageState
             duration: Duration(minutes: minutes),
           );
       if (mounted) setState(() => _current = updated);
+      unawaited(_syncAppointmentNotification(updated));
     } catch (error) {
       if (mounted) setState(() => _error = _friendlyFocusError(error));
     } finally {
@@ -2543,6 +2698,14 @@ class _AppointmentPreparationPageState
       final session = await ref
           .read(focusRepositoryProvider)
           .enterAppointmentEarly(current.id);
+      if (!mounted) return;
+      await ref
+          .read(focusNotificationServiceProvider)
+          .appointmentEnteredFocus(
+            appointmentId: current.id,
+            taskTitle: _taskTitle(session.taskId),
+          );
+      await _syncFocusNotification(session);
       if (!mounted) return;
       _timer?.cancel();
       await Navigator.of(context).pushReplacement<void, void>(
@@ -2579,6 +2742,7 @@ class _AppointmentPreparationPageState
       await ref
           .read(focusRepositoryProvider)
           .cancelAppointment(appointmentId: current.id, failureReason: reason);
+      await _syncAppointmentNotification(null);
       if (mounted) Navigator.of(context).pop();
     } catch (error) {
       if (mounted) setState(() => _error = _friendlyFocusError(error));
@@ -2820,6 +2984,7 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
   void initState() {
     super.initState();
     _current = widget.session;
+    unawaited(_syncSessionNotification(widget.session));
     _refresh();
     _timer = Timer.periodic(
       const Duration(milliseconds: 250),
@@ -2832,7 +2997,40 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
         .read(focusRepositoryProvider)
         .getSession(widget.session.id);
     if (!mounted) return;
-    if (session != null) setState(() => _current = session);
+    if (session != null) {
+      final previous = _current;
+      if (previous?.status != session.status ||
+          previous?.endsAt != session.endsAt ||
+          previous?.pausedAt != session.pausedAt) {
+        setState(() => _current = session);
+        if (previous?.isUnfinished == true && !session.isUnfinished) {
+          unawaited(
+            ref
+                .read(focusNotificationServiceProvider)
+                .sessionEnded(
+                  sessionId: session.id,
+                  appointmentId: session.appointmentId,
+                  taskTitle: widget.taskTitle,
+                  status: session.status,
+                ),
+          );
+        }
+        unawaited(_syncSessionNotification(session));
+      }
+    }
+  }
+
+  Future<void> _syncSessionNotification(FocusSession? session) async {
+    try {
+      await ref
+          .read(focusNotificationServiceProvider)
+          .sync(
+            session: session?.isUnfinished == true ? session : null,
+            taskTitle: widget.taskTitle,
+          );
+    } catch (_) {
+      // A notification failure does not affect the focus session.
+    }
   }
 
   Future<void> _togglePause() async {
@@ -2857,6 +3055,7 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
       _current = session.isPaused
           ? await repository.resumeSession(session.id)
           : await repository.pauseSession(session.id, ruleText: ruleText!);
+      await _syncSessionNotification(_current);
       if (mounted) setState(() {});
     } catch (error) {
       if (mounted) _showError(error);
@@ -2901,6 +3100,15 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
       _current = await ref
           .read(focusRepositoryProvider)
           .completeEarlySession(sessionId: session.id, ruleText: ruleText);
+      await ref
+          .read(focusNotificationServiceProvider)
+          .sessionEnded(
+            sessionId: session.id,
+            appointmentId: session.appointmentId,
+            taskTitle: widget.taskTitle,
+            status: _current!.status,
+          );
+      await _syncSessionNotification(_current);
       if (mounted) setState(() {});
     } catch (error) {
       if (mounted) _showError(error);
@@ -2925,6 +3133,15 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
       _current = await ref
           .read(focusRepositoryProvider)
           .abandonSession(sessionId: session.id, failureReason: reason);
+      await ref
+          .read(focusNotificationServiceProvider)
+          .sessionEnded(
+            sessionId: session.id,
+            appointmentId: session.appointmentId,
+            taskTitle: widget.taskTitle,
+            status: _current!.status,
+          );
+      await _syncSessionNotification(_current);
       if (mounted) setState(() {});
     } catch (error) {
       if (mounted) _showError(error);
@@ -3119,8 +3336,15 @@ class _MyPageState extends ConsumerState<MyPage> {
           child: ListTile(
             leading: const Icon(Icons.settings_outlined),
             title: const Text('设置'),
-            subtitle: const Text('通知、显示与设备偏好将在这里管理'),
-            onTap: () {},
+            subtitle: const Text('专注通知与本设备后台状态'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => FocusNotificationSettingsPage(
+                  service: ref.read(focusNotificationServiceProvider),
+                ),
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 12),
