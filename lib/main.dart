@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'src/auth/auth_repository.dart';
 import 'src/auth/supabase_auth_repository.dart';
+import 'src/board/national_focus_summary_card.dart';
 import 'src/calendar/calendar_page.dart';
 import 'src/calendar/calendar_provider.dart';
 import 'src/calendar/calendar_repository.dart';
@@ -522,7 +523,7 @@ class _AppShellState extends ConsumerState<AppShell>
     final nationalFocusRepository = ref.watch(nationalFocusRepositoryProvider);
     final focusRepository = ref.watch(focusRepositoryProvider);
     final pages = [
-      const BoardPage(),
+      BoardPage(onOpenNationalFocus: () => setState(() => _index = 1)),
       NationalFocusTreePage(
         repository: nationalFocusRepository,
         displayTimeZoneLoader: () async {
@@ -646,7 +647,9 @@ class _FocusClockReviewPrompt extends StatelessWidget {
 }
 
 class BoardPage extends ConsumerStatefulWidget {
-  const BoardPage({super.key});
+  const BoardPage({super.key, required this.onOpenNationalFocus});
+
+  final VoidCallback onOpenNationalFocus;
 
   @override
   ConsumerState<BoardPage> createState() => _BoardPageState();
@@ -673,6 +676,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
   Widget build(BuildContext context) {
     final taskRepository = ref.watch(taskRepositoryProvider);
     final focusRepository = ref.watch(focusRepositoryProvider);
+    final nationalFocusRepository = ref.watch(nationalFocusRepositoryProvider);
     final calendarRepository = ref.watch(calendarRepositoryProvider);
     return FutureBuilder<String>(
       future: _deviceTimeZoneId,
@@ -689,10 +693,14 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                 builder: (context, metricsSnapshot) => _BoardContent(
                   repository: taskRepository,
                   focusRepository: focusRepository,
+                  nationalFocusRepository: nationalFocusRepository,
                   calendarRepository: calendarRepository,
+                  onOpenNationalFocus: widget.onOpenNationalFocus,
                   goals: goalSnapshot.data ?? const [],
                   metrics: metricsSnapshot.data,
-                  deviceTimeZoneId: deviceTimeZoneId,
+                  displayTimeZoneId:
+                      metricsSnapshot.data?.displayTimeZoneId ??
+                      (timeZoneSnapshot.hasError ? deviceTimeZoneId : null),
                   deviceTimeZoneError: timeZoneSnapshot.hasError,
                 ),
               ),
@@ -706,19 +714,23 @@ class _BoardContent extends StatelessWidget {
   const _BoardContent({
     required this.repository,
     required this.focusRepository,
+    required this.nationalFocusRepository,
     required this.calendarRepository,
+    required this.onOpenNationalFocus,
     required this.goals,
     required this.metrics,
-    required this.deviceTimeZoneId,
+    required this.displayTimeZoneId,
     required this.deviceTimeZoneError,
   });
 
   final TaskRepository repository;
   final FocusRepository focusRepository;
+  final NationalFocusRepository nationalFocusRepository;
   final CalendarRepository calendarRepository;
+  final VoidCallback onOpenNationalFocus;
   final List<Goal> goals;
   final FocusDashboardMetrics? metrics;
-  final String deviceTimeZoneId;
+  final String? displayTimeZoneId;
   final bool deviceTimeZoneError;
 
   @override
@@ -771,14 +783,20 @@ class _BoardContent extends StatelessWidget {
               pendingReviewTaskIds: metrics?.pendingReviewTaskIds ?? const {},
             ),
         const SizedBox(height: 12),
-        CalendarAgendaCard(repository: calendarRepository),
+        NationalFocusSummaryCard(
+          repository: nationalFocusRepository,
+          displayTimeZoneId: displayTimeZoneId,
+          onOpenTree: onOpenNationalFocus,
+        ),
         const SizedBox(height: 12),
         _RecentFocusActivityCard(
           repository: focusRepository,
           metrics: metrics,
-          deviceTimeZoneId: deviceTimeZoneId,
+          deviceTimeZoneId: displayTimeZoneId ?? 'Etc/UTC',
           deviceTimeZoneError: deviceTimeZoneError,
         ),
+        const SizedBox(height: 12),
+        CalendarAgendaCard(repository: calendarRepository),
       ],
     );
   }
