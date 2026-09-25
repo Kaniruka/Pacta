@@ -8,6 +8,7 @@ import '../focus/focus_time_zones.dart';
 import 'national_focus_checkpoints.dart';
 import 'national_focus_models.dart';
 import 'national_focus_repository.dart';
+import 'national_focus_strengthening_page.dart';
 
 /// The National Focus destination body. The app shell owns the app bar and
 /// bottom navigation; this widget owns the tree canvas and its local flows.
@@ -111,8 +112,8 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
           SnackBar(
             content: Text(
               card.state == NationalFocusCardState.pendingTodayConfirmation
-                  ? '已确认「${card.triggerCondition}」今日继续有效。'
-                  : '已点亮「${card.triggerCondition}」。',
+                  ? '已确认「${card.effectiveTriggerCondition}」今日继续有效。'
+                  : '已点亮「${card.effectiveTriggerCondition}」。',
             ),
           ),
         );
@@ -158,7 +159,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已熄灭「${card.triggerCondition}」。')),
+          SnackBar(content: Text('已熄灭「${card.effectiveTriggerCondition}」。')),
         );
       }
     } catch (error) {
@@ -213,6 +214,17 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     });
   }
 
+  Future<void> _manageStrengthening(NationalFocusCard card) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => NationalFocusStrengtheningPage(
+          repository: widget.repository,
+          cardId: card.id,
+        ),
+      ),
+    );
+  }
+
   void _beginPlacement(NationalFocusCard card) {
     setState(() {
       _placementCard = card;
@@ -265,8 +277,8 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
         title: const Text('移入卡片库？'),
         content: Text(
           descendantCount == 0
-              ? '「${card.triggerCondition}」将移入卡片库。'
-              : '「${card.triggerCondition}」及 $descendantCount 张后代卡片将一起移入卡片库并解除父子关系。之后需要逐张重新放置和点亮。',
+              ? '「${card.effectiveTriggerCondition}」将移入卡片库。'
+              : '「${card.effectiveTriggerCondition}」及 $descendantCount 张后代卡片将一起移入卡片库并解除父子关系。之后需要逐张重新放置和点亮。',
         ),
         actions: [
           TextButton(
@@ -287,8 +299,8 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
       await widget.repository.moveCardToLibrary(card.id);
       if (mounted) {
         final message = descendantCount == 0
-            ? '已将「${card.triggerCondition}」移入卡片库。'
-            : '已将「${card.triggerCondition}」和 $descendantCount 张后代卡片移入卡片库。';
+            ? '已将「${card.effectiveTriggerCondition}」移入卡片库。'
+            : '已将「${card.effectiveTriggerCondition}」和 $descendantCount 张后代卡片移入卡片库。';
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(message)));
       }
@@ -527,8 +539,12 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
       lightBlocked: hasExtinguishedAncestor,
       cascadeSourceLabel: card.cascadeSourceCardId == null
           ? null
-          : cardsById[card.cascadeSourceCardId]?.triggerCondition ?? '父节点',
+          : cardsById[card.cascadeSourceCardId]?.effectiveTriggerCondition ??
+                '父节点',
       onSelect: selecting && !isBlocked ? () => _placeAt(card.id) : null,
+      onManageStrengthening: selecting
+          ? null
+          : () => _manageStrengthening(card),
       onRelocate: () => _beginPlacement(card),
       onMoveToLibrary: selecting || _busyCardIds.contains(card.id)
           ? null
@@ -607,6 +623,17 @@ class _NationalFocusCardLibraryPageState
     }
   }
 
+  Future<void> _manageStrengthening(NationalFocusCard card) async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => NationalFocusStrengtheningPage(
+          repository: widget.repository,
+          cardId: card.id,
+        ),
+      ),
+    );
+  }
+
   Future<void> _deleteCard(NationalFocusCard card) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -678,6 +705,7 @@ class _NationalFocusCardLibraryPageState
             repository: widget.repository,
             onPlace: (card) => Navigator.of(context).pop(card),
             onDelete: _deleteCard,
+            onManageStrengthening: _manageStrengthening,
           ),
           _DeletedNationalFocusCardList(
             repository: widget.repository,
@@ -699,11 +727,13 @@ class _LibraryCardList extends StatelessWidget {
     required this.repository,
     required this.onPlace,
     required this.onDelete,
+    required this.onManageStrengthening,
   });
 
   final NationalFocusRepository repository;
   final ValueChanged<NationalFocusCard> onPlace;
   final ValueChanged<NationalFocusCard> onDelete;
+  final ValueChanged<NationalFocusCard> onManageStrengthening;
 
   @override
   Widget build(BuildContext context) => StreamBuilder<List<NationalFocusCard>>(
@@ -743,6 +773,7 @@ class _LibraryCardList extends StatelessWidget {
               card: cards[index],
               onPlace: () => onPlace(cards[index]),
               onDelete: () => onDelete(cards[index]),
+              onManageStrengthening: () => onManageStrengthening(cards[index]),
             ),
           ),
         ),
@@ -961,11 +992,13 @@ class _LibraryCard extends StatelessWidget {
     required this.card,
     required this.onPlace,
     required this.onDelete,
+    required this.onManageStrengthening,
   });
 
   final NationalFocusCard card;
   final VoidCallback onPlace;
   final VoidCallback onDelete;
+  final VoidCallback onManageStrengthening;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -974,9 +1007,16 @@ class _LibraryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _FieldText(label: '主要触发条件', value: card.triggerCondition),
+          if (card.activeStrengtheningLevel != null) ...[
+            Text(
+              '当前要求 · 强化等级 ${card.activeStrengtheningLevel}',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+            const SizedBox(height: 8),
+          ],
+          _FieldText(label: '当前主要触发条件', value: card.effectiveTriggerCondition),
           const SizedBox(height: 12),
-          _FieldText(label: '行动', value: card.action),
+          _FieldText(label: '当前行动', value: card.effectiveAction),
           if (card.scope != null) ...[
             const SizedBox(height: 12),
             _FieldText(label: '适用范围', value: card.scope!),
@@ -997,6 +1037,13 @@ class _LibraryCard extends StatelessWidget {
                 onPressed: onDelete,
                 icon: const Icon(Icons.delete_outline),
                 label: const Text('删除'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onManageStrengthening,
+                icon: const Icon(Icons.tune),
+                label: Text(
+                  '强化等级 ${card.strengtheningLevels.length}/$maxNationalFocusStrengtheningLevels',
+                ),
               ),
               FilledButton.tonalIcon(
                 onPressed: onPlace,
@@ -1024,9 +1071,9 @@ class _DeletedLibraryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _FieldText(label: '主要触发条件', value: card.triggerCondition),
+          _FieldText(label: '当前主要触发条件', value: card.effectiveTriggerCondition),
           const SizedBox(height: 12),
-          _FieldText(label: '行动', value: card.action),
+          _FieldText(label: '当前行动', value: card.effectiveAction),
           const SizedBox(height: 12),
           _NationalFocusRecordSummary(card: card),
           const SizedBox(height: 8),
@@ -1059,6 +1106,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
     required this.lightBlocked,
     required this.cascadeSourceLabel,
     required this.onSelect,
+    required this.onManageStrengthening,
     required this.onRelocate,
     required this.onMoveToLibrary,
     required this.onLight,
@@ -1074,6 +1122,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
   final bool lightBlocked;
   final String? cascadeSourceLabel;
   final VoidCallback? onSelect;
+  final VoidCallback? onManageStrengthening;
   final VoidCallback onRelocate;
   final VoidCallback? onMoveToLibrary;
   final VoidCallback? onLight;
@@ -1092,6 +1141,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
             blocked: blocked,
             lightBlocked: lightBlocked,
             cascadeSourceLabel: cascadeSourceLabel,
+            onManageStrengthening: onManageStrengthening,
             onRelocate: onRelocate,
             onMoveToLibrary: onMoveToLibrary,
             onLight: onLight,
@@ -1262,6 +1312,7 @@ class _DetailedTreeCard extends StatelessWidget {
     required this.lightBlocked,
     required this.cascadeSourceLabel,
     required this.onMoveToLibrary,
+    required this.onManageStrengthening,
     required this.onRelocate,
     required this.onLight,
     required this.onExtinguish,
@@ -1275,6 +1326,7 @@ class _DetailedTreeCard extends StatelessWidget {
   final bool lightBlocked;
   final String? cascadeSourceLabel;
   final VoidCallback? onMoveToLibrary;
+  final VoidCallback? onManageStrengthening;
   final VoidCallback onRelocate;
   final VoidCallback? onLight;
   final VoidCallback? onExtinguish;
@@ -1298,9 +1350,17 @@ class _DetailedTreeCard extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
-        _FieldText(label: '主要触发条件', value: card.triggerCondition),
+        if (card.activeStrengtheningLevel != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              '当前要求 · 强化等级 ${card.activeStrengtheningLevel}',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+          ),
+        _FieldText(label: '当前主要触发条件', value: card.effectiveTriggerCondition),
         const SizedBox(height: 12),
-        _FieldText(label: '行动', value: card.action),
+        _FieldText(label: '当前行动', value: card.effectiveAction),
         if (card.scope != null) ...[
           const SizedBox(height: 12),
           _FieldText(label: '适用范围', value: card.scope!),
@@ -1319,6 +1379,17 @@ class _DetailedTreeCard extends StatelessWidget {
           ),
         ],
         if (!selecting) ...[
+          if (onManageStrengthening != null) ...[
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: onManageStrengthening,
+                icon: const Icon(Icons.tune),
+                label: const Text('管理强化要求'),
+              ),
+            ),
+          ],
           const SizedBox(height: 12),
           _NodeMaintenanceAction(
             card: card,
@@ -1546,7 +1617,9 @@ class _ExtinguishReasonDialogState extends State<_ExtinguishReasonDialog> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('「${widget.card.triggerCondition}」会在下一检查点结算；此前重新点亮可保留当前连续记录。'),
+        Text(
+          '「${widget.card.effectiveTriggerCondition}」会在下一检查点结算；此前重新点亮可保留当前连续记录。',
+        ),
         if (widget.descendantCount > 0) ...[
           const SizedBox(height: 8),
           Text('此操作也会熄灭 ${widget.descendantCount} 个后代。父节点恢复后，后代仍需逐个点亮。'),
@@ -1767,7 +1840,9 @@ class _FailureBatchCard extends StatelessWidget {
           snapshotById,
         ).compareTo(_snapshotDepth(second, snapshotById));
         if (depthOrder != 0) return depthOrder;
-        return first.triggerCondition.compareTo(second.triggerCondition);
+        return first.effectiveTriggerCondition.compareTo(
+          second.effectiveTriggerCondition,
+        );
       });
     return Card(
       child: Column(
@@ -1802,7 +1877,9 @@ class _FailureBatchCard extends StatelessWidget {
                           left: _snapshotDepth(card, snapshotById) * 14,
                         ),
                         child: Text(
-                          '${card.isInTree ? '' : '卡片库内 · '}${card.triggerCondition} · ${card.state.label} · '
+                          '${card.isInTree ? '' : '卡片库内 · '}${card.effectiveTriggerCondition}'
+                          '${card.activeStrengtheningLevel == null ? '' : ' · 强化等级 ${card.activeStrengtheningLevel}'} · '
+                          '${card.effectiveAction} · ${card.state.label} · '
                           '连续 ${card.currentConsecutiveDays} 天 · '
                           '最高 ${card.bestConsecutiveDays} 天'
                           '${_snapshotFailureAnnotation(card, snapshotById)}',
@@ -1834,7 +1911,7 @@ class _FailureBatchCard extends StatelessWidget {
   String _snapshotName(NationalFocusFailure failure) =>
       failure.treeSnapshot
           .where((card) => card.id == failure.cardId)
-          .map((card) => card.triggerCondition)
+          .map((card) => card.effectiveTriggerCondition)
           .firstOrNull ??
       '已移除的国策卡';
 
@@ -1862,7 +1939,7 @@ class _FailureBatchCard extends StatelessWidget {
     if (sourceId == null) return '';
     if (sourceId == card.id) return ' · 独立失败来源';
     final source = cardsById[sourceId];
-    return ' · 因「${source?.triggerCondition ?? '父节点'}」连带熄灭';
+    return ' · 因「${source?.effectiveTriggerCondition ?? '父节点'}」连带熄灭';
   }
 }
 
@@ -1934,7 +2011,7 @@ class _PlacementBanner extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              '为「${card.triggerCondition}」选择位置：点顶层或一个节点。',
+              '为「${card.effectiveTriggerCondition}」选择位置：点顶层或一个节点。',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(

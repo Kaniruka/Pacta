@@ -1,5 +1,7 @@
 import 'dart:math' as math;
 
+const maxNationalFocusStrengtheningLevels = 5;
+
 enum NationalFocusCardState {
   lit,
   pendingTodayConfirmation,
@@ -70,6 +72,9 @@ class NationalFocusCard {
     this.scope,
     this.exceptionNotes,
     this.parentId,
+    this.strengtheningLevels = const [],
+    this.activeStrengtheningLevel,
+    this.requirementVersions = const [],
   });
 
   final String id;
@@ -90,12 +95,72 @@ class NationalFocusCard {
   final String? failureReason;
   final String? cascadeSourceCardId;
   final NationalFocusCardState? cascadePriorState;
+  final List<NationalFocusStrengtheningLevel> strengtheningLevels;
+  final int? activeStrengtheningLevel;
+  final List<NationalFocusRequirementVersion> requirementVersions;
 
   bool get isInLibrary => !isInTree;
   bool get isDeleted => deletedAt != null;
   bool get isTopLevel => isInTree && parentId == null;
+  NationalFocusStrengtheningLevel? get activeStrengtheningDefinition {
+    final activeLevel = activeStrengtheningLevel;
+    if (activeLevel == null) return null;
+    for (final level in strengtheningLevels) {
+      if (level.levelNumber == activeLevel) return level;
+    }
+    return null;
+  }
+
+  String get effectiveTriggerCondition =>
+      activeStrengtheningDefinition?.triggerCondition ?? triggerCondition;
+  String get effectiveAction => activeStrengtheningDefinition?.action ?? action;
+
   double get internalizationProgress =>
       100 * (1 - math.exp(-successfulDays / 60));
+}
+
+class NationalFocusStrengtheningLevel {
+  const NationalFocusStrengtheningLevel({
+    required this.levelNumber,
+    this.triggerCondition,
+    this.action,
+  });
+
+  final int levelNumber;
+  final String? triggerCondition;
+  final String? action;
+}
+
+class NationalFocusStrengtheningLevelDraft {
+  const NationalFocusStrengtheningLevelDraft({
+    this.triggerCondition,
+    this.action,
+  });
+
+  final String? triggerCondition;
+  final String? action;
+}
+
+class NationalFocusRequirementVersion {
+  const NationalFocusRequirementVersion({
+    required this.versionNumber,
+    required this.strengtheningLevelNumber,
+    required this.effectiveTriggerCondition,
+    required this.effectiveAction,
+    required this.effectiveFrom,
+    this.scope,
+    this.exceptionNotes,
+    this.effectiveUntil,
+  });
+
+  final int versionNumber;
+  final int? strengtheningLevelNumber;
+  final String effectiveTriggerCondition;
+  final String effectiveAction;
+  final String? scope;
+  final String? exceptionNotes;
+  final DateTime effectiveFrom;
+  final DateTime? effectiveUntil;
 }
 
 class NationalFocusCardSnapshot {
@@ -118,7 +183,13 @@ class NationalFocusCardSnapshot {
     this.cascadeSourceCardId,
     this.cascadePriorState,
     this.failureSourceCardId,
-  });
+    this.activeStrengtheningLevel,
+    this.requirementVersionNumber,
+    String? effectiveTriggerCondition,
+    String? effectiveAction,
+  }) : effectiveTriggerCondition =
+           effectiveTriggerCondition ?? triggerCondition,
+       effectiveAction = effectiveAction ?? action;
 
   final String id;
   final String triggerCondition;
@@ -136,6 +207,10 @@ class NationalFocusCardSnapshot {
   final String? cascadeSourceCardId;
   final NationalFocusCardState? cascadePriorState;
   final String? failureSourceCardId;
+  final int? activeStrengtheningLevel;
+  final int? requirementVersionNumber;
+  final String effectiveTriggerCondition;
+  final String effectiveAction;
   final DateTime createdAt;
   final DateTime updatedAt;
 }

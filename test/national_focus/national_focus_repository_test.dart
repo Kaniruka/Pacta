@@ -77,6 +77,154 @@ void main() {
     await expectLater(otherUser.getCard(card.id), throwsStateError);
   });
 
+  test('选择或编辑强化要求会保留生效区间且不重置国策记录', () async {
+    now = DateTime.utc(2026, 9, 25, 3, 59);
+    final card = await repository.createCard(draft('开始工作后', '阅读 5 页'));
+    await repository.placeCard(cardId: card.id, parentId: null);
+    await repository.lightCard(card.id);
+
+    final firstLevel = await repository.saveStrengtheningLevel(
+      cardId: card.id,
+      draft: const NationalFocusStrengtheningLevelDraft(action: '阅读 10 页'),
+    );
+    expect(firstLevel.levelNumber, 1);
+
+    now = DateTime.utc(2026, 9, 25, 4);
+    await repository.selectStrengtheningLevel(
+      cardId: card.id,
+      levelNumber: firstLevel.levelNumber,
+    );
+    var strengthened = await repository.getCard(card.id);
+    expect(strengthened.effectiveTriggerCondition, '开始工作后');
+    expect(strengthened.effectiveAction, '阅读 10 页');
+    expect(strengthened.state, NationalFocusCardState.lit);
+
+    now = DateTime.utc(2026, 9, 25, 20);
+    await repository.settleDueCheckpoints();
+    final afterCheckpoint = await repository.getCard(card.id);
+    expect(afterCheckpoint.successfulDays, 1);
+    expect(afterCheckpoint.currentConsecutiveDays, 1);
+    expect(
+      afterCheckpoint.state,
+      NationalFocusCardState.pendingTodayConfirmation,
+    );
+
+    now = DateTime.utc(2026, 9, 26, 4);
+    await repository.saveStrengtheningLevel(
+      cardId: card.id,
+      levelNumber: firstLevel.levelNumber,
+      draft: const NationalFocusStrengtheningLevelDraft(action: '阅读 12 页'),
+    );
+
+    strengthened = await repository.getCard(card.id);
+    expect(strengthened.effectiveAction, '阅读 12 页');
+    expect(strengthened.successfulDays, 1);
+    expect(strengthened.currentConsecutiveDays, 1);
+    expect(strengthened.state, NationalFocusCardState.pendingTodayConfirmation);
+    expect(strengthened.requirementVersions, hasLength(3));
+    expect(strengthened.requirementVersions[0].effectiveAction, '阅读 5 页');
+    expect(
+      strengthened.requirementVersions[0].effectiveUntil!.isAtSameMomentAs(
+        DateTime.utc(2026, 9, 25, 4),
+      ),
+      isTrue,
+    );
+    expect(strengthened.requirementVersions[1].effectiveAction, '阅读 10 页');
+    expect(
+      strengthened.requirementVersions[1].effectiveUntil!.isAtSameMomentAs(
+        DateTime.utc(2026, 9, 26, 4),
+      ),
+      isTrue,
+    );
+    expect(strengthened.requirementVersions[2].effectiveAction, '阅读 12 页');
+    expect(strengthened.requirementVersions[2].effectiveUntil, isNull);
+
+    await repository.dispose();
+    repository = LocalNationalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      now: () => now,
+    );
+    final restored = await repository.getCard(card.id);
+    expect(restored.activeStrengtheningLevel, 1);
+    expect(restored.effectiveAction, '阅读 12 页');
+    expect(restored.requirementVersions, hasLength(3));
+    expect(restored.requirementVersions[1].effectiveAction, '阅读 10 页');
+  });
+
+  test('强化等级最多五个且未强化字段沿用基础要求', () async {
+    final card = await repository.createCard(draft('开始工作后', '整理桌面'));
+    for (
+      var levelNumber = 1;
+      levelNumber <= maxNationalFocusStrengtheningLevels;
+      levelNumber++
+    ) {
+      final level = await repository.saveStrengtheningLevel(
+        cardId: card.id,
+        draft: NationalFocusStrengtheningLevelDraft(
+          triggerCondition: '提前 $levelNumber 分钟开始',
+        ),
+      );
+      expect(level.levelNumber, levelNumber);
+    }
+
+    await repository.selectStrengtheningLevel(cardId: card.id, levelNumber: 1);
+    var updated = await repository.getCard(card.id);
+    expect(updated.strengtheningLevels, hasLength(5));
+    expect(updated.effectiveTriggerCondition, '提前 1 分钟开始');
+    expect(updated.effectiveAction, '整理桌面');
+
+    await expectLater(
+      repository.saveStrengtheningLevel(
+        cardId: card.id,
+        draft: const NationalFocusStrengtheningLevelDraft(action: '写下计划'),
+      ),
+      throwsArgumentError,
+    );
+    updated = await repository.getCard(card.id);
+    expect(updated.strengtheningLevels, hasLength(5));
+  });
+
+  test('失败快照保留检查点时的强化要求版本', () async {
+    now = DateTime.utc(2026, 9, 25, 3, 59);
+    final card = await repository.createCard(draft('开始工作后', '阅读 5 页'));
+    await repository.placeCard(cardId: card.id, parentId: null);
+    await repository.lightCard(card.id);
+    final level = await repository.saveStrengtheningLevel(
+      cardId: card.id,
+      draft: const NationalFocusStrengtheningLevelDraft(action: '阅读 10 页'),
+    );
+
+    now = DateTime.utc(2026, 9, 25, 4);
+    await repository.selectStrengtheningLevel(
+      cardId: card.id,
+      levelNumber: level.levelNumber,
+    );
+    now = DateTime.utc(2026, 9, 25, 20);
+    await repository.settleDueCheckpoints();
+    now = DateTime.utc(2026, 9, 26, 20);
+    await repository.settleDueCheckpoints();
+
+    var failure = (await repository.getFailures()).single;
+    var snapshot = failure.treeSnapshot.singleWhere(
+      (item) => item.id == card.id,
+    );
+    expect(snapshot.activeStrengtheningLevel, 1);
+    expect(snapshot.requirementVersionNumber, 2);
+    expect(snapshot.effectiveAction, '阅读 10 页');
+
+    now = DateTime.utc(2026, 9, 26, 20, 1);
+    await repository.saveStrengtheningLevel(
+      cardId: card.id,
+      levelNumber: 1,
+      draft: const NationalFocusStrengtheningLevelDraft(action: '阅读 12 页'),
+    );
+    failure = (await repository.getFailures()).single;
+    snapshot = failure.treeSnapshot.singleWhere((item) => item.id == card.id);
+    expect(snapshot.effectiveAction, '阅读 10 页');
+    expect(snapshot.requirementVersionNumber, 2);
+  });
+
   test('拒绝把自己或自己的后代设为父节点', () async {
     final root = await repository.createCard(draft('到办公室后', '打开计划'));
     final child = await repository.createCard(draft('计划打开后', '先做第一项'));

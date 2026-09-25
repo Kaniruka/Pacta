@@ -254,12 +254,73 @@ void main() {
 
     await tester.tap(find.text('详情'));
     await tester.pumpAndSettle();
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -350));
+    await tester.pumpAndSettle();
     final relocationButton = find.text('调整树中位置').last;
     await tester.tap(relocationButton);
     await tester.pumpAndSettle();
 
     expect(find.text('不能把有效分支放到本人、后代或熄灭分支下。'), findsOneWidget);
     expect((await repository.getCard(activeRoot.id)).parentId, isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('用户可编辑并切换强化要求且详情与卡片库显示当前内容', (tester) async {
+    final card = await createPlacedCard();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: NationalFocusTreePage(
+            repository: repository,
+            now: () => now,
+            displayTimeZoneLoader: () async => 'Asia/Shanghai',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('详情'));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, -350));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('管理强化要求'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('国策强化要求'), findsOneWidget);
+    await tester.drag(find.byType(ListView).last, const Offset(0, -350));
+    await tester.pumpAndSettle();
+    expect(find.text('强化等级 0/5'), findsOneWidget);
+    expect(find.text('基础要求'), findsOneWidget);
+    await tester.tap(find.text('新建强化等级'));
+    await tester.pumpAndSettle();
+    expect(find.text('基础行动'), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('strengthened-action')),
+      '每天阅读 10 页',
+    );
+    await tester.tap(find.text('保存强化等级'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('强化等级 1/5'), findsOneWidget);
+    expect(find.text('每天阅读 10 页'), findsOneWidget);
+    await tester.drag(find.byType(ListView).last, const Offset(0, -350));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('采用强化等级 1'));
+    await tester.pumpAndSettle();
+    expect((await repository.getCard(card.id)).effectiveAction, '每天阅读 10 页');
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('每天阅读 10 页'), findsOneWidget);
+
+    await repository.moveCardToLibrary(card.id);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('卡片库'));
+    await tester.pumpAndSettle();
+    expect(find.text('当前要求 · 强化等级 1'), findsOneWidget);
+    expect(find.text('每天阅读 10 页'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));

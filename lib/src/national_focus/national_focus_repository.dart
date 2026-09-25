@@ -17,6 +17,15 @@ abstract interface class NationalFocusRepository {
   Future<List<NationalFocusCard>> getDeletedCards();
   Future<NationalFocusCard> getCard(String cardId);
   Future<NationalFocusCard> createCard(NationalFocusCardDraft draft);
+  Future<NationalFocusStrengtheningLevel> saveStrengtheningLevel({
+    required String cardId,
+    int? levelNumber,
+    required NationalFocusStrengtheningLevelDraft draft,
+  });
+  Future<void> selectStrengtheningLevel({
+    required String cardId,
+    required int? levelNumber,
+  });
   Future<void> placeCard({required String cardId, required String? parentId});
   Future<void> moveCardToLibrary(String cardId);
   Future<NationalFocusCardDeletion> deleteCard(String cardId);
@@ -77,7 +86,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
         (card) => OrderingTerm.asc(card.createdAt),
         (card) => OrderingTerm.asc(card.id),
       ]);
-    yield* query.watch().map(_cardsFromRows);
+    yield* query.watch().asyncMap(_cardsFromRows);
   }
 
   @override
@@ -102,35 +111,347 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   Future<NationalFocusCard> createCard(NationalFocusCardDraft draft) async {
     await settleDueCheckpoints();
     final timestamp = _nextTimestamp();
+    final id = _uuid.v4();
+    final triggerCondition = _requiredText(draft.triggerCondition, '主要触发条件');
+    final action = _requiredText(draft.action, '行动');
+    final scope = _optionalText(draft.scope);
+    final exceptionNotes = _optionalText(draft.exceptionNotes);
+    final initialVersion = NationalFocusRequirementVersion(
+      versionNumber: 1,
+      strengtheningLevelNumber: null,
+      effectiveTriggerCondition: triggerCondition,
+      effectiveAction: action,
+      scope: scope,
+      exceptionNotes: exceptionNotes,
+      effectiveFrom: timestamp,
+    );
     final card = NationalFocusCard(
-      id: _uuid.v4(),
-      triggerCondition: _requiredText(draft.triggerCondition, '主要触发条件'),
-      action: _requiredText(draft.action, '行动'),
-      scope: _optionalText(draft.scope),
-      exceptionNotes: _optionalText(draft.exceptionNotes),
+      id: id,
+      triggerCondition: triggerCondition,
+      action: action,
+      scope: scope,
+      exceptionNotes: exceptionNotes,
       isInTree: false,
       state: NationalFocusCardState.extinguished,
       createdAt: timestamp,
       updatedAt: timestamp,
+      requirementVersions: [initialVersion],
     );
+    await database.transaction(() async {
+      await database
+          .into(database.localNationalFocusCards)
+          .insert(
+            LocalNationalFocusCardsCompanion.insert(
+              userId: userId,
+              id: card.id,
+              triggerCondition: card.triggerCondition,
+              action: card.action,
+              scope: Value(card.scope),
+              exceptionNotes: Value(card.exceptionNotes),
+              isInTree: const Value(false),
+              parentId: const Value(null),
+              state: Value(card.state.storageValue),
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            ),
+          );
+      await database
+          .into(database.localNationalFocusRequirementVersions)
+          .insert(
+            LocalNationalFocusRequirementVersionsCompanion.insert(
+              userId: userId,
+              id: _uuid.v4(),
+              cardId: card.id,
+              versionNumber: 1,
+              strengtheningLevelNumber: const Value(null),
+              effectiveTriggerCondition: triggerCondition,
+              effectiveAction: action,
+              scope: Value(scope),
+              exceptionNotes: Value(exceptionNotes),
+              effectiveFrom: timestamp,
+            ),
+          );
+    });
+    return card;
+  }
+
+  @override
+  Future<NationalFocusStrengtheningLevel> saveStrengtheningLevel({
+    required String cardId,
+    int? levelNumber,
+    required NationalFocusStrengtheningLevelDraft draft,
+  }) async {
+    await settleDueCheckpoints();
+    final triggerOverride = _optionalText(draft.triggerCondition);
+    final actionOverride = _optionalText(draft.action);
+    if (triggerOverride == null && actionOverride == null) {
+      throw ArgumentError('至少填写一项强化要求；留空字段会沿用基础要求。');
+    }
+
+    return database.transaction(() async {
+      final card = await _findCardRow(cardId);
+      if (card.deletedAt != null) {
+        throw StateError('已删除的国策卡需要先恢复到卡片库。');
+      }
+      final storedLevels =
+          await (database.select(database.localNationalFocusStrengtheningLevels)
+                ..where(
+                  (level) =>
+                      level.userId.equals(userId) & level.cardId.equals(cardId),
+                )
+                ..orderBy([(level) => OrderingTerm.asc(level.levelNumber)]))
+              .get();
+
+      final isCreating = levelNumber == null;
+      final targetLevelNumber =
+          levelNumber ??
+          (storedLevels.isEmpty ? 1 : storedLevels.last.levelNumber + 1);
+      if (targetLevelNumber < 1 ||
+          targetLevelNumber > maxNationalFocusStrengtheningLevels) {
+        throw ArgumentError(
+          '强化等级只能在 1 到 $maxNationalFocusStrengtheningLevels 之间。',
+        );
+      }
+      LocalNationalFocusStrengtheningLevel? existing;
+      for (final level in storedLevels) {
+        if (level.levelNumber == targetLevelNumber) {
+          existing = level;
+          break;
+        }
+      }
+      if (isCreating) {
+        if (storedLevels.length >= maxNationalFocusStrengtheningLevels) {
+          throw StateError(
+            '一张国策卡最多建立 $maxNationalFocusStrengtheningLevels 个强化等级。',
+          );
+        }
+        if (existing != null) {
+          throw StateError('强化等级编号已存在。');
+        }
+      } else if (existing == null) {
+        throw StateError('找不到要编辑的强化等级。');
+      }
+
+      if (existing != null &&
+          existing.triggerConditionOverride == triggerOverride &&
+          existing.actionOverride == actionOverride) {
+        return NationalFocusStrengtheningLevel(
+          levelNumber: targetLevelNumber,
+          triggerCondition: triggerOverride,
+          action: actionOverride,
+        );
+      }
+
+      final timestamp = _nextTimestamp(card.updatedAt);
+      if (existing == null) {
+        await database
+            .into(database.localNationalFocusStrengtheningLevels)
+            .insert(
+              LocalNationalFocusStrengtheningLevelsCompanion.insert(
+                userId: userId,
+                cardId: cardId,
+                levelNumber: targetLevelNumber,
+                triggerConditionOverride: Value(triggerOverride),
+                actionOverride: Value(actionOverride),
+                createdAt: timestamp,
+                updatedAt: timestamp,
+              ),
+            );
+      } else {
+        await (database.update(database.localNationalFocusStrengtheningLevels)
+              ..where(
+                (level) =>
+                    level.userId.equals(userId) &
+                    level.cardId.equals(cardId) &
+                    level.levelNumber.equals(targetLevelNumber),
+              ))
+            .write(
+              LocalNationalFocusStrengtheningLevelsCompanion(
+                triggerConditionOverride: Value(triggerOverride),
+                actionOverride: Value(actionOverride),
+                updatedAt: Value(timestamp),
+              ),
+            );
+      }
+
+      if (card.activeStrengtheningLevel == targetLevelNumber) {
+        await _appendRequirementVersion(
+          card: card,
+          levelNumber: targetLevelNumber,
+          triggerOverride: triggerOverride,
+          actionOverride: actionOverride,
+          effectiveFrom: timestamp,
+        );
+      }
+      await _updateCard(
+        card,
+        LocalNationalFocusCardsCompanion(updatedAt: Value(timestamp)),
+      );
+      return NationalFocusStrengtheningLevel(
+        levelNumber: targetLevelNumber,
+        triggerCondition: triggerOverride,
+        action: actionOverride,
+      );
+    });
+  }
+
+  @override
+  Future<void> selectStrengtheningLevel({
+    required String cardId,
+    required int? levelNumber,
+  }) async {
+    await settleDueCheckpoints();
+    await database.transaction(() async {
+      final card = await _findCardRow(cardId);
+      if (card.deletedAt != null) {
+        throw StateError('已删除的国策卡需要先恢复到卡片库。');
+      }
+      if (levelNumber != null &&
+          (levelNumber < 1 ||
+              levelNumber > maxNationalFocusStrengtheningLevels)) {
+        throw ArgumentError(
+          '强化等级只能在 1 到 $maxNationalFocusStrengtheningLevels 之间。',
+        );
+      }
+      if (card.activeStrengtheningLevel == levelNumber) return;
+
+      LocalNationalFocusStrengtheningLevel? level;
+      if (levelNumber != null) {
+        level =
+            await (database.select(
+                  database.localNationalFocusStrengtheningLevels,
+                )..where(
+                  (candidate) =>
+                      candidate.userId.equals(userId) &
+                      candidate.cardId.equals(cardId) &
+                      candidate.levelNumber.equals(levelNumber),
+                ))
+                .getSingleOrNull();
+        if (level == null) throw StateError('找不到要采用的强化等级。');
+      }
+
+      final timestamp = _nextTimestamp(card.updatedAt);
+      await _appendRequirementVersion(
+        card: card,
+        levelNumber: levelNumber,
+        triggerOverride: level?.triggerConditionOverride,
+        actionOverride: level?.actionOverride,
+        effectiveFrom: timestamp,
+      );
+      await _updateCard(
+        card,
+        LocalNationalFocusCardsCompanion(
+          activeStrengtheningLevel: Value(levelNumber),
+          updatedAt: Value(timestamp),
+        ),
+      );
+    });
+  }
+
+  Future<void> _appendRequirementVersion({
+    required LocalNationalFocusCard card,
+    required int? levelNumber,
+    required String? triggerOverride,
+    required String? actionOverride,
+    required DateTime effectiveFrom,
+  }) async {
+    var versions =
+        await (database.select(database.localNationalFocusRequirementVersions)
+              ..where(
+                (version) =>
+                    version.userId.equals(userId) &
+                    version.cardId.equals(card.id),
+              )
+              ..orderBy([(version) => OrderingTerm.asc(version.versionNumber)]))
+            .get();
+
+    if (versions.isEmpty) {
+      String? previousTriggerOverride;
+      String? previousActionOverride;
+      final selected = card.activeStrengtheningLevel;
+      if (selected != null) {
+        final previousLevel =
+            await (database.select(
+                  database.localNationalFocusStrengtheningLevels,
+                )..where(
+                  (level) =>
+                      level.userId.equals(userId) &
+                      level.cardId.equals(card.id) &
+                      level.levelNumber.equals(selected),
+                ))
+                .getSingleOrNull();
+        previousTriggerOverride = previousLevel?.triggerConditionOverride;
+        previousActionOverride = previousLevel?.actionOverride;
+      }
+      await database
+          .into(database.localNationalFocusRequirementVersions)
+          .insert(
+            LocalNationalFocusRequirementVersionsCompanion.insert(
+              userId: userId,
+              id: _uuid.v4(),
+              cardId: card.id,
+              versionNumber: 1,
+              strengtheningLevelNumber: Value(selected),
+              effectiveTriggerCondition:
+                  previousTriggerOverride ?? card.triggerCondition,
+              effectiveAction: previousActionOverride ?? card.action,
+              scope: Value(card.scope),
+              exceptionNotes: Value(card.exceptionNotes),
+              effectiveFrom: card.createdAt,
+            ),
+          );
+      versions =
+          await (database.select(database.localNationalFocusRequirementVersions)
+                ..where(
+                  (version) =>
+                      version.userId.equals(userId) &
+                      version.cardId.equals(card.id),
+                )
+                ..orderBy([
+                  (version) => OrderingTerm.asc(version.versionNumber),
+                ]))
+              .get();
+    }
+
+    final openVersion =
+        await (database.select(database.localNationalFocusRequirementVersions)
+              ..where(
+                (version) =>
+                    version.userId.equals(userId) &
+                    version.cardId.equals(card.id) &
+                    version.effectiveUntil.isNull(),
+              ))
+            .getSingleOrNull();
+    if (openVersion != null) {
+      await (database.update(database.localNationalFocusRequirementVersions)
+            ..where(
+              (version) =>
+                  version.userId.equals(userId) &
+                  version.id.equals(openVersion.id),
+            ))
+          .write(
+            LocalNationalFocusRequirementVersionsCompanion(
+              effectiveUntil: Value(effectiveFrom),
+            ),
+          );
+    }
+
     await database
-        .into(database.localNationalFocusCards)
+        .into(database.localNationalFocusRequirementVersions)
         .insert(
-          LocalNationalFocusCardsCompanion.insert(
+          LocalNationalFocusRequirementVersionsCompanion.insert(
             userId: userId,
-            id: card.id,
-            triggerCondition: card.triggerCondition,
-            action: card.action,
+            id: _uuid.v4(),
+            cardId: card.id,
+            versionNumber: versions.last.versionNumber + 1,
+            strengtheningLevelNumber: Value(levelNumber),
+            effectiveTriggerCondition: triggerOverride ?? card.triggerCondition,
+            effectiveAction: actionOverride ?? card.action,
             scope: Value(card.scope),
             exceptionNotes: Value(card.exceptionNotes),
-            isInTree: const Value(false),
-            parentId: const Value(null),
-            state: Value(card.state.storageValue),
-            createdAt: timestamp,
-            updatedAt: timestamp,
+            effectiveFrom: effectiveFrom,
           ),
         );
-    return card;
   }
 
   @override
@@ -307,6 +628,19 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       }
 
       if (!referencedByHistory) {
+        await (database.delete(database.localNationalFocusStrengtheningLevels)
+              ..where(
+                (level) =>
+                    level.userId.equals(userId) & level.cardId.equals(cardId),
+              ))
+            .go();
+        await (database.delete(
+              database.localNationalFocusRequirementVersions,
+            )..where(
+              (version) =>
+                  version.userId.equals(userId) & version.cardId.equals(cardId),
+            ))
+            .go();
         await (database.delete(database.localNationalFocusCards)
               ..where((candidate) => candidate.userId.equals(userId))
               ..where((candidate) => candidate.id.equals(cardId)))
@@ -550,16 +884,15 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
 
     final plannedFailures = _planIndependentFailures(cards);
     final failureSourceCardIds = _failureSourceCardIds(cards, plannedFailures);
-    final snapshotJson = jsonEncode(
-      cards
-          .map(
-            (card) => _snapshotJson(
-              card,
-              failureSourceCardId: failureSourceCardIds[card.id],
-            ),
-          )
-          .toList(growable: false),
+    final snapshotCards = await Future.wait(
+      cards.map(
+        (card) => _snapshotJson(
+          card,
+          failureSourceCardId: failureSourceCardIds[card.id],
+        ),
+      ),
     );
+    final snapshotJson = jsonEncode(snapshotCards);
     final missedConfirmationBatchId =
         plannedFailures.values.any(
           (failure) =>
@@ -897,56 +1230,128 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
         .write(update);
   }
 
-  List<NationalFocusCard> _cardsFromRows(List<LocalNationalFocusCard> rows) =>
-      rows.map(_cardFromRow).toList(growable: false);
+  Future<List<NationalFocusCard>> _cardsFromRows(
+    List<LocalNationalFocusCard> rows,
+  ) => Future.wait(rows.map(_cardFromRow));
 
-  NationalFocusCard _cardFromRow(LocalNationalFocusCard row) =>
-      NationalFocusCard(
-        id: row.id,
-        triggerCondition: row.triggerCondition,
-        action: row.action,
-        scope: row.scope,
-        exceptionNotes: row.exceptionNotes,
-        isInTree: row.isInTree,
-        parentId: row.parentId,
-        state: NationalFocusCardState.fromStorage(row.state),
-        createdAt: row.createdAt,
-        updatedAt: row.updatedAt,
-        successfulDays: row.successfulDays,
-        currentConsecutiveDays: row.currentConsecutiveDays,
-        bestConsecutiveDays: row.bestConsecutiveDays,
-        maintenanceCycleStarted: row.maintenanceCycleStarted,
-        failureReason: row.failureReason,
-        cascadeSourceCardId: row.cascadeSourceCardId,
-        cascadePriorState: row.cascadePriorState == null
-            ? null
-            : NationalFocusCardState.fromStorage(row.cascadePriorState!),
-        deletedAt: row.deletedAt,
-      );
+  Future<NationalFocusCard> _cardFromRow(LocalNationalFocusCard row) async {
+    final levelRows =
+        await (database.select(database.localNationalFocusStrengtheningLevels)
+              ..where(
+                (level) =>
+                    level.userId.equals(userId) & level.cardId.equals(row.id),
+              )
+              ..orderBy([(level) => OrderingTerm.asc(level.levelNumber)]))
+            .get();
+    final versionRows =
+        await (database.select(database.localNationalFocusRequirementVersions)
+              ..where(
+                (version) =>
+                    version.userId.equals(userId) &
+                    version.cardId.equals(row.id),
+              )
+              ..orderBy([(version) => OrderingTerm.asc(version.versionNumber)]))
+            .get();
+    final versions = versionRows.isEmpty
+        ? [
+            NationalFocusRequirementVersion(
+              versionNumber: 1,
+              strengtheningLevelNumber: row.activeStrengtheningLevel,
+              effectiveTriggerCondition: row.triggerCondition,
+              effectiveAction: row.action,
+              scope: row.scope,
+              exceptionNotes: row.exceptionNotes,
+              effectiveFrom: row.createdAt,
+            ),
+          ]
+        : versionRows.map(_requirementVersionFromRow).toList(growable: false);
+    return NationalFocusCard(
+      id: row.id,
+      triggerCondition: row.triggerCondition,
+      action: row.action,
+      scope: row.scope,
+      exceptionNotes: row.exceptionNotes,
+      isInTree: row.isInTree,
+      parentId: row.parentId,
+      state: NationalFocusCardState.fromStorage(row.state),
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      successfulDays: row.successfulDays,
+      currentConsecutiveDays: row.currentConsecutiveDays,
+      bestConsecutiveDays: row.bestConsecutiveDays,
+      maintenanceCycleStarted: row.maintenanceCycleStarted,
+      failureReason: row.failureReason,
+      cascadeSourceCardId: row.cascadeSourceCardId,
+      cascadePriorState: row.cascadePriorState == null
+          ? null
+          : NationalFocusCardState.fromStorage(row.cascadePriorState!),
+      deletedAt: row.deletedAt,
+      strengtheningLevels: levelRows
+          .map(
+            (level) => NationalFocusStrengtheningLevel(
+              levelNumber: level.levelNumber,
+              triggerCondition: level.triggerConditionOverride,
+              action: level.actionOverride,
+            ),
+          )
+          .toList(growable: false),
+      activeStrengtheningLevel: row.activeStrengtheningLevel,
+      requirementVersions: versions,
+    );
+  }
 
-  Map<String, Object?> _snapshotJson(
+  NationalFocusRequirementVersion _requirementVersionFromRow(
+    LocalNationalFocusRequirementVersion row,
+  ) => NationalFocusRequirementVersion(
+    versionNumber: row.versionNumber,
+    strengtheningLevelNumber: row.strengtheningLevelNumber,
+    effectiveTriggerCondition: row.effectiveTriggerCondition,
+    effectiveAction: row.effectiveAction,
+    scope: row.scope,
+    exceptionNotes: row.exceptionNotes,
+    effectiveFrom: row.effectiveFrom,
+    effectiveUntil: row.effectiveUntil,
+  );
+
+  Future<Map<String, Object?>> _snapshotJson(
     LocalNationalFocusCard row, {
     String? failureSourceCardId,
-  }) => {
-    'id': row.id,
-    'triggerCondition': row.triggerCondition,
-    'action': row.action,
-    'scope': row.scope,
-    'exceptionNotes': row.exceptionNotes,
-    'isInTree': row.isInTree,
-    'parentId': row.parentId,
-    'state': row.state,
-    'successfulDays': row.successfulDays,
-    'currentConsecutiveDays': row.currentConsecutiveDays,
-    'bestConsecutiveDays': row.bestConsecutiveDays,
-    'maintenanceCycleStarted': row.maintenanceCycleStarted,
-    'failureReason': row.failureReason,
-    'cascadeSourceCardId': row.cascadeSourceCardId,
-    'cascadePriorState': row.cascadePriorState,
-    'failureSourceCardId': failureSourceCardId,
-    'createdAt': row.createdAt.toUtc().toIso8601String(),
-    'updatedAt': row.updatedAt.toUtc().toIso8601String(),
-  };
+  }) async {
+    final version =
+        await (database.select(database.localNationalFocusRequirementVersions)
+              ..where(
+                (candidate) =>
+                    candidate.userId.equals(userId) &
+                    candidate.cardId.equals(row.id) &
+                    candidate.effectiveUntil.isNull(),
+              ))
+            .getSingleOrNull();
+    return {
+      'id': row.id,
+      'triggerCondition': row.triggerCondition,
+      'action': row.action,
+      'effectiveTriggerCondition':
+          version?.effectiveTriggerCondition ?? row.triggerCondition,
+      'effectiveAction': version?.effectiveAction ?? row.action,
+      'activeStrengtheningLevel': row.activeStrengtheningLevel,
+      'requirementVersionNumber': version?.versionNumber,
+      'scope': row.scope,
+      'exceptionNotes': row.exceptionNotes,
+      'isInTree': row.isInTree,
+      'parentId': row.parentId,
+      'state': row.state,
+      'successfulDays': row.successfulDays,
+      'currentConsecutiveDays': row.currentConsecutiveDays,
+      'bestConsecutiveDays': row.bestConsecutiveDays,
+      'maintenanceCycleStarted': row.maintenanceCycleStarted,
+      'failureReason': row.failureReason,
+      'cascadeSourceCardId': row.cascadeSourceCardId,
+      'cascadePriorState': row.cascadePriorState,
+      'failureSourceCardId': failureSourceCardId,
+      'createdAt': row.createdAt.toUtc().toIso8601String(),
+      'updatedAt': row.updatedAt.toUtc().toIso8601String(),
+    };
+  }
 
   NationalFocusFailure _failureFromRow(LocalNationalFocusFailure row) {
     final decoded = jsonDecode(row.treeSnapshot) as List<dynamic>;
@@ -974,6 +1379,11 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
                     item['cascadePriorState'] as String,
                   ),
             failureSourceCardId: item['failureSourceCardId'] as String?,
+            activeStrengtheningLevel: item['activeStrengtheningLevel'] as int?,
+            requirementVersionNumber: item['requirementVersionNumber'] as int?,
+            effectiveTriggerCondition:
+                item['effectiveTriggerCondition'] as String?,
+            effectiveAction: item['effectiveAction'] as String?,
             createdAt: DateTime.parse(item['createdAt'] as String),
             updatedAt: DateTime.parse(item['updatedAt'] as String),
           );
@@ -1053,6 +1463,19 @@ class UnavailableNationalFocusRepository implements NationalFocusRepository {
   @override
   Future<NationalFocusCard> createCard(NationalFocusCardDraft draft) =>
       _unavailable();
+
+  @override
+  Future<NationalFocusStrengtheningLevel> saveStrengtheningLevel({
+    required String cardId,
+    int? levelNumber,
+    required NationalFocusStrengtheningLevelDraft draft,
+  }) => _unavailable();
+
+  @override
+  Future<void> selectStrengtheningLevel({
+    required String cardId,
+    required int? levelNumber,
+  }) => _unavailable();
 
   @override
   Future<void> placeCard({required String cardId, required String? parentId}) =>

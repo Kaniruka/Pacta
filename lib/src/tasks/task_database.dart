@@ -55,9 +55,40 @@ class LocalNationalFocusCards extends Table {
   TextColumn get failureReason => text().nullable()();
   TextColumn get cascadeSourceCardId => text().nullable()();
   TextColumn get cascadePriorState => text().nullable()();
+  IntColumn get activeStrengtheningLevel => integer().nullable()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
   DateTimeColumn get deletedAt => dateTime().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId, id};
+}
+
+class LocalNationalFocusStrengtheningLevels extends Table {
+  TextColumn get userId => text()();
+  TextColumn get cardId => text()();
+  IntColumn get levelNumber => integer()();
+  TextColumn get triggerConditionOverride => text().nullable()();
+  TextColumn get actionOverride => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId, cardId, levelNumber};
+}
+
+class LocalNationalFocusRequirementVersions extends Table {
+  TextColumn get userId => text()();
+  TextColumn get id => text()();
+  TextColumn get cardId => text()();
+  IntColumn get versionNumber => integer()();
+  IntColumn get strengtheningLevelNumber => integer().nullable()();
+  TextColumn get effectiveTriggerCondition => text()();
+  TextColumn get effectiveAction => text()();
+  TextColumn get scope => text().nullable()();
+  TextColumn get exceptionNotes => text().nullable()();
+  DateTimeColumn get effectiveFrom => dateTime()();
+  DateTimeColumn get effectiveUntil => dateTime().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
@@ -235,6 +266,8 @@ class TaskSyncEntries extends Table {
     LocalGoals,
     LocalTasks,
     LocalNationalFocusCards,
+    LocalNationalFocusStrengtheningLevels,
+    LocalNationalFocusRequirementVersions,
     LocalNationalFocusMaintenance,
     LocalNationalFocusFailures,
     TaskSyncEntries,
@@ -255,7 +288,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 16;
+  int get schemaVersion => 17;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -371,6 +404,14 @@ class PactaDatabase extends _$PactaDatabase {
           localNationalFocusCards,
           localNationalFocusCards.deletedAt,
         );
+      }
+      if (from < 17) {
+        await m.addColumn(
+          localNationalFocusCards,
+          localNationalFocusCards.activeStrengtheningLevel,
+        );
+        await m.createTable(localNationalFocusStrengtheningLevels);
+        await m.createTable(localNationalFocusRequirementVersions);
       }
     },
   );
