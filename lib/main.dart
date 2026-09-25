@@ -9,7 +9,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'src/auth/auth_repository.dart';
 import 'src/auth/admin_password_reset_card.dart';
+import 'src/auth/admin_user_lifecycle_card.dart';
 import 'src/auth/supabase_auth_repository.dart';
+import 'src/auth/user_lifecycle.dart';
+import 'src/auth/user_lifecycle_models.dart';
 import 'src/board/national_focus_summary_card.dart';
 import 'src/calendar/calendar_page.dart';
 import 'src/calendar/calendar_provider.dart';
@@ -59,16 +62,28 @@ Future<void> main() async {
         database: database,
         userId: userId,
         remote: remote,
+        lifecycleAccess: LocalUserLifecycleAccess(
+          database: database,
+          userId: userId,
+        ),
       ),
       focusRepositoryFactory: (userId) => LocalFocusRepository(
         database: database,
         userId: userId,
         remote: focusRemote,
+        lifecycleAccess: LocalUserLifecycleAccess(
+          database: database,
+          userId: userId,
+        ),
       ),
       nationalFocusRepositoryFactory: (userId) => LocalNationalFocusRepository(
         database: database,
         userId: userId,
         remote: nationalFocusRemote,
+        lifecycleAccess: LocalUserLifecycleAccess(
+          database: database,
+          userId: userId,
+        ),
       ),
       calendarRepositoryFactory: (userId) => LocalCalendarRepository(
         database: database,
@@ -77,6 +92,17 @@ Future<void> main() async {
             ? const AndroidCalendarProvider()
             : const UnsupportedCalendarProvider(),
         remote: calendarRemote,
+        lifecycleAccess: LocalUserLifecycleAccess(
+          database: database,
+          userId: userId,
+        ),
+      ),
+      userLifecycleRepositoryFactory: (userId) => UserLifecycleRepository(
+        authRepository: repository,
+        localAccess: LocalUserLifecycleAccess(
+          database: database,
+          userId: userId,
+        ),
       ),
     ),
   );
@@ -91,6 +117,7 @@ class PactaApp extends StatelessWidget {
     this.focusRepositoryFactory,
     this.nationalFocusRepositoryFactory,
     this.calendarRepositoryFactory,
+    this.userLifecycleRepositoryFactory,
   });
 
   final AuthRepository authRepository;
@@ -100,6 +127,8 @@ class PactaApp extends StatelessWidget {
   final NationalFocusRepository Function(String userId)?
   nationalFocusRepositoryFactory;
   final CalendarRepository Function(String userId)? calendarRepositoryFactory;
+  final UserLifecycleStatusRepository Function(String userId)?
+  userLifecycleRepositoryFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -122,6 +151,10 @@ class PactaApp extends StatelessWidget {
         calendarRepositoryFactoryProvider.overrideWithValue(
           calendarRepositoryFactory ??
               (_) => const UnavailableCalendarRepository(),
+        ),
+        userLifecycleRepositoryFactoryProvider.overrideWithValue(
+          userLifecycleRepositoryFactory ??
+              (_) => const UnavailableUserLifecycleStatusRepository(),
         ),
       ],
       child: MaterialApp(
@@ -210,6 +243,20 @@ final calendarRepositoryProvider = Provider.autoDispose<CalendarRepository>((
   ref.onDispose(repository.dispose);
   return repository;
 });
+
+final userLifecycleRepositoryFactoryProvider =
+    Provider<UserLifecycleStatusRepository Function(String userId)>((ref) {
+      return (_) => const UnavailableUserLifecycleStatusRepository();
+    });
+
+final userLifecycleStatusRepositoryProvider =
+    Provider.autoDispose<UserLifecycleStatusRepository>((ref) {
+      final userId = ref.watch(authRepositoryProvider).currentUserId;
+      if (userId == null) {
+        return const UnavailableUserLifecycleStatusRepository();
+      }
+      return ref.watch(userLifecycleRepositoryFactoryProvider)(userId);
+    });
 
 class AuthGate extends ConsumerWidget {
   const AuthGate({super.key});
@@ -418,6 +465,11 @@ class _AppShellState extends ConsumerState<AppShell>
 
   Future<void> _syncTasks() async {
     try {
+      await ref.read(userLifecycleStatusRepositoryProvider).refresh();
+    } catch (_) {
+      // A failed status check preserves the last status known on this device.
+    }
+    try {
       await ref.read(focusRepositoryProvider).sync();
     } catch (_) {
       // Focus records remain local and are retried on resume or reconnect.
@@ -523,6 +575,9 @@ class _AppShellState extends ConsumerState<AppShell>
   Widget build(BuildContext context) {
     final nationalFocusRepository = ref.watch(nationalFocusRepositoryProvider);
     final focusRepository = ref.watch(focusRepositoryProvider);
+    final lifecycleStatusRepository = ref.watch(
+      userLifecycleStatusRepositoryProvider,
+    );
     final pages = [
       BoardPage(onOpenNationalFocus: () => setState(() => _index = 1)),
       NationalFocusTreePage(
@@ -541,7 +596,45 @@ class _AppShellState extends ConsumerState<AppShell>
     final destination = _destinations[_index];
     return Scaffold(
       appBar: AppBar(title: Text(destination.label)),
-      body: IndexedStack(index: _index, children: pages),
+      body: StreamBuilder<UserLifecycleStatus?>(
+        stream: lifecycleStatusRepository.watchStatus(),
+        builder: (context, snapshot) => Column(
+          children: [
+            if (snapshot.data?.isSuspended == true)
+              Material(
+                color: Theme.of(context).colorScheme.errorContainer,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.pause_circle_outline,
+                        color: Theme.of(context).colorScheme.onErrorContainer,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '此用户已停用。新业务操作和同步已暂停；本机保留的流程仍按原时间线继续，恢复后再同步。',
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onErrorContainer,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            Expanded(
+              child: IndexedStack(index: _index, children: pages),
+            ),
+          ],
+        ),
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (value) => setState(() => _index = value),
@@ -3321,15 +3414,17 @@ class _MyPageState extends ConsumerState<MyPage> {
         FutureBuilder<bool>(
           future: _isAdministrator,
           builder: (context, snapshot) => snapshot.data == true
-              ? Column(
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(top: 12),
-                      child: AdminEligibilityCard(),
-                    ),
-                    const SizedBox(height: 12),
-                    AdminPasswordResetCard(repository: repository),
-                  ],
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Column(
+                    children: [
+                      AdminUserLifecycleCard(repository: repository),
+                      const SizedBox(height: 12),
+                      const AdminEligibilityCard(),
+                      const SizedBox(height: 12),
+                      AdminPasswordResetCard(repository: repository),
+                    ],
+                  ),
                 )
               : const SizedBox.shrink(),
         ),

@@ -1,3 +1,5 @@
+import 'user_lifecycle_models.dart';
+
 abstract interface class AuthRepository {
   Stream<String?> get authState;
   String? get currentUserIdentifier;
@@ -20,4 +22,12 @@ abstract interface class AuthRepository {
     required String newPassword,
     required bool manualVerificationConfirmed,
   });
+
+  Future<UserLifecycleStatus> getCurrentUserLifecycle();
+
+  Future<List<ManagedUserLifecycle>> listUserLifecycles();
+
+  Future<void> suspendUser(String userId);
+
+  Future<void> restoreUser(String userId);
 }

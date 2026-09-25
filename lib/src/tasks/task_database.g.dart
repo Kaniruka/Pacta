@@ -11195,6 +11195,459 @@ class LocalCalendarBlocksCompanion extends UpdateCompanion<LocalCalendarBlock> {
   }
 }
 
+class $LocalUserLifecycleStatesTable extends LocalUserLifecycleStates
+    with TableInfo<$LocalUserLifecycleStatesTable, LocalUserLifecycleState> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalUserLifecycleStatesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isSuspendedMeta = const VerificationMeta(
+    'isSuspended',
+  );
+  @override
+  late final GeneratedColumn<bool> isSuspended = GeneratedColumn<bool>(
+    'is_suspended',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_suspended" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _suspendedAtMeta = const VerificationMeta(
+    'suspendedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> suspendedAt = GeneratedColumn<DateTime>(
+    'suspended_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _purgeEligibleAtMeta = const VerificationMeta(
+    'purgeEligibleAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> purgeEligibleAt =
+      GeneratedColumn<DateTime>(
+        'purge_eligible_at',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _isEligibleForPurgeMeta =
+      const VerificationMeta('isEligibleForPurge');
+  @override
+  late final GeneratedColumn<bool> isEligibleForPurge = GeneratedColumn<bool>(
+    'is_eligible_for_purge',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_eligible_for_purge" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _checkedAtMeta = const VerificationMeta(
+    'checkedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> checkedAt = GeneratedColumn<DateTime>(
+    'checked_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    isSuspended,
+    suspendedAt,
+    purgeEligibleAt,
+    isEligibleForPurge,
+    checkedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_user_lifecycle_states';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalUserLifecycleState> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('is_suspended')) {
+      context.handle(
+        _isSuspendedMeta,
+        isSuspended.isAcceptableOrUnknown(
+          data['is_suspended']!,
+          _isSuspendedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('suspended_at')) {
+      context.handle(
+        _suspendedAtMeta,
+        suspendedAt.isAcceptableOrUnknown(
+          data['suspended_at']!,
+          _suspendedAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('purge_eligible_at')) {
+      context.handle(
+        _purgeEligibleAtMeta,
+        purgeEligibleAt.isAcceptableOrUnknown(
+          data['purge_eligible_at']!,
+          _purgeEligibleAtMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_eligible_for_purge')) {
+      context.handle(
+        _isEligibleForPurgeMeta,
+        isEligibleForPurge.isAcceptableOrUnknown(
+          data['is_eligible_for_purge']!,
+          _isEligibleForPurgeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('checked_at')) {
+      context.handle(
+        _checkedAtMeta,
+        checkedAt.isAcceptableOrUnknown(data['checked_at']!, _checkedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_checkedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId};
+  @override
+  LocalUserLifecycleState map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalUserLifecycleState(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      isSuspended: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_suspended'],
+      )!,
+      suspendedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}suspended_at'],
+      ),
+      purgeEligibleAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}purge_eligible_at'],
+      ),
+      isEligibleForPurge: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_eligible_for_purge'],
+      )!,
+      checkedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}checked_at'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalUserLifecycleStatesTable createAlias(String alias) {
+    return $LocalUserLifecycleStatesTable(attachedDatabase, alias);
+  }
+}
+
+class LocalUserLifecycleState extends DataClass
+    implements Insertable<LocalUserLifecycleState> {
+  final String userId;
+  final bool isSuspended;
+  final DateTime? suspendedAt;
+  final DateTime? purgeEligibleAt;
+  final bool isEligibleForPurge;
+  final DateTime checkedAt;
+  const LocalUserLifecycleState({
+    required this.userId,
+    required this.isSuspended,
+    this.suspendedAt,
+    this.purgeEligibleAt,
+    required this.isEligibleForPurge,
+    required this.checkedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['is_suspended'] = Variable<bool>(isSuspended);
+    if (!nullToAbsent || suspendedAt != null) {
+      map['suspended_at'] = Variable<DateTime>(suspendedAt);
+    }
+    if (!nullToAbsent || purgeEligibleAt != null) {
+      map['purge_eligible_at'] = Variable<DateTime>(purgeEligibleAt);
+    }
+    map['is_eligible_for_purge'] = Variable<bool>(isEligibleForPurge);
+    map['checked_at'] = Variable<DateTime>(checkedAt);
+    return map;
+  }
+
+  LocalUserLifecycleStatesCompanion toCompanion(bool nullToAbsent) {
+    return LocalUserLifecycleStatesCompanion(
+      userId: Value(userId),
+      isSuspended: Value(isSuspended),
+      suspendedAt: suspendedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(suspendedAt),
+      purgeEligibleAt: purgeEligibleAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(purgeEligibleAt),
+      isEligibleForPurge: Value(isEligibleForPurge),
+      checkedAt: Value(checkedAt),
+    );
+  }
+
+  factory LocalUserLifecycleState.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalUserLifecycleState(
+      userId: serializer.fromJson<String>(json['userId']),
+      isSuspended: serializer.fromJson<bool>(json['isSuspended']),
+      suspendedAt: serializer.fromJson<DateTime?>(json['suspendedAt']),
+      purgeEligibleAt: serializer.fromJson<DateTime?>(json['purgeEligibleAt']),
+      isEligibleForPurge: serializer.fromJson<bool>(json['isEligibleForPurge']),
+      checkedAt: serializer.fromJson<DateTime>(json['checkedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'isSuspended': serializer.toJson<bool>(isSuspended),
+      'suspendedAt': serializer.toJson<DateTime?>(suspendedAt),
+      'purgeEligibleAt': serializer.toJson<DateTime?>(purgeEligibleAt),
+      'isEligibleForPurge': serializer.toJson<bool>(isEligibleForPurge),
+      'checkedAt': serializer.toJson<DateTime>(checkedAt),
+    };
+  }
+
+  LocalUserLifecycleState copyWith({
+    String? userId,
+    bool? isSuspended,
+    Value<DateTime?> suspendedAt = const Value.absent(),
+    Value<DateTime?> purgeEligibleAt = const Value.absent(),
+    bool? isEligibleForPurge,
+    DateTime? checkedAt,
+  }) => LocalUserLifecycleState(
+    userId: userId ?? this.userId,
+    isSuspended: isSuspended ?? this.isSuspended,
+    suspendedAt: suspendedAt.present ? suspendedAt.value : this.suspendedAt,
+    purgeEligibleAt: purgeEligibleAt.present
+        ? purgeEligibleAt.value
+        : this.purgeEligibleAt,
+    isEligibleForPurge: isEligibleForPurge ?? this.isEligibleForPurge,
+    checkedAt: checkedAt ?? this.checkedAt,
+  );
+  LocalUserLifecycleState copyWithCompanion(
+    LocalUserLifecycleStatesCompanion data,
+  ) {
+    return LocalUserLifecycleState(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      isSuspended: data.isSuspended.present
+          ? data.isSuspended.value
+          : this.isSuspended,
+      suspendedAt: data.suspendedAt.present
+          ? data.suspendedAt.value
+          : this.suspendedAt,
+      purgeEligibleAt: data.purgeEligibleAt.present
+          ? data.purgeEligibleAt.value
+          : this.purgeEligibleAt,
+      isEligibleForPurge: data.isEligibleForPurge.present
+          ? data.isEligibleForPurge.value
+          : this.isEligibleForPurge,
+      checkedAt: data.checkedAt.present ? data.checkedAt.value : this.checkedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalUserLifecycleState(')
+          ..write('userId: $userId, ')
+          ..write('isSuspended: $isSuspended, ')
+          ..write('suspendedAt: $suspendedAt, ')
+          ..write('purgeEligibleAt: $purgeEligibleAt, ')
+          ..write('isEligibleForPurge: $isEligibleForPurge, ')
+          ..write('checkedAt: $checkedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    userId,
+    isSuspended,
+    suspendedAt,
+    purgeEligibleAt,
+    isEligibleForPurge,
+    checkedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalUserLifecycleState &&
+          other.userId == this.userId &&
+          other.isSuspended == this.isSuspended &&
+          other.suspendedAt == this.suspendedAt &&
+          other.purgeEligibleAt == this.purgeEligibleAt &&
+          other.isEligibleForPurge == this.isEligibleForPurge &&
+          other.checkedAt == this.checkedAt);
+}
+
+class LocalUserLifecycleStatesCompanion
+    extends UpdateCompanion<LocalUserLifecycleState> {
+  final Value<String> userId;
+  final Value<bool> isSuspended;
+  final Value<DateTime?> suspendedAt;
+  final Value<DateTime?> purgeEligibleAt;
+  final Value<bool> isEligibleForPurge;
+  final Value<DateTime> checkedAt;
+  final Value<int> rowid;
+  const LocalUserLifecycleStatesCompanion({
+    this.userId = const Value.absent(),
+    this.isSuspended = const Value.absent(),
+    this.suspendedAt = const Value.absent(),
+    this.purgeEligibleAt = const Value.absent(),
+    this.isEligibleForPurge = const Value.absent(),
+    this.checkedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalUserLifecycleStatesCompanion.insert({
+    required String userId,
+    this.isSuspended = const Value.absent(),
+    this.suspendedAt = const Value.absent(),
+    this.purgeEligibleAt = const Value.absent(),
+    this.isEligibleForPurge = const Value.absent(),
+    required DateTime checkedAt,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       checkedAt = Value(checkedAt);
+  static Insertable<LocalUserLifecycleState> custom({
+    Expression<String>? userId,
+    Expression<bool>? isSuspended,
+    Expression<DateTime>? suspendedAt,
+    Expression<DateTime>? purgeEligibleAt,
+    Expression<bool>? isEligibleForPurge,
+    Expression<DateTime>? checkedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (isSuspended != null) 'is_suspended': isSuspended,
+      if (suspendedAt != null) 'suspended_at': suspendedAt,
+      if (purgeEligibleAt != null) 'purge_eligible_at': purgeEligibleAt,
+      if (isEligibleForPurge != null)
+        'is_eligible_for_purge': isEligibleForPurge,
+      if (checkedAt != null) 'checked_at': checkedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalUserLifecycleStatesCompanion copyWith({
+    Value<String>? userId,
+    Value<bool>? isSuspended,
+    Value<DateTime?>? suspendedAt,
+    Value<DateTime?>? purgeEligibleAt,
+    Value<bool>? isEligibleForPurge,
+    Value<DateTime>? checkedAt,
+    Value<int>? rowid,
+  }) {
+    return LocalUserLifecycleStatesCompanion(
+      userId: userId ?? this.userId,
+      isSuspended: isSuspended ?? this.isSuspended,
+      suspendedAt: suspendedAt ?? this.suspendedAt,
+      purgeEligibleAt: purgeEligibleAt ?? this.purgeEligibleAt,
+      isEligibleForPurge: isEligibleForPurge ?? this.isEligibleForPurge,
+      checkedAt: checkedAt ?? this.checkedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (isSuspended.present) {
+      map['is_suspended'] = Variable<bool>(isSuspended.value);
+    }
+    if (suspendedAt.present) {
+      map['suspended_at'] = Variable<DateTime>(suspendedAt.value);
+    }
+    if (purgeEligibleAt.present) {
+      map['purge_eligible_at'] = Variable<DateTime>(purgeEligibleAt.value);
+    }
+    if (isEligibleForPurge.present) {
+      map['is_eligible_for_purge'] = Variable<bool>(isEligibleForPurge.value);
+    }
+    if (checkedAt.present) {
+      map['checked_at'] = Variable<DateTime>(checkedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalUserLifecycleStatesCompanion(')
+          ..write('userId: $userId, ')
+          ..write('isSuspended: $isSuspended, ')
+          ..write('suspendedAt: $suspendedAt, ')
+          ..write('purgeEligibleAt: $purgeEligibleAt, ')
+          ..write('isEligibleForPurge: $isEligibleForPurge, ')
+          ..write('checkedAt: $checkedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$PactaDatabase extends GeneratedDatabase {
   _$PactaDatabase(QueryExecutor e) : super(e);
   $PactaDatabaseManager get managers => $PactaDatabaseManager(this);
@@ -11237,6 +11690,8 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
       $LocalCalendarSourcesTable(this);
   late final $LocalCalendarBlocksTable localCalendarBlocks =
       $LocalCalendarBlocksTable(this);
+  late final $LocalUserLifecycleStatesTable localUserLifecycleStates =
+      $LocalUserLifecycleStatesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -11261,6 +11716,7 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
     focusSyncSources,
     localCalendarSources,
     localCalendarBlocks,
+    localUserLifecycleStates,
   ];
 }
 
@@ -16892,6 +17348,252 @@ typedef $$LocalCalendarBlocksTableProcessedTableManager =
       LocalCalendarBlock,
       PrefetchHooks Function()
     >;
+typedef $$LocalUserLifecycleStatesTableCreateCompanionBuilder =
+    LocalUserLifecycleStatesCompanion Function({
+      required String userId,
+      Value<bool> isSuspended,
+      Value<DateTime?> suspendedAt,
+      Value<DateTime?> purgeEligibleAt,
+      Value<bool> isEligibleForPurge,
+      required DateTime checkedAt,
+      Value<int> rowid,
+    });
+typedef $$LocalUserLifecycleStatesTableUpdateCompanionBuilder =
+    LocalUserLifecycleStatesCompanion Function({
+      Value<String> userId,
+      Value<bool> isSuspended,
+      Value<DateTime?> suspendedAt,
+      Value<DateTime?> purgeEligibleAt,
+      Value<bool> isEligibleForPurge,
+      Value<DateTime> checkedAt,
+      Value<int> rowid,
+    });
+
+class $$LocalUserLifecycleStatesTableFilterComposer
+    extends Composer<_$PactaDatabase, $LocalUserLifecycleStatesTable> {
+  $$LocalUserLifecycleStatesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isSuspended => $composableBuilder(
+    column: $table.isSuspended,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get suspendedAt => $composableBuilder(
+    column: $table.suspendedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get purgeEligibleAt => $composableBuilder(
+    column: $table.purgeEligibleAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isEligibleForPurge => $composableBuilder(
+    column: $table.isEligibleForPurge,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get checkedAt => $composableBuilder(
+    column: $table.checkedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalUserLifecycleStatesTableOrderingComposer
+    extends Composer<_$PactaDatabase, $LocalUserLifecycleStatesTable> {
+  $$LocalUserLifecycleStatesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isSuspended => $composableBuilder(
+    column: $table.isSuspended,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get suspendedAt => $composableBuilder(
+    column: $table.suspendedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get purgeEligibleAt => $composableBuilder(
+    column: $table.purgeEligibleAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isEligibleForPurge => $composableBuilder(
+    column: $table.isEligibleForPurge,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get checkedAt => $composableBuilder(
+    column: $table.checkedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalUserLifecycleStatesTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $LocalUserLifecycleStatesTable> {
+  $$LocalUserLifecycleStatesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<bool> get isSuspended => $composableBuilder(
+    column: $table.isSuspended,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get suspendedAt => $composableBuilder(
+    column: $table.suspendedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get purgeEligibleAt => $composableBuilder(
+    column: $table.purgeEligibleAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isEligibleForPurge => $composableBuilder(
+    column: $table.isEligibleForPurge,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get checkedAt =>
+      $composableBuilder(column: $table.checkedAt, builder: (column) => column);
+}
+
+class $$LocalUserLifecycleStatesTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $LocalUserLifecycleStatesTable,
+          LocalUserLifecycleState,
+          $$LocalUserLifecycleStatesTableFilterComposer,
+          $$LocalUserLifecycleStatesTableOrderingComposer,
+          $$LocalUserLifecycleStatesTableAnnotationComposer,
+          $$LocalUserLifecycleStatesTableCreateCompanionBuilder,
+          $$LocalUserLifecycleStatesTableUpdateCompanionBuilder,
+          (
+            LocalUserLifecycleState,
+            BaseReferences<
+              _$PactaDatabase,
+              $LocalUserLifecycleStatesTable,
+              LocalUserLifecycleState
+            >,
+          ),
+          LocalUserLifecycleState,
+          PrefetchHooks Function()
+        > {
+  $$LocalUserLifecycleStatesTableTableManager(
+    _$PactaDatabase db,
+    $LocalUserLifecycleStatesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalUserLifecycleStatesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$LocalUserLifecycleStatesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$LocalUserLifecycleStatesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<bool> isSuspended = const Value.absent(),
+                Value<DateTime?> suspendedAt = const Value.absent(),
+                Value<DateTime?> purgeEligibleAt = const Value.absent(),
+                Value<bool> isEligibleForPurge = const Value.absent(),
+                Value<DateTime> checkedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalUserLifecycleStatesCompanion(
+                userId: userId,
+                isSuspended: isSuspended,
+                suspendedAt: suspendedAt,
+                purgeEligibleAt: purgeEligibleAt,
+                isEligibleForPurge: isEligibleForPurge,
+                checkedAt: checkedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                Value<bool> isSuspended = const Value.absent(),
+                Value<DateTime?> suspendedAt = const Value.absent(),
+                Value<DateTime?> purgeEligibleAt = const Value.absent(),
+                Value<bool> isEligibleForPurge = const Value.absent(),
+                required DateTime checkedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => LocalUserLifecycleStatesCompanion.insert(
+                userId: userId,
+                isSuspended: isSuspended,
+                suspendedAt: suspendedAt,
+                purgeEligibleAt: purgeEligibleAt,
+                isEligibleForPurge: isEligibleForPurge,
+                checkedAt: checkedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalUserLifecycleStatesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $LocalUserLifecycleStatesTable,
+      LocalUserLifecycleState,
+      $$LocalUserLifecycleStatesTableFilterComposer,
+      $$LocalUserLifecycleStatesTableOrderingComposer,
+      $$LocalUserLifecycleStatesTableAnnotationComposer,
+      $$LocalUserLifecycleStatesTableCreateCompanionBuilder,
+      $$LocalUserLifecycleStatesTableUpdateCompanionBuilder,
+      (
+        LocalUserLifecycleState,
+        BaseReferences<
+          _$PactaDatabase,
+          $LocalUserLifecycleStatesTable,
+          LocalUserLifecycleState
+        >,
+      ),
+      LocalUserLifecycleState,
+      PrefetchHooks Function()
+    >;
 
 class $PactaDatabaseManager {
   final _$PactaDatabase _db;
@@ -16956,4 +17658,9 @@ class $PactaDatabaseManager {
       $$LocalCalendarSourcesTableTableManager(_db, _db.localCalendarSources);
   $$LocalCalendarBlocksTableTableManager get localCalendarBlocks =>
       $$LocalCalendarBlocksTableTableManager(_db, _db.localCalendarBlocks);
+  $$LocalUserLifecycleStatesTableTableManager get localUserLifecycleStates =>
+      $$LocalUserLifecycleStatesTableTableManager(
+        _db,
+        _db.localUserLifecycleStates,
+      );
 }

@@ -300,6 +300,19 @@ class LocalCalendarBlocks extends Table {
   Set<Column<Object>> get primaryKey => {userId, sourceId, occurrenceId};
 }
 
+class LocalUserLifecycleStates extends Table {
+  TextColumn get userId => text()();
+  BoolColumn get isSuspended => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get suspendedAt => dateTime().nullable()();
+  DateTimeColumn get purgeEligibleAt => dateTime().nullable()();
+  BoolColumn get isEligibleForPurge =>
+      boolean().withDefault(const Constant(false))();
+  DateTimeColumn get checkedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId};
+}
+
 @DriftDatabase(
   tables: [
     LocalGoals,
@@ -321,6 +334,7 @@ class LocalCalendarBlocks extends Table {
     FocusSyncSources,
     LocalCalendarSources,
     LocalCalendarBlocks,
+    LocalUserLifecycleStates,
   ],
 )
 class PactaDatabase extends _$PactaDatabase {
@@ -329,7 +343,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 21;
+  int get schemaVersion => 22;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -472,6 +486,9 @@ class PactaDatabase extends _$PactaDatabase {
       if (from >= 20 && from < 21) {
         await m.addColumn(localCalendarSources, localCalendarSources.isStale);
         await m.addColumn(localCalendarSources, localCalendarSources.isDeleted);
+      }
+      if (from < 22) {
+        await m.createTable(localUserLifecycleStates);
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);

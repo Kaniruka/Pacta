@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'auth_repository.dart';
+import 'user_lifecycle_models.dart';
 
 class SupabaseAuthRepository implements AuthRepository {
   SupabaseAuthRepository(this._client);
@@ -86,6 +87,33 @@ class SupabaseAuthRepository implements AuthRepository {
     );
   }
 
+  @override
+  Future<UserLifecycleStatus> getCurrentUserLifecycle() async {
+    final response = await _client.rpc('current_user_lifecycle_status');
+    return UserLifecycleStatus.fromJson(
+      Map<String, dynamic>.from(response as Map),
+    );
+  }
+
+  @override
+  Future<List<ManagedUserLifecycle>> listUserLifecycles() async {
+    final response = await _client.rpc('admin_list_user_lifecycles');
+    return [
+      for (final row in response as List)
+        ManagedUserLifecycle.fromJson(Map<String, dynamic>.from(row as Map)),
+    ];
+  }
+
+  @override
+  Future<void> suspendUser(String userId) async {
+    await _client.rpc('admin_suspend_user', params: {'p_user_id': userId});
+  }
+
+  @override
+  Future<void> restoreUser(String userId) async {
+    await _client.rpc('admin_restore_user', params: {'p_user_id': userId});
+  }
+
   void _requireEmail(String value) {
     if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value.trim())) {
       throw const FormatException('请输入有效的邮箱地址。');
@@ -139,6 +167,26 @@ class UnavailableAuthRepository implements AuthRepository {
     required String newPassword,
     required bool manualVerificationConfirmed,
   }) async {
+    throw StateError(message);
+  }
+
+  @override
+  Future<UserLifecycleStatus> getCurrentUserLifecycle() async {
+    throw StateError(message);
+  }
+
+  @override
+  Future<List<ManagedUserLifecycle>> listUserLifecycles() async {
+    throw StateError(message);
+  }
+
+  @override
+  Future<void> suspendUser(String userId) async {
+    throw StateError(message);
+  }
+
+  @override
+  Future<void> restoreUser(String userId) async {
     throw StateError(message);
   }
 }

@@ -5,6 +5,7 @@ import 'package:drift/drift.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../auth/user_lifecycle.dart';
 import '../tasks/task_database.dart';
 import 'national_focus_checkpoints.dart';
 import 'national_focus_models.dart';
@@ -160,9 +161,12 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     required this.database,
     required this.userId,
     this.remote = const UnavailableNationalFocusRemoteDataSource(),
+    UserLifecycleAccess? lifecycleAccess,
     DateTime Function()? now,
     Duration Function()? monotonicNow,
-  }) : _now = now ?? DateTime.now,
+  }) : lifecycleAccess =
+           lifecycleAccess ?? const AlwaysActiveUserLifecycleAccess(),
+       _now = now ?? DateTime.now,
        _injectedMonotonicNow = monotonicNow,
        _clockJumpDetectionEnabled = now == null || monotonicNow != null {
     if (userId.trim().isEmpty) {
@@ -173,6 +177,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   final PactaDatabase database;
   final String userId;
   final NationalFocusRemoteDataSource remote;
+  final UserLifecycleAccess lifecycleAccess;
   final DateTime Function() _now;
   final Duration Function()? _injectedMonotonicNow;
   final bool _clockJumpDetectionEnabled;
@@ -237,6 +242,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   @override
   Future<NationalFocusCard> createCard(NationalFocusCardDraft draft) async {
     await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
     final timestamp = _nextTimestamp();
     final id = _uuid.v4();
     final triggerCondition = _requiredText(draft.triggerCondition, '主要触发条件');
@@ -310,6 +316,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     required NationalFocusStrengtheningLevelDraft draft,
   }) async {
     await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
     final triggerOverride = _optionalText(draft.triggerCondition);
     final actionOverride = _optionalText(draft.action);
     if (triggerOverride == null && actionOverride == null) {
@@ -432,6 +439,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     required int? levelNumber,
   }) async {
     await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
       _requireResolvedCard(card);
@@ -593,6 +601,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     required String? parentId,
   }) async {
     await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
       _requireResolvedCard(card);
@@ -667,6 +676,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   @override
   Future<void> moveCardToLibrary(String cardId) async {
     await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
       if (card.deletedAt != null) {
@@ -720,6 +730,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   @override
   Future<NationalFocusCardDeletion> deleteCard(String cardId) async {
     await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
     final deletion = await database.transaction(() async {
       final card =
           await (database.select(database.localNationalFocusCards)
@@ -811,6 +822,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   @override
   Future<void> restoreDeletedCard(String cardId) async {
     await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
       _requireResolvedCard(card);
@@ -834,6 +846,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   @override
   Future<void> lightCard(String cardId) async {
     await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
       _requireResolvedCard(card);
@@ -891,6 +904,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     String? failureReason,
   }) async {
     await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
       _requireResolvedCard(card);
@@ -953,6 +967,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   @override
   Future<int> confirmToday() async {
     await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
     final confirmedCardIds = <String>[];
     final confirmedCount = await database.transaction(() async {
       final pendingCards =
@@ -1335,6 +1350,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     required String? explanation,
   }) async {
     await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
     final normalized = _optionalText(explanation);
     if (normalized != null && normalized.length > 500) {
       throw ArgumentError('补充说明不能超过 500 个字符。');
@@ -1386,6 +1402,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   @override
   Future<void> deferNationalFocusReconciliation(String caseId) async {
     await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
     await database.transaction(() async {
       final sources = await _getNationalFocusSyncSources();
       final heads = _nationalFocusSourceHeads(sources);
@@ -1413,6 +1430,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     required String selectedSourceId,
   }) async {
     await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
     await database.transaction(() async {
       final sources = await _getNationalFocusSyncSources();
       final heads = _nationalFocusSourceHeads(sources);
@@ -1648,6 +1666,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
 
   @override
   Future<void> deferNationalFocusClockReview(String caseId) async {
+    await lifecycleAccess.requireActive();
     await database.transaction(() async {
       final sources = await _getNationalFocusSyncSources();
       final heads = _nationalFocusSourceHeads(sources);
@@ -1671,6 +1690,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
 
   @override
   Future<void> resolveNationalFocusClockReview(String caseId) async {
+    await lifecycleAccess.requireActive();
     await database.transaction(() async {
       final sources = await _getNationalFocusSyncSources();
       final heads = _nationalFocusSourceHeads(sources);
@@ -1794,6 +1814,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   Future<void> _syncOnce() async {
     await settleDueCheckpoints();
     await _recordLocalStateRecoveryIfNeeded();
+    if (await lifecycleAccess.isSuspended()) return;
     final remoteSources = await remote.pull(userId: userId);
     for (final source in remoteSources) {
       await database

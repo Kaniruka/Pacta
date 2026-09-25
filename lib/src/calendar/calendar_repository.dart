@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:drift/drift.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../auth/user_lifecycle.dart';
 import '../tasks/task_database.dart';
 import 'calendar_models.dart';
 import 'calendar_provider.dart';
@@ -139,13 +140,17 @@ class LocalCalendarRepository implements CalendarRepository {
     required this.userId,
     required this.provider,
     required this.remote,
+    UserLifecycleAccess? lifecycleAccess,
     DateTime Function()? now,
-  }) : _now = now ?? DateTime.now;
+  }) : lifecycleAccess =
+           lifecycleAccess ?? const AlwaysActiveUserLifecycleAccess(),
+       _now = now ?? DateTime.now;
 
   final PactaDatabase database;
   final String userId;
   final CalendarProvider provider;
   final CalendarRemoteDataSource remote;
+  final UserLifecycleAccess lifecycleAccess;
   final DateTime Function() _now;
   final _changes = StreamController<void>.broadcast();
 
@@ -195,6 +200,7 @@ class LocalCalendarRepository implements CalendarRepository {
 
   @override
   Future<CalendarImportResult> importCalendars(Set<String> sourceIds) async {
+    await lifecycleAccess.requireActive();
     if (!provider.isSupported) {
       throw UnsupportedError('请在 Android 设备上选择系统日历。');
     }
@@ -274,6 +280,7 @@ class LocalCalendarRepository implements CalendarRepository {
 
   @override
   Future<void> removeSources(Set<String> sourceIds) async {
+    await lifecycleAccess.requireActive();
     if (sourceIds.isEmpty) return;
     if (!provider.isSupported) {
       throw UnsupportedError('请在 Android 设备上管理系统日历来源。');
@@ -375,6 +382,7 @@ class LocalCalendarRepository implements CalendarRepository {
 
   @override
   Future<void> sync() async {
+    if (await lifecycleAccess.isSuspended()) return;
     final refreshedEvents = provider.isSupported
         ? await _refreshSelectedSources()
         : <String, List<CalendarEventOccurrence>>{};

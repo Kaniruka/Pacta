@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../auth/user_lifecycle.dart';
 import 'task_database.dart';
 import 'task_models.dart';
 
@@ -65,12 +66,16 @@ class LocalTaskRepository implements TaskRepository {
     required this.database,
     required this.userId,
     required this.remote,
+    UserLifecycleAccess? lifecycleAccess,
     DateTime Function()? now,
-  }) : _now = now ?? DateTime.now;
+  }) : lifecycleAccess =
+           lifecycleAccess ?? const AlwaysActiveUserLifecycleAccess(),
+       _now = now ?? DateTime.now;
 
   final PactaDatabase database;
   final String userId;
   final TaskRemoteDataSource remote;
+  final UserLifecycleAccess lifecycleAccess;
   final DateTime Function() _now;
   final _changes = StreamController<void>.broadcast();
   final _uuid = const Uuid();
@@ -128,6 +133,7 @@ class LocalTaskRepository implements TaskRepository {
 
   @override
   Future<Goal> createGoal(GoalDraft draft) async {
+    await lifecycleAccess.requireActive();
     final title = _requiredTitle(draft.title, '目标');
     final timestamp = _nextTimestamp();
     final goal = Goal(
@@ -144,6 +150,7 @@ class LocalTaskRepository implements TaskRepository {
 
   @override
   Future<Goal> updateGoal(String goalId, GoalDraft draft) async {
+    await lifecycleAccess.requireActive();
     final existing = await _findGoal(goalId);
     final updated = existing.copyWith(
       title: _requiredTitle(draft.title, '目标'),
@@ -157,6 +164,7 @@ class LocalTaskRepository implements TaskRepository {
 
   @override
   Future<void> deleteGoal(String goalId) async {
+    await lifecycleAccess.requireActive();
     final existing = await _findGoalIncludingDeleted(goalId);
     if (existing.isDeleted) return;
 
@@ -197,6 +205,7 @@ class LocalTaskRepository implements TaskRepository {
 
   @override
   Future<Task> createTask(String goalId, TaskDraft draft) async {
+    await lifecycleAccess.requireActive();
     final goal = await _findGoal(goalId);
     final timestamp = _nextTimestamp();
     final task = Task(
@@ -217,6 +226,7 @@ class LocalTaskRepository implements TaskRepository {
 
   @override
   Future<Task> updateTask(String taskId, TaskDraft draft) async {
+    await lifecycleAccess.requireActive();
     final existing = await _findTask(taskId);
     final updated = existing.copyWith(
       title: _requiredTitle(draft.title, '任务'),
@@ -235,6 +245,7 @@ class LocalTaskRepository implements TaskRepository {
     String taskId, {
     required bool isComplete,
   }) async {
+    await lifecycleAccess.requireActive();
     final existing = await _findTask(taskId);
     await _saveTask(
       existing.copyWith(
@@ -247,6 +258,7 @@ class LocalTaskRepository implements TaskRepository {
 
   @override
   Future<void> sync() async {
+    if (await lifecycleAccess.isSuspended()) return;
     final snapshot = await remote.pull(userId: userId);
     final localGoals = await _localGoalsById();
     final localTasks = await _localTasksById();

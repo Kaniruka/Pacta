@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timezone/timezone.dart' as timezone;
 import 'package:uuid/uuid.dart';
 
+import '../auth/user_lifecycle.dart';
 import '../tasks/task_database.dart' as db;
 import 'focus_models.dart';
 import 'focus_time_zones.dart';
@@ -261,15 +262,19 @@ class LocalFocusRepository implements FocusRepository {
     required this.database,
     required this.userId,
     required this.remote,
+    UserLifecycleAccess? lifecycleAccess,
     DateTime Function()? now,
     Duration Function()? monotonicNow,
-  }) : _now = now ?? DateTime.now,
+  }) : lifecycleAccess =
+           lifecycleAccess ?? const AlwaysActiveUserLifecycleAccess(),
+       _now = now ?? DateTime.now,
        _injectedMonotonicNow = monotonicNow,
        _clockJumpDetectionEnabled = now == null || monotonicNow != null;
 
   final db.PactaDatabase database;
   final String userId;
   final FocusRemoteDataSource remote;
+  final UserLifecycleAccess lifecycleAccess;
   final DateTime Function() _now;
   final Duration Function()? _injectedMonotonicNow;
   final bool _clockJumpDetectionEnabled;
@@ -366,6 +371,7 @@ class LocalFocusRepository implements FocusRepository {
     String caseId,
     FocusTimeInterval Function(FocusTimeInterval interval) update,
   ) async {
+    await lifecycleAccess.requireActive();
     final separator = caseId.lastIndexOf(':');
     if (separator <= 0) throw StateError('时钟核对记录不存在。');
     final sessionId = caseId.substring(0, separator);
@@ -615,6 +621,7 @@ class LocalFocusRepository implements FocusRepository {
     required Map<String, FocusSessionReconciliationSelection> sessionSelections,
     String? adoptedSessionId,
   }) async {
+    await lifecycleAccess.requireActive();
     final cases = await getFocusReconciliations();
     FocusReconciliationCase? reconciliation;
     for (final candidate in cases) {
@@ -882,6 +889,7 @@ class LocalFocusRepository implements FocusRepository {
 
   @override
   Future<void> setDisplayTimeZonePreference(String? timeZoneId) async {
+    await lifecycleAccess.requireActive();
     if (timeZoneId != null && !FocusTimeZones.contains(timeZoneId)) {
       throw ArgumentError.value(timeZoneId, 'timeZoneId', '未知的时区标识。');
     }
@@ -1002,6 +1010,7 @@ class LocalFocusRepository implements FocusRepository {
     required String appointmentId,
     required String sourceId,
   }) async {
+    await lifecycleAccess.requireActive();
     final row = await _appointmentRow(appointmentId);
     if (row == null) throw StateError('预约准备不存在或已不属于当前用户。');
     final source =
@@ -1087,6 +1096,7 @@ class LocalFocusRepository implements FocusRepository {
 
     await _settleDueAppointments();
     await _settleDueSessions();
+    await lifecycleAccess.requireActive();
     final existing = await _activeAppointmentRow();
     if (existing != null) return _appointmentFromRow(existing);
     final activeSession = await _activeSessionRow();
@@ -1124,6 +1134,7 @@ class LocalFocusRepository implements FocusRepository {
   }) async {
     _validateDuration(duration);
     await _settleDueAppointments();
+    await lifecycleAccess.requireActive();
     final row = await _appointmentRow(appointmentId);
     if (row == null) throw StateError('预约准备不存在或已不属于当前用户。');
     if (row.status != AppointmentPreparationStatus.active.storageValue) {
@@ -1162,6 +1173,7 @@ class LocalFocusRepository implements FocusRepository {
   @override
   Future<FocusSession> enterAppointmentEarly(String appointmentId) async {
     await _settleDueAppointments();
+    await lifecycleAccess.requireActive();
     final row = await _appointmentRow(appointmentId);
     if (row == null) throw StateError('预约准备不存在或已不属于当前用户。');
     if (row.status == AppointmentPreparationStatus.failed.storageValue) {
@@ -1234,6 +1246,7 @@ class LocalFocusRepository implements FocusRepository {
   }) async {
     final reason = _requiredFailureReason(failureReason);
     await _settleDueAppointments();
+    await lifecycleAccess.requireActive();
     final row = await _appointmentRow(appointmentId);
     if (row == null) throw StateError('预约准备不存在或已不属于当前用户。');
     if (row.status == AppointmentPreparationStatus.succeeded.storageValue) {
@@ -1290,6 +1303,7 @@ class LocalFocusRepository implements FocusRepository {
 
   @override
   Future<PrecedentRule> createPrecedentRule({required String text}) async {
+    await lifecycleAccess.requireActive();
     final ruleText = _requiredRuleText(text);
     final now = _now().toUtc();
     final rule = PrecedentRule(
@@ -1318,6 +1332,7 @@ class LocalFocusRepository implements FocusRepository {
     required String ruleId,
     required String text,
   }) async {
+    await lifecycleAccess.requireActive();
     final ruleText = _requiredRuleText(text);
     final row =
         await (database.select(database.focusPrecedentRules)
@@ -1348,6 +1363,7 @@ class LocalFocusRepository implements FocusRepository {
 
   @override
   Future<void> deletePrecedentRule(String ruleId) async {
+    await lifecycleAccess.requireActive();
     final row =
         await (database.select(database.focusPrecedentRules)
               ..where((rule) => rule.userId.equals(userId))
@@ -1379,6 +1395,7 @@ class LocalFocusRepository implements FocusRepository {
 
     await _settleDueAppointments();
     await _settleDueSessions();
+    await lifecycleAccess.requireActive();
     final appointment = await _activeAppointmentRow();
     if (appointment != null) {
       throw StateError('已有预约准备，请先返回原流程或提前进入/取消预约。');
@@ -1776,6 +1793,7 @@ class LocalFocusRepository implements FocusRepository {
   }) async {
     final normalizedRule = _requiredRuleText(ruleText);
     await _settleDueSessions();
+    await lifecycleAccess.requireActive();
     final clockSample = _sampleClock();
     final now = clockSample.wallTime;
     await database.transaction(() async {
@@ -1809,6 +1827,7 @@ class LocalFocusRepository implements FocusRepository {
 
   @override
   Future<FocusSession> resumeSession(String sessionId) async {
+    await lifecycleAccess.requireActive();
     await _observeDeviceClock();
     final clockSample = _sampleClock();
     final now = clockSample.wallTime;
@@ -1864,6 +1883,7 @@ class LocalFocusRepository implements FocusRepository {
   }) async {
     final normalizedRule = _requiredRuleText(ruleText);
     await _settleDueSessions();
+    await lifecycleAccess.requireActive();
     final existing = await _sessionRow(sessionId);
     if (existing == null) {
       throw StateError('专注会话不存在或已不属于当前用户。');
@@ -1895,6 +1915,7 @@ class LocalFocusRepository implements FocusRepository {
   }) async {
     final reason = _requiredFailureReason(failureReason);
     await _settleDueSessions();
+    await lifecycleAccess.requireActive();
     final clockSample = _sampleClock();
     final now = clockSample.wallTime;
     await database.transaction(() async {
@@ -1954,6 +1975,7 @@ class LocalFocusRepository implements FocusRepository {
     required String sessionId,
     required String failureReason,
   }) async {
+    await lifecycleAccess.requireActive();
     final reason = _requiredFailureReason(failureReason);
     final row = await _sessionRow(sessionId);
     if (row == null) throw StateError('专注会话不存在或已不属于当前用户。');
@@ -1971,6 +1993,7 @@ class LocalFocusRepository implements FocusRepository {
     required String nodeId,
     required String note,
   }) async {
+    await lifecycleAccess.requireActive();
     final normalized = note.trim();
     if (normalized.length > 500) throw ArgumentError('节点备注不能超过 500 字。');
     final row =
@@ -2475,6 +2498,10 @@ class LocalFocusRepository implements FocusRepository {
 
   Future<void> _syncOnce() async {
     await settleDueSessions();
+    if (await lifecycleAccess.isSuspended()) {
+      await _publish();
+      return;
+    }
     final snapshot = await remote.pull(userId: userId);
     final dispositionUpdates = <String, FocusSession>{};
     for (final source in snapshot.sources) {
