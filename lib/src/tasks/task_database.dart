@@ -114,6 +114,8 @@ class LocalNationalFocusFailures extends Table {
   TextColumn get failureReason => text().nullable()();
   TextColumn get sharedExplanation => text().nullable()();
   TextColumn get treeSnapshot => text()();
+  TextColumn get reviewDisposition =>
+      text().withDefault(const Constant('accepted'))();
 
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
@@ -290,7 +292,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 18;
+  int get schemaVersion => 19;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -414,10 +416,16 @@ class PactaDatabase extends _$PactaDatabase {
         await m.createTable(localNationalFocusStrengtheningLevels);
         await m.createTable(localNationalFocusRequirementVersions);
       }
-      if (from < 18) {
+      if (from >= 13 && from < 18) {
         await m.addColumn(
           localNationalFocusCards,
           localNationalFocusCards.reviewDisposition,
+        );
+      }
+      if (from >= 14 && from < 19) {
+        await m.addColumn(
+          localNationalFocusFailures,
+          localNationalFocusFailures.reviewDisposition,
         );
       }
       if (from < 15) {

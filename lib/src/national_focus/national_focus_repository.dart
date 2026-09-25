@@ -40,6 +40,15 @@ abstract interface class NationalFocusRepository {
     required String batchId,
     required String? explanation,
   });
+  Stream<NationalFocusReviewState> watchNationalFocusReviewState();
+  Future<NationalFocusReviewState> getNationalFocusReviewState();
+  Future<void> deferNationalFocusReconciliation(String caseId);
+  Future<void> resolveNationalFocusReconciliation({
+    required String caseId,
+    required String selectedSourceId,
+  });
+  Future<void> deferNationalFocusClockReview(String caseId);
+  Future<void> resolveNationalFocusClockReview(String caseId);
   Future<void> sync();
   Future<void> dispose();
 }
@@ -136,13 +145,26 @@ class UnavailableNationalFocusRemoteDataSource
 
 const _nationalFocusTreeEntityId = '00000000-0000-4000-8000-000000000018';
 
+class _NationalFocusClockSample {
+  const _NationalFocusClockSample({
+    required this.wallTime,
+    required this.monotonicTime,
+  });
+
+  final DateTime wallTime;
+  final Duration monotonicTime;
+}
+
 class LocalNationalFocusRepository implements NationalFocusRepository {
   LocalNationalFocusRepository({
     required this.database,
     required this.userId,
     this.remote = const UnavailableNationalFocusRemoteDataSource(),
     DateTime Function()? now,
-  }) : _now = now ?? DateTime.now {
+    Duration Function()? monotonicNow,
+  }) : _now = now ?? DateTime.now,
+       _injectedMonotonicNow = monotonicNow,
+       _clockJumpDetectionEnabled = now == null || monotonicNow != null {
     if (userId.trim().isEmpty) {
       throw ArgumentError.value(userId, 'userId', '用户标识不能为空。');
     }
@@ -152,8 +174,16 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   final String userId;
   final NationalFocusRemoteDataSource remote;
   final DateTime Function() _now;
+  final Duration Function()? _injectedMonotonicNow;
+  final bool _clockJumpDetectionEnabled;
+  final Stopwatch _monotonicStopwatch = Stopwatch()..start();
   final _uuid = const Uuid();
   Future<void> _syncQueue = Future<void>.value();
+  _NationalFocusClockSample? _lastClockSample;
+  Duration? _trustedClockOffset;
+  bool _clockOffsetRestored = false;
+  String? _pendingClockReviewId;
+  Duration? _pendingClockReviewMonotonicTime;
 
   @override
   Stream<List<NationalFocusCard>> watchTreeCards() =>
@@ -963,7 +993,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       if (confirmedCardIds.isNotEmpty) {
         await _recordSyncSnapshot(
           operation: 'confirm_today',
-          checkpointAt: nextNationalFocusCheckpoint(_now().toUtc()),
+          checkpointAt: nextNationalFocusCheckpoint(_trustedNow()),
           confirmedCardIds: confirmedCardIds,
         );
       }
@@ -974,56 +1004,183 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
 
   @override
   Future<void> settleDueCheckpoints() async {
-    final now = _now().toUtc();
+    await _restoreTrustedClockOffset();
+    final sample = _sampleNationalFocusClock();
+    final previous = _lastClockSample;
+    final elapsed = previous == null
+        ? Duration.zero
+        : sample.monotonicTime - previous.monotonicTime;
+    final wallDelta = previous == null
+        ? Duration.zero
+        : sample.wallTime.difference(previous.wallTime);
+    final discrepancyMicros = wallDelta.inMicroseconds - elapsed.inMicroseconds;
+    final hasClockJump =
+        _clockJumpDetectionEnabled &&
+        previous != null &&
+        discrepancyMicros.abs() > const Duration(seconds: 30).inMicroseconds;
+    final reliableNow = hasClockJump
+        ? previous.wallTime.add(
+            Duration(
+              microseconds: elapsed.inMicroseconds.clamp(0, 1 << 62).toInt(),
+            ),
+          )
+        : sample.wallTime;
+    _lastClockSample = _NationalFocusClockSample(
+      wallTime: reliableNow,
+      monotonicTime: sample.monotonicTime,
+    );
+    if (hasClockJump) {
+      _trustedClockOffset = _now().toUtc().difference(reliableNow);
+      _pendingClockReviewMonotonicTime = sample.monotonicTime;
+    }
     await database.transaction(() async {
-      final progress = await (database.select(
-        database.localNationalFocusMaintenance,
-      )..where((row) => row.userId.equals(userId))).getSingleOrNull();
-      if (progress == null) {
-        await database
-            .into(database.localNationalFocusMaintenance)
-            .insert(
-              LocalNationalFocusMaintenanceCompanion.insert(
-                userId: userId,
-                lastSettledCheckpointAt: nationalFocusCheckpointAtOrBefore(now),
-              ),
-            );
-        await _recordSyncSnapshot(operation: 'initialize_checkpoints');
-        return;
-      }
-
-      var checkpoint = progress.lastSettledCheckpointAt.toUtc().add(
-        nationalFocusCheckpointPeriod,
+      final sources = await _getNationalFocusSyncSources();
+      final heads = _nationalFocusSourceHeads(sources);
+      final metadata = _nationalFocusReviewMetadataFromSources(
+        sources,
+        heads.map((source) => source.sourceId),
       );
-      while (!checkpoint.isAfter(now)) {
-        await _settleCheckpoint(checkpoint);
-        await (database.update(
-          database.localNationalFocusMaintenance,
-        )..where((row) => row.userId.equals(userId))).write(
-          LocalNationalFocusMaintenanceCompanion(
-            lastSettledCheckpointAt: Value(checkpoint),
-          ),
-        );
-        final checkpointFailures = await (database.select(
-          database.localNationalFocusFailures,
-        )..where((failure) => failure.userId.equals(userId))).get();
+      final pendingClockCases = _mapList(
+        metadata['nationalFocusClockReviewCases'],
+      );
+      if (pendingClockCases.isNotEmpty && !hasClockJump) return;
+
+      await _settleCheckpointsThrough(reliableNow);
+      if (hasClockJump) {
+        final previousSample = previous;
+        final activeCards = await (database.select(
+          database.localNationalFocusCards,
+        )..where((card) => card.userId.equals(userId))).get();
+        final affectedCardIds = <String>[];
+        for (final card in activeCards) {
+          if (!card.isInTree && !card.maintenanceCycleStarted) continue;
+          affectedCardIds.add(card.id);
+          if (card.reviewDisposition == 'pending_review') continue;
+          await _updateCard(
+            card,
+            const LocalNationalFocusCardsCompanion(
+              reviewDisposition: Value('pending_review'),
+            ),
+          );
+        }
+        final rawWallTime = _now().toUtc();
+        final clockReviewId = _uuid.v4();
+        final deviceId = await _getNationalFocusDeviceId();
+        _pendingClockReviewId = clockReviewId;
+        final clockReview = {
+          'id': clockReviewId,
+          'deviceId': deviceId,
+          'direction': discrepancyMicros > 0 ? 'forward' : 'backward',
+          'detectedAt': rawWallTime.toIso8601String(),
+          'previousWallTime': previousSample.wallTime.toIso8601String(),
+          'observedWallTime': rawWallTime.toIso8601String(),
+          'reliableThroughTime': reliableNow.toIso8601String(),
+          'estimatedElapsedSeconds': elapsed.inSeconds.clamp(0, 1 << 31),
+          'clockOffsetsByDevice': {
+            deviceId: _trustedClockOffset!.inMilliseconds,
+          },
+          'cardIds': affectedCardIds..sort(),
+          'isDeferred': false,
+        };
+        final clockCases = [...pendingClockCases, clockReview];
         await _recordSyncSnapshot(
-          operation: 'settle_checkpoint',
-          checkpointAt: checkpoint,
-          missedConfirmationCardIds: [
-            for (final failure in checkpointFailures)
-              if (failure.checkpointAt.isAtSameMomentAs(checkpoint) &&
-                  failure.cause ==
-                      NationalFocusFailureCause.missedConfirmation.storageValue)
-                failure.cardId,
-          ],
+          operation: 'national_focus_clock_anomaly',
+          metadata: {...metadata, 'nationalFocusClockReviewCases': clockCases},
         );
-        checkpoint = checkpoint.add(nationalFocusCheckpointPeriod);
       }
     });
   }
 
-  Future<void> _settleCheckpoint(DateTime checkpoint) async {
+  Future<void> _settleCheckpointsThrough(DateTime now) async {
+    final progress = await (database.select(
+      database.localNationalFocusMaintenance,
+    )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+    if (progress == null) {
+      await database
+          .into(database.localNationalFocusMaintenance)
+          .insert(
+            LocalNationalFocusMaintenanceCompanion.insert(
+              userId: userId,
+              lastSettledCheckpointAt: nationalFocusCheckpointAtOrBefore(now),
+            ),
+          );
+      await _recordSyncSnapshot(operation: 'initialize_checkpoints');
+      return;
+    }
+
+    var checkpoint = progress.lastSettledCheckpointAt.toUtc().add(
+      nationalFocusCheckpointPeriod,
+    );
+    while (!checkpoint.isAfter(now)) {
+      await _settleCheckpoint(checkpoint);
+      await (database.update(
+        database.localNationalFocusMaintenance,
+      )..where((row) => row.userId.equals(userId))).write(
+        LocalNationalFocusMaintenanceCompanion(
+          lastSettledCheckpointAt: Value(checkpoint),
+        ),
+      );
+      final checkpointFailures = await (database.select(
+        database.localNationalFocusFailures,
+      )..where((failure) => failure.userId.equals(userId))).get();
+      await _recordSyncSnapshot(
+        operation: 'settle_checkpoint',
+        checkpointAt: checkpoint,
+        missedConfirmationCardIds: [
+          for (final failure in checkpointFailures)
+            if (failure.checkpointAt.isAtSameMomentAs(checkpoint) &&
+                failure.cause ==
+                    NationalFocusFailureCause.missedConfirmation.storageValue)
+              failure.cardId,
+        ],
+      );
+      checkpoint = checkpoint.add(nationalFocusCheckpointPeriod);
+    }
+  }
+
+  _NationalFocusClockSample _sampleNationalFocusClock() =>
+      _NationalFocusClockSample(
+        wallTime: _trustedNow(),
+        monotonicTime:
+            _injectedMonotonicNow?.call() ?? _monotonicStopwatch.elapsed,
+      );
+
+  DateTime _trustedNow() {
+    final now = _now().toUtc();
+    final offset = _trustedClockOffset;
+    return offset == null ? now : now.subtract(offset);
+  }
+
+  Future<void> _restoreTrustedClockOffset() async {
+    if (_clockOffsetRestored) return;
+    _clockOffsetRestored = true;
+    final deviceId = await _getNationalFocusDeviceId();
+    final sources = await _getNationalFocusSyncSources();
+    for (final source in sources.reversed) {
+      final payload = _nationalFocusPayload(source);
+      for (final collection in [
+        'nationalFocusClockReviewHistory',
+        'nationalFocusClockReviewCases',
+      ]) {
+        for (final item in _mapList(payload[collection]).reversed) {
+          final offsets = item['clockOffsetsByDevice'];
+          final offset = offsets is Map
+              ? offsets[deviceId]
+              : item['deviceId'] == deviceId
+              ? item['clockOffsetMilliseconds']
+              : null;
+          if (offset is! int) continue;
+          _trustedClockOffset = Duration(milliseconds: offset);
+          return;
+        }
+      }
+    }
+  }
+
+  Future<void> _settleCheckpoint(
+    DateTime checkpoint, {
+    Set<String>? onlyCardIds,
+  }) async {
     final storedCards =
         await (database.select(database.localNationalFocusCards)
               ..where((card) => card.userId.equals(userId))
@@ -1032,19 +1189,27 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
                 (card) => OrderingTerm.asc(card.id),
               ]))
             .get();
-    final cards = storedCards
+    final settlementCards = storedCards
         .where(
           (card) =>
               card.reviewDisposition != 'pending_review' &&
               (card.isInTree || card.maintenanceCycleStarted),
         )
         .toList(growable: false);
+    final cards = onlyCardIds == null
+        ? settlementCards
+        : settlementCards
+              .where((card) => onlyCardIds.contains(card.id))
+              .toList(growable: false);
     if (cards.isEmpty) return;
 
-    final plannedFailures = _planIndependentFailures(cards);
-    final failureSourceCardIds = _failureSourceCardIds(cards, plannedFailures);
+    final plannedFailures = _planIndependentFailures(settlementCards);
+    final failureSourceCardIds = _failureSourceCardIds(
+      settlementCards,
+      plannedFailures,
+    );
     final snapshotCards = await Future.wait(
-      cards.map(
+      settlementCards.map(
         (card) => _snapshotJson(
           card,
           failureSourceCardId: failureSourceCardIds[card.id],
@@ -1192,6 +1357,432 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   }
 
   @override
+  Stream<NationalFocusReviewState> watchNationalFocusReviewState() =>
+      (database.select(database.focusSyncSources)
+            ..where((row) => row.userId.equals(userId))
+            ..where((row) => row.entityType.equals('national_focus_tree'))
+            ..where((row) => row.entityId.equals(_nationalFocusTreeEntityId)))
+          .watch()
+          .asyncMap((_) => getNationalFocusReviewState());
+
+  @override
+  Future<NationalFocusReviewState> getNationalFocusReviewState() async {
+    final sources = await _getNationalFocusSyncSources();
+    if (sources.isEmpty) return const NationalFocusReviewState();
+    final heads = _nationalFocusSourceHeads(sources);
+    final pendingPayloads = <Map<String, dynamic>>[];
+    if (heads.length > 1) {
+      final merged = _mergeNationalFocusSnapshots(sources, heads);
+      pendingPayloads.add(merged);
+    } else {
+      pendingPayloads.addAll(heads.map(_nationalFocusPayload));
+    }
+    return _nationalFocusReviewStateFromSources(
+      pendingPayloads: pendingPayloads,
+      sources: sources,
+    );
+  }
+
+  @override
+  Future<void> deferNationalFocusReconciliation(String caseId) async {
+    await settleDueCheckpoints();
+    await database.transaction(() async {
+      final sources = await _getNationalFocusSyncSources();
+      final heads = _nationalFocusSourceHeads(sources);
+      final metadata = _nationalFocusReviewMetadataFromSources(
+        sources,
+        heads.map((source) => source.sourceId),
+      );
+      final cases = _mapList(metadata['nationalFocusReconciliationCases']);
+      final index = cases.indexWhere((item) => item['id'] == caseId);
+      if (index < 0) {
+        throw StateError('找不到这组待核对的国策操作。');
+      }
+      if (cases[index]['isDeferred'] == true) return;
+      cases[index] = {...cases[index], 'isDeferred': true};
+      await _recordSyncSnapshot(
+        operation: 'defer_national_focus_reconciliation',
+        metadata: {...metadata, 'nationalFocusReconciliationCases': cases},
+      );
+    });
+  }
+
+  @override
+  Future<void> resolveNationalFocusReconciliation({
+    required String caseId,
+    required String selectedSourceId,
+  }) async {
+    await settleDueCheckpoints();
+    await database.transaction(() async {
+      final sources = await _getNationalFocusSyncSources();
+      final heads = _nationalFocusSourceHeads(sources);
+      final metadata = _nationalFocusReviewMetadataFromSources(
+        sources,
+        heads.map((source) => source.sourceId),
+      );
+      final cases = _mapList(metadata['nationalFocusReconciliationCases']);
+      final reviewIndex = cases.indexWhere((item) => item['id'] == caseId);
+      if (reviewIndex < 0) {
+        if (_mapList(metadata['nationalFocusReconciliationHistory'])
+            .any((item) => item['caseId'] == caseId)) {
+          return;
+        }
+        throw StateError('找不到这组待核对的国策操作。');
+      }
+      final review = cases[reviewIndex];
+      final optionIds = _mapList(review['options'])
+          .map((option) => option['sourceId'])
+          .whereType<String>()
+          .toSet();
+      if (!optionIds.contains(selectedSourceId)) {
+        throw StateError('请选择核对记录中展示的完整操作分支。');
+      }
+      final sourcesById = {
+        for (final source in sources) source.sourceId: source,
+      };
+      final selectedSource = sourcesById[selectedSourceId];
+      if (selectedSource == null) {
+        throw StateError('选定的原始操作来源已不可用。');
+      }
+      final selectedSnapshot = _nationalFocusPayload(selectedSource);
+      final selectedCards = _nationalFocusCardsById(selectedSnapshot);
+      final affectedCardIds = (review['cardIds'] as List<dynamic>)
+          .whereType<String>()
+          .toSet();
+      final unresolvedConflictCardIds = cases
+          .where((item) => item['id'] != caseId)
+          .expand(
+            (item) => (item['cardIds'] as List<dynamic>).whereType<String>(),
+          )
+          .toSet();
+      final unresolvedClockCardIds =
+          _mapList(metadata['nationalFocusClockReviewCases'])
+              .expand(
+                (item) =>
+                    (item['cardIds'] as List<dynamic>).whereType<String>(),
+              )
+              .toSet();
+      final pendingReviewCardIds = {
+        ...unresolvedConflictCardIds,
+        ...unresolvedClockCardIds,
+      };
+      final snapshot = await _currentNationalFocusSnapshot();
+      final cards = _nationalFocusCardsById(snapshot);
+      for (final cardId in affectedCardIds) {
+        final accepted = selectedCards[cardId];
+        if (accepted == null) {
+          cards.remove(cardId);
+        } else {
+          cards[cardId] = {
+            ...accepted,
+            'reviewDisposition': pendingReviewCardIds.contains(cardId)
+                ? 'pending_review'
+                : 'accepted',
+          };
+        }
+      }
+      final acceptedTombstones = selectedSnapshot['tombstones'];
+      final tombstones = <String>{
+        if (snapshot['tombstones'] is List)
+          ...(snapshot['tombstones'] as List).whereType<String>(),
+      };
+      for (final cardId in affectedCardIds) {
+        tombstones.remove(cardId);
+        if (acceptedTombstones is List &&
+            acceptedTombstones.whereType<String>().contains(cardId)) {
+          tombstones.add(cardId);
+        }
+      }
+      final resolvedCards = cards.values.toList()
+        ..sort(
+          (left, right) =>
+              (left['id'] as String).compareTo(right['id'] as String),
+        );
+      if (!_isValidNationalFocusTree(resolvedCards)) {
+        throw StateError('这个操作分支会形成无效国策树，请选择另一完整分支。');
+      }
+      snapshot['cards'] = resolvedCards;
+      snapshot['tombstones'] = tombstones.toList()..sort();
+
+      final selectedFailures = _mapList(selectedSnapshot['failures'])
+          .where((failure) => affectedCardIds.contains(failure['cardId']))
+          .toList();
+      final failures = _mapList(snapshot['failures']);
+      final existingExplanations = {
+        for (final failure in failures)
+          if (failure['id'] is String && failure['sharedExplanation'] != null)
+            failure['id'] as String: failure['sharedExplanation'],
+      };
+      final failuresById = {
+        for (final failure in failures)
+          if (!affectedCardIds.contains(failure['cardId']))
+            failure['id']: failure,
+      };
+      for (final failure in selectedFailures) {
+        failuresById[failure['id']] = {
+          ...failure,
+          if (existingExplanations[failure['id']] != null)
+            'sharedExplanation': existingExplanations[failure['id']],
+          'reviewDisposition': pendingReviewCardIds.contains(failure['cardId'])
+              ? 'pending_review'
+              : 'accepted',
+        };
+      }
+      snapshot['failures'] = failuresById.values.toList();
+
+      final options = _mapList(review['options']);
+      final acceptedOperationIds = <String>{selectedSourceId};
+      final retainedOperationIds = <String>{};
+      for (final option in options) {
+        final operationIds = _mapList(option['operations'])
+            .map((operation) => operation['sourceId'])
+            .whereType<String>();
+        retainedOperationIds.addAll(operationIds);
+        if (option['sourceId'] == selectedSourceId) {
+          acceptedOperationIds.addAll(operationIds);
+        }
+      }
+      final replayCardIds = _nationalFocusCheckpointReplayCardIds(
+        affectedCardIds,
+        resolvedCards,
+      );
+      final replayFrom = _nationalFocusCheckpointFromSnapshot(selectedSnapshot);
+      final replayThrough = _nationalFocusCheckpointFromSnapshot(snapshot);
+      final needsCheckpointReplay =
+          replayFrom != null &&
+          replayThrough != null &&
+          replayThrough.isAfter(replayFrom) &&
+          replayCardIds.isNotEmpty;
+      final result = {
+        'caseId': caseId,
+        'resolvedAt': _trustedNow().toIso8601String(),
+        'cardIds': affectedCardIds.toList()..sort(),
+        'acceptedSourceIds': acceptedOperationIds.toList()..sort(),
+        'retainedSourceIds': retainedOperationIds.toList()..sort(),
+        'selectedSourceId': selectedSourceId,
+        'replayFromCheckpointAt': needsCheckpointReplay
+            ? replayFrom.toIso8601String()
+            : null,
+        'replayThroughCheckpointAt': needsCheckpointReplay
+            ? replayThrough.toIso8601String()
+            : null,
+        'replayCardIds': replayCardIds.toList()..sort(),
+        'pendingCheckpointReplay': needsCheckpointReplay,
+      };
+      cases.removeAt(reviewIndex);
+      final history = _mapList(metadata['nationalFocusReconciliationHistory']);
+      if (!history.any((item) => item['caseId'] == caseId)) {
+        history.add(result);
+      }
+      await _applyNationalFocusSnapshot(snapshot);
+      await _recordSyncSnapshot(
+        operation: 'resolve_national_focus_reconciliation',
+        metadata: {
+          ...metadata,
+          'nationalFocusReconciliationCases': cases,
+          'nationalFocusReconciliationHistory': history,
+        },
+      );
+      await _replayDeferredNationalFocusCheckpointReconciliations();
+    });
+  }
+
+  Future<void> _replayDeferredNationalFocusCheckpointReconciliations() async {
+    final sources = await _getNationalFocusSyncSources();
+    if (sources.isEmpty) return;
+    final heads = _nationalFocusSourceHeads(sources);
+    final metadata = _nationalFocusReviewMetadataFromSources(
+      sources,
+      heads.map((source) => source.sourceId),
+    );
+    final pendingReviewCardIds = <String>{
+      for (final review in _mapList(
+        metadata['nationalFocusReconciliationCases'],
+      ))
+        ...(review['cardIds'] as List<dynamic>).whereType<String>(),
+      for (final review in _mapList(metadata['nationalFocusClockReviewCases']))
+        ...(review['cardIds'] as List<dynamic>).whereType<String>(),
+    };
+    final history = _mapList(metadata['nationalFocusReconciliationHistory']);
+    var replayedAny = false;
+
+    for (var index = 0; index < history.length; index++) {
+      final result = history[index];
+      if (result['pendingCheckpointReplay'] != true) continue;
+      final cardIds = (result['replayCardIds'] as List<dynamic>)
+          .whereType<String>()
+          .toSet();
+      if (cardIds.any(pendingReviewCardIds.contains)) continue;
+
+      final rawFrom = result['replayFromCheckpointAt'];
+      final rawThrough = result['replayThroughCheckpointAt'];
+      if (rawFrom is! String || rawThrough is! String) {
+        throw StateError('缺少国策检查点重算所需的原始边界。');
+      }
+      var checkpoint = DateTime.parse(rawFrom)
+          .toUtc()
+          .add(nationalFocusCheckpointPeriod);
+      final through = DateTime.parse(rawThrough).toUtc();
+      while (!checkpoint.isAfter(through)) {
+        await _settleCheckpoint(checkpoint, onlyCardIds: cardIds);
+        await _recordSyncSnapshot(
+          operation: 'replay_national_focus_checkpoint',
+          checkpointAt: checkpoint,
+        );
+        checkpoint = checkpoint.add(nationalFocusCheckpointPeriod);
+      }
+      history[index] = {
+        ...result,
+        'pendingCheckpointReplay': false,
+        'replayedThroughCheckpointAt': through.toIso8601String(),
+      };
+      replayedAny = true;
+    }
+
+    if (!replayedAny) return;
+    await _recordSyncSnapshot(
+      operation: 'complete_national_focus_checkpoint_replay',
+      metadata: {...metadata, 'nationalFocusReconciliationHistory': history},
+    );
+  }
+
+  @override
+  Future<void> deferNationalFocusClockReview(String caseId) async {
+    await database.transaction(() async {
+      final sources = await _getNationalFocusSyncSources();
+      final heads = _nationalFocusSourceHeads(sources);
+      final metadata = _nationalFocusReviewMetadataFromSources(
+        sources,
+        heads.map((source) => source.sourceId),
+      );
+      final cases = _mapList(metadata['nationalFocusClockReviewCases']);
+      final index = cases.indexWhere((item) => item['id'] == caseId);
+      if (index < 0) {
+        throw StateError('找不到待核对的国策时钟记录。');
+      }
+      if (cases[index]['isDeferred'] == true) return;
+      cases[index] = {...cases[index], 'isDeferred': true};
+      await _recordSyncSnapshot(
+        operation: 'defer_national_focus_clock_review',
+        metadata: {...metadata, 'nationalFocusClockReviewCases': cases},
+      );
+    });
+  }
+
+  @override
+  Future<void> resolveNationalFocusClockReview(String caseId) async {
+    await database.transaction(() async {
+      final sources = await _getNationalFocusSyncSources();
+      final heads = _nationalFocusSourceHeads(sources);
+      final metadata = _nationalFocusReviewMetadataFromSources(
+        sources,
+        heads.map((source) => source.sourceId),
+      );
+      final cases = _mapList(metadata['nationalFocusClockReviewCases']);
+      final index = cases.indexWhere((item) => item['id'] == caseId);
+      if (index < 0) {
+        if (_mapList(metadata['nationalFocusClockReviewHistory'])
+            .any((item) => item['id'] == caseId)) {
+          return;
+        }
+        throw StateError('找不到待核对的国策时钟记录。');
+      }
+      final review = cases.removeAt(index);
+      var reliableThrough = DateTime.parse(
+        review['reliableThroughTime'] as String,
+      ).toUtc();
+      final monotonicAtDetection = _pendingClockReviewId == caseId
+          ? _pendingClockReviewMonotonicTime
+          : null;
+      if (monotonicAtDetection != null) {
+        final currentMonotonic =
+            _injectedMonotonicNow?.call() ?? _monotonicStopwatch.elapsed;
+        final elapsed = currentMonotonic - monotonicAtDetection;
+        reliableThrough = reliableThrough.add(
+          Duration(
+            microseconds: elapsed.inMicroseconds.clamp(0, 1 << 62).toInt(),
+          ),
+        );
+      }
+      final rawNow = _now().toUtc();
+      _trustedClockOffset = rawNow.difference(reliableThrough);
+      final cardIds = (review['cardIds'] as List<dynamic>)
+          .whereType<String>()
+          .toSet();
+      final unresolvedConflictCardIds =
+          _mapList(metadata['nationalFocusReconciliationCases'])
+              .expand(
+                (item) =>
+                    (item['cardIds'] as List<dynamic>).whereType<String>(),
+              )
+              .toSet();
+      final unresolvedClockCardIds = cases
+          .expand(
+            (item) => (item['cardIds'] as List<dynamic>).whereType<String>(),
+          )
+          .toSet();
+      for (final cardId in cardIds) {
+        final card = await _findCardRow(cardId);
+        if (card.reviewDisposition != 'pending_review') continue;
+        if (unresolvedConflictCardIds.contains(cardId) ||
+            unresolvedClockCardIds.contains(cardId)) {
+          continue;
+        }
+        await _updateCard(
+          card,
+          const LocalNationalFocusCardsCompanion(
+            reviewDisposition: Value('accepted'),
+          ),
+        );
+        await (database.update(database.localNationalFocusFailures)
+              ..where((failure) => failure.userId.equals(userId))
+              ..where((failure) => failure.cardId.equals(cardId))
+              ..where(
+                (failure) => failure.reviewDisposition.equals('pending_review'),
+              ))
+            .write(
+              const LocalNationalFocusFailuresCompanion(
+                reviewDisposition: Value('accepted'),
+              ),
+            );
+      }
+      final resolvedAt = _trustedNow();
+      final history = _mapList(metadata['nationalFocusClockReviewHistory']);
+      final deviceId = await _getNationalFocusDeviceId();
+      final clockOffsets = Map<String, dynamic>.from(
+        review['clockOffsetsByDevice'] is Map
+            ? review['clockOffsetsByDevice'] as Map
+            : const <String, dynamic>{},
+      )..[deviceId] = _trustedClockOffset!.inMilliseconds;
+      history.add({
+        ...review,
+        'clockOffsetsByDevice': clockOffsets,
+        'reliableThroughTime': reliableThrough.toIso8601String(),
+        'resolvedAt': resolvedAt.toIso8601String(),
+        'resolution': 'accept_monotonic_estimate',
+        'clockOffsetMilliseconds': _trustedClockOffset!.inMilliseconds,
+      });
+      _pendingClockReviewId = null;
+      _pendingClockReviewMonotonicTime = null;
+      _lastClockSample = _NationalFocusClockSample(
+        wallTime: reliableThrough,
+        monotonicTime:
+            _injectedMonotonicNow?.call() ?? _monotonicStopwatch.elapsed,
+      );
+      await _recordSyncSnapshot(
+        operation: 'resolve_national_focus_clock_review',
+        metadata: {
+          ...metadata,
+          'nationalFocusClockReviewCases': cases,
+          'nationalFocusClockReviewHistory': history,
+        },
+      );
+      await _replayDeferredNationalFocusCheckpointReconciliations();
+      await _settleCheckpointsThrough(reliableThrough);
+    });
+  }
+
+  @override
   Future<void> sync() {
     final nextSync = _syncQueue
         .catchError((Object _) {})
@@ -1237,6 +1828,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       await _recordSyncSnapshot(
         operation: 'synchronization_merge',
         parentSourceIds: [for (final head in heads) head.sourceId],
+        metadata: _reviewMetadataFromSnapshot(mergedSnapshot),
       );
     }
     await remote.upsertSources(
@@ -1295,6 +1887,65 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     ];
   }
 
+  Map<String, dynamic> _nationalFocusReviewMetadataFromSources(
+    List<NationalFocusSyncSource> sources,
+    Iterable<String> parentSourceIds,
+  ) {
+    final parentIds = parentSourceIds.toSet();
+    final reconciliationCases = <String, Map<String, dynamic>>{};
+    final reconciliationHistory = <String, Map<String, dynamic>>{};
+    final clockReviewCases = <String, Map<String, dynamic>>{};
+    final clockReviewHistory = <String, Map<String, dynamic>>{};
+    for (final source in sources) {
+      if (!parentIds.contains(source.sourceId)) continue;
+      final payload = _nationalFocusPayload(source);
+      for (final item in _mapList(
+        payload['nationalFocusReconciliationCases'],
+      )) {
+        final id = item['id'];
+        if (id is String) reconciliationCases[id] = item;
+      }
+      for (final item in _mapList(
+        payload['nationalFocusReconciliationHistory'],
+      )) {
+        final id = item['caseId'];
+        if (id is String) reconciliationHistory[id] = item;
+      }
+      for (final item in _mapList(payload['nationalFocusClockReviewCases'])) {
+        final id = item['id'];
+        if (id is String) clockReviewCases[id] = item;
+      }
+      for (final item in _mapList(payload['nationalFocusClockReviewHistory'])) {
+        final id = item['id'];
+        if (id is String) clockReviewHistory[id] = item;
+      }
+    }
+    return {
+      'nationalFocusReconciliationCases': reconciliationCases.values.toList(),
+      'nationalFocusReconciliationHistory': reconciliationHistory.values
+          .toList(),
+      'nationalFocusClockReviewCases': clockReviewCases.values.toList(),
+      'nationalFocusClockReviewHistory': clockReviewHistory.values.toList(),
+    };
+  }
+
+  Map<String, dynamic> _reviewMetadataFromSnapshot(
+    Map<String, dynamic> snapshot,
+  ) => {
+    'nationalFocusReconciliationCases': _mapList(
+      snapshot['nationalFocusReconciliationCases'],
+    ),
+    'nationalFocusReconciliationHistory': _mapList(
+      snapshot['nationalFocusReconciliationHistory'],
+    ),
+    'nationalFocusClockReviewCases': _mapList(
+      snapshot['nationalFocusClockReviewCases'],
+    ),
+    'nationalFocusClockReviewHistory': _mapList(
+      snapshot['nationalFocusClockReviewHistory'],
+    ),
+  };
+
   Future<void> _recordSyncSnapshot({
     required String operation,
     DateTime? checkpointAt,
@@ -1302,6 +1953,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     Iterable<String> missedConfirmationCardIds = const [],
     Set<String> deletedCardIds = const {},
     List<String>? parentSourceIds,
+    Map<String, dynamic> metadata = const {},
   }) async {
     final existingSources = await _getNationalFocusSyncSources();
     final tombstones = <String>{...deletedCardIds};
@@ -1319,8 +1971,14 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
             .toList()
           ..sort();
     final snapshot = await _currentNationalFocusSnapshot();
+    final inheritedMetadata = _nationalFocusReviewMetadataFromSources(
+      existingSources,
+      resolvedParents,
+    );
     final payload = {
       ...snapshot,
+      ...inheritedMetadata,
+      ...metadata,
       'operation': operation,
       'checkpointAt': checkpointAt?.toUtc().toIso8601String(),
       'confirmedCardIds': confirmedCardIds.toSet().toList()..sort(),
@@ -1333,7 +1991,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       sourceId: _uuid.v4(),
       deviceId: deviceId,
       parentSourceIds: resolvedParents,
-      occurredAt: _now().toUtc(),
+      occurredAt: _trustedNow(),
       payload: jsonEncode(payload),
     );
     await database
@@ -1470,6 +2128,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
             'failureReason': failure.failureReason,
             'sharedExplanation': failure.sharedExplanation,
             'treeSnapshot': failure.treeSnapshot,
+            'reviewDisposition': failure.reviewDisposition,
           },
       ],
       'maintenance': maintenance == null
@@ -1517,6 +2176,38 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     final headSnapshots = {
       for (final head in heads) head.sourceId: payloadsById[head.sourceId]!,
     };
+    final pendingReconciliationCases = <String, Map<String, dynamic>>{};
+    final reconciliationHistory = <String, Map<String, dynamic>>{};
+    final pendingClockReviewCases = <String, Map<String, dynamic>>{};
+    final clockReviewHistory = <String, Map<String, dynamic>>{};
+    for (final snapshot in headSnapshots.values) {
+      for (final review in _mapList(
+        snapshot['nationalFocusReconciliationCases'],
+      )) {
+        final id = review['id'];
+        if (id is String) pendingReconciliationCases[id] = review;
+      }
+      for (final review in _mapList(
+        snapshot['nationalFocusClockReviewCases'],
+      )) {
+        final id = review['id'];
+        if (id is String) pendingClockReviewCases[id] = review;
+      }
+    }
+    for (final snapshot in payloadsById.values) {
+      for (final result in _mapList(
+        snapshot['nationalFocusReconciliationHistory'],
+      )) {
+        final id = result['caseId'];
+        if (id is String) reconciliationHistory[id] = result;
+      }
+      for (final result in _mapList(
+        snapshot['nationalFocusClockReviewHistory'],
+      )) {
+        final id = result['id'];
+        if (id is String) clockReviewHistory[id] = result;
+      }
+    }
 
     final validConfirmations = <String>{};
     for (final source in sources) {
@@ -1667,6 +2358,27 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       tombstones.remove(cardId);
     }
 
+    final reviewGroups = _nationalFocusConflictGroups(
+      conflictingCardIds,
+      headSnapshots.values,
+    );
+    for (final cardIds in reviewGroups) {
+      final id = _nationalFocusReconciliationId(baseSourceId, cardIds);
+      pendingReconciliationCases.putIfAbsent(
+        id,
+        () => _nationalFocusReconciliationCaseJson(
+          id: id,
+          cardIds: cardIds,
+          baseSourceId: baseSourceId,
+          baseCards: baseCards,
+          heads: heads,
+          headSnapshots: headSnapshots,
+          sourcesById: sourcesById,
+          payloadsById: payloadsById,
+        ),
+      );
+    }
+
     final failuresById = <String, Map<String, dynamic>>{};
     for (final snapshot in headSnapshots.values) {
       final failures = snapshot['failures'];
@@ -1682,6 +2394,11 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
                 failure['sharedExplanation'] != null)) {
           failuresById[failureId] = failure;
         }
+      }
+    }
+    for (final failure in failuresById.values) {
+      if (conflictingCardIds.contains(failure['cardId'])) {
+        failure['reviewDisposition'] = 'pending_review';
       }
     }
     failuresById.removeWhere((_, failure) {
@@ -1728,6 +2445,12 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
                   .toIso8601String(),
             },
       'tombstones': tombstones.toList()..sort(),
+      'nationalFocusReconciliationCases': pendingReconciliationCases.values
+          .toList(),
+      'nationalFocusReconciliationHistory': reconciliationHistory.values
+          .toList(),
+      'nationalFocusClockReviewCases': pendingClockReviewCases.values.toList(),
+      'nationalFocusClockReviewHistory': clockReviewHistory.values.toList(),
     };
   }
 
@@ -1878,6 +2601,9 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
                   failure['sharedExplanation'] as String?,
                 ),
                 treeSnapshot: failure['treeSnapshot'] as String,
+                reviewDisposition: Value(
+                  (failure['reviewDisposition'] as String?) ?? 'accepted',
+                ),
               ),
             );
       }
@@ -2327,6 +3053,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       failureReason: row.failureReason,
       sharedExplanation: row.sharedExplanation,
       treeSnapshot: snapshot,
+      isPendingReview: row.reviewDisposition == 'pending_review',
     );
   }
 
@@ -2342,7 +3069,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   }
 
   DateTime _nextTimestamp([DateTime? previous]) {
-    final candidate = _now().toUtc();
+    final candidate = _trustedNow();
     final second = DateTime.fromMillisecondsSinceEpoch(
       candidate.millisecondsSinceEpoch - candidate.millisecond,
       isUtc: true,
@@ -2445,6 +3172,30 @@ class UnavailableNationalFocusRepository implements NationalFocusRepository {
   }) => _unavailable();
 
   @override
+  Stream<NationalFocusReviewState> watchNationalFocusReviewState() =>
+      Stream.value(const NationalFocusReviewState());
+
+  @override
+  Future<NationalFocusReviewState> getNationalFocusReviewState() async =>
+      const NationalFocusReviewState();
+
+  @override
+  Future<void> deferNationalFocusReconciliation(String caseId) =>
+      _unavailable();
+
+  @override
+  Future<void> resolveNationalFocusReconciliation({
+    required String caseId,
+    required String selectedSourceId,
+  }) => _unavailable();
+
+  @override
+  Future<void> deferNationalFocusClockReview(String caseId) => _unavailable();
+
+  @override
+  Future<void> resolveNationalFocusClockReview(String caseId) => _unavailable();
+
+  @override
   Future<void> sync() async {}
 
   @override
@@ -2454,6 +3205,191 @@ class UnavailableNationalFocusRepository implements NationalFocusRepository {
     throw StateError('当前用户的国策卡片存储尚未配置。');
   }
 }
+
+DateTime? _nationalFocusCheckpointFromSnapshot(Map<String, dynamic> snapshot) {
+  final maintenance = snapshot['maintenance'];
+  final rawCheckpoint = maintenance is Map
+      ? maintenance['lastSettledCheckpointAt']
+      : null;
+  return rawCheckpoint is String ? DateTime.parse(rawCheckpoint).toUtc() : null;
+}
+
+Set<String> _nationalFocusCheckpointReplayCardIds(
+  Set<String> affectedCardIds,
+  List<Map<String, dynamic>> resolvedCards,
+) {
+  final replayCardIds = <String>{...affectedCardIds};
+  final cardsById = {
+    for (final card in resolvedCards) card['id'] as String: card,
+  };
+  for (final card in resolvedCards) {
+    final cardId = card['id'] as String;
+    final visited = <String>{cardId};
+    var parentId = card['parentId'] as String?;
+    while (parentId != null && visited.add(parentId)) {
+      if (affectedCardIds.contains(parentId)) {
+        replayCardIds.add(cardId);
+        break;
+      }
+      parentId = cardsById[parentId]?['parentId'] as String?;
+    }
+  }
+  return replayCardIds;
+}
+
+List<Map<String, dynamic>> _mapList(Object? value) => value is List
+    ? value
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList()
+    : <Map<String, dynamic>>[];
+
+NationalFocusReviewState _nationalFocusReviewStateFromSources({
+  required List<Map<String, dynamic>> pendingPayloads,
+  required List<NationalFocusSyncSource> sources,
+}) {
+  final casesById = <String, Map<String, dynamic>>{};
+  final clockCasesById = <String, Map<String, dynamic>>{};
+  final historyById = <String, Map<String, dynamic>>{};
+  final clockHistoryById = <String, Map<String, dynamic>>{};
+  for (final payload in pendingPayloads) {
+    for (final item in _mapList(payload['nationalFocusReconciliationCases'])) {
+      final id = item['id'];
+      if (id is String) casesById[id] = item;
+    }
+    for (final item in _mapList(payload['nationalFocusClockReviewCases'])) {
+      final id = item['id'];
+      if (id is String) clockCasesById[id] = item;
+    }
+  }
+  for (final source in sources) {
+    final payload = _nationalFocusPayload(source);
+    for (final item in _mapList(
+      payload['nationalFocusReconciliationHistory'],
+    )) {
+      final id = item['caseId'];
+      if (id is String) historyById[id] = item;
+    }
+    for (final item in _mapList(payload['nationalFocusClockReviewHistory'])) {
+      final id = item['id'];
+      if (id is String) clockHistoryById[id] = item;
+    }
+  }
+
+  final cases = casesById.values.map((item) {
+    final options = _mapList(item['options'])
+        .map((option) {
+          final operations = _mapList(option['operations'])
+              .map((operation) {
+                return NationalFocusReconciliationOperation(
+                  sourceId: operation['sourceId'] as String,
+                  deviceId: operation['deviceId'] as String,
+                  operation: operation['operation'] as String,
+                  occurredAt: DateTime.parse(operation['occurredAt'] as String)
+                      .toUtc(),
+                  effects: _nationalFocusEffectsFromJson(operation['effects']),
+                );
+              })
+              .toList(growable: false);
+          return NationalFocusReconciliationOption(
+            sourceId: option['sourceId'] as String,
+            operations: operations,
+            effects: _nationalFocusEffectsFromJson(option['effects']),
+          );
+        })
+        .toList(growable: false);
+    return NationalFocusReconciliationCase(
+      id: item['id'] as String,
+      createdAt: DateTime.parse(item['createdAt'] as String).toUtc(),
+      cardIds: (item['cardIds'] as List<dynamic>).whereType<String>().toList(),
+      cardNames: {
+        for (final entry in Map<String, dynamic>.from(
+          item['cardNames'] as Map,
+        ).entries)
+          entry.key: entry.value as String,
+      },
+      options: options,
+      isDeferred: item['isDeferred'] == true,
+    );
+  }).toList()..sort((left, right) => left.createdAt.compareTo(right.createdAt));
+
+  NationalFocusClockReviewCase clockCase(
+    Map<String, dynamic> item,
+  ) => NationalFocusClockReviewCase(
+    id: item['id'] as String,
+    direction: item['direction'] == 'backward'
+        ? NationalFocusClockChangeDirection.backward
+        : NationalFocusClockChangeDirection.forward,
+    detectedAt: DateTime.parse(item['detectedAt'] as String).toUtc(),
+    previousWallTime: DateTime.parse(item['previousWallTime'] as String)
+        .toUtc(),
+    observedWallTime: DateTime.parse(item['observedWallTime'] as String)
+        .toUtc(),
+    reliableThroughTime: DateTime.parse(item['reliableThroughTime'] as String)
+        .toUtc(),
+    estimatedElapsedSeconds: item['estimatedElapsedSeconds'] as int,
+    cardIds: (item['cardIds'] as List<dynamic>).whereType<String>().toList(),
+    isDeferred: item['isDeferred'] == true,
+  );
+
+  final reconciliationHistory =
+      historyById.values.map((item) {
+          return NationalFocusReconciliationResult(
+            caseId: item['caseId'] as String,
+            resolvedAt: DateTime.parse(item['resolvedAt'] as String).toUtc(),
+            cardIds: (item['cardIds'] as List<dynamic>)
+                .whereType<String>()
+                .toList(),
+            acceptedSourceIds: (item['acceptedSourceIds'] as List<dynamic>)
+                .whereType<String>()
+                .toList(),
+            retainedSourceIds: (item['retainedSourceIds'] as List<dynamic>)
+                .whereType<String>()
+                .toList(),
+          );
+        }).toList()
+        ..sort((left, right) => left.resolvedAt.compareTo(right.resolvedAt));
+
+  return NationalFocusReviewState(
+    reconciliationCases: cases,
+    clockReviewCases: clockCasesById.values.map(clockCase).toList()
+      ..sort((left, right) => left.detectedAt.compareTo(right.detectedAt)),
+    reconciliationHistory: reconciliationHistory,
+    clockReviewHistory: clockHistoryById.values.map(clockCase).toList()
+      ..sort((left, right) => left.detectedAt.compareTo(right.detectedAt)),
+  );
+}
+
+List<NationalFocusReconciliationCardEffect> _nationalFocusEffectsFromJson(
+  Object? value,
+) => [
+  for (final item in _mapList(value))
+    NationalFocusReconciliationCardEffect(
+      cardId: item['cardId'] as String,
+      triggerCondition: item['triggerCondition'] as String?,
+      previousState: item['previousState'] as String?,
+      newState: item['newState'] as String?,
+      previousParentId: item['previousParentId'] as String?,
+      newParentId: item['newParentId'] as String?,
+      previousIsInTree: item['previousIsInTree'] as bool?,
+      newIsInTree: item['newIsInTree'] as bool?,
+      previousFailureReason: item['previousFailureReason'] as String?,
+      newFailureReason: item['newFailureReason'] as String?,
+      previousCascadeSourceCardId:
+          item['previousCascadeSourceCardId'] as String?,
+      newCascadeSourceCardId: item['newCascadeSourceCardId'] as String?,
+      previousSuccessfulDays: item['previousSuccessfulDays'] as int?,
+      newSuccessfulDays: item['newSuccessfulDays'] as int?,
+      previousCurrentConsecutiveDays:
+          item['previousCurrentConsecutiveDays'] as int?,
+      newCurrentConsecutiveDays: item['newCurrentConsecutiveDays'] as int?,
+      previousBestConsecutiveDays: item['previousBestConsecutiveDays'] as int?,
+      newBestConsecutiveDays: item['newBestConsecutiveDays'] as int?,
+      previousMaintenanceCycleStarted:
+          item['previousMaintenanceCycleStarted'] as bool?,
+      newMaintenanceCycleStarted: item['newMaintenanceCycleStarted'] as bool?,
+    ),
+];
 
 Map<String, dynamic> _nationalFocusSourceToJson(
   NationalFocusSyncSource source, {
@@ -2559,6 +3495,215 @@ Map<String, Map<String, dynamic>> _nationalFocusCardsById(
       if (rawCard['id'] is String)
         rawCard['id'] as String: Map<String, dynamic>.from(rawCard),
   };
+}
+
+String _nationalFocusReconciliationId(
+  String? baseSourceId,
+  List<String> cardIds,
+) => 'national-focus:${baseSourceId ?? 'root'}:${cardIds.join(',')}';
+
+List<List<String>> _nationalFocusConflictGroups(
+  Set<String> conflictingCardIds,
+  Iterable<Map<String, dynamic>> snapshots,
+) {
+  final neighbors = {
+    for (final cardId in conflictingCardIds) cardId: <String>{},
+  };
+  for (final snapshot in snapshots) {
+    final cards = _nationalFocusCardsById(snapshot);
+    for (final cardId in conflictingCardIds) {
+      final parentId = cards[cardId]?['parentId'];
+      if (parentId is! String || !conflictingCardIds.contains(parentId)) {
+        continue;
+      }
+      neighbors[cardId]!.add(parentId);
+      neighbors[parentId]!.add(cardId);
+    }
+  }
+  final groups = <List<String>>[];
+  final unvisited = {...conflictingCardIds};
+  while (unvisited.isNotEmpty) {
+    final group = <String>{};
+    final pending = <String>[unvisited.first];
+    while (pending.isNotEmpty) {
+      final cardId = pending.removeLast();
+      if (!unvisited.remove(cardId)) continue;
+      group.add(cardId);
+      pending.addAll(neighbors[cardId]!.where(unvisited.contains));
+    }
+    groups.add(group.toList()..sort());
+  }
+  groups.sort((left, right) => left.first.compareTo(right.first));
+  return groups;
+}
+
+Map<String, dynamic> _nationalFocusReconciliationCaseJson({
+  required String id,
+  required List<String> cardIds,
+  required String? baseSourceId,
+  required Map<String, Map<String, dynamic>> baseCards,
+  required List<NationalFocusSyncSource> heads,
+  required Map<String, Map<String, dynamic>> headSnapshots,
+  required Map<String, NationalFocusSyncSource> sourcesById,
+  required Map<String, Map<String, dynamic>> payloadsById,
+}) {
+  final baseAncestors = baseSourceId == null
+      ? <String>{}
+      : _nationalFocusAncestors(baseSourceId, sourcesById);
+  final options = <Map<String, dynamic>>[];
+  for (final head in heads) {
+    final headCards = _nationalFocusCardsById(headSnapshots[head.sourceId]!);
+    final optionEffects = <Map<String, dynamic>>[];
+    for (final cardId in cardIds) {
+      final before = baseCards[cardId];
+      final after = headCards[cardId];
+      if (_nationalFocusCardSignature(before) ==
+          _nationalFocusCardSignature(after)) {
+        continue;
+      }
+      optionEffects.add(_nationalFocusEffectJson(cardId, before, after));
+    }
+    if (optionEffects.isEmpty) continue;
+
+    final branchSourceIds =
+        _nationalFocusAncestors(
+          head.sourceId,
+          sourcesById,
+        ).difference(baseAncestors).toList()..sort((left, right) {
+          final timeOrder = sourcesById[left]!.occurredAt.compareTo(
+            sourcesById[right]!.occurredAt,
+          );
+          return timeOrder == 0 ? left.compareTo(right) : timeOrder;
+        });
+    final operations = <Map<String, dynamic>>[];
+    for (final sourceId in branchSourceIds) {
+      final source = sourcesById[sourceId]!;
+      final payload = payloadsById[sourceId]!;
+      final sourceCards = _nationalFocusCardsById(payload);
+      Map<String, Map<String, dynamic>> previousCards = baseCards;
+      for (final parentSourceId in source.parentSourceIds) {
+        final parentPayload = payloadsById[parentSourceId];
+        if (parentPayload != null) {
+          previousCards = _nationalFocusCardsById(parentPayload);
+          break;
+        }
+      }
+      final operationEffects = <Map<String, dynamic>>[];
+      for (final cardId in cardIds) {
+        final before = previousCards[cardId] ?? baseCards[cardId];
+        final after = sourceCards[cardId];
+        if (_nationalFocusCardSignature(before) ==
+            _nationalFocusCardSignature(after)) {
+          continue;
+        }
+        operationEffects.add(_nationalFocusEffectJson(cardId, before, after));
+      }
+      if (operationEffects.isEmpty) continue;
+      operations.add({
+        'sourceId': source.sourceId,
+        'deviceId': source.deviceId,
+        'operation': payload['operation'] is String
+            ? payload['operation'] as String
+            : 'unknown',
+        'occurredAt': source.occurredAt.toUtc().toIso8601String(),
+        'effects': operationEffects,
+      });
+    }
+    options.add({
+      'sourceId': head.sourceId,
+      'operations': operations,
+      'effects': optionEffects,
+    });
+  }
+  final createdAt = heads
+      .map((source) => source.occurredAt.toUtc())
+      .reduce((left, right) => left.isAfter(right) ? left : right);
+  return {
+    'id': id,
+    'createdAt': createdAt.toIso8601String(),
+    'cardIds': cardIds,
+    'cardNames': {
+      for (final cardId in cardIds)
+        cardId: _nationalFocusConflictCardName(
+          cardId,
+          baseCards,
+          heads,
+          headSnapshots,
+        ),
+    },
+    'baseSourceId': baseSourceId,
+    'options': options,
+    'isDeferred': false,
+  };
+}
+
+Map<String, dynamic> _nationalFocusEffectJson(
+  String cardId,
+  Map<String, dynamic>? before,
+  Map<String, dynamic>? after,
+) => {
+  'cardId': cardId,
+  'triggerCondition': after?['triggerCondition'] ?? before?['triggerCondition'],
+  'previousState': before?['state'],
+  'newState': after?['state'],
+  'previousParentId': before?['parentId'],
+  'newParentId': after?['parentId'],
+  'previousIsInTree': before?['isInTree'],
+  'newIsInTree': after?['isInTree'],
+  'previousFailureReason': before?['failureReason'],
+  'newFailureReason': after?['failureReason'],
+  'previousCascadeSourceCardId': before?['cascadeSourceCardId'],
+  'newCascadeSourceCardId': after?['cascadeSourceCardId'],
+  'previousSuccessfulDays': before?['successfulDays'],
+  'newSuccessfulDays': after?['successfulDays'],
+  'previousCurrentConsecutiveDays': before?['currentConsecutiveDays'],
+  'newCurrentConsecutiveDays': after?['currentConsecutiveDays'],
+  'previousBestConsecutiveDays': before?['bestConsecutiveDays'],
+  'newBestConsecutiveDays': after?['bestConsecutiveDays'],
+  'previousMaintenanceCycleStarted': before?['maintenanceCycleStarted'],
+  'newMaintenanceCycleStarted': after?['maintenanceCycleStarted'],
+};
+
+String _nationalFocusConflictCardName(
+  String cardId,
+  Map<String, Map<String, dynamic>> baseCards,
+  List<NationalFocusSyncSource> heads,
+  Map<String, Map<String, dynamic>> headSnapshots,
+) {
+  final baseName = baseCards[cardId]?['triggerCondition'];
+  if (baseName is String) return baseName;
+  for (final head in heads) {
+    final name = _nationalFocusCardsById(
+      headSnapshots[head.sourceId]!,
+    )[cardId]?['triggerCondition'];
+    if (name is String) return name;
+  }
+  return '已删除的国策卡';
+}
+
+bool _isValidNationalFocusTree(List<Map<String, dynamic>> cards) {
+  final cardsById = {for (final card in cards) card['id'] as String: card};
+  for (final card in cards) {
+    final cardId = card['id'] as String;
+    final parentId = card['parentId'] as String?;
+    if (card['isInTree'] != true) {
+      if (parentId != null) return false;
+      continue;
+    }
+    final visited = <String>{cardId};
+    var ancestorId = parentId;
+    while (ancestorId != null) {
+      if (!visited.add(ancestorId)) return false;
+      final ancestor = cardsById[ancestorId];
+      if (ancestor == null ||
+          ancestor['isInTree'] != true ||
+          ancestor['deletedAt'] != null) {
+        return false;
+      }
+      ancestorId = ancestor['parentId'] as String?;
+    }
+  }
+  return true;
 }
 
 String _nationalFocusCardSignature(Map<String, dynamic>? card) {

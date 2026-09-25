@@ -7,6 +7,7 @@ import 'package:timezone/timezone.dart' as timezone;
 import '../focus/focus_time_zones.dart';
 import 'national_focus_checkpoints.dart';
 import 'national_focus_models.dart';
+import 'national_focus_reconciliation_page.dart';
 import 'national_focus_repository.dart';
 import 'national_focus_strengthening_page.dart';
 
@@ -408,6 +409,10 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                   ),
                 ],
               ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: NationalFocusReviewPrompt(repository: widget.repository),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
@@ -1920,8 +1925,14 @@ class _FailureBatchCard extends StatelessWidget {
       child: Column(
         children: [
           ExpansionTile(
-            title: Text('$checkpointLabel · ${failures.length} 个节点'),
-            subtitle: Text(representative.cause.label),
+            title: Text(
+              '$checkpointLabel · ${failures.length} 个节点'
+              '${failures.any((failure) => failure.isPendingReview) ? ' · 待核对' : ''}',
+            ),
+            subtitle: Text(
+              '${representative.cause.label}'
+              '${representative.isPendingReview ? ' · 此记录尚未裁定' : ''}',
+            ),
             children: [
               for (final failure in failures)
                 ListTile(
@@ -1929,7 +1940,8 @@ class _FailureBatchCard extends StatelessWidget {
                   title: Text(_snapshotName(failure)),
                   subtitle: Text(
                     '${failure.cause.label} · '
-                    '${failure.failureReason ?? '原因未填写'}',
+                    '${failure.failureReason ?? '原因未填写'}'
+                    '${failure.isPendingReview ? ' · 待核对' : ''}',
                   ),
                 ),
               const Divider(),

@@ -243,6 +243,7 @@ class NationalFocusFailure {
     required this.failureReason,
     required this.sharedExplanation,
     required this.treeSnapshot,
+    this.isPendingReview = false,
   });
 
   final String id;
@@ -253,6 +254,156 @@ class NationalFocusFailure {
   final String? failureReason;
   final String? sharedExplanation;
   final List<NationalFocusCardSnapshot> treeSnapshot;
+  final bool isPendingReview;
+}
+
+enum NationalFocusClockChangeDirection { forward, backward }
+
+class NationalFocusReconciliationCardEffect {
+  const NationalFocusReconciliationCardEffect({
+    required this.cardId,
+    this.triggerCondition,
+    this.previousState,
+    this.newState,
+    this.previousParentId,
+    this.newParentId,
+    this.previousIsInTree,
+    this.newIsInTree,
+    this.previousFailureReason,
+    this.newFailureReason,
+    this.previousCascadeSourceCardId,
+    this.newCascadeSourceCardId,
+    this.previousSuccessfulDays,
+    this.newSuccessfulDays,
+    this.previousCurrentConsecutiveDays,
+    this.newCurrentConsecutiveDays,
+    this.previousBestConsecutiveDays,
+    this.newBestConsecutiveDays,
+    this.previousMaintenanceCycleStarted,
+    this.newMaintenanceCycleStarted,
+  });
+
+  final String cardId;
+  final String? triggerCondition;
+  final String? previousState;
+  final String? newState;
+  final String? previousParentId;
+  final String? newParentId;
+  final bool? previousIsInTree;
+  final bool? newIsInTree;
+  final String? previousFailureReason;
+  final String? newFailureReason;
+  final String? previousCascadeSourceCardId;
+  final String? newCascadeSourceCardId;
+  final int? previousSuccessfulDays;
+  final int? newSuccessfulDays;
+  final int? previousCurrentConsecutiveDays;
+  final int? newCurrentConsecutiveDays;
+  final int? previousBestConsecutiveDays;
+  final int? newBestConsecutiveDays;
+  final bool? previousMaintenanceCycleStarted;
+  final bool? newMaintenanceCycleStarted;
+}
+
+class NationalFocusReconciliationOperation {
+  const NationalFocusReconciliationOperation({
+    required this.sourceId,
+    required this.deviceId,
+    required this.operation,
+    required this.occurredAt,
+    required this.effects,
+  });
+
+  final String sourceId;
+  final String deviceId;
+  final String operation;
+  final DateTime occurredAt;
+  final List<NationalFocusReconciliationCardEffect> effects;
+}
+
+class NationalFocusReconciliationOption {
+  const NationalFocusReconciliationOption({
+    required this.sourceId,
+    required this.operations,
+    required this.effects,
+  });
+
+  /// The immutable synchronization source whose complete branch is selected.
+  final String sourceId;
+  final List<NationalFocusReconciliationOperation> operations;
+  final List<NationalFocusReconciliationCardEffect> effects;
+}
+
+class NationalFocusReconciliationCase {
+  const NationalFocusReconciliationCase({
+    required this.id,
+    required this.createdAt,
+    required this.cardIds,
+    required this.cardNames,
+    required this.options,
+    this.isDeferred = false,
+  });
+
+  final String id;
+  final DateTime createdAt;
+  final List<String> cardIds;
+  final Map<String, String> cardNames;
+  final List<NationalFocusReconciliationOption> options;
+  final bool isDeferred;
+}
+
+class NationalFocusReconciliationResult {
+  const NationalFocusReconciliationResult({
+    required this.caseId,
+    required this.resolvedAt,
+    required this.cardIds,
+    required this.acceptedSourceIds,
+    required this.retainedSourceIds,
+  });
+
+  final String caseId;
+  final DateTime resolvedAt;
+  final List<String> cardIds;
+  final List<String> acceptedSourceIds;
+  final List<String> retainedSourceIds;
+}
+
+class NationalFocusClockReviewCase {
+  const NationalFocusClockReviewCase({
+    required this.id,
+    required this.direction,
+    required this.detectedAt,
+    required this.previousWallTime,
+    required this.observedWallTime,
+    required this.reliableThroughTime,
+    required this.estimatedElapsedSeconds,
+    required this.cardIds,
+    this.isDeferred = false,
+  });
+
+  final String id;
+  final NationalFocusClockChangeDirection direction;
+  final DateTime detectedAt;
+  final DateTime previousWallTime;
+  final DateTime observedWallTime;
+  final DateTime reliableThroughTime;
+  final int estimatedElapsedSeconds;
+  final List<String> cardIds;
+  final bool isDeferred;
+}
+
+class NationalFocusReviewState {
+  const NationalFocusReviewState({
+    this.reconciliationCases = const [],
+    this.clockReviewCases = const [],
+    this.reconciliationHistory = const [],
+    this.clockReviewHistory = const [],
+  });
+
+  final List<NationalFocusReconciliationCase> reconciliationCases;
+  final List<NationalFocusClockReviewCase> clockReviewCases;
+  final List<NationalFocusReconciliationResult> reconciliationHistory;
+  final List<NationalFocusClockReviewCase> clockReviewHistory;
 }
 
 class NationalFocusCardDraft {

@@ -4018,6 +4018,19 @@ class $LocalNationalFocusFailuresTable extends LocalNationalFocusFailures
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _reviewDispositionMeta = const VerificationMeta(
+    'reviewDisposition',
+  );
+  @override
+  late final GeneratedColumn<String> reviewDisposition =
+      GeneratedColumn<String>(
+        'review_disposition',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant('accepted'),
+      );
   @override
   List<GeneratedColumn> get $columns => [
     userId,
@@ -4029,6 +4042,7 @@ class $LocalNationalFocusFailuresTable extends LocalNationalFocusFailures
     failureReason,
     sharedExplanation,
     treeSnapshot,
+    reviewDisposition,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4119,6 +4133,15 @@ class $LocalNationalFocusFailuresTable extends LocalNationalFocusFailures
     } else if (isInserting) {
       context.missing(_treeSnapshotMeta);
     }
+    if (data.containsKey('review_disposition')) {
+      context.handle(
+        _reviewDispositionMeta,
+        reviewDisposition.isAcceptableOrUnknown(
+          data['review_disposition']!,
+          _reviewDispositionMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -4167,6 +4190,10 @@ class $LocalNationalFocusFailuresTable extends LocalNationalFocusFailures
         DriftSqlType.string,
         data['${effectivePrefix}tree_snapshot'],
       )!,
+      reviewDisposition: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}review_disposition'],
+      )!,
     );
   }
 
@@ -4187,6 +4214,7 @@ class LocalNationalFocusFailure extends DataClass
   final String? failureReason;
   final String? sharedExplanation;
   final String treeSnapshot;
+  final String reviewDisposition;
   const LocalNationalFocusFailure({
     required this.userId,
     required this.id,
@@ -4197,6 +4225,7 @@ class LocalNationalFocusFailure extends DataClass
     this.failureReason,
     this.sharedExplanation,
     required this.treeSnapshot,
+    required this.reviewDisposition,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -4214,6 +4243,7 @@ class LocalNationalFocusFailure extends DataClass
       map['shared_explanation'] = Variable<String>(sharedExplanation);
     }
     map['tree_snapshot'] = Variable<String>(treeSnapshot);
+    map['review_disposition'] = Variable<String>(reviewDisposition);
     return map;
   }
 
@@ -4232,6 +4262,7 @@ class LocalNationalFocusFailure extends DataClass
           ? const Value.absent()
           : Value(sharedExplanation),
       treeSnapshot: Value(treeSnapshot),
+      reviewDisposition: Value(reviewDisposition),
     );
   }
 
@@ -4252,6 +4283,7 @@ class LocalNationalFocusFailure extends DataClass
         json['sharedExplanation'],
       ),
       treeSnapshot: serializer.fromJson<String>(json['treeSnapshot']),
+      reviewDisposition: serializer.fromJson<String>(json['reviewDisposition']),
     );
   }
   @override
@@ -4267,6 +4299,7 @@ class LocalNationalFocusFailure extends DataClass
       'failureReason': serializer.toJson<String?>(failureReason),
       'sharedExplanation': serializer.toJson<String?>(sharedExplanation),
       'treeSnapshot': serializer.toJson<String>(treeSnapshot),
+      'reviewDisposition': serializer.toJson<String>(reviewDisposition),
     };
   }
 
@@ -4280,6 +4313,7 @@ class LocalNationalFocusFailure extends DataClass
     Value<String?> failureReason = const Value.absent(),
     Value<String?> sharedExplanation = const Value.absent(),
     String? treeSnapshot,
+    String? reviewDisposition,
   }) => LocalNationalFocusFailure(
     userId: userId ?? this.userId,
     id: id ?? this.id,
@@ -4294,6 +4328,7 @@ class LocalNationalFocusFailure extends DataClass
         ? sharedExplanation.value
         : this.sharedExplanation,
     treeSnapshot: treeSnapshot ?? this.treeSnapshot,
+    reviewDisposition: reviewDisposition ?? this.reviewDisposition,
   );
   LocalNationalFocusFailure copyWithCompanion(
     LocalNationalFocusFailuresCompanion data,
@@ -4316,6 +4351,9 @@ class LocalNationalFocusFailure extends DataClass
       treeSnapshot: data.treeSnapshot.present
           ? data.treeSnapshot.value
           : this.treeSnapshot,
+      reviewDisposition: data.reviewDisposition.present
+          ? data.reviewDisposition.value
+          : this.reviewDisposition,
     );
   }
 
@@ -4330,7 +4368,8 @@ class LocalNationalFocusFailure extends DataClass
           ..write('cause: $cause, ')
           ..write('failureReason: $failureReason, ')
           ..write('sharedExplanation: $sharedExplanation, ')
-          ..write('treeSnapshot: $treeSnapshot')
+          ..write('treeSnapshot: $treeSnapshot, ')
+          ..write('reviewDisposition: $reviewDisposition')
           ..write(')'))
         .toString();
   }
@@ -4346,6 +4385,7 @@ class LocalNationalFocusFailure extends DataClass
     failureReason,
     sharedExplanation,
     treeSnapshot,
+    reviewDisposition,
   );
   @override
   bool operator ==(Object other) =>
@@ -4359,7 +4399,8 @@ class LocalNationalFocusFailure extends DataClass
           other.cause == this.cause &&
           other.failureReason == this.failureReason &&
           other.sharedExplanation == this.sharedExplanation &&
-          other.treeSnapshot == this.treeSnapshot);
+          other.treeSnapshot == this.treeSnapshot &&
+          other.reviewDisposition == this.reviewDisposition);
 }
 
 class LocalNationalFocusFailuresCompanion
@@ -4373,6 +4414,7 @@ class LocalNationalFocusFailuresCompanion
   final Value<String?> failureReason;
   final Value<String?> sharedExplanation;
   final Value<String> treeSnapshot;
+  final Value<String> reviewDisposition;
   final Value<int> rowid;
   const LocalNationalFocusFailuresCompanion({
     this.userId = const Value.absent(),
@@ -4384,6 +4426,7 @@ class LocalNationalFocusFailuresCompanion
     this.failureReason = const Value.absent(),
     this.sharedExplanation = const Value.absent(),
     this.treeSnapshot = const Value.absent(),
+    this.reviewDisposition = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   LocalNationalFocusFailuresCompanion.insert({
@@ -4396,6 +4439,7 @@ class LocalNationalFocusFailuresCompanion
     this.failureReason = const Value.absent(),
     this.sharedExplanation = const Value.absent(),
     required String treeSnapshot,
+    this.reviewDisposition = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
        id = Value(id),
@@ -4414,6 +4458,7 @@ class LocalNationalFocusFailuresCompanion
     Expression<String>? failureReason,
     Expression<String>? sharedExplanation,
     Expression<String>? treeSnapshot,
+    Expression<String>? reviewDisposition,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -4426,6 +4471,7 @@ class LocalNationalFocusFailuresCompanion
       if (failureReason != null) 'failure_reason': failureReason,
       if (sharedExplanation != null) 'shared_explanation': sharedExplanation,
       if (treeSnapshot != null) 'tree_snapshot': treeSnapshot,
+      if (reviewDisposition != null) 'review_disposition': reviewDisposition,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -4440,6 +4486,7 @@ class LocalNationalFocusFailuresCompanion
     Value<String?>? failureReason,
     Value<String?>? sharedExplanation,
     Value<String>? treeSnapshot,
+    Value<String>? reviewDisposition,
     Value<int>? rowid,
   }) {
     return LocalNationalFocusFailuresCompanion(
@@ -4452,6 +4499,7 @@ class LocalNationalFocusFailuresCompanion
       failureReason: failureReason ?? this.failureReason,
       sharedExplanation: sharedExplanation ?? this.sharedExplanation,
       treeSnapshot: treeSnapshot ?? this.treeSnapshot,
+      reviewDisposition: reviewDisposition ?? this.reviewDisposition,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4486,6 +4534,9 @@ class LocalNationalFocusFailuresCompanion
     if (treeSnapshot.present) {
       map['tree_snapshot'] = Variable<String>(treeSnapshot.value);
     }
+    if (reviewDisposition.present) {
+      map['review_disposition'] = Variable<String>(reviewDisposition.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4504,6 +4555,7 @@ class LocalNationalFocusFailuresCompanion
           ..write('failureReason: $failureReason, ')
           ..write('sharedExplanation: $sharedExplanation, ')
           ..write('treeSnapshot: $treeSnapshot, ')
+          ..write('reviewDisposition: $reviewDisposition, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -11679,6 +11731,7 @@ typedef $$LocalNationalFocusFailuresTableCreateCompanionBuilder =
       Value<String?> failureReason,
       Value<String?> sharedExplanation,
       required String treeSnapshot,
+      Value<String> reviewDisposition,
       Value<int> rowid,
     });
 typedef $$LocalNationalFocusFailuresTableUpdateCompanionBuilder =
@@ -11692,6 +11745,7 @@ typedef $$LocalNationalFocusFailuresTableUpdateCompanionBuilder =
       Value<String?> failureReason,
       Value<String?> sharedExplanation,
       Value<String> treeSnapshot,
+      Value<String> reviewDisposition,
       Value<int> rowid,
     });
 
@@ -11746,6 +11800,11 @@ class $$LocalNationalFocusFailuresTableFilterComposer
 
   ColumnFilters<String> get treeSnapshot => $composableBuilder(
     column: $table.treeSnapshot,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reviewDisposition => $composableBuilder(
+    column: $table.reviewDisposition,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -11803,6 +11862,11 @@ class $$LocalNationalFocusFailuresTableOrderingComposer
     column: $table.treeSnapshot,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get reviewDisposition => $composableBuilder(
+    column: $table.reviewDisposition,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$LocalNationalFocusFailuresTableAnnotationComposer
@@ -11846,6 +11910,11 @@ class $$LocalNationalFocusFailuresTableAnnotationComposer
 
   GeneratedColumn<String> get treeSnapshot => $composableBuilder(
     column: $table.treeSnapshot,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get reviewDisposition => $composableBuilder(
+    column: $table.reviewDisposition,
     builder: (column) => column,
   );
 }
@@ -11905,6 +11974,7 @@ class $$LocalNationalFocusFailuresTableTableManager
                 Value<String?> failureReason = const Value.absent(),
                 Value<String?> sharedExplanation = const Value.absent(),
                 Value<String> treeSnapshot = const Value.absent(),
+                Value<String> reviewDisposition = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalNationalFocusFailuresCompanion(
                 userId: userId,
@@ -11916,6 +11986,7 @@ class $$LocalNationalFocusFailuresTableTableManager
                 failureReason: failureReason,
                 sharedExplanation: sharedExplanation,
                 treeSnapshot: treeSnapshot,
+                reviewDisposition: reviewDisposition,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -11929,6 +12000,7 @@ class $$LocalNationalFocusFailuresTableTableManager
                 Value<String?> failureReason = const Value.absent(),
                 Value<String?> sharedExplanation = const Value.absent(),
                 required String treeSnapshot,
+                Value<String> reviewDisposition = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalNationalFocusFailuresCompanion.insert(
                 userId: userId,
@@ -11940,6 +12012,7 @@ class $$LocalNationalFocusFailuresTableTableManager
                 failureReason: failureReason,
                 sharedExplanation: sharedExplanation,
                 treeSnapshot: treeSnapshot,
+                reviewDisposition: reviewDisposition,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
