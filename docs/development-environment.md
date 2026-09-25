@@ -72,7 +72,7 @@ Android 的下一步：在 Android Studio 的 SDK Manager → SDK Tools 中安�
 
 数据库结构变更保留为仓库中的迁移文件；管理员授予注册资格、资格原子消费、RLS 和用户隔离由远端 Supabase 真实验证。客户端 key 不替代可信服务端权限。当前注册流程不使用 Auth 深链，因为 T01 不发送邮箱验证或恢复消息。
 
-仅在以后明确需要完全本地的后端时，再安装 Supabase CLI 和 Docker 兼容运行时，初始化本仓库的 Supabase 配置并使用本地实例给出的 URL/key。当前仓库没有 `supabase/config.toml`，本地后端不属于当前开发前置步骤。
+仅在以后明确需要完全本地的后端时，再安装 Supabase CLI 和 Docker 兼容运行时，初始化本仓库的 Supabase 配置并使用本地实例给出的 URL/key。当前 `supabase/config.toml` 仅声明云端管理员密码重置 Edge Function 的 JWT 校验，不配置本地 Supabase 服务；本地后端不属于当前开发前置步骤。
 
 ## 参考
 

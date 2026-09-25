@@ -63,8 +63,31 @@ class SupabaseAuthRepository implements AuthRepository {
     ) as bool;
   }
 
+  @override
+  Future<void> adminResetUserPassword({
+    required String targetEmail,
+    required String newPassword,
+    required bool manualVerificationConfirmed,
+  }) async {
+    if (!manualVerificationConfirmed) {
+      throw const FormatException('请先确认已完成人工核实。');
+    }
+    _requireEmail(targetEmail);
+    if (newPassword.length < 8) {
+      throw const FormatException('新密码至少需要 8 个字符。');
+    }
+    await _client.functions.invoke(
+      'admin-reset-user-password',
+      body: {
+        'email': targetEmail.trim().toLowerCase(),
+        'new_password': newPassword,
+        'manual_verification_confirmed': true,
+      },
+    );
+  }
+
   void _requireEmail(String value) {
-    if (!value.contains('@')) {
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value.trim())) {
       throw const FormatException('请输入有效的邮箱地址。');
     }
   }
@@ -107,6 +130,15 @@ class UnavailableAuthRepository implements AuthRepository {
 
   @override
   Future<bool> revokeEligibility({required String email}) async {
+    throw StateError(message);
+  }
+
+  @override
+  Future<void> adminResetUserPassword({
+    required String targetEmail,
+    required String newPassword,
+    required bool manualVerificationConfirmed,
+  }) async {
     throw StateError(message);
   }
 }

@@ -8,6 +8,7 @@ import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'src/auth/auth_repository.dart';
+import 'src/auth/admin_password_reset_card.dart';
 import 'src/auth/supabase_auth_repository.dart';
 import 'src/board/national_focus_summary_card.dart';
 import 'src/calendar/calendar_page.dart';
@@ -3320,9 +3321,15 @@ class _MyPageState extends ConsumerState<MyPage> {
         FutureBuilder<bool>(
           future: _isAdministrator,
           builder: (context, snapshot) => snapshot.data == true
-              ? const Padding(
-                  padding: EdgeInsets.only(top: 12),
-                  child: AdminEligibilityCard(),
+              ? Column(
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(top: 12),
+                      child: AdminEligibilityCard(),
+                    ),
+                    const SizedBox(height: 12),
+                    AdminPasswordResetCard(repository: repository),
+                  ],
                 )
               : const SizedBox.shrink(),
         ),

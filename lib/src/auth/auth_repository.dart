@@ -14,4 +14,10 @@ abstract interface class AuthRepository {
   Future<void> grantEligibility({required String email});
 
   Future<bool> revokeEligibility({required String email});
+
+  Future<void> adminResetUserPassword({
+    required String targetEmail,
+    required String newPassword,
+    required bool manualVerificationConfirmed,
+  });
 }

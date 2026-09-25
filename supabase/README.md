@@ -42,3 +42,26 @@ confirm one unique email for each user, then update that same Auth user by ID
 with a trusted server operation. Verify the email login and only then remove
 the phone login path. The operation must never be run from Flutter and must
 never expose a `service_role` key.
+
+## Administrator password reset
+
+Ticket T25 adds `admin-reset-user-password`, a JWT-verified Edge Function for
+administrators who have manually verified a user's identity. Apply
+`202609260002_admin_password_reset_target_lookup.sql`, then deploy the function:
+
+```powershell
+supabase functions deploy admin-reset-user-password
+```
+
+The function verifies the caller's current Auth JWT and checks `app_admins`
+before looking up the exact target email. The lookup RPC is executable only by
+`service_role`; the function changes the existing Auth user through the Auth
+Admin API, preserving that user's `user_id` and business-data ownership. The
+function's runtime uses Supabase's server-side service-role/secret environment
+variable. Do not copy it into Flutter, `.env`, or source control.
+
+The administrator confirms that identity was checked outside the App and must
+tell the user the new password through a secure external channel. The App sends
+no email or SMS and does not claim to validate email ownership. No user or
+administrator password is returned by the function or written to Pacta business
+tables; Supabase Auth applies its own credential storage for the new password.
