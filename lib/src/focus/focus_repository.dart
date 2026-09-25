@@ -150,6 +150,13 @@ class UnavailableFocusRemoteDataSource implements FocusRemoteDataSource {
 abstract interface class FocusRepository {
   Stream<List<FocusSession>> watchSessions();
   Stream<List<FocusReconciliationCase>> watchFocusReconciliations();
+  Stream<List<FocusClockReviewCase>> watchClockReviewCases();
+  Future<List<FocusClockReviewCase>> getClockReviewCases();
+  Future<void> deferClockReviewCase(String caseId);
+  Future<void> resolveClockReviewCase({
+    required String caseId,
+    required FocusClockReviewDecision decision,
+  });
   Future<List<FocusReconciliationCase>> getFocusReconciliations();
   Future<void> resolveFocusReconciliation({
     required String caseId,
@@ -242,22 +249,39 @@ class _PendingFocusConfigurationKeys {
   final Set<String> modes;
 }
 
+class _FocusClockSample {
+  const _FocusClockSample({required this.wallTime, required this.monotonic});
+
+  final DateTime wallTime;
+  final Duration monotonic;
+}
+
 class LocalFocusRepository implements FocusRepository {
   LocalFocusRepository({
     required this.database,
     required this.userId,
     required this.remote,
     DateTime Function()? now,
-  }) : _now = now ?? DateTime.now;
+    Duration Function()? monotonicNow,
+  }) : _now = now ?? DateTime.now,
+       _injectedMonotonicNow = monotonicNow,
+       _clockJumpDetectionEnabled = now == null || monotonicNow != null;
 
   final db.PactaDatabase database;
   final String userId;
   final FocusRemoteDataSource remote;
   final DateTime Function() _now;
+  final Duration Function()? _injectedMonotonicNow;
+  final bool _clockJumpDetectionEnabled;
   final _changes = StreamController<List<FocusSession>>.broadcast();
   final _uuid = const Uuid();
   Future<void>? _appointmentSettlement;
   Future<void> _syncQueue = Future<void>.value();
+  final Stopwatch _monotonicStopwatch = Stopwatch()..start();
+  late final String _clockEpochId = _uuid.v4();
+  _FocusClockSample? _lastClockSample;
+  Timer? _clockWatchdog;
+  Future<void>? _clockObservation;
 
   static const appointmentPreparationDuration = Duration(minutes: 15);
 
@@ -265,6 +289,132 @@ class LocalFocusRepository implements FocusRepository {
   Stream<List<FocusSession>> watchSessions() async* {
     yield await getSessions();
     yield* _changes.stream;
+  }
+
+  @override
+  Stream<List<FocusClockReviewCase>> watchClockReviewCases() async* {
+    yield await getClockReviewCases();
+    yield* _changes.stream.asyncMap((_) => getClockReviewCases());
+  }
+
+  @override
+  Future<List<FocusClockReviewCase>> getClockReviewCases() async {
+    final sessions = await _getSessionsWithoutSettling();
+    final cases = <FocusClockReviewCase>[];
+    for (final session in sessions) {
+      var reliableSeconds = 0;
+      for (var index = 0; index < session.effectiveIntervals.length; index++) {
+        final interval = session.effectiveIntervals[index];
+        if (interval.isAwaitingClockReview) {
+          cases.add(
+            FocusClockReviewCase(
+              id: _clockReviewCaseId(session.id, index),
+              sessionId: session.id,
+              taskId: session.taskId,
+              direction: (interval.clockDiscrepancySeconds ?? 0) >= 0
+                  ? FocusClockChangeDirection.forward
+                  : FocusClockChangeDirection.backward,
+              reliableSeconds: reliableSeconds,
+              interval: interval,
+            ),
+          );
+        } else {
+          reliableSeconds += interval.durationSeconds;
+        }
+      }
+    }
+    cases.sort((left, right) {
+      final leftAt = left.interval.observedEndedAt ?? left.interval.startedAt;
+      final rightAt =
+          right.interval.observedEndedAt ?? right.interval.startedAt;
+      return rightAt.compareTo(leftAt);
+    });
+    return List.unmodifiable(cases);
+  }
+
+  @override
+  Future<void> deferClockReviewCase(String caseId) async {
+    await _updateClockReviewInterval(
+      caseId,
+      (interval) =>
+          interval.copyWith(clockReviewStatus: FocusClockReviewStatus.deferred),
+    );
+  }
+
+  @override
+  Future<void> resolveClockReviewCase({
+    required String caseId,
+    required FocusClockReviewDecision decision,
+  }) async {
+    await _updateClockReviewInterval(caseId, (interval) {
+      if (decision == FocusClockReviewDecision.acceptMonotonicEstimate &&
+          interval.measuredDurationSeconds == null) {
+        throw StateError('这段时间缺少连续计时依据，只能保留已确认区间。');
+      }
+      return interval.copyWith(
+        clockReviewStatus: FocusClockReviewStatus.resolved,
+        excludeFromFocusProgress:
+            decision == FocusClockReviewDecision.keepReliableTimeOnly,
+        endedAt: decision == FocusClockReviewDecision.keepReliableTimeOnly
+            ? interval.startedAt
+            : interval.endedAt,
+      );
+    });
+  }
+
+  Future<void> _updateClockReviewInterval(
+    String caseId,
+    FocusTimeInterval Function(FocusTimeInterval interval) update,
+  ) async {
+    final separator = caseId.lastIndexOf(':');
+    if (separator <= 0) throw StateError('时钟核对记录不存在。');
+    final sessionId = caseId.substring(0, separator);
+    final intervalIndex = int.tryParse(caseId.substring(separator + 1));
+    if (intervalIndex == null) throw StateError('时钟核对记录不存在。');
+    final row = await _sessionRow(sessionId);
+    if (row == null) throw StateError('专注记录已不存在。');
+    final session = _sessionFromRow(row);
+    if (intervalIndex < 0 ||
+        intervalIndex >= session.effectiveIntervals.length) {
+      throw StateError('这段时钟证据已不存在。');
+    }
+    final intervals = [...session.effectiveIntervals];
+    final interval = intervals[intervalIndex];
+    if (!interval.isAwaitingClockReview) return;
+    intervals[intervalIndex] = update(interval);
+    final effectiveSeconds = _reliableIntervalSeconds(intervals);
+    final updated = FocusSession(
+      id: session.id,
+      taskId: session.taskId,
+      mode: session.mode,
+      durationSeconds: session.durationSeconds,
+      startedAt: session.startedAt,
+      endsAt: session.endsAt,
+      status: session.status,
+      completedAt: session.completedAt,
+      effectiveSeconds: effectiveSeconds,
+      completionType: session.completionType,
+      completionRuleText: session.completionRuleText,
+      pausedAt: session.pausedAt,
+      pausedSeconds: session.pausedSeconds,
+      pauseRuleText: session.pauseRuleText,
+      failureReason: session.failureReason,
+      appointmentId: session.appointmentId,
+      effectiveIntervals: intervals,
+      reviewDisposition: session.reviewDisposition,
+      reviewDispositionUpdatedAt: session.reviewDispositionUpdatedAt,
+      configurationBasisSourceId: session.configurationBasisSourceId,
+      outcomeBasisSourceId: session.outcomeBasisSourceId,
+    );
+    await _saveSession(updated, queue: false);
+    await _queue('focus_session', updated.id, _now().toUtc());
+    if (!session.status.isUnfinished) {
+      await _reconcileFocusEffectsAfterDispositionChanges(
+        updates: {updated.id: updated},
+      );
+      await _reconcileTaskFocusProgressFromSessions();
+    }
+    await _publish();
   }
 
   @override
@@ -657,6 +807,13 @@ class LocalFocusRepository implements FocusRepository {
               session.reviewDisposition == FocusRecordDisposition.pendingReview,
         )
         .toList();
+    final pendingClockReviewSessions = sessions
+        .where(
+          (session) => session.effectiveIntervals.any(
+            (interval) => interval.isAwaitingClockReview,
+          ),
+        )
+        .toList();
     final pendingReviewConfigurations =
         await _getPendingFocusConfigurationKeys();
     final focusProgressByTask = <String, int>{};
@@ -713,8 +870,13 @@ class LocalFocusRepository implements FocusRepository {
       totalAcceptedFocusSeconds: totalSeconds,
       displayTimeZoneId: zoneId,
       followsDeviceTimeZone: !usesPreference,
-      hasPendingReview: pendingReviewSessions.isNotEmpty,
-      pendingReviewTaskIds: pendingReviewConfigurations.taskIds,
+      hasPendingReview:
+          pendingReviewSessions.isNotEmpty ||
+          pendingClockReviewSessions.isNotEmpty,
+      pendingReviewTaskIds: {
+        ...pendingReviewConfigurations.taskIds,
+        for (final session in pendingClockReviewSessions) session.taskId,
+      },
     );
   }
 
@@ -932,7 +1094,8 @@ class LocalFocusRepository implements FocusRepository {
       throw StateError('已有进行中的专注，请先返回原流程或处理它的结束操作。');
     }
 
-    final startedAt = _now().toUtc();
+    final clockSample = _sampleClock();
+    final startedAt = clockSample.wallTime;
     final appointment = AppointmentPreparation(
       id: _uuid.v4(),
       taskId: taskId,
@@ -1012,7 +1175,8 @@ class LocalFocusRepository implements FocusRepository {
       return _sessionFromRow(existingSession);
     }
 
-    final now = _now().toUtc();
+    final clockSample = _sampleClock();
+    final now = clockSample.wallTime;
     final session = FocusSession(
       id: row.sessionId ?? row.id,
       appointmentId: row.id,
@@ -1024,7 +1188,16 @@ class LocalFocusRepository implements FocusRepository {
       status: FocusSessionStatus.active,
       completedAt: null,
       effectiveSeconds: 0,
-      effectiveIntervals: [FocusTimeInterval(startedAt: now, endedAt: null)],
+      effectiveIntervals: [
+        FocusTimeInterval(
+          startedAt: now,
+          endedAt: null,
+          clockEpochId: _clockEpochId,
+          monotonicStartedMicroseconds: clockSample.monotonic.inMicroseconds,
+          monotonicCheckpointMicroseconds: clockSample.monotonic.inMicroseconds,
+          lastObservedWallTime: now,
+        ),
+      ],
       reviewDisposition: FocusRecordDisposition.fromStorage(
         row.reviewDisposition,
       ),
@@ -1213,7 +1386,8 @@ class LocalFocusRepository implements FocusRepository {
     final existing = await getActiveSession();
     if (existing != null) return existing;
 
-    final startedAt = _now().toUtc();
+    final clockSample = _sampleClock();
+    final startedAt = clockSample.wallTime;
     final session = FocusSession(
       id: _uuid.v4(),
       taskId: taskId,
@@ -1225,7 +1399,14 @@ class LocalFocusRepository implements FocusRepository {
       completedAt: null,
       effectiveSeconds: 0,
       effectiveIntervals: [
-        FocusTimeInterval(startedAt: startedAt, endedAt: null),
+        FocusTimeInterval(
+          startedAt: startedAt,
+          endedAt: null,
+          clockEpochId: _clockEpochId,
+          monotonicStartedMicroseconds: clockSample.monotonic.inMicroseconds,
+          monotonicCheckpointMicroseconds: clockSample.monotonic.inMicroseconds,
+          lastObservedWallTime: clockSample.wallTime,
+        ),
       ],
     );
     await database.transaction(() async {
@@ -1250,6 +1431,7 @@ class LocalFocusRepository implements FocusRepository {
         );
       }
     });
+    _ensureClockWatchdog();
     await _publish();
     return session;
   }
@@ -1260,6 +1442,333 @@ class LocalFocusRepository implements FocusRepository {
     await _settleDueSessions();
   }
 
+  Future<void> _observeDeviceClock() {
+    final inFlight = _clockObservation;
+    if (inFlight != null) return inFlight;
+    final next = _observeDeviceClockOnce();
+    _clockObservation = next;
+    return next.whenComplete(() {
+      if (identical(_clockObservation, next)) _clockObservation = null;
+    });
+  }
+
+  Future<void> _observeDeviceClockOnce() async {
+    final sample = _sampleClock();
+    final previous = _lastClockSample;
+    _lastClockSample = sample;
+    if (!_clockJumpDetectionEnabled) return;
+
+    if (previous == null) {
+      await _recoverOpenIntervalsFromPreviousProcess(sample);
+      return;
+    }
+    final wallDelta = sample.wallTime.difference(previous.wallTime);
+    final monotonicDelta = sample.monotonic - previous.monotonic;
+    final discrepancy = wallDelta - monotonicDelta;
+    if (discrepancy.abs() < const Duration(seconds: 5)) return;
+
+    final rows =
+        await (database.select(database.focusSessions)
+              ..where((session) => session.userId.equals(userId))
+              ..where((session) => session.status.equals('active')))
+            .get();
+    for (final row in rows) {
+      final intervals = _decodeIntervals(row.effectiveIntervals);
+      final openIndex = intervals.lastIndexWhere(
+        (interval) => interval.endedAt == null,
+      );
+      if (openIndex < 0) continue;
+      final open = intervals[openIndex];
+      final openedAt = open.monotonicStartedMicroseconds;
+      if (open.clockEpochId != _clockEpochId || openedAt == null) continue;
+      final reliablePrefixSeconds =
+          ((previous.monotonic.inMicroseconds - openedAt) /
+                  Duration.microsecondsPerSecond)
+              .floor()
+              .clamp(0, row.durationSeconds);
+      intervals.removeAt(openIndex);
+      if (previous.wallTime.isAfter(open.startedAt) &&
+          reliablePrefixSeconds > 0) {
+        intervals.add(
+          FocusTimeInterval(
+            startedAt: open.startedAt,
+            endedAt: previous.wallTime,
+            measuredDurationSeconds: reliablePrefixSeconds,
+            clockEpochId: _clockEpochId,
+            monotonicStartedMicroseconds: openedAt,
+            monotonicEndedMicroseconds: previous.monotonic.inMicroseconds,
+          ),
+        );
+      }
+      final uncertainSeconds = monotonicDelta.inSeconds.clamp(0, 86400);
+      final uncertainStart = previous.wallTime;
+      final uncertainEnd = uncertainStart.add(
+        Duration(seconds: uncertainSeconds),
+      );
+      // Keep the new segment ordered after the uncertain interval for a
+      // backward jump, and re-anchor after the forward jump so wall-clock
+      // settlement cannot finish the session immediately.
+      final activeStart = sample.wallTime.isAfter(uncertainEnd)
+          ? sample.wallTime
+          : uncertainEnd;
+      intervals.add(
+        FocusTimeInterval(
+          startedAt: uncertainStart,
+          endedAt: uncertainEnd,
+          measuredDurationSeconds: uncertainSeconds,
+          clockEpochId: _clockEpochId,
+          monotonicStartedMicroseconds: previous.monotonic.inMicroseconds,
+          monotonicEndedMicroseconds: sample.monotonic.inMicroseconds,
+          observedStartedAt: previous.wallTime,
+          observedEndedAt: sample.wallTime,
+          clockDiscrepancySeconds: discrepancy.inSeconds,
+          clockReviewStatus: FocusClockReviewStatus.pending,
+        ),
+      );
+      intervals.add(
+        FocusTimeInterval(
+          startedAt: activeStart,
+          endedAt: null,
+          clockEpochId: _clockEpochId,
+          monotonicStartedMicroseconds: sample.monotonic.inMicroseconds,
+          monotonicCheckpointMicroseconds: sample.monotonic.inMicroseconds,
+          observedStartedAt: sample.wallTime,
+          lastObservedWallTime: sample.wallTime,
+        ),
+      );
+      final elapsedSeconds = _activeElapsedSeconds(
+        intervals,
+        sample,
+        _clockEpochId,
+      );
+      final remainingSeconds = (row.durationSeconds - elapsedSeconds).clamp(
+        0,
+        row.durationSeconds,
+      );
+      final updated = FocusSession(
+        id: row.id,
+        appointmentId: row.appointmentId,
+        taskId: row.taskId,
+        mode: FocusChainMode.fromStorage(row.mode),
+        durationSeconds: row.durationSeconds,
+        startedAt: row.startedAt,
+        endsAt: activeStart.add(Duration(seconds: remainingSeconds)),
+        status: FocusSessionStatus.active,
+        completedAt: null,
+        effectiveSeconds: _reliableIntervalSeconds(intervals),
+        completionType: FocusSessionCompletionType.fromStorage(
+          row.completionType,
+        ),
+        completionRuleText: row.completionRuleText,
+        pausedAt: row.pausedAt,
+        pausedSeconds: row.pausedSeconds,
+        pauseRuleText: row.pauseRuleText,
+        failureReason: row.failureReason,
+        effectiveIntervals: intervals,
+        reviewDisposition: FocusRecordDisposition.fromStorage(
+          row.reviewDisposition,
+        ),
+        reviewDispositionUpdatedAt: row.reviewDispositionUpdatedAt,
+        configurationBasisSourceId: row.configurationBasisSourceId,
+        outcomeBasisSourceId: row.outcomeBasisSourceId,
+      );
+      await _saveSession(updated, queue: false);
+      await _queue('focus_session', updated.id, sample.wallTime);
+    }
+    if (rows.isNotEmpty) await _publish();
+  }
+
+  Future<void> _recoverOpenIntervalsFromPreviousProcess(
+    _FocusClockSample sample,
+  ) async {
+    final rows =
+        await (database.select(database.focusSessions)
+              ..where((session) => session.userId.equals(userId))
+              ..where((session) => session.status.equals('active')))
+            .get();
+    for (final row in rows) {
+      final intervals = _decodeIntervals(row.effectiveIntervals);
+      final openIndex = intervals.lastIndexWhere(
+        (interval) => interval.endedAt == null,
+      );
+      if (openIndex < 0) continue;
+      final open = intervals[openIndex];
+      if (open.clockEpochId == null || open.clockEpochId == _clockEpochId) {
+        continue;
+      }
+      intervals.removeAt(openIndex);
+      final elapsedBeforeOpen = _activeElapsedSeconds(
+        intervals,
+        sample,
+        _clockEpochId,
+      );
+      final remainingSeconds = (row.durationSeconds - elapsedBeforeOpen).clamp(
+        0,
+        row.durationSeconds,
+      );
+      final lastObservedWallTime = open.lastObservedWallTime ?? open.startedAt;
+      final rolledBackDuringRestart = sample.wallTime.isBefore(
+        lastObservedWallTime.subtract(const Duration(seconds: 5)),
+      );
+      late DateTime recoveryStart;
+      if (rolledBackDuringRestart) {
+        final monoStart = open.monotonicStartedMicroseconds;
+        final monoCheckpoint = open.monotonicCheckpointMicroseconds;
+        final confirmedSeconds =
+            monoStart == null ||
+                monoCheckpoint == null ||
+                monoCheckpoint < monoStart
+            ? 0
+            : ((monoCheckpoint - monoStart) / Duration.microsecondsPerSecond)
+                  .floor()
+                  .clamp(0, remainingSeconds);
+        final confirmedEnd = open.startedAt.add(
+          Duration(seconds: confirmedSeconds),
+        );
+        if (confirmedSeconds > 0) {
+          intervals.add(
+            open.copyWith(
+              endedAt: confirmedEnd,
+              measuredDurationSeconds: confirmedSeconds,
+              observedEndedAt: lastObservedWallTime,
+            ),
+          );
+        }
+        recoveryStart = confirmedEnd.isAfter(lastObservedWallTime)
+            ? confirmedEnd
+            : lastObservedWallTime;
+        // A rollback across process recovery cannot be measured by either
+        // process's monotonic clock. Preserve the confirmed prefix and both
+        // wall samples; the new interval resumes after that uncertain gap.
+        intervals.add(
+          FocusTimeInterval(
+            startedAt: recoveryStart,
+            endedAt: recoveryStart,
+            clockEpochId: open.clockEpochId,
+            monotonicStartedMicroseconds: open.monotonicStartedMicroseconds,
+            monotonicCheckpointMicroseconds:
+                open.monotonicCheckpointMicroseconds,
+            lastObservedWallTime: lastObservedWallTime,
+            observedStartedAt: lastObservedWallTime,
+            observedEndedAt: sample.wallTime,
+            clockDiscrepancySeconds: sample.wallTime
+                .difference(lastObservedWallTime)
+                .inSeconds,
+            clockReviewStatus: FocusClockReviewStatus.pending,
+          ),
+        );
+      } else {
+        // A normal process restart keeps the core countdown recovery contract:
+        // count the old open segment only up to its scheduled deadline. If the
+        // deadline passed while the app was closed, settlement below records
+        // completion at that deadline rather than losing all prior focus.
+        final recoveryEnd = sample.wallTime.isAfter(row.endsAt)
+            ? row.endsAt
+            : sample.wallTime;
+        final recoveredSeconds = recoveryEnd
+            .difference(open.startedAt)
+            .inSeconds
+            .clamp(0, remainingSeconds);
+        final recoveredEnd = open.startedAt.add(
+          Duration(seconds: recoveredSeconds),
+        );
+        if (recoveredSeconds > 0) {
+          intervals.add(
+            open.copyWith(
+              endedAt: recoveredEnd,
+              measuredDurationSeconds: recoveredSeconds,
+              observedEndedAt: recoveryEnd,
+            ),
+          );
+        }
+        recoveryStart = sample.wallTime.isAfter(recoveredEnd)
+            ? sample.wallTime
+            : recoveredEnd;
+      }
+      if (recoveryStart.isBefore(row.endsAt)) {
+        intervals.add(
+          FocusTimeInterval(
+            startedAt: recoveryStart,
+            endedAt: null,
+            clockEpochId: _clockEpochId,
+            monotonicStartedMicroseconds: sample.monotonic.inMicroseconds,
+            monotonicCheckpointMicroseconds: sample.monotonic.inMicroseconds,
+            lastObservedWallTime: sample.wallTime,
+          ),
+        );
+      }
+      final updated = FocusSession(
+        id: row.id,
+        appointmentId: row.appointmentId,
+        taskId: row.taskId,
+        mode: FocusChainMode.fromStorage(row.mode),
+        durationSeconds: row.durationSeconds,
+        startedAt: row.startedAt,
+        // The wall-clock deadline was fixed when the session started. A
+        // process restart does not grant the countdown a fresh duration;
+        // only the unknowable open interval becomes pending evidence.
+        endsAt: row.endsAt,
+        status: FocusSessionStatus.active,
+        completedAt: null,
+        effectiveSeconds: _reliableIntervalSeconds(intervals),
+        completionType: FocusSessionCompletionType.fromStorage(
+          row.completionType,
+        ),
+        completionRuleText: row.completionRuleText,
+        pausedAt: row.pausedAt,
+        pausedSeconds: row.pausedSeconds,
+        pauseRuleText: row.pauseRuleText,
+        failureReason: row.failureReason,
+        effectiveIntervals: intervals,
+        reviewDisposition: FocusRecordDisposition.fromStorage(
+          row.reviewDisposition,
+        ),
+        reviewDispositionUpdatedAt: row.reviewDispositionUpdatedAt,
+        configurationBasisSourceId: row.configurationBasisSourceId,
+        outcomeBasisSourceId: row.outcomeBasisSourceId,
+      );
+      await _saveSession(updated, queue: false);
+      await _queue('focus_session', updated.id, sample.wallTime);
+    }
+    if (rows.isNotEmpty) await _publish();
+  }
+
+  _FocusClockSample _sampleClock() => _FocusClockSample(
+    wallTime: _now().toUtc(),
+    monotonic:
+        _injectedMonotonicNow?.call() ??
+        (_clockJumpDetectionEnabled
+            ? _monotonicStopwatch.elapsed
+            : Duration(microseconds: _now().toUtc().microsecondsSinceEpoch)),
+  );
+
+  void _ensureClockWatchdog() {
+    if (_clockWatchdog != null) return;
+    _clockWatchdog = Timer.periodic(const Duration(seconds: 1), (_) {
+      unawaited(_settleDueSessions());
+    });
+  }
+
+  Future<void> _refreshClockWatchdog() async {
+    if (!_clockJumpDetectionEnabled) {
+      _clockWatchdog?.cancel();
+      _clockWatchdog = null;
+      return;
+    }
+    final active =
+        await (database.select(database.focusSessions)
+              ..where((session) => session.userId.equals(userId))
+              ..where((session) => session.status.equals('active'))
+              ..limit(1))
+            .getSingleOrNull();
+    if (active == null) {
+      _clockWatchdog?.cancel();
+      _clockWatchdog = null;
+    } else {
+      _ensureClockWatchdog();
+    }
+  }
+
   @override
   Future<FocusSession> pauseSession(
     String sessionId, {
@@ -1267,7 +1776,8 @@ class LocalFocusRepository implements FocusRepository {
   }) async {
     final normalizedRule = _requiredRuleText(ruleText);
     await _settleDueSessions();
-    final now = _now().toUtc();
+    final clockSample = _sampleClock();
+    final now = clockSample.wallTime;
     await database.transaction(() async {
       final row = await _sessionRow(sessionId);
       if (row == null) throw StateError('专注会话不存在或已不属于当前用户。');
@@ -1284,19 +1794,24 @@ class LocalFocusRepository implements FocusRepository {
               pausedAt: Value(now),
               pauseRuleText: Value(normalizedRule),
               effectiveIntervals: Value(
-                _encodeIntervals(_closeCurrentInterval(row, now)),
+                _encodeIntervals(
+                  _closeCurrentInterval(row, now, clockSample: clockSample),
+                ),
               ),
             ),
           );
       await _queue('focus_session', sessionId, now);
     });
+    await _refreshClockWatchdog();
     await _publish();
     return (await getSession(sessionId))!;
   }
 
   @override
   Future<FocusSession> resumeSession(String sessionId) async {
-    final now = _now().toUtc();
+    await _observeDeviceClock();
+    final clockSample = _sampleClock();
+    final now = clockSample.wallTime;
     await database.transaction(() async {
       final row = await _sessionRow(sessionId);
       if (row == null) throw StateError('专注会话不存在或已不属于当前用户。');
@@ -1306,9 +1821,23 @@ class LocalFocusRepository implements FocusRepository {
       }
       final pausedDuration = now.difference(row.pausedAt!);
       final pausedSeconds = pausedDuration.inSeconds;
-      final adjustedEndsAt = row.endsAt.add(pausedDuration);
+      final closedIntervals = _decodeIntervals(row.effectiveIntervals);
+      final remainingSeconds =
+          (row.durationSeconds - _reliableIntervalSeconds(closedIntervals))
+              .clamp(0, row.durationSeconds);
+      final adjustedEndsAt = now.add(Duration(seconds: remainingSeconds));
       final intervals = _closedIntervalsFor(row, row.pausedAt!)
-        ..add(FocusTimeInterval(startedAt: now, endedAt: null));
+        ..add(
+          FocusTimeInterval(
+            startedAt: now,
+            endedAt: null,
+            clockEpochId: _clockEpochId,
+            monotonicStartedMicroseconds: clockSample.monotonic.inMicroseconds,
+            monotonicCheckpointMicroseconds:
+                clockSample.monotonic.inMicroseconds,
+            lastObservedWallTime: clockSample.wallTime,
+          ),
+        );
       await (database.update(database.focusSessions)
             ..where((session) => session.userId.equals(userId))
             ..where((session) => session.id.equals(sessionId)))
@@ -1323,6 +1852,7 @@ class LocalFocusRepository implements FocusRepository {
           );
       await _queue('focus_session', sessionId, now);
     });
+    _ensureClockWatchdog();
     await _publish();
     return (await getSession(sessionId))!;
   }
@@ -1365,13 +1895,19 @@ class LocalFocusRepository implements FocusRepository {
   }) async {
     final reason = _requiredFailureReason(failureReason);
     await _settleDueSessions();
-    final now = _now().toUtc();
+    final clockSample = _sampleClock();
+    final now = clockSample.wallTime;
     await database.transaction(() async {
       final row = await _sessionRow(sessionId);
       if (row == null) throw StateError('专注会话不存在或已不属于当前用户。');
       if (row.status == 'failed') return;
       if (row.status == 'completed') throw StateError('正常完成的专注不能改为失败。');
-      final effectiveSeconds = _effectiveSeconds(row, now);
+      final intervals = _closeCurrentInterval(
+        row,
+        now,
+        clockSample: clockSample,
+      );
+      final effectiveSeconds = _reliableIntervalSeconds(intervals);
       await (database.update(database.focusSessions)
             ..where((session) => session.userId.equals(userId))
             ..where((session) => session.id.equals(sessionId)))
@@ -1382,9 +1918,7 @@ class LocalFocusRepository implements FocusRepository {
               pausedAt: const Value(null),
               effectiveSeconds: Value(effectiveSeconds),
               failureReason: Value(reason),
-              effectiveIntervals: Value(
-                _encodeIntervals(_closeCurrentInterval(row, now)),
-              ),
+              effectiveIntervals: Value(_encodeIntervals(intervals)),
             ),
           );
       if (row.reviewDisposition ==
@@ -1410,6 +1944,7 @@ class LocalFocusRepository implements FocusRepository {
       }
       await _queue('focus_session', sessionId, now);
     });
+    await _refreshClockWatchdog();
     await _publish();
     return (await getSession(sessionId))!;
   }
@@ -1458,7 +1993,10 @@ class LocalFocusRepository implements FocusRepository {
   }
 
   Future<void> _settleDueSessions() async {
-    final now = _now().toUtc();
+    await _observeDeviceClock();
+    final clockSample = _sampleClock();
+    await _persistActiveClockCheckpoint(clockSample);
+    final now = clockSample.wallTime;
     final rows =
         await (database.select(database.focusSessions)
               ..where((session) => session.userId.equals(userId))
@@ -1467,13 +2005,65 @@ class LocalFocusRepository implements FocusRepository {
                 (session) => session.reviewDisposition.equals(
                   FocusRecordDisposition.accepted.storageValue,
                 ),
-              )
-              ..where((session) => session.endsAt.isSmallerOrEqualValue(now)))
+              ))
+            .get();
+    var settledAny = false;
+    for (final row in rows) {
+      final monotonicElapsed = _activeElapsedSeconds(
+        _decodeIntervals(row.effectiveIntervals),
+        clockSample,
+        _clockEpochId,
+      );
+      final dueByMonotonic = monotonicElapsed >= row.durationSeconds;
+      if (dueByMonotonic || !row.endsAt.isAfter(now)) {
+        await _completeSession(row.id, now: dueByMonotonic ? row.endsAt : now);
+        settledAny = true;
+      }
+    }
+    if (settledAny) await _publish();
+    await _refreshClockWatchdog();
+  }
+
+  Future<void> _persistActiveClockCheckpoint(_FocusClockSample sample) async {
+    if (!_clockJumpDetectionEnabled) return;
+    final rows =
+        await (database.select(database.focusSessions)
+              ..where((session) => session.userId.equals(userId))
+              ..where((session) => session.status.equals('active')))
             .get();
     for (final row in rows) {
-      await _completeSession(row.id, now: now);
+      final intervals = _decodeIntervals(row.effectiveIntervals);
+      final openIndex = intervals.lastIndexWhere(
+        (interval) => interval.endedAt == null,
+      );
+      if (openIndex < 0) continue;
+      final open = intervals[openIndex];
+      if (open.clockEpochId != _clockEpochId) continue;
+      if (open.monotonicCheckpointMicroseconds ==
+          sample.monotonic.inMicroseconds) {
+        continue;
+      }
+      final wallSample = sample.wallTime.isAfter(row.endsAt)
+          ? row.endsAt
+          : sample.wallTime;
+      final lastObserved = open.lastObservedWallTime;
+      final checkpointWallTime =
+          lastObserved == null || wallSample.isAfter(lastObserved)
+          ? wallSample
+          : lastObserved;
+      intervals[openIndex] = open.copyWith(
+        monotonicCheckpointMicroseconds: sample.monotonic.inMicroseconds,
+        lastObservedWallTime: checkpointWallTime,
+      );
+      await (database.update(database.focusSessions)
+            ..where((session) => session.userId.equals(userId))
+            ..where((session) => session.id.equals(row.id)))
+          .write(
+            db.FocusSessionsCompanion(
+              effectiveIntervals: Value(_encodeIntervals(intervals)),
+            ),
+          );
     }
-    if (rows.isNotEmpty) await _publish();
   }
 
   Future<void> _settleDueAppointments() {
@@ -1669,13 +2259,17 @@ class LocalFocusRepository implements FocusRepository {
               row.status != 'paused')) {
         return;
       }
-      final seconds = isEarlyCompletion
-          ? _effectiveSeconds(row, now)
-          : row.durationSeconds;
+      final clockSample = _sampleClock();
+      final completedAt = isEarlyCompletion ? now : row.endsAt;
+      final intervals = _closeCurrentInterval(
+        row,
+        completedAt,
+        clockSample: clockSample,
+      );
+      final seconds = _reliableIntervalSeconds(intervals);
       if (isEarlyCompletion && seconds <= 0) {
         throw StateError('至少需要有有效专注时间才能提前完成。');
       }
-      final completedAt = isEarlyCompletion ? now : row.endsAt;
       await (database.update(database.focusSessions)
             ..where((session) => session.userId.equals(userId))
             ..where((session) => session.id.equals(sessionId)))
@@ -1687,9 +2281,7 @@ class LocalFocusRepository implements FocusRepository {
               completionType: Value(completionType.storageValue),
               completionRuleText: Value(completionRuleText),
               pausedAt: const Value(null),
-              effectiveIntervals: Value(
-                _encodeIntervals(_closeCurrentInterval(row, completedAt)),
-              ),
+              effectiveIntervals: Value(_encodeIntervals(intervals)),
             ),
           );
 
@@ -1720,29 +2312,31 @@ class LocalFocusRepository implements FocusRepository {
 
           await _addTaskProgress(row.taskId, seconds, completedAt);
 
-          final mode = row.mode;
-          final record =
-              await (database.select(database.focusChainRecords)
-                    ..where((entry) => entry.userId.equals(userId))
-                    ..where((entry) => entry.mode.equals(mode)))
-                  .getSingleOrNull();
-          final current = (record?.currentConsecutive ?? 0) + 1;
-          final best = current > (record?.bestConsecutive ?? 0)
-              ? current
-              : (record?.bestConsecutive ?? 0);
-          await database
-              .into(database.focusChainRecords)
-              .insertOnConflictUpdate(
-                db.FocusChainRecordsCompanion.insert(
-                  userId: userId,
-                  mode: mode,
-                  currentConsecutive: Value(current),
-                  bestConsecutive: Value(best),
-                  updatedAt: completedAt,
-                ),
-              );
           await _queue('focus_node', nodeId, completedAt);
-          await _queue('focus_chain', mode, completedAt);
+          if (!intervals.any((interval) => interval.isAwaitingClockReview)) {
+            final mode = row.mode;
+            final record =
+                await (database.select(database.focusChainRecords)
+                      ..where((entry) => entry.userId.equals(userId))
+                      ..where((entry) => entry.mode.equals(mode)))
+                    .getSingleOrNull();
+            final current = (record?.currentConsecutive ?? 0) + 1;
+            final best = current > (record?.bestConsecutive ?? 0)
+                ? current
+                : (record?.bestConsecutive ?? 0);
+            await database
+                .into(database.focusChainRecords)
+                .insertOnConflictUpdate(
+                  db.FocusChainRecordsCompanion.insert(
+                    userId: userId,
+                    mode: mode,
+                    currentConsecutive: Value(current),
+                    bestConsecutive: Value(best),
+                    updatedAt: completedAt,
+                  ),
+                );
+            await _queue('focus_chain', mode, completedAt);
+          }
         }
       }
       await _queue('focus_session', sessionId, completedAt);
@@ -1825,6 +2419,15 @@ class LocalFocusRepository implements FocusRepository {
     final pendingReviewConfigurations =
         await _getPendingFocusConfigurationKeys();
     final pendingModes = pendingReviewConfigurations.modes;
+    final pendingClockRows = await (database.select(
+      database.focusSessions,
+    )..where((session) => session.userId.equals(userId))).get();
+    final pendingClockModes = {
+      for (final session in pendingClockRows)
+        if (_decodeIntervals(session.effectiveIntervals)
+            .any((interval) => interval.isAwaitingClockReview))
+          session.mode,
+    };
     final byMode = {for (final row in rows) row.mode: _recordFromRow(row)};
     final now = _now().toUtc();
     return [
@@ -1843,7 +2446,9 @@ class LocalFocusRepository implements FocusRepository {
             currentConsecutive: record.currentConsecutive,
             bestConsecutive: record.bestConsecutive,
             updatedAt: record.updatedAt,
-            hasPendingReview: pendingModes.contains(mode.storageValue),
+            hasPendingReview:
+                pendingModes.contains(mode.storageValue) ||
+                pendingClockModes.contains(mode.storageValue),
           );
         }(),
     ];
@@ -2313,7 +2918,11 @@ class LocalFocusRepository implements FocusRepository {
   }
 
   @override
-  Future<void> dispose() => _changes.close();
+  Future<void> dispose() async {
+    _clockWatchdog?.cancel();
+    _clockWatchdog = null;
+    await _changes.close();
+  }
 
   Future<void> _saveSession(FocusSession session, {bool queue = true}) async {
     await database
@@ -2581,14 +3190,6 @@ class LocalFocusRepository implements FocusRepository {
         .getSingleOrNull();
   }
 
-  int _effectiveSeconds(db.FocusSession row, DateTime now) {
-    final end = row.status == 'paused' && row.pausedAt != null
-        ? row.pausedAt!
-        : (now.isBefore(row.endsAt) ? now : row.endsAt);
-    final elapsed = end.difference(row.startedAt).inSeconds;
-    return (elapsed - row.pausedSeconds).clamp(0, row.durationSeconds);
-  }
-
   Future<void> _addTaskProgress(
     String taskId,
     int seconds,
@@ -2706,6 +3307,10 @@ class LocalFocusRepository implements FocusRepository {
         var current = 0;
         var best = 0;
         for (final row in rows) {
+          final intervals = _decodeIntervals(row.effectiveIntervals);
+          if (intervals.any((interval) => interval.isAwaitingClockReview)) {
+            continue;
+          }
           if (!FocusRecordDisposition.fromStorage(row.reviewDisposition)
               .contributesToFocusProgress) {
             continue;
@@ -2889,6 +3494,7 @@ class LocalFocusRepository implements FocusRepository {
   Future<void> _applyCompletedEffects(FocusSession session) async {
     if (!session.reviewDisposition.contributesToFocusProgress) return;
     final settledAt = session.completedAt ?? session.endsAt;
+    final effectiveSeconds = _focusSecondsForProjection(session);
     await database.transaction(() async {
       final existingNode =
           await (database.select(database.focusNodes)
@@ -2906,39 +3512,39 @@ class LocalFocusRepository implements FocusRepository {
                 taskId: session.taskId,
                 mode: session.mode.storageValue,
                 createdAt: settledAt,
-                effectiveSeconds: session.effectiveSeconds,
+                effectiveSeconds: effectiveSeconds,
               ),
             );
       }
-      await _addTaskProgress(
-        session.taskId,
-        session.effectiveSeconds,
-        settledAt,
-      );
-      final record =
-          await (database.select(database.focusChainRecords)
-                ..where((entry) => entry.userId.equals(userId))
-                ..where(
-                  (entry) => entry.mode.equals(session.mode.storageValue),
-                ))
-              .getSingleOrNull();
-      final current = (record?.currentConsecutive ?? 0) + 1;
-      final best = current > (record?.bestConsecutive ?? 0)
-          ? current
-          : (record?.bestConsecutive ?? 0);
-      await database
-          .into(database.focusChainRecords)
-          .insertOnConflictUpdate(
-            db.FocusChainRecordsCompanion.insert(
-              userId: userId,
-              mode: session.mode.storageValue,
-              currentConsecutive: Value(current),
-              bestConsecutive: Value(best),
-              updatedAt: settledAt,
-            ),
-          );
+      await _addTaskProgress(session.taskId, effectiveSeconds, settledAt);
+      if (!session.effectiveIntervals.any(
+        (interval) => interval.isAwaitingClockReview,
+      )) {
+        final record =
+            await (database.select(database.focusChainRecords)
+                  ..where((entry) => entry.userId.equals(userId))
+                  ..where(
+                    (entry) => entry.mode.equals(session.mode.storageValue),
+                  ))
+                .getSingleOrNull();
+        final current = (record?.currentConsecutive ?? 0) + 1;
+        final best = current > (record?.bestConsecutive ?? 0)
+            ? current
+            : (record?.bestConsecutive ?? 0);
+        await database
+            .into(database.focusChainRecords)
+            .insertOnConflictUpdate(
+              db.FocusChainRecordsCompanion.insert(
+                userId: userId,
+                mode: session.mode.storageValue,
+                currentConsecutive: Value(current),
+                bestConsecutive: Value(best),
+                updatedAt: settledAt,
+              ),
+            );
+        await _queue('focus_chain', session.mode.storageValue, settledAt);
+      }
       await _queue('focus_node', session.id, settledAt);
-      await _queue('focus_chain', session.mode.storageValue, settledAt);
     });
   }
 
@@ -2958,13 +3564,15 @@ class LocalFocusRepository implements FocusRepository {
 
   List<FocusTimeInterval> _closeCurrentInterval(
     db.FocusSession row,
-    DateTime endedAt,
-  ) => _closedIntervalsFor(row, endedAt);
+    DateTime endedAt, {
+    _FocusClockSample? clockSample,
+  }) => _closedIntervalsFor(row, endedAt, clockSample: clockSample);
 
   List<FocusTimeInterval> _closedIntervalsFor(
     db.FocusSession row,
-    DateTime endedAt,
-  ) {
+    DateTime endedAt, {
+    _FocusClockSample? clockSample,
+  }) {
     final intervals = _decodeIntervals(row.effectiveIntervals);
     final openIndex = intervals.lastIndexWhere(
       (interval) => interval.endedAt == null,
@@ -2974,12 +3582,44 @@ class LocalFocusRepository implements FocusRepository {
       final activeEnd = row.status == 'paused' && row.pausedAt != null
           ? row.pausedAt!
           : endedAt;
-      if (!activeEnd.isAfter(open.startedAt)) {
+      final monoStart = open.monotonicStartedMicroseconds;
+      final hasSameEpochSample =
+          clockSample != null &&
+          open.clockEpochId == _clockEpochId &&
+          monoStart != null;
+      var measuredSeconds = activeEnd.difference(open.startedAt).inSeconds;
+      var closedAt = activeEnd;
+      int? monoEnd;
+      if (hasSameEpochSample) {
+        measuredSeconds =
+            ((clockSample.monotonic.inMicroseconds - monoStart) /
+                    Duration.microsecondsPerSecond)
+                .floor();
+        final alreadyElapsed = _activeElapsedSeconds(
+          intervals.where((interval) => !identical(interval, open)),
+          clockSample,
+          _clockEpochId,
+        );
+        measuredSeconds = measuredSeconds.clamp(
+          0,
+          (row.durationSeconds - alreadyElapsed).clamp(0, row.durationSeconds),
+        );
+        monoEnd = clockSample.monotonic.inMicroseconds;
+        if (measuredSeconds > 0 && !activeEnd.isAfter(open.startedAt)) {
+          closedAt = open.startedAt.add(Duration(seconds: measuredSeconds));
+        }
+      }
+      if (measuredSeconds <= 0 && !activeEnd.isAfter(open.startedAt)) {
         intervals.removeAt(openIndex);
       } else {
-        intervals[openIndex] = FocusTimeInterval(
-          startedAt: open.startedAt,
-          endedAt: activeEnd,
+        intervals[openIndex] = open.copyWith(
+          endedAt: closedAt,
+          measuredDurationSeconds: measuredSeconds.clamp(
+            0,
+            row.durationSeconds,
+          ),
+          monotonicEndedMicroseconds: monoEnd,
+          observedEndedAt: activeEnd,
         );
       }
       return intervals;
@@ -3079,10 +3719,15 @@ class LocalFocusRepository implements FocusRepository {
 List<FocusTimeInterval> _effectiveIntervalsForProjection(FocusSession session) {
   final closedIntervals = session.effectiveIntervals
       .where(
-        (interval) => interval.endedAt != null && interval.durationSeconds > 0,
+        (interval) =>
+            interval.endedAt != null &&
+            interval.durationSeconds > 0 &&
+            !interval.isAwaitingClockReview &&
+            !interval.excludeFromFocusProgress,
       )
       .toList();
   if (closedIntervals.isNotEmpty) return closedIntervals;
+  if (session.effectiveIntervals.isNotEmpty) return const [];
   if (session.effectiveSeconds <= 0) return const [];
   return [
     FocusTimeInterval(
@@ -3154,15 +3799,30 @@ String _calendarDateKey(int year, int month, int day) =>
     '${month.toString().padLeft(2, '0')}-'
     '${day.toString().padLeft(2, '0')}';
 
-String _encodeIntervals(List<FocusTimeInterval> intervals) => jsonEncode([
-  for (final interval in intervals)
-    {
-      'started_at': _utcIso8601(interval.startedAt),
-      'ended_at': interval.endedAt == null
-          ? null
-          : _utcIso8601(interval.endedAt!),
-    },
-]);
+String _encodeIntervals(List<FocusTimeInterval> intervals) =>
+    jsonEncode([for (final interval in intervals) _intervalToJson(interval)]);
+
+Map<String, Object?> _intervalToJson(FocusTimeInterval interval) => {
+  'started_at': _utcIso8601(interval.startedAt),
+  'ended_at': interval.endedAt == null ? null : _utcIso8601(interval.endedAt!),
+  'measured_duration_seconds': interval.measuredDurationSeconds,
+  'clock_epoch_id': interval.clockEpochId,
+  'monotonic_started_microseconds': interval.monotonicStartedMicroseconds,
+  'monotonic_ended_microseconds': interval.monotonicEndedMicroseconds,
+  'monotonic_checkpoint_microseconds': interval.monotonicCheckpointMicroseconds,
+  'last_observed_wall_time': interval.lastObservedWallTime == null
+      ? null
+      : _utcIso8601(interval.lastObservedWallTime!),
+  'observed_started_at': interval.observedStartedAt == null
+      ? null
+      : _utcIso8601(interval.observedStartedAt!),
+  'observed_ended_at': interval.observedEndedAt == null
+      ? null
+      : _utcIso8601(interval.observedEndedAt!),
+  'clock_discrepancy_seconds': interval.clockDiscrepancySeconds,
+  'clock_review_status': interval.clockReviewStatus.storageValue,
+  'exclude_from_focus_progress': interval.excludeFromFocusProgress,
+};
 
 List<FocusTimeInterval> _decodeIntervals(String encoded) {
   try {
@@ -3185,6 +3845,36 @@ List<FocusTimeInterval> _intervalsFromJsonValue(Object? value) {
       FocusTimeInterval(
         startedAt: DateTime.parse(startedAt).toUtc(),
         endedAt: endedAt is String ? DateTime.parse(endedAt).toUtc() : null,
+        measuredDurationSeconds: _optionalJsonInt(
+          item['measured_duration_seconds'],
+        ),
+        clockEpochId: item['clock_epoch_id'] as String?,
+        monotonicStartedMicroseconds: _optionalJsonInt(
+          item['monotonic_started_microseconds'],
+        ),
+        monotonicEndedMicroseconds: _optionalJsonInt(
+          item['monotonic_ended_microseconds'],
+        ),
+        monotonicCheckpointMicroseconds: _optionalJsonInt(
+          item['monotonic_checkpoint_microseconds'],
+        ),
+        lastObservedWallTime: item['last_observed_wall_time'] is String
+            ? DateTime.parse(item['last_observed_wall_time'] as String).toUtc()
+            : null,
+        observedStartedAt: item['observed_started_at'] is String
+            ? DateTime.parse(item['observed_started_at'] as String).toUtc()
+            : null,
+        observedEndedAt: item['observed_ended_at'] is String
+            ? DateTime.parse(item['observed_ended_at'] as String).toUtc()
+            : null,
+        clockDiscrepancySeconds: _optionalJsonInt(
+          item['clock_discrepancy_seconds'],
+        ),
+        clockReviewStatus: FocusClockReviewStatus.fromStorage(
+          item['clock_review_status'] as String?,
+        ),
+        excludeFromFocusProgress:
+            item['exclude_from_focus_progress'] as bool? ?? false,
       ),
     );
   }
@@ -3195,13 +3885,15 @@ List<Map<String, Object?>> _intervalsToJson(
   List<FocusTimeInterval> intervals,
 ) => [
   for (final interval in intervals)
-    {
-      'started_at': _utcIso8601(interval.startedAt),
-      'ended_at': interval.endedAt == null
-          ? null
-          : _utcIso8601(interval.endedAt!),
-    },
+    Map<String, Object?>.from(_intervalToJson(interval))
+      ..remove('monotonic_checkpoint_microseconds')
+      ..remove('last_observed_wall_time'),
 ];
+
+int? _optionalJsonInt(Object? value) => value is num ? value.toInt() : null;
+
+String _clockReviewCaseId(String sessionId, int intervalIndex) =>
+    '$sessionId:$intervalIndex';
 
 String _focusConfigurationSignature(FocusSession session) => _canonicalJson({
   'task_id': session.taskId,
@@ -3223,11 +3915,13 @@ List<FocusTimeInterval> _unionFocusIntervals(Iterable<FocusSession> sessions) {
   final intervals = <FocusTimeInterval>[];
   for (final session in sessions) {
     for (final interval in session.effectiveIntervals) {
+      if (interval.isAwaitingClockReview) {
+        intervals.add(interval);
+        continue;
+      }
       final end = interval.endedAt ?? session.completedAt ?? session.endsAt;
       if (!end.isAfter(interval.startedAt)) continue;
-      intervals.add(
-        FocusTimeInterval(startedAt: interval.startedAt, endedAt: end),
-      );
+      intervals.add(interval.copyWith(endedAt: end));
     }
   }
   intervals.sort((left, right) {
@@ -3242,11 +3936,29 @@ List<FocusTimeInterval> _unionFocusIntervals(Iterable<FocusSession> sessions) {
       continue;
     }
     final previous = merged.last;
+    if (previous.isAwaitingClockReview || interval.isAwaitingClockReview) {
+      if (interval != previous) merged.add(interval);
+      continue;
+    }
     if (!interval.startedAt.isAfter(previous.endedAt!)) {
       if (interval.endedAt!.isAfter(previous.endedAt!)) {
         merged[merged.length - 1] = FocusTimeInterval(
           startedAt: previous.startedAt,
           endedAt: interval.endedAt,
+          measuredDurationSeconds: interval.endedAt!
+              .difference(previous.startedAt)
+              .inSeconds,
+          clockEpochId: previous.clockEpochId,
+          monotonicStartedMicroseconds: previous.monotonicStartedMicroseconds,
+          monotonicEndedMicroseconds: interval.monotonicEndedMicroseconds,
+          monotonicCheckpointMicroseconds:
+              interval.monotonicCheckpointMicroseconds,
+          lastObservedWallTime: interval.lastObservedWallTime,
+          observedStartedAt: previous.observedStartedAt,
+          observedEndedAt: interval.observedEndedAt,
+          clockDiscrepancySeconds: previous.clockDiscrepancySeconds,
+          clockReviewStatus: previous.clockReviewStatus,
+          excludeFromFocusProgress: previous.excludeFromFocusProgress,
         );
       }
     } else {
@@ -3256,16 +3968,38 @@ List<FocusTimeInterval> _unionFocusIntervals(Iterable<FocusSession> sessions) {
   return List.unmodifiable(merged);
 }
 
+int _reliableIntervalSeconds(Iterable<FocusTimeInterval> intervals) =>
+    intervals.fold<int>(0, (seconds, interval) {
+      if (interval.isAwaitingClockReview || interval.excludeFromFocusProgress) {
+        return seconds;
+      }
+      return seconds + interval.durationSeconds;
+    });
+
+int _activeElapsedSeconds(
+  Iterable<FocusTimeInterval> intervals,
+  _FocusClockSample sample,
+  String clockEpochId,
+) => intervals.fold<int>(0, (seconds, interval) {
+  final endedAt = interval.endedAt;
+  if (endedAt != null) return seconds + interval.durationSeconds;
+  if (interval.clockEpochId != clockEpochId) return seconds;
+  final start = interval.monotonicStartedMicroseconds;
+  if (start == null) return seconds;
+  final elapsed =
+      ((sample.monotonic.inMicroseconds - start) /
+              Duration.microsecondsPerSecond)
+          .floor();
+  return seconds + elapsed.clamp(0, 86400);
+});
+
 FocusSession _sessionWithUnionedIntervals(
   FocusSession base,
   Iterable<FocusSession> variants,
 ) {
   final intervals = _unionFocusIntervals(variants);
   if (intervals.isEmpty) return base;
-  final seconds = intervals.fold<int>(
-    0,
-    (total, interval) => total + interval.durationSeconds,
-  );
+  final seconds = _reliableIntervalSeconds(intervals);
   return FocusSession(
     id: base.id,
     appointmentId: base.appointmentId,
@@ -3552,6 +4286,21 @@ String _focusPayloadSignature(
           key == 'review_disposition_updated_at' ||
           key == 'updated_at',
     );
+  final rawIntervals = state['effective_intervals'];
+  if (rawIntervals is List) {
+    state['effective_intervals'] = [
+      for (final rawInterval in rawIntervals)
+        if (rawInterval is Map)
+          Map<String, dynamic>.from(rawInterval)
+            ..remove('clock_epoch_id')
+            ..remove('monotonic_started_microseconds')
+            ..remove('monotonic_ended_microseconds')
+            ..remove('monotonic_checkpoint_microseconds')
+            ..remove('last_observed_wall_time')
+        else
+          rawInterval,
+    ];
+  }
   return _canonicalJson(state);
 }
 
@@ -4078,6 +4827,22 @@ class UnavailableFocusRepository implements FocusRepository {
   @override
   Stream<List<FocusReconciliationCase>> watchFocusReconciliations() =>
       Stream.value(const []);
+
+  @override
+  Stream<List<FocusClockReviewCase>> watchClockReviewCases() =>
+      Stream.value(const []);
+
+  @override
+  Future<List<FocusClockReviewCase>> getClockReviewCases() async => const [];
+
+  @override
+  Future<void> deferClockReviewCase(String caseId) async {}
+
+  @override
+  Future<void> resolveClockReviewCase({
+    required String caseId,
+    required FocusClockReviewDecision decision,
+  }) async {}
 
   @override
   Future<List<FocusReconciliationCase>> getFocusReconciliations() async =>

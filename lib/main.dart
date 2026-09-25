@@ -10,8 +10,11 @@ import 'src/auth/auth_repository.dart';
 import 'src/auth/supabase_auth_repository.dart';
 import 'src/focus/focus_models.dart';
 import 'src/focus/focus_repository.dart';
+import 'src/focus/focus_clock_review_page.dart';
 import 'src/focus/focus_reconciliation_page.dart';
 import 'src/focus/focus_time_zones.dart';
+import 'src/national_focus/national_focus_repository.dart';
+import 'src/national_focus/national_focus_tree_page.dart';
 import 'src/tasks/task_database.dart' show PactaDatabase;
 import 'src/tasks/task_models.dart';
 import 'src/tasks/task_repository.dart';
@@ -43,6 +46,8 @@ Future<void> main() async {
         userId: userId,
         remote: focusRemote,
       ),
+      nationalFocusRepositoryFactory: (userId) =>
+          LocalNationalFocusRepository(database: database, userId: userId),
     ),
   );
 }
@@ -53,11 +58,14 @@ class PactaApp extends StatelessWidget {
     required this.authRepository,
     this.taskRepositoryFactory,
     this.focusRepositoryFactory,
+    this.nationalFocusRepositoryFactory,
   });
 
   final AuthRepository authRepository;
   final TaskRepository Function(String userId)? taskRepositoryFactory;
   final FocusRepository Function(String userId)? focusRepositoryFactory;
+  final NationalFocusRepository Function(String userId)?
+  nationalFocusRepositoryFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +77,10 @@ class PactaApp extends StatelessWidget {
         ),
         focusRepositoryFactoryProvider.overrideWithValue(
           focusRepositoryFactory ?? (_) => const UnavailableFocusRepository(),
+        ),
+        nationalFocusRepositoryFactoryProvider.overrideWithValue(
+          nationalFocusRepositoryFactory ??
+              (_) => const UnavailableNationalFocusRepository(),
         ),
       ],
       child: MaterialApp(
@@ -120,6 +132,22 @@ final focusRepositoryProvider = Provider.autoDispose<FocusRepository>((ref) {
   ref.onDispose(repository.dispose);
   return repository;
 });
+
+final nationalFocusRepositoryFactoryProvider =
+    Provider<NationalFocusRepository Function(String userId)>((ref) {
+      return (_) => const UnavailableNationalFocusRepository();
+    });
+
+final nationalFocusRepositoryProvider =
+    Provider.autoDispose<NationalFocusRepository>((ref) {
+      final userId = ref.watch(authRepositoryProvider).currentUserId;
+      if (userId == null) return const UnavailableNationalFocusRepository();
+      final repository = ref.watch(nationalFocusRepositoryFactoryProvider)(
+        userId,
+      );
+      ref.onDispose(repository.dispose);
+      return repository;
+    });
 
 class AuthGate extends ConsumerWidget {
   const AuthGate({super.key});
@@ -334,9 +362,10 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   Widget build(BuildContext context) {
+    final nationalFocusRepository = ref.watch(nationalFocusRepositoryProvider);
     final pages = [
       const BoardPage(),
-      const NationalFocusPage(),
+      NationalFocusTreePage(repository: nationalFocusRepository),
       const FocusChainPage(),
       const MyPage(),
     ];
@@ -400,6 +429,45 @@ class _FocusReconciliationPrompt extends StatelessWidget {
                     focusRepository: focusRepository,
                     taskRepository: taskRepository,
                   ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _FocusClockReviewPrompt extends StatelessWidget {
+  const _FocusClockReviewPrompt({required this.repository});
+
+  final FocusRepository repository;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<FocusClockReviewCase>>(
+      stream: repository.watchClockReviewCases(),
+      builder: (context, snapshot) {
+        final cases = snapshot.data ?? const <FocusClockReviewCase>[];
+        if (cases.isEmpty) return const SizedBox.shrink();
+        final deferredCount = cases.where((item) => item.isDeferred).length;
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Card(
+            color: Theme.of(context).colorScheme.tertiaryContainer,
+            child: ListTile(
+              leading: const Icon(Icons.schedule_outlined),
+              title: Text('${cases.length} 段专注时间待核对'),
+              subtitle: Text(
+                deferredCount == 0
+                    ? '时钟变化后的区间保留待核对，不会直接判为失败。'
+                    : '$deferredCount 段已暂缓；可靠时间仍可继续使用。',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => FocusClockReviewPage(repository: repository),
                 ),
               ),
             ),
@@ -507,6 +575,7 @@ class _BoardContent extends StatelessWidget {
           focusRepository: focusRepository,
           taskRepository: repository,
         ),
+        _FocusClockReviewPrompt(repository: focusRepository),
         if (goals.isEmpty)
           const Card(
             child: Padding(
@@ -1293,18 +1362,6 @@ String _formatDuration(int seconds) {
   final minutes = seconds ~/ 60;
   final remainingSeconds = seconds % 60;
   return '$minutes分${remainingSeconds.toString().padLeft(2, '0')}秒';
-}
-
-class NationalFocusPage extends StatelessWidget {
-  const NationalFocusPage({super.key});
-
-  @override
-  Widget build(BuildContext context) => const _EmptyPage(
-    title: '国策树',
-    message: '国策树还是空的',
-    detail: '你的国策卡会在这里形成结构。它们由你手动维护和确认。',
-    icon: Icons.account_tree_outlined,
-  );
 }
 
 class FocusChainPage extends ConsumerStatefulWidget {
@@ -3300,43 +3357,6 @@ class _AdminEligibilityCardState extends ConsumerState<AdminEligibilityCard> {
               ),
             ],
           ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _EmptyPage extends StatelessWidget {
-  const _EmptyPage({
-    required this.title,
-    required this.message,
-    required this.detail,
-    required this.icon,
-  });
-
-  final String title;
-  final String message;
-  final String detail;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(28),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: 64, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(height: 20),
-          Text(title, style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          Text(
-            message,
-            style: Theme.of(context).textTheme.headlineSmall,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 12),
-          Text(detail, textAlign: TextAlign.center),
         ],
       ),
     ),

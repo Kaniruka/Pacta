@@ -81,18 +81,141 @@ enum FocusRecordDisposition {
 }
 
 class FocusTimeInterval {
-  const FocusTimeInterval({required this.startedAt, required this.endedAt});
+  const FocusTimeInterval({
+    required this.startedAt,
+    required this.endedAt,
+    this.measuredDurationSeconds,
+    this.clockEpochId,
+    this.monotonicStartedMicroseconds,
+    this.monotonicEndedMicroseconds,
+    this.monotonicCheckpointMicroseconds,
+    this.lastObservedWallTime,
+    this.observedStartedAt,
+    this.observedEndedAt,
+    this.clockDiscrepancySeconds,
+    this.clockReviewStatus = FocusClockReviewStatus.none,
+    this.excludeFromFocusProgress = false,
+  });
 
   final DateTime startedAt;
   final DateTime? endedAt;
 
+  /// Elapsed time measured by the monotonic clock, when available.
+  final int? measuredDurationSeconds;
+  final String? clockEpochId;
+  final int? monotonicStartedMicroseconds;
+  final int? monotonicEndedMicroseconds;
+
+  /// Most recent local wall/monotonic sample persisted while this interval
+  /// was open, used to detect clock rollback across process recovery.
+  final int? monotonicCheckpointMicroseconds;
+  final DateTime? lastObservedWallTime;
+
+  /// Original device wall-clock values retained when they disagree with the
+  /// monotonic timeline.
+  final DateTime? observedStartedAt;
+  final DateTime? observedEndedAt;
+  final int? clockDiscrepancySeconds;
+  final FocusClockReviewStatus clockReviewStatus;
+  final bool excludeFromFocusProgress;
+
+  bool get isAwaitingClockReview =>
+      clockReviewStatus == FocusClockReviewStatus.pending ||
+      clockReviewStatus == FocusClockReviewStatus.deferred;
+
   int get durationSeconds {
+    if (excludeFromFocusProgress) return 0;
+    if (measuredDurationSeconds != null) {
+      return measuredDurationSeconds!.clamp(0, 1 << 31);
+    }
     final seconds = endedAt?.difference(startedAt).inSeconds ?? 0;
     return seconds > 0 ? seconds : 0;
   }
 
-  FocusTimeInterval copyWith({DateTime? endedAt}) =>
-      FocusTimeInterval(startedAt: startedAt, endedAt: endedAt ?? this.endedAt);
+  FocusTimeInterval copyWith({
+    DateTime? startedAt,
+    DateTime? endedAt,
+    int? measuredDurationSeconds,
+    String? clockEpochId,
+    int? monotonicStartedMicroseconds,
+    int? monotonicEndedMicroseconds,
+    int? monotonicCheckpointMicroseconds,
+    DateTime? lastObservedWallTime,
+    DateTime? observedStartedAt,
+    DateTime? observedEndedAt,
+    int? clockDiscrepancySeconds,
+    FocusClockReviewStatus? clockReviewStatus,
+    bool? excludeFromFocusProgress,
+  }) => FocusTimeInterval(
+    startedAt: startedAt ?? this.startedAt,
+    endedAt: endedAt ?? this.endedAt,
+    measuredDurationSeconds:
+        measuredDurationSeconds ?? this.measuredDurationSeconds,
+    clockEpochId: clockEpochId ?? this.clockEpochId,
+    monotonicStartedMicroseconds:
+        monotonicStartedMicroseconds ?? this.monotonicStartedMicroseconds,
+    monotonicEndedMicroseconds:
+        monotonicEndedMicroseconds ?? this.monotonicEndedMicroseconds,
+    monotonicCheckpointMicroseconds:
+        monotonicCheckpointMicroseconds ?? this.monotonicCheckpointMicroseconds,
+    lastObservedWallTime: lastObservedWallTime ?? this.lastObservedWallTime,
+    observedStartedAt: observedStartedAt ?? this.observedStartedAt,
+    observedEndedAt: observedEndedAt ?? this.observedEndedAt,
+    clockDiscrepancySeconds:
+        clockDiscrepancySeconds ?? this.clockDiscrepancySeconds,
+    clockReviewStatus: clockReviewStatus ?? this.clockReviewStatus,
+    excludeFromFocusProgress:
+        excludeFromFocusProgress ?? this.excludeFromFocusProgress,
+  );
+}
+
+enum FocusClockReviewStatus {
+  none,
+  pending,
+  deferred,
+  resolved;
+
+  String get storageValue => switch (this) {
+    FocusClockReviewStatus.none => 'none',
+    FocusClockReviewStatus.pending => 'pending',
+    FocusClockReviewStatus.deferred => 'deferred',
+    FocusClockReviewStatus.resolved => 'resolved',
+  };
+
+  static FocusClockReviewStatus fromStorage(String? value) => switch (value) {
+    'pending' => FocusClockReviewStatus.pending,
+    'deferred' => FocusClockReviewStatus.deferred,
+    'resolved' => FocusClockReviewStatus.resolved,
+    _ => FocusClockReviewStatus.none,
+  };
+}
+
+enum FocusClockChangeDirection { forward, backward }
+
+enum FocusClockReviewDecision { acceptMonotonicEstimate, keepReliableTimeOnly }
+
+class FocusClockReviewCase {
+  const FocusClockReviewCase({
+    required this.id,
+    required this.sessionId,
+    required this.taskId,
+    required this.direction,
+    required this.reliableSeconds,
+    required this.interval,
+  });
+
+  final String id;
+  final String sessionId;
+  final String taskId;
+  final FocusClockChangeDirection direction;
+  final int reliableSeconds;
+  final FocusTimeInterval interval;
+
+  bool get isDeferred =>
+      interval.clockReviewStatus == FocusClockReviewStatus.deferred;
+  bool get canAcceptMonotonicEstimate =>
+      interval.measuredDurationSeconds != null;
+  int? get uncertainSeconds => interval.measuredDurationSeconds;
 }
 
 class FocusActivityDay {

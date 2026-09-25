@@ -35,6 +35,23 @@ class LocalTasks extends Table {
   Set<Column<Object>> get primaryKey => {userId, id};
 }
 
+class LocalNationalFocusCards extends Table {
+  TextColumn get userId => text()();
+  TextColumn get id => text()();
+  TextColumn get triggerCondition => text()();
+  TextColumn get action => text()();
+  TextColumn get scope => text().nullable()();
+  TextColumn get exceptionNotes => text().nullable()();
+  BoolColumn get isInTree => boolean().withDefault(const Constant(false))();
+  TextColumn get parentId => text().nullable()();
+  TextColumn get state => text().withDefault(const Constant('extinguished'))();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId, id};
+}
+
 class FocusSessions extends Table {
   TextColumn get userId => text()();
   TextColumn get id => text()();
@@ -183,6 +200,7 @@ class TaskSyncEntries extends Table {
   tables: [
     LocalGoals,
     LocalTasks,
+    LocalNationalFocusCards,
     TaskSyncEntries,
     FocusSessions,
     FocusNodes,
@@ -201,7 +219,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -273,6 +291,9 @@ class PactaDatabase extends _$PactaDatabase {
         );
         await m.addColumn(focusSessions, focusSessions.outcomeBasisSourceId);
         await m.addColumn(focusSyncSources, focusSyncSources.parentSourceIds);
+      }
+      if (from < 13) {
+        await m.createTable(localNationalFocusCards);
       }
     },
   );

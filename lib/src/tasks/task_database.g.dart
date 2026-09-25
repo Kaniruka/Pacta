@@ -1190,6 +1190,672 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
   }
 }
 
+class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
+    with TableInfo<$LocalNationalFocusCardsTable, LocalNationalFocusCard> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalNationalFocusCardsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _triggerConditionMeta = const VerificationMeta(
+    'triggerCondition',
+  );
+  @override
+  late final GeneratedColumn<String> triggerCondition = GeneratedColumn<String>(
+    'trigger_condition',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _actionMeta = const VerificationMeta('action');
+  @override
+  late final GeneratedColumn<String> action = GeneratedColumn<String>(
+    'action',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _scopeMeta = const VerificationMeta('scope');
+  @override
+  late final GeneratedColumn<String> scope = GeneratedColumn<String>(
+    'scope',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _exceptionNotesMeta = const VerificationMeta(
+    'exceptionNotes',
+  );
+  @override
+  late final GeneratedColumn<String> exceptionNotes = GeneratedColumn<String>(
+    'exception_notes',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _isInTreeMeta = const VerificationMeta(
+    'isInTree',
+  );
+  @override
+  late final GeneratedColumn<bool> isInTree = GeneratedColumn<bool>(
+    'is_in_tree',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_in_tree" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _parentIdMeta = const VerificationMeta(
+    'parentId',
+  );
+  @override
+  late final GeneratedColumn<String> parentId = GeneratedColumn<String>(
+    'parent_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _stateMeta = const VerificationMeta('state');
+  @override
+  late final GeneratedColumn<String> state = GeneratedColumn<String>(
+    'state',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('extinguished'),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    id,
+    triggerCondition,
+    action,
+    scope,
+    exceptionNotes,
+    isInTree,
+    parentId,
+    state,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_national_focus_cards';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalNationalFocusCard> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('trigger_condition')) {
+      context.handle(
+        _triggerConditionMeta,
+        triggerCondition.isAcceptableOrUnknown(
+          data['trigger_condition']!,
+          _triggerConditionMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_triggerConditionMeta);
+    }
+    if (data.containsKey('action')) {
+      context.handle(
+        _actionMeta,
+        action.isAcceptableOrUnknown(data['action']!, _actionMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_actionMeta);
+    }
+    if (data.containsKey('scope')) {
+      context.handle(
+        _scopeMeta,
+        scope.isAcceptableOrUnknown(data['scope']!, _scopeMeta),
+      );
+    }
+    if (data.containsKey('exception_notes')) {
+      context.handle(
+        _exceptionNotesMeta,
+        exceptionNotes.isAcceptableOrUnknown(
+          data['exception_notes']!,
+          _exceptionNotesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_in_tree')) {
+      context.handle(
+        _isInTreeMeta,
+        isInTree.isAcceptableOrUnknown(data['is_in_tree']!, _isInTreeMeta),
+      );
+    }
+    if (data.containsKey('parent_id')) {
+      context.handle(
+        _parentIdMeta,
+        parentId.isAcceptableOrUnknown(data['parent_id']!, _parentIdMeta),
+      );
+    }
+    if (data.containsKey('state')) {
+      context.handle(
+        _stateMeta,
+        state.isAcceptableOrUnknown(data['state']!, _stateMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId, id};
+  @override
+  LocalNationalFocusCard map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalNationalFocusCard(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      triggerCondition: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}trigger_condition'],
+      )!,
+      action: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}action'],
+      )!,
+      scope: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}scope'],
+      ),
+      exceptionNotes: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}exception_notes'],
+      ),
+      isInTree: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_in_tree'],
+      )!,
+      parentId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}parent_id'],
+      ),
+      state: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}state'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalNationalFocusCardsTable createAlias(String alias) {
+    return $LocalNationalFocusCardsTable(attachedDatabase, alias);
+  }
+}
+
+class LocalNationalFocusCard extends DataClass
+    implements Insertable<LocalNationalFocusCard> {
+  final String userId;
+  final String id;
+  final String triggerCondition;
+  final String action;
+  final String? scope;
+  final String? exceptionNotes;
+  final bool isInTree;
+  final String? parentId;
+  final String state;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  const LocalNationalFocusCard({
+    required this.userId,
+    required this.id,
+    required this.triggerCondition,
+    required this.action,
+    this.scope,
+    this.exceptionNotes,
+    required this.isInTree,
+    this.parentId,
+    required this.state,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['id'] = Variable<String>(id);
+    map['trigger_condition'] = Variable<String>(triggerCondition);
+    map['action'] = Variable<String>(action);
+    if (!nullToAbsent || scope != null) {
+      map['scope'] = Variable<String>(scope);
+    }
+    if (!nullToAbsent || exceptionNotes != null) {
+      map['exception_notes'] = Variable<String>(exceptionNotes);
+    }
+    map['is_in_tree'] = Variable<bool>(isInTree);
+    if (!nullToAbsent || parentId != null) {
+      map['parent_id'] = Variable<String>(parentId);
+    }
+    map['state'] = Variable<String>(state);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  LocalNationalFocusCardsCompanion toCompanion(bool nullToAbsent) {
+    return LocalNationalFocusCardsCompanion(
+      userId: Value(userId),
+      id: Value(id),
+      triggerCondition: Value(triggerCondition),
+      action: Value(action),
+      scope: scope == null && nullToAbsent
+          ? const Value.absent()
+          : Value(scope),
+      exceptionNotes: exceptionNotes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(exceptionNotes),
+      isInTree: Value(isInTree),
+      parentId: parentId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(parentId),
+      state: Value(state),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory LocalNationalFocusCard.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalNationalFocusCard(
+      userId: serializer.fromJson<String>(json['userId']),
+      id: serializer.fromJson<String>(json['id']),
+      triggerCondition: serializer.fromJson<String>(json['triggerCondition']),
+      action: serializer.fromJson<String>(json['action']),
+      scope: serializer.fromJson<String?>(json['scope']),
+      exceptionNotes: serializer.fromJson<String?>(json['exceptionNotes']),
+      isInTree: serializer.fromJson<bool>(json['isInTree']),
+      parentId: serializer.fromJson<String?>(json['parentId']),
+      state: serializer.fromJson<String>(json['state']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'id': serializer.toJson<String>(id),
+      'triggerCondition': serializer.toJson<String>(triggerCondition),
+      'action': serializer.toJson<String>(action),
+      'scope': serializer.toJson<String?>(scope),
+      'exceptionNotes': serializer.toJson<String?>(exceptionNotes),
+      'isInTree': serializer.toJson<bool>(isInTree),
+      'parentId': serializer.toJson<String?>(parentId),
+      'state': serializer.toJson<String>(state),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  LocalNationalFocusCard copyWith({
+    String? userId,
+    String? id,
+    String? triggerCondition,
+    String? action,
+    Value<String?> scope = const Value.absent(),
+    Value<String?> exceptionNotes = const Value.absent(),
+    bool? isInTree,
+    Value<String?> parentId = const Value.absent(),
+    String? state,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => LocalNationalFocusCard(
+    userId: userId ?? this.userId,
+    id: id ?? this.id,
+    triggerCondition: triggerCondition ?? this.triggerCondition,
+    action: action ?? this.action,
+    scope: scope.present ? scope.value : this.scope,
+    exceptionNotes: exceptionNotes.present
+        ? exceptionNotes.value
+        : this.exceptionNotes,
+    isInTree: isInTree ?? this.isInTree,
+    parentId: parentId.present ? parentId.value : this.parentId,
+    state: state ?? this.state,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  LocalNationalFocusCard copyWithCompanion(
+    LocalNationalFocusCardsCompanion data,
+  ) {
+    return LocalNationalFocusCard(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      id: data.id.present ? data.id.value : this.id,
+      triggerCondition: data.triggerCondition.present
+          ? data.triggerCondition.value
+          : this.triggerCondition,
+      action: data.action.present ? data.action.value : this.action,
+      scope: data.scope.present ? data.scope.value : this.scope,
+      exceptionNotes: data.exceptionNotes.present
+          ? data.exceptionNotes.value
+          : this.exceptionNotes,
+      isInTree: data.isInTree.present ? data.isInTree.value : this.isInTree,
+      parentId: data.parentId.present ? data.parentId.value : this.parentId,
+      state: data.state.present ? data.state.value : this.state,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalNationalFocusCard(')
+          ..write('userId: $userId, ')
+          ..write('id: $id, ')
+          ..write('triggerCondition: $triggerCondition, ')
+          ..write('action: $action, ')
+          ..write('scope: $scope, ')
+          ..write('exceptionNotes: $exceptionNotes, ')
+          ..write('isInTree: $isInTree, ')
+          ..write('parentId: $parentId, ')
+          ..write('state: $state, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    userId,
+    id,
+    triggerCondition,
+    action,
+    scope,
+    exceptionNotes,
+    isInTree,
+    parentId,
+    state,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalNationalFocusCard &&
+          other.userId == this.userId &&
+          other.id == this.id &&
+          other.triggerCondition == this.triggerCondition &&
+          other.action == this.action &&
+          other.scope == this.scope &&
+          other.exceptionNotes == this.exceptionNotes &&
+          other.isInTree == this.isInTree &&
+          other.parentId == this.parentId &&
+          other.state == this.state &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class LocalNationalFocusCardsCompanion
+    extends UpdateCompanion<LocalNationalFocusCard> {
+  final Value<String> userId;
+  final Value<String> id;
+  final Value<String> triggerCondition;
+  final Value<String> action;
+  final Value<String?> scope;
+  final Value<String?> exceptionNotes;
+  final Value<bool> isInTree;
+  final Value<String?> parentId;
+  final Value<String> state;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const LocalNationalFocusCardsCompanion({
+    this.userId = const Value.absent(),
+    this.id = const Value.absent(),
+    this.triggerCondition = const Value.absent(),
+    this.action = const Value.absent(),
+    this.scope = const Value.absent(),
+    this.exceptionNotes = const Value.absent(),
+    this.isInTree = const Value.absent(),
+    this.parentId = const Value.absent(),
+    this.state = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalNationalFocusCardsCompanion.insert({
+    required String userId,
+    required String id,
+    required String triggerCondition,
+    required String action,
+    this.scope = const Value.absent(),
+    this.exceptionNotes = const Value.absent(),
+    this.isInTree = const Value.absent(),
+    this.parentId = const Value.absent(),
+    this.state = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       id = Value(id),
+       triggerCondition = Value(triggerCondition),
+       action = Value(action),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<LocalNationalFocusCard> custom({
+    Expression<String>? userId,
+    Expression<String>? id,
+    Expression<String>? triggerCondition,
+    Expression<String>? action,
+    Expression<String>? scope,
+    Expression<String>? exceptionNotes,
+    Expression<bool>? isInTree,
+    Expression<String>? parentId,
+    Expression<String>? state,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (id != null) 'id': id,
+      if (triggerCondition != null) 'trigger_condition': triggerCondition,
+      if (action != null) 'action': action,
+      if (scope != null) 'scope': scope,
+      if (exceptionNotes != null) 'exception_notes': exceptionNotes,
+      if (isInTree != null) 'is_in_tree': isInTree,
+      if (parentId != null) 'parent_id': parentId,
+      if (state != null) 'state': state,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalNationalFocusCardsCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? id,
+    Value<String>? triggerCondition,
+    Value<String>? action,
+    Value<String?>? scope,
+    Value<String?>? exceptionNotes,
+    Value<bool>? isInTree,
+    Value<String?>? parentId,
+    Value<String>? state,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return LocalNationalFocusCardsCompanion(
+      userId: userId ?? this.userId,
+      id: id ?? this.id,
+      triggerCondition: triggerCondition ?? this.triggerCondition,
+      action: action ?? this.action,
+      scope: scope ?? this.scope,
+      exceptionNotes: exceptionNotes ?? this.exceptionNotes,
+      isInTree: isInTree ?? this.isInTree,
+      parentId: parentId ?? this.parentId,
+      state: state ?? this.state,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (triggerCondition.present) {
+      map['trigger_condition'] = Variable<String>(triggerCondition.value);
+    }
+    if (action.present) {
+      map['action'] = Variable<String>(action.value);
+    }
+    if (scope.present) {
+      map['scope'] = Variable<String>(scope.value);
+    }
+    if (exceptionNotes.present) {
+      map['exception_notes'] = Variable<String>(exceptionNotes.value);
+    }
+    if (isInTree.present) {
+      map['is_in_tree'] = Variable<bool>(isInTree.value);
+    }
+    if (parentId.present) {
+      map['parent_id'] = Variable<String>(parentId.value);
+    }
+    if (state.present) {
+      map['state'] = Variable<String>(state.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalNationalFocusCardsCompanion(')
+          ..write('userId: $userId, ')
+          ..write('id: $id, ')
+          ..write('triggerCondition: $triggerCondition, ')
+          ..write('action: $action, ')
+          ..write('scope: $scope, ')
+          ..write('exceptionNotes: $exceptionNotes, ')
+          ..write('isInTree: $isInTree, ')
+          ..write('parentId: $parentId, ')
+          ..write('state: $state, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $TaskSyncEntriesTable extends TaskSyncEntries
     with TableInfo<$TaskSyncEntriesTable, TaskSyncEntry> {
   @override
@@ -6390,6 +7056,8 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   $PactaDatabaseManager get managers => $PactaDatabaseManager(this);
   late final $LocalGoalsTable localGoals = $LocalGoalsTable(this);
   late final $LocalTasksTable localTasks = $LocalTasksTable(this);
+  late final $LocalNationalFocusCardsTable localNationalFocusCards =
+      $LocalNationalFocusCardsTable(this);
   late final $TaskSyncEntriesTable taskSyncEntries = $TaskSyncEntriesTable(
     this,
   );
@@ -6418,6 +7086,7 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     localGoals,
     localTasks,
+    localNationalFocusCards,
     taskSyncEntries,
     focusSessions,
     focusNodes,
@@ -7004,6 +7673,343 @@ typedef $$LocalTasksTableProcessedTableManager =
       $$LocalTasksTableUpdateCompanionBuilder,
       (LocalTask, BaseReferences<_$PactaDatabase, $LocalTasksTable, LocalTask>),
       LocalTask,
+      PrefetchHooks Function()
+    >;
+typedef $$LocalNationalFocusCardsTableCreateCompanionBuilder =
+    LocalNationalFocusCardsCompanion Function({
+      required String userId,
+      required String id,
+      required String triggerCondition,
+      required String action,
+      Value<String?> scope,
+      Value<String?> exceptionNotes,
+      Value<bool> isInTree,
+      Value<String?> parentId,
+      Value<String> state,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<int> rowid,
+    });
+typedef $$LocalNationalFocusCardsTableUpdateCompanionBuilder =
+    LocalNationalFocusCardsCompanion Function({
+      Value<String> userId,
+      Value<String> id,
+      Value<String> triggerCondition,
+      Value<String> action,
+      Value<String?> scope,
+      Value<String?> exceptionNotes,
+      Value<bool> isInTree,
+      Value<String?> parentId,
+      Value<String> state,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$LocalNationalFocusCardsTableFilterComposer
+    extends Composer<_$PactaDatabase, $LocalNationalFocusCardsTable> {
+  $$LocalNationalFocusCardsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get triggerCondition => $composableBuilder(
+    column: $table.triggerCondition,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get action => $composableBuilder(
+    column: $table.action,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get scope => $composableBuilder(
+    column: $table.scope,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get exceptionNotes => $composableBuilder(
+    column: $table.exceptionNotes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isInTree => $composableBuilder(
+    column: $table.isInTree,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get parentId => $composableBuilder(
+    column: $table.parentId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get state => $composableBuilder(
+    column: $table.state,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalNationalFocusCardsTableOrderingComposer
+    extends Composer<_$PactaDatabase, $LocalNationalFocusCardsTable> {
+  $$LocalNationalFocusCardsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get triggerCondition => $composableBuilder(
+    column: $table.triggerCondition,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get action => $composableBuilder(
+    column: $table.action,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get scope => $composableBuilder(
+    column: $table.scope,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get exceptionNotes => $composableBuilder(
+    column: $table.exceptionNotes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isInTree => $composableBuilder(
+    column: $table.isInTree,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get parentId => $composableBuilder(
+    column: $table.parentId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get state => $composableBuilder(
+    column: $table.state,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalNationalFocusCardsTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $LocalNationalFocusCardsTable> {
+  $$LocalNationalFocusCardsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get triggerCondition => $composableBuilder(
+    column: $table.triggerCondition,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get action =>
+      $composableBuilder(column: $table.action, builder: (column) => column);
+
+  GeneratedColumn<String> get scope =>
+      $composableBuilder(column: $table.scope, builder: (column) => column);
+
+  GeneratedColumn<String> get exceptionNotes => $composableBuilder(
+    column: $table.exceptionNotes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isInTree =>
+      $composableBuilder(column: $table.isInTree, builder: (column) => column);
+
+  GeneratedColumn<String> get parentId =>
+      $composableBuilder(column: $table.parentId, builder: (column) => column);
+
+  GeneratedColumn<String> get state =>
+      $composableBuilder(column: $table.state, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$LocalNationalFocusCardsTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $LocalNationalFocusCardsTable,
+          LocalNationalFocusCard,
+          $$LocalNationalFocusCardsTableFilterComposer,
+          $$LocalNationalFocusCardsTableOrderingComposer,
+          $$LocalNationalFocusCardsTableAnnotationComposer,
+          $$LocalNationalFocusCardsTableCreateCompanionBuilder,
+          $$LocalNationalFocusCardsTableUpdateCompanionBuilder,
+          (
+            LocalNationalFocusCard,
+            BaseReferences<
+              _$PactaDatabase,
+              $LocalNationalFocusCardsTable,
+              LocalNationalFocusCard
+            >,
+          ),
+          LocalNationalFocusCard,
+          PrefetchHooks Function()
+        > {
+  $$LocalNationalFocusCardsTableTableManager(
+    _$PactaDatabase db,
+    $LocalNationalFocusCardsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalNationalFocusCardsTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$LocalNationalFocusCardsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$LocalNationalFocusCardsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> id = const Value.absent(),
+                Value<String> triggerCondition = const Value.absent(),
+                Value<String> action = const Value.absent(),
+                Value<String?> scope = const Value.absent(),
+                Value<String?> exceptionNotes = const Value.absent(),
+                Value<bool> isInTree = const Value.absent(),
+                Value<String?> parentId = const Value.absent(),
+                Value<String> state = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalNationalFocusCardsCompanion(
+                userId: userId,
+                id: id,
+                triggerCondition: triggerCondition,
+                action: action,
+                scope: scope,
+                exceptionNotes: exceptionNotes,
+                isInTree: isInTree,
+                parentId: parentId,
+                state: state,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                required String id,
+                required String triggerCondition,
+                required String action,
+                Value<String?> scope = const Value.absent(),
+                Value<String?> exceptionNotes = const Value.absent(),
+                Value<bool> isInTree = const Value.absent(),
+                Value<String?> parentId = const Value.absent(),
+                Value<String> state = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => LocalNationalFocusCardsCompanion.insert(
+                userId: userId,
+                id: id,
+                triggerCondition: triggerCondition,
+                action: action,
+                scope: scope,
+                exceptionNotes: exceptionNotes,
+                isInTree: isInTree,
+                parentId: parentId,
+                state: state,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalNationalFocusCardsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $LocalNationalFocusCardsTable,
+      LocalNationalFocusCard,
+      $$LocalNationalFocusCardsTableFilterComposer,
+      $$LocalNationalFocusCardsTableOrderingComposer,
+      $$LocalNationalFocusCardsTableAnnotationComposer,
+      $$LocalNationalFocusCardsTableCreateCompanionBuilder,
+      $$LocalNationalFocusCardsTableUpdateCompanionBuilder,
+      (
+        LocalNationalFocusCard,
+        BaseReferences<
+          _$PactaDatabase,
+          $LocalNationalFocusCardsTable,
+          LocalNationalFocusCard
+        >,
+      ),
+      LocalNationalFocusCard,
       PrefetchHooks Function()
     >;
 typedef $$TaskSyncEntriesTableCreateCompanionBuilder =
@@ -9717,6 +10723,11 @@ class $PactaDatabaseManager {
       $$LocalGoalsTableTableManager(_db, _db.localGoals);
   $$LocalTasksTableTableManager get localTasks =>
       $$LocalTasksTableTableManager(_db, _db.localTasks);
+  $$LocalNationalFocusCardsTableTableManager get localNationalFocusCards =>
+      $$LocalNationalFocusCardsTableTableManager(
+        _db,
+        _db.localNationalFocusCards,
+      );
   $$TaskSyncEntriesTableTableManager get taskSyncEntries =>
       $$TaskSyncEntriesTableTableManager(_db, _db.taskSyncEntries);
   $$FocusSessionsTableTableManager get focusSessions =>

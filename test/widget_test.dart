@@ -32,7 +32,7 @@ void main() {
 
     await tester.tap(find.text('国策树'));
     await tester.pumpAndSettle();
-    expect(find.text('国策树还是空的'), findsOneWidget);
+    expect(find.text('先在卡片库创建国策卡，再回到这里选择顶层或父节点。'), findsOneWidget);
 
     await tester.tap(find.text('专注链'));
     await tester.pumpAndSettle();
@@ -194,7 +194,6 @@ void main() {
       userId: 'user@example.com',
       remote: focusRemote,
     );
-    addTearDown(focusRepository.dispose);
     final goal = await taskRepository.createGoal(
       const GoalDraft(title: '交付', classification: TaskClassification.regular),
     );
@@ -231,6 +230,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(await focusRepository.getActiveSession(), isNotNull);
     expect(find.text('打开专注设置'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await focusRepository.dispose();
   });
 
   testWidgets('专注设置可启动预约准备，准备页改配置不重置时间并可提前进入', (tester) async {
