@@ -11,11 +11,16 @@ import 'national_focus_models.dart';
 abstract interface class NationalFocusRepository {
   Stream<List<NationalFocusCard>> watchTreeCards();
   Stream<List<NationalFocusCard>> watchLibraryCards();
+  Stream<List<NationalFocusCard>> watchDeletedCards();
   Future<List<NationalFocusCard>> getTreeCards();
   Future<List<NationalFocusCard>> getLibraryCards();
+  Future<List<NationalFocusCard>> getDeletedCards();
   Future<NationalFocusCard> getCard(String cardId);
   Future<NationalFocusCard> createCard(NationalFocusCardDraft draft);
   Future<void> placeCard({required String cardId, required String? parentId});
+  Future<void> moveCardToLibrary(String cardId);
+  Future<NationalFocusCardDeletion> deleteCard(String cardId);
+  Future<void> restoreDeletedCard(String cardId);
   Future<void> lightCard(String cardId);
   Future<void> extinguishCard({required String cardId, String? failureReason});
   Future<int> confirmToday();
@@ -45,17 +50,29 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   final _uuid = const Uuid();
 
   @override
-  Stream<List<NationalFocusCard>> watchTreeCards() => _watchCards(inTree: true);
+  Stream<List<NationalFocusCard>> watchTreeCards() =>
+      _watchCards(inTree: true, deleted: false);
 
   @override
   Stream<List<NationalFocusCard>> watchLibraryCards() =>
-      _watchCards(inTree: false);
+      _watchCards(inTree: false, deleted: false);
 
-  Stream<List<NationalFocusCard>> _watchCards({required bool inTree}) async* {
+  @override
+  Stream<List<NationalFocusCard>> watchDeletedCards() =>
+      _watchCards(inTree: false, deleted: true);
+
+  Stream<List<NationalFocusCard>> _watchCards({
+    required bool inTree,
+    required bool deleted,
+  }) async* {
     await settleDueCheckpoints();
     final query = database.select(database.localNationalFocusCards)
       ..where((card) => card.userId.equals(userId))
       ..where((card) => card.isInTree.equals(inTree))
+      ..where(
+        (card) =>
+            deleted ? card.deletedAt.isNotNull() : card.deletedAt.isNull(),
+      )
       ..orderBy([
         (card) => OrderingTerm.asc(card.createdAt),
         (card) => OrderingTerm.asc(card.id),
@@ -64,10 +81,16 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   }
 
   @override
-  Future<List<NationalFocusCard>> getTreeCards() => _getCards(inTree: true);
+  Future<List<NationalFocusCard>> getTreeCards() =>
+      _getCards(inTree: true, deleted: false);
 
   @override
-  Future<List<NationalFocusCard>> getLibraryCards() => _getCards(inTree: false);
+  Future<List<NationalFocusCard>> getLibraryCards() =>
+      _getCards(inTree: false, deleted: false);
+
+  @override
+  Future<List<NationalFocusCard>> getDeletedCards() =>
+      _getCards(inTree: false, deleted: true);
 
   @override
   Future<NationalFocusCard> getCard(String cardId) async {
@@ -118,6 +141,9 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     await settleDueCheckpoints();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
+      if (card.deletedAt != null) {
+        throw StateError('已删除的国策卡需要先恢复到卡片库。');
+      }
       final rows = await (database.select(
         database.localNationalFocusCards,
       )..where((candidate) => candidate.userId.equals(userId))).get();
@@ -183,10 +209,144 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   }
 
   @override
+  Future<void> moveCardToLibrary(String cardId) async {
+    await settleDueCheckpoints();
+    await database.transaction(() async {
+      final card = await _findCardRow(cardId);
+      if (card.deletedAt != null) {
+        throw StateError('已删除的国策卡需要先恢复到卡片库。');
+      }
+      if (!card.isInTree) {
+        throw StateError('只有树中的国策卡可以移入卡片库。');
+      }
+      final treeCards =
+          await (database.select(database.localNationalFocusCards)
+                ..where((candidate) => candidate.userId.equals(userId))
+                ..where((candidate) => candidate.isInTree.equals(true)))
+              .get();
+      final branch = [card, ..._descendantsOf(card.id, treeCards)];
+      for (final branchCard in branch) {
+        final state = NationalFocusCardState.fromStorage(branchCard.state);
+        final priorCascadeState = branchCard.cascadePriorState == null
+            ? null
+            : NationalFocusCardState.fromStorage(branchCard.cascadePriorState!);
+        final needsRelighting =
+            state == NationalFocusCardState.lit ||
+            state == NationalFocusCardState.pendingTodayConfirmation ||
+            priorCascadeState == NationalFocusCardState.lit ||
+            priorCascadeState ==
+                NationalFocusCardState.pendingTodayConfirmation;
+        await _updateCard(
+          branchCard,
+          LocalNationalFocusCardsCompanion(
+            isInTree: const Value(false),
+            parentId: const Value(null),
+            state: Value(
+              needsRelighting
+                  ? NationalFocusCardState.pendingTodayConfirmation.storageValue
+                  : branchCard.state,
+            ),
+            cascadeSourceCardId: const Value(null),
+            cascadePriorState: const Value(null),
+            updatedAt: Value(_nextTimestamp(branchCard.updatedAt)),
+          ),
+        );
+      }
+    });
+  }
+
+  @override
+  Future<NationalFocusCardDeletion> deleteCard(String cardId) async {
+    await settleDueCheckpoints();
+    return database.transaction(() async {
+      final card = await _findCardRow(cardId);
+      if (card.deletedAt != null) {
+        throw StateError('这张国策卡已在已删除列表中。');
+      }
+      if (card.isInTree) {
+        throw StateError('请先把国策卡移入卡片库，再删除。');
+      }
+      final attachedCards =
+          await (database.select(database.localNationalFocusCards)
+                ..where((candidate) => candidate.userId.equals(userId))
+                ..where((candidate) => candidate.parentId.equals(cardId)))
+              .get();
+      if (attachedCards.isNotEmpty) {
+        throw StateError('请先把所属分支移入卡片库，再删除。');
+      }
+
+      final failures = await (database.select(
+        database.localNationalFocusFailures,
+      )..where((failure) => failure.userId.equals(userId))).get();
+      var referencedByHistory = false;
+      for (final failure in failures) {
+        if (failure.cardId == cardId) {
+          referencedByHistory = true;
+          break;
+        }
+        try {
+          final snapshot = jsonDecode(failure.treeSnapshot) as List<dynamic>;
+          if (snapshot.any(
+            (entry) => (entry as Map<String, dynamic>)['id'] == cardId,
+          )) {
+            referencedByHistory = true;
+            break;
+          }
+        } on FormatException {
+          throw StateError('无法读取国策历史快照；为保护历史记录，无法删除这张卡。');
+        } on TypeError {
+          throw StateError('国策历史快照格式无效；为保护历史记录，无法删除这张卡。');
+        }
+      }
+
+      if (!referencedByHistory) {
+        await (database.delete(database.localNationalFocusCards)
+              ..where((candidate) => candidate.userId.equals(userId))
+              ..where((candidate) => candidate.id.equals(cardId)))
+            .go();
+        return NationalFocusCardDeletion.permanentlyDeleted;
+      }
+
+      final deletedAt = _nextTimestamp(card.updatedAt);
+      await _updateCard(
+        card,
+        LocalNationalFocusCardsCompanion(
+          deletedAt: Value(deletedAt),
+          updatedAt: Value(deletedAt),
+        ),
+      );
+      return NationalFocusCardDeletion.softDeleted;
+    });
+  }
+
+  @override
+  Future<void> restoreDeletedCard(String cardId) async {
+    await settleDueCheckpoints();
+    await database.transaction(() async {
+      final card = await _findCardRow(cardId);
+      if (card.deletedAt == null || card.isInTree) {
+        throw StateError('已删除列表中找不到这张国策卡。');
+      }
+      await _updateCard(
+        card,
+        LocalNationalFocusCardsCompanion(
+          deletedAt: const Value(null),
+          isInTree: const Value(false),
+          parentId: const Value(null),
+          updatedAt: Value(_nextTimestamp(card.updatedAt)),
+        ),
+      );
+    });
+  }
+
+  @override
   Future<void> lightCard(String cardId) async {
     await settleDueCheckpoints();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
+      if (card.deletedAt != null) {
+        throw StateError('已删除的国策卡需要先恢复到卡片库。');
+      }
       if (!card.isInTree) {
         throw StateError('卡片需要先放入国策树才能点亮。');
       }
@@ -239,6 +399,9 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     await settleDueCheckpoints();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
+      if (card.deletedAt != null) {
+        throw StateError('已删除的国策卡需要先恢复到卡片库。');
+      }
       if (!card.isInTree) {
         throw StateError('卡片不在国策树中。');
       }
@@ -300,7 +463,8 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
                         .pendingTodayConfirmation
                         .storageValue,
                   ),
-                ))
+                )
+                ..where((card) => card.deletedAt.isNull()))
               .get();
       final treeCards =
           await (database.select(database.localNationalFocusCards)
@@ -363,15 +527,17 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   }
 
   Future<void> _settleCheckpoint(DateTime checkpoint) async {
-    final cards =
+    final storedCards =
         await (database.select(database.localNationalFocusCards)
               ..where((card) => card.userId.equals(userId))
-              ..where((card) => card.isInTree.equals(true))
               ..orderBy([
                 (card) => OrderingTerm.asc(card.createdAt),
                 (card) => OrderingTerm.asc(card.id),
               ]))
             .get();
+    final cards = storedCards
+        .where((card) => card.isInTree || card.maintenanceCycleStarted)
+        .toList(growable: false);
     if (cards.isEmpty) return;
 
     final plannedFailures = _planIndependentFailures(cards);
@@ -525,11 +691,18 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   @override
   Future<void> dispose() async {}
 
-  Future<List<NationalFocusCard>> _getCards({required bool inTree}) async {
+  Future<List<NationalFocusCard>> _getCards({
+    required bool inTree,
+    required bool deleted,
+  }) async {
     await settleDueCheckpoints();
     final query = database.select(database.localNationalFocusCards)
       ..where((card) => card.userId.equals(userId))
       ..where((card) => card.isInTree.equals(inTree))
+      ..where(
+        (card) =>
+            deleted ? card.deletedAt.isNotNull() : card.deletedAt.isNull(),
+      )
       ..orderBy([
         (card) => OrderingTerm.asc(card.createdAt),
         (card) => OrderingTerm.asc(card.id),
@@ -740,6 +913,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
         cascadePriorState: row.cascadePriorState == null
             ? null
             : NationalFocusCardState.fromStorage(row.cascadePriorState!),
+        deletedAt: row.deletedAt,
       );
 
   Map<String, Object?> _snapshotJson(
@@ -853,10 +1027,17 @@ class UnavailableNationalFocusRepository implements NationalFocusRepository {
       Stream.value(const <NationalFocusCard>[]);
 
   @override
+  Stream<List<NationalFocusCard>> watchDeletedCards() =>
+      Stream.value(const <NationalFocusCard>[]);
+
+  @override
   Future<List<NationalFocusCard>> getTreeCards() async => const [];
 
   @override
   Future<List<NationalFocusCard>> getLibraryCards() async => const [];
+
+  @override
+  Future<List<NationalFocusCard>> getDeletedCards() async => const [];
 
   @override
   Future<NationalFocusCard> getCard(String cardId) => _unavailable();
@@ -868,6 +1049,15 @@ class UnavailableNationalFocusRepository implements NationalFocusRepository {
   @override
   Future<void> placeCard({required String cardId, required String? parentId}) =>
       _unavailable();
+
+  @override
+  Future<void> moveCardToLibrary(String cardId) => _unavailable();
+
+  @override
+  Future<NationalFocusCardDeletion> deleteCard(String cardId) => _unavailable();
+
+  @override
+  Future<void> restoreDeletedCard(String cardId) => _unavailable();
 
   @override
   Future<void> lightCard(String cardId) => _unavailable();

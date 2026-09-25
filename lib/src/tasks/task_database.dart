@@ -57,6 +57,7 @@ class LocalNationalFocusCards extends Table {
   TextColumn get cascadePriorState => text().nullable()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
+  DateTimeColumn get deletedAt => dateTime().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
@@ -254,7 +255,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 15;
+  int get schemaVersion => 16;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -364,6 +365,12 @@ class PactaDatabase extends _$PactaDatabase {
           localNationalFocusCards.cascadePriorState,
         );
         await _cascadeLegacyActiveDescendants(this);
+      }
+      if (from < 16) {
+        await m.addColumn(
+          localNationalFocusCards,
+          localNationalFocusCards.deletedAt,
+        );
       }
     },
   );

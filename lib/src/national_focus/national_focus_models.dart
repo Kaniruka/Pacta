@@ -48,6 +48,8 @@ enum NationalFocusFailureCause {
   };
 }
 
+enum NationalFocusCardDeletion { permanentlyDeleted, softDeleted }
+
 class NationalFocusCard {
   const NationalFocusCard({
     required this.id,
@@ -57,6 +59,7 @@ class NationalFocusCard {
     required this.state,
     required this.createdAt,
     required this.updatedAt,
+    this.deletedAt,
     this.successfulDays = 0,
     this.currentConsecutiveDays = 0,
     this.bestConsecutiveDays = 0,
@@ -79,6 +82,7 @@ class NationalFocusCard {
   final NationalFocusCardState state;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final DateTime? deletedAt;
   final int successfulDays;
   final int currentConsecutiveDays;
   final int bestConsecutiveDays;
@@ -88,6 +92,7 @@ class NationalFocusCard {
   final NationalFocusCardState? cascadePriorState;
 
   bool get isInLibrary => !isInTree;
+  bool get isDeleted => deletedAt != null;
   bool get isTopLevel => isInTree && parentId == null;
   double get internalizationProgress =>
       100 * (1 - math.exp(-successfulDays / 60));

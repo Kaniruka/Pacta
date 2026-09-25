@@ -240,6 +240,66 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     }
   }
 
+  Future<void> _moveBranchToLibrary(NationalFocusCard card) async {
+    if (_busyCardIds.contains(card.id)) return;
+    late final int descendantCount;
+    try {
+      final treeCards = await widget.repository.getTreeCards();
+      final childrenByParent = <String, List<NationalFocusCard>>{};
+      for (final treeCard in treeCards) {
+        final parentId = treeCard.parentId;
+        if (parentId != null) {
+          childrenByParent.putIfAbsent(parentId, () => []).add(treeCard);
+        }
+      }
+      descendantCount = _descendantsOf(card.id, childrenByParent).length;
+    } catch (error) {
+      if (mounted) setState(() => _error = _friendlyError(error));
+      return;
+    }
+    if (!mounted) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('移入卡片库？'),
+        content: Text(
+          descendantCount == 0
+              ? '「${card.triggerCondition}」将移入卡片库。'
+              : '「${card.triggerCondition}」及 $descendantCount 张后代卡片将一起移入卡片库并解除父子关系。之后需要逐张重新放置和点亮。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('移入卡片库'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted || !_busyCardIds.add(card.id)) return;
+
+    setState(() => _error = null);
+    try {
+      await widget.repository.moveCardToLibrary(card.id);
+      if (mounted) {
+        final message = descendantCount == 0
+            ? '已将「${card.triggerCondition}」移入卡片库。'
+            : '已将「${card.triggerCondition}」和 $descendantCount 张后代卡片移入卡片库。';
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = _friendlyError(error));
+    } finally {
+      _busyCardIds.remove(card.id);
+      if (mounted) setState(() {});
+    }
+  }
+
   void _cancelPlacement() {
     setState(() {
       _placementCard = null;
@@ -470,6 +530,9 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
           : cardsById[card.cascadeSourceCardId]?.triggerCondition ?? '父节点',
       onSelect: selecting && !isBlocked ? () => _placeAt(card.id) : null,
       onRelocate: () => _beginPlacement(card),
+      onMoveToLibrary: selecting || _busyCardIds.contains(card.id)
+          ? null
+          : () => _moveBranchToLibrary(card),
       onLight: selecting || hasExtinguishedAncestor
           ? null
           : () => _lightCard(card),
@@ -519,15 +582,23 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   }
 }
 
-class NationalFocusCardLibraryPage extends StatelessWidget {
+class NationalFocusCardLibraryPage extends StatefulWidget {
   const NationalFocusCardLibraryPage({super.key, required this.repository});
 
   final NationalFocusRepository repository;
 
+  @override
+  State<NationalFocusCardLibraryPage> createState() =>
+      _NationalFocusCardLibraryPageState();
+}
+
+class _NationalFocusCardLibraryPageState
+    extends State<NationalFocusCardLibraryPage> {
   Future<void> _createCard(BuildContext context) async {
     final created = await Navigator.of(context).push<bool>(
       MaterialPageRoute<bool>(
-        builder: (_) => NationalFocusCardEditorPage(repository: repository),
+        builder: (_) =>
+            NationalFocusCardEditorPage(repository: widget.repository),
       ),
     );
     if (created == true && context.mounted) {
@@ -536,63 +607,201 @@ class NationalFocusCardLibraryPage extends StatelessWidget {
     }
   }
 
+  Future<void> _deleteCard(NationalFocusCard card) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('删除国策卡？'),
+        content: const Text('失败历史快照引用的卡片会移入已删除列表，可恢复到卡片库；没有失败快照引用的卡片会永久删除。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final result = await widget.repository.deleteCard(card.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result == NationalFocusCardDeletion.softDeleted
+                ? '历史快照引用这张卡；已移入已删除列表，可恢复。'
+                : '没有失败快照引用；已永久删除这张卡。',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_friendlyError(error))));
+    }
+  }
+
+  Future<void> _restoreCard(NationalFocusCard card) async {
+    try {
+      await widget.repository.restoreDeletedCard(card.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已恢复到卡片库；树位置和点亮状态需要重新选择。')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_friendlyError(error))));
+    }
+  }
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('国策卡片库')),
-    body: StreamBuilder<List<NationalFocusCard>>(
-      stream: repository.watchLibraryCards(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return _TreeMessage(
-            icon: Icons.error_outline,
-            title: '无法读取卡片库',
-            message: snapshot.error.toString(),
-          );
-        }
-        if (!snapshot.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final cards = snapshot.data!;
-        if (cards.isEmpty) {
-          return Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: _TreeMessage(
-                icon: Icons.library_books_outlined,
-                title: '卡片库还是空的',
-                message: '创建一张国策卡，再单独选择它在树画布中的位置。',
-                action: FilledButton.icon(
-                  onPressed: () => _createCard(context),
-                  icon: const Icon(Icons.add),
-                  label: const Text('新建国策卡'),
-                ),
-              ),
-            ),
-          );
-        }
-        return LayoutBuilder(
-          builder: (context, constraints) => Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 900),
-              child: ListView.separated(
-                padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-                itemCount: cards.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 12),
-                itemBuilder: (context, index) => _LibraryCard(
-                  card: cards[index],
-                  onPlace: () => Navigator.of(context).pop(cards[index]),
-                ),
-              ),
+  Widget build(BuildContext context) => DefaultTabController(
+    length: 2,
+    child: Scaffold(
+      appBar: AppBar(
+        title: const Text('国策卡片库'),
+        bottom: const TabBar(
+          tabs: [
+            Tab(text: '卡片库'),
+            Tab(text: '已删除'),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        children: [
+          _LibraryCardList(
+            repository: widget.repository,
+            onPlace: (card) => Navigator.of(context).pop(card),
+            onDelete: _deleteCard,
+          ),
+          _DeletedNationalFocusCardList(
+            repository: widget.repository,
+            onRestore: _restoreCard,
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _createCard(context),
+        icon: const Icon(Icons.add),
+        label: const Text('新建国策卡'),
+      ),
+    ),
+  );
+}
+
+class _LibraryCardList extends StatelessWidget {
+  const _LibraryCardList({
+    required this.repository,
+    required this.onPlace,
+    required this.onDelete,
+  });
+
+  final NationalFocusRepository repository;
+  final ValueChanged<NationalFocusCard> onPlace;
+  final ValueChanged<NationalFocusCard> onDelete;
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<NationalFocusCard>>(
+    stream: repository.watchLibraryCards(),
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return _TreeMessage(
+          icon: Icons.error_outline,
+          title: '无法读取卡片库',
+          message: _friendlyError(snapshot.error!),
+        );
+      }
+      if (!snapshot.hasData) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      final cards = snapshot.data!;
+      if (cards.isEmpty) {
+        return const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: _TreeMessage(
+              icon: Icons.library_books_outlined,
+              title: '卡片库还是空的',
+              message: '创建一张国策卡，再单独选择它在树画布中的位置。',
             ),
           ),
         );
-      },
-    ),
-    floatingActionButton: FloatingActionButton.extended(
-      onPressed: () => _createCard(context),
-      icon: const Icon(Icons.add),
-      label: const Text('新建国策卡'),
-    ),
+      }
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: ListView.separated(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+            itemCount: cards.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
+            itemBuilder: (context, index) => _LibraryCard(
+              card: cards[index],
+              onPlace: () => onPlace(cards[index]),
+              onDelete: () => onDelete(cards[index]),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+}
+
+class _DeletedNationalFocusCardList extends StatelessWidget {
+  const _DeletedNationalFocusCardList({
+    required this.repository,
+    required this.onRestore,
+  });
+
+  final NationalFocusRepository repository;
+  final ValueChanged<NationalFocusCard> onRestore;
+
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<NationalFocusCard>>(
+    stream: repository.watchDeletedCards(),
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return _TreeMessage(
+          icon: Icons.error_outline,
+          title: '无法读取已删除卡片',
+          message: _friendlyError(snapshot.error!),
+        );
+      }
+      if (!snapshot.hasData) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      final cards = snapshot.data!;
+      if (cards.isEmpty) {
+        return const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: _TreeMessage(
+              icon: Icons.delete_outline,
+              title: '没有可恢复的卡片',
+              message: '有失败历史快照引用的卡片会保留在这里，可恢复到卡片库。',
+            ),
+          ),
+        );
+      }
+      return Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 900),
+          child: ListView.separated(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+            itemCount: cards.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
+            itemBuilder: (context, index) => _DeletedLibraryCard(
+              card: cards[index],
+              onRestore: () => onRestore(cards[index]),
+            ),
+          ),
+        ),
+      );
+    },
   );
 }
 
@@ -748,10 +957,15 @@ class _NationalFocusCardEditorPageState
 }
 
 class _LibraryCard extends StatelessWidget {
-  const _LibraryCard({required this.card, required this.onPlace});
+  const _LibraryCard({
+    required this.card,
+    required this.onPlace,
+    required this.onDelete,
+  });
 
   final NationalFocusCard card;
   final VoidCallback onPlace;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -772,12 +986,61 @@ class _LibraryCard extends StatelessWidget {
             _FieldText(label: '例外说明', value: card.exceptionNotes!),
           ],
           const SizedBox(height: 12),
+          _NationalFocusRecordSummary(card: card),
+          const SizedBox(height: 12),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              TextButton.icon(
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline),
+                label: const Text('删除'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: onPlace,
+                icon: const Icon(Icons.account_tree_outlined),
+                label: const Text('放入树画布'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+class _DeletedLibraryCard extends StatelessWidget {
+  const _DeletedLibraryCard({required this.card, required this.onRestore});
+
+  final NationalFocusCard card;
+  final VoidCallback onRestore;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _FieldText(label: '主要触发条件', value: card.triggerCondition),
+          const SizedBox(height: 12),
+          _FieldText(label: '行动', value: card.action),
+          const SizedBox(height: 12),
+          _NationalFocusRecordSummary(card: card),
+          const SizedBox(height: 8),
+          Text(
+            '恢复后会回到卡片库；树位置和点亮状态需要重新选择。',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
           Align(
             alignment: Alignment.centerRight,
             child: FilledButton.tonalIcon(
-              onPressed: onPlace,
-              icon: const Icon(Icons.account_tree_outlined),
-              label: const Text('放入树画布'),
+              onPressed: onRestore,
+              icon: const Icon(Icons.restore),
+              label: const Text('恢复到卡片库'),
             ),
           ),
         ],
@@ -797,6 +1060,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
     required this.cascadeSourceLabel,
     required this.onSelect,
     required this.onRelocate,
+    required this.onMoveToLibrary,
     required this.onLight,
     required this.onExtinguish,
     required this.busy,
@@ -811,6 +1075,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
   final String? cascadeSourceLabel;
   final VoidCallback? onSelect;
   final VoidCallback onRelocate;
+  final VoidCallback? onMoveToLibrary;
   final VoidCallback? onLight;
   final VoidCallback? onExtinguish;
   final bool busy;
@@ -828,6 +1093,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
             lightBlocked: lightBlocked,
             cascadeSourceLabel: cascadeSourceLabel,
             onRelocate: onRelocate,
+            onMoveToLibrary: onMoveToLibrary,
             onLight: onLight,
             onExtinguish: onExtinguish,
             busy: busy,
@@ -838,6 +1104,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
             blocked: selecting && blocked,
             lightBlocked: lightBlocked,
             cascadeSourceLabel: cascadeSourceLabel,
+            onMoveToLibrary: onMoveToLibrary,
             onLight: onLight,
             onExtinguish: onExtinguish,
             busy: busy,
@@ -867,6 +1134,7 @@ class _StructureTreeCard extends StatelessWidget {
     required this.blocked,
     required this.lightBlocked,
     required this.cascadeSourceLabel,
+    required this.onMoveToLibrary,
     required this.onLight,
     required this.onExtinguish,
     required this.busy,
@@ -877,6 +1145,7 @@ class _StructureTreeCard extends StatelessWidget {
   final bool blocked;
   final bool lightBlocked;
   final String? cascadeSourceLabel;
+  final VoidCallback? onMoveToLibrary;
   final VoidCallback? onLight;
   final VoidCallback? onExtinguish;
   final bool busy;
@@ -924,7 +1193,9 @@ class _StructureTreeCard extends StatelessWidget {
             ],
           ),
         ),
-        if (onLight != null || onExtinguish != null) ...[
+        if (onLight != null ||
+            onExtinguish != null ||
+            onMoveToLibrary != null) ...[
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -946,6 +1217,17 @@ class _StructureTreeCard extends StatelessWidget {
                   onExtinguish: onExtinguish,
                   busy: busy,
                 ),
+                if (onMoveToLibrary != null) ...[
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: onMoveToLibrary,
+                      icon: const Icon(Icons.library_add_outlined),
+                      label: const Text('移入卡片库'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -979,6 +1261,7 @@ class _DetailedTreeCard extends StatelessWidget {
     required this.blocked,
     required this.lightBlocked,
     required this.cascadeSourceLabel,
+    required this.onMoveToLibrary,
     required this.onRelocate,
     required this.onLight,
     required this.onExtinguish,
@@ -991,6 +1274,7 @@ class _DetailedTreeCard extends StatelessWidget {
   final bool blocked;
   final bool lightBlocked;
   final String? cascadeSourceLabel;
+  final VoidCallback? onMoveToLibrary;
   final VoidCallback onRelocate;
   final VoidCallback? onLight;
   final VoidCallback? onExtinguish;
@@ -1051,7 +1335,16 @@ class _DetailedTreeCard extends StatelessWidget {
               label: const Text('调整树中位置'),
             ),
           ),
-        ] else if (blocked) ...[
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: onMoveToLibrary,
+              icon: const Icon(Icons.library_add_outlined),
+              label: const Text('移入卡片库'),
+            ),
+          ),
+        ] else if (blocked &&
+            card.state == NationalFocusCardState.extinguished) ...[
           const SizedBox(height: 8),
           Text(
             '不能把有效分支放到本人、后代或熄灭分支下。',
@@ -1509,7 +1802,7 @@ class _FailureBatchCard extends StatelessWidget {
                           left: _snapshotDepth(card, snapshotById) * 14,
                         ),
                         child: Text(
-                          '${card.triggerCondition} · ${card.state.label} · '
+                          '${card.isInTree ? '' : '卡片库内 · '}${card.triggerCondition} · ${card.state.label} · '
                           '连续 ${card.currentConsecutiveDays} 天 · '
                           '最高 ${card.bestConsecutiveDays} 天'
                           '${_snapshotFailureAnnotation(card, snapshotById)}',
