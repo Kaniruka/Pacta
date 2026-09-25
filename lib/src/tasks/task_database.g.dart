@@ -9757,6 +9757,1346 @@ class FocusSyncSourcesCompanion extends UpdateCompanion<FocusSyncSource> {
   }
 }
 
+class $LocalCalendarSourcesTable extends LocalCalendarSources
+    with TableInfo<$LocalCalendarSourcesTable, LocalCalendarSource> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalCalendarSourcesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceIdMeta = const VerificationMeta(
+    'sourceId',
+  );
+  @override
+  late final GeneratedColumn<String> sourceId = GeneratedColumn<String>(
+    'source_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _displayNameMeta = const VerificationMeta(
+    'displayName',
+  );
+  @override
+  late final GeneratedColumn<String> displayName = GeneratedColumn<String>(
+    'display_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _timeZoneIdMeta = const VerificationMeta(
+    'timeZoneId',
+  );
+  @override
+  late final GeneratedColumn<String> timeZoneId = GeneratedColumn<String>(
+    'time_zone_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _localCalendarIdMeta = const VerificationMeta(
+    'localCalendarId',
+  );
+  @override
+  late final GeneratedColumn<String> localCalendarId = GeneratedColumn<String>(
+    'local_calendar_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _isSelectedMeta = const VerificationMeta(
+    'isSelected',
+  );
+  @override
+  late final GeneratedColumn<bool> isSelected = GeneratedColumn<bool>(
+    'is_selected',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_selected" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    sourceId,
+    displayName,
+    timeZoneId,
+    localCalendarId,
+    isSelected,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_calendar_sources';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalCalendarSource> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('source_id')) {
+      context.handle(
+        _sourceIdMeta,
+        sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceIdMeta);
+    }
+    if (data.containsKey('display_name')) {
+      context.handle(
+        _displayNameMeta,
+        displayName.isAcceptableOrUnknown(
+          data['display_name']!,
+          _displayNameMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_displayNameMeta);
+    }
+    if (data.containsKey('time_zone_id')) {
+      context.handle(
+        _timeZoneIdMeta,
+        timeZoneId.isAcceptableOrUnknown(
+          data['time_zone_id']!,
+          _timeZoneIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_timeZoneIdMeta);
+    }
+    if (data.containsKey('local_calendar_id')) {
+      context.handle(
+        _localCalendarIdMeta,
+        localCalendarId.isAcceptableOrUnknown(
+          data['local_calendar_id']!,
+          _localCalendarIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_selected')) {
+      context.handle(
+        _isSelectedMeta,
+        isSelected.isAcceptableOrUnknown(data['is_selected']!, _isSelectedMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId, sourceId};
+  @override
+  LocalCalendarSource map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalCalendarSource(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      sourceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_id'],
+      )!,
+      displayName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}display_name'],
+      )!,
+      timeZoneId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}time_zone_id'],
+      )!,
+      localCalendarId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}local_calendar_id'],
+      ),
+      isSelected: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_selected'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalCalendarSourcesTable createAlias(String alias) {
+    return $LocalCalendarSourcesTable(attachedDatabase, alias);
+  }
+}
+
+class LocalCalendarSource extends DataClass
+    implements Insertable<LocalCalendarSource> {
+  final String userId;
+  final String sourceId;
+  final String displayName;
+  final String timeZoneId;
+  final String? localCalendarId;
+  final bool isSelected;
+  final DateTime updatedAt;
+  const LocalCalendarSource({
+    required this.userId,
+    required this.sourceId,
+    required this.displayName,
+    required this.timeZoneId,
+    this.localCalendarId,
+    required this.isSelected,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['source_id'] = Variable<String>(sourceId);
+    map['display_name'] = Variable<String>(displayName);
+    map['time_zone_id'] = Variable<String>(timeZoneId);
+    if (!nullToAbsent || localCalendarId != null) {
+      map['local_calendar_id'] = Variable<String>(localCalendarId);
+    }
+    map['is_selected'] = Variable<bool>(isSelected);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  LocalCalendarSourcesCompanion toCompanion(bool nullToAbsent) {
+    return LocalCalendarSourcesCompanion(
+      userId: Value(userId),
+      sourceId: Value(sourceId),
+      displayName: Value(displayName),
+      timeZoneId: Value(timeZoneId),
+      localCalendarId: localCalendarId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(localCalendarId),
+      isSelected: Value(isSelected),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory LocalCalendarSource.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalCalendarSource(
+      userId: serializer.fromJson<String>(json['userId']),
+      sourceId: serializer.fromJson<String>(json['sourceId']),
+      displayName: serializer.fromJson<String>(json['displayName']),
+      timeZoneId: serializer.fromJson<String>(json['timeZoneId']),
+      localCalendarId: serializer.fromJson<String?>(json['localCalendarId']),
+      isSelected: serializer.fromJson<bool>(json['isSelected']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'sourceId': serializer.toJson<String>(sourceId),
+      'displayName': serializer.toJson<String>(displayName),
+      'timeZoneId': serializer.toJson<String>(timeZoneId),
+      'localCalendarId': serializer.toJson<String?>(localCalendarId),
+      'isSelected': serializer.toJson<bool>(isSelected),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  LocalCalendarSource copyWith({
+    String? userId,
+    String? sourceId,
+    String? displayName,
+    String? timeZoneId,
+    Value<String?> localCalendarId = const Value.absent(),
+    bool? isSelected,
+    DateTime? updatedAt,
+  }) => LocalCalendarSource(
+    userId: userId ?? this.userId,
+    sourceId: sourceId ?? this.sourceId,
+    displayName: displayName ?? this.displayName,
+    timeZoneId: timeZoneId ?? this.timeZoneId,
+    localCalendarId: localCalendarId.present
+        ? localCalendarId.value
+        : this.localCalendarId,
+    isSelected: isSelected ?? this.isSelected,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  LocalCalendarSource copyWithCompanion(LocalCalendarSourcesCompanion data) {
+    return LocalCalendarSource(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
+      displayName: data.displayName.present
+          ? data.displayName.value
+          : this.displayName,
+      timeZoneId: data.timeZoneId.present
+          ? data.timeZoneId.value
+          : this.timeZoneId,
+      localCalendarId: data.localCalendarId.present
+          ? data.localCalendarId.value
+          : this.localCalendarId,
+      isSelected: data.isSelected.present
+          ? data.isSelected.value
+          : this.isSelected,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalCalendarSource(')
+          ..write('userId: $userId, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('displayName: $displayName, ')
+          ..write('timeZoneId: $timeZoneId, ')
+          ..write('localCalendarId: $localCalendarId, ')
+          ..write('isSelected: $isSelected, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    userId,
+    sourceId,
+    displayName,
+    timeZoneId,
+    localCalendarId,
+    isSelected,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalCalendarSource &&
+          other.userId == this.userId &&
+          other.sourceId == this.sourceId &&
+          other.displayName == this.displayName &&
+          other.timeZoneId == this.timeZoneId &&
+          other.localCalendarId == this.localCalendarId &&
+          other.isSelected == this.isSelected &&
+          other.updatedAt == this.updatedAt);
+}
+
+class LocalCalendarSourcesCompanion
+    extends UpdateCompanion<LocalCalendarSource> {
+  final Value<String> userId;
+  final Value<String> sourceId;
+  final Value<String> displayName;
+  final Value<String> timeZoneId;
+  final Value<String?> localCalendarId;
+  final Value<bool> isSelected;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const LocalCalendarSourcesCompanion({
+    this.userId = const Value.absent(),
+    this.sourceId = const Value.absent(),
+    this.displayName = const Value.absent(),
+    this.timeZoneId = const Value.absent(),
+    this.localCalendarId = const Value.absent(),
+    this.isSelected = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalCalendarSourcesCompanion.insert({
+    required String userId,
+    required String sourceId,
+    required String displayName,
+    required String timeZoneId,
+    this.localCalendarId = const Value.absent(),
+    this.isSelected = const Value.absent(),
+    required DateTime updatedAt,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       sourceId = Value(sourceId),
+       displayName = Value(displayName),
+       timeZoneId = Value(timeZoneId),
+       updatedAt = Value(updatedAt);
+  static Insertable<LocalCalendarSource> custom({
+    Expression<String>? userId,
+    Expression<String>? sourceId,
+    Expression<String>? displayName,
+    Expression<String>? timeZoneId,
+    Expression<String>? localCalendarId,
+    Expression<bool>? isSelected,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (sourceId != null) 'source_id': sourceId,
+      if (displayName != null) 'display_name': displayName,
+      if (timeZoneId != null) 'time_zone_id': timeZoneId,
+      if (localCalendarId != null) 'local_calendar_id': localCalendarId,
+      if (isSelected != null) 'is_selected': isSelected,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalCalendarSourcesCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? sourceId,
+    Value<String>? displayName,
+    Value<String>? timeZoneId,
+    Value<String?>? localCalendarId,
+    Value<bool>? isSelected,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return LocalCalendarSourcesCompanion(
+      userId: userId ?? this.userId,
+      sourceId: sourceId ?? this.sourceId,
+      displayName: displayName ?? this.displayName,
+      timeZoneId: timeZoneId ?? this.timeZoneId,
+      localCalendarId: localCalendarId ?? this.localCalendarId,
+      isSelected: isSelected ?? this.isSelected,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (sourceId.present) {
+      map['source_id'] = Variable<String>(sourceId.value);
+    }
+    if (displayName.present) {
+      map['display_name'] = Variable<String>(displayName.value);
+    }
+    if (timeZoneId.present) {
+      map['time_zone_id'] = Variable<String>(timeZoneId.value);
+    }
+    if (localCalendarId.present) {
+      map['local_calendar_id'] = Variable<String>(localCalendarId.value);
+    }
+    if (isSelected.present) {
+      map['is_selected'] = Variable<bool>(isSelected.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalCalendarSourcesCompanion(')
+          ..write('userId: $userId, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('displayName: $displayName, ')
+          ..write('timeZoneId: $timeZoneId, ')
+          ..write('localCalendarId: $localCalendarId, ')
+          ..write('isSelected: $isSelected, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $LocalCalendarBlocksTable extends LocalCalendarBlocks
+    with TableInfo<$LocalCalendarBlocksTable, LocalCalendarBlock> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalCalendarBlocksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceIdMeta = const VerificationMeta(
+    'sourceId',
+  );
+  @override
+  late final GeneratedColumn<String> sourceId = GeneratedColumn<String>(
+    'source_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceEventIdMeta = const VerificationMeta(
+    'sourceEventId',
+  );
+  @override
+  late final GeneratedColumn<String> sourceEventId = GeneratedColumn<String>(
+    'source_event_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _occurrenceIdMeta = const VerificationMeta(
+    'occurrenceId',
+  );
+  @override
+  late final GeneratedColumn<String> occurrenceId = GeneratedColumn<String>(
+    'occurrence_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _eventIdentityMeta = const VerificationMeta(
+    'eventIdentity',
+  );
+  @override
+  late final GeneratedColumn<String> eventIdentity = GeneratedColumn<String>(
+    'event_identity',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _startsAtMeta = const VerificationMeta(
+    'startsAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> startsAt = GeneratedColumn<DateTime>(
+    'starts_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _endsAtMeta = const VerificationMeta('endsAt');
+  @override
+  late final GeneratedColumn<DateTime> endsAt = GeneratedColumn<DateTime>(
+    'ends_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _allDayMeta = const VerificationMeta('allDay');
+  @override
+  late final GeneratedColumn<bool> allDay = GeneratedColumn<bool>(
+    'all_day',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("all_day" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _allDayStartDateMeta = const VerificationMeta(
+    'allDayStartDate',
+  );
+  @override
+  late final GeneratedColumn<String> allDayStartDate = GeneratedColumn<String>(
+    'all_day_start_date',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _allDayEndDateExclusiveMeta =
+      const VerificationMeta('allDayEndDateExclusive');
+  @override
+  late final GeneratedColumn<String> allDayEndDateExclusive =
+      GeneratedColumn<String>(
+        'all_day_end_date_exclusive',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _availabilityMeta = const VerificationMeta(
+    'availability',
+  );
+  @override
+  late final GeneratedColumn<String> availability = GeneratedColumn<String>(
+    'availability',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _timeZoneIdMeta = const VerificationMeta(
+    'timeZoneId',
+  );
+  @override
+  late final GeneratedColumn<String> timeZoneId = GeneratedColumn<String>(
+    'time_zone_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    sourceId,
+    sourceEventId,
+    occurrenceId,
+    eventIdentity,
+    title,
+    startsAt,
+    endsAt,
+    allDay,
+    allDayStartDate,
+    allDayEndDateExclusive,
+    availability,
+    timeZoneId,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_calendar_blocks';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalCalendarBlock> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('source_id')) {
+      context.handle(
+        _sourceIdMeta,
+        sourceId.isAcceptableOrUnknown(data['source_id']!, _sourceIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceIdMeta);
+    }
+    if (data.containsKey('source_event_id')) {
+      context.handle(
+        _sourceEventIdMeta,
+        sourceEventId.isAcceptableOrUnknown(
+          data['source_event_id']!,
+          _sourceEventIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceEventIdMeta);
+    }
+    if (data.containsKey('occurrence_id')) {
+      context.handle(
+        _occurrenceIdMeta,
+        occurrenceId.isAcceptableOrUnknown(
+          data['occurrence_id']!,
+          _occurrenceIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_occurrenceIdMeta);
+    }
+    if (data.containsKey('event_identity')) {
+      context.handle(
+        _eventIdentityMeta,
+        eventIdentity.isAcceptableOrUnknown(
+          data['event_identity']!,
+          _eventIdentityMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_eventIdentityMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('starts_at')) {
+      context.handle(
+        _startsAtMeta,
+        startsAt.isAcceptableOrUnknown(data['starts_at']!, _startsAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_startsAtMeta);
+    }
+    if (data.containsKey('ends_at')) {
+      context.handle(
+        _endsAtMeta,
+        endsAt.isAcceptableOrUnknown(data['ends_at']!, _endsAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_endsAtMeta);
+    }
+    if (data.containsKey('all_day')) {
+      context.handle(
+        _allDayMeta,
+        allDay.isAcceptableOrUnknown(data['all_day']!, _allDayMeta),
+      );
+    }
+    if (data.containsKey('all_day_start_date')) {
+      context.handle(
+        _allDayStartDateMeta,
+        allDayStartDate.isAcceptableOrUnknown(
+          data['all_day_start_date']!,
+          _allDayStartDateMeta,
+        ),
+      );
+    }
+    if (data.containsKey('all_day_end_date_exclusive')) {
+      context.handle(
+        _allDayEndDateExclusiveMeta,
+        allDayEndDateExclusive.isAcceptableOrUnknown(
+          data['all_day_end_date_exclusive']!,
+          _allDayEndDateExclusiveMeta,
+        ),
+      );
+    }
+    if (data.containsKey('availability')) {
+      context.handle(
+        _availabilityMeta,
+        availability.isAcceptableOrUnknown(
+          data['availability']!,
+          _availabilityMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_availabilityMeta);
+    }
+    if (data.containsKey('time_zone_id')) {
+      context.handle(
+        _timeZoneIdMeta,
+        timeZoneId.isAcceptableOrUnknown(
+          data['time_zone_id']!,
+          _timeZoneIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_timeZoneIdMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId, sourceId, occurrenceId};
+  @override
+  LocalCalendarBlock map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalCalendarBlock(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      sourceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_id'],
+      )!,
+      sourceEventId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_event_id'],
+      )!,
+      occurrenceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}occurrence_id'],
+      )!,
+      eventIdentity: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}event_identity'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      startsAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}starts_at'],
+      )!,
+      endsAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}ends_at'],
+      )!,
+      allDay: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}all_day'],
+      )!,
+      allDayStartDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}all_day_start_date'],
+      ),
+      allDayEndDateExclusive: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}all_day_end_date_exclusive'],
+      ),
+      availability: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}availability'],
+      )!,
+      timeZoneId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}time_zone_id'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalCalendarBlocksTable createAlias(String alias) {
+    return $LocalCalendarBlocksTable(attachedDatabase, alias);
+  }
+}
+
+class LocalCalendarBlock extends DataClass
+    implements Insertable<LocalCalendarBlock> {
+  final String userId;
+  final String sourceId;
+  final String sourceEventId;
+  final String occurrenceId;
+  final String eventIdentity;
+  final String title;
+  final DateTime startsAt;
+  final DateTime endsAt;
+  final bool allDay;
+  final String? allDayStartDate;
+  final String? allDayEndDateExclusive;
+  final String availability;
+  final String timeZoneId;
+  final DateTime updatedAt;
+  const LocalCalendarBlock({
+    required this.userId,
+    required this.sourceId,
+    required this.sourceEventId,
+    required this.occurrenceId,
+    required this.eventIdentity,
+    required this.title,
+    required this.startsAt,
+    required this.endsAt,
+    required this.allDay,
+    this.allDayStartDate,
+    this.allDayEndDateExclusive,
+    required this.availability,
+    required this.timeZoneId,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['source_id'] = Variable<String>(sourceId);
+    map['source_event_id'] = Variable<String>(sourceEventId);
+    map['occurrence_id'] = Variable<String>(occurrenceId);
+    map['event_identity'] = Variable<String>(eventIdentity);
+    map['title'] = Variable<String>(title);
+    map['starts_at'] = Variable<DateTime>(startsAt);
+    map['ends_at'] = Variable<DateTime>(endsAt);
+    map['all_day'] = Variable<bool>(allDay);
+    if (!nullToAbsent || allDayStartDate != null) {
+      map['all_day_start_date'] = Variable<String>(allDayStartDate);
+    }
+    if (!nullToAbsent || allDayEndDateExclusive != null) {
+      map['all_day_end_date_exclusive'] = Variable<String>(
+        allDayEndDateExclusive,
+      );
+    }
+    map['availability'] = Variable<String>(availability);
+    map['time_zone_id'] = Variable<String>(timeZoneId);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  LocalCalendarBlocksCompanion toCompanion(bool nullToAbsent) {
+    return LocalCalendarBlocksCompanion(
+      userId: Value(userId),
+      sourceId: Value(sourceId),
+      sourceEventId: Value(sourceEventId),
+      occurrenceId: Value(occurrenceId),
+      eventIdentity: Value(eventIdentity),
+      title: Value(title),
+      startsAt: Value(startsAt),
+      endsAt: Value(endsAt),
+      allDay: Value(allDay),
+      allDayStartDate: allDayStartDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(allDayStartDate),
+      allDayEndDateExclusive: allDayEndDateExclusive == null && nullToAbsent
+          ? const Value.absent()
+          : Value(allDayEndDateExclusive),
+      availability: Value(availability),
+      timeZoneId: Value(timeZoneId),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory LocalCalendarBlock.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalCalendarBlock(
+      userId: serializer.fromJson<String>(json['userId']),
+      sourceId: serializer.fromJson<String>(json['sourceId']),
+      sourceEventId: serializer.fromJson<String>(json['sourceEventId']),
+      occurrenceId: serializer.fromJson<String>(json['occurrenceId']),
+      eventIdentity: serializer.fromJson<String>(json['eventIdentity']),
+      title: serializer.fromJson<String>(json['title']),
+      startsAt: serializer.fromJson<DateTime>(json['startsAt']),
+      endsAt: serializer.fromJson<DateTime>(json['endsAt']),
+      allDay: serializer.fromJson<bool>(json['allDay']),
+      allDayStartDate: serializer.fromJson<String?>(json['allDayStartDate']),
+      allDayEndDateExclusive: serializer.fromJson<String?>(
+        json['allDayEndDateExclusive'],
+      ),
+      availability: serializer.fromJson<String>(json['availability']),
+      timeZoneId: serializer.fromJson<String>(json['timeZoneId']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'sourceId': serializer.toJson<String>(sourceId),
+      'sourceEventId': serializer.toJson<String>(sourceEventId),
+      'occurrenceId': serializer.toJson<String>(occurrenceId),
+      'eventIdentity': serializer.toJson<String>(eventIdentity),
+      'title': serializer.toJson<String>(title),
+      'startsAt': serializer.toJson<DateTime>(startsAt),
+      'endsAt': serializer.toJson<DateTime>(endsAt),
+      'allDay': serializer.toJson<bool>(allDay),
+      'allDayStartDate': serializer.toJson<String?>(allDayStartDate),
+      'allDayEndDateExclusive': serializer.toJson<String?>(
+        allDayEndDateExclusive,
+      ),
+      'availability': serializer.toJson<String>(availability),
+      'timeZoneId': serializer.toJson<String>(timeZoneId),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  LocalCalendarBlock copyWith({
+    String? userId,
+    String? sourceId,
+    String? sourceEventId,
+    String? occurrenceId,
+    String? eventIdentity,
+    String? title,
+    DateTime? startsAt,
+    DateTime? endsAt,
+    bool? allDay,
+    Value<String?> allDayStartDate = const Value.absent(),
+    Value<String?> allDayEndDateExclusive = const Value.absent(),
+    String? availability,
+    String? timeZoneId,
+    DateTime? updatedAt,
+  }) => LocalCalendarBlock(
+    userId: userId ?? this.userId,
+    sourceId: sourceId ?? this.sourceId,
+    sourceEventId: sourceEventId ?? this.sourceEventId,
+    occurrenceId: occurrenceId ?? this.occurrenceId,
+    eventIdentity: eventIdentity ?? this.eventIdentity,
+    title: title ?? this.title,
+    startsAt: startsAt ?? this.startsAt,
+    endsAt: endsAt ?? this.endsAt,
+    allDay: allDay ?? this.allDay,
+    allDayStartDate: allDayStartDate.present
+        ? allDayStartDate.value
+        : this.allDayStartDate,
+    allDayEndDateExclusive: allDayEndDateExclusive.present
+        ? allDayEndDateExclusive.value
+        : this.allDayEndDateExclusive,
+    availability: availability ?? this.availability,
+    timeZoneId: timeZoneId ?? this.timeZoneId,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  LocalCalendarBlock copyWithCompanion(LocalCalendarBlocksCompanion data) {
+    return LocalCalendarBlock(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      sourceId: data.sourceId.present ? data.sourceId.value : this.sourceId,
+      sourceEventId: data.sourceEventId.present
+          ? data.sourceEventId.value
+          : this.sourceEventId,
+      occurrenceId: data.occurrenceId.present
+          ? data.occurrenceId.value
+          : this.occurrenceId,
+      eventIdentity: data.eventIdentity.present
+          ? data.eventIdentity.value
+          : this.eventIdentity,
+      title: data.title.present ? data.title.value : this.title,
+      startsAt: data.startsAt.present ? data.startsAt.value : this.startsAt,
+      endsAt: data.endsAt.present ? data.endsAt.value : this.endsAt,
+      allDay: data.allDay.present ? data.allDay.value : this.allDay,
+      allDayStartDate: data.allDayStartDate.present
+          ? data.allDayStartDate.value
+          : this.allDayStartDate,
+      allDayEndDateExclusive: data.allDayEndDateExclusive.present
+          ? data.allDayEndDateExclusive.value
+          : this.allDayEndDateExclusive,
+      availability: data.availability.present
+          ? data.availability.value
+          : this.availability,
+      timeZoneId: data.timeZoneId.present
+          ? data.timeZoneId.value
+          : this.timeZoneId,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalCalendarBlock(')
+          ..write('userId: $userId, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('sourceEventId: $sourceEventId, ')
+          ..write('occurrenceId: $occurrenceId, ')
+          ..write('eventIdentity: $eventIdentity, ')
+          ..write('title: $title, ')
+          ..write('startsAt: $startsAt, ')
+          ..write('endsAt: $endsAt, ')
+          ..write('allDay: $allDay, ')
+          ..write('allDayStartDate: $allDayStartDate, ')
+          ..write('allDayEndDateExclusive: $allDayEndDateExclusive, ')
+          ..write('availability: $availability, ')
+          ..write('timeZoneId: $timeZoneId, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    userId,
+    sourceId,
+    sourceEventId,
+    occurrenceId,
+    eventIdentity,
+    title,
+    startsAt,
+    endsAt,
+    allDay,
+    allDayStartDate,
+    allDayEndDateExclusive,
+    availability,
+    timeZoneId,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalCalendarBlock &&
+          other.userId == this.userId &&
+          other.sourceId == this.sourceId &&
+          other.sourceEventId == this.sourceEventId &&
+          other.occurrenceId == this.occurrenceId &&
+          other.eventIdentity == this.eventIdentity &&
+          other.title == this.title &&
+          other.startsAt == this.startsAt &&
+          other.endsAt == this.endsAt &&
+          other.allDay == this.allDay &&
+          other.allDayStartDate == this.allDayStartDate &&
+          other.allDayEndDateExclusive == this.allDayEndDateExclusive &&
+          other.availability == this.availability &&
+          other.timeZoneId == this.timeZoneId &&
+          other.updatedAt == this.updatedAt);
+}
+
+class LocalCalendarBlocksCompanion extends UpdateCompanion<LocalCalendarBlock> {
+  final Value<String> userId;
+  final Value<String> sourceId;
+  final Value<String> sourceEventId;
+  final Value<String> occurrenceId;
+  final Value<String> eventIdentity;
+  final Value<String> title;
+  final Value<DateTime> startsAt;
+  final Value<DateTime> endsAt;
+  final Value<bool> allDay;
+  final Value<String?> allDayStartDate;
+  final Value<String?> allDayEndDateExclusive;
+  final Value<String> availability;
+  final Value<String> timeZoneId;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const LocalCalendarBlocksCompanion({
+    this.userId = const Value.absent(),
+    this.sourceId = const Value.absent(),
+    this.sourceEventId = const Value.absent(),
+    this.occurrenceId = const Value.absent(),
+    this.eventIdentity = const Value.absent(),
+    this.title = const Value.absent(),
+    this.startsAt = const Value.absent(),
+    this.endsAt = const Value.absent(),
+    this.allDay = const Value.absent(),
+    this.allDayStartDate = const Value.absent(),
+    this.allDayEndDateExclusive = const Value.absent(),
+    this.availability = const Value.absent(),
+    this.timeZoneId = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalCalendarBlocksCompanion.insert({
+    required String userId,
+    required String sourceId,
+    required String sourceEventId,
+    required String occurrenceId,
+    required String eventIdentity,
+    required String title,
+    required DateTime startsAt,
+    required DateTime endsAt,
+    this.allDay = const Value.absent(),
+    this.allDayStartDate = const Value.absent(),
+    this.allDayEndDateExclusive = const Value.absent(),
+    required String availability,
+    required String timeZoneId,
+    required DateTime updatedAt,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       sourceId = Value(sourceId),
+       sourceEventId = Value(sourceEventId),
+       occurrenceId = Value(occurrenceId),
+       eventIdentity = Value(eventIdentity),
+       title = Value(title),
+       startsAt = Value(startsAt),
+       endsAt = Value(endsAt),
+       availability = Value(availability),
+       timeZoneId = Value(timeZoneId),
+       updatedAt = Value(updatedAt);
+  static Insertable<LocalCalendarBlock> custom({
+    Expression<String>? userId,
+    Expression<String>? sourceId,
+    Expression<String>? sourceEventId,
+    Expression<String>? occurrenceId,
+    Expression<String>? eventIdentity,
+    Expression<String>? title,
+    Expression<DateTime>? startsAt,
+    Expression<DateTime>? endsAt,
+    Expression<bool>? allDay,
+    Expression<String>? allDayStartDate,
+    Expression<String>? allDayEndDateExclusive,
+    Expression<String>? availability,
+    Expression<String>? timeZoneId,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (sourceId != null) 'source_id': sourceId,
+      if (sourceEventId != null) 'source_event_id': sourceEventId,
+      if (occurrenceId != null) 'occurrence_id': occurrenceId,
+      if (eventIdentity != null) 'event_identity': eventIdentity,
+      if (title != null) 'title': title,
+      if (startsAt != null) 'starts_at': startsAt,
+      if (endsAt != null) 'ends_at': endsAt,
+      if (allDay != null) 'all_day': allDay,
+      if (allDayStartDate != null) 'all_day_start_date': allDayStartDate,
+      if (allDayEndDateExclusive != null)
+        'all_day_end_date_exclusive': allDayEndDateExclusive,
+      if (availability != null) 'availability': availability,
+      if (timeZoneId != null) 'time_zone_id': timeZoneId,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalCalendarBlocksCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? sourceId,
+    Value<String>? sourceEventId,
+    Value<String>? occurrenceId,
+    Value<String>? eventIdentity,
+    Value<String>? title,
+    Value<DateTime>? startsAt,
+    Value<DateTime>? endsAt,
+    Value<bool>? allDay,
+    Value<String?>? allDayStartDate,
+    Value<String?>? allDayEndDateExclusive,
+    Value<String>? availability,
+    Value<String>? timeZoneId,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return LocalCalendarBlocksCompanion(
+      userId: userId ?? this.userId,
+      sourceId: sourceId ?? this.sourceId,
+      sourceEventId: sourceEventId ?? this.sourceEventId,
+      occurrenceId: occurrenceId ?? this.occurrenceId,
+      eventIdentity: eventIdentity ?? this.eventIdentity,
+      title: title ?? this.title,
+      startsAt: startsAt ?? this.startsAt,
+      endsAt: endsAt ?? this.endsAt,
+      allDay: allDay ?? this.allDay,
+      allDayStartDate: allDayStartDate ?? this.allDayStartDate,
+      allDayEndDateExclusive:
+          allDayEndDateExclusive ?? this.allDayEndDateExclusive,
+      availability: availability ?? this.availability,
+      timeZoneId: timeZoneId ?? this.timeZoneId,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (sourceId.present) {
+      map['source_id'] = Variable<String>(sourceId.value);
+    }
+    if (sourceEventId.present) {
+      map['source_event_id'] = Variable<String>(sourceEventId.value);
+    }
+    if (occurrenceId.present) {
+      map['occurrence_id'] = Variable<String>(occurrenceId.value);
+    }
+    if (eventIdentity.present) {
+      map['event_identity'] = Variable<String>(eventIdentity.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (startsAt.present) {
+      map['starts_at'] = Variable<DateTime>(startsAt.value);
+    }
+    if (endsAt.present) {
+      map['ends_at'] = Variable<DateTime>(endsAt.value);
+    }
+    if (allDay.present) {
+      map['all_day'] = Variable<bool>(allDay.value);
+    }
+    if (allDayStartDate.present) {
+      map['all_day_start_date'] = Variable<String>(allDayStartDate.value);
+    }
+    if (allDayEndDateExclusive.present) {
+      map['all_day_end_date_exclusive'] = Variable<String>(
+        allDayEndDateExclusive.value,
+      );
+    }
+    if (availability.present) {
+      map['availability'] = Variable<String>(availability.value);
+    }
+    if (timeZoneId.present) {
+      map['time_zone_id'] = Variable<String>(timeZoneId.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalCalendarBlocksCompanion(')
+          ..write('userId: $userId, ')
+          ..write('sourceId: $sourceId, ')
+          ..write('sourceEventId: $sourceEventId, ')
+          ..write('occurrenceId: $occurrenceId, ')
+          ..write('eventIdentity: $eventIdentity, ')
+          ..write('title: $title, ')
+          ..write('startsAt: $startsAt, ')
+          ..write('endsAt: $endsAt, ')
+          ..write('allDay: $allDay, ')
+          ..write('allDayStartDate: $allDayStartDate, ')
+          ..write('allDayEndDateExclusive: $allDayEndDateExclusive, ')
+          ..write('availability: $availability, ')
+          ..write('timeZoneId: $timeZoneId, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$PactaDatabase extends GeneratedDatabase {
   _$PactaDatabase(QueryExecutor e) : super(e);
   $PactaDatabaseManager get managers => $PactaDatabaseManager(this);
@@ -9795,6 +11135,10 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   late final $FocusSyncSourcesTable focusSyncSources = $FocusSyncSourcesTable(
     this,
   );
+  late final $LocalCalendarSourcesTable localCalendarSources =
+      $LocalCalendarSourcesTable(this);
+  late final $LocalCalendarBlocksTable localCalendarBlocks =
+      $LocalCalendarBlocksTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -9817,6 +11161,8 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
     appointmentChainRecords,
     focusSourceDevices,
     focusSyncSources,
+    localCalendarSources,
+    localCalendarBlocks,
   ];
 }
 
@@ -14747,6 +16093,669 @@ typedef $$FocusSyncSourcesTableProcessedTableManager =
       FocusSyncSource,
       PrefetchHooks Function()
     >;
+typedef $$LocalCalendarSourcesTableCreateCompanionBuilder =
+    LocalCalendarSourcesCompanion Function({
+      required String userId,
+      required String sourceId,
+      required String displayName,
+      required String timeZoneId,
+      Value<String?> localCalendarId,
+      Value<bool> isSelected,
+      required DateTime updatedAt,
+      Value<int> rowid,
+    });
+typedef $$LocalCalendarSourcesTableUpdateCompanionBuilder =
+    LocalCalendarSourcesCompanion Function({
+      Value<String> userId,
+      Value<String> sourceId,
+      Value<String> displayName,
+      Value<String> timeZoneId,
+      Value<String?> localCalendarId,
+      Value<bool> isSelected,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$LocalCalendarSourcesTableFilterComposer
+    extends Composer<_$PactaDatabase, $LocalCalendarSourcesTable> {
+  $$LocalCalendarSourcesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceId => $composableBuilder(
+    column: $table.sourceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get timeZoneId => $composableBuilder(
+    column: $table.timeZoneId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get localCalendarId => $composableBuilder(
+    column: $table.localCalendarId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isSelected => $composableBuilder(
+    column: $table.isSelected,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalCalendarSourcesTableOrderingComposer
+    extends Composer<_$PactaDatabase, $LocalCalendarSourcesTable> {
+  $$LocalCalendarSourcesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceId => $composableBuilder(
+    column: $table.sourceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get timeZoneId => $composableBuilder(
+    column: $table.timeZoneId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get localCalendarId => $composableBuilder(
+    column: $table.localCalendarId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isSelected => $composableBuilder(
+    column: $table.isSelected,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalCalendarSourcesTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $LocalCalendarSourcesTable> {
+  $$LocalCalendarSourcesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceId =>
+      $composableBuilder(column: $table.sourceId, builder: (column) => column);
+
+  GeneratedColumn<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get timeZoneId => $composableBuilder(
+    column: $table.timeZoneId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get localCalendarId => $composableBuilder(
+    column: $table.localCalendarId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isSelected => $composableBuilder(
+    column: $table.isSelected,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$LocalCalendarSourcesTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $LocalCalendarSourcesTable,
+          LocalCalendarSource,
+          $$LocalCalendarSourcesTableFilterComposer,
+          $$LocalCalendarSourcesTableOrderingComposer,
+          $$LocalCalendarSourcesTableAnnotationComposer,
+          $$LocalCalendarSourcesTableCreateCompanionBuilder,
+          $$LocalCalendarSourcesTableUpdateCompanionBuilder,
+          (
+            LocalCalendarSource,
+            BaseReferences<
+              _$PactaDatabase,
+              $LocalCalendarSourcesTable,
+              LocalCalendarSource
+            >,
+          ),
+          LocalCalendarSource,
+          PrefetchHooks Function()
+        > {
+  $$LocalCalendarSourcesTableTableManager(
+    _$PactaDatabase db,
+    $LocalCalendarSourcesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalCalendarSourcesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalCalendarSourcesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$LocalCalendarSourcesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> sourceId = const Value.absent(),
+                Value<String> displayName = const Value.absent(),
+                Value<String> timeZoneId = const Value.absent(),
+                Value<String?> localCalendarId = const Value.absent(),
+                Value<bool> isSelected = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalCalendarSourcesCompanion(
+                userId: userId,
+                sourceId: sourceId,
+                displayName: displayName,
+                timeZoneId: timeZoneId,
+                localCalendarId: localCalendarId,
+                isSelected: isSelected,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                required String sourceId,
+                required String displayName,
+                required String timeZoneId,
+                Value<String?> localCalendarId = const Value.absent(),
+                Value<bool> isSelected = const Value.absent(),
+                required DateTime updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => LocalCalendarSourcesCompanion.insert(
+                userId: userId,
+                sourceId: sourceId,
+                displayName: displayName,
+                timeZoneId: timeZoneId,
+                localCalendarId: localCalendarId,
+                isSelected: isSelected,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalCalendarSourcesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $LocalCalendarSourcesTable,
+      LocalCalendarSource,
+      $$LocalCalendarSourcesTableFilterComposer,
+      $$LocalCalendarSourcesTableOrderingComposer,
+      $$LocalCalendarSourcesTableAnnotationComposer,
+      $$LocalCalendarSourcesTableCreateCompanionBuilder,
+      $$LocalCalendarSourcesTableUpdateCompanionBuilder,
+      (
+        LocalCalendarSource,
+        BaseReferences<
+          _$PactaDatabase,
+          $LocalCalendarSourcesTable,
+          LocalCalendarSource
+        >,
+      ),
+      LocalCalendarSource,
+      PrefetchHooks Function()
+    >;
+typedef $$LocalCalendarBlocksTableCreateCompanionBuilder =
+    LocalCalendarBlocksCompanion Function({
+      required String userId,
+      required String sourceId,
+      required String sourceEventId,
+      required String occurrenceId,
+      required String eventIdentity,
+      required String title,
+      required DateTime startsAt,
+      required DateTime endsAt,
+      Value<bool> allDay,
+      Value<String?> allDayStartDate,
+      Value<String?> allDayEndDateExclusive,
+      required String availability,
+      required String timeZoneId,
+      required DateTime updatedAt,
+      Value<int> rowid,
+    });
+typedef $$LocalCalendarBlocksTableUpdateCompanionBuilder =
+    LocalCalendarBlocksCompanion Function({
+      Value<String> userId,
+      Value<String> sourceId,
+      Value<String> sourceEventId,
+      Value<String> occurrenceId,
+      Value<String> eventIdentity,
+      Value<String> title,
+      Value<DateTime> startsAt,
+      Value<DateTime> endsAt,
+      Value<bool> allDay,
+      Value<String?> allDayStartDate,
+      Value<String?> allDayEndDateExclusive,
+      Value<String> availability,
+      Value<String> timeZoneId,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$LocalCalendarBlocksTableFilterComposer
+    extends Composer<_$PactaDatabase, $LocalCalendarBlocksTable> {
+  $$LocalCalendarBlocksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceId => $composableBuilder(
+    column: $table.sourceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceEventId => $composableBuilder(
+    column: $table.sourceEventId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get occurrenceId => $composableBuilder(
+    column: $table.occurrenceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get eventIdentity => $composableBuilder(
+    column: $table.eventIdentity,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get startsAt => $composableBuilder(
+    column: $table.startsAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get endsAt => $composableBuilder(
+    column: $table.endsAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get allDay => $composableBuilder(
+    column: $table.allDay,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get allDayStartDate => $composableBuilder(
+    column: $table.allDayStartDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get allDayEndDateExclusive => $composableBuilder(
+    column: $table.allDayEndDateExclusive,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get availability => $composableBuilder(
+    column: $table.availability,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get timeZoneId => $composableBuilder(
+    column: $table.timeZoneId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalCalendarBlocksTableOrderingComposer
+    extends Composer<_$PactaDatabase, $LocalCalendarBlocksTable> {
+  $$LocalCalendarBlocksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceId => $composableBuilder(
+    column: $table.sourceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceEventId => $composableBuilder(
+    column: $table.sourceEventId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get occurrenceId => $composableBuilder(
+    column: $table.occurrenceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get eventIdentity => $composableBuilder(
+    column: $table.eventIdentity,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get startsAt => $composableBuilder(
+    column: $table.startsAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get endsAt => $composableBuilder(
+    column: $table.endsAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get allDay => $composableBuilder(
+    column: $table.allDay,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get allDayStartDate => $composableBuilder(
+    column: $table.allDayStartDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get allDayEndDateExclusive => $composableBuilder(
+    column: $table.allDayEndDateExclusive,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get availability => $composableBuilder(
+    column: $table.availability,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get timeZoneId => $composableBuilder(
+    column: $table.timeZoneId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalCalendarBlocksTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $LocalCalendarBlocksTable> {
+  $$LocalCalendarBlocksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceId =>
+      $composableBuilder(column: $table.sourceId, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceEventId => $composableBuilder(
+    column: $table.sourceEventId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get occurrenceId => $composableBuilder(
+    column: $table.occurrenceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get eventIdentity => $composableBuilder(
+    column: $table.eventIdentity,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get startsAt =>
+      $composableBuilder(column: $table.startsAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get endsAt =>
+      $composableBuilder(column: $table.endsAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get allDay =>
+      $composableBuilder(column: $table.allDay, builder: (column) => column);
+
+  GeneratedColumn<String> get allDayStartDate => $composableBuilder(
+    column: $table.allDayStartDate,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get allDayEndDateExclusive => $composableBuilder(
+    column: $table.allDayEndDateExclusive,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get availability => $composableBuilder(
+    column: $table.availability,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get timeZoneId => $composableBuilder(
+    column: $table.timeZoneId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$LocalCalendarBlocksTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $LocalCalendarBlocksTable,
+          LocalCalendarBlock,
+          $$LocalCalendarBlocksTableFilterComposer,
+          $$LocalCalendarBlocksTableOrderingComposer,
+          $$LocalCalendarBlocksTableAnnotationComposer,
+          $$LocalCalendarBlocksTableCreateCompanionBuilder,
+          $$LocalCalendarBlocksTableUpdateCompanionBuilder,
+          (
+            LocalCalendarBlock,
+            BaseReferences<
+              _$PactaDatabase,
+              $LocalCalendarBlocksTable,
+              LocalCalendarBlock
+            >,
+          ),
+          LocalCalendarBlock,
+          PrefetchHooks Function()
+        > {
+  $$LocalCalendarBlocksTableTableManager(
+    _$PactaDatabase db,
+    $LocalCalendarBlocksTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalCalendarBlocksTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalCalendarBlocksTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$LocalCalendarBlocksTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> sourceId = const Value.absent(),
+                Value<String> sourceEventId = const Value.absent(),
+                Value<String> occurrenceId = const Value.absent(),
+                Value<String> eventIdentity = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<DateTime> startsAt = const Value.absent(),
+                Value<DateTime> endsAt = const Value.absent(),
+                Value<bool> allDay = const Value.absent(),
+                Value<String?> allDayStartDate = const Value.absent(),
+                Value<String?> allDayEndDateExclusive = const Value.absent(),
+                Value<String> availability = const Value.absent(),
+                Value<String> timeZoneId = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalCalendarBlocksCompanion(
+                userId: userId,
+                sourceId: sourceId,
+                sourceEventId: sourceEventId,
+                occurrenceId: occurrenceId,
+                eventIdentity: eventIdentity,
+                title: title,
+                startsAt: startsAt,
+                endsAt: endsAt,
+                allDay: allDay,
+                allDayStartDate: allDayStartDate,
+                allDayEndDateExclusive: allDayEndDateExclusive,
+                availability: availability,
+                timeZoneId: timeZoneId,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                required String sourceId,
+                required String sourceEventId,
+                required String occurrenceId,
+                required String eventIdentity,
+                required String title,
+                required DateTime startsAt,
+                required DateTime endsAt,
+                Value<bool> allDay = const Value.absent(),
+                Value<String?> allDayStartDate = const Value.absent(),
+                Value<String?> allDayEndDateExclusive = const Value.absent(),
+                required String availability,
+                required String timeZoneId,
+                required DateTime updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => LocalCalendarBlocksCompanion.insert(
+                userId: userId,
+                sourceId: sourceId,
+                sourceEventId: sourceEventId,
+                occurrenceId: occurrenceId,
+                eventIdentity: eventIdentity,
+                title: title,
+                startsAt: startsAt,
+                endsAt: endsAt,
+                allDay: allDay,
+                allDayStartDate: allDayStartDate,
+                allDayEndDateExclusive: allDayEndDateExclusive,
+                availability: availability,
+                timeZoneId: timeZoneId,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalCalendarBlocksTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $LocalCalendarBlocksTable,
+      LocalCalendarBlock,
+      $$LocalCalendarBlocksTableFilterComposer,
+      $$LocalCalendarBlocksTableOrderingComposer,
+      $$LocalCalendarBlocksTableAnnotationComposer,
+      $$LocalCalendarBlocksTableCreateCompanionBuilder,
+      $$LocalCalendarBlocksTableUpdateCompanionBuilder,
+      (
+        LocalCalendarBlock,
+        BaseReferences<
+          _$PactaDatabase,
+          $LocalCalendarBlocksTable,
+          LocalCalendarBlock
+        >,
+      ),
+      LocalCalendarBlock,
+      PrefetchHooks Function()
+    >;
 
 class $PactaDatabaseManager {
   final _$PactaDatabase _db;
@@ -14807,4 +16816,8 @@ class $PactaDatabaseManager {
       $$FocusSourceDevicesTableTableManager(_db, _db.focusSourceDevices);
   $$FocusSyncSourcesTableTableManager get focusSyncSources =>
       $$FocusSyncSourcesTableTableManager(_db, _db.focusSyncSources);
+  $$LocalCalendarSourcesTableTableManager get localCalendarSources =>
+      $$LocalCalendarSourcesTableTableManager(_db, _db.localCalendarSources);
+  $$LocalCalendarBlocksTableTableManager get localCalendarBlocks =>
+      $$LocalCalendarBlocksTableTableManager(_db, _db.localCalendarBlocks);
 }

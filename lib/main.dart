@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart' hide FocusNode;
@@ -8,6 +9,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'src/auth/auth_repository.dart';
 import 'src/auth/supabase_auth_repository.dart';
+import 'src/calendar/calendar_page.dart';
+import 'src/calendar/calendar_provider.dart';
+import 'src/calendar/calendar_repository.dart';
 import 'src/focus/focus_models.dart';
 import 'src/focus/focus_repository.dart';
 import 'src/focus/focus_clock_review_page.dart';
@@ -29,6 +33,8 @@ Future<void> main() async {
   FocusRemoteDataSource focusRemote = const UnavailableFocusRemoteDataSource();
   NationalFocusRemoteDataSource nationalFocusRemote =
       const UnavailableNationalFocusRemoteDataSource();
+  CalendarRemoteDataSource calendarRemote =
+      const UnavailableCalendarRemoteDataSource();
   if (url.isNotEmpty && key.isNotEmpty) {
     await Supabase.initialize(url: url, publishableKey: key);
     repository = SupabaseAuthRepository(Supabase.instance.client);
@@ -37,6 +43,7 @@ Future<void> main() async {
     nationalFocusRemote = SupabaseNationalFocusRemoteDataSource(
       Supabase.instance.client,
     );
+    calendarRemote = SupabaseCalendarRemoteDataSource(Supabase.instance.client);
   }
   runApp(
     PactaApp(
@@ -56,6 +63,14 @@ Future<void> main() async {
         userId: userId,
         remote: nationalFocusRemote,
       ),
+      calendarRepositoryFactory: (userId) => LocalCalendarRepository(
+        database: database,
+        userId: userId,
+        provider: Platform.isAndroid
+            ? const AndroidCalendarProvider()
+            : const UnsupportedCalendarProvider(),
+        remote: calendarRemote,
+      ),
     ),
   );
 }
@@ -67,6 +82,7 @@ class PactaApp extends StatelessWidget {
     this.taskRepositoryFactory,
     this.focusRepositoryFactory,
     this.nationalFocusRepositoryFactory,
+    this.calendarRepositoryFactory,
   });
 
   final AuthRepository authRepository;
@@ -74,6 +90,7 @@ class PactaApp extends StatelessWidget {
   final FocusRepository Function(String userId)? focusRepositoryFactory;
   final NationalFocusRepository Function(String userId)?
   nationalFocusRepositoryFactory;
+  final CalendarRepository Function(String userId)? calendarRepositoryFactory;
 
   @override
   Widget build(BuildContext context) {
@@ -89,6 +106,10 @@ class PactaApp extends StatelessWidget {
         nationalFocusRepositoryFactoryProvider.overrideWithValue(
           nationalFocusRepositoryFactory ??
               (_) => const UnavailableNationalFocusRepository(),
+        ),
+        calendarRepositoryFactoryProvider.overrideWithValue(
+          calendarRepositoryFactory ??
+              (_) => const UnavailableCalendarRepository(),
         ),
       ],
       child: MaterialApp(
@@ -156,6 +177,21 @@ final nationalFocusRepositoryProvider =
       ref.onDispose(repository.dispose);
       return repository;
     });
+
+final calendarRepositoryFactoryProvider =
+    Provider<CalendarRepository Function(String userId)>((ref) {
+      return (_) => const UnavailableCalendarRepository();
+    });
+
+final calendarRepositoryProvider = Provider.autoDispose<CalendarRepository>((
+  ref,
+) {
+  final userId = ref.watch(authRepositoryProvider).currentUserId;
+  if (userId == null) return const UnavailableCalendarRepository();
+  final repository = ref.watch(calendarRepositoryFactoryProvider)(userId);
+  ref.onDispose(repository.dispose);
+  return repository;
+});
 
 class AuthGate extends ConsumerWidget {
   const AuthGate({super.key});
@@ -364,6 +400,11 @@ class _AppShellState extends ConsumerState<AppShell>
     } catch (_) {
       // National Focus edits stay local and are retried on resume or reconnect.
     }
+    try {
+      await ref.read(calendarRepositoryProvider).sync();
+    } catch (_) {
+      // Calendar Blocks stay local and are retried on resume or reconnect.
+    }
   }
 
   @override
@@ -529,6 +570,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
   Widget build(BuildContext context) {
     final taskRepository = ref.watch(taskRepositoryProvider);
     final focusRepository = ref.watch(focusRepositoryProvider);
+    final calendarRepository = ref.watch(calendarRepositoryProvider);
     return FutureBuilder<String>(
       future: _deviceTimeZoneId,
       builder: (context, timeZoneSnapshot) {
@@ -544,6 +586,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                 builder: (context, metricsSnapshot) => _BoardContent(
                   repository: taskRepository,
                   focusRepository: focusRepository,
+                  calendarRepository: calendarRepository,
                   goals: goalSnapshot.data ?? const [],
                   metrics: metricsSnapshot.data,
                   deviceTimeZoneId: deviceTimeZoneId,
@@ -560,6 +603,7 @@ class _BoardContent extends StatelessWidget {
   const _BoardContent({
     required this.repository,
     required this.focusRepository,
+    required this.calendarRepository,
     required this.goals,
     required this.metrics,
     required this.deviceTimeZoneId,
@@ -568,6 +612,7 @@ class _BoardContent extends StatelessWidget {
 
   final TaskRepository repository;
   final FocusRepository focusRepository;
+  final CalendarRepository calendarRepository;
   final List<Goal> goals;
   final FocusDashboardMetrics? metrics;
   final String deviceTimeZoneId;
@@ -622,6 +667,8 @@ class _BoardContent extends StatelessWidget {
               focusProgressSecondsByTask: metrics?.focusProgressSecondsByTask,
               pendingReviewTaskIds: metrics?.pendingReviewTaskIds ?? const {},
             ),
+        const SizedBox(height: 12),
+        CalendarAgendaCard(repository: calendarRepository),
         const SizedBox(height: 12),
         _RecentFocusActivityCard(
           repository: focusRepository,
@@ -3024,6 +3071,7 @@ class _MyPageState extends ConsumerState<MyPage> {
   @override
   Widget build(BuildContext context) {
     final repository = ref.watch(authRepositoryProvider);
+    final calendarRepository = ref.watch(calendarRepositoryProvider);
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -3045,6 +3093,25 @@ class _MyPageState extends ConsumerState<MyPage> {
         ),
         const SizedBox(height: 12),
         const _FocusReconciliationPageLink(),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.calendar_month_outlined),
+            title: const Text('日历块'),
+            subtitle: Text(
+              Platform.isAndroid ? '选择只读导入的系统日历来源' : '查看从 Android 同步的规划参考',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => CalendarSourcesPage(
+                  repository: calendarRepository,
+                  isAndroid: Platform.isAndroid,
+                ),
+              ),
+            ),
+          ),
+        ),
         const SizedBox(height: 12),
         const PrecedentRulesCard(),
         const SizedBox(height: 12),

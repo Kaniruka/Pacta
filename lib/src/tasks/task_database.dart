@@ -265,6 +265,39 @@ class TaskSyncEntries extends Table {
   Set<Column<Object>> get primaryKey => {userId, entityType, entityId};
 }
 
+class LocalCalendarSources extends Table {
+  TextColumn get userId => text()();
+  TextColumn get sourceId => text()();
+  TextColumn get displayName => text()();
+  TextColumn get timeZoneId => text()();
+  TextColumn get localCalendarId => text().nullable()();
+  BoolColumn get isSelected => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId, sourceId};
+}
+
+class LocalCalendarBlocks extends Table {
+  TextColumn get userId => text()();
+  TextColumn get sourceId => text()();
+  TextColumn get sourceEventId => text()();
+  TextColumn get occurrenceId => text()();
+  TextColumn get eventIdentity => text()();
+  TextColumn get title => text()();
+  DateTimeColumn get startsAt => dateTime()();
+  DateTimeColumn get endsAt => dateTime()();
+  BoolColumn get allDay => boolean().withDefault(const Constant(false))();
+  TextColumn get allDayStartDate => text().nullable()();
+  TextColumn get allDayEndDateExclusive => text().nullable()();
+  TextColumn get availability => text()();
+  TextColumn get timeZoneId => text()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId, sourceId, occurrenceId};
+}
+
 @DriftDatabase(
   tables: [
     LocalGoals,
@@ -284,6 +317,8 @@ class TaskSyncEntries extends Table {
     AppointmentChainRecords,
     FocusSourceDevices,
     FocusSyncSources,
+    LocalCalendarSources,
+    LocalCalendarBlocks,
   ],
 )
 class PactaDatabase extends _$PactaDatabase {
@@ -292,7 +327,7 @@ class PactaDatabase extends _$PactaDatabase {
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
 
   @override
-  int get schemaVersion => 19;
+  int get schemaVersion => 20;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -427,6 +462,10 @@ class PactaDatabase extends _$PactaDatabase {
           localNationalFocusFailures,
           localNationalFocusFailures.reviewDisposition,
         );
+      }
+      if (from < 20) {
+        await m.createTable(localCalendarSources);
+        await m.createTable(localCalendarBlocks);
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);
