@@ -250,6 +250,7 @@ class LocalFocusRepository implements FocusRepository {
   final _changes = StreamController<List<FocusSession>>.broadcast();
   final _uuid = const Uuid();
   Future<void>? _appointmentSettlement;
+  Future<void> _syncQueue = Future<void>.value();
 
   static const appointmentPreparationDuration = Duration(minutes: 15);
 
@@ -590,7 +591,7 @@ class LocalFocusRepository implements FocusRepository {
       updatedAt: startedAt,
     );
     await database.transaction(() async {
-      await _saveAppointment(appointment);
+      await _saveAppointment(appointment, queue: false);
       await _queue('focus_appointment', appointment.id, startedAt);
     });
     await _publish();
@@ -1505,7 +1506,15 @@ class LocalFocusRepository implements FocusRepository {
   }
 
   @override
-  Future<void> sync() async {
+  Future<void> sync() {
+    final nextSync = _syncQueue
+        .catchError((Object _) {})
+        .then((_) => _syncOnce());
+    _syncQueue = nextSync;
+    return nextSync;
+  }
+
+  Future<void> _syncOnce() async {
     await settleDueSessions();
     final snapshot = await remote.pull(userId: userId);
     final dispositionUpdates = <String, FocusSession>{};

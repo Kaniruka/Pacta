@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -5,7 +6,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
-import 'package:pacta/src/tasks/task_database.dart';
+import 'package:pacta/src/tasks/task_database.dart' hide FocusSyncSource;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 
@@ -459,6 +460,114 @@ void main() {
     expect(
       (await focusRepository.getAppointmentChainRecord()).currentConsecutive,
       1,
+    );
+  });
+
+  test('创建预约只记录一个初始同步来源', () async {
+    final task = await createTask('单一预约来源');
+    final appointment = await focusRepository.startAppointment(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 30),
+    );
+    await focusRepository.sync();
+
+    final sources = (await focusRemote.pull(userId: 'user-a')).sources
+        .where(
+          (source) =>
+              source.entityType == 'focus_appointment' &&
+              source.entityId == appointment.id,
+        )
+        .toList();
+    expect(sources, hasLength(1));
+    expect(sources.single.parentSourceId, isNull);
+  });
+
+  test('T10 同一仓储的重叠同步不会并发读取远端', () async {
+    final task = await createTask('串行同步预约');
+    final remote = BlockingInMemoryFocusRemote();
+    final repository = LocalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      remote: remote,
+      now: () => now,
+    );
+    addTearDown(repository.dispose);
+    await repository.startAppointment(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 30),
+    );
+
+    remote.holdNextPull();
+    final firstSync = repository.sync();
+    await remote.firstPullStarted;
+    final secondSync = repository.sync();
+    var maximumDuringOverlap = 0;
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      maximumDuringOverlap = remote.maxConcurrentPulls;
+    } finally {
+      remote.releaseBlockedPull();
+      await Future.wait([firstSync, secondSync]);
+    }
+    expect(maximumDuringOverlap, 1, reason: '启动、网络恢复和前台恢复可能重叠触发同步');
+    expect(remote.maxConcurrentPulls, 1);
+  });
+
+  test('T10 离线后重试上传保留预约来源标识', () async {
+    final task = await createTask('断网重试预约');
+    final remote = FailOnceInMemoryFocusRemote();
+    final repository = LocalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      remote: remote,
+      now: () => now,
+    );
+    addTearDown(repository.dispose);
+    final appointment = await repository.startAppointment(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 30),
+    );
+    await expectLater(repository.sync(), throwsA(isA<StateError>()));
+    expect((await repository.getAppointment(appointment.id))?.isActive, isTrue);
+    final failedUploadSource = remote.failedUploadSources!.singleWhere(
+      (source) =>
+          source.entityType == 'focus_appointment' &&
+          source.entityId == appointment.id,
+    );
+    expect(
+      failedUploadSource.occurredAt.isAtSameMomentAs(appointment.updatedAt),
+      isTrue,
+    );
+
+    now = now.add(const Duration(minutes: 5));
+    await repository.sync();
+    final remoteSnapshot = await remote.pull(userId: 'user-a');
+    final remoteSources = remoteSnapshot.sources.where(
+      (source) =>
+          source.entityType == 'focus_appointment' &&
+          source.entityId == appointment.id,
+    );
+    expect(remoteSources.map((source) => source.sourceId), [
+      failedUploadSource.sourceId,
+    ]);
+    expect(
+      remoteSources.single.occurredAt.isAtSameMomentAs(
+        failedUploadSource.occurredAt,
+      ),
+      isTrue,
+    );
+    final synchronizedAppointment = remoteSnapshot.appointments.singleWhere(
+      (candidate) => candidate.id == appointment.id,
+    );
+    expect(synchronizedAppointment.taskId, appointment.taskId);
+    expect(synchronizedAppointment.mode, appointment.mode);
+    expect(synchronizedAppointment.status, AppointmentPreparationStatus.active);
+    expect(
+      synchronizedAppointment.startedAt.isAtSameMomentAs(appointment.startedAt),
+      isTrue,
     );
   });
 
@@ -1376,4 +1485,59 @@ void main() {
       const Duration(minutes: 5).inSeconds,
     );
   });
+}
+
+class BlockingInMemoryFocusRemote extends InMemoryFocusRemote {
+  Completer<void>? _pullStarted;
+  Completer<void>? _releasePull;
+  var _holdNextPull = false;
+  var _activePulls = 0;
+  var maxConcurrentPulls = 0;
+
+  Future<void> get firstPullStarted => _pullStarted!.future;
+
+  void holdNextPull() {
+    _pullStarted = Completer<void>();
+    _releasePull = Completer<void>();
+    _holdNextPull = true;
+  }
+
+  void releaseBlockedPull() {
+    final release = _releasePull;
+    if (release != null && !release.isCompleted) release.complete();
+  }
+
+  @override
+  Future<FocusRemoteSnapshot> pull({required String userId}) async {
+    _activePulls++;
+    if (_activePulls > maxConcurrentPulls) {
+      maxConcurrentPulls = _activePulls;
+    }
+    final snapshot = await super.pull(userId: userId);
+    if (_holdNextPull) {
+      _holdNextPull = false;
+      _pullStarted!.complete();
+      await _releasePull!.future;
+    }
+    _activePulls--;
+    return snapshot;
+  }
+}
+
+class FailOnceInMemoryFocusRemote extends InMemoryFocusRemote {
+  var _shouldFailSourceUpload = true;
+  List<FocusSyncSource>? failedUploadSources;
+
+  @override
+  Future<void> upsertSources({
+    required String userId,
+    required List<FocusSyncSource> sources,
+  }) async {
+    if (_shouldFailSourceUpload) {
+      _shouldFailSourceUpload = false;
+      failedUploadSources = List.unmodifiable(sources);
+      throw StateError('simulated offline');
+    }
+    await super.upsertSources(userId: userId, sources: sources);
+  }
 }

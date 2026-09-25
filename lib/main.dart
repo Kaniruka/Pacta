@@ -1450,9 +1450,12 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                           '${task.classification.label} · 已专注 '
                           '${_formatDuration(task.focusProgressSeconds)}',
                         ),
-                        trailing: FilledButton.tonal(
-                          onPressed: () => _showSetup(task),
-                          child: const Text('开始'),
+                        trailing: Tooltip(
+                          message: '开始任务：${task.title}',
+                          child: FilledButton.tonal(
+                            onPressed: () => _showSetup(task),
+                            child: const Text('开始'),
+                          ),
                         ),
                       ),
                     ),
