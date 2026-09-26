@@ -1,4 +1,6 @@
-# Focus Loop and Core Application Shell
+# Pacta — First-version Product Specification
+
+Synthesized from the local requirements conversation records and confirmed decisions through 2026-09-22. Implementation tickets T01–T27 are closed. The current local verification and remaining platform evidence are recorded below.
 
 ## Problem Statement
 
@@ -50,7 +52,7 @@ Starting a Focus Session moves the user to a dedicated countdown surface. A Sess
 21. As a user, I want the countdown to be the visible boundary for the current commitment, so that I can see elapsed and remaining time.
 22. As a user, I want the Session page to provide only Pause, Early Termination, Abandon, and the current Continue action, so that there is no misleading manual completion button.
 23. As a user, I want a Session to be recorded as normally completed only when its countdown reaches zero, so that ending early cannot be mistaken for normal completion.
-24. As a user, I want backgrounding the App to leave the Session active, so that a phone operation does not cause an automatic failure.
+24. As a user, I want backgrounding the App to leave the Session active, so that a routine device operation does not cause an automatic failure.
 25. As a user, I want a persistent notification to keep the countdown available while the App is in the background, so that I can return to the Session without losing state.
 26. As a user, I want Pause to require selecting or creating a Precedent Rule I judge applicable, or returning to the countdown, so that pausing does not become a default escape hatch.
 27. As a user, I want Continue after an exception-controlled pause to resume the same Focus Session and its remaining countdown without counting paused time, so that a pause does not create a second Session or duplicate progress. Continue uses the retained pause-rule revision without another rule selection or confirmation.
@@ -113,6 +115,86 @@ Card details must display and allow the user to edit the concrete requirements o
 63. As a user, I want My to contain personal records and settings, so that global configuration has one predictable home.
 64. As a user, I want notification and background-timing settings under My, so that other pages do not expose unrelated settings menus.
 65. As a user, I want shared Precedent Rule history and management reachable only from My, so that all chains use one centrally maintained collection. Chain menus have no rule-management entry; focus interruption flows still allow direct rule selection.
+
+### Goals, effective time, and recovery
+
+66. As a user, I want to create and edit Goals and their executable Tasks with estimated durations and deadlines, so that I can organize work and choose a next action.
+67. As a user, I want to mark a Task complete or undo its completion myself, so that time invested is not mistaken for work finished.
+68. As a user, I want an empty Goal to remain incomplete and a nonempty Goal to derive completion from all its Tasks, so that its status reflects actual work.
+69. As a user, I want Focus Progress to exceed an estimate without being capped, so that estimates remain planning references.
+70. As a user, I want deleted work excluded from new starts while existing flows and historical names remain available, so that deletion does not corrupt my records.
+71. As a user, I want completed and failed Sessions to share one effective-time basis across Task Focus Progress and Recent Focus Activity, so that both views agree about invested time.
+72. As a user, I want cross-midnight activity split in my device's display time zone, so that daily activity reflects my chosen display while total duration remains stable.
+73. As a user, I want preparation and unpaused focus recovered on their original timeline after process termination, so that reopening does not extend the commitment or settle it twice.
+74. As a user, I want an approved paused Session to remain paused across restarts, so that time away does not become focus time.
+
+### Synchronization and reconciliation
+
+75. As a user, I want the same core capabilities and offline workflows on Android and Windows, so that I can use either device independently.
+76. As a user, I want to view and continue the same synchronized flow on another device, so that switching devices does not create another attempt.
+77. As a user, I want known unfinished-flow conflicts to offer continuation or the applicable ending flow, so that I can resolve the conflict and proceed.
+78. As a user, I want offline starts without remote-state confirmation, so that unavailable connectivity does not prevent work.
+79. As a user, I want to choose one source configuration, confirm conflicting outcomes separately, and deduplicate valid intervals, so that reconciliation preserves both meaning and actual time.
+80. As a user, I want duplicate records retained without extra time, nodes, or failures, so that redundant device records do not distort progress.
+81. As a user, I want disputed contributions marked pending review while undisputed work remains usable, so that uncertainty does not stop new work.
+82. As a user, I want valid offline National Focus confirmations recognized despite delayed upload, so that a missing upload is not treated as a missed confirmation.
+83. As a user, I want genuinely conflicting tree operations reconciled with valid complete branches and original evidence, so that synchronization does not invent an invalid tree.
+84. As a user, I want uncertain clock evidence left pending review without forced failure, so that I can defer a decision while continuing to use the App.
+
+### Calendar and notifications
+
+85. As a user, I want selected Android device calendars shown as read-only Calendar Blocks and synchronized to Windows, so that fixed commitments inform planning.
+86. As a user, I want source changes, revoked access, recurring occurrences, and overlapping busy intervals handled accurately, so that the calendar view remains useful without altering Tasks.
+87. As a user, I want stale calendar data labeled when reading fails, so that temporary failures do not look like event deletion.
+88. As a user, I want calendar occupancy to leave focus startup available, so that planning context does not overrule my choice.
+89. As a user, I want preparation-to-focus and focus-end notifications plus configurable National Focus reminders, so that I can follow transitions and confirm pending nodes.
+90. As a user, I want National Focus reminders deferred until an unfinished flow ends, so that a reminder does not interrupt preparation, focus, or an approved pause.
+91. As a user, I want deadlines displayed in-App and notification preferences kept per device, so that reminder behavior matches the agreed scope.
+
+### Registration, isolation, and user lifecycle
+
+92. As an eligible user, I want to register with an approved email address and a password, so that I can access my private data without an App-operated invitation or verification-message flow.
+93. As an administrator, I want to issue and revoke unused registration eligibility and reject unauthorized or duplicate registration, so that shared-instance access stays controlled.
+94. As a user, I want other users unable to read or change my business data, so that my tasks and history remain private.
+95. As an administrator, I want to reset a password after manual verification through a trusted administrative operation, so that forgotten passwords have a recovery path.
+96. As an administrator, I want to suspend and restore users, so that access can be managed without premature data deletion.
+97. As a suspended user, I want retained local data and existing flows handled on the agreed timeline, so that suspension itself does not record failure.
+98. As a restored user, I want retained offline records synchronized with original times and reconciliation, so that delayed uploads preserve valid work.
+99. As an administrator, I want a user eligible for explicit cloud purge after 30 days of the current suspension, so that expiry alone never irreversibly deletes data.
+100. As a user, I want local cleanup only after trustworthy confirmation that my old identity was purged, so that ordinary login or network errors cannot erase local records.
+101. As a newly registered user reusing a purged identifier, I want a fresh identity requiring fresh eligibility, so that old identity data is not silently inherited.
+
+## Implementation Decisions
+
+The accepted stack and product boundaries come from the four accepted ADRs. Module responsibilities below organize those requirements for implementation; they do not claim existing application interfaces or prescribe final database tables, endpoint names, or component layouts.
+
+- **Client and application shell:** use Flutter/Dart, Riverpod, Drift/SQLite, and Material 3 with custom design tokens. Deliver equivalent core and offline capabilities on Android 15 and Windows 11. Preserve the four primary destinations and their responsibilities; production visual design remains implementation work.
+- **Goal and Task operations:** own creation, editing, explicit Task completion, derived Goal completion, classification, estimates, deadlines, and deletion. Retain historical task context and prevent ordinary synchronized edits from resurrecting deleted work. Do not support Task movement between Goals or Goal/Task restoration.
+- **Focus execution:** own preparation, immediate start, approved pause/continue, approved early termination, abandonment, scheduled recovery, and three independent chain records. Preparation and focus transitions must settle once even after retries, restart, or synchronized handoff. The adopted mode determines focus attribution; Task classification only organizes work.
+- **Shared Precedent Rules:** keep user-authored free text centrally managed in My and directly selectable or creatable during interruptions. Preserve the original rule revision for confirmed operations. Rule edits and deletion do not invalidate an existing approved pause.
+- **Effective-time projections:** derive Task Focus Progress and Recent Focus Activity from the same accepted active intervals of completed and failed Sessions. Exclude pauses, unresolved disputed contributions, and duplicate records. Partition daily activity by device display zone without changing total time or chain order. Completion alone creates a Focus Node; failure retains its chain-reset effect.
+- **National Focus maintenance:** own cards, tree placement, library moves, soft-deleted card restoration, requirement versions, daily confirmation, fixed checkpoints, failure events, and immutable full-tree snapshots. Keep internalization, consecutive records, and up to five strengthening levels distinct. Settle the ending day before creating the new pending-confirmation state.
+- **Durable local state and synchronization:** retain flow configuration, active/paused timing evidence, original occurrence times, rule and card requirement revisions, deletion state, source records, pending uploads, and reconciliation results. Persist state changes sufficiently to recover each logical transition once. Synchronize on startup, resume, and restored connectivity. Final schema and migration design must preserve these behavioral contracts.
+- **Reconciliation:** separate source-configuration selection, outcome confirmation, and effective-time union. Preserve original evidence and valid tree branches. Never use upload-order overwrite to determine conflicting focus outcomes or active National Focus operations. Ordinary editable Task metadata may use field-level last-write-wins subject to deletion precedence. Recompute affected projections in actual occurrence order after review.
+- **Calendar adapter:** read selected Android calendars and synchronize only normalized minimum-field Calendar Blocks. Retain source identity and occurrence identity for updates and deduplication. Windows consumes synchronized blocks. Distinguish confirmed source removal from temporary read failure; occupancy never gates focus startup.
+- **Notification adapter:** implement local flow-transition notifications, persistent countdown status, and the configurable deferred National Focus reminder. Device notification settings and display-zone preferences remain device-specific. Notification delivery does not determine business settlement.
+- **Cloud access and administration:** use one Supabase project with Auth, PostgreSQL, and authoritative per-user RLS on exposed business tables. Business ownership is identified by user identity. Client credentials are publishable/anonymous only; privileged credentials stay in trusted server code. Registration eligibility, password reset, suspension, restoration, and purge require server-enforced authorization.
+- **Identity lifecycle contract:** atomically enforce registration eligibility consumption and reject duplicates; retain suspended data and existing flows as specified. After 30 days mark purge eligibility without deleting automatically. A trustworthy explicit purge result must identify the old identity before local cleanup; failed authentication or ordinary permission errors cannot serve as that signal. Exact service interfaces and administrative initialization remain implementation design, not new user business decisions.
+
+## Testing Decisions
+
+**Testing seams — confirmed by the user on 2026-09-21:** use one shared application-use-case boundary as the primary seam for business behavior. Exercise commands and observable queries with durable local storage and controlled time, then replay the same behavior with restart and synchronization. Add focused real-service authorization tests and Android/Windows platform integration tests where a shared application boundary cannot prove RLS enforcement or OS behavior. The repository now contains the Flutter application, durable local storage, and executable automated and platform integration test suites.
+
+- Good tests assert externally visible outcomes: available actions, flow state, retained history, effective minutes, nodes, chain records, pending-review markers, and allowed/denied access. Avoid assertions about private helpers, internal call order, widget trees, or an exact schema. Control time rather than sleeping through countdowns.
+- Exercise Goal/Task lifecycle, focus execution, shared rules, National Focus maintenance, reconciliation, and statistics through the primary application boundary. Prefer complete workflows to separate mocks for every internal module. Use actual local persistence for restart and idempotency checks; simulate independent device stores and duplicated or reordered synchronization deliveries.
+- Existing specification examples and the acceptance matrix A01–A32, including both 2026-09-21 supplements, remain the acceptance prior art. The repository includes unit/widget tests and platform integration tests; report actual platform, initial state, outcome, and evidence for each executed scenario.
+- Focus cases must include normal completion, failure after a pause, exception-approved early termination, cancellation before confirmation, deleted Tasks with unfinished flows, preparation configuration edits, and 10:00 preparation recovered at 11:00 with exactly one 10:15 handoff and 10:45 completion.
+- Verify the latest effective-time decision explicitly: 20 completed minutes followed by 10 active failed minutes and 5 paused minutes yields 30 minutes in both projections; failure resets only the adopted chain and creates no node. Same-Session intervals 10:00–10:20 and 10:10–10:30 yield a 30-minute union even when the reconciled outcome is failed. Duplicate synchronization adds nothing.
+- National Focus cases must include 03:59 first lighting, checkpoint ordering, empty pending sets, child confirmation with an unconfirmed parent, independent versus cascading failure sources, one shared batch explanation, immutable snapshots, library removal and individual replacement, restored cards, strengthening-version changes, and repeated checkpoints without repeated failure.
+- Reconciliation cases must distinguish missing offline confirmation from genuine conflicting actions, retain all sources, preserve valid branches, and exclude only disputed contributions. Verify deferred clock review and timezone redistribution without altered total duration or checkpoint time.
+- Test registration eligibility, per-user isolation, administrative authorization, suspension/restoration, and purge against an isolated Supabase test instance through real public and privileged service boundaries. Use at least two users plus an administrator and exercise direct unauthorized access; UI-only tests cannot establish RLS enforcement. Verify that ordinary errors preserve local caches and a fresh identity cannot inherit old data.
+- On Android 15 and Windows 11, verify the shell and critical user journeys, process termination/recovery, offline continuation, cross-device handoff, notification denial and deferral. Verify native calendar permission and source changes on Android and synchronized display on Windows. OS notifications and background behavior require actual platform evidence beyond controlled-time application tests.
+- On 2026-09-26, `flutter test` passed 171 tests and `flutter analyze` reported no issues. Platform integration tests were not run during this audit; existing platform evidence remains tracked by T01–T27.
 
 ## Confirmed behavior and acceptance examples
 
@@ -317,7 +399,7 @@ National Focus Daily Confirmation means “确认今日继续有效”: acknowle
 
 ### Registration eligibility and password access
 
-- Administrators add a specified email address to a registration allowlist in the administration interface. The operator informs users externally; the App sends no invitation email, SMS, verification code, or invitation link. Users register with an approved email and password, then log in with that email and password. The server checks registration eligibility, rejects unapproved identifiers and duplicate registration, and marks successfully consumed eligibility as used. Unused eligibility does not expire by default and may be revoked by an administrator. Revoking unused eligibility is distinct from suspending a registered user. The App does not verify email ownership; forgotten passwords are reset by an administrator after manual verification, and there is no App-operated email or SMS recovery flow.
+- Administrators add a specified email address to a registration allowlist in the administration interface. The operator informs users externally; the App sends no invitation or verification messages. Users register with an approved email and password, then log in with that email and password. The server checks registration eligibility, rejects unapproved identifiers and duplicate registration, and marks successfully consumed eligibility as used. Unused eligibility does not expire by default and may be revoked by an administrator. Revoking unused eligibility is distinct from suspending a registered user. The App does not verify email ownership; forgotten passwords are reset by an administrator after manual verification, and the App provides no self-service password recovery.
 - Acceptance: an unapproved identifier cannot register; an approved unused identifier can register with a password without receiving a message or verification code. A second registration is rejected. Revoking unused eligibility does not suspend an existing user.
 
 ### Suspension retention and cloud purge
@@ -332,14 +414,14 @@ National Focus Daily Confirmation means “确认今日继续有效”: acknowle
 - After restoration, synchronize retained records, including records created offline before the device learned of suspension, using original occurrence times, deduplication, and reconciliation. Neither suspension nor delayed upload directly establishes failure. National Focus continues to follow its checkpoint rules; valid offline confirmations do not become invalid because of late upload.
 - After cloud purge, reject uploads by the old identity and do not recreate it from local records. Delete that identity's local business cache and pending uploads only after receiving a trustworthy, explicit server result that this old identity has been purged. Network errors, failed login, expired credentials, and ordinary permission denials are never sufficient evidence for local deletion.
 - Offline-device data cannot be guaranteed remotely erased; clean it locally when the device later receives trustworthy confirmation of purge.
-- Reusing the same email address requires fresh registration eligibility and creates a new user identity. Never automatically inherit, associate, or upload the old identity's data. A historical phone-only identity must be migrated to an email on the same `user_id` before phone login is disabled; it must not be replaced by a newly registered user.
+- Reusing the same email address requires fresh registration eligibility and creates a new user identity. Never automatically inherit, associate, or upload the old identity's data.
 
 - Acceptance: known suspension during preparation does not cancel it: it hands off and settles unpaused focus locally on schedule. A previously paused Session remains paused. No business upload occurs until restoration.
 - Acceptance: login failure, token expiry, permission denial, and network failure each preserve the local cache. Only a trustworthy purge result for the old identity authorizes local cleanup; later registration with the same identifier does not reconnect old data.
 
 ### Requirements review closure
 
-D01–D24 are closed: 23 confirmed decisions and D03 cancelled. See [the acceptance matrix](acceptance-matrix-20260914.md) for implementation validation scenarios; these scenarios have not yet been executed against an application.
+D01–D25 are closed: 24 confirmed decisions and D03 cancelled. See [the acceptance matrix](acceptance-matrix-20260914.md); local automated verification is recorded above and platform evidence is tracked by T01–T27.
 
 ## Out of Scope
 
@@ -355,3 +437,16 @@ D01–D24 are closed: 23 confirmed decisions and D03 cancelled. See [the accepta
 - Automatic post-failure tree redesign or splitting, replacement-card generation, post-failure redesign suggestions, or automatic card evaluation. User-requested library removal does dissolve the removed subtree as specified above.
 - National Focus Groups, tolerance quotas, Water-tight Compartment exceptions, and complex inheritance mechanics.
 - Structured Failure Reason categories or cross-domain failure analytics beyond retaining the original short text; these remain future work.
+- iOS, macOS, Linux, and Web delivery, and unverified promises about earlier Android or Windows versions.
+- Task moves between Goals, Goal/Task restoration, and voluntary changes to settled focus or appointment outcomes.
+- Task deadline notifications, App-operated invitation/verification messages, self-service password recovery, and automatic purge on retention expiry.
+- Treating removed historical UI images as production design requirements.
+
+## Further Notes
+
+- This specification synthesizes the local [requirements conversation review](requirements-review-20260912.md), [confirmed decisions D01–D25](requirements-decisions-20260913.md), [product design](product-design.md), and the existing core specification. D01/D02/D04–D25 are confirmed; D03 is cancelled. Superseded proposals in the conversation record are historical evidence, not active requirements.
+- The 2026-09-21 effective-time revision supersedes the former exclusion of failed Sessions from Task Focus Progress. Both completed and failed Sessions now contribute accepted actual active time. Other outcome, chain, pause, and reconciliation rules remain as specified.
+- Use the [domain glossary](../CONTEXT.md) and accepted ADRs for [cloud isolation](adr/0001-supabase-single-project-invite-only-users.md), [read-only calendars](adr/0002-app-owned-tasks-read-only-system-calendar.md), [client stack and platforms](adr/0003-flutter-dart-client-stack.md), and [information architecture](adr/0004-core-screen-information-architecture.md). No ADR change is proposed.
+- The [acceptance matrix](acceptance-matrix-20260914.md) provides A01–A32 and supplementary boundary cases. The [document audit](document-audit-20260921.md) records the prior consistency review and removal of old UI references.
+- Implementation status (2026-09-26): tickets T01–T27 are closed. Local Flutter tests passed 171 tests and flutter analyze reported no issues. Android 15, Windows 11, and isolated Supabase acceptance evidence is recorded in the tickets; platform integration tests were not rerun during this audit.
+- Publication status: the user confirmed the testing seams on 2026-09-21. Implementation tickets T01–T27 are now complete, and [GitHub Issue #20](https://github.com/Kaniruka/Pacta/issues/20) is closed as delivered. To fit GitHub's body-length limit, the complete normative behavior and acceptance examples remain in the [specification supplement comment](https://github.com/Kaniruka/Pacta/issues/20#issuecomment-5761444364), which is part of the same specification.
