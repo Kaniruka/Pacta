@@ -1,0 +1,8 @@
+{
+  "name": "pacta",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "supabase": "2.117.0"
+  }
+}
