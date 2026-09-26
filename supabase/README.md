@@ -38,10 +38,33 @@ remaining part of the same transaction.
 
 Do not create replacement users for existing phone-only users. First produce a
 server-side inventory of users whose `auth.users.email` is null, collect and
-confirm one unique email for each user, then update that same Auth user by ID
-with a trusted server operation. Verify the email login and only then remove
-the phone login path. The operation must never be run from Flutter and must
-never expose a `service_role` key.
+confirm one unique email for each user, then deploy and call the trusted
+`admin-migrate-phone-identity` Edge Function for that exact `user_id`. The
+function authenticates the administrator, rejects identities that are not
+phone-only or have a purge receipt, and updates the existing Auth user by ID.
+It marks the operator-verified email confirmed without creating another user
+or consuming registration eligibility. Verify email login and business-data
+ownership on the same `user_id` before disabling the phone login path. The
+operation must never be run from Flutter and must never expose a `service_role`
+key.
+
+Deploy the function after the email-only registration migration. Invoke it with
+an administrator access token and explicit confirmation that the unique email
+was verified outside the App:
+
+```powershell
+supabase functions deploy admin-migrate-phone-identity
+```
+
+Request body:
+
+```json
+{
+  "user_id": "AUTH_USER_UUID",
+  "email": "person@example.com",
+  "email_manually_verified": true
+}
+```
 
 ## Administrator password reset
 

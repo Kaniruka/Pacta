@@ -23,6 +23,7 @@ import 'src/focus/focus_clock_review_page.dart';
 import 'src/focus/focus_reconciliation_page.dart';
 import 'src/focus/focus_time_zones.dart';
 import 'src/national_focus/national_focus_repository.dart';
+import 'src/national_focus/national_focus_checkpoint_scheduler.dart';
 import 'src/national_focus/national_focus_models.dart';
 import 'src/national_focus/national_focus_tree_page.dart';
 import 'src/notifications/focus_notification_service.dart';
@@ -507,6 +508,7 @@ class _AppShellState extends ConsumerState<AppShell>
   late final StreamSubscription<String> _notificationOpenSubscription;
   late final StreamSubscription<List<NationalFocusCard>>
   _nationalFocusReminderSubscription;
+  late final NationalFocusCheckpointScheduler _nationalFocusCheckpointScheduler;
 
   static const _destinations = [
     _Destination('看板', Icons.dashboard_outlined, Icons.dashboard),
@@ -519,6 +521,10 @@ class _AppShellState extends ConsumerState<AppShell>
   void initState() {
     super.initState();
     _focusNotificationService = ref.read(focusNotificationServiceProvider);
+    _nationalFocusCheckpointScheduler = NationalFocusCheckpointScheduler(
+      settleDueCheckpoints: () =>
+          ref.read(nationalFocusRepositoryProvider).settleDueCheckpoints(),
+    )..start();
     WidgetsBinding.instance.addObserver(this);
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
       _,
@@ -552,13 +558,6 @@ class _AppShellState extends ConsumerState<AppShell>
   }
 
   Future<void> _syncPendingData() async {
-    try {
-      await ref
-          .read(userPurgeCleanupRepositoryProvider)
-          ?.purgeLocallyConfirmedUsers();
-    } catch (_) {
-      // Receipt lookup failures preserve local data and retry on the next resume.
-    }
     try {
       await ref.read(userLifecycleStatusRepositoryProvider).refresh();
     } catch (_) {
@@ -679,6 +678,7 @@ class _AppShellState extends ConsumerState<AppShell>
     _connectivitySubscription.cancel();
     _notificationOpenSubscription.cancel();
     _nationalFocusReminderSubscription.cancel();
+    _nationalFocusCheckpointScheduler.dispose();
     unawaited(
       _focusNotificationService.syncNationalFocusReminder(
         hasPendingConfirmations: false,

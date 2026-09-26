@@ -1,14 +1,17 @@
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:drift/native.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/notifications/focus_device_preferences.dart';
 import 'package:pacta/src/notifications/focus_notification_service.dart';
-import 'package:pacta/src/tasks/task_database.dart';
+import 'package:pacta/src/notifications/national_focus_reminder_state.dart';
+import 'package:pacta/src/tasks/task_database.dart' hide FocusSession;
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _reminderId = 2204;
@@ -46,8 +49,9 @@ void main() {
     final service = FocusNotificationService(
       preferencesStore: preferencesStore,
       androidNotifications: notifications,
-      now: () => DateTime.utc(2037, 1, 2, 12),
+      now: () => DateTime.utc(2037, 1, 2, 14),
     );
+    FocusNotificationService? flowServiceForCleanup;
 
     try {
       await service.initialize();
@@ -82,7 +86,7 @@ void main() {
       await preferencesStore.save(
         oldPreferences.copyWith(
           nationalFocusReminderEnabled: true,
-          nationalFocusReminderMinutesAfterMidnight: 0,
+          nationalFocusReminderMinutesAfterMidnight: 22 * 60,
         ),
       );
       await preferences.remove(
@@ -122,6 +126,144 @@ void main() {
           ),
           '2037-01-02',
         );
+
+        // Simulate the next Beijing 22:00 while exercising the actual Android
+        // notification plugin and durable schedule state.
+        var reminderNow = DateTime.utc(2037, 1, 3, 13, 59);
+        final flowService = FocusNotificationService(
+          preferencesStore: preferencesStore,
+          androidNotifications: notifications,
+          now: () => reminderNow,
+        );
+        flowServiceForCleanup = flowService;
+        await flowService.initialize();
+        await flowService.syncNationalFocusReminder(
+          hasPendingConfirmations: true,
+        );
+        final appointmentEndsAt = DateTime.utc(2037, 1, 3, 14);
+        await flowService.sync(
+          appointment: _appointment(appointmentEndsAt),
+          taskTitle: 'T23 appointment',
+        );
+        final activeSessionEndsAt = appointmentEndsAt.add(
+          const Duration(minutes: 30),
+        );
+        await flowService.sync(
+          session: _session(
+            endsAt: activeSessionEndsAt,
+            status: FocusSessionStatus.active,
+          ),
+          taskTitle: 'T23 active focus',
+        );
+        final reminderState = NationalFocusReminderStateStore(preferences);
+        final scheduled = reminderState.loadScheduled();
+        expect(scheduled, isNotNull);
+        expect(scheduled!.scheduledAt, DateTime.utc(2037, 1, 3, 14, 30));
+
+        await flowService.sync(
+          session: _session(
+            endsAt: activeSessionEndsAt,
+            status: FocusSessionStatus.paused,
+            pausedAt: DateTime.utc(2037, 1, 3, 14, 5),
+          ),
+          taskTitle: 'T23 paused focus',
+        );
+        expect(
+          (await notifications.pendingNotificationRequests()).where(
+            (notification) => notification.id == _reminderId,
+          ),
+          isEmpty,
+          reason: 'Pausing an active focus flow must hold the reminder.',
+        );
+
+        final continuedEndsAt = DateTime.utc(2037, 1, 3, 14, 45);
+        await flowService.sync(
+          session: _session(
+            endsAt: continuedEndsAt,
+            status: FocusSessionStatus.active,
+          ),
+          taskTitle: 'T23 continued focus',
+        );
+        reminderNow = DateTime.utc(2037, 1, 3, 14, 46);
+        await flowService.sync(taskTitle: 'T23 completed focus');
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 500)),
+        );
+        final activeAfterCompletion = await notifications
+            .getActiveNotifications();
+        if (!activeAfterCompletion.any(
+          (notification) => notification.id == _reminderId,
+        )) {
+          final pendingAfterCompletion = await notifications
+              .pendingNotificationRequests();
+          debugPrint(
+            'T23 completion diagnostics: '
+            'lastSent=${reminderState.loadLastSentDayKey()} '
+            'scheduled=${reminderState.loadScheduled()?.scheduledAt} '
+            'activeIds=${activeAfterCompletion.map((item) => item.id).toList()} '
+            'pendingIds=${pendingAfterCompletion.map((item) => item.id).toList()} '
+            'allowed=${await flowService.notificationsAllowed()}',
+          );
+        }
+        expect(
+          activeAfterCompletion.where(
+            (notification) => notification.id == _reminderId,
+          ),
+          hasLength(1),
+          reason: 'Completion releases one reminder when confirmation remains.',
+        );
+        expect(
+          preferences.getString(
+            'pacta.device.national_focus_reminder_last_sent_day',
+          ),
+          '2037-01-03',
+        );
+
+        reminderNow = DateTime.utc(2037, 1, 4, 13, 59);
+        await flowService.syncNationalFocusReminder(
+          hasPendingConfirmations: true,
+        );
+        await preferencesStore.save(
+          (await preferencesStore.load()).copyWith(
+            nationalFocusReminderEnabled: false,
+          ),
+        );
+        await flowService.updatePreferences(await preferencesStore.load());
+        expect(
+          (await notifications.pendingNotificationRequests()).where(
+            (notification) => notification.id == _reminderId,
+          ),
+          isEmpty,
+          reason: 'Disabling the reminder must cancel its Android alarm.',
+        );
+
+        await preferencesStore.save(
+          (await preferencesStore.load()).copyWith(
+            nationalFocusReminderEnabled: true,
+          ),
+        );
+        await nationalFocus.confirmToday();
+        final confirmedCards = await nationalFocus.getTreeCards();
+        await flowService.syncNationalFocusReminder(
+          hasPendingConfirmations: confirmedCards.any(
+            (card) =>
+                card.state == NationalFocusCardState.pendingTodayConfirmation,
+          ),
+        );
+        expect(
+          (await notifications.pendingNotificationRequests()).where(
+            (notification) => notification.id == _reminderId,
+          ),
+          isEmpty,
+          reason: 'Clearing all confirmations must cancel the next alarm.',
+        );
+        expect(
+          (await notifications.getActiveNotifications()).where(
+            (notification) => notification.id == _reminderId,
+          ),
+          isEmpty,
+          reason: 'Clearing all confirmations must dismiss an active reminder.',
+        );
       } else {
         expect(
           (await notifications.getActiveNotifications()).any(
@@ -144,6 +286,7 @@ void main() {
       }
     } finally {
       await notifications.cancel(id: _reminderId);
+      await flowServiceForCleanup?.dispose();
       await service.dispose();
       await _restorePreferences(preferences, previousValues);
       await nationalFocus.dispose();
@@ -151,6 +294,35 @@ void main() {
     }
   }, skip: !Platform.isAndroid);
 }
+
+AppointmentPreparation _appointment(DateTime endsAt) => AppointmentPreparation(
+  id: 'ticket-23-appointment',
+  taskId: 'ticket-23-task',
+  mode: FocusChainMode.regular,
+  durationSeconds: 30 * 60,
+  startedAt: endsAt.subtract(const Duration(minutes: 15)),
+  endsAt: endsAt,
+  status: AppointmentPreparationStatus.active,
+  settledAt: null,
+  updatedAt: endsAt.subtract(const Duration(minutes: 15)),
+);
+
+FocusSession _session({
+  required DateTime endsAt,
+  required FocusSessionStatus status,
+  DateTime? pausedAt,
+}) => FocusSession(
+  id: 'ticket-23-session',
+  taskId: 'ticket-23-task',
+  mode: FocusChainMode.regular,
+  durationSeconds: 30 * 60,
+  startedAt: endsAt.subtract(const Duration(minutes: 30)),
+  endsAt: endsAt,
+  status: status,
+  completedAt: null,
+  effectiveSeconds: 0,
+  pausedAt: pausedAt,
+);
 
 Future<void> _restorePreferences(
   SharedPreferences preferences,

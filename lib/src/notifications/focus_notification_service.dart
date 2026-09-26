@@ -621,7 +621,12 @@ class FocusNotificationService {
         expectedPendingIds.add(_sessionEndNotificationId);
       }
     }
-    await _cancelStalePendingAndroidNotifications(expectedPendingIds);
+    // National Focus reminder reconciliation owns this id and must distinguish
+    // a delivered alarm from an alarm removed while updating focus state.
+    await _cancelStalePendingAndroidNotifications({
+      ...expectedPendingIds,
+      _nationalFocusReminderNotificationId,
+    });
 
     if (!showStatus || plan == null) {
       await _androidNotifications.cancel(id: _statusNotificationId);
