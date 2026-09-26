@@ -114,6 +114,34 @@ class SupabaseAuthRepository implements AuthRepository {
     await _client.rpc('admin_restore_user', params: {'p_user_id': userId});
   }
 
+  @override
+  Future<UserPurgeReceipt> purgeUser(String userId) async {
+    final response = await _client.functions.invoke(
+      'admin-purge-user',
+      body: {'user_id': userId},
+    );
+    final data = response.data;
+    if (data is! Map) throw const FormatException('清除回执格式无效。');
+    final receipt = UserPurgeReceipt.fromJson(Map<String, dynamic>.from(data));
+    if (!receipt.confirmsPurgedUser(userId)) {
+      throw StateError('服务端未确认该用户身份已清除。');
+    }
+    return receipt;
+  }
+
+  @override
+  Future<UserPurgeReceipt?> lookupPurgeReceipt(String oldUserId) async {
+    final response = await _client.rpc(
+      'user_purge_receipt',
+      params: {'p_user_id': oldUserId},
+    );
+    if (response is! Map) return null;
+    final receipt = UserPurgeReceipt.fromJson(
+      Map<String, dynamic>.from(response),
+    );
+    return receipt.confirmsPurgedUser(oldUserId) ? receipt : null;
+  }
+
   void _requireEmail(String value) {
     if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value.trim())) {
       throw const FormatException('请输入有效的邮箱地址。');
@@ -187,6 +215,16 @@ class UnavailableAuthRepository implements AuthRepository {
 
   @override
   Future<void> restoreUser(String userId) async {
+    throw StateError(message);
+  }
+
+  @override
+  Future<UserPurgeReceipt> purgeUser(String userId) async {
+    throw StateError(message);
+  }
+
+  @override
+  Future<UserPurgeReceipt?> lookupPurgeReceipt(String oldUserId) async {
     throw StateError(message);
   }
 }

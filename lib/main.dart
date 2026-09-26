@@ -23,6 +23,7 @@ import 'src/focus/focus_clock_review_page.dart';
 import 'src/focus/focus_reconciliation_page.dart';
 import 'src/focus/focus_time_zones.dart';
 import 'src/national_focus/national_focus_repository.dart';
+import 'src/national_focus/national_focus_models.dart';
 import 'src/national_focus/national_focus_tree_page.dart';
 import 'src/notifications/focus_notification_service.dart';
 import 'src/notifications/focus_notification_settings_page.dart';
@@ -54,9 +55,14 @@ Future<void> main() async {
     );
     calendarRemote = SupabaseCalendarRemoteDataSource(Supabase.instance.client);
   }
+  final purgeCleanupRepository = UserPurgeCleanupRepository(
+    authRepository: repository,
+    database: database,
+  );
   runApp(
     PactaApp(
       authRepository: repository,
+      userPurgeCleanupRepository: purgeCleanupRepository,
       focusNotificationService: focusNotificationService,
       taskRepositoryFactory: (userId) => LocalTaskRepository(
         database: database,
@@ -112,6 +118,7 @@ class PactaApp extends StatelessWidget {
   const PactaApp({
     super.key,
     required this.authRepository,
+    this.userPurgeCleanupRepository,
     this.focusNotificationService,
     this.taskRepositoryFactory,
     this.focusRepositoryFactory,
@@ -121,6 +128,7 @@ class PactaApp extends StatelessWidget {
   });
 
   final AuthRepository authRepository;
+  final UserPurgeCleanupRepository? userPurgeCleanupRepository;
   final FocusNotificationService? focusNotificationService;
   final TaskRepository Function(String userId)? taskRepositoryFactory;
   final FocusRepository Function(String userId)? focusRepositoryFactory;
@@ -135,6 +143,9 @@ class PactaApp extends StatelessWidget {
     return ProviderScope(
       overrides: [
         authRepositoryProvider.overrideWithValue(authRepository),
+        userPurgeCleanupRepositoryProvider.overrideWithValue(
+          userPurgeCleanupRepository,
+        ),
         focusNotificationServiceProvider.overrideWithValue(
           focusNotificationService ?? DisabledFocusNotificationService(),
         ),
@@ -171,7 +182,10 @@ class PactaApp extends StatelessWidget {
             border: OutlineInputBorder(),
           ),
         ),
-        home: const AuthGate(),
+        home: _UserPurgeCleanupLifecycleObserver(
+          cleanupRepository: userPurgeCleanupRepository,
+          child: const AuthGate(),
+        ),
       ),
     );
   }
@@ -180,6 +194,9 @@ class PactaApp extends StatelessWidget {
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return const UnavailableAuthRepository();
 });
+
+final userPurgeCleanupRepositoryProvider =
+    Provider<UserPurgeCleanupRepository?>((ref) => null);
 
 final focusNotificationServiceProvider = Provider<FocusNotificationService>((
   ref,
@@ -257,6 +274,68 @@ final userLifecycleStatusRepositoryProvider =
       }
       return ref.watch(userLifecycleRepositoryFactoryProvider)(userId);
     });
+
+class _UserPurgeCleanupLifecycleObserver extends StatefulWidget {
+  const _UserPurgeCleanupLifecycleObserver({
+    required this.cleanupRepository,
+    required this.child,
+  });
+
+  final UserPurgeCleanupRepository? cleanupRepository;
+  final Widget child;
+
+  @override
+  State<_UserPurgeCleanupLifecycleObserver> createState() =>
+      _UserPurgeCleanupLifecycleObserverState();
+}
+
+class _UserPurgeCleanupLifecycleObserverState
+    extends State<_UserPurgeCleanupLifecycleObserver>
+    with WidgetsBindingObserver {
+  late final StreamSubscription<List<ConnectivityResult>>
+  _connectivitySubscription;
+  bool _running = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      _,
+    ) {
+      unawaited(_runCleanup());
+    });
+    unawaited(_runCleanup());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_runCleanup());
+  }
+
+  Future<void> _runCleanup() async {
+    final repository = widget.cleanupRepository;
+    if (repository == null || _running) return;
+    _running = true;
+    try {
+      await repository.purgeLocallyConfirmedUsers();
+    } catch (_) {
+      // Offline or invalid receipt responses keep local rows for a later retry.
+    } finally {
+      _running = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _connectivitySubscription.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
 
 class AuthGate extends ConsumerWidget {
   const AuthGate({super.key});
@@ -422,9 +501,12 @@ class AppShell extends ConsumerStatefulWidget {
 class _AppShellState extends ConsumerState<AppShell>
     with WidgetsBindingObserver {
   int _index = 0;
+  late final FocusNotificationService _focusNotificationService;
   late final StreamSubscription<List<ConnectivityResult>>
   _connectivitySubscription;
   late final StreamSubscription<String> _notificationOpenSubscription;
+  late final StreamSubscription<List<NationalFocusCard>>
+  _nationalFocusReminderSubscription;
 
   static const _destinations = [
     _Destination('看板', Icons.dashboard_outlined, Icons.dashboard),
@@ -436,24 +518,30 @@ class _AppShellState extends ConsumerState<AppShell>
   @override
   void initState() {
     super.initState();
+    _focusNotificationService = ref.read(focusNotificationServiceProvider);
     WidgetsBinding.instance.addObserver(this);
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
       _,
     ) {
       unawaited(_syncPendingData());
     });
-    _notificationOpenSubscription = ref
-        .read(focusNotificationServiceProvider)
-        .openFlowRequests
+    _notificationOpenSubscription = _focusNotificationService.openFlowRequests
         .listen((payload) {
-          ref.read(focusNotificationServiceProvider).takePendingOpenRequest();
+          _focusNotificationService.takePendingOpenRequest();
           unawaited(_openFocusFlow(payload));
         });
+    _nationalFocusReminderSubscription = ref
+        .read(nationalFocusRepositoryProvider)
+        .watchTreeCards()
+        .listen(
+          (cards) => unawaited(_syncNationalFocusReminder(cards)),
+          onError: (Object _) {
+            // Notification reconciliation never changes National Focus state.
+          },
+        );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_syncPendingData());
-      final request = ref
-          .read(focusNotificationServiceProvider)
-          .takePendingOpenRequest();
+      final request = _focusNotificationService.takePendingOpenRequest();
       if (request != null) unawaited(_openFocusFlow(request));
     });
   }
@@ -464,6 +552,13 @@ class _AppShellState extends ConsumerState<AppShell>
   }
 
   Future<void> _syncPendingData() async {
+    try {
+      await ref
+          .read(userPurgeCleanupRepositoryProvider)
+          ?.purgeLocallyConfirmedUsers();
+    } catch (_) {
+      // Receipt lookup failures preserve local data and retry on the next resume.
+    }
     try {
       await ref.read(userLifecycleStatusRepositoryProvider).refresh();
     } catch (_) {
@@ -501,22 +596,37 @@ class _AppShellState extends ConsumerState<AppShell>
           : null;
       final taskId = activeSession?.taskId ?? activeAppointment?.taskId;
       final goals = await ref.read(taskRepositoryProvider).getGoals();
-      await ref
-          .read(focusNotificationServiceProvider)
-          .sync(
-            appointment: activeAppointment,
-            session: activeSession,
-            taskTitle: taskId == null
-                ? '当前任务'
-                : _findTaskTitle(goals, taskId) ?? '当前任务',
-          );
+      await _focusNotificationService.sync(
+        appointment: activeAppointment,
+        session: activeSession,
+        taskTitle: taskId == null
+            ? '当前任务'
+            : _findTaskTitle(goals, taskId) ?? '当前任务',
+      );
     } catch (_) {
       // A local focus flow stays usable when the notification adapter is unavailable.
     }
   }
 
+  Future<void> _syncNationalFocusReminder(List<NationalFocusCard> cards) async {
+    try {
+      await _focusNotificationService.syncNationalFocusReminder(
+        hasPendingConfirmations: cards.any(
+          (card) =>
+              card.state == NationalFocusCardState.pendingTodayConfirmation,
+        ),
+      );
+    } catch (_) {
+      // Reminder delivery is optional and cannot block National Focus actions.
+    }
+  }
+
   Future<void> _openFocusFlow(String payload) async {
     if (!mounted) return;
+    if (payload.startsWith('national-focus-reminder:')) {
+      setState(() => _index = 1);
+      return;
+    }
     final separator = payload.indexOf(':');
     if (separator <= 0 || separator == payload.length - 1) return;
     final kind = payload.substring(0, separator);
@@ -568,6 +678,12 @@ class _AppShellState extends ConsumerState<AppShell>
     WidgetsBinding.instance.removeObserver(this);
     _connectivitySubscription.cancel();
     _notificationOpenSubscription.cancel();
+    _nationalFocusReminderSubscription.cancel();
+    unawaited(
+      _focusNotificationService.syncNationalFocusReminder(
+        hasPendingConfirmations: false,
+      ),
+    );
     super.dispose();
   }
 

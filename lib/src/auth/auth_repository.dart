@@ -30,4 +30,8 @@ abstract interface class AuthRepository {
   Future<void> suspendUser(String userId);
 
   Future<void> restoreUser(String userId);
+
+  Future<UserPurgeReceipt> purgeUser(String userId);
+
+  Future<UserPurgeReceipt?> lookupPurgeReceipt(String oldUserId);
 }

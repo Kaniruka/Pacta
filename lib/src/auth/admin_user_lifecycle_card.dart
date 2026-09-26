@@ -61,6 +61,50 @@ class _AdminUserLifecycleCardState extends State<AdminUserLifecycleCard> {
     }
   }
 
+  Future<void> _confirmPurge(ManagedUserLifecycle user) async {
+    if (!user.isSuspended || !user.isEligibleForPurge) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('确认不可逆清除'),
+        content: Text(
+          '将永久清除 ${user.email ?? user.userId} 的云端业务数据和认证身份。'
+          '此操作不可撤销，也无法远程擦除离线设备上的数据；设备只会在取得绑定此旧身份的已清除回执后清理本地缓存。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('清除云端身份'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      final receipt = await widget.repository.purgeUser(user.userId);
+      if (!receipt.confirmsPurgedUser(user.userId)) {
+        throw StateError('服务端未确认该用户身份已清除。');
+      }
+      await _load();
+      if (mounted && _message == null) {
+        setState(() => _message = '已清除 ${user.email ?? user.userId} 的云端身份。');
+      }
+    } catch (error) {
+      if (mounted) setState(() => _message = _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   String _friendlyError(Object error) =>
       error.toString().replaceFirst('Bad state: ', '');
 
@@ -121,20 +165,34 @@ class _AdminUserLifecycleCardState extends State<AdminUserLifecycleCard> {
         '最近恢复：${_formatDate(user.restoredAt)}',
     ].join('\n');
 
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(user.email ?? user.userId),
-      subtitle: Text(subtitle),
-      isThreeLine: subtitle.contains('\n'),
-      trailing: user.isSuspended
-          ? OutlinedButton(
-              onPressed: _busy ? null : () => _setSuspended(user, false),
-              child: const Text('恢复'),
-            )
-          : FilledButton.tonal(
-              onPressed: _busy ? null : () => _setSuspended(user, true),
-              child: const Text('停用'),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(user.email ?? user.userId),
+          subtitle: Text(subtitle),
+          isThreeLine: subtitle.contains('\n'),
+          trailing: user.isSuspended
+              ? OutlinedButton(
+                  onPressed: _busy ? null : () => _setSuspended(user, false),
+                  child: const Text('恢复'),
+                )
+              : FilledButton.tonal(
+                  onPressed: _busy ? null : () => _setSuspended(user, true),
+                  child: const Text('停用'),
+                ),
+        ),
+        if (user.isSuspended && user.isEligibleForPurge)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _busy ? null : () => _confirmPurge(user),
+              icon: const Icon(Icons.delete_forever_outlined),
+              label: const Text('永久清除'),
             ),
+          ),
+      ],
     );
   }
 

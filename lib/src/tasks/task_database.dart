@@ -1,6 +1,8 @@
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
+import '../auth/user_lifecycle_models.dart';
+
 part 'task_database.g.dart';
 
 class LocalGoals extends Table {
@@ -341,6 +343,104 @@ class PactaDatabase extends _$PactaDatabase {
   PactaDatabase(super.e);
 
   factory PactaDatabase.open() => PactaDatabase(driftDatabase(name: 'pacta'));
+
+  Future<Set<String>> localUserIdsWithData() async {
+    final rows = await customSelect('''
+      SELECT user_id FROM local_calendar_blocks
+      UNION SELECT user_id FROM local_calendar_sources
+      UNION SELECT user_id FROM task_sync_entries
+      UNION SELECT user_id FROM focus_sync_sources
+      UNION SELECT user_id FROM focus_nodes
+      UNION SELECT user_id FROM focus_sessions
+      UNION SELECT user_id FROM focus_appointments
+      UNION SELECT user_id FROM focus_chain_records
+      UNION SELECT user_id FROM appointment_chain_records
+      UNION SELECT user_id FROM focus_source_devices
+      UNION SELECT user_id FROM focus_preferences
+      UNION SELECT user_id FROM focus_precedent_rules
+      UNION SELECT user_id FROM local_national_focus_failures
+      UNION SELECT user_id FROM local_national_focus_requirement_versions
+      UNION SELECT user_id FROM local_national_focus_strengthening_levels
+      UNION SELECT user_id FROM local_national_focus_maintenance
+      UNION SELECT user_id FROM local_national_focus_cards
+      UNION SELECT user_id FROM local_tasks
+      UNION SELECT user_id FROM local_goals
+      UNION SELECT user_id FROM local_user_lifecycle_states
+    ''').get();
+    return rows.map((row) => row.read<String>('user_id')).toSet();
+  }
+
+  Future<bool> purgeUserDataForReceipt({
+    required String userId,
+    required UserPurgeReceipt receipt,
+  }) async {
+    if (userId.isEmpty || !receipt.confirmsPurgedUser(userId)) return false;
+
+    await transaction(() async {
+      await (delete(
+        localCalendarBlocks,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        localCalendarSources,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        taskSyncEntries,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        focusSyncSources,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        focusNodes,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        focusSessions,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        focusAppointments,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        focusChainRecords,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        appointmentChainRecords,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        focusSourceDevices,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        focusPreferences,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        focusPrecedentRules,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        localNationalFocusFailures,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        localNationalFocusRequirementVersions,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        localNationalFocusStrengtheningLevels,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        localNationalFocusMaintenance,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        localNationalFocusCards,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        localTasks,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        localGoals,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        localUserLifecycleStates,
+      )..where((row) => row.userId.equals(userId))).go();
+    });
+
+    return true;
+  }
 
   @override
   int get schemaVersion => 22;

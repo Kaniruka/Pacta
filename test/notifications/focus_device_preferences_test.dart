@@ -9,22 +9,47 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  test('notification and background preferences persist on this device', () async {
-    final preferences = await SharedPreferences.getInstance();
-    final store = FocusDevicePreferencesStore(preferences);
+  test(
+    'notification and background preferences persist on this device',
+    () async {
+      final preferences = await SharedPreferences.getInstance();
+      final store = FocusDevicePreferencesStore(preferences);
 
-    await store.save(
-      const FocusDevicePreferences(
-        notificationsEnabled: true,
-        backgroundRunningEnabled: false,
-      ),
-    );
+      await store.save(
+        const FocusDevicePreferences(
+          notificationsEnabled: true,
+          backgroundRunningEnabled: false,
+        ),
+      );
 
-    final restored = await FocusDevicePreferencesStore(preferences).load();
+      final restored = await FocusDevicePreferencesStore(preferences).load();
 
-    expect(restored.notificationsEnabled, isTrue);
-    expect(restored.backgroundRunningEnabled, isFalse);
-  });
+      expect(restored.notificationsEnabled, isTrue);
+      expect(restored.backgroundRunningEnabled, isFalse);
+    },
+  );
+
+  test(
+    'National Focus reminder choice and time persist on this device',
+    () async {
+      final preferences = await SharedPreferences.getInstance();
+      final store = FocusDevicePreferencesStore(preferences);
+
+      await store.save(
+        const FocusDevicePreferences(
+          notificationsEnabled: false,
+          backgroundRunningEnabled: true,
+          nationalFocusReminderEnabled: false,
+          nationalFocusReminderMinutesAfterMidnight: 7 * 60 + 30,
+        ),
+      );
+
+      final restored = await FocusDevicePreferencesStore(preferences).load();
+
+      expect(restored.nationalFocusReminderEnabled, isFalse);
+      expect(restored.nationalFocusReminderMinutesAfterMidnight, 7 * 60 + 30);
+    },
+  );
 
   test('notification and background preferences have safe defaults', () async {
     final preferences = await SharedPreferences.getInstance();
@@ -32,5 +57,7 @@ void main() {
 
     expect(settings.notificationsEnabled, isFalse);
     expect(settings.backgroundRunningEnabled, isTrue);
+    expect(settings.nationalFocusReminderEnabled, isTrue);
+    expect(settings.nationalFocusReminderMinutesAfterMidnight, 22 * 60);
   });
 }

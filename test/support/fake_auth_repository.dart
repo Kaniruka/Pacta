@@ -9,6 +9,13 @@ class FakeAuthRepository implements AuthRepository {
   List<ManagedUserLifecycle> managedUsers = const [];
   final suspendedUserIds = <String>[];
   final restoredUserIds = <String>[];
+  final purgedUserIds = <String>[];
+  final purgeReceiptLookupIds = <String>[];
+  final lookupPurgeReceipts = <String, UserPurgeReceipt>{};
+  UserPurgeReceipt? purgeReceipt;
+  UserPurgeReceipt? lookupPurgeReceiptResult;
+  Object? purgeError;
+  Object? purgeReceiptLookupError;
   Object? passwordResetError;
   Object? signInError;
   String? passwordResetEmail;
@@ -121,5 +128,34 @@ class FakeAuthRepository implements AuthRepository {
         else
           managedUsers[current],
     ];
+  }
+
+  @override
+  Future<UserPurgeReceipt> purgeUser(String userId) async {
+    purgedUserIds.add(userId);
+    final error = purgeError;
+    if (error != null) throw error;
+    final receipt =
+        purgeReceipt ??
+        UserPurgeReceipt(
+          userId: userId,
+          status: UserPurgeStatus.completed,
+          purgedAt: DateTime.now().toUtc(),
+        );
+    if (receipt.confirmsPurgedUser(userId)) {
+      managedUsers = [
+        for (final user in managedUsers)
+          if (user.userId != userId) user,
+      ];
+    }
+    return receipt;
+  }
+
+  @override
+  Future<UserPurgeReceipt?> lookupPurgeReceipt(String oldUserId) async {
+    purgeReceiptLookupIds.add(oldUserId);
+    final error = purgeReceiptLookupError;
+    if (error != null) throw error;
+    return lookupPurgeReceipts[oldUserId] ?? lookupPurgeReceiptResult;
   }
 }

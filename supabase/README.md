@@ -88,3 +88,42 @@ and restoration/re-suspension behavior, then rolls back its test changes:
 ```powershell
 supabase db query --linked -f supabase/tests/user_suspension_access.sql
 ```
+
+## Explicit cloud purge
+
+Ticket T27 adds `202609260004_user_purge.sql` and the
+`admin-purge-user` Edge Function. Apply the migration after T26, then deploy
+the function:
+
+```powershell
+supabase db push
+supabase functions deploy admin-purge-user
+```
+
+The function verifies the caller's Auth JWT and `app_admins` membership. Its
+service-only RPCs recheck that the target is not an administrator and has been
+continuously suspended for at least 30 days. The operation first deletes all
+current cloud business tables in dependency order, then permanently deletes the
+Auth identity through the Auth Admin API, and records a completed receipt bound
+to the old UUID. A pending operation never counts as a receipt. Retries resume
+the same pending purge so an Auth API or completion-recording failure cannot
+tell a device to clean its cache early. Restoration is blocked while a purge
+is pending.
+
+The public `user_purge_receipt` RPC returns only a completed receipt's old UUID
+and completion time; it does not return email or business data. Offline devices
+use that response to clean only local rows whose owner UUID matches. Ordinary
+authentication, authorization, and network errors do not authorize local
+cleanup. The old UUID receipt remains after Auth deletion; fresh registration
+with the same email requires an explicit new administrator grant and consumes
+eligibility for a different Auth UUID.
+
+Run the rollback-only purge probe only against an isolated Supabase project
+containing an administrator and two non-administrator email users. It inserts
+business rows, simulates hard Auth deletion inside a transaction, checks the
+receipt, business-data cascade, old-UUID rejection, and fresh eligibility, then
+rolls back:
+
+```powershell
+supabase db query --linked -f supabase/tests/user_purge_access.sql
+```

@@ -12,10 +12,13 @@ import 'package:timezone/timezone.dart' as timezone;
 import '../focus/focus_models.dart';
 import 'focus_device_preferences.dart';
 import 'focus_notification_plan.dart';
+import 'national_focus_reminder_plan.dart';
+import 'national_focus_reminder_state.dart';
 
 class FocusNotificationService {
   FocusNotificationService({
     this.preferencesStore,
+    this.nationalFocusReminderStateStore,
     FlutterLocalNotificationsPlugin? androidNotifications,
     MethodChannel? windowsChannel,
     DateTime Function()? now,
@@ -29,25 +32,35 @@ class FocusNotificationService {
   static const _appointmentStatusNotificationId = 2201;
   static const _appointmentTransitionNotificationId = 2202;
   static const _sessionEndNotificationId = 2203;
+  static const _nationalFocusReminderNotificationId = 2204;
   static const _statusChannelId = 'pacta_focus_status';
   static const _eventChannelId = 'pacta_focus_events';
+  static const _nationalFocusReminderChannelId =
+      'pacta_national_focus_reminders';
   static const _ownedNotificationIds = {
     _statusNotificationId,
     _appointmentStatusNotificationId,
     _appointmentTransitionNotificationId,
     _sessionEndNotificationId,
+    _nationalFocusReminderNotificationId,
   };
 
   final FocusDevicePreferencesStore? preferencesStore;
+  final NationalFocusReminderStateStore? nationalFocusReminderStateStore;
   final FlutterLocalNotificationsPlugin _androidNotifications;
   final MethodChannel _windowsChannel;
   final DateTime Function() _now;
   final _openFlowRequests = StreamController<String>.broadcast();
 
   FocusDevicePreferencesStore? _resolvedPreferencesStore;
+  NationalFocusReminderStateStore? _resolvedNationalFocusReminderStateStore;
   FocusNotificationPlan? _currentPlan;
   Timer? _windowsTicker;
+  Timer? _windowsNationalFocusReminderTimer;
+  Future<void> _nationalFocusReminderWork = Future<void>.value();
+  bool? _hasPendingNationalFocusConfirmations;
   bool _initialized = false;
+  bool _timeZonesInitialized = false;
   bool _windowsTransitionPending = false;
   bool _windowsEndPending = false;
   String? _pendingOpenRequest;
@@ -64,6 +77,7 @@ class FocusNotificationService {
     if (!Platform.isAndroid) return;
 
     timezone_data.initializeTimeZones();
+    _timeZonesInitialized = true;
     try {
       final localTimeZone = await FlutterTimezone.getLocalTimezone();
       timezone.setLocalLocation(timezone.getLocation(localTimeZone.identifier));
@@ -91,6 +105,13 @@ class FocusNotificationService {
   Future<void> updatePreferences(FocusDevicePreferences preferences) async {
     await (await _settingsStore).save(preferences);
     await _applyCurrentPlan();
+  }
+
+  Future<void> syncNationalFocusReminder({
+    required bool hasPendingConfirmations,
+  }) async {
+    _hasPendingNationalFocusConfirmations = hasPendingConfirmations;
+    await _queueNationalFocusReminderReconciliation();
   }
 
   Future<bool> notificationsAllowed() async {
@@ -270,7 +291,9 @@ class FocusNotificationService {
 
   Future<void> clear() async {
     _currentPlan = null;
+    _hasPendingNationalFocusConfirmations = false;
     _windowsTicker?.cancel();
+    _windowsNationalFocusReminderTimer?.cancel();
     if (Platform.isAndroid) {
       await _cancelPendingAndroidNotifications(_ownedNotificationIds);
       await _androidNotifications.cancel(id: _statusNotificationId);
@@ -278,10 +301,12 @@ class FocusNotificationService {
     } else if (Platform.isWindows) {
       await _windowsChannel.invokeMethod<void>('clearStatus');
     }
+    await (await _reminderStateStore).clearScheduled();
   }
 
   Future<void> dispose() async {
     _windowsTicker?.cancel();
+    _windowsNationalFocusReminderTimer?.cancel();
     await _openFlowRequests.close();
   }
 
@@ -293,15 +318,286 @@ class FocusNotificationService {
     );
   }
 
+  Future<NationalFocusReminderStateStore> get _reminderStateStore async {
+    final supplied = nationalFocusReminderStateStore;
+    if (supplied != null) return supplied;
+    return _resolvedNationalFocusReminderStateStore ??=
+        NationalFocusReminderStateStore(await SharedPreferences.getInstance());
+  }
+
   Future<void> _applyCurrentPlan() async {
     final preferences = await (await _settingsStore).load();
     if (Platform.isWindows) {
       await _applyWindowsPlan(preferences);
-      return;
-    }
-    if (Platform.isAndroid) {
+    } else if (Platform.isAndroid) {
       await _applyAndroidPlan(preferences);
     }
+    await _queueNationalFocusReminderReconciliation();
+  }
+
+  Future<void> _queueNationalFocusReminderReconciliation() {
+    final operation = _nationalFocusReminderWork.then(
+      (_) => _reconcileNationalFocusReminder(),
+    );
+    _nationalFocusReminderWork = operation.catchError((Object _) {});
+    return operation;
+  }
+
+  Future<void> _reconcileNationalFocusReminder() async {
+    final preferences = await (await _settingsStore).load();
+    final state = await _reminderStateStore;
+    if (_hasPendingNationalFocusConfirmations == null &&
+        preferences.nationalFocusReminderEnabled) {
+      return;
+    }
+
+    if (!preferences.nationalFocusReminderEnabled ||
+        _hasPendingNationalFocusConfirmations != true ||
+        (!Platform.isAndroid && !Platform.isWindows) ||
+        (Platform.isAndroid && !await notificationsAllowed())) {
+      await _cancelNationalFocusReminder(state);
+      return;
+    }
+
+    final now = _now().toUtc();
+    final lastSentDayKey = state.loadLastSentDayKey();
+    var reminder = NationalFocusReminderPlan.next(
+      now: now,
+      minuteOfDay: preferences.nationalFocusReminderMinutesAfterMidnight,
+      hasPendingConfirmations: true,
+      lastNotifiedDayKey: lastSentDayKey,
+      activeFlow: _currentPlan,
+    );
+    if (reminder == null) {
+      await _cancelNationalFocusReminder(state);
+      return;
+    }
+
+    if (Platform.isWindows) {
+      await _applyWindowsNationalFocusReminder(reminder, preferences, state);
+      return;
+    }
+
+    await _applyAndroidNationalFocusReminder(reminder, preferences, state);
+  }
+
+  Future<void> _cancelNationalFocusReminder(
+    NationalFocusReminderStateStore state,
+  ) async {
+    _windowsNationalFocusReminderTimer?.cancel();
+    if (Platform.isAndroid) {
+      await _androidNotifications.cancel(
+        id: _nationalFocusReminderNotificationId,
+      );
+    }
+    await state.clearScheduled();
+  }
+
+  Future<void> _applyWindowsNationalFocusReminder(
+    NationalFocusReminderPlan? reminder,
+    FocusDevicePreferences preferences,
+    NationalFocusReminderStateStore state,
+  ) async {
+    _windowsNationalFocusReminderTimer?.cancel();
+    if (reminder == null) return;
+
+    final now = _now().toUtc();
+    if (reminder.scheduledAt.isAfter(now)) {
+      await state.saveScheduled(
+        NationalFocusReminderSchedule(
+          dayKey: reminder.dayKey,
+          scheduledAt: reminder.scheduledAt,
+          repeatsDaily: false,
+        ),
+      );
+      _windowsNationalFocusReminderTimer = Timer(
+        reminder.scheduledAt.difference(now),
+        () => unawaited(_queueNationalFocusReminderReconciliation()),
+      );
+      return;
+    }
+
+    await _showWindowsEvent(title: '国策待确认', body: '请确认今天仍然有效的国策。');
+    await state.markSent(reminder.dayKey);
+    final nextReminder = NationalFocusReminderPlan.next(
+      now: _now(),
+      minuteOfDay: preferences.nationalFocusReminderMinutesAfterMidnight,
+      hasPendingConfirmations: _hasPendingNationalFocusConfirmations == true,
+      lastNotifiedDayKey: reminder.dayKey,
+      activeFlow: _currentPlan,
+    );
+    if (nextReminder != null && nextReminder.scheduledAt.isAfter(_now())) {
+      await state.saveScheduled(
+        NationalFocusReminderSchedule(
+          dayKey: nextReminder.dayKey,
+          scheduledAt: nextReminder.scheduledAt,
+          repeatsDaily: false,
+        ),
+      );
+      _windowsNationalFocusReminderTimer = Timer(
+        nextReminder.scheduledAt.difference(_now()),
+        () => unawaited(_queueNationalFocusReminderReconciliation()),
+      );
+    }
+  }
+
+  Future<void> _applyAndroidNationalFocusReminder(
+    NationalFocusReminderPlan reminder,
+    FocusDevicePreferences preferences,
+    NationalFocusReminderStateStore state,
+  ) async {
+    final now = _now().toUtc();
+    final scheduled = state.loadScheduled();
+    final pending = await _androidNotifications.pendingNotificationRequests();
+    final hasPendingReminder = pending.any(
+      (request) => request.id == _nationalFocusReminderNotificationId,
+    );
+
+    if (scheduled != null &&
+        !scheduled.scheduledAt.isAfter(now) &&
+        !hasPendingReminder) {
+      await state.markSent(scheduled.dayKey);
+      final nextReminder = NationalFocusReminderPlan.next(
+        now: now,
+        minuteOfDay: preferences.nationalFocusReminderMinutesAfterMidnight,
+        hasPendingConfirmations: true,
+        lastNotifiedDayKey: scheduled.dayKey,
+        activeFlow: _currentPlan,
+      );
+      if (nextReminder == null) {
+        await _cancelNationalFocusReminder(state);
+        return;
+      }
+      await _scheduleAndroidNationalFocusReminder(nextReminder, state, now);
+      return;
+    }
+
+    if (!reminder.scheduledAt.isAfter(now)) {
+      if (hasPendingReminder &&
+          scheduled?.repeatsDaily == true &&
+          state.loadLastSentDayKey() != reminder.dayKey) {
+        await state.markSent(reminder.dayKey);
+        final nextReminder = NationalFocusReminderPlan.next(
+          now: now,
+          minuteOfDay: preferences.nationalFocusReminderMinutesAfterMidnight,
+          hasPendingConfirmations: true,
+          lastNotifiedDayKey: reminder.dayKey,
+          activeFlow: _currentPlan,
+        );
+        if (nextReminder != null) {
+          await _scheduleAndroidNationalFocusReminder(nextReminder, state, now);
+        }
+        return;
+      }
+
+      await _androidNotifications.cancel(
+        id: _nationalFocusReminderNotificationId,
+      );
+      await _androidNotifications.show(
+        id: _nationalFocusReminderNotificationId,
+        title: '国策待确认',
+        body: '请确认今天仍然有效的国策。',
+        notificationDetails: _nationalFocusReminderDetails(),
+        payload: 'national-focus-reminder:${reminder.dayKey}',
+      );
+      await state.markSent(reminder.dayKey);
+      final nextReminder = NationalFocusReminderPlan.next(
+        now: _now(),
+        minuteOfDay: preferences.nationalFocusReminderMinutesAfterMidnight,
+        hasPendingConfirmations: true,
+        lastNotifiedDayKey: reminder.dayKey,
+        activeFlow: _currentPlan,
+      );
+      if (nextReminder != null) {
+        await _scheduleAndroidNationalFocusReminder(
+          nextReminder,
+          state,
+          _now().toUtc(),
+        );
+      }
+      return;
+    }
+
+    final isAlreadyScheduled =
+        hasPendingReminder &&
+        scheduled != null &&
+        scheduled.dayKey == reminder.dayKey &&
+        scheduled.scheduledAt.isAtSameMomentAs(reminder.scheduledAt) &&
+        scheduled.repeatsDaily == !reminder.isDeferred;
+    if (isAlreadyScheduled) return;
+
+    await _scheduleAndroidNationalFocusReminder(reminder, state, now);
+  }
+
+  Future<void> _scheduleAndroidNationalFocusReminder(
+    NationalFocusReminderPlan reminder,
+    NationalFocusReminderStateStore state,
+    DateTime now,
+  ) async {
+    final repeatsDaily = !reminder.isDeferred;
+    if (!reminder.scheduledAt.isAfter(now)) {
+      await _androidNotifications.cancel(
+        id: _nationalFocusReminderNotificationId,
+      );
+      await _androidNotifications.show(
+        id: _nationalFocusReminderNotificationId,
+        title: '国策待确认',
+        body: '请确认今天仍然有效的国策。',
+        notificationDetails: _nationalFocusReminderDetails(),
+        payload: 'national-focus-reminder:${reminder.dayKey}',
+      );
+      await state.markSent(reminder.dayKey);
+      final preferences = await (await _settingsStore).load();
+      final nextReminder = NationalFocusReminderPlan.next(
+        now: _now(),
+        minuteOfDay: preferences.nationalFocusReminderMinutesAfterMidnight,
+        hasPendingConfirmations: _hasPendingNationalFocusConfirmations == true,
+        lastNotifiedDayKey: reminder.dayKey,
+        activeFlow: _currentPlan,
+      );
+      if (nextReminder != null) {
+        await _scheduleAndroidNationalFocusReminder(
+          nextReminder,
+          state,
+          _now().toUtc(),
+        );
+      }
+      return;
+    }
+
+    // Reusing this id replaces the pending alarm; cancelling first would also
+    // dismiss a reminder that was just shown with the same id.
+    final exactAllowed = await exactAlarmsAllowed();
+    await _androidNotifications.zonedSchedule(
+      id: _nationalFocusReminderNotificationId,
+      title: '国策待确认',
+      body: '请确认今天仍然有效的国策。',
+      scheduledDate: timezone.TZDateTime.from(
+        reminder.scheduledAt,
+        _beijingLocation,
+      ),
+      notificationDetails: _nationalFocusReminderDetails(),
+      androidScheduleMode: exactAllowed
+          ? AndroidScheduleMode.exactAllowWhileIdle
+          : AndroidScheduleMode.inexactAllowWhileIdle,
+      payload: 'national-focus-reminder:${reminder.dayKey}',
+      matchDateTimeComponents: repeatsDaily ? DateTimeComponents.time : null,
+    );
+    await state.saveScheduled(
+      NationalFocusReminderSchedule(
+        dayKey: reminder.dayKey,
+        scheduledAt: reminder.scheduledAt,
+        repeatsDaily: repeatsDaily,
+      ),
+    );
+  }
+
+  timezone.Location get _beijingLocation {
+    if (!_timeZonesInitialized) {
+      timezone_data.initializeTimeZones();
+      _timeZonesInitialized = true;
+    }
+    return timezone.getLocation('Asia/Shanghai');
   }
 
   Future<void> _applyAndroidPlan(FocusDevicePreferences preferences) async {
@@ -523,6 +819,19 @@ class FocusNotificationService {
     payload: payload,
   );
 
+  NotificationDetails _nationalFocusReminderDetails() => NotificationDetails(
+    android: AndroidNotificationDetails(
+      _nationalFocusReminderChannelId,
+      '国策待确认',
+      channelDescription: '有待今日确认的国策时提醒。',
+      importance: Importance.high,
+      priority: Priority.high,
+      category: AndroidNotificationCategory.reminder,
+      autoCancel: true,
+      onlyAlertOnce: true,
+    ),
+  );
+
   NotificationDetails _statusDetails({
     DateTime? endAt,
     DateTime? timeoutAt,
@@ -670,6 +979,7 @@ class DisabledFocusNotificationService extends FocusNotificationService {
       const FocusDevicePreferences(
         notificationsEnabled: false,
         backgroundRunningEnabled: false,
+        nationalFocusReminderEnabled: false,
       );
 
   @override
@@ -695,6 +1005,11 @@ class DisabledFocusNotificationService extends FocusNotificationService {
     AppointmentPreparation? appointment,
     FocusSession? session,
     required String taskTitle,
+  }) async {}
+
+  @override
+  Future<void> syncNationalFocusReminder({
+    required bool hasPendingConfirmations,
   }) async {}
 
   @override

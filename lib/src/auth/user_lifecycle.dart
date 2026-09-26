@@ -120,6 +120,59 @@ class UserLifecycleRepository implements UserLifecycleStatusRepository {
   Future<void> restoreUser(String userId) async {
     await authRepository.restoreUser(userId);
   }
+
+  Future<bool> purgeLocalDataIfConfirmed(String oldUserId) async {
+    return UserPurgeCleanupRepository(
+      authRepository: authRepository,
+      database: localAccess.database,
+    ).purgeUserIfConfirmed(oldUserId);
+  }
+}
+
+/// Checks receipts for every UUID still present in local business tables.
+/// This deliberately does not depend on the currently authenticated user so
+/// offline data remains discoverable after Auth removes the old session.
+class UserPurgeCleanupRepository {
+  UserPurgeCleanupRepository({
+    required this.authRepository,
+    required this.database,
+  });
+
+  final AuthRepository authRepository;
+  final PactaDatabase database;
+  Future<int>? _inFlight;
+
+  Future<int> purgeLocallyConfirmedUsers() async {
+    final inFlight = _inFlight;
+    if (inFlight != null) return inFlight;
+
+    final operation = _purgeLocallyConfirmedUsers();
+    _inFlight = operation;
+    try {
+      return await operation;
+    } finally {
+      if (identical(_inFlight, operation)) _inFlight = null;
+    }
+  }
+
+  Future<bool> purgeUserIfConfirmed(String oldUserId) async {
+    if (oldUserId.isEmpty) return false;
+    final receipt = await authRepository.lookupPurgeReceipt(oldUserId);
+    if (receipt == null || !receipt.confirmsPurgedUser(oldUserId)) return false;
+    return database.purgeUserDataForReceipt(
+      userId: oldUserId,
+      receipt: receipt,
+    );
+  }
+
+  Future<int> _purgeLocallyConfirmedUsers() async {
+    final userIds = await database.localUserIdsWithData();
+    var purgedCount = 0;
+    for (final userId in userIds) {
+      if (await purgeUserIfConfirmed(userId)) purgedCount++;
+    }
+    return purgedCount;
+  }
 }
 
 class UnavailableUserLifecycleStatusRepository
