@@ -4,26 +4,15 @@ status: accepted
 
 # Use one Supabase project with invite-only, per-user isolation
 
-Pacta will use one Supabase project to support multiple users, without introducing an App-level organization or workspace model. Supabase Auth identifies each user, every business record is owned by `user_id`, and Row Level Security is the authoritative isolation boundary. Registration is invite-only and administrative actions are handled through trusted server code. This keeps the open-source project inexpensive and simple to self-deploy, while accepting that all users share the project's resource quota and that RLS must be tested as a security-critical boundary.
+Pacta uses one Supabase project to support multiple users without introducing an App-level organization or workspace model. Supabase Auth identifies each user, every business record is owned by user_id, and Row Level Security is the authoritative isolation boundary. Registration eligibility is issued by administrators and enforced by trusted server code. This keeps the open-source project inexpensive and simple to self-deploy, while accepting that all users share the project's resource quota and that RLS must be tested as a security-critical boundary.
 
 ## Considered options
 
-- One Supabase project with per-user RLS: selected for low operational cost and simple phone/desktop synchronization.
+- One Supabase project with per-user RLS: selected for low operational cost and simple mobile/desktop synchronization.
 - One database or project per user: rejected as unnecessary operational complexity for the intended scale.
 - GitHub repositories as user databases: rejected because Git history is not an appropriate transactional user-data store.
 - Public registration: rejected for the shared instance because the project has finite shared capacity.
 
-## Registration eligibility clarification — 2026-09-14
+## Registration and password access — 2026-09-22
 
-Administrators add a specified email address or phone number to a registration allowlist in the administration interface. The operator informs users externally; the App sends no invitation email, SMS, verification code, or invitation link. Users register with an approved identifier and a password, then log in using that identifier and password. The server checks registration eligibility, rejects unapproved identifiers and duplicate registration, and marks successfully consumed eligibility as used. Unused eligibility does not expire by default and may be revoked by an administrator. Revoking unused eligibility is distinct from suspending a registered user. Eligibility checks do not verify actual ownership of the email address or phone number. Forgotten passwords are reset by an administrator after manual verification; there is no email or SMS recovery flow. The term invite-only refers to administrator-issued registration eligibility, not an App-operated messaging or ownership-verification system. This replaces earlier email-invitation proposals without changing per-user isolation or trusted-server administration.
-
-## Authentication identifier revision — 2026-09-22
-
-The supported registration and password-login identifier is now email only. New
-phone eligibility, phone registration, and phone login are disabled. Existing
-phone-based Auth identities and their `user_id`-owned business data are not
-deleted or recreated; each affected identity requires an explicit trusted
-server migration to a unique email before Phone Auth is disabled. Historical
-phone eligibility rows may be retained for audit, but cannot be consumed for
-new registration. The existing no-App-operated-ownership-verification and
-administrator-assisted recovery decisions remain unchanged.
+Email is the sole registration and password-login identifier. Administrators grant and revoke email registration eligibility; a successful registration consumes one unused eligibility in the same transaction. The App does not send invitation or verification messages and does not verify email ownership. Forgotten passwords are reset by an administrator after manual identity verification. This policy retains per-user isolation and trusted-server administration.

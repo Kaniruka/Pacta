@@ -24,47 +24,19 @@ same database transaction as registration. A race or duplicate registration
 therefore cannot consume one qualification twice. The trigger bypasses only
 trusted `service_role` creation, which is used for administrator bootstrap.
 
-## Email-only migration
+## Email-only registration
 
-`202609220002_email_only_registration.sql` stops new phone registrations and
-revokes unused phone eligibility while preserving historical phone eligibility
-rows and existing `auth.users` identities. Apply it before disabling Phone Auth
-in the Supabase dashboard.
+The application uses email and password for registration and login. The
+`registration_eligibility` table accepts email identifiers only. Its
+`auth.users` trigger requires an email and consumes an unused, unrevoked
+eligibility in the same transaction. The email-only constraint is applied by
+`20260926120000_email_only_registration_schema.sql`.
 
-`202609220003_fix_email_eligibility_validation.sql` tightens the email-only
-grant validation and recreates the eligibility trigger as `AFTER INSERT` so
-`used_user_id` satisfies its foreign key to the newly created Auth user while
-remaining part of the same transaction.
-
-Do not create replacement users for existing phone-only users. First produce a
-server-side inventory of users whose `auth.users.email` is null, collect and
-confirm one unique email for each user, then deploy and call the trusted
-`admin-migrate-phone-identity` Edge Function for that exact `user_id`. The
-function authenticates the administrator, rejects identities that are not
-phone-only or have a purge receipt, and updates the existing Auth user by ID.
-It marks the operator-verified email confirmed without creating another user
-or consuming registration eligibility. Verify email login and business-data
-ownership on the same `user_id` before disabling the phone login path. The
-operation must never be run from Flutter and must never expose a `service_role`
-key.
-
-Deploy the function after the email-only registration migration. Invoke it with
-an administrator access token and explicit confirmation that the unique email
-was verified outside the App:
-
-```powershell
-supabase functions deploy admin-migrate-phone-identity
-```
-
-Request body:
-
-```json
-{
-  "user_id": "AUTH_USER_UUID",
-  "email": "person@example.com",
-  "email_manually_verified": true
-}
-```
+Email Auth and user signups are enabled in the cloud project; the database
+eligibility trigger limits successful registration to approved addresses.
+Email confirmation is disabled because the App does not send verification
+messages. Password resets are handled by an administrator after manual
+identity verification.
 
 ## Administrator password reset
 
@@ -85,7 +57,7 @@ variable. Do not copy it into Flutter, `.env`, or source control.
 
 The administrator confirms that identity was checked outside the App and must
 tell the user the new password through a secure external channel. The App sends
-no email or SMS and does not claim to validate email ownership. No user or
+no account messages and does not claim to validate email ownership. No user or
 administrator password is returned by the function or written to Pacta business
 tables; Supabase Auth applies its own credential storage for the new password.
 

@@ -64,7 +64,7 @@ This table offers practice suggestions. Recon Practice is an execution method ap
 
 Failure reasons begin as required short free-text summaries when the user fails or abandons a session. A few words are sufficient initially, and the user can edit the reason later. No empty “暂时无法总结” path is provided. Later, optional structured categories or tags may be added for aggregate statistics, trend analysis, and comparison with National Focus Tree failure reasons, while preserving the original text. Fine-grained filtering by reason is not a core interaction because early users will not have enough records for it to be useful.
 
-Once started, a Focus Session continues while the App is in the background. Process termination alone does not fail the Session. On recovery, an unpaused Session whose scheduled countdown has elapsed completes at its scheduled end, counting only effective focus time within the countdown rather than the later reopening delay. An approved paused Session remains paused, and recovery settles an outcome only once. A persistent notification keeps the countdown visible and active for tasks that require the user to operate the phone. The countdown is a boundary and progress cue, not the sole measure of completion.
+Once started, a Focus Session continues while the App is in the background. Process termination alone does not fail the Session. On recovery, an unpaused Session whose scheduled countdown has elapsed completes at its scheduled end, counting only effective focus time within the countdown rather than the later reopening delay. An approved paused Session remains paused, and recovery settles an outcome only once. A persistent notification keeps the countdown visible and active for tasks that require the user to operate the mobile device. The countdown is a boundary and progress cue, not the sole measure of completion.
 
 The CTDP-derived signal model is intentionally human-operated: a user may perform an Appointment Chain signal and open the corresponding flow, or perform an immediate-start signal and open the Focus Chain directly. The App does not listen for or verify snaps, gestures, or other physical markers. Once preparation has started, its transition into focus requires neither another signal nor another start click.
 
@@ -161,7 +161,7 @@ The App uses one Supabase project to serve multiple users. It does not create an
 - Every business row is associated with `user_id`.
 - Row Level Security ensures that a user can only read or modify their own rows.
 - A separate `app_admins` table identifies the administrator identities.
-- Registration eligibility records control which email addresses may register; phone numbers are not supported as new login identifiers.
+- Registration eligibility records control which email addresses may register; email is the sole registration and password-login identifier.
 
 The administrator should have an in-App user-management screen for:
 
@@ -172,7 +172,7 @@ The administrator should have an in-App user-management screen for:
 - suspending or restoring users;
 - purging users after the retention period.
 
-Administrators add a specified email address to a registration allowlist in the administration interface. The operator informs users externally; the App sends no invitation email, SMS, verification code, or invitation link. Users register with an approved email and password, then log in using that email and password. The server checks registration eligibility, rejects unapproved identifiers and duplicate registration, and marks successfully consumed eligibility as used. Unused eligibility does not expire by default and may be revoked by an administrator. Revoking unused eligibility is distinct from suspending a registered user. The App does not verify email ownership. Forgotten passwords are reset by an administrator after manual verification; there is no App-operated email or SMS recovery flow. Server-side eligibility enforcement is required; hiding client controls is insufficient.
+Administrators add a specified email address to a registration allowlist in the administration interface. The operator informs users externally; the App sends no invitation or verification messages. Users register with an approved email and password, then log in using that email and password. The server checks registration eligibility, rejects unapproved identifiers and duplicate registration, and marks successfully consumed eligibility as used. Unused eligibility does not expire by default and may be revoked by an administrator. Revoking unused eligibility is distinct from suspending a registered user. The App does not verify email ownership. Forgotten passwords are reset by an administrator after manual verification; the App provides no self-service password recovery. Server-side eligibility enforcement is required; hiding client controls is insufficient.
 
 ## 4. User lifecycle
 
@@ -194,11 +194,11 @@ The retention period is 30 days from the current suspension. On expiry mark the 
 - After restoration, synchronize retained records, including records created offline before the device learned of suspension, using original occurrence times, deduplication, and reconciliation. Neither suspension nor delayed upload directly establishes failure. National Focus continues to follow its checkpoint rules; valid offline confirmations do not become invalid because of late upload.
 - After cloud purge, reject uploads by the old identity and do not recreate it from local records. Delete that identity's local business cache and pending uploads only after receiving a trustworthy, explicit server result that this old identity has been purged. Network errors, failed login, expired credentials, and ordinary permission denials are never sufficient evidence for local deletion.
 - Offline-device data cannot be guaranteed remotely erased; clean it locally when the device later receives trustworthy confirmation of purge.
-- Reusing the same email address requires fresh registration eligibility and creates a new user identity. Never automatically inherit, associate, or upload the old identity's data. Existing phone-only identities are migrated to an email on the same `user_id` rather than recreated.
+- Reusing the same email address requires fresh registration eligibility and creates a new user identity. Never automatically inherit, associate, or upload the old identity's data.
 
 ## 5. Persistence and synchronization
 
-The cloud backend is required for phone/desktop synchronization. The accepted client baseline is:
+The cloud backend is required for mobile/desktop synchronization. The accepted client baseline is:
 
 ```text
 Flutter/Dart client
@@ -256,7 +256,7 @@ The first useful version should contain:
 4. a minimal National Focus Tree;
 5. read-only mobile system-calendar import;
 6. focus-transition and deferred National Focus notifications, with deadlines displayed only in-App;
-7. phone/desktop synchronization;
+7. mobile/desktop synchronization;
 8. administrator user lifecycle controls.
 
 The first version should not contain:

@@ -1,16 +1,15 @@
--- Authentication policy revision: email is the only supported registration
--- and password-login identifier. Existing auth.users rows are preserved.
--- Phone-only users require an explicit, server-side identity migration before
--- phone authentication is disabled; this migration does not invent emails or
--- create replacement users.
+-- Email is the only supported registration and password-login identifier.
+-- Existing auth.users rows are preserved.
 
--- Preserve historical phone eligibility rows, but prevent unused phone
--- eligibility from being used after this migration.
-update public.registration_eligibility
-set revoked_at = coalesce(revoked_at, now())
-where identifier_type = 'phone'
-  and used_at is null
-  and revoked_at is null;
+delete from public.registration_eligibility
+where identifier_type <> 'email';
+
+alter table public.registration_eligibility
+  drop constraint if exists registration_eligibility_identifier_type_check;
+
+alter table public.registration_eligibility
+  add constraint registration_eligibility_identifier_type_check
+  check (identifier_type = 'email');
 
 create or replace function public.admin_grant_registration_eligibility(
   p_identifier text,
@@ -86,7 +85,7 @@ declare
   consumed_id uuid;
 begin
   -- Trusted service-role creation is used for administrator bootstrap and
-  -- controlled identity migration; it does not represent public registration.
+  -- does not represent public registration.
   if current_setting('request.jwt.claim.role', true) = 'service_role' then
     return new;
   end if;

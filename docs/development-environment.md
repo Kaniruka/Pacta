@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-仓库已包含 Flutter/Dart 客户端、Android/Windows 平台工程、Supabase 迁移和应用测试。T01 的认证实现使用邮箱-only 注册与密码登录；手机号注册、手机号登录和新手机号资格均不支持。根目录 `.env` 只保存本机验收配置，不纳入版本库。
+仓库已包含 Flutter/Dart 客户端、Android/Windows 平台工程、Supabase 迁移和应用测试。T01 的认证实现使用邮箱与密码注册、登录，注册资格由管理员按邮箱发放。根目录 `.env` 只保存本机验收配置，不纳入版本库。
 
 技术栈依据 ADR 0001 和 0003：Flutter/Dart、Material 3、Riverpod、Drift/SQLite、Supabase Auth/PostgreSQL/RLS。Riverpod、Drift 和 Supabase Flutter SDK 已在 `pubspec.yaml` 中声明；设备日历需要平台权限，当前也没有云日历 API Key 的需求。
 
@@ -68,7 +68,7 @@ Android 的下一步：在 Android Studio 的 SDK Manager → SDK Tools 中安�
 
 ## Supabase 开发路径
 
-2026-09-22 已确定：本项目使用云端 Supabase 进行开发，Flutter 客户端在本机运行，通过根目录 `.env` 连接云端开发项目。日常开发不以本地 Supabase 实例或 Docker 为前提。远端 Auth 已启用 Email、禁用 Phone；为满足 T01 的无验证邮件约束，Supabase 控制台的 Confirm email 必须关闭。
+2026-09-22 已确定：本项目使用云端 Supabase 进行开发，Flutter 客户端在本机运行，通过根目录 `.env` 连接云端开发项目。日常开发不以本地 Supabase 实例或 Docker 为前提。远端 Auth 已启用 Email；为满足 T01 的无验证邮件约束，Supabase 控制台的 Confirm email 必须关闭。
 
 数据库结构变更保留为仓库中的迁移文件；管理员授予注册资格、资格原子消费、RLS 和用户隔离由远端 Supabase 真实验证。客户端 key 不替代可信服务端权限。当前注册流程不使用 Auth 深链，因为 T01 不发送邮箱验证或恢复消息。
 

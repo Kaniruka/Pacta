@@ -114,7 +114,7 @@ class _AdminPasswordResetCardState extends State<AdminPasswordResetCard> {
         children: [
           Text('管理员：重置用户密码', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 6),
-          const Text('请先在线下人工核实用户身份。应用不会验证邮箱所有权，也不会发送邮件或短信。'),
+          const Text('请先在线下人工核实用户身份。应用不会验证邮箱所有权，也不提供自助密码找回。'),
           const SizedBox(height: 12),
           TextField(
             key: const Key('reset-target-email'),

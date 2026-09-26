@@ -141,7 +141,7 @@ The point in time by which a task or outcome becomes materially late or loses va
 _Avoid_: Due date, reminder
 
 **Registration Eligibility (注册资格)**:
-An administrator-issued permission for a specified email address to register once, without App-operated ownership verification. Unused eligibility remains valid until revoked; successful registration consumes it. Phone numbers are not supported as new registration or login identifiers; historical phone-based identities are handled by an explicit migration.
+An administrator-issued permission for a specified email address to register once, without App-operated ownership verification. Unused eligibility remains valid until revoked; successful registration consumes it. Email is the sole registration and password-login identifier.
 _Avoid_: Email invitation, verification code, proof of identity
 
 **Active User (正常用户)**:

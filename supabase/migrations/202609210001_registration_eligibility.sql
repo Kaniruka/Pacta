@@ -10,7 +10,7 @@ create table if not exists public.app_admins (
 create table if not exists public.registration_eligibility (
   id uuid primary key default gen_random_uuid(),
   identifier text not null,
-  identifier_type text not null check (identifier_type in ('email', 'phone')),
+  identifier_type text not null check (identifier_type = 'email'),
   used_at timestamptz,
   used_user_id uuid unique references auth.users(id) on delete set null,
   revoked_at timestamptz,
@@ -63,8 +63,10 @@ begin
   if not public.is_app_admin() then
     raise exception 'administrator privileges required' using errcode = '42501';
   end if;
-  if p_identifier_type not in ('email', 'phone') or normalized = '' then
-    raise exception 'invalid registration identifier';
+  if coalesce(p_identifier_type, '') <> 'email'
+     or normalized = ''
+     or normalized !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
+    raise exception 'email registration eligibility required';
   end if;
 
   insert into public.registration_eligibility(identifier, identifier_type)
@@ -94,6 +96,9 @@ begin
   if not public.is_app_admin() then
     raise exception 'administrator privileges required' using errcode = '42501';
   end if;
+  if coalesce(p_identifier_type, '') <> 'email' then
+    raise exception 'email registration eligibility required';
+  end if;
   update public.registration_eligibility
   set revoked_at = now()
   where identifier = public.normalize_registration_identifier(p_identifier)
@@ -112,7 +117,6 @@ set search_path = public, pg_catalog
 as $$
 declare
   identifier_value text;
-  identifier_kind text;
   consumed_id uuid;
 begin
   -- Trusted service-role creation is used for administrator bootstrap and
@@ -121,13 +125,16 @@ begin
     return new;
   end if;
 
-  identifier_value := public.normalize_registration_identifier(coalesce(new.email, new.phone));
-  identifier_kind := case when new.email is not null then 'email' else 'phone' end;
+  if new.email is null or public.normalize_registration_identifier(new.email) = '' then
+    raise exception 'email registration required' using errcode = 'P0001';
+  end if;
+
+  identifier_value := public.normalize_registration_identifier(new.email);
 
   update public.registration_eligibility
   set used_at = now(), used_user_id = new.id
   where identifier = identifier_value
-    and identifier_type = identifier_kind
+    and identifier_type = 'email'
     and used_at is null
     and revoked_at is null
   returning id into consumed_id;
