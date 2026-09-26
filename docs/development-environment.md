@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-仓库已包含 Flutter/Dart 客户端、Android/Windows 平台工程、Supabase 迁移和应用测试。T01 的认证实现使用邮箱与密码注册、登录，注册资格由管理员按邮箱发放。根目录 `.env` 只保存本机验收配置，不纳入版本库。
+仓库已包含 Flutter/Dart 客户端、Android/Windows 平台工程、Supabase 迁移和应用测试。T01 的认证实现使用邮箱与密码注册、登录，注册资格由管理员按邮箱发放。根目录 `.env` 只保存传给客户端的公开配置，不纳入版本库。
 
 技术栈依据 ADR 0001 和 0003：Flutter/Dart、Material 3、Riverpod、Drift/SQLite、Supabase Auth/PostgreSQL/RLS。Riverpod、Drift 和 Supabase Flutter SDK 已在 `pubspec.yaml` 中声明；设备日历需要平台权限，当前也没有云日历 API Key 的需求。
 
@@ -24,7 +24,7 @@ if (!(Test-Path -LiteralPath .env)) { Copy-Item -LiteralPath .env.example -Desti
 
 从 Supabase 项目的 Connect 面板获取真实值。模板留空，避免将占位值误认为可连接的服务。
 
-2026-09-22 检查：当前本机根目录 `.env` 已填写上述变量，`SUPABASE_URL` 指向 Supabase 云端项目（`*.supabase.co`）。应用会在启动时通过 `--dart-define-from-file=.env` 读取 `SUPABASE_URL` 和 `SUPABASE_PUBLISHABLE_KEY`；`TEST_*` 变量仅供人工验收脚本或控制台操作使用。实际值只保留在被 Git 忽略的 `.env` 中，不复制到开发文档或模板。
+2026-09-22 检查：当时本机根目录 `.env` 已填写上述变量，`SUPABASE_URL` 指向 Supabase 云端项目（`*.supabase.co`）。应用启动时通过 `--dart-define-from-file=.env` 读取客户端配置。新环境的 `.env` 只填写 `SUPABASE_URL` 和 `SUPABASE_PUBLISHABLE_KEY`；`TEST_*` 仅供人工验收，单独保存在被 Git 忽略且不传给 Flutter 的本机文件中。
 
 从仓库根目录传入配置：
 
@@ -39,7 +39,7 @@ Flutter 不会自动加载 `.env`。应用初始化代码需要以 `const String
 
 客户端编译期配置可以从产物中提取。此文件只用于客户端公开配置，不可放入 `service_role`、`sb_secret_...`、数据库密码、Supabase access token 或签名材料。后台注册资格与用户管理操作需要可信服务端；部署凭据放入服务端环境或 CI secrets，不能随 `--dart-define-from-file` 传给客户端。
 
-`.env` 还可以保存本机验收账号变量，但这些变量不是客户端配置：`TEST_*` 只供人工验收脚本或控制台操作使用。测试密码属于敏感凭据，只保存在被 Git 忽略的本机 `.env`，不要复制到 `.env.example`、提交记录、截图或聊天记录。管理员账号必须先在 Supabase Auth 中确认邮箱，再用该账号登录客户端；`app_admins` 表中的管理员绑定由可信 SQL 迁移初始化，普通客户端不能自行授予管理员权限。
+`TEST_*` 是人工验收用变量，不属于客户端配置。测试账号和密码应单独保存在被 Git 忽略的本机文件或凭据管理器中，不随 `--dart-define-from-file=.env` 传给 Flutter，也不要复制到 `.env.example`、提交记录、截图或聊天记录。管理员账号必须先在 Supabase Auth 中确认邮箱，再用该账号登录客户端；`app_admins` 表中的管理员绑定由可信后台操作初始化，普通客户端不能自行授予管理员权限。
 
 ## 工具与平台
 
