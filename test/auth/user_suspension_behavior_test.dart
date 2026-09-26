@@ -114,6 +114,341 @@ void main() {
     expect(remote.pullCount, requestsBeforeSuspendedSync + 1);
   });
 
+  test('two devices reconcile offline work when they learn suspension at different times', () async {
+    final remote = OfflineAwareTaskRemote();
+    final firstDatabase = PactaDatabase(NativeDatabase.memory());
+    final secondDatabase = PactaDatabase(NativeDatabase.memory());
+    addTearDown(firstDatabase.close);
+    addTearDown(secondDatabase.close);
+
+    final firstLifecycle = LocalUserLifecycleAccess(
+      database: firstDatabase,
+      userId: 'user-a',
+    );
+    final secondLifecycle = LocalUserLifecycleAccess(
+      database: secondDatabase,
+      userId: 'user-a',
+    );
+    final firstDevice = LocalTaskRepository(
+      database: firstDatabase,
+      userId: 'user-a',
+      remote: remote,
+      lifecycleAccess: firstLifecycle,
+    );
+    final secondDevice = LocalTaskRepository(
+      database: secondDatabase,
+      userId: 'user-a',
+      remote: remote,
+      lifecycleAccess: secondLifecycle,
+    );
+    addTearDown(firstDevice.dispose);
+    addTearDown(secondDevice.dispose);
+    final checkedAt = DateTime.utc(2026, 9, 26);
+
+    final sharedGoal = await firstDevice.createGoal(
+      const GoalDraft(
+        title: 'Shared goal',
+        classification: TaskClassification.regular,
+      ),
+    );
+    await firstDevice.sync();
+    await secondDevice.sync();
+    expect((await secondDevice.getGoals()).single.id, sharedGoal.id);
+    expect(await secondLifecycle.readStatus(), isNull);
+
+    final suspension = UserLifecycleStatus(
+      isSuspended: true,
+      suspendedAt: checkedAt,
+      purgeEligibleAt: checkedAt.add(const Duration(days: 30)),
+      checkedAt: checkedAt,
+    );
+    await firstLifecycle.saveStatus(suspension);
+    await expectLater(
+      firstDevice.createTask(
+        sharedGoal.id,
+        const TaskDraft(title: 'Blocked on device one'),
+      ),
+      throwsA(isA<UserOperationsSuspendedException>()),
+    );
+
+    remote.offline = true;
+    final offlineTask = await secondDevice.createTask(
+      sharedGoal.id,
+      const TaskDraft(title: 'Offline work from device two'),
+    );
+    await expectLater(secondDevice.sync(), throwsStateError);
+    expect(remote.tasks, isEmpty);
+
+    await secondLifecycle.saveStatus(suspension);
+    await secondDevice.sync();
+    expect(remote.tasks, isEmpty);
+    expect(
+      (await secondDevice.getGoals()).single.tasks.single.id,
+      offlineTask.id,
+    );
+
+    remote.offline = false;
+    final restored = UserLifecycleStatus(
+      isSuspended: false,
+      checkedAt: checkedAt.add(const Duration(days: 2)),
+    );
+    await firstLifecycle.saveStatus(restored);
+    await secondLifecycle.saveStatus(restored);
+    await secondDevice.sync();
+    await firstDevice.sync();
+    await secondDevice.sync();
+
+    expect(remote.tasks, hasLength(1));
+    expect(remote.tasks.single.id, offlineTask.id);
+    expect(
+      (await firstDevice.getGoals()).single.tasks.single.id,
+      offlineTask.id,
+    );
+    expect(
+      (await secondDevice.getGoals()).single.tasks.single.id,
+      offlineTask.id,
+    );
+  });
+
+  test('two devices preserve focus and National Focus state across suspension and restore', () async {
+    var now = DateTime.utc(2026, 9, 20, 19, 59);
+    final firstDatabase = PactaDatabase(NativeDatabase.memory());
+    final secondDatabase = PactaDatabase(NativeDatabase.memory());
+    addTearDown(firstDatabase.close);
+    addTearDown(secondDatabase.close);
+
+    final firstLifecycle = LocalUserLifecycleAccess(
+      database: firstDatabase,
+      userId: 'user-a',
+    );
+    final secondLifecycle = LocalUserLifecycleAccess(
+      database: secondDatabase,
+      userId: 'user-a',
+    );
+    final taskRemote = OfflineAwareTaskRemote();
+    final firstTasks = LocalTaskRepository(
+      database: firstDatabase,
+      userId: 'user-a',
+      remote: taskRemote,
+      lifecycleAccess: firstLifecycle,
+      now: () => now,
+    );
+    final secondTasks = LocalTaskRepository(
+      database: secondDatabase,
+      userId: 'user-a',
+      remote: taskRemote,
+      lifecycleAccess: secondLifecycle,
+      now: () => now,
+    );
+    addTearDown(firstTasks.dispose);
+    addTearDown(secondTasks.dispose);
+
+    final focusRemote = CountingFocusRemote();
+    final firstFocus = LocalFocusRepository(
+      database: firstDatabase,
+      userId: 'user-a',
+      remote: focusRemote,
+      lifecycleAccess: firstLifecycle,
+      now: () => now,
+    );
+    final secondFocus = LocalFocusRepository(
+      database: secondDatabase,
+      userId: 'user-a',
+      remote: focusRemote,
+      lifecycleAccess: secondLifecycle,
+      now: () => now,
+    );
+    addTearDown(firstFocus.dispose);
+    addTearDown(secondFocus.dispose);
+
+    final nationalFocusRemote = OfflineAwareNationalFocusRemote();
+    final firstNationalFocus = LocalNationalFocusRepository(
+      database: firstDatabase,
+      userId: 'user-a',
+      remote: nationalFocusRemote,
+      lifecycleAccess: firstLifecycle,
+      now: () => now,
+    );
+    final secondNationalFocus = LocalNationalFocusRepository(
+      database: secondDatabase,
+      userId: 'user-a',
+      remote: nationalFocusRemote,
+      lifecycleAccess: secondLifecycle,
+      now: () => now,
+    );
+    addTearDown(firstNationalFocus.dispose);
+    addTearDown(secondNationalFocus.dispose);
+
+    final goal = await firstTasks.createGoal(
+      const GoalDraft(
+        title: 'Shared lifecycle goal',
+        classification: TaskClassification.regular,
+      ),
+    );
+    final task = await firstTasks.createTask(
+      goal.id,
+      const TaskDraft(title: 'Focus across suspension'),
+    );
+    await firstTasks.sync();
+    await secondTasks.sync();
+
+    final card = await firstNationalFocus.createCard(
+      const NationalFocusCardDraft(triggerCondition: '开始工作前', action: '写下第一步'),
+    );
+    await firstNationalFocus.placeCard(cardId: card.id, parentId: null);
+    await firstNationalFocus.lightCard(card.id);
+    await firstNationalFocus.sync();
+    await secondNationalFocus.sync();
+
+    now = DateTime.utc(2026, 9, 20, 20, 0, 1);
+    await secondNationalFocus.settleDueCheckpoints();
+    expect(
+      (await secondNationalFocus.getCard(card.id)).state,
+      NationalFocusCardState.pendingTodayConfirmation,
+    );
+    expect(await secondNationalFocus.confirmToday(), 1);
+    nationalFocusRemote.offline = true;
+    await expectLater(secondNationalFocus.sync(), throwsStateError);
+    expect(
+      (await secondNationalFocus.getCard(card.id)).state,
+      NationalFocusCardState.lit,
+    );
+
+    final appointment = await firstFocus.startAppointment(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(seconds: 40),
+    );
+    await firstFocus.sync();
+    final focusPullsBeforeSuspension = focusRemote.pullCount;
+    final suspension = UserLifecycleStatus(
+      isSuspended: true,
+      suspendedAt: now,
+      purgeEligibleAt: now.add(const Duration(days: 30)),
+      checkedAt: now,
+    );
+    await firstLifecycle.saveStatus(suspension);
+
+    now = appointment.endsAt;
+    await firstFocus.sync();
+    expect(
+      (await firstFocus.getAppointment(appointment.id))!.isSucceeded,
+      isTrue,
+    );
+    final handedOffSession = (await firstFocus.getActiveSession())!;
+      expect(
+        handedOffSession.startedAt.isAtSameMomentAs(appointment.endsAt),
+        isTrue,
+      );
+    expect(focusRemote.pullCount, focusPullsBeforeSuspension);
+
+    now = handedOffSession.endsAt;
+    await firstFocus.sync();
+    expect(
+      (await firstFocus.getSession(handedOffSession.id))!.status,
+      FocusSessionStatus.completed,
+    );
+
+    await firstLifecycle.saveStatus(
+      UserLifecycleStatus(isSuspended: false, checkedAt: now),
+    );
+    final pausedSession = await firstFocus.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(seconds: 30),
+    );
+    await firstFocus.pauseSession(pausedSession.id, ruleText: '暂停状态保留到恢复后');
+    await firstLifecycle.saveStatus(
+      UserLifecycleStatus(
+        isSuspended: true,
+        suspendedAt: now,
+        purgeEligibleAt: now.add(const Duration(days: 30)),
+        checkedAt: now,
+      ),
+    );
+    now = pausedSession.endsAt.add(const Duration(hours: 1));
+    await firstFocus.sync();
+    expect(
+      (await firstFocus.getSession(pausedSession.id))!.status,
+      FocusSessionStatus.paused,
+    );
+
+    expect(await secondLifecycle.readStatus(), isNull);
+    taskRemote.offline = true;
+    final offlineTask = await secondTasks.createTask(
+      goal.id,
+      const TaskDraft(title: 'Offline task while status is unknown'),
+    );
+    await expectLater(secondTasks.sync(), throwsStateError);
+    expect(
+      taskRemote.tasks.any((remoteTask) => remoteTask.id == offlineTask.id),
+      isFalse,
+    );
+
+    await secondLifecycle.saveStatus(suspension);
+    final taskPullsWhileSuspended = taskRemote.pullCount;
+    final nationalFocusPullsWhileSuspended = nationalFocusRemote.pullCount;
+    await secondTasks.sync();
+    await secondNationalFocus.sync();
+    expect(taskRemote.pullCount, taskPullsWhileSuspended);
+    expect(nationalFocusRemote.pullCount, nationalFocusPullsWhileSuspended);
+    expect(
+      taskRemote.tasks.any((remoteTask) => remoteTask.id == offlineTask.id),
+      isFalse,
+    );
+
+    taskRemote.offline = false;
+    nationalFocusRemote.offline = false;
+    final restored = UserLifecycleStatus(
+      isSuspended: false,
+      checkedAt: now.add(const Duration(minutes: 1)),
+    );
+    await firstLifecycle.saveStatus(restored);
+    await secondLifecycle.saveStatus(restored);
+    await secondTasks.sync();
+    await firstTasks.sync();
+    await secondTasks.sync();
+    await firstFocus.sync();
+    await firstFocus.sync();
+    await secondFocus.sync();
+    await secondNationalFocus.sync();
+    await firstNationalFocus.sync();
+    await secondNationalFocus.sync();
+
+    expect(
+      taskRemote.tasks.where((remoteTask) => remoteTask.id == offlineTask.id),
+      hasLength(1),
+    );
+    expect(
+      (await secondTasks.getGoals()).single.tasks.any(
+        (localTask) => localTask.id == offlineTask.id,
+      ),
+      isTrue,
+    );
+    expect(
+      (await secondFocus.getAppointment(appointment.id))!.isSucceeded,
+      isTrue,
+    );
+    expect(
+      (await secondFocus.getSession(handedOffSession.id))!.status,
+      FocusSessionStatus.completed,
+    );
+    expect(
+      (await secondFocus.getSession(pausedSession.id))!.status,
+      FocusSessionStatus.paused,
+    );
+    expect(
+      (await secondNationalFocus.getCard(card.id)).state,
+      NationalFocusCardState.lit,
+    );
+    expect(await secondNationalFocus.getFailures(cardId: card.id), isEmpty);
+    final remoteSources = await nationalFocusRemote.pull(userId: 'user-a');
+    expect(
+      remoteSources.map((source) => source.sourceId).toSet(),
+      hasLength(remoteSources.length),
+    );
+  });
+
   test(
     'known suspension lets due preparation hand off and focus settle locally',
     () async {
@@ -329,5 +664,27 @@ class CountingNationalFocusRemote
   Future<List<NationalFocusSyncSource>> pull({required String userId}) {
     pullCount++;
     return super.pull(userId: userId);
+  }
+}
+
+class OfflineAwareNationalFocusRemote
+    extends InMemoryNationalFocusRemoteDataSource {
+  bool offline = false;
+  int pullCount = 0;
+
+  @override
+  Future<List<NationalFocusSyncSource>> pull({required String userId}) async {
+    pullCount++;
+    if (offline) throw StateError('network unavailable');
+    return super.pull(userId: userId);
+  }
+
+  @override
+  Future<void> upsertSources({
+    required String userId,
+    required List<NationalFocusSyncSource> sources,
+  }) async {
+    if (offline) throw StateError('network unavailable');
+    await super.upsertSources(userId: userId, sources: sources);
   }
 }

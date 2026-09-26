@@ -10,6 +10,7 @@ class FakeAuthRepository implements AuthRepository {
   final suspendedUserIds = <String>[];
   final restoredUserIds = <String>[];
   Object? passwordResetError;
+  Object? signInError;
   String? passwordResetEmail;
   String? passwordResetValue;
   bool? passwordResetManualVerificationConfirmed;
@@ -25,6 +26,8 @@ class FakeAuthRepository implements AuthRepository {
 
   @override
   Future<void> signIn({required String email, required String password}) async {
+    final error = signInError;
+    if (error != null) throw error;
     signedInUser = email;
   }
 
