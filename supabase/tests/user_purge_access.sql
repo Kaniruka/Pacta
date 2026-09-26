@@ -56,6 +56,11 @@ begin
   perform set_config('t27.source_id', gen_random_uuid()::text, true);
   perform set_config('t27.device_id', gen_random_uuid()::text, true);
   perform set_config('t27.other_goal_id', gen_random_uuid()::text, true);
+  perform set_config('t27.calendar_source_id', gen_random_uuid()::text, true);
+  perform set_config('t27.calendar_event_id', gen_random_uuid()::text, true);
+  perform set_config('t27.calendar_occurrence_id', gen_random_uuid()::text, true);
+  perform set_config('t27.calendar_identity', gen_random_uuid()::text, true);
+  perform set_config('t27.precedent_rule', gen_random_uuid()::text, true);
 end
 $setup$;
 
@@ -219,15 +224,26 @@ values (
 insert into public.focus_chain_records (
   user_id, mode, current_consecutive, best_consecutive, updated_at
 )
-values (current_setting('t27.target_id')::uuid, 'regular', 1, 1, now());
+values (current_setting('t27.target_id')::uuid, 'regular', 1, 1, now())
+on conflict (user_id, mode) do update
+set current_consecutive = excluded.current_consecutive,
+    best_consecutive = excluded.best_consecutive,
+    updated_at = excluded.updated_at;
 
 insert into public.appointment_chain_records (
   user_id, current_consecutive, best_consecutive, updated_at
 )
-values (current_setting('t27.target_id')::uuid, 1, 1, now());
+values (current_setting('t27.target_id')::uuid, 1, 1, now())
+on conflict (user_id) do update
+set current_consecutive = excluded.current_consecutive,
+    best_consecutive = excluded.best_consecutive,
+    updated_at = excluded.updated_at;
 
 insert into public.focus_precedent_rules (user_id, rule_text)
-values (current_setting('t27.target_id')::uuid, 'purge test rule');
+values (
+  current_setting('t27.target_id')::uuid,
+  'purge test rule ' || current_setting('t27.precedent_rule')
+);
 
 insert into public.focus_sync_sources (
   source_id, user_id, device_id, entity_type, entity_id, occurred_at, payload
@@ -245,7 +261,12 @@ values (
 insert into public.calendar_sources (
   user_id, source_id, display_name, time_zone_id
 )
-values (current_setting('t27.target_id')::uuid, 't27-calendar', 'Test', 'UTC');
+values (
+  current_setting('t27.target_id')::uuid,
+  current_setting('t27.calendar_source_id'),
+  'Test',
+  'UTC'
+);
 
 insert into public.calendar_blocks (
   user_id, source_id, source_event_id, occurrence_id, event_identity, title,
@@ -253,10 +274,10 @@ insert into public.calendar_blocks (
 )
 values (
   current_setting('t27.target_id')::uuid,
-  't27-calendar',
-  't27-event',
-  't27-occurrence',
-  't27-identity',
+  current_setting('t27.calendar_source_id'),
+  current_setting('t27.calendar_event_id'),
+  current_setting('t27.calendar_occurrence_id'),
+  current_setting('t27.calendar_identity'),
   'Test block',
   now(),
   now() + interval '1 hour',
@@ -270,7 +291,7 @@ insert into public.goals (
 values (
   current_setting('t27.other_goal_id')::uuid,
   current_setting('t27.other_id')::uuid,
-  'other user's retained goal',
+  'other user''s retained goal',
   'regular',
   now(),
   now()
@@ -284,6 +305,7 @@ select public.admin_delete_user_business_data(
 );
 
 select set_config('request.jwt.claim.sub', current_setting('t27.target_id'), true);
+reset role;
 do $business_data_pending_probe$
 declare
   target_id uuid := current_setting('t27.target_id')::uuid;
@@ -309,7 +331,6 @@ begin
   end if;
 end
 $business_data_pending_probe$;
-reset role;
 
 -- Simulate the hard Auth Admin API deletion. Auth foreign keys cascade all
 -- current business tables; the purge ledger intentionally has no Auth FK.
@@ -322,6 +343,7 @@ select public.admin_complete_user_purge(
 );
 
 select set_config('request.jwt.claim.sub', current_setting('t27.target_id'), true);
+reset role;
 do $completed_purge_probe$
 declare
   target_id uuid := current_setting('t27.target_id')::uuid;
@@ -361,7 +383,6 @@ begin
   end if;
 end
 $completed_purge_probe$;
-reset role;
 
 -- Only a fresh administrator grant can reuse the email, and the registration
 -- trigger must create an entirely new identity with no old business rows.

@@ -114,7 +114,7 @@ supabase db query --linked -f supabase/tests/user_suspension_access.sql
 
 ## Explicit cloud purge
 
-Ticket T27 adds `202609260004_user_purge.sql` and the
+Ticket T27 adds `20260926075712_user_purge.sql` and the
 `admin-purge-user` Edge Function. Apply the migration after T26, then deploy
 the function:
 
