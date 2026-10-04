@@ -47,6 +47,7 @@ class NationalFocusTreePage extends StatefulWidget {
 
 class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   bool _detailed = false;
+  final Set<String> _expandedCardIds = {};
   NationalFocusCard? _placementCard;
   String? _error;
   String _displayTimeZoneId = 'Etc/UTC';
@@ -479,8 +480,10 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                         ],
                         selected: {_detailed},
                         onSelectionChanged: _placementCard == null
-                            ? (value) =>
-                                  setState(() => _detailed = value.single)
+                            ? (value) => setState(() {
+                                _detailed = value.single;
+                                _expandedCardIds.clear();
+                              })
                             : null,
                       ),
                     ),
@@ -580,15 +583,20 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     final branch = _NationalFocusTreeNode(
       card: card,
       path: path,
-      detailed: _detailed,
+      detailed: _detailed || _expandedCardIds.contains(card.id),
       selecting: selecting,
-      blocked: isBlocked,
+      blocked: isBlocked || reviewBlocked,
       lightBlocked: hasExtinguishedAncestor,
       cascadeSourceLabel: card.cascadeSourceCardId == null
           ? null
           : cardsById[card.cascadeSourceCardId]?.effectiveTriggerCondition ??
                 '父节点',
-      onShowDetails: selecting ? null : () => setState(() => _detailed = true),
+      onShowDetails: selecting
+          ? null
+          : () => setState(() => _expandedCardIds.add(card.id)),
+      onHideDetails: selecting || _detailed
+          ? null
+          : () => setState(() => _expandedCardIds.remove(card.id)),
       onSelect: selecting && !isBlocked && !reviewBlocked
           ? () => _placeAt(card.id)
           : null,
@@ -1231,6 +1239,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
     required this.lightBlocked,
     required this.cascadeSourceLabel,
     required this.onShowDetails,
+    required this.onHideDetails,
     required this.onSelect,
     required this.onManageStrengthening,
     required this.onRelocate,
@@ -1248,6 +1257,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
   final bool lightBlocked;
   final String? cascadeSourceLabel;
   final VoidCallback? onShowDetails;
+  final VoidCallback? onHideDetails;
   final VoidCallback? onSelect;
   final VoidCallback? onManageStrengthening;
   final VoidCallback? onRelocate;
@@ -1268,6 +1278,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
             blocked: blocked,
             lightBlocked: lightBlocked,
             cascadeSourceLabel: cascadeSourceLabel,
+            onHideDetails: onHideDetails,
             onManageStrengthening: onManageStrengthening,
             onRelocate: onRelocate,
             onMoveToLibrary: onMoveToLibrary,
@@ -1290,9 +1301,13 @@ class _NationalFocusTreeNode extends StatelessWidget {
 
     if (!selecting) return Card(child: content);
     return Semantics(
-      button: !blocked,
+      button: true,
       enabled: !blocked,
-      label: blocked ? '第 $path 个节点不能选作父节点' : '选择第 $path 个节点作为父节点',
+      label: card.hasPendingReview
+          ? '第 $path 个节点待核对，不能选作父节点'
+          : blocked
+          ? '第 $path 个节点不能选作父节点'
+          : '选择第 $path 个节点作为父节点',
       child: Card(
         color: blocked ? colors.surfaceContainerLow : colors.secondaryContainer,
         child: InkWell(
@@ -1360,8 +1375,10 @@ class _StructureTreeCard extends StatelessWidget {
                 ),
               ),
               if (blocked)
-                const Tooltip(
-                  message: '不能把有效分支放到本人、后代或熄灭分支下',
+                Tooltip(
+                  message: card.hasPendingReview
+                      ? '此节点待核对，暂不能选作父节点'
+                      : '不能把有效分支放到本人、后代或熄灭分支下',
                   child: Icon(Icons.block_outlined),
                 )
               else
@@ -1470,6 +1487,7 @@ class _DetailedTreeCard extends StatelessWidget {
     required this.blocked,
     required this.lightBlocked,
     required this.cascadeSourceLabel,
+    required this.onHideDetails,
     required this.onMoveToLibrary,
     required this.onManageStrengthening,
     required this.onRelocate,
@@ -1484,6 +1502,7 @@ class _DetailedTreeCard extends StatelessWidget {
   final bool blocked;
   final bool lightBlocked;
   final String? cascadeSourceLabel;
+  final VoidCallback? onHideDetails;
   final VoidCallback? onMoveToLibrary;
   final VoidCallback? onManageStrengthening;
   final VoidCallback? onRelocate;
@@ -1502,6 +1521,12 @@ class _DetailedTreeCard extends StatelessWidget {
           runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
+            if (onHideDetails != null)
+              IconButton(
+                tooltip: '收起详情',
+                onPressed: onHideDetails,
+                icon: const Icon(Icons.expand_less),
+              ),
             Text('节点 $path', style: Theme.of(context).textTheme.titleMedium),
             _StateChip(
               state: card.state,
@@ -1576,10 +1601,13 @@ class _DetailedTreeCard extends StatelessWidget {
             ),
           ),
         ] else if (blocked &&
-            card.state == NationalFocusCardState.extinguished) ...[
+            (card.hasPendingReview ||
+                card.state == NationalFocusCardState.extinguished)) ...[
           const SizedBox(height: 8),
           Text(
-            '不能把有效分支放到本人、后代或熄灭分支下。',
+            card.hasPendingReview
+                ? '此节点待核对，暂不能选作父节点。'
+                : '不能把有效分支放到本人、后代或熄灭分支下。',
             style: TextStyle(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),

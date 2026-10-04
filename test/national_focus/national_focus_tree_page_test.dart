@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -510,4 +512,128 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
+  testWidgets('单节点详情只展开该节点且可收起，全局模式仍独立', (tester) async {
+    final root = await createPlacedCard();
+    for (var index = 0; index < 2; index++) {
+      final card = await repository.createCard(
+        NationalFocusCardDraft(
+          triggerCondition: '分支 $index',
+          action: '行动 $index',
+        ),
+      );
+      await repository.placeCard(cardId: card.id, parentId: root.id);
+    }
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: NationalFocusTreePage(repository: repository, now: () => now),
+        ),
+      ),
+    );
+    await pumpNationalFocusUi(tester);
+    final rootNode = find.byKey(ValueKey('national-focus-node-${root.id}'));
+    final showDetails = find.descendant(
+      of: rootNode,
+      matching: find.byTooltip('显示详情'),
+    );
+    await reveal(tester, showDetails);
+    await tester.tap(showDetails);
+    await pumpNationalFocusUi(tester);
+    expect(find.textContaining('当前连续'), findsOneWidget);
+    expect(find.byTooltip('显示详情'), findsNWidgets(2));
+    final hideDetails = find.byTooltip('收起详情');
+    await reveal(tester, hideDetails);
+    await tester.tap(hideDetails);
+    await pumpNationalFocusUi(tester);
+    expect(find.textContaining('当前连续'), findsNothing);
+    expect(find.byTooltip('显示详情'), findsNWidgets(3));
+    // A mode change clears any individually expanded node.
+    await reveal(tester, showDetails);
+    await tester.tap(showDetails);
+    await pumpNationalFocusUi(tester);
+    await reveal(tester, find.text('详情'));
+    await tester.tap(find.text('详情'));
+    await pumpNationalFocusUi(tester);
+    expect(find.textContaining('当前连续'), findsNWidgets(3));
+    expect(find.byTooltip('收起详情'), findsNothing);
+    await reveal(tester, find.text('结构'));
+    await tester.tap(find.text('结构'));
+    await pumpNationalFocusUi(tester);
+    expect(find.textContaining('当前连续'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('放置流程待核对节点呈现禁用语义和明确原因', (tester) async {
+    final semantics = tester.ensureSemantics();
+    final pending = NationalFocusCard(
+      id: 'pending-parent',
+      triggerCondition: '待核对父节点',
+      action: '行动',
+      isInTree: true,
+      state: NationalFocusCardState.extinguished,
+      hasPendingReview: true,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final library = NationalFocusCard(
+      id: 'library-card',
+      triggerCondition: '待放置卡片',
+      action: '行动',
+      isInTree: false,
+      state: NationalFocusCardState.extinguished,
+      createdAt: now,
+      updatedAt: now,
+    );
+    final fake = _PendingPlacementRepository(pending, library);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: NationalFocusTreePage(repository: fake, now: () => now),
+        ),
+      ),
+    );
+    await pumpNationalFocusUi(tester);
+    await reveal(tester, find.text('卡片库'));
+    await tester.tap(find.text('卡片库'));
+    await pumpNationalFocusUi(tester);
+    await tester.ensureVisible(find.text('放入树画布'));
+    await tester.pump();
+    await tester.tap(find.text('放入树画布'));
+    await pumpNationalFocusUi(tester);
+    final disabled = find.byWidgetPredicate(
+      (widget) =>
+          widget is Semantics &&
+          widget.properties.label == '第 1 个节点待核对，不能选作父节点',
+    );
+    await reveal(tester, disabled);
+    final data = tester.getSemantics(disabled).getSemanticsData();
+    expect(data.flagsCollection.isEnabled, ui.Tristate.isFalse);
+    expect(data.flagsCollection.isButton, isTrue);
+    expect(find.byTooltip('此节点待核对，暂不能选作父节点'), findsOneWidget);
+    expect(tester.widget<Semantics>(disabled).properties.enabled, isFalse);
+    await tester.tap(find.text('待核对父节点'));
+    await pumpNationalFocusUi(tester);
+    expect(fake.placeCalls, 0);
+    semantics.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+}
+
+class _PendingPlacementRepository extends UnavailableNationalFocusRepository {
+  _PendingPlacementRepository(this.pending, this.library);
+  final NationalFocusCard pending;
+  final NationalFocusCard library;
+  int placeCalls = 0;
+
+  @override
+  Stream<List<NationalFocusCard>> watchTreeCards() => Stream.value([pending]);
+  @override
+  Stream<List<NationalFocusCard>> watchLibraryCards() =>
+      Stream.value([library]);
+  @override
+  Future<void> placeCard({required String cardId, String? parentId}) async {
+    placeCalls++;
+  }
 }

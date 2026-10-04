@@ -28,7 +28,7 @@ void main() {
   });
 
   testWidgets('窄屏大字可访问四个入口且页面不溢出', (tester) async {
-    tester.view.physicalSize = const Size(360, 800);
+    tester.view.physicalSize = const Size(320, 800);
     tester.view.devicePixelRatio = 1;
     tester.platformDispatcher.textScaleFactorTestValue = 2;
     addTearDown(tester.view.resetPhysicalSize);

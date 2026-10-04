@@ -4,7 +4,7 @@
 
 总体评价：Needs work。Pacta 的核心工作是把具体任务转换为专注承诺，再维护独立的国策规则；页面辨识点应是向下生长的国策分支。现有四入口符合 ADR 0004，但重复标题、默认展开的记录和操作、深层递归缩进让任务和树结构难以读懂。
 
-本报告基于 Flutter 源码审查；未以截图推测对比度，也未声称已完成模拟器、TalkBack、Windows 键盘验收。采用 Apple HIG 的可访问性、布局和渐进呈现原则；Android 保留 Material 3，Windows 保留原生窗口惯例。范围不改变数据模型、确认规则、专注结果或四入口职责。
+审查阶段基于 Flutter 源码；未以截图推测对比度。实施后的模拟器和Windows原生验证记录见文末，TalkBack与实体键盘人工验收尚未完成。采用 Apple HIG 的可访问性、布局和渐进呈现原则；Android 保留 Material 3，Windows 保留原生窗口惯例。范围不改变数据模型、确认规则、专注结果或四入口职责。
 
 ## 依据
 
@@ -118,4 +118,15 @@
 - 暂未进行TalkBack完整朗读验收、真实Android输入法和实体Windows键盘人工验收。极大国策树仍一次构建，尚未虚拟化。
 
 
-最终自动验证：`dart format` 完成；`flutter analyze` 无问题；完整 `flutter test` 181项通过。Android `flutter drive --driver=test_driver/ui_layout_acceptance_test.dart --target=integration_test/ui_layout_acceptance_test.dart -d emulator-5554` 与 Windows `flutter test integration_test/ui_layout_acceptance_test.dart -d windows` 均通过。日志与隔离示例截图在被Git忽略的 `build/ui-layout-*.log` 和 `build/ui-layout-evidence/`。Android测试使用本地替身用户与内存数据库，不访问真实用户数据。
+最终自动验证：`dart format` 完成；`flutter analyze` 无问题；完整 `flutter test` 183项通过。Android `flutter drive --driver=test_driver/ui_layout_acceptance_test.dart --target=integration_test/ui_layout_acceptance_test.dart -d emulator-5554` 与 Windows `flutter test integration_test/ui_layout_acceptance_test.dart -d windows` 均通过。日志与隔离示例截图在被Git忽略的 `build/ui-layout-*.log` 和 `build/ui-layout-evidence/`。Android测试使用本地替身用户与内存数据库，不访问真实用户数据。
+
+
+## Standards
+
+code-review规范轴以任务开始时的 `1eb864a` 为固定基线，检查本次提交。发现1项：待核对国策节点实际不可选，却呈现可选背景和启用的读屏语义。已将待核对状态纳入禁用呈现，并增加专用原因；回归测试确认禁用语义且不会触发放置。独立静态复核确认已解决。
+
+## Spec
+
+code-review需求轴发现1项：“显示详情”最初切换整棵树的详情模式，未满足按节点渐进展开。已改为按card.id展开/收起；顶部显式“结构/详情”模式仍保留。多分支回归测试确认仅所选节点展开、可收起、全局模式仍可使用。独立静态复核确认已解决。
+
+双轴汇总：Standards 1项、Spec 1项，均已修复；复核未发现其余有证据支持的待修问题。最终完整测试183项通过，320dp/200%四入口、二级页面、深树与主题对比度均有自动覆盖。
