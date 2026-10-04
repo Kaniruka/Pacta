@@ -31,6 +31,8 @@ import 'src/notifications/focus_notification_settings_page.dart';
 import 'src/tasks/task_database.dart' show PactaDatabase;
 import 'src/tasks/task_models.dart';
 import 'src/tasks/task_repository.dart';
+import 'src/sync/cloud_snapshot_repository.dart';
+import 'src/sync/cloud_sync_card.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -40,21 +42,11 @@ Future<void> main() async {
   final key = const String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
   AuthRepository repository = const UnavailableAuthRepository();
   final database = PactaDatabase.open();
-  TaskRemoteDataSource remote = const UnavailableTaskRemoteDataSource();
-  FocusRemoteDataSource focusRemote = const UnavailableFocusRemoteDataSource();
-  NationalFocusRemoteDataSource nationalFocusRemote =
-      const UnavailableNationalFocusRemoteDataSource();
-  CalendarRemoteDataSource calendarRemote =
-      const UnavailableCalendarRemoteDataSource();
+  CloudSnapshotRemote? cloudRemote;
   if (url.isNotEmpty && key.isNotEmpty) {
     await Supabase.initialize(url: url, publishableKey: key);
     repository = SupabaseAuthRepository(Supabase.instance.client);
-    remote = SupabaseTaskRemoteDataSource(Supabase.instance.client);
-    focusRemote = SupabaseFocusRemoteDataSource(Supabase.instance.client);
-    nationalFocusRemote = SupabaseNationalFocusRemoteDataSource(
-      Supabase.instance.client,
-    );
-    calendarRemote = SupabaseCalendarRemoteDataSource(Supabase.instance.client);
+    cloudRemote = SupabaseCloudSnapshotRemote(Supabase.instance.client);
   }
   final purgeCleanupRepository = UserPurgeCleanupRepository(
     authRepository: repository,
@@ -68,7 +60,8 @@ Future<void> main() async {
       taskRepositoryFactory: (userId) => LocalTaskRepository(
         database: database,
         userId: userId,
-        remote: remote,
+        remote: const UnavailableTaskRemoteDataSource(),
+        cloudSyncEnabled: false,
         lifecycleAccess: LocalUserLifecycleAccess(
           database: database,
           userId: userId,
@@ -77,7 +70,8 @@ Future<void> main() async {
       focusRepositoryFactory: (userId) => LocalFocusRepository(
         database: database,
         userId: userId,
-        remote: focusRemote,
+        remote: const UnavailableFocusRemoteDataSource(),
+        cloudSyncEnabled: false,
         lifecycleAccess: LocalUserLifecycleAccess(
           database: database,
           userId: userId,
@@ -86,7 +80,8 @@ Future<void> main() async {
       nationalFocusRepositoryFactory: (userId) => LocalNationalFocusRepository(
         database: database,
         userId: userId,
-        remote: nationalFocusRemote,
+        remote: const UnavailableNationalFocusRemoteDataSource(),
+        cloudSyncEnabled: false,
         lifecycleAccess: LocalUserLifecycleAccess(
           database: database,
           userId: userId,
@@ -98,12 +93,22 @@ Future<void> main() async {
         provider: Platform.isAndroid
             ? const AndroidCalendarProvider()
             : const UnsupportedCalendarProvider(),
-        remote: calendarRemote,
+        remote: const UnavailableCalendarRemoteDataSource(),
+        cloudSyncEnabled: false,
         lifecycleAccess: LocalUserLifecycleAccess(
           database: database,
           userId: userId,
         ),
       ),
+      cloudSnapshotRepositoryFactory: cloudRemote == null
+          ? null
+          : (userId) => CloudSnapshotRepository(
+              database: database,
+              remote: cloudRemote!,
+              userId: userId,
+              deviceName:
+                  '${Platform.localHostname} (${Platform.isAndroid ? 'Android' : 'Windows'})',
+            ),
       userLifecycleRepositoryFactory: (userId) => UserLifecycleRepository(
         authRepository: repository,
         localAccess: LocalUserLifecycleAccess(
@@ -126,7 +131,11 @@ class PactaApp extends StatelessWidget {
     this.nationalFocusRepositoryFactory,
     this.calendarRepositoryFactory,
     this.userLifecycleRepositoryFactory,
+    this.cloudSnapshotRepositoryFactory,
   });
+
+  final CloudSnapshotRepository Function(String userId)?
+  cloudSnapshotRepositoryFactory;
 
   final AuthRepository authRepository;
   final UserPurgeCleanupRepository? userPurgeCleanupRepository;
@@ -143,6 +152,9 @@ class PactaApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ProviderScope(
       overrides: [
+        cloudSnapshotRepositoryFactoryProvider.overrideWithValue(
+          cloudSnapshotRepositoryFactory,
+        ),
         authRepositoryProvider.overrideWithValue(authRepository),
         userPurgeCleanupRepositoryProvider.overrideWithValue(
           userPurgeCleanupRepository,
@@ -202,6 +214,16 @@ ThemeData _pactaTheme(Brightness brightness) {
     ),
   );
 }
+
+final cloudSnapshotRepositoryFactoryProvider =
+    Provider<CloudSnapshotRepository Function(String userId)?>((ref) => null);
+
+final cloudSnapshotRepositoryProvider =
+    Provider.autoDispose<CloudSnapshotRepository?>((ref) {
+      final userId = ref.watch(authRepositoryProvider).currentUserId;
+      final factory = ref.watch(cloudSnapshotRepositoryFactoryProvider);
+      return userId == null || factory == null ? null : factory(userId);
+    });
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return const UnavailableAuthRepository();
@@ -517,7 +539,7 @@ class _AppShellState extends ConsumerState<AppShell>
   late final StreamSubscription<List<ConnectivityResult>>
   _connectivitySubscription;
   late final StreamSubscription<String> _notificationOpenSubscription;
-  late final StreamSubscription<List<NationalFocusCard>>
+  late StreamSubscription<List<NationalFocusCard>>
   _nationalFocusReminderSubscription;
   late final NationalFocusCheckpointScheduler _nationalFocusCheckpointScheduler;
 
@@ -540,7 +562,7 @@ class _AppShellState extends ConsumerState<AppShell>
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
       _,
     ) {
-      unawaited(_syncPendingData());
+      unawaited(_refreshLocalState());
     });
     _notificationOpenSubscription = _focusNotificationService.openFlowRequests
         .listen((payload) {
@@ -557,7 +579,7 @@ class _AppShellState extends ConsumerState<AppShell>
           },
         );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_syncPendingData());
+      unawaited(_refreshLocalState());
       final request = _focusNotificationService.takePendingOpenRequest();
       if (request != null) unawaited(_openFocusFlow(request));
     });
@@ -565,36 +587,23 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_syncPendingData());
+    if (state == AppLifecycleState.resumed) unawaited(_refreshLocalState());
   }
 
-  Future<void> _syncPendingData() async {
+  Future<void> _refreshLocalState() async {
     try {
       await ref.read(userLifecycleStatusRepositoryProvider).refresh();
     } catch (_) {
       // A failed status check preserves the last status known on this device.
     }
+    // Lifecycle and local notification refresh never transfer business records.
     try {
-      await ref.read(focusRepositoryProvider).sync();
+      await ref.read(focusRepositoryProvider).settleDueSessions();
+      await ref.read(nationalFocusRepositoryProvider).settleDueCheckpoints();
     } catch (_) {
-      // Focus records remain local and are retried on resume or reconnect.
+      // Local recovery can be retried without uploading or discarding records.
     }
     await _syncFocusStatus();
-    try {
-      await ref.read(taskRepositoryProvider).sync();
-    } catch (_) {
-      // Offline edits stay local and are retried on resume or reconnect.
-    }
-    try {
-      await ref.read(nationalFocusRepositoryProvider).sync();
-    } catch (_) {
-      // National Focus edits stay local and are retried on resume or reconnect.
-    }
-    try {
-      await ref.read(calendarRepositoryProvider).sync();
-    } catch (_) {
-      // Calendar Blocks stay local and are retried on resume or reconnect.
-    }
   }
 
   Future<void> _syncFocusStatus() async {
@@ -700,6 +709,16 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(nationalFocusRepositoryProvider, (previous, next) {
+      unawaited(_nationalFocusReminderSubscription.cancel());
+      _nationalFocusReminderSubscription = next.watchTreeCards().listen(
+        (cards) => unawaited(_syncNationalFocusReminder(cards)),
+        onError: (Object _) {},
+      );
+    });
+    ref.listen(focusRepositoryProvider, (previous, next) {
+      unawaited(_syncFocusStatus());
+    });
     final nationalFocusRepository = ref.watch(nationalFocusRepositoryProvider);
     final focusRepository = ref.watch(focusRepositoryProvider);
     final lifecycleStatusRepository = ref.watch(
@@ -3591,6 +3610,19 @@ class _MyPageState extends ConsumerState<MyPage> {
             title: Text(repository.currentUserIdentifier ?? '当前用户'),
             subtitle: const Text('个人数据仅属于你'),
           ),
+        ),
+        const SizedBox(height: 12),
+        CloudSyncCard(
+          repository: ref.watch(cloudSnapshotRepositoryProvider),
+          onDownloaded: () async {
+            ref.invalidate(taskRepositoryProvider);
+            ref.invalidate(focusRepositoryProvider);
+            ref.invalidate(nationalFocusRepositoryProvider);
+            ref.invalidate(calendarRepositoryProvider);
+            await ref
+                .read(nationalFocusRepositoryProvider)
+                .settleDueCheckpoints();
+          },
         ),
         const SizedBox(height: 12),
         Card(

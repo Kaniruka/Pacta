@@ -146,29 +146,17 @@ class UnavailableNationalFocusRemoteDataSource
 
 const _nationalFocusTreeEntityId = '00000000-0000-4000-8000-000000000018';
 
-class _NationalFocusClockSample {
-  const _NationalFocusClockSample({
-    required this.wallTime,
-    required this.monotonicTime,
-  });
-
-  final DateTime wallTime;
-  final Duration monotonicTime;
-}
-
 class LocalNationalFocusRepository implements NationalFocusRepository {
   LocalNationalFocusRepository({
     required this.database,
     required this.userId,
     this.remote = const UnavailableNationalFocusRemoteDataSource(),
+    this.cloudSyncEnabled = true,
     UserLifecycleAccess? lifecycleAccess,
     DateTime Function()? now,
-    Duration Function()? monotonicNow,
   }) : lifecycleAccess =
            lifecycleAccess ?? const AlwaysActiveUserLifecycleAccess(),
-       _now = now ?? DateTime.now,
-       _injectedMonotonicNow = monotonicNow,
-       _clockJumpDetectionEnabled = now == null || monotonicNow != null {
+       _now = now ?? DateTime.now {
     if (userId.trim().isEmpty) {
       throw ArgumentError.value(userId, 'userId', '用户标识不能为空。');
     }
@@ -177,18 +165,12 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   final PactaDatabase database;
   final String userId;
   final NationalFocusRemoteDataSource remote;
+  final bool cloudSyncEnabled;
   final UserLifecycleAccess lifecycleAccess;
   final DateTime Function() _now;
-  final Duration Function()? _injectedMonotonicNow;
-  final bool _clockJumpDetectionEnabled;
-  final Stopwatch _monotonicStopwatch = Stopwatch()..start();
   final _uuid = const Uuid();
   Future<void> _syncQueue = Future<void>.value();
-  _NationalFocusClockSample? _lastClockSample;
   Duration? _trustedClockOffset;
-  bool _clockOffsetRestored = false;
-  String? _pendingClockReviewId;
-  Duration? _pendingClockReviewMonotonicTime;
 
   @override
   Stream<List<NationalFocusCard>> watchTreeCards() =>
@@ -1019,91 +1001,74 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
 
   @override
   Future<void> settleDueCheckpoints() async {
-    await _restoreTrustedClockOffset();
-    final sample = _sampleNationalFocusClock();
-    final previous = _lastClockSample;
-    final elapsed = previous == null
-        ? Duration.zero
-        : sample.monotonicTime - previous.monotonicTime;
-    final wallDelta = previous == null
-        ? Duration.zero
-        : sample.wallTime.difference(previous.wallTime);
-    final discrepancyMicros = wallDelta.inMicroseconds - elapsed.inMicroseconds;
-    final hasClockJump =
-        _clockJumpDetectionEnabled &&
-        previous != null &&
-        discrepancyMicros.abs() > const Duration(seconds: 30).inMicroseconds;
-    final reliableNow = hasClockJump
-        ? previous.wallTime.add(
-            Duration(
-              microseconds: elapsed.inMicroseconds.clamp(0, 1 << 62).toInt(),
-            ),
-          )
-        : sample.wallTime;
-    _lastClockSample = _NationalFocusClockSample(
-      wallTime: reliableNow,
-      monotonicTime: sample.monotonicTime,
-    );
-    if (hasClockJump) {
-      _trustedClockOffset = _now().toUtc().difference(reliableNow);
-      _pendingClockReviewMonotonicTime = sample.monotonicTime;
-    }
     await database.transaction(() async {
-      final sources = await _getNationalFocusSyncSources();
-      final heads = _nationalFocusSourceHeads(sources);
-      final metadata = _nationalFocusReviewMetadataFromSources(
-        sources,
-        heads.map((source) => source.sourceId),
-      );
-      final pendingClockCases = _mapList(
-        metadata['nationalFocusClockReviewCases'],
-      );
-      if (pendingClockCases.isNotEmpty && !hasClockJump) return;
+      await _retireLegacyClockReviews();
+      await _settleCheckpointsThrough(_now().toUtc());
+    });
+  }
 
-      await _settleCheckpointsThrough(reliableNow);
-      if (hasClockJump) {
-        final previousSample = previous;
-        final activeCards = await (database.select(
-          database.localNationalFocusCards,
-        )..where((card) => card.userId.equals(userId))).get();
-        final affectedCardIds = <String>[];
-        for (final card in activeCards) {
-          if (!card.isInTree && !card.maintenanceCycleStarted) continue;
-          affectedCardIds.add(card.id);
-          if (card.reviewDisposition == 'pending_review') continue;
-          await _updateCard(
-            card,
+  Future<void> _retireLegacyClockReviews() async {
+    final sources = await _getNationalFocusSyncSources();
+    if (sources.isEmpty) return;
+    final heads = _nationalFocusSourceHeads(sources);
+    final metadata = _nationalFocusReviewMetadataFromSources(
+      sources,
+      heads.map((source) => source.sourceId),
+    );
+    final clockCases = _mapList(metadata['nationalFocusClockReviewCases']);
+    if (clockCases.isEmpty) return;
+
+    final conflictCardIds =
+        _mapList(metadata['nationalFocusReconciliationCases'])
+            .expand(
+              (item) => (item['cardIds'] as List<dynamic>).whereType<String>(),
+            )
+            .toSet();
+    final clockOnlyCardIds =
+        clockCases
+            .expand(
+              (item) => (item['cardIds'] as List<dynamic>).whereType<String>(),
+            )
+            .toSet()
+          ..removeAll(conflictCardIds);
+    for (final cardId in clockOnlyCardIds) {
+      await (database.update(database.localNationalFocusCards)
+            ..where((card) => card.userId.equals(userId))
+            ..where((card) => card.id.equals(cardId))
+            ..where((card) => card.reviewDisposition.equals('pending_review')))
+          .write(
             const LocalNationalFocusCardsCompanion(
-              reviewDisposition: Value('pending_review'),
+              reviewDisposition: Value('accepted'),
             ),
           );
-        }
-        final rawWallTime = _now().toUtc();
-        final clockReviewId = _uuid.v4();
-        final deviceId = await _getNationalFocusDeviceId();
-        _pendingClockReviewId = clockReviewId;
-        final clockReview = {
-          'id': clockReviewId,
-          'deviceId': deviceId,
-          'direction': discrepancyMicros > 0 ? 'forward' : 'backward',
-          'detectedAt': rawWallTime.toIso8601String(),
-          'previousWallTime': previousSample.wallTime.toIso8601String(),
-          'observedWallTime': rawWallTime.toIso8601String(),
-          'reliableThroughTime': reliableNow.toIso8601String(),
-          'estimatedElapsedSeconds': elapsed.inSeconds.clamp(0, 1 << 31),
-          'clockOffsetsByDevice': {
-            deviceId: _trustedClockOffset!.inMilliseconds,
-          },
-          'cardIds': affectedCardIds..sort(),
-          'isDeferred': false,
-        };
-        final clockCases = [...pendingClockCases, clockReview];
-        await _recordSyncSnapshot(
-          operation: 'national_focus_clock_anomaly',
-          metadata: {...metadata, 'nationalFocusClockReviewCases': clockCases},
-        );
-      }
-    });
+      await (database.update(database.localNationalFocusFailures)
+            ..where((failure) => failure.userId.equals(userId))
+            ..where((failure) => failure.cardId.equals(cardId))
+            ..where(
+              (failure) => failure.reviewDisposition.equals('pending_review'),
+            ))
+          .write(
+            const LocalNationalFocusFailuresCompanion(
+              reviewDisposition: Value('accepted'),
+            ),
+          );
+    }
+    await _recordSyncSnapshot(
+      operation: 'retire_legacy_national_focus_clock_review',
+      metadata: {
+        ...metadata,
+        'nationalFocusClockReviewCases': const <Map<String, dynamic>>[],
+        'nationalFocusClockReviewHistory': [
+          ..._mapList(metadata['nationalFocusClockReviewHistory']),
+          for (final review in clockCases)
+            {
+              ...review,
+              'resolution': 'use_local_clock',
+              'resolvedAt': _trustedNow().toIso8601String(),
+            },
+        ],
+      },
+    );
   }
 
   Future<void> _settleCheckpointsThrough(DateTime now) async {
@@ -1153,44 +1118,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     }
   }
 
-  _NationalFocusClockSample _sampleNationalFocusClock() =>
-      _NationalFocusClockSample(
-        wallTime: _trustedNow(),
-        monotonicTime:
-            _injectedMonotonicNow?.call() ?? _monotonicStopwatch.elapsed,
-      );
-
-  DateTime _trustedNow() {
-    final now = _now().toUtc();
-    final offset = _trustedClockOffset;
-    return offset == null ? now : now.subtract(offset);
-  }
-
-  Future<void> _restoreTrustedClockOffset() async {
-    if (_clockOffsetRestored) return;
-    _clockOffsetRestored = true;
-    final deviceId = await _getNationalFocusDeviceId();
-    final sources = await _getNationalFocusSyncSources();
-    for (final source in sources.reversed) {
-      final payload = _nationalFocusPayload(source);
-      for (final collection in [
-        'nationalFocusClockReviewHistory',
-        'nationalFocusClockReviewCases',
-      ]) {
-        for (final item in _mapList(payload[collection]).reversed) {
-          final offsets = item['clockOffsetsByDevice'];
-          final offset = offsets is Map
-              ? offsets[deviceId]
-              : item['deviceId'] == deviceId
-              ? item['clockOffsetMilliseconds']
-              : null;
-          if (offset is! int) continue;
-          _trustedClockOffset = Duration(milliseconds: offset);
-          return;
-        }
-      }
-    }
-  }
+  DateTime _trustedNow() => _now().toUtc();
 
   Future<void> _settleCheckpoint(
     DateTime checkpoint, {
@@ -1383,6 +1311,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
 
   @override
   Future<NationalFocusReviewState> getNationalFocusReviewState() async {
+    await settleDueCheckpoints();
     final sources = await _getNationalFocusSyncSources();
     if (sources.isEmpty) return const NationalFocusReviewState();
     final heads = _nationalFocusSourceHeads(sources);
@@ -1711,19 +1640,6 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       var reliableThrough = DateTime.parse(
         review['reliableThroughTime'] as String,
       ).toUtc();
-      final monotonicAtDetection = _pendingClockReviewId == caseId
-          ? _pendingClockReviewMonotonicTime
-          : null;
-      if (monotonicAtDetection != null) {
-        final currentMonotonic =
-            _injectedMonotonicNow?.call() ?? _monotonicStopwatch.elapsed;
-        final elapsed = currentMonotonic - monotonicAtDetection;
-        reliableThrough = reliableThrough.add(
-          Duration(
-            microseconds: elapsed.inMicroseconds.clamp(0, 1 << 62).toInt(),
-          ),
-        );
-      }
       final rawNow = _now().toUtc();
       _trustedClockOffset = rawNow.difference(reliableThrough);
       final cardIds = (review['cardIds'] as List<dynamic>)
@@ -1782,13 +1698,6 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
         'resolution': 'accept_monotonic_estimate',
         'clockOffsetMilliseconds': _trustedClockOffset!.inMilliseconds,
       });
-      _pendingClockReviewId = null;
-      _pendingClockReviewMonotonicTime = null;
-      _lastClockSample = _NationalFocusClockSample(
-        wallTime: reliableThrough,
-        monotonicTime:
-            _injectedMonotonicNow?.call() ?? _monotonicStopwatch.elapsed,
-      );
       await _recordSyncSnapshot(
         operation: 'resolve_national_focus_clock_review',
         metadata: {
@@ -1802,8 +1711,36 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     });
   }
 
+  /// Rebuilds legacy local projections in an isolated empty database.
+  /// The caller must load the original national_focus_tree sources first.
+  Future<void> restoreLegacyCloudProjection() async {
+    await database.transaction(() async {
+      final existingCard = await (database.select(
+        database.localNationalFocusCards,
+      )..where((card) => card.userId.equals(userId))).getSingleOrNull();
+      final existingMaintenance = await (database.select(
+        database.localNationalFocusMaintenance,
+      )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+      if (existingCard != null || existingMaintenance != null) {
+        throw StateError('旧国策投影只能恢复到空的临时数据库。');
+      }
+      final sources = await _getNationalFocusSyncSources();
+      if (sources.isEmpty) {
+        throw StateError('没有可恢复的旧国策来源。');
+      }
+      final heads = _nationalFocusSourceHeads(sources);
+      if (heads.isEmpty) {
+        throw StateError('旧国策来源缺少可恢复的头节点。');
+      }
+      await _applyNationalFocusSnapshot(
+        _mergeNationalFocusSnapshots(sources, heads),
+      );
+    });
+  }
+
   @override
   Future<void> sync() {
+    if (!cloudSyncEnabled) return Future<void>.value();
     final nextSync = _syncQueue
         .catchError((Object _) {})
         .then((_) => _syncOnce());
@@ -3270,17 +3207,11 @@ NationalFocusReviewState _nationalFocusReviewStateFromSources({
   required List<NationalFocusSyncSource> sources,
 }) {
   final casesById = <String, Map<String, dynamic>>{};
-  final clockCasesById = <String, Map<String, dynamic>>{};
   final historyById = <String, Map<String, dynamic>>{};
-  final clockHistoryById = <String, Map<String, dynamic>>{};
   for (final payload in pendingPayloads) {
     for (final item in _mapList(payload['nationalFocusReconciliationCases'])) {
       final id = item['id'];
       if (id is String) casesById[id] = item;
-    }
-    for (final item in _mapList(payload['nationalFocusClockReviewCases'])) {
-      final id = item['id'];
-      if (id is String) clockCasesById[id] = item;
     }
   }
   for (final source in sources) {
@@ -3290,10 +3221,6 @@ NationalFocusReviewState _nationalFocusReviewStateFromSources({
     )) {
       final id = item['caseId'];
       if (id is String) historyById[id] = item;
-    }
-    for (final item in _mapList(payload['nationalFocusClockReviewHistory'])) {
-      final id = item['id'];
-      if (id is String) clockHistoryById[id] = item;
     }
   }
 
@@ -3334,25 +3261,6 @@ NationalFocusReviewState _nationalFocusReviewStateFromSources({
     );
   }).toList()..sort((left, right) => left.createdAt.compareTo(right.createdAt));
 
-  NationalFocusClockReviewCase clockCase(
-    Map<String, dynamic> item,
-  ) => NationalFocusClockReviewCase(
-    id: item['id'] as String,
-    direction: item['direction'] == 'backward'
-        ? NationalFocusClockChangeDirection.backward
-        : NationalFocusClockChangeDirection.forward,
-    detectedAt: DateTime.parse(item['detectedAt'] as String).toUtc(),
-    previousWallTime: DateTime.parse(item['previousWallTime'] as String)
-        .toUtc(),
-    observedWallTime: DateTime.parse(item['observedWallTime'] as String)
-        .toUtc(),
-    reliableThroughTime: DateTime.parse(item['reliableThroughTime'] as String)
-        .toUtc(),
-    estimatedElapsedSeconds: item['estimatedElapsedSeconds'] as int,
-    cardIds: (item['cardIds'] as List<dynamic>).whereType<String>().toList(),
-    isDeferred: item['isDeferred'] == true,
-  );
-
   final reconciliationHistory =
       historyById.values.map((item) {
           return NationalFocusReconciliationResult(
@@ -3373,11 +3281,9 @@ NationalFocusReviewState _nationalFocusReviewStateFromSources({
 
   return NationalFocusReviewState(
     reconciliationCases: cases,
-    clockReviewCases: clockCasesById.values.map(clockCase).toList()
-      ..sort((left, right) => left.detectedAt.compareTo(right.detectedAt)),
+    clockReviewCases: const [],
     reconciliationHistory: reconciliationHistory,
-    clockReviewHistory: clockHistoryById.values.map(clockCase).toList()
-      ..sort((left, right) => left.detectedAt.compareTo(right.detectedAt)),
+    clockReviewHistory: const [],
   );
 }
 

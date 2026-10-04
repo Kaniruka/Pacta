@@ -84,7 +84,7 @@ void main() {
       CalendarSourcesPage(repository: repository, isAndroid: false),
     );
     await _reveal(tester, find.text('工作与家庭的共享规划日历来源'));
-    await _reveal(tester, find.text('立即同步'));
+    await _reveal(tester, find.text('刷新本机日历'));
     await _scan(tester);
   });
 

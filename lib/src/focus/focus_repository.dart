@@ -262,6 +262,7 @@ class LocalFocusRepository implements FocusRepository {
     required this.database,
     required this.userId,
     required this.remote,
+    this.cloudSyncEnabled = true,
     UserLifecycleAccess? lifecycleAccess,
     DateTime Function()? now,
     Duration Function()? monotonicNow,
@@ -274,6 +275,7 @@ class LocalFocusRepository implements FocusRepository {
   final db.PactaDatabase database;
   final String userId;
   final FocusRemoteDataSource remote;
+  final bool cloudSyncEnabled;
   final UserLifecycleAccess lifecycleAccess;
   final DateTime Function() _now;
   final Duration Function()? _injectedMonotonicNow;
@@ -2489,6 +2491,7 @@ class LocalFocusRepository implements FocusRepository {
 
   @override
   Future<void> sync() {
+    if (!cloudSyncEnabled) return Future<void>.value();
     final nextSync = _syncQueue
         .catchError((Object _) {})
         .then((_) => _syncOnce());

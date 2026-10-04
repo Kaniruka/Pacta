@@ -354,6 +354,67 @@ void main() {
     expect(agenda.blocks.single.title, '平台未知权限时保留');
   });
 
+  test('关闭云同步时导入与刷新只访问本机，删除本机缓存不访问远端', () async {
+    await repository.dispose();
+    final localOnlyRemote = _CountingCalendarRemote();
+    repository = LocalCalendarRepository(
+      database: database,
+      userId: 'user-a',
+      provider: provider,
+      remote: localOnlyRemote,
+      cloudSyncEnabled: false,
+      now: () => now,
+    );
+    provider.events = [
+      event(
+        occurrenceId: 'local-only-event',
+        identity: 'local-only-event',
+        title: '初始本机活动',
+        start: DateTime.utc(2026, 9, 25, 9),
+        end: DateTime.utc(2026, 9, 25, 10),
+      ),
+    ];
+    await repository.requestAccess();
+
+    final importResult = await repository.importCalendars({source.id});
+    expect(importResult.synced, isFalse);
+    expect(importResult.isStale, isFalse);
+    expect(importResult.importedOccurrences, 1);
+    expect(localOnlyRemote.calls, 0);
+
+    provider.events = [
+      event(
+        occurrenceId: 'local-only-event',
+        identity: 'local-only-event',
+        title: '刷新后的本机活动',
+        start: DateTime.utc(2026, 9, 25, 9),
+        end: DateTime.utc(2026, 9, 25, 10),
+      ),
+    ];
+    await repository.sync();
+    final agenda = await repository.getAgenda(
+      from: DateTime.utc(2026, 9, 25),
+      to: DateTime.utc(2026, 9, 26),
+    );
+    expect(agenda.blocks.single.title, '刷新后的本机活动');
+    expect(agenda.isStale, isFalse);
+
+    await repository.removeSources({source.id});
+    expect(
+      await (database.select(
+        database.localCalendarSources,
+      )..where((row) => row.userId.equals('user-a'))).get(),
+      isEmpty,
+    );
+    expect(
+      await (database.select(
+        database.localCalendarBlocks,
+      )..where((row) => row.userId.equals('user-a'))).get(),
+      isEmpty,
+    );
+    expect(localOnlyRemote.calls, 0);
+  });
+
   test('离线时保留日历缓存并在连接恢复后完成同步', () async {
     provider.events = [
       event(
@@ -492,4 +553,55 @@ void main() {
     expect(secondAgenda.blocks.single.sourceIds, contains(source.id));
     expect(isolatedAgenda.blocks, isEmpty);
   });
+}
+
+class _CountingCalendarRemote extends InMemoryCalendarRemote {
+  int calls = 0;
+
+  @override
+  Future<CalendarRemoteSnapshot> pull({required String userId}) {
+    calls++;
+    return super.pull(userId: userId);
+  }
+
+  @override
+  Future<void> upsertSources({
+    required String userId,
+    required List<CalendarSource> sources,
+  }) {
+    calls++;
+    return super.upsertSources(userId: userId, sources: sources);
+  }
+
+  @override
+  Future<void> upsertEvents({
+    required String userId,
+    required List<CalendarEventOccurrence> events,
+  }) {
+    calls++;
+    return super.upsertEvents(userId: userId, events: events);
+  }
+
+  @override
+  Future<void> deleteSources({
+    required String userId,
+    required Set<String> sourceIds,
+  }) {
+    calls++;
+    return super.deleteSources(userId: userId, sourceIds: sourceIds);
+  }
+
+  @override
+  Future<void> deleteEvents({
+    required String userId,
+    required String sourceId,
+    required Set<String> occurrenceIds,
+  }) {
+    calls++;
+    return super.deleteEvents(
+      userId: userId,
+      sourceId: sourceId,
+      occurrenceIds: occurrenceIds,
+    );
+  }
 }

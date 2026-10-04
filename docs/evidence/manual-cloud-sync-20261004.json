@@ -1,0 +1,129 @@
+{
+  "date": "2026-10-04",
+  "environment": "configured Supabase development project, isolated temporary identities",
+  "migrationVersions": [
+    "202610040001",
+    "202610040002"
+  ],
+  "checks": [
+    {
+      "case": "temporary login device",
+      "passed": true
+    },
+    {
+      "case": "temporary login isolation",
+      "passed": true
+    },
+    {
+      "case": "temporary login concurrency",
+      "passed": true
+    },
+    {
+      "case": "temporary login legacy",
+      "passed": true
+    },
+    {
+      "case": "real RPC initial revision 0 to 1",
+      "passed": true
+    },
+    {
+      "case": "cross-user RLS hides cloud snapshot",
+      "passed": true
+    },
+    {
+      "case": "anonymous cannot read cloud snapshots",
+      "passed": true
+    },
+    {
+      "case": "authenticated direct cloud table write denied",
+      "passed": true
+    },
+    {
+      "case": "stale cloud revision rejected",
+      "passed": true
+    },
+    {
+      "case": "cross-user payload upload rejected",
+      "passed": true
+    },
+    {
+      "case": "nonzero initial revision cannot insert",
+      "passed": true
+    },
+    {
+      "case": "two actual PostgreSQL connections used concurrently",
+      "passed": true
+    },
+    {
+      "case": "two PostgreSQL connections cannot both win initial CAS",
+      "passed": true
+    },
+    {
+      "case": "concurrent first upload persists exactly revision 1",
+      "passed": true
+    },
+    {
+      "case": "reset only legacy test fixtures",
+      "passed": true
+    },
+    {
+      "case": "isolated legacy business fixture created",
+      "passed": true
+    },
+    {
+      "case": "real legacy RPC supplies complete records and token",
+      "passed": true
+    },
+    {
+      "case": "legacy data cannot be overwritten without preview token",
+      "passed": true
+    },
+    {
+      "case": "isolated legacy fixture changed",
+      "passed": true
+    },
+    {
+      "case": "changed legacy content invalidates confirmed preview",
+      "passed": true
+    },
+    {
+      "case": "matching legacy token permits canonical snapshot",
+      "passed": true
+    },
+    {
+      "case": "retired per-record writes rejected after canonical snapshot",
+      "passed": true
+    },
+    {
+      "case": "isolated user suspended for access probe",
+      "passed": true
+    },
+    {
+      "case": "real server denies suspended-user snapshot upload",
+      "passed": true
+    },
+    {
+      "case": "suspended-user snapshot read blocked by RLS",
+      "passed": true
+    },
+    {
+      "case": "isolated user restored after probe",
+      "passed": true
+    }
+  ],
+  "liveRollbackSQL": {
+    "passed": true,
+    "rolledBack": true,
+    "temporaryIdentitiesOnly": true
+  },
+  "livePurge": {
+    "snapshot_rows": 0,
+    "legacy_goal_rows": 0,
+    "receipt_confirms_data_deleted": true
+  },
+  "cleanup": {
+    "temporary_users": 0,
+    "temporary_snapshots": 0,
+    "probe_function_removed": true
+  }
+}

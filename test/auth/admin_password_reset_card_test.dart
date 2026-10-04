@@ -38,6 +38,11 @@ void main() {
           )
           .first,
     );
+    await Scrollable.ensureVisible(
+      tester.element(find.text('用户管理')),
+      alignment: 0.2,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.text('用户管理'));
     await tester.pumpAndSettle();
     expect(find.text('管理员：重置用户密码'), findsOneWidget);

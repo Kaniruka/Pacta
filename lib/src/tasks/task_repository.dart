@@ -66,6 +66,7 @@ class LocalTaskRepository implements TaskRepository {
     required this.database,
     required this.userId,
     required this.remote,
+    this.cloudSyncEnabled = true,
     UserLifecycleAccess? lifecycleAccess,
     DateTime Function()? now,
   }) : lifecycleAccess =
@@ -75,6 +76,7 @@ class LocalTaskRepository implements TaskRepository {
   final PactaDatabase database;
   final String userId;
   final TaskRemoteDataSource remote;
+  final bool cloudSyncEnabled;
   final UserLifecycleAccess lifecycleAccess;
   final DateTime Function() _now;
   final _changes = StreamController<void>.broadcast();
@@ -258,6 +260,7 @@ class LocalTaskRepository implements TaskRepository {
 
   @override
   Future<void> sync() async {
+    if (!cloudSyncEnabled) return;
     if (await lifecycleAccess.isSuspended()) return;
     final snapshot = await remote.pull(userId: userId);
     final localGoals = await _localGoalsById();

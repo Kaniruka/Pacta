@@ -140,6 +140,7 @@ class LocalCalendarRepository implements CalendarRepository {
     required this.userId,
     required this.provider,
     required this.remote,
+    this.cloudSyncEnabled = true,
     UserLifecycleAccess? lifecycleAccess,
     DateTime Function()? now,
   }) : lifecycleAccess =
@@ -150,6 +151,7 @@ class LocalCalendarRepository implements CalendarRepository {
   final String userId;
   final CalendarProvider provider;
   final CalendarRemoteDataSource remote;
+  final bool cloudSyncEnabled;
   final UserLifecycleAccess lifecycleAccess;
   final DateTime Function() _now;
   final _changes = StreamController<void>.broadcast();
@@ -205,7 +207,10 @@ class LocalCalendarRepository implements CalendarRepository {
       throw UnsupportedError('请在 Android 设备上选择系统日历。');
     }
     if (sourceIds.isEmpty) {
-      return const CalendarImportResult(importedOccurrences: 0, synced: true);
+      return CalendarImportResult(
+        importedOccurrences: 0,
+        synced: cloudSyncEnabled,
+      );
     }
     CalendarPermissionState permission;
     try {
@@ -248,7 +253,7 @@ class LocalCalendarRepository implements CalendarRepository {
     });
     await _publish();
 
-    var synced = true;
+    var synced = cloudSyncEnabled;
     try {
       await sync();
     } catch (_) {
@@ -270,11 +275,9 @@ class LocalCalendarRepository implements CalendarRepository {
     return CalendarImportResult(
       importedOccurrences: importedCount,
       synced: synced,
-      isStale:
-          !synced ||
-          currentSources.any(
-            (source) => sourceIds.contains(source.id) && source.isStale,
-          ),
+      isStale: currentSources.any(
+        (source) => sourceIds.contains(source.id) && source.isStale,
+      ),
     );
   }
 
@@ -291,6 +294,12 @@ class LocalCalendarRepository implements CalendarRepository {
         if (sourceIds.contains(source.sourceId)) source.sourceId,
     };
     if (selectedIds.isEmpty) return;
+
+    if (!cloudSyncEnabled) {
+      await database.transaction(() => _deleteLocalSourceRows(selectedIds));
+      await _publish();
+      return;
+    }
 
     await database.transaction(() async {
       for (final sourceId in selectedIds) {
@@ -383,6 +392,11 @@ class LocalCalendarRepository implements CalendarRepository {
   @override
   Future<void> sync() async {
     if (await lifecycleAccess.isSuspended()) return;
+    if (!cloudSyncEnabled) {
+      if (provider.isSupported) await _refreshSelectedSources();
+      await _publish();
+      return;
+    }
     final refreshedEvents = provider.isSupported
         ? await _refreshSelectedSources()
         : <String, List<CalendarEventOccurrence>>{};

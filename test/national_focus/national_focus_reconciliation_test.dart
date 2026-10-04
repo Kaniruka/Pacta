@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -260,7 +261,7 @@ void main() {
     expect(selectedCard.action, '逐项检查');
   });
 
-  test('分支裁决保留重叠时钟核对状态，最后一项核对完成后才解除', () async {
+  test('本机时间跳变不增加分支裁决的待核对项', () async {
     final card = await firstDevice.createCard(
       const NationalFocusCardDraft(triggerCondition: '开始拉伸', action: '伸展三分钟'),
     );
@@ -269,13 +270,11 @@ void main() {
     await firstDevice.sync();
     await secondDevice.dispose();
     var secondWallTime = now;
-    var secondMonotonicTime = Duration.zero;
     secondDevice = LocalNationalFocusRepository(
       database: secondDatabase,
       userId: 'ticket-19-user',
       remote: remote,
       now: () => secondWallTime,
-      monotonicNow: () => secondMonotonicTime,
     );
     await secondDevice.sync();
 
@@ -285,7 +284,6 @@ void main() {
     await secondDevice.sync();
 
     secondWallTime = secondWallTime.add(const Duration(hours: 2));
-    secondMonotonicTime += const Duration(seconds: 1);
     await secondDevice.settleDueCheckpoints();
     var reviewState = await secondDevice.getNationalFocusReviewState();
     final reconciliation = reviewState.reconciliationCases.single;
@@ -296,24 +294,20 @@ void main() {
         ),
       ),
     );
-    final clockReview = reviewState.clockReviewCases.single;
+    expect(reviewState.clockReviewCases, isEmpty);
 
     await secondDevice.resolveNationalFocusReconciliation(
       caseId: reconciliation.id,
       selectedSourceId: selectedBranch.sourceId,
     );
-    expect((await secondDevice.getCard(card.id)).hasPendingReview, isTrue);
-
-    await secondDevice.resolveNationalFocusClockReview(clockReview.id);
     expect((await secondDevice.getCard(card.id)).hasPendingReview, isFalse);
     reviewState = await secondDevice.getNationalFocusReviewState();
     expect(reviewState.reconciliationCases, isEmpty);
     expect(reviewState.clockReviewCases, isEmpty);
   });
 
-  test('时钟前跳只结算连续计时确认的时间并允许暂缓', () async {
+  test('本机时间前跳按当前时间结算且不生成国策时钟待核对', () async {
     var wallTime = DateTime.utc(2026, 9, 20, 19, 59);
-    var monotonicTime = Duration.zero;
     final card = await firstDevice.createCard(
       const NationalFocusCardDraft(triggerCondition: '开始运动', action: '活动五分钟'),
     );
@@ -328,56 +322,213 @@ void main() {
       userId: 'ticket-19-user',
       remote: remote,
       now: () => wallTime,
-      monotonicNow: () => monotonicTime,
     );
     await firstDevice.settleDueCheckpoints();
     wallTime = wallTime.add(const Duration(minutes: 2));
-    monotonicTime += const Duration(minutes: 2);
     await firstDevice.settleDueCheckpoints();
     expect((await firstDevice.getCard(card.id)).successfulDays, 1);
 
-    wallTime = wallTime.add(const Duration(hours: 2));
-    monotonicTime += const Duration(seconds: 1);
+    wallTime = wallTime.add(const Duration(hours: 26));
     await firstDevice.settleDueCheckpoints();
-
-    var reviewState = await firstDevice.getNationalFocusReviewState();
-    expect(reviewState.clockReviewCases, hasLength(1));
-    final clockReview = reviewState.clockReviewCases.single;
-    expect(clockReview.direction, NationalFocusClockChangeDirection.forward);
-    expect((await firstDevice.getCard(card.id)).hasPendingReview, isTrue);
-    expect(await firstDevice.getFailures(cardId: card.id), isEmpty);
-
-    await firstDevice.deferNationalFocusClockReview(clockReview.id);
-    reviewState = await firstDevice.getNationalFocusReviewState();
-    expect(reviewState.clockReviewCases.single.isDeferred, isTrue);
-    expect((await firstDevice.getCard(card.id)).successfulDays, 1);
-    expect(await firstDevice.getFailures(cardId: card.id), isEmpty);
-
-    await firstDevice.resolveNationalFocusClockReview(clockReview.id);
-    reviewState = await firstDevice.getNationalFocusReviewState();
-    expect(reviewState.clockReviewCases, isEmpty);
-    expect(reviewState.clockReviewHistory, hasLength(1));
+    expect(
+      (await firstDevice.getNationalFocusReviewState()).clockReviewCases,
+      isEmpty,
+    );
     expect((await firstDevice.getCard(card.id)).hasPendingReview, isFalse);
-    expect((await firstDevice.getCard(card.id)).successfulDays, 1);
-    expect(await firstDevice.getFailures(cardId: card.id), isEmpty);
+    expect(await firstDevice.getFailures(cardId: card.id), hasLength(1));
     await firstDevice.sync();
     await secondDevice.sync();
-    final syncedReview = await secondDevice.getNationalFocusReviewState();
-    expect(syncedReview.clockReviewCases, isEmpty);
-    expect(syncedReview.clockReviewHistory, hasLength(1));
-    expect((await secondDevice.getCard(card.id)).hasPendingReview, isFalse);
+    expect(
+      (await secondDevice.getNationalFocusReviewState()).clockReviewCases,
+      isEmpty,
+    );
+  });
 
+  test('升级旧时钟核对后清除仅时钟待核对并保留分支冲突与来源', () async {
+    final clockOnly = await firstDevice.createCard(
+      const NationalFocusCardDraft(triggerCondition: '仅时钟', action: '行动'),
+    );
+    final conflicted = await firstDevice.createCard(
+      const NationalFocusCardDraft(triggerCondition: '分支冲突', action: '行动'),
+    );
+    await firstDevice.placeCard(cardId: clockOnly.id, parentId: null);
+    await firstDevice.placeCard(cardId: conflicted.id, parentId: null);
+    await firstDevice.lightCard(clockOnly.id);
+    await firstDevice.lightCard(conflicted.id);
+    await firstDevice.settleDueCheckpoints();
+    final sourceRows = await firstDatabase
+        .select(firstDatabase.focusSyncSources)
+        .get();
+    final source = sourceRows.last;
+    final payload = Map<String, dynamic>.from(
+      jsonDecode(source.payload) as Map,
+    );
+    payload['nationalFocusClockReviewCases'] = [
+      {
+        'id': 'legacy-clock',
+        'deviceId': 'old-device',
+        'direction': 'forward',
+        'detectedAt': now.toIso8601String(),
+        'previousWallTime': now.toIso8601String(),
+        'observedWallTime': now.toIso8601String(),
+        'reliableThroughTime': now.toIso8601String(),
+        'estimatedElapsedSeconds': 1,
+        'cardIds': [clockOnly.id, conflicted.id],
+        'isDeferred': true,
+      },
+    ];
+    payload['nationalFocusReconciliationCases'] = [
+      {
+        'id': 'legacy-conflict',
+        'createdAt': now.toIso8601String(),
+        'cardIds': [conflicted.id],
+        'cardNames': {conflicted.id: '分支冲突'},
+        'options': [],
+        'isDeferred': false,
+      },
+    ];
+    await firstDatabase.customStatement(
+      'UPDATE focus_sync_sources SET payload = ? WHERE source_id = ?',
+      [jsonEncode(payload), source.sourceId],
+    );
+    await firstDatabase.customStatement(
+      "UPDATE local_national_focus_cards SET review_disposition = 'pending_review' WHERE id IN (?, ?)",
+      [clockOnly.id, conflicted.id],
+    );
     await firstDevice.dispose();
+    await firstDatabase.close();
+    firstDatabase = PactaDatabase(
+      NativeDatabase(File('${directory.path}/first.sqlite')),
+    );
     firstDevice = LocalNationalFocusRepository(
       database: firstDatabase,
       userId: 'ticket-19-user',
       remote: remote,
-      now: () => wallTime,
-      monotonicNow: () => monotonicTime,
+      now: () => now,
+      cloudSyncEnabled: false,
     );
-    await firstDevice.settleDueCheckpoints();
-    expect(await firstDevice.getFailures(cardId: card.id), isEmpty);
-    expect((await firstDevice.getCard(card.id)).successfulDays, 1);
+    final state = await firstDevice.getNationalFocusReviewState();
+    expect(state.clockReviewCases, isEmpty);
+    expect(state.clockReviewHistory, isEmpty);
+    expect(state.reconciliationCases, hasLength(1));
+    expect((await firstDevice.getCard(clockOnly.id)).hasPendingReview, isFalse);
+    expect((await firstDevice.getCard(conflicted.id)).hasPendingReview, isTrue);
+    final evidence = await firstDatabase
+        .select(firstDatabase.focusSyncSources)
+        .get();
+    expect(evidence.any((row) => row.payload.contains('legacy-clock')), isTrue);
+    expect(
+      evidence.any((row) => row.payload.contains('use_local_clock')),
+      isTrue,
+    );
+
+    await firstDevice.dispose();
+    await firstDatabase.close();
+    firstDatabase = PactaDatabase(
+      NativeDatabase(File('${directory.path}/first.sqlite')),
+    );
+    firstDevice = LocalNationalFocusRepository(
+      database: firstDatabase,
+      userId: 'ticket-19-user',
+      remote: remote,
+      now: () => now,
+      cloudSyncEnabled: false,
+    );
+    expect((await firstDevice.getCard(clockOnly.id)).hasPendingReview, isFalse);
+    expect((await firstDevice.getCard(conflicted.id)).hasPendingReview, isTrue);
+    expect(
+      (await firstDevice.getNationalFocusReviewState()).clockReviewCases,
+      isEmpty,
+    );
+  });
+
+  test('临时数据库从旧来源恢复投影不结算、不增来源且不访问远端', () async {
+    final card = await firstDevice.createCard(
+      const NationalFocusCardDraft(triggerCondition: '旧国策', action: '行动'),
+    );
+    await firstDevice.placeCard(cardId: card.id, parentId: null);
+    await firstDevice.lightCard(card.id);
+    final oldSources = await firstDatabase
+        .select(firstDatabase.focusSyncSources)
+        .get();
+    final originalMaintenance =
+        (await firstDatabase
+                .select(firstDatabase.localNationalFocusMaintenance)
+                .get())
+            .single
+            .lastSettledCheckpointAt;
+    for (final source in oldSources) {
+      await secondDatabase.customStatement(
+        'INSERT INTO focus_sync_sources (user_id, source_id, device_id, entity_type, entity_id, parent_source_id, parent_source_ids, occurred_at, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [
+          source.userId,
+          source.sourceId,
+          source.deviceId,
+          source.entityType,
+          source.entityId,
+          source.parentSourceId,
+          source.parentSourceIds,
+          source.occurredAt.millisecondsSinceEpoch ~/ 1000,
+          source.payload,
+        ],
+      );
+    }
+    final spy = _CountingNationalFocusRemote();
+    await secondDevice.dispose();
+    now = now.add(const Duration(days: 30));
+    secondDevice = LocalNationalFocusRepository(
+      database: secondDatabase,
+      userId: 'ticket-19-user',
+      remote: spy,
+      now: () => now,
+      cloudSyncEnabled: false,
+    );
+    await secondDevice.restoreLegacyCloudProjection();
+    final restored =
+        (await secondDatabase
+                .select(secondDatabase.localNationalFocusCards)
+                .get())
+            .single;
+    expect(restored.id, card.id);
+    final restoredMaintenance =
+        (await secondDatabase
+                .select(secondDatabase.localNationalFocusMaintenance)
+                .get())
+            .single
+            .lastSettledCheckpointAt;
+    expect(restoredMaintenance, originalMaintenance);
+    final restoredSources = await secondDatabase
+        .select(secondDatabase.focusSyncSources)
+        .get();
+    expect(
+      restoredSources.map((row) => row.sourceId).toSet(),
+      oldSources.map((row) => row.sourceId).toSet(),
+    );
+    expect(spy.pullCount, 0);
+    expect(spy.upsertCount, 0);
+    await expectLater(
+      secondDevice.restoreLegacyCloudProjection(),
+      throwsStateError,
+    );
+  });
+
+  test('关闭国策旧云同步时不读取或写入远端', () async {
+    final spy = _CountingNationalFocusRemote();
+    await firstDevice.dispose();
+    firstDevice = LocalNationalFocusRepository(
+      database: firstDatabase,
+      userId: 'ticket-19-user',
+      remote: spy,
+      now: () => now,
+      cloudSyncEnabled: false,
+    );
+    await firstDevice.createCard(
+      const NationalFocusCardDraft(triggerCondition: '本地任务', action: '行动'),
+    );
+    await firstDevice.sync();
+    expect(spy.pullCount, 0);
+    expect(spy.upsertCount, 0);
+    expect(await firstDevice.getLibraryCards(), hasLength(1));
   });
 
   test('裁决采用分支时恢复完整熄灭原因并将结果同步到两个端点', () async {
@@ -427,4 +578,23 @@ void main() {
     expect(result.acceptedSourceIds, contains(selectedBranch.sourceId));
     expect(result.retainedSourceIds.length, greaterThan(1));
   });
+}
+
+class _CountingNationalFocusRemote implements NationalFocusRemoteDataSource {
+  int pullCount = 0;
+  int upsertCount = 0;
+
+  @override
+  Future<List<NationalFocusSyncSource>> pull({required String userId}) async {
+    pullCount++;
+    return const [];
+  }
+
+  @override
+  Future<void> upsertSources({
+    required String userId,
+    required List<NationalFocusSyncSource> sources,
+  }) async {
+    upsertCount++;
+  }
 }

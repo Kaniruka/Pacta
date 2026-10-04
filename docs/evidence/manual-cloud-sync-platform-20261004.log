@@ -1,0 +1,83 @@
+Filtered platform evidence: historical failures are retained separately from subsequent passing runs. No credentials, account values, or session URLs included.
+
+Evidence source: manual-sync-android-evidence.log
+I/flutter ( 4165): 00:00 +0: My offers explicit cloud upload and download through the real app shell
+I/flutter ( 4165): 00:08 +0: My offers explicit cloud upload and download through the real app shell [E]
+I/flutter ( 4165):   The test description was: My offers explicit cloud upload and download through the real app shell
+I/flutter ( 4423): 00:00 +0: My offers explicit cloud upload and download through the real app shell
+I/flutter ( 4423): 00:08 +0: My offers explicit cloud upload and download through the real app shell [E]
+I/flutter ( 4423):   The test description was: My offers explicit cloud upload and download through the real app shell
+I/flutter ( 4655): 00:00 +0: T20 Android Calendar Provider grants read-only access and imports selected sources
+I/flutter ( 4655):   T20 Android Calendar Provider grants read-only access and imports selected sources
+I/flutter ( 4655): 00:00 +0: T20 Android Calendar Provider grants read-only access and imports selected sources [E]
+I/flutter ( 4655):   The test description was: T20 Android Calendar Provider grants read-only access and imports selected sources
+I/flutter ( 4864): T21_PERMISSION_SEED_COMPLETE
+I/flutter ( 4864): 01:01 +2: All tests passed!
+I/flutter ( 5100): 00:00 +2: All tests passed!
+I/flutter ( 5407): 00:00 +0: T20 Android Calendar Provider grants read-only access and imports selected sources
+I/flutter ( 5407): 00:01 +2: All tests passed!
+I/flutter ( 5592): T22_PERMISSION_DENIED_LOCAL_FOCUS_FLOW_COMPLETED
+I/flutter ( 5592): 00:01 +2: All tests passed!
+I/flutter ( 5722): T22_APPOINTMENT_STATUS_AND_TRANSITIONS_SCHEDULED
+I/flutter ( 5722): T22_APPOINTMENT_TRANSITION_DELIVERED_AND_SETTLED_ONCE
+I/flutter ( 5722): T22_SESSION_END_DELIVERED_WITHOUT_TRANSITION_REPLAY
+I/flutter ( 5722): T22_SEQUENTIAL_FOCUS_EVENTS_REMAIN_DISTINCT
+I/flutter ( 5722): T22_TAPPED_SCHEDULED_EVENTS_NOT_REPLAYED
+I/flutter ( 5722): 00:40 +2: All tests passed!
+I/flutter ( 5885): 00:03 +2: All tests passed!
+I/flutter ( 6039): 00:00 +0: My offers explicit cloud upload and download through the real app shell
+I/flutter ( 6039): 00:08 +2: All tests passed!
+I/flutter ( 6183): REAL_MANUAL_CLOUD_PHASE_PASSED android-upload
+I/flutter ( 6183): 00:10 +2: All tests passed!
+I/flutter ( 6429): REAL_MANUAL_CLOUD_PHASE_PASSED android-download
+I/flutter ( 6429): 00:11 +2: All tests passed!
+
+Evidence source: pacta-android-manual-cloud-direct.log
+00:00 +0: My offers explicit cloud upload and download through the real app shell
+02:01 +1: All tests passed!
+
+Evidence source: pacta-windows-manual-cloud-ui.log
+00:00 +0: My offers explicit cloud upload and download through the real app shell
+00:06 +2: All tests passed!
+All tests passed.
+
+Evidence source: pacta-windows-real-cloud.log
+REAL_MANUAL_CLOUD_PHASE_PASSED windows-roundtrip
+00:08 +2: All tests passed!
+All tests passed.
+
+Evidence source: pacta-windows-cloud-conflict.log
+REAL_HTTP409_AND_OFFLINE_RECOVERY_PASSED
+00:04 +2 ~1: All tests passed!
+All tests passed.
+
+Evidence source: pacta-windows-native-notifications.log
+T22_WINDOWS_TRAY_STATUS_UPDATED
+T22_WINDOWS_TRANSITION_AND_END_NOTIFICATIONS_SENT
+00:40 +2: All tests passed!
+All tests passed.
+
+Evidence source: pacta-windows-national-reminder.log
+00:00 +2: All tests passed!
+All tests passed.
+
+Evidence source: manual-offline-recovery-20261004123808offline.log
+I/flutter ( 6901): MANUAL_OFFLINE_READY:20261004123808offline
+PASS MANUAL_OFFLINE_READY:20261004123808offline
+I/flutter ( 6901): MANUAL_OFFLINE_NETWORK_CONFIRMED:20261004123808offline
+I/flutter ( 6901): MANUAL_OFFLINE_LOCAL_EDITS_SAVED:20261004123808offline
+PASS MANUAL_OFFLINE_NETWORK_CONFIRMED:20261004123808offline
+PASS MANUAL_OFFLINE_LOCAL_EDITS_SAVED:20261004123808offline
+I/flutter ( 6901): MANUAL_OFFLINE_ONLINE_CONFIRMED:20261004123808offline
+I/flutter ( 6901): MANUAL_OFFLINE_WAITING_FOR_RESUME:20261004123808offline
+PASS MANUAL_OFFLINE_ONLINE_CONFIRMED:20261004123808offline
+PASS MANUAL_OFFLINE_WAITING_FOR_RESUME:20261004123808offline
+I/flutter ( 6901): MANUAL_OFFLINE_RECOVERY_VERIFIED:20261004123808offline
+I/flutter ( 6901): MANUAL_OFFLINE_SEED_PHASE_COMPLETE:20261004123808offline
+I/flutter ( 6901): 00:13 +2: All tests passed!
+All tests passed.
+PASS MANUAL_OFFLINE_RECOVERY_VERIFIED:20261004123808offline
+PASS MANUAL_OFFLINE_SEED_PHASE_COMPLETE:20261004123808offline
+I/flutter ( 7329): MANUAL_OFFLINE_RESTART_VERIFIED:20261004123808offline
+I/flutter ( 7329): 00:05 +2: All tests passed!
+All tests passed.

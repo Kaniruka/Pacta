@@ -122,3 +122,42 @@ rolls back:
 ```powershell
 supabase db query --linked -f supabase/tests/user_purge_access.sql
 ```
+
+## Manual whole-data cloud sync — 2026-10-04
+
+Apply `202610040001_cloud_business_snapshots.sql` and
+`202610040002_cloud_snapshot_conflict_http_status.sql` before running the new
+client's manual cloud sync. The client uses `cloud_business_snapshots` to
+inspect/download the current user's whole business snapshot and
+`save_cloud_business_snapshot` to upload with an expected revision. A stale
+revision fails without replacing the cloud copy. Startup, foreground recovery,
+connectivity restoration, and ordinary edits no longer transfer business data.
+
+The table is private to its owning authenticated User; upload authorization
+checks the current server-controlled lifecycle state. Snapshots exclude local
+device settings, authentication, and administrator-controlled lifecycle state.
+The new migration also makes explicit purge remove the snapshot.
+
+Run `supabase/tests/cloud_business_snapshots.sql` in an isolated test
+project after applying the migration. Client tests do not prove deployed RLS
+or a successful Android/Windows transfer. Migration preparation is distinct
+from applying it to a live project.
+
+If an existing User has legacy cloud records but no whole-data snapshot, the
+manual preview reads a single legacy-record RPC and converts those records in
+an isolated temporary local store. The UI marks original source/upload
+metadata as unknown. A content token prevents uploading over a legacy preview
+that changed. After the first whole-data snapshot exists, legacy business-table
+write guards reject older clients; upgrade all devices. Legacy rows are retained
+for historical conversion evidence and removed by explicit purge.
+
+The follow-up migration returns business-version conflicts as `PT409`
+(HTTP 409), and retired legacy writes as `PT410` (HTTP 410). Do not raise
+`40001` for an expected stale preview: PostgREST treats it as a transient
+serialization failure and retries the transaction. See the
+[Supabase troubleshooting note](https://supabase.com/docs/guides/troubleshooting/high-cpu-and-infinite-transaction-retries-when-using-custom-error-codes-in-rpc-functions-77326b).
+
+Both snapshot migrations were applied to the configured development project
+on 2026-10-04. Live acceptance used isolated temporary identities, not normal
+users' data. Full results are in
+[the validation record](../docs/manual-cloud-sync-validation-20261004.md).

@@ -288,4 +288,60 @@ void main() {
     expect(remote.goals.single.isDeleted, isTrue);
     expect(remote.tasks.single.isDeleted, isTrue);
   });
+
+  test('关闭云同步时任务仍保存在本机且不访问远端', () async {
+    final remote = _CountingTaskRemote();
+    final localOnlyRepository = LocalTaskRepository(
+      database: database,
+      userId: 'user-a',
+      remote: remote,
+      cloudSyncEnabled: false,
+      now: () => now,
+    );
+    addTearDown(localOnlyRepository.dispose);
+
+    final goal = await localOnlyRepository.createGoal(
+      const GoalDraft(
+        title: '本机目标',
+        classification: TaskClassification.regular,
+      ),
+    );
+    await localOnlyRepository.createTask(
+      goal.id,
+      const TaskDraft(title: '本机任务', classification: null),
+    );
+    await localOnlyRepository.sync();
+
+    expect(
+      (await localOnlyRepository.getGoals()).single.tasks.single.title,
+      '本机任务',
+    );
+    expect(remote.calls, 0);
+  });
+}
+
+class _CountingTaskRemote implements TaskRemoteDataSource {
+  int calls = 0;
+
+  @override
+  Future<TaskRemoteSnapshot> pull({required String userId}) async {
+    calls++;
+    return const TaskRemoteSnapshot();
+  }
+
+  @override
+  Future<void> upsertGoals({
+    required String userId,
+    required List<Goal> goals,
+  }) async {
+    calls++;
+  }
+
+  @override
+  Future<void> upsertTasks({
+    required String userId,
+    required List<Task> tasks,
+  }) async {
+    calls++;
+  }
 }

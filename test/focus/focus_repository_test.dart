@@ -56,6 +56,26 @@ void main() {
     );
   }
 
+  test('关闭旧云同步时本机记录不会上传或拉取远端记录', () async {
+    await focusRepository.dispose();
+    focusRepository = LocalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      remote: focusRemote,
+      cloudSyncEnabled: false,
+      now: () => now,
+    );
+    final task = await createTask('本机专注');
+    await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 1),
+    );
+    await focusRepository.sync();
+    expect((await focusRemote.pull(userId: 'user-a')).sessions, isEmpty);
+    expect(await focusRepository.getSessions(), hasLength(1));
+  });
+
   test('倒计时归零只结算一次节点、链记录和任务有效时间', () async {
     final task = await createTask('写发布说明', estimatedMinutes: 1);
     final session = await focusRepository.startSession(

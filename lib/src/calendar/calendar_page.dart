@@ -229,11 +229,9 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       setState(() {
         _state = refreshed;
         _working = false;
-        _message = !result.synced
-            ? '本机缓存已保留，云端同步暂未成功；恢复连接后会重试。'
-            : result.isStale
-            ? '日历来源暂未更新，已有缓存已保留。'
-            : '已导入 ${result.importedOccurrences} 个日历发生次并同步。';
+        _message = result.isStale
+            ? '本机日历来源暂未更新，已有缓存已保留。'
+            : '已导入 ${result.importedOccurrences} 个日历发生次。跨设备共享请前往“我的”上传或下载。';
       });
     } catch (_) {
       if (!mounted) return;
@@ -322,7 +320,9 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       setState(() {
         _state = state;
         _working = false;
-        _message = state.hasPendingUpdates ? '部分日历数据尚未更新，已有缓存已保留。' : '日历块已同步。';
+        _message = state.hasPendingUpdates
+            ? '部分本机日历尚未更新，已有缓存已保留。'
+            : '本机日历已刷新。跨设备共享请前往“我的”上传或下载。';
       });
     } catch (_) {
       if (!mounted) return;
@@ -330,7 +330,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       setState(() {
         _state = state;
         _working = false;
-        _message = '云端暂时不可用，已有缓存已保留并标记未更新。';
+        _message = '本机日历暂时无法更新，已有缓存已保留。';
       });
     }
   }
@@ -338,14 +338,14 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
   Future<void> _removeSource(CalendarSource source) => _removeSources(
     {source.id},
     title: '取消导入日历？',
-    content: '将移除“${source.displayName}”及其日历块，并同步到其他设备。',
+    content: '将从本机移除“${source.displayName}”及其日历块。跨设备共享请前往“我的”上传或下载。',
     confirmLabel: '取消导入',
   );
 
   Future<void> _confirmPermissionRevocation() => _removeSources(
     _state!.importedSourceIds,
     title: '移除所有已导入日历？',
-    content: '设备日历权限已关闭。确认后会移除缓存的日历来源和日历块，并在云端可用时同步到其他设备。目标、任务和历史记录不受影响。',
+    content: '设备日历权限已关闭。确认后会从本机移除缓存的日历来源和日历块。跨设备共享请前往“我的”上传或下载。目标、任务和历史记录不受影响。',
     confirmLabel: '确认移除',
   );
 
@@ -386,8 +386,8 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
         _state = state;
         _working = false;
         _message = state.hasPendingUpdates
-            ? '已在本机移除；云端更新待连接后同步。'
-            : '日历来源已移除并同步。';
+            ? '已在本机移除来源；部分日历缓存仍待刷新。'
+            : '日历来源已从本机移除。跨设备共享请前往“我的”上传或下载。';
       });
     } catch (_) {
       final state = await widget.repository.loadImportState();
@@ -395,7 +395,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       setState(() {
         _state = state;
         _working = false;
-        _message = '已在本机移除；云端暂未更新，连接恢复后会重试。';
+        _message = '本机移除未完成，请重试。';
       });
     }
   }
@@ -418,7 +418,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
                   child: Padding(
                     padding: EdgeInsets.all(16),
                     child: Text(
-                      '日历仅作为只读规划参考。全天活动保留原始日期；空闲活动不计入占用，日历安排不会限制专注启动。',
+                      '日历仅作为只读规划参考。全天活动保留原始日期；空闲活动不计入占用，日历安排不会限制专注启动。跨设备共享日历数据请前往“我的”上传或下载。',
                     ),
                   ),
                 ),
@@ -430,8 +430,8 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
                   Card(
                     child: ListTile(
                       leading: Icon(Icons.sync_outlined),
-                      title: Text('从 Android 同步日历块'),
-                      subtitle: Text('Windows 只显示已选择并同步的日历来源。'),
+                      title: Text('本机已保存的日历块'),
+                      subtitle: Text('跨设备上传或下载完整数据请前往“我的”。'),
                     ),
                   ),
                 if (state?.hasPendingUpdates == true)
@@ -440,9 +440,9 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
                       liveRegion: true,
                       label: '部分日历数据尚未更新，已有缓存已保留。',
                       child: const ListTile(
-                        leading: Icon(Icons.cloud_off_outlined),
+                        leading: Icon(Icons.sync_problem_outlined),
                         title: Text('日历数据未更新'),
-                        subtitle: Text('已有缓存已保留；连接或权限恢复后可以重试。'),
+                        subtitle: Text('已有缓存已保留；检查本机日历权限后可以重试刷新。'),
                       ),
                     ),
                   ),
@@ -456,7 +456,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
                         leading: const Icon(Icons.event_available_outlined),
                         title: Text(source.displayName),
                         subtitle: Text(
-                          '${source.timeZoneId} · ${source.isStale ? '未更新' : '已同步'}',
+                          '${source.timeZoneId} · ${source.isStale ? '未更新' : '已更新'}',
                         ),
                         trailing: widget.isAndroid
                             ? IconButton(
@@ -498,7 +498,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
                 OutlinedButton.icon(
                   onPressed: _working ? null : _sync,
                   icon: const Icon(Icons.sync),
-                  label: const Text('立即同步'),
+                  label: const Text('刷新本机日历'),
                 ),
               ],
             ),
@@ -523,7 +523,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
           title: Text(hasStaleSource ? '日历来源未更新' : '已允许读取日历'),
           subtitle: Text(
             hasStaleSource
-                ? '读取或云端同步暂未成功，Pacta 已保留已有缓存。'
+                ? '本机日历读取暂未成功，Pacta 已保留已有缓存。'
                 : 'Pacta 只读取你选择的日历，不会修改源日历。',
           ),
         ),

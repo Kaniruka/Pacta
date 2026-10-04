@@ -51,9 +51,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('从 Android 同步日历块'), findsOneWidget);
+    expect(find.text('本机已保存的日历块'), findsOneWidget);
     expect(find.text('已同步日历'), findsOneWidget);
-    expect(find.text('立即同步'), findsOneWidget);
+    expect(find.text('刷新本机日历'), findsOneWidget);
   });
 
   testWidgets('Android exposes a retry action for calendar reconciliation', (
@@ -77,7 +77,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('立即同步'), findsOneWidget);
+    expect(find.text('刷新本机日历'), findsOneWidget);
     expect(find.text('选择其他日历'), findsOneWidget);
   });
 
@@ -322,7 +322,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('权限撤销日历'), findsNothing);
-    expect(find.text('日历来源已移除并同步。'), findsOneWidget);
+    expect(find.textContaining('日历来源已从本机移除'), findsOneWidget);
     expect((await remote.pull(userId: 'user-a')).events, isEmpty);
   });
 }

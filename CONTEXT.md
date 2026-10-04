@@ -16,9 +16,21 @@ _Avoid_: Timer, pomodoro
 The settled result of a Focus Session: completed or failed, with completed records distinguishing normal countdown completion from exception-approved early termination. “Abandon this Focus Session” is a user action that settles failure after confirmation, not an independent outcome or a temporary first-version distinction.
 _Avoid_: Abandoned outcome, success/failure boolean
 
+**Cloud Data Snapshot (云端数据快照)**:
+A complete copy of one User's app-owned business records, with its originating device and data update time. It is the whole-data alternative to that device's Local Data Snapshot, not a collection of changes to merge.
+_Avoid_: Merged history, synchronization queue
+
+**Local Data Snapshot (本地数据快照)**:
+The complete business records currently held for one User on one device. Device-specific settings, authentication, and administrator-controlled user status are outside this snapshot.
+_Avoid_: Device settings backup
+
+**Manual Cloud Sync (手动云同步)**:
+The user's explicit choice to replace their Cloud Data Snapshot with their Local Data Snapshot, or replace their Local Data Snapshot with their Cloud Data Snapshot. Choosing one whole snapshot discards the other snapshot's unique business records rather than reconciling individual records.
+_Avoid_: Automatic merge, automatic cloud sync, record-by-record reconciliation
+
 **Focus Session Reconciliation (专注记录核对)**:
-The user's review of conflicting multi-device focus records, separating configuration selection, outcome confirmation, and effective-time deduplication. Original sources remain available, disputed contributions and affected records are marked pending review, and ongoing work remains usable.
-_Avoid_: Automatic outcome overwrite
+The former review of conflicting multi-device Focus Session records. Historical review results may remain in snapshots; current Manual Cloud Sync chooses a whole snapshot instead of creating new cross-device review cases.
+_Avoid_: Manual Cloud Sync
 
 **Duplicate Focus Record (重复专注记录)**:
 A retained source record marked as a duplicate during Focus Session Reconciliation rather than a separate accepted focus attempt. It contributes no additional official progress or Focus Node and is not a failed Session that resets a chain.

@@ -15,9 +15,3 @@
 - 修改 Dart 代码后，对改动文件运行 `dart format`，再运行 `flutter analyze` 和相关 `flutter test`；影响跨模块行为时运行完整 `flutter test`。修改 Drift 表结构后，按需运行 `dart run build_runner build --delete-conflicting-outputs`，检查生成文件差异。
 - 修改同步、身份、权限或数据库行为时，核查离线恢复、重复同步、跨用户隔离和 RLS 影响；在隔离测试项目验证相关 SQL 或真实服务边界。Android/Windows 原生权限、通知和日历行为需要对应平台证据，不能仅以单元测试代替。
 - 客户端只使用可公开的 Supabase URL 和 publishable/anon key。将服务端密钥、管理员凭据与真实测试账号信息留在受保护的环境中；提交前检查改动中没有这些值。
-
-## 命令与文件操作
-
-- 简单系统命令可以使用 PowerShell；批量文件、中文编码、复杂路径或大量文本处理优先编写一次性 Python 脚本。
-- 同一种执行方式连续失败两次后立即停止重试；先说明失败原因，再选择其他方案，避免反复调整路径、引号和转义盲目执行。
-- 文件操作前确认目标路径；完成后检查文件内容、`git diff` 和相关验证结果。
