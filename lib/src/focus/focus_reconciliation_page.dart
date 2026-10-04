@@ -98,7 +98,7 @@ class _ReconciliationList extends StatelessWidget {
         return Align(
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 880),
+            constraints: const BoxConstraints(maxWidth: 800),
             child: ListView(
               padding: EdgeInsets.fromLTRB(
                 horizontalPadding,

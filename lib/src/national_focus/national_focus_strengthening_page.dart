@@ -122,7 +122,7 @@ class _NationalFocusStrengtheningPageState
       appBar: AppBar(title: const Text('国策强化要求')),
       body: Center(
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 960),
+          constraints: const BoxConstraints(maxWidth: 800),
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
             children: [
@@ -162,13 +162,14 @@ class _NationalFocusStrengtheningPageState
                 ],
               ),
               const SizedBox(height: 8),
-              Row(
+              Wrap(
+                spacing: 16,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Expanded(
-                    child: Text(
-                      '强化等级 $levelCount/$maxNationalFocusStrengtheningLevels',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
+                  Text(
+                    '强化等级 $levelCount/$maxNationalFocusStrengtheningLevels',
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
                   FilledButton.icon(
                     onPressed:
@@ -352,7 +353,7 @@ class _StrengtheningLevelEditorPageState
             padding: const EdgeInsets.only(right: 12),
             child: FilledButton.tonal(
               onPressed: _save,
-              child: const Text('保存强化等级'),
+              child: const Text('保存'),
             ),
           ),
         ],
@@ -361,7 +362,7 @@ class _StrengtheningLevelEditorPageState
         key: _formKey,
         child: Center(
           child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 960),
+            constraints: const BoxConstraints(maxWidth: 800),
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
               children: [

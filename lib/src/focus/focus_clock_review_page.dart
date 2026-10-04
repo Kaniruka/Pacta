@@ -76,11 +76,21 @@ class _FocusClockReviewPageState extends State<FocusClockReviewPage> {
         if (cases.isEmpty) {
           return const Center(child: Text('当前没有待核对的设备时间记录'));
         }
-        return ListView.separated(
-          padding: const EdgeInsets.all(16),
-          itemCount: cases.length,
-          separatorBuilder: (context, index) => const SizedBox(height: 12),
-          itemBuilder: (context, index) => _reviewCard(context, cases[index]),
+        return SafeArea(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: ListView.separated(
+                padding: const EdgeInsets.all(16),
+                itemCount: cases.length,
+                separatorBuilder: (context, index) =>
+                    const SizedBox(height: 12),
+                itemBuilder: (context, index) =>
+                    _reviewCard(context, cases[index]),
+              ),
+            ),
+          ),
         );
       },
     ),

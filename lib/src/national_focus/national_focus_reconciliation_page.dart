@@ -105,73 +105,85 @@ class _NationalFocusReconciliationPageState
         if (state == null) {
           return const Center(child: CircularProgressIndicator());
         }
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-          children: [
-            Text(
-              '完整操作分支会一并采用。未裁决的节点保留待核对状态，不会被当作成功或失败。',
-              style: Theme.of(context).textTheme.bodyMedium,
+        return SafeArea(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                children: [
+                  Text(
+                    '完整操作分支会一并采用。未裁决的节点保留待核对状态，不会被当作成功或失败。',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 12),
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        _error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  if (state.reconciliationCases.isNotEmpty) ...[
+                    _sectionHeading(context, '真实分支冲突'),
+                    for (final review in state.reconciliationCases)
+                      _reconciliationCard(context, review),
+                  ],
+                  if (state.clockReviewCases.isNotEmpty) ...[
+                    _sectionHeading(context, '时钟异常'),
+                    for (final review in state.clockReviewCases)
+                      _clockReviewCard(context, review),
+                  ],
+                  if (state.reconciliationHistory.isNotEmpty ||
+                      state.clockReviewHistory.isNotEmpty) ...[
+                    _sectionHeading(context, '已完成的核对'),
+                    for (final result in state.reconciliationHistory.reversed)
+                      Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.account_tree_outlined),
+                          title: Text('已裁决 ${result.cardIds.length} 个节点的分支'),
+                          subtitle: Text(
+                            '${_dateTime(result.resolvedAt)} · '
+                            '采用 ${result.acceptedSourceIds.length} 条来源，'
+                            '保留 ${result.retainedSourceIds.length} 条来源记录',
+                          ),
+                        ),
+                      ),
+                    for (final review in state.clockReviewHistory.reversed)
+                      Card(
+                        child: ListTile(
+                          leading: const Icon(Icons.schedule_outlined),
+                          title: Text(
+                            '已核对${_directionLabel(review.direction)}时钟变更',
+                          ),
+                          subtitle: Text(
+                            '${_dateTime(review.detectedAt)} · 连续计时约 '
+                            '${review.estimatedElapsedSeconds} 秒 · '
+                            '检查点推进至 ${_dateTime(review.reliableThroughTime)}',
+                          ),
+                        ),
+                      ),
+                  ],
+                  if (state.reconciliationCases.isEmpty &&
+                      state.clockReviewCases.isEmpty &&
+                      state.reconciliationHistory.isEmpty &&
+                      state.clockReviewHistory.isEmpty)
+                    const Card(
+                      child: ListTile(
+                        leading: Icon(Icons.check_circle_outline),
+                        title: Text('目前没有待核对记录'),
+                      ),
+                    ),
+                ],
+              ),
             ),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Semantics(
-                liveRegion: true,
-                child: Text(
-                  _error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            if (state.reconciliationCases.isNotEmpty) ...[
-              _sectionHeading(context, '真实分支冲突'),
-              for (final review in state.reconciliationCases)
-                _reconciliationCard(context, review),
-            ],
-            if (state.clockReviewCases.isNotEmpty) ...[
-              _sectionHeading(context, '时钟异常'),
-              for (final review in state.clockReviewCases)
-                _clockReviewCard(context, review),
-            ],
-            if (state.reconciliationHistory.isNotEmpty ||
-                state.clockReviewHistory.isNotEmpty) ...[
-              _sectionHeading(context, '已完成的核对'),
-              for (final result in state.reconciliationHistory.reversed)
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.account_tree_outlined),
-                    title: Text('已裁决 ${result.cardIds.length} 个节点的分支'),
-                    subtitle: Text(
-                      '${_dateTime(result.resolvedAt)} · '
-                      '采用 ${result.acceptedSourceIds.length} 条来源，'
-                      '保留 ${result.retainedSourceIds.length} 条来源记录',
-                    ),
-                  ),
-                ),
-              for (final review in state.clockReviewHistory.reversed)
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.schedule_outlined),
-                    title: Text('已核对${_directionLabel(review.direction)}时钟变更'),
-                    subtitle: Text(
-                      '${_dateTime(review.detectedAt)} · 连续计时约 '
-                      '${review.estimatedElapsedSeconds} 秒 · '
-                      '检查点推进至 ${_dateTime(review.reliableThroughTime)}',
-                    ),
-                  ),
-                ),
-            ],
-            if (state.reconciliationCases.isEmpty &&
-                state.clockReviewCases.isEmpty &&
-                state.reconciliationHistory.isEmpty &&
-                state.clockReviewHistory.isEmpty)
-              const Card(
-                child: ListTile(
-                  leading: Icon(Icons.check_circle_outline),
-                  title: Text('目前没有待核对记录'),
-                ),
-              ),
-          ],
+          ),
         );
       },
     ),

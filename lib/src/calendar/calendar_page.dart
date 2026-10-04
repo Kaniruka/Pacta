@@ -406,94 +406,104 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
     final imported = state?.importedSources ?? const <CalendarSource>[];
     return Scaffold(
       appBar: AppBar(title: const Text('日历块')),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          const Card(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('日历仅作为只读规划参考。全天活动保留原始日期；空闲活动不计入占用，日历安排不会限制专注启动。'),
-            ),
-          ),
-          if (_loading)
-            const Center(child: CircularProgressIndicator())
-          else if (widget.isAndroid)
-            _androidImportStatus(state)
-          else
-            Card(
-              child: ListTile(
-                leading: Icon(Icons.sync_outlined),
-                title: Text('从 Android 同步日历块'),
-                subtitle: Text('Windows 只显示已选择并同步的日历来源。'),
-              ),
-            ),
-          if (state?.hasPendingUpdates == true)
-            Card(
-              child: Semantics(
-                liveRegion: true,
-                label: '部分日历数据尚未更新，已有缓存已保留。',
-                child: const ListTile(
-                  leading: Icon(Icons.cloud_off_outlined),
-                  title: Text('日历数据未更新'),
-                  subtitle: Text('已有缓存已保留；连接或权限恢复后可以重试。'),
-                ),
-              ),
-            ),
-          if (imported.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text('已导入来源', style: Theme.of(context).textTheme.titleMedium),
-            for (final source in imported)
-              Card(
-                child: ListTile(
-                  key: ValueKey('source-${source.id}'),
-                  leading: const Icon(Icons.event_available_outlined),
-                  title: Text(source.displayName),
-                  subtitle: Text(
-                    '${source.timeZoneId} · ${source.isStale ? '未更新' : '已同步'}',
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 800),
+            child: ListView(
+              padding: const EdgeInsets.all(20),
+              children: [
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      '日历仅作为只读规划参考。全天活动保留原始日期；空闲活动不计入占用，日历安排不会限制专注启动。',
+                    ),
                   ),
-                  trailing: widget.isAndroid
-                      ? IconButton(
-                          tooltip: '取消导入 ${source.displayName}',
-                          onPressed: _working
-                              ? null
-                              : () => _removeSource(source),
-                          icon: const Icon(Icons.remove_circle_outline),
-                        )
-                      : Icon(
-                          source.isStale
-                              ? Icons.cloud_off_outlined
-                              : Icons.check_circle_outline,
-                        ),
                 ),
-              ),
-          ],
-          if (_message != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: Semantics(liveRegion: true, child: Text(_message!)),
+                if (_loading)
+                  const Center(child: CircularProgressIndicator())
+                else if (widget.isAndroid)
+                  _androidImportStatus(state)
+                else
+                  Card(
+                    child: ListTile(
+                      leading: Icon(Icons.sync_outlined),
+                      title: Text('从 Android 同步日历块'),
+                      subtitle: Text('Windows 只显示已选择并同步的日历来源。'),
+                    ),
+                  ),
+                if (state?.hasPendingUpdates == true)
+                  Card(
+                    child: Semantics(
+                      liveRegion: true,
+                      label: '部分日历数据尚未更新，已有缓存已保留。',
+                      child: const ListTile(
+                        leading: Icon(Icons.cloud_off_outlined),
+                        title: Text('日历数据未更新'),
+                        subtitle: Text('已有缓存已保留；连接或权限恢复后可以重试。'),
+                      ),
+                    ),
+                  ),
+                if (imported.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text('已导入来源', style: Theme.of(context).textTheme.titleMedium),
+                  for (final source in imported)
+                    Card(
+                      child: ListTile(
+                        key: ValueKey('source-${source.id}'),
+                        leading: const Icon(Icons.event_available_outlined),
+                        title: Text(source.displayName),
+                        subtitle: Text(
+                          '${source.timeZoneId} · ${source.isStale ? '未更新' : '已同步'}',
+                        ),
+                        trailing: widget.isAndroid
+                            ? IconButton(
+                                tooltip: '取消导入 ${source.displayName}',
+                                onPressed: _working
+                                    ? null
+                                    : () => _removeSource(source),
+                                icon: const Icon(Icons.remove_circle_outline),
+                              )
+                            : Icon(
+                                source.isStale
+                                    ? Icons.cloud_off_outlined
+                                    : Icons.check_circle_outline,
+                              ),
+                      ),
+                    ),
+                ],
+                if (_message != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Semantics(liveRegion: true, child: Text(_message!)),
+                  ),
+                const SizedBox(height: 12),
+                if (widget.isAndroid)
+                  FilledButton.icon(
+                    onPressed: _working ? null : _chooseSources,
+                    icon: _working
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.calendar_month_outlined),
+                    label: Text(
+                      state?.permission == CalendarPermissionState.granted
+                          ? '选择其他日历'
+                          : '允许并选择日历',
+                    ),
+                  ),
+                OutlinedButton.icon(
+                  onPressed: _working ? null : _sync,
+                  icon: const Icon(Icons.sync),
+                  label: const Text('立即同步'),
+                ),
+              ],
             ),
-          const SizedBox(height: 12),
-          if (widget.isAndroid)
-            FilledButton.icon(
-              onPressed: _working ? null : _chooseSources,
-              icon: _working
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.calendar_month_outlined),
-              label: Text(
-                state?.permission == CalendarPermissionState.granted
-                    ? '选择其他日历'
-                    : '允许并选择日历',
-              ),
-            ),
-          OutlinedButton.icon(
-            onPressed: _working ? null : _sync,
-            icon: const Icon(Icons.sync),
-            label: const Text('立即同步'),
           ),
-        ],
+        ),
       ),
     );
   }

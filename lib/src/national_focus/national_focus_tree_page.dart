@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:timezone/timezone.dart' as timezone;
 
 import '../focus/focus_time_zones.dart';
@@ -53,6 +54,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   final Set<String> _busyCardIds = {};
   bool _confirming = false;
   Timer? _settlementTimer;
+  ScrollController? _treeHorizontalController;
 
   @override
   void initState() {
@@ -68,6 +70,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   @override
   void dispose() {
     _settlementTimer?.cancel();
+    _treeHorizontalController?.dispose();
     super.dispose();
   }
 
@@ -379,151 +382,176 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
               cardsById,
             );
 
-        return Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-              child: Row(
+        if (roots.isNotEmpty && _treeHorizontalController == null) {
+          final firstBranchWidth = _branchWidth(
+            roots.first,
+            childrenByParent,
+            _treeNodeWidth,
+          );
+          final viewportWidth = MediaQuery.sizeOf(context).width - 40;
+          _treeHorizontalController = ScrollController(
+            initialScrollOffset: math.max(
+              0,
+              (firstBranchWidth - viewportWidth) / 2,
+            ),
+          );
+        }
+        return CustomScrollView(
+          key: const PageStorageKey<String>('national-focus-tree'),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Column(
                 children: [
-                  Expanded(
-                    child: Column(
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        spacing: 16,
+                        runSpacing: 12,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            '国策树',
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                          FilledButton.tonalIcon(
+                            onPressed: _placementCard == null
+                                ? _openLibrary
+                                : null,
+                            icon: const Icon(Icons.library_books_outlined),
+                            label: const Text('卡片库'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: NationalFocusReviewPrompt(
+                      repository: widget.repository,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                    child: _MaintenanceSummary(
+                      nextCheckpoint: _formatCheckpoint(
+                        _now,
+                        _displayTimeZoneId,
+                      ),
+                      displayTimeZoneId: _displayTimeZoneId,
+                      pendingCount: pendingCount,
+                      confirming: _confirming,
+                      onConfirm: _placementCard == null ? _confirmToday : null,
+                      onOpenHistory: _openFailureHistory,
+                    ),
+                  ),
+                  if (_placementCard case final card?)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                      child: _PlacementBanner(
+                        card: card,
+                        onCancel: _cancelPlacement,
+                      ),
+                    ),
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                      child: _InlineError(_error!),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: SegmentedButton<bool>(
+                        segments: const [
+                          ButtonSegment<bool>(
+                            value: false,
+                            icon: Icon(Icons.account_tree_outlined),
+                            label: Text('结构'),
+                          ),
+                          ButtonSegment<bool>(
+                            value: true,
+                            icon: Icon(Icons.article_outlined),
+                            label: Text('详情'),
+                          ),
+                        ],
+                        selected: {_detailed},
+                        onSelectionChanged: _placementCard == null
+                            ? (value) =>
+                                  setState(() => _detailed = value.single)
+                            : null,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (_placementCard != null)
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                sliver: SliverToBoxAdapter(
+                  child: _TopLevelPosition(
+                    isSelecting: _placementCard != null,
+                    onTap: _placementCard == null ? null : () => _placeAt(null),
+                  ),
+                ),
+              ),
+            if (roots.isEmpty && _placementCard == null)
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                sliver: SliverToBoxAdapter(
+                  child: _TreeMessage(
+                    icon: Icons.account_tree_outlined,
+                    title: '树画布还是空的',
+                    message: '先在卡片库创建国策卡，再回到这里选择顶层或父节点。',
+                    action: FilledButton.icon(
+                      onPressed: _openLibrary,
+                      icon: const Icon(Icons.library_books_outlined),
+                      label: const Text('打开卡片库'),
+                    ),
+                  ),
+                ),
+              )
+            else if (roots.isNotEmpty)
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                sliver: SliverToBoxAdapter(
+                  child: SingleChildScrollView(
+                    controller: _treeHorizontalController,
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          '国策树',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '确认节点今日继续有效，并查看连续记录与内化进度。',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
+                        for (var index = 0; index < roots.length; index++)
+                          _buildBranch(
+                            card: roots[index],
+                            path: '${index + 1}',
+                            depth: 0,
+                            childrenByParent: childrenByParent,
+                            blockedParentIds: blockedParentIds,
+                            cardsById: cardsById,
+                            placementContainsActiveCard:
+                                placementContainsActiveCard,
+                            hasExtinguishedAncestor: false,
+                          ),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  FilledButton.tonalIcon(
-                    onPressed: _placementCard == null ? _openLibrary : null,
-                    icon: const Icon(Icons.library_books_outlined),
-                    label: const Text('卡片库'),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                sliver: SliverToBoxAdapter(
+                  child: _TreeMessage(
+                    icon: Icons.touch_app_outlined,
+                    title: '选择树中的父节点',
+                    message: '树中暂时没有可选父节点；你可以把这张卡放到顶层。',
                   ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: NationalFocusReviewPrompt(repository: widget.repository),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: _MaintenanceSummary(
-                nextCheckpoint: _formatCheckpoint(_now, _displayTimeZoneId),
-                displayTimeZoneId: _displayTimeZoneId,
-                pendingCount: pendingCount,
-                confirming: _confirming,
-                onConfirm: _placementCard == null ? _confirmToday : null,
-                onOpenHistory: _openFailureHistory,
-              ),
-            ),
-            if (_placementCard case final card?)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-                child: _PlacementBanner(card: card, onCancel: _cancelPlacement),
-              ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                child: _InlineError(_error!),
-              ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment<bool>(
-                      value: false,
-                      icon: Icon(Icons.account_tree_outlined),
-                      label: Text('结构'),
-                    ),
-                    ButtonSegment<bool>(
-                      value: true,
-                      icon: Icon(Icons.article_outlined),
-                      label: Text('详情'),
-                    ),
-                  ],
-                  selected: {_detailed},
-                  onSelectionChanged: _placementCard == null
-                      ? (value) => setState(() => _detailed = value.single)
-                      : null,
                 ),
               ),
-            ),
-            Expanded(
-              child: CustomScrollView(
-                key: const PageStorageKey<String>('national-focus-tree'),
-                slivers: [
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-                    sliver: SliverToBoxAdapter(
-                      child: _TopLevelPosition(
-                        isSelecting: _placementCard != null,
-                        onTap: _placementCard == null
-                            ? null
-                            : () => _placeAt(null),
-                      ),
-                    ),
-                  ),
-                  if (roots.isEmpty && _placementCard == null)
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                      sliver: SliverToBoxAdapter(
-                        child: _TreeMessage(
-                          icon: Icons.account_tree_outlined,
-                          title: '树画布还是空的',
-                          message: '先在卡片库创建国策卡，再回到这里选择顶层或父节点。',
-                          action: FilledButton.icon(
-                            onPressed: _openLibrary,
-                            icon: const Icon(Icons.library_books_outlined),
-                            label: const Text('打开卡片库'),
-                          ),
-                        ),
-                      ),
-                    )
-                  else if (roots.isNotEmpty)
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                      sliver: SliverList.list(
-                        children: [
-                          for (var index = 0; index < roots.length; index++)
-                            _buildBranch(
-                              card: roots[index],
-                              path: '${index + 1}',
-                              depth: 0,
-                              childrenByParent: childrenByParent,
-                              blockedParentIds: blockedParentIds,
-                              cardsById: cardsById,
-                              placementContainsActiveCard:
-                                  placementContainsActiveCard,
-                              hasExtinguishedAncestor: false,
-                            ),
-                        ],
-                      ),
-                    )
-                  else
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                      sliver: SliverToBoxAdapter(
-                        child: _TreeMessage(
-                          icon: Icons.touch_app_outlined,
-                          title: '选择树中的父节点',
-                          message: '树中暂时没有可选父节点；你可以把这张卡放到顶层。',
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
           ],
         );
       },
@@ -560,6 +588,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
           ? null
           : cardsById[card.cascadeSourceCardId]?.effectiveTriggerCondition ??
                 '父节点',
+      onShowDetails: selecting ? null : () => setState(() => _detailed = true),
       onSelect: selecting && !isBlocked && !reviewBlocked
           ? () => _placeAt(card.id)
           : null,
@@ -583,46 +612,72 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
           : () => _extinguishCard(card),
       busy: _busyCardIds.contains(card.id),
     );
-    return Padding(
-      padding: EdgeInsets.only(left: math.min(depth, 6) * 12.0),
+    final nodeWidth = _treeNodeWidth;
+    final childWidths = [
+      for (final child in children)
+        _branchWidth(child, childrenByParent, nodeWidth),
+    ];
+    final width = _branchWidth(card, childrenByParent, nodeWidth);
+    return SizedBox(
+      width: width,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          branch,
-          if (children.isNotEmpty)
-            Container(
-              margin: const EdgeInsets.only(left: 18),
-              padding: const EdgeInsets.only(left: 12, top: 8),
-              decoration: BoxDecoration(
-                border: Border(
-                  left: BorderSide(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                    width: 2,
-                  ),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (var index = 0; index < children.length; index++)
-                    _buildBranch(
-                      card: children[index],
-                      path: '$path.${index + 1}',
-                      depth: depth + 1,
-                      childrenByParent: childrenByParent,
-                      blockedParentIds: blockedParentIds,
-                      cardsById: cardsById,
-                      placementContainsActiveCard: placementContainsActiveCard,
-                      hasExtinguishedAncestor:
-                          hasExtinguishedAncestor ||
-                          card.state == NationalFocusCardState.extinguished,
-                    ),
-                ],
+          SizedBox(
+            width: nodeWidth,
+            child: KeyedSubtree(
+              key: ValueKey('national-focus-node-${card.id}'),
+              child: branch,
+            ),
+          ),
+          if (children.isNotEmpty) ...[
+            CustomPaint(
+              size: Size(width, 36),
+              painter: _BranchConnectorPainter(
+                childWidths: childWidths,
+                color: Theme.of(context).colorScheme.outline,
               ),
             ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var index = 0; index < children.length; index++)
+                  _buildBranch(
+                    card: children[index],
+                    path: '$path.${index + 1}',
+                    depth: depth + 1,
+                    childrenByParent: childrenByParent,
+                    blockedParentIds: blockedParentIds,
+                    cardsById: cardsById,
+                    placementContainsActiveCard: placementContainsActiveCard,
+                    hasExtinguishedAncestor: targetBranchIsExtinguished,
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  double get _treeNodeWidth {
+    // A single rule always fits the viewport, including enlarged text.
+    // Only sibling branches require horizontal movement.
+    return math.min(480, math.max(224, MediaQuery.sizeOf(context).width - 56));
+  }
+
+  double _branchWidth(
+    NationalFocusCard card,
+    Map<String, List<NationalFocusCard>> childrenByParent,
+    double nodeWidth,
+  ) {
+    final children = childrenByParent[card.id] ?? const [];
+    return children.isEmpty
+        ? nodeWidth + 16
+        : children.fold<double>(
+            0,
+            (width, child) =>
+                width + _branchWidth(child, childrenByParent, nodeWidth),
+          );
   }
 }
 
@@ -1175,6 +1230,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
     required this.blocked,
     required this.lightBlocked,
     required this.cascadeSourceLabel,
+    required this.onShowDetails,
     required this.onSelect,
     required this.onManageStrengthening,
     required this.onRelocate,
@@ -1191,6 +1247,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
   final bool blocked;
   final bool lightBlocked;
   final String? cascadeSourceLabel;
+  final VoidCallback? onShowDetails;
   final VoidCallback? onSelect;
   final VoidCallback? onManageStrengthening;
   final VoidCallback? onRelocate;
@@ -1224,6 +1281,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
             blocked: selecting && blocked,
             lightBlocked: lightBlocked,
             cascadeSourceLabel: cascadeSourceLabel,
+            onShowDetails: onShowDetails,
             onMoveToLibrary: onMoveToLibrary,
             onLight: onLight,
             onExtinguish: onExtinguish,
@@ -1254,6 +1312,7 @@ class _StructureTreeCard extends StatelessWidget {
     required this.blocked,
     required this.lightBlocked,
     required this.cascadeSourceLabel,
+    required this.onShowDetails,
     required this.onMoveToLibrary,
     required this.onLight,
     required this.onExtinguish,
@@ -1265,6 +1324,7 @@ class _StructureTreeCard extends StatelessWidget {
   final bool blocked;
   final bool lightBlocked;
   final String? cascadeSourceLabel;
+  final VoidCallback? onShowDetails;
   final VoidCallback? onMoveToLibrary;
   final VoidCallback? onLight;
   final VoidCallback? onExtinguish;
@@ -1295,8 +1355,7 @@ class _StructureTreeCard extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  '节点 $path · '
-                  '${card.hasPendingReview ? '待核对 · ' : ''}${card.state.label}',
+                  card.effectiveTriggerCondition,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
@@ -1306,11 +1365,31 @@ class _StructureTreeCard extends StatelessWidget {
                   child: Icon(Icons.block_outlined),
                 )
               else
-                Icon(
-                  Icons.chevron_right,
-                  color: colors.onSurfaceVariant,
-                  semanticLabel: '树节点',
+                IconButton(
+                  tooltip: '显示详情',
+                  onPressed: onShowDetails,
+                  icon: const Icon(Icons.chevron_right),
                 ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                card.effectiveAction,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _StateChip(
+                  state: card.state,
+                  hasPendingReview: card.hasPendingReview,
+                ),
+              ),
             ],
           ),
         ),
@@ -1324,7 +1403,6 @@ class _StructureTreeCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _NationalFocusRecordSummary(card: card),
                 if (cascadeSourceLabel != null) ...[
                   const SizedBox(height: 8),
                   _CascadeStatusNote(
@@ -1332,24 +1410,33 @@ class _StructureTreeCard extends StatelessWidget {
                     lightBlocked: lightBlocked,
                   ),
                 ],
-                const SizedBox(height: 12),
-                _NodeMaintenanceAction(
-                  card: card,
-                  onLight: onLight,
-                  onExtinguish: onExtinguish,
-                  busy: busy,
-                ),
-                if (onMoveToLibrary != null) ...[
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: onMoveToLibrary,
-                      icon: const Icon(Icons.library_add_outlined),
-                      label: const Text('移入卡片库'),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _NodeMaintenanceAction(
+                        card: card,
+                        onLight: onLight,
+                        onExtinguish: onExtinguish,
+                        busy: busy,
+                      ),
                     ),
-                  ),
-                ],
+                    if (onMoveToLibrary != null)
+                      SizedBox.square(
+                        dimension: 48,
+                        child: PopupMenuButton<String>(
+                          tooltip: '管理节点',
+                          onSelected: (_) => onMoveToLibrary?.call(),
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(
+                              value: 'library',
+                              child: Text('移入卡片库'),
+                            ),
+                          ],
+                          icon: const Icon(Icons.more_horiz),
+                        ),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -1410,14 +1497,12 @@ class _DetailedTreeCard extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
+        Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Expanded(
-              child: Text(
-                '节点 $path',
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
+            Text('节点 $path', style: Theme.of(context).textTheme.titleMedium),
             _StateChip(
               state: card.state,
               hasPendingReview: card.hasPendingReview,
@@ -1527,43 +1612,19 @@ class _MaintenanceSummary extends StatelessWidget {
     color: Theme.of(context).colorScheme.surfaceContainerLow,
     margin: EdgeInsets.zero,
     child: Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(Icons.schedule_outlined),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      nextCheckpoint,
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '固定规则为北京时间 04:00；显示时区 $displayTimeZoneId 不会移动结算边界。',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            pendingCount == 0 ? '今日没有待确认节点。' : '待今日确认：$pendingCount 个节点',
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 8),
           Wrap(
-            spacing: 8,
+            spacing: 12,
             runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
+              Text(
+                pendingCount == 0 ? '今日已无待确认节点' : '$pendingCount 个节点待今日确认',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               FilledButton.tonalIcon(
                 onPressed: onConfirm == null || pendingCount == 0 || confirming
                     ? null
@@ -1576,7 +1637,24 @@ class _MaintenanceSummary extends StatelessWidget {
                     : const Icon(Icons.done_all),
                 label: Text(confirming ? '正在确认' : '一键确认今日'),
               ),
-              OutlinedButton.icon(
+            ],
+          ),
+          ExpansionTile(
+            key: const PageStorageKey('national-focus-checkpoint-information'),
+            tilePadding: EdgeInsets.zero,
+            title: const Text('检查点与失败记录'),
+            children: [
+              Text(
+                nextCheckpoint,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '固定规则为北京时间 04:00；显示时区 $displayTimeZoneId 不会移动结算边界。',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              TextButton.icon(
                 onPressed: onOpenHistory,
                 icon: const Icon(Icons.history),
                 label: const Text('查看失败记录'),
@@ -2096,8 +2174,6 @@ class _PlacementBanner extends StatelessWidget {
           Expanded(
             child: Text(
               '为「${card.effectiveTriggerCondition}」选择位置：点顶层或一个节点。',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onPrimaryContainer,
               ),
@@ -2268,3 +2344,50 @@ String _friendlyError(Object error) => error
     .toString()
     .replaceFirst('Bad state: ', '')
     .replaceFirst('Invalid argument(s): ', '');
+
+class _BranchConnectorPainter extends CustomPainter {
+  const _BranchConnectorPainter({
+    required this.childWidths,
+    required this.color,
+  });
+
+  final List<double> childWidths;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    final centers = <double>[];
+    var offset = 0.0;
+    for (final width in childWidths) {
+      centers.add(offset + width / 2);
+      offset += width;
+    }
+    final middle = size.height / 2;
+    canvas.drawLine(
+      Offset(size.width / 2, 0),
+      Offset(size.width / 2, middle),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(centers.first, middle),
+      Offset(centers.last, middle),
+      paint,
+    );
+    for (final center in centers) {
+      canvas.drawLine(
+        Offset(center, middle),
+        Offset(center, size.height),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_BranchConnectorPainter oldDelegate) =>
+      oldDelegate.color != color ||
+      !listEquals(oldDelegate.childWidths, childWidths);
+}

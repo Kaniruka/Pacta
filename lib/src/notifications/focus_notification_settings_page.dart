@@ -206,145 +206,188 @@ class _FocusNotificationSettingsPageState
       appBar: AppBar(title: const Text('通知与后台状态')),
       body: _loading || preferences == null
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.all(20),
-              children: [
-                Card(
-                  child: Column(
+          : SafeArea(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 800),
+                  child: ListView(
+                    padding: const EdgeInsets.all(20),
                     children: [
-                      SwitchListTile.adaptive(
-                        value: preferences.notificationsEnabled,
-                        onChanged: _updating ? null : _setNotificationsEnabled,
-                        title: const Text('专注流程通知'),
-                        subtitle: const Text('预约进入专注和专注会话结束时提醒。任务截止时间不会通知。'),
-                      ),
-                      if (preferences.notificationsEnabled &&
-                          !_notificationsAllowed)
-                        const Padding(
-                          padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text('系统通知权限未开放，提醒暂不可送达。'),
-                          ),
-                        ),
-                      if (preferences.notificationsEnabled &&
-                          Platform.isAndroid &&
-                          !_exactAlarmsAllowed)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton.icon(
-                              onPressed: _updating ? null : _allowExactAlarms,
-                              icon: const Icon(Icons.alarm_add_outlined),
-                              label: const Text('允许准确的专注提醒'),
+                      Card(
+                        child: Column(
+                          children: [
+                            SwitchListTile.adaptive(
+                              value: preferences.notificationsEnabled,
+                              onChanged: _updating
+                                  ? null
+                                  : _setNotificationsEnabled,
+                              title: const Text('专注流程通知'),
+                              subtitle: const Text(
+                                '预约进入专注和专注会话结束时提醒。任务截止时间不会通知。',
+                              ),
                             ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Card(
-                  child: Column(
-                    children: [
-                      SwitchListTile.adaptive(
-                        key: const Key('national-focus-reminder-enabled'),
-                        value: preferences.nationalFocusReminderEnabled,
-                        onChanged: _updating
-                            ? null
-                            : _setNationalFocusReminderEnabled,
-                        title: const Text('国策待确认提醒'),
-                        subtitle: const Text(
-                          '有待今日确认的国策时提醒一次；预约、专注或批准暂停未结束时会延后。',
-                        ),
-                      ),
-                      ListTile(
-                        title: const Text('提醒时间（北京时间）'),
-                        subtitle: const Text('各设备单独设置，不影响国策检查点。'),
-                        trailing: TextButton(
-                          key: const Key('national-focus-reminder-time'),
-                          onPressed: _updating
-                              ? null
-                              : _setNationalFocusReminderTime,
-                          child: Text(
-                            _formatTime(
-                              preferences
-                                  .nationalFocusReminderMinutesAfterMidnight,
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (preferences.nationalFocusReminderEnabled &&
-                          Platform.isAndroid &&
-                          !_notificationsAllowed)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('系统通知权限未开放，国策提醒暂不可送达；专注流程仍可照常使用。'),
-                                TextButton.icon(
-                                  onPressed: _updating
-                                      ? null
-                                      : _requestReminderPermission,
-                                  icon: const Icon(
-                                    Icons.notifications_active_outlined,
-                                  ),
-                                  label: const Text('开启国策提醒权限'),
+                            if (preferences.notificationsEnabled &&
+                                !_notificationsAllowed)
+                              const Padding(
+                                padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text('系统通知权限未开放，提醒暂不可送达。'),
                                 ),
-                              ],
+                              ),
+                            if (preferences.notificationsEnabled &&
+                                Platform.isAndroid &&
+                                !_exactAlarmsAllowed)
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  0,
+                                  16,
+                                  16,
+                                ),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: TextButton.icon(
+                                    onPressed: _updating
+                                        ? null
+                                        : _allowExactAlarms,
+                                    icon: const Icon(Icons.alarm_add_outlined),
+                                    label: const Text('允许准确的专注提醒'),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Card(
+                        child: Column(
+                          children: [
+                            SwitchListTile.adaptive(
+                              key: const Key('national-focus-reminder-enabled'),
+                              value: preferences.nationalFocusReminderEnabled,
+                              onChanged: _updating
+                                  ? null
+                                  : _setNationalFocusReminderEnabled,
+                              title: const Text('国策待确认提醒'),
+                              subtitle: const Text(
+                                '有待今日确认的国策时提醒一次；预约、专注或批准暂停未结束时会延后。',
+                              ),
                             ),
+                            ListTile(
+                              title: const Text('提醒时间（北京时间）'),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('各设备单独设置，不影响国策检查点。'),
+                                  TextButton(
+                                    key: const Key(
+                                      'national-focus-reminder-time',
+                                    ),
+                                    onPressed: _updating
+                                        ? null
+                                        : _setNationalFocusReminderTime,
+                                    child: Text(
+                                      _formatTime(
+                                        preferences
+                                            .nationalFocusReminderMinutesAfterMidnight,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (preferences.nationalFocusReminderEnabled &&
+                                Platform.isAndroid &&
+                                !_notificationsAllowed)
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  0,
+                                  16,
+                                  16,
+                                ),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        '系统通知权限未开放，国策提醒暂不可送达；专注流程仍可照常使用。',
+                                      ),
+                                      TextButton.icon(
+                                        onPressed: _updating
+                                            ? null
+                                            : _requestReminderPermission,
+                                        icon: const Icon(
+                                          Icons.notifications_active_outlined,
+                                        ),
+                                        label: const Text('开启国策提醒权限'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            if (preferences.nationalFocusReminderEnabled &&
+                                Platform.isAndroid &&
+                                _notificationsAllowed &&
+                                !_exactAlarmsAllowed)
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  0,
+                                  16,
+                                  16,
+                                ),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: TextButton.icon(
+                                    onPressed: _updating
+                                        ? null
+                                        : _allowExactAlarms,
+                                    icon: const Icon(Icons.alarm_add_outlined),
+                                    label: const Text('允许准确的国策提醒'),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Card(
+                        child: SwitchListTile.adaptive(
+                          value: preferences.backgroundRunningEnabled,
+                          onChanged: _updating ? null : _setBackgroundEnabled,
+                          title: const Text('显示后台倒计时'),
+                          subtitle: Text(
+                            Platform.isWindows
+                                ? '在系统托盘显示当前状态；会话进行中关闭窗口时保留在后台。'
+                                : '在通知栏显示预约或专注状态，点击可返回当前会话。',
                           ),
                         ),
-                      if (preferences.nationalFocusReminderEnabled &&
-                          Platform.isAndroid &&
-                          _notificationsAllowed &&
-                          !_exactAlarmsAllowed)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: TextButton.icon(
-                              onPressed: _updating ? null : _allowExactAlarms,
-                              icon: const Icon(Icons.alarm_add_outlined),
-                              label: const Text('允许准确的国策提醒'),
-                            ),
+                      ),
+                      if (_message != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          _message!,
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
                           ),
                         ),
+                      ],
+                      const SizedBox(height: 12),
+                      Text(
+                        '这些偏好仅保存在本设备，不会同步到其他设备。',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                Card(
-                  child: SwitchListTile.adaptive(
-                    value: preferences.backgroundRunningEnabled,
-                    onChanged: _updating ? null : _setBackgroundEnabled,
-                    title: const Text('显示后台倒计时'),
-                    subtitle: Text(
-                      Platform.isWindows
-                          ? '在系统托盘显示当前状态；会话进行中关闭窗口时保留在后台。'
-                          : '在通知栏显示预约或专注状态，点击可返回当前会话。',
-                    ),
-                  ),
-                ),
-                if (_message != null) ...[
-                  const SizedBox(height: 12),
-                  Text(
-                    _message!,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                Text(
-                  '这些偏好仅保存在本设备，不会同步到其他设备。',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
+              ),
             ),
     );
   }

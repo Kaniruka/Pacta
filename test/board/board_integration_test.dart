@@ -97,7 +97,7 @@ void main() {
     await tester.ensureVisible(find.text('打开国策树'));
     await tester.tap(find.text('打开国策树'));
     await tester.pumpAndSettle();
-    expect(find.text('确认节点今日继续有效，并查看连续记录与内化进度。'), findsOneWidget);
+    expect(find.text('检查点与失败记录'), findsOneWidget);
     expect(find.text('整理发布材料'), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());

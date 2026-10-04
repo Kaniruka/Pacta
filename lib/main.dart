@@ -172,17 +172,8 @@ class PactaApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Pacta',
         debugShowCheckedModeBanner: false,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xff385a52),
-            brightness: Brightness.light,
-          ),
-          useMaterial3: true,
-          scaffoldBackgroundColor: const Color(0xfff8faf8),
-          inputDecorationTheme: const InputDecorationTheme(
-            border: OutlineInputBorder(),
-          ),
-        ),
+        theme: _pactaTheme(Brightness.light),
+        darkTheme: _pactaTheme(Brightness.dark),
         home: _UserPurgeCleanupLifecycleObserver(
           cleanupRepository: userPurgeCleanupRepository,
           child: const AuthGate(),
@@ -190,6 +181,26 @@ class PactaApp extends StatelessWidget {
       ),
     );
   }
+}
+
+ThemeData _pactaTheme(Brightness brightness) {
+  final colors = ColorScheme.fromSeed(
+    seedColor: const Color(0xff385a52),
+    brightness: brightness,
+  );
+  return ThemeData(
+    colorScheme: colors,
+    useMaterial3: true,
+    scaffoldBackgroundColor: colors.surface,
+    appBarTheme: const AppBarTheme(centerTitle: false),
+    cardTheme: const CardThemeData(
+      elevation: 0,
+      margin: EdgeInsets.symmetric(vertical: 4),
+    ),
+    inputDecorationTheme: const InputDecorationTheme(
+      border: OutlineInputBorder(),
+    ),
+  );
 }
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
@@ -709,10 +720,9 @@ class _AppShellState extends ConsumerState<AppShell>
       const FocusChainPage(),
       const MyPage(),
     ];
-    final destination = _destinations[_index];
-    return Scaffold(
-      appBar: AppBar(title: Text(destination.label)),
-      body: StreamBuilder<UserLifecycleStatus?>(
+    final wide = MediaQuery.sizeOf(context).width >= 840;
+    final content = SafeArea(
+      child: StreamBuilder<UserLifecycleStatus?>(
         stream: lifecycleStatusRepository.watchStatus(),
         builder: (context, snapshot) => Column(
           children: [
@@ -751,18 +761,53 @@ class _AppShellState extends ConsumerState<AppShell>
           ],
         ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (value) => setState(() => _index = value),
-        destinations: [
-          for (final item in _destinations)
-            NavigationDestination(
-              icon: Icon(item.icon),
-              selectedIcon: Icon(item.selectedIcon),
-              label: item.label,
+    );
+    return Scaffold(
+      body: Row(
+        children: [
+          if (wide) ...[
+            NavigationRail(
+              selectedIndex: _index,
+              labelType: NavigationRailLabelType.all,
+              onDestinationSelected: (value) => setState(() => _index = value),
+              destinations: [
+                for (final item in _destinations)
+                  NavigationRailDestination(
+                    icon: Icon(item.icon),
+                    selectedIcon: Icon(item.selectedIcon),
+                    label: Text(item.label),
+                  ),
+              ],
             ),
+            const VerticalDivider(width: 1),
+          ],
+          Expanded(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: _index == 1 ? double.infinity : 960,
+                ),
+                child: content,
+              ),
+            ),
+          ),
         ],
       ),
+      bottomNavigationBar: wide
+          ? null
+          : NavigationBar(
+              selectedIndex: _index,
+              onDestinationSelected: (value) => setState(() => _index = value),
+              destinations: [
+                for (final item in _destinations)
+                  NavigationDestination(
+                    icon: Icon(item.icon),
+                    selectedIcon: Icon(item.selectedIcon),
+                    label: item.label,
+                  ),
+              ],
+            ),
     );
   }
 }
@@ -945,69 +990,95 @@ class _BoardContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                '今天先做什么',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
+    final primary = <Widget>[
+      Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 16,
+        runSpacing: 12,
+        children: [
+          Text('今天先做什么', style: Theme.of(context).textTheme.headlineSmall),
+          FilledButton.icon(
+            onPressed: () => _createGoal(context),
+            icon: const Icon(Icons.add),
+            label: const Text('新建目标'),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      _FocusReconciliationPrompt(
+        focusRepository: focusRepository,
+        taskRepository: repository,
+      ),
+      _FocusClockReviewPrompt(repository: focusRepository),
+      if (goals.isEmpty)
+        const Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Column(
+              children: [
+                Icon(Icons.inbox_outlined, size: 48),
+                SizedBox(height: 12),
+                Text('暂无任务', style: TextStyle(fontSize: 22)),
+                SizedBox(height: 8),
+                Text('创建目标和任务后，它们会优先出现在这里。'),
+              ],
             ),
-            FilledButton.icon(
-              onPressed: () => _createGoal(context),
-              icon: const Icon(Icons.add),
-              label: const Text('新建目标'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _FocusReconciliationPrompt(
-          focusRepository: focusRepository,
-          taskRepository: repository,
-        ),
-        _FocusClockReviewPrompt(repository: focusRepository),
-        if (goals.isEmpty)
-          const Card(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Column(
-                children: [
-                  Icon(Icons.inbox_outlined, size: 48),
-                  SizedBox(height: 12),
-                  Text('暂无任务', style: TextStyle(fontSize: 22)),
-                  SizedBox(height: 8),
-                  Text('创建目标和任务后，它们会优先出现在这里。'),
-                ],
-              ),
-            ),
-          )
-        else
-          for (final goal in goals)
-            _GoalCard(
-              repository: repository,
-              goal: goal,
-              focusProgressSecondsByTask: metrics?.focusProgressSecondsByTask,
-              pendingReviewTaskIds: metrics?.pendingReviewTaskIds ?? const {},
-            ),
-        const SizedBox(height: 12),
-        NationalFocusSummaryCard(
-          repository: nationalFocusRepository,
-          displayTimeZoneId: displayTimeZoneId,
-          onOpenTree: onOpenNationalFocus,
-        ),
-        const SizedBox(height: 12),
-        _RecentFocusActivityCard(
-          repository: focusRepository,
-          metrics: metrics,
-          deviceTimeZoneId: displayTimeZoneId ?? 'Etc/UTC',
-          deviceTimeZoneError: deviceTimeZoneError,
-        ),
-        const SizedBox(height: 12),
-        CalendarAgendaCard(repository: calendarRepository),
-      ],
+          ),
+        )
+      else
+        for (final goal in goals)
+          _GoalCard(
+            repository: repository,
+            goal: goal,
+            focusProgressSecondsByTask: metrics?.focusProgressSecondsByTask,
+            pendingReviewTaskIds: metrics?.pendingReviewTaskIds ?? const {},
+          ),
+    ];
+    final secondary = <Widget>[
+      const SizedBox(height: 12),
+      NationalFocusSummaryCard(
+        repository: nationalFocusRepository,
+        displayTimeZoneId: displayTimeZoneId,
+        onOpenTree: onOpenNationalFocus,
+      ),
+      const SizedBox(height: 12),
+      _RecentFocusActivityCard(
+        repository: focusRepository,
+        metrics: metrics,
+        deviceTimeZoneId: displayTimeZoneId ?? 'Etc/UTC',
+        deviceTimeZoneError: deviceTimeZoneError,
+      ),
+      const SizedBox(height: 12),
+      CalendarAgendaCard(repository: calendarRepository),
+    ];
+    return LayoutBuilder(
+      builder: (context, constraints) => ListView(
+        padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+        children: constraints.maxWidth >= 840
+            ? [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: primary,
+                      ),
+                    ),
+                    const SizedBox(width: 24),
+                    SizedBox(
+                      width: 320,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: secondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ]
+            : [...primary, ...secondary],
+      ),
     );
   }
 
@@ -1985,14 +2056,11 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                               ListTile(
                                 contentPadding: EdgeInsets.zero,
                                 title: Text(record.mode.label),
-                                trailing: Text(
+                                subtitle: Text(
                                   record.hasPendingReview
-                                      ? '待核对'
+                                      ? '待核对 · 争议结果暂不计入连续记录。'
                                       : '${record.currentConsecutive} 次 · 最佳 ${record.bestConsecutive} 次',
                                 ),
-                                subtitle: record.hasPendingReview
-                                    ? const Text('争议结果暂不计入连续记录。')
-                                    : null,
                               ),
                             FutureBuilder<AppointmentChainRecord>(
                               future: _appointmentChainRecordFuture,
@@ -2004,14 +2072,11 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                                 return ListTile(
                                   contentPadding: EdgeInsets.zero,
                                   title: const Text('预约链'),
-                                  trailing: Text(
+                                  subtitle: Text(
                                     record.hasPendingReview
-                                        ? '待核对'
+                                        ? '待核对 · 争议结果暂不计入连续记录。'
                                         : '${record.currentConsecutive} 次 · 最佳 ${record.bestConsecutive} 次',
                                   ),
-                                  subtitle: record.hasPendingReview
-                                      ? const Text('争议结果暂不计入连续记录。')
-                                      : null,
                                 );
                               },
                             ),
@@ -2247,69 +2312,67 @@ class _FocusHistoryCard extends StatelessWidget {
     final nodesBySession = {for (final node in nodes) node.sessionId: node};
     return Card(
       margin: const EdgeInsets.only(top: 16),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('专注历史', style: Theme.of(context).textTheme.titleMedium),
-            for (final session in sessions)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(taskTitles[session.taskId] ?? '原任务'),
-                subtitle: Text(
-                  session.isFailed
-                      ? '失败 · ${_formatDuration(session.effectiveSeconds)}\n原因：${session.failureReason ?? '未填写'}'
-                      : session.isEarlyCompleted
-                      ? '获准提前完成 · ${_formatDuration(session.effectiveSeconds)}\n依据：${session.completionRuleText ?? '未记录'}'
-                      : '正常完成 · ${_formatDuration(session.effectiveSeconds)}',
-                ),
-                trailing: Wrap(
-                  children: [
-                    if (session.isFailed)
-                      IconButton(
-                        tooltip: '编辑失败原因',
-                        icon: const Icon(Icons.edit_note_outlined),
-                        onPressed: () async {
-                          final reason = await _showTextEditor(
-                            context,
-                            title: '编辑失败原因',
-                            label: '失败原因',
-                            initial: session.failureReason ?? '',
-                            required: true,
-                          );
-                          if (reason != null) {
-                            await repository.updateFailureReason(
-                              sessionId: session.id,
-                              failureReason: reason,
-                            );
-                          }
-                        },
-                      ),
-                    if (nodesBySession[session.id] case final node?)
-                      IconButton(
-                        tooltip: '编辑节点备注',
-                        icon: const Icon(Icons.sticky_note_2_outlined),
-                        onPressed: () async {
-                          final note = await _showTextEditor(
-                            context,
-                            title: '编辑节点备注',
-                            label: '备注（可选）',
-                            initial: node.note ?? '',
-                          );
-                          if (note != null) {
-                            await repository.updateNodeNote(
-                              nodeId: node.id,
-                              note: note,
-                            );
-                          }
-                        },
-                      ),
-                  ],
-                ),
+      child: ExpansionTile(
+        title: const Text('专注历史'),
+        subtitle: Text('${sessions.length} 次已结算专注'),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        children: [
+          for (final session in sessions)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(taskTitles[session.taskId] ?? '原任务'),
+              subtitle: Text(
+                session.isFailed
+                    ? '失败 · ${_formatDuration(session.effectiveSeconds)}\n原因：${session.failureReason ?? '未填写'}'
+                    : session.isEarlyCompleted
+                    ? '获准提前完成 · ${_formatDuration(session.effectiveSeconds)}\n依据：${session.completionRuleText ?? '未记录'}'
+                    : '正常完成 · ${_formatDuration(session.effectiveSeconds)}',
               ),
-          ],
-        ),
+              trailing: Wrap(
+                children: [
+                  if (session.isFailed)
+                    IconButton(
+                      tooltip: '编辑失败原因',
+                      icon: const Icon(Icons.edit_note_outlined),
+                      onPressed: () async {
+                        final reason = await _showTextEditor(
+                          context,
+                          title: '编辑失败原因',
+                          label: '失败原因',
+                          initial: session.failureReason ?? '',
+                          required: true,
+                        );
+                        if (reason != null) {
+                          await repository.updateFailureReason(
+                            sessionId: session.id,
+                            failureReason: reason,
+                          );
+                        }
+                      },
+                    ),
+                  if (nodesBySession[session.id] case final node?)
+                    IconButton(
+                      tooltip: '编辑节点备注',
+                      icon: const Icon(Icons.sticky_note_2_outlined),
+                      onPressed: () async {
+                        final note = await _showTextEditor(
+                          context,
+                          title: '编辑节点备注',
+                          label: '备注（可选）',
+                          initial: node.note ?? '',
+                        );
+                        if (note != null) {
+                          await repository.updateNodeNote(
+                            nodeId: node.id,
+                            note: note,
+                          );
+                        }
+                      },
+                    ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -3411,7 +3474,7 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -3520,6 +3583,8 @@ class _MyPageState extends ConsumerState<MyPage> {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
+        Text('我的', style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 16),
         Card(
           child: ListTile(
             leading: const CircleAvatar(child: Icon(Icons.person_outline)),
@@ -3527,25 +3592,6 @@ class _MyPageState extends ConsumerState<MyPage> {
             subtitle: const Text('个人数据仅属于你'),
           ),
         ),
-        FutureBuilder<bool>(
-          future: _isAdministrator,
-          builder: (context, snapshot) => snapshot.data == true
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Column(
-                    children: [
-                      AdminUserLifecycleCard(repository: repository),
-                      const SizedBox(height: 12),
-                      const AdminEligibilityCard(),
-                      const SizedBox(height: 12),
-                      AdminPasswordResetCard(repository: repository),
-                    ],
-                  ),
-                )
-              : const SizedBox.shrink(),
-        ),
-        const SizedBox(height: 12),
-        const _FocusReconciliationPageLink(),
         const SizedBox(height: 12),
         Card(
           child: ListTile(
@@ -3582,6 +3628,32 @@ class _MyPageState extends ConsumerState<MyPage> {
               ),
             ),
           ),
+        ),
+        const SizedBox(height: 12),
+        const _FocusReconciliationPageLink(),
+        const SizedBox(height: 12),
+        FutureBuilder<bool>(
+          future: _isAdministrator,
+          builder: (context, snapshot) => snapshot.data == true
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Card(
+                    child: ExpansionTile(
+                      leading: const Icon(Icons.admin_panel_settings_outlined),
+                      title: const Text('用户管理'),
+                      subtitle: const Text('注册资格、用户状态与密码重置'),
+                      childrenPadding: const EdgeInsets.all(12),
+                      children: [
+                        AdminUserLifecycleCard(repository: repository),
+                        const SizedBox(height: 12),
+                        const AdminEligibilityCard(),
+                        const SizedBox(height: 12),
+                        AdminPasswordResetCard(repository: repository),
+                      ],
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
         const SizedBox(height: 12),
         OutlinedButton.icon(

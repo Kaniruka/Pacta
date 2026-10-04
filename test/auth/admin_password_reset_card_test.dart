@@ -27,6 +27,19 @@ void main() {
     await tester.tap(find.text('我的').last);
     await tester.pumpAndSettle();
 
+    expect(find.text('管理员：重置用户密码'), findsNothing);
+    await tester.scrollUntilVisible(
+      find.text('用户管理'),
+      250,
+      scrollable: find
+          .descendant(
+            of: find.byType(MyPage),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.tap(find.text('用户管理'));
+    await tester.pumpAndSettle();
     expect(find.text('管理员：重置用户密码'), findsOneWidget);
     expect(find.byKey(const Key('reset-target-email')), findsOneWidget);
   });
