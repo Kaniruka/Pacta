@@ -1870,7 +1870,6 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
   late Future<List<FocusChainRecord>> _chainRecordsFuture;
   late Future<AppointmentChainRecord> _appointmentChainRecordFuture;
   late Future<AppointmentPreparation?> _activeAppointmentFuture;
-  Future<List<FocusNode>> _nodesFuture = Future.value(const []);
 
   @override
   void initState() {
@@ -2105,18 +2104,22 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                     );
                   },
                 ),
-                if (sessions.any((session) => !session.isUnfinished))
-                  FutureBuilder<List<FocusNode>>(
-                    future: _nodesFuture,
-                    builder: (context, nodeSnapshot) => _FocusHistoryCard(
-                      repository: focusRepository,
-                      sessions: sessions
-                          .where((session) => !session.isUnfinished)
-                          .toList(),
-                      nodes: nodeSnapshot.data ?? const [],
-                      taskTitles: taskTitles,
+                Card(
+                  key: const ValueKey('focus-history-entry'),
+                  child: ListTile(
+                    leading: const Icon(Icons.history),
+                    title: const Text('专注历史'),
+                    subtitle: Text(
+                      '${sessions.where((session) => !session.isUnfinished).length} 次已结算专注',
+                    ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const FocusHistoryPage(),
+                      ),
                     ),
                   ),
+                ),
               ],
             );
           },
@@ -2145,9 +2148,6 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
     _projectionSignature = signature;
     _chainRecordsFuture = repository.getChainRecords();
     _appointmentChainRecordFuture = repository.getAppointmentChainRecord();
-    _nodesFuture = sessions.any((session) => !session.isUnfinished)
-        ? repository.getNodes()
-        : Future.value(const []);
   }
 
   bool _matchesFilter(Task task) {
@@ -2313,32 +2313,148 @@ void _showFocusError(BuildContext context, Object error) {
   );
 }
 
-class _FocusHistoryCard extends StatelessWidget {
-  const _FocusHistoryCard({
+class FocusHistoryPage extends ConsumerStatefulWidget {
+  const FocusHistoryPage({super.key});
+
+  @override
+  ConsumerState<FocusHistoryPage> createState() => _FocusHistoryPageState();
+}
+
+class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
+  FocusRepository? _nodesRepository;
+  String? _nodesSessionSignature;
+  late Future<List<FocusNode>> _nodesFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNodes(ref.read(focusRepositoryProvider));
+  }
+
+  void _loadNodes(FocusRepository repository) {
+    _nodesRepository = repository;
+    _nodesSessionSignature = null;
+    _nodesFuture = repository.getNodes();
+  }
+
+  void _refreshNodesForSessions(
+    FocusRepository repository,
+    List<FocusSession> sessions,
+  ) {
+    final signature = sessions.map((session) => session.id).join('|');
+    if (!identical(_nodesRepository, repository) ||
+        _nodesSessionSignature != signature) {
+      _nodesRepository = repository;
+      _nodesSessionSignature = signature;
+      _nodesFuture = repository.getNodes();
+    }
+  }
+
+  void _reloadNodes(FocusRepository repository) {
+    if (!mounted) return;
+    setState(() {
+      _nodesFuture = repository.getNodes();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final repository = ref.watch(focusRepositoryProvider);
+    if (!identical(_nodesRepository, repository)) _loadNodes(repository);
+    final taskRepository = ref.watch(taskRepositoryProvider);
+    return Scaffold(
+      appBar: AppBar(title: const Text('专注历史')),
+      body: StreamBuilder<List<Goal>>(
+        stream: taskRepository.watchGoals(includeDeleted: true),
+        builder: (context, goalsSnapshot) {
+          if (goalsSnapshot.hasError) {
+            return const Center(child: Text('暂时无法读取任务名称。'));
+          }
+          if (!goalsSnapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final taskTitles = <String, String>{
+            for (final goal in goalsSnapshot.data!)
+              for (final task in goal.tasks) task.id: _taskDisplayTitle(task),
+          };
+          return StreamBuilder<List<FocusSession>>(
+            stream: repository.watchSessions(),
+            builder: (context, sessionsSnapshot) {
+              if (sessionsSnapshot.hasError) {
+                return const Center(child: Text('暂时无法读取专注历史。'));
+              }
+              if (!sessionsSnapshot.hasData) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final sessions = sessionsSnapshot.data!
+                  .where((session) => !session.isUnfinished)
+                  .toList();
+              _refreshNodesForSessions(repository, sessions);
+              if (sessions.isEmpty) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text('完成或结束专注后，记录会显示在这里。'),
+                  ),
+                );
+              }
+              return FutureBuilder<List<FocusNode>>(
+                future: _nodesFuture,
+                builder: (context, nodesSnapshot) => _FocusHistoryList(
+                  repository: repository,
+                  sessions: sessions,
+                  nodes: nodesSnapshot.data ?? const [],
+                  taskTitles: taskTitles,
+                  nodeError: nodesSnapshot.hasError,
+                  onNodeNoteUpdated: () => _reloadNodes(repository),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _FocusHistoryList extends StatelessWidget {
+  const _FocusHistoryList({
     required this.repository,
     required this.sessions,
     required this.nodes,
     required this.taskTitles,
+    required this.nodeError,
+    required this.onNodeNoteUpdated,
   });
 
   final FocusRepository repository;
   final List<FocusSession> sessions;
   final List<FocusNode> nodes;
   final Map<String, String> taskTitles;
+  final bool nodeError;
+  final VoidCallback onNodeNoteUpdated;
 
   @override
   Widget build(BuildContext context) {
     final nodesBySession = {for (final node in nodes) node.sessionId: node};
-    return Card(
-      margin: const EdgeInsets.only(top: 16),
-      child: ExpansionTile(
-        title: const Text('专注历史'),
-        subtitle: Text('${sessions.length} 次已结算专注'),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        children: [
-          for (final session in sessions)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+      children: [
+        if (nodeError)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text('节点备注暂时不可用，专注记录仍可查看。'),
+          ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            '${sessions.length} 次已结算专注',
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+        ),
+        for (final session in sessions)
+          Card(
+            child: ListTile(
               title: Text(taskTitles[session.taskId] ?? '原任务'),
               subtitle: Text(
                 session.isFailed
@@ -2385,14 +2501,15 @@ class _FocusHistoryCard extends StatelessWidget {
                             nodeId: node.id,
                             note: note,
                           );
+                          onNodeNoteUpdated();
                         }
                       },
                     ),
                 ],
               ),
             ),
-        ],
-      ),
+          ),
+      ],
     );
   }
 }
@@ -3667,21 +3784,17 @@ class _MyPageState extends ConsumerState<MyPage> {
         FutureBuilder<bool>(
           future: _isAdministrator,
           builder: (context, snapshot) => snapshot.data == true
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Card(
-                    child: ExpansionTile(
-                      leading: const Icon(Icons.admin_panel_settings_outlined),
-                      title: const Text('用户管理'),
-                      subtitle: const Text('注册资格、用户状态与密码重置'),
-                      childrenPadding: const EdgeInsets.all(12),
-                      children: [
-                        AdminUserLifecycleCard(repository: repository),
-                        const SizedBox(height: 12),
-                        const AdminEligibilityCard(),
-                        const SizedBox(height: 12),
-                        AdminPasswordResetCard(repository: repository),
-                      ],
+              ? Card(
+                  key: const ValueKey('admin-users-entry'),
+                  child: ListTile(
+                    leading: const Icon(Icons.admin_panel_settings_outlined),
+                    title: const Text('用户管理'),
+                    subtitle: const Text('注册资格、用户状态与密码重置'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AdminUsersPage(),
+                      ),
                     ),
                   ),
                 )
@@ -3694,6 +3807,87 @@ class _MyPageState extends ConsumerState<MyPage> {
           label: const Text('退出登录'),
         ),
       ],
+    );
+  }
+}
+
+class AdminUsersPage extends ConsumerStatefulWidget {
+  const AdminUsersPage({super.key});
+
+  @override
+  ConsumerState<AdminUsersPage> createState() => _AdminUsersPageState();
+}
+
+class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
+  AuthRepository? _checkedRepository;
+  late Future<bool> _isAdministrator;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkAdministrator(ref.read(authRepositoryProvider));
+  }
+
+  void _checkAdministrator(AuthRepository repository) {
+    _checkedRepository = repository;
+    _isAdministrator = repository.isAdministrator();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final repository = ref.watch(authRepositoryProvider);
+    if (!identical(_checkedRepository, repository)) {
+      _checkAdministrator(repository);
+    }
+    return Scaffold(
+      appBar: AppBar(title: const Text('用户管理')),
+      body: FutureBuilder<bool>(
+        future: _isAdministrator,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done &&
+              !snapshot.hasError) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('暂时无法确认管理员身份。'),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: () =>
+                          setState(() => _checkAdministrator(repository)),
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('重试'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+          if (snapshot.data != true) {
+            return const Center(child: Text('仅管理员可访问用户管理。'));
+          }
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+            children: [
+              Text(
+                '注册资格、用户状态与密码重置',
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 12),
+              AdminUserLifecycleCard(repository: repository),
+              const SizedBox(height: 12),
+              const AdminEligibilityCard(),
+              const SizedBox(height: 12),
+              AdminPasswordResetCard(repository: repository),
+            ],
+          );
+        },
+      ),
     );
   }
 }

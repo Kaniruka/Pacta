@@ -2,6 +2,8 @@ import 'dart:ui' as ui;
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
@@ -71,6 +73,210 @@ void main() {
     await tester.pump();
   }
 
+  testWidgets('国策画布可缩放并重新显示整棵树', (tester) async {
+    await createPlacedCard();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: NationalFocusTreePage(repository: repository)),
+      ),
+    );
+    await pumpNationalFocusUi(tester);
+    expect(find.byKey(const ValueKey('national-focus-canvas')), findsOneWidget);
+    await tester.tap(find.byTooltip('放大国策树'));
+    await tester.pump();
+    expect(find.text('125%'), findsOneWidget);
+    await tester.tap(find.byTooltip('查看整棵树'));
+    await tester.pump();
+    expect(find.text('100%'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('整树初始适应小于100%时双指缩放与百分比同步', (tester) async {
+    for (var index = 0; index < 4; index++) {
+      final card = await repository.createCard(
+        NationalFocusCardDraft(
+          triggerCondition: '顶层节点 $index',
+          action: '完成行动 $index',
+        ),
+      );
+      await repository.placeCard(cardId: card.id, parentId: null);
+    }
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: NationalFocusTreePage(repository: repository)),
+      ),
+    );
+    await pumpNationalFocusUi(tester);
+    final canvas = find.byKey(const ValueKey('national-focus-canvas'));
+    final surface = find
+        .ancestor(of: canvas, matching: find.byType(RawGestureDetector))
+        .first;
+    final initialScale = tester.widget<Transform>(canvas).transform.entry(0, 0);
+    expect(initialScale, lessThan(1));
+    expect(find.text('${(initialScale * 100).round()}%'), findsOneWidget);
+
+    final center = tester.getCenter(surface);
+    final first = await tester.startGesture(
+      center + const Offset(-25, 0),
+      kind: ui.PointerDeviceKind.touch,
+      pointer: 61,
+    );
+    final second = await tester.startGesture(
+      center + const Offset(25, 0),
+      kind: ui.PointerDeviceKind.touch,
+      pointer: 62,
+    );
+    await first.moveBy(const Offset(-25, 0));
+    await second.moveBy(const Offset(25, 0));
+    await tester.pump();
+    final zoomedScale = tester.widget<Transform>(canvas).transform.entry(0, 0);
+    expect(zoomedScale, greaterThan(initialScale));
+    expect(find.text('${(zoomedScale * 100).round()}%'), findsOneWidget);
+    await first.up();
+    await second.up();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('触屏单指滚动页面，双指移动画布且抬起一指即停止移动', (tester) async {
+    await createPlacedCard();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: NationalFocusTreePage(repository: repository)),
+      ),
+    );
+    await pumpNationalFocusUi(tester);
+    final canvas = find.byKey(const ValueKey('national-focus-canvas'));
+    final gestureArea = find
+        .ancestor(of: canvas, matching: find.byType(RawGestureDetector))
+        .first;
+    final scrollable = find
+        .descendant(
+          of: find.byType(CustomScrollView).first,
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final scrollPosition = tester.state<ScrollableState>(scrollable).position;
+    final startScroll = scrollPosition.pixels;
+    final center = tester.getCenter(gestureArea);
+    expect(scrollPosition.maxScrollExtent, greaterThan(0));
+    expect(center.dy, lessThan(tester.view.physicalSize.height));
+    final original = tester.widget<Transform>(canvas).transform.clone();
+
+    final one = await tester.startGesture(
+      center,
+      kind: ui.PointerDeviceKind.touch,
+      pointer: 51,
+    );
+    await one.moveBy(const Offset(0, -100));
+    await tester.pump();
+    await one.moveBy(const Offset(0, -100));
+    await tester.pump();
+    expect(scrollPosition.pixels, greaterThan(startScroll));
+    expect(
+      tester.widget<Transform>(canvas).transform.storage,
+      orderedEquals(original.storage),
+    );
+    await one.up();
+    await tester.pumpAndSettle();
+
+    final touchCenter = tester.getCenter(gestureArea);
+    final first = await tester.startGesture(
+      touchCenter + const Offset(-35, 0),
+      kind: ui.PointerDeviceKind.touch,
+      pointer: 52,
+    );
+    final second = await tester.startGesture(
+      touchCenter + const Offset(35, 0),
+      kind: ui.PointerDeviceKind.touch,
+      pointer: 53,
+    );
+    final beforePan = tester.widget<Transform>(canvas).transform.clone();
+    await first.moveBy(const Offset(35, -55));
+    await second.moveBy(const Offset(35, -55));
+    await tester.pump();
+    final afterPan = tester.widget<Transform>(canvas).transform.clone();
+    expect(afterPan.storage, isNot(orderedEquals(beforePan.storage)));
+    await first.moveBy(const Offset(-25, 0));
+    await second.moveBy(const Offset(25, 0));
+    await tester.pump();
+    final afterPinch = tester.widget<Transform>(canvas).transform.clone();
+    expect(afterPinch.entry(0, 0), greaterThan(afterPan.entry(0, 0)));
+    await second.up();
+    await first.moveBy(const Offset(30, 0));
+    await tester.pump();
+    expect(
+      tester.widget<Transform>(canvas).transform.storage,
+      orderedEquals(afterPinch.storage),
+    );
+    await first.up();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('Windows 滚轮只在按住 Ctrl 时缩放画布', (tester) async {
+    await createPlacedCard();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: NationalFocusTreePage(repository: repository)),
+      ),
+    );
+    await pumpNationalFocusUi(tester);
+    final canvas = find.byKey(const ValueKey('national-focus-canvas'));
+    final area = find
+        .ancestor(of: canvas, matching: find.byType(RawGestureDetector))
+        .first;
+    final center = tester.getCenter(area);
+    final scrollable = find
+        .descendant(
+          of: find.byType(CustomScrollView).first,
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final scrollPosition = tester.state<ScrollableState>(scrollable).position;
+    final original = tester.widget<Transform>(canvas).transform.clone();
+    await tester.sendEventToBinding(
+      PointerScrollEvent(position: center, scrollDelta: const Offset(0, 120)),
+    );
+    await tester.pump();
+    expect(scrollPosition.pixels, greaterThan(0));
+    expect(
+      tester.widget<Transform>(canvas).transform.storage,
+      orderedEquals(original.storage),
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendEventToBinding(
+      PointerScrollEvent(position: center, scrollDelta: const Offset(0, -120)),
+    );
+    await tester.pump();
+    expect(
+      tester.widget<Transform>(canvas).transform.storage,
+      isNot(orderedEquals(original.storage)),
+    );
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+
+    final mouseCenter = tester.getCenter(area);
+    final beforeMousePan = tester.widget<Transform>(canvas).transform.clone();
+    final mouse = await tester.startGesture(
+      mouseCenter,
+      kind: ui.PointerDeviceKind.mouse,
+      buttons: kPrimaryMouseButton,
+    );
+    await mouse.moveBy(const Offset(40, 25));
+    await tester.pump();
+    await mouse.moveBy(const Offset(20, 15));
+    await tester.pump();
+    expect(
+      tester.widget<Transform>(canvas).transform.storage,
+      isNot(orderedEquals(beforeMousePan.storage)),
+    );
+    await mouse.up();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
   testWidgets('国策树使用所选时区展示固定检查点并支持点亮、确认和选填熄灭原因', (tester) async {
     final card = await createPlacedCard();
     await tester.pumpWidget(
@@ -94,6 +300,8 @@ void main() {
       find.text('固定规则为北京时间 04:00；显示时区 Asia/Tokyo 不会移动结算边界。'),
       findsOneWidget,
     );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
     expect(find.text('点亮'), findsOneWidget);
 
     await reveal(tester, find.text('点亮'));
@@ -104,6 +312,8 @@ void main() {
       (await repository.getCard(card.id)).state,
       NationalFocusCardState.lit,
     );
+    await tester.tap(find.byTooltip('显示详情'));
+    await tester.pump();
     expect(find.text('主动熄灭'), findsOneWidget);
 
     now = DateTime.utc(2026, 9, 25, 20);
@@ -204,6 +414,8 @@ void main() {
     );
     await pumpNationalFocusUi(tester);
 
+    await tester.tap(find.byTooltip('显示详情'));
+    await tester.pump();
     expect(find.text('确认今日继续有效'), findsOneWidget);
     expect(find.text('主动熄灭'), findsOneWidget);
     await reveal(tester, find.text('主动熄灭'));
@@ -249,6 +461,8 @@ void main() {
     );
     await pumpNationalFocusUi(tester);
 
+    await tester.tap(find.byTooltip('显示详情').first);
+    await tester.pump();
     await reveal(tester, find.text('主动熄灭').first);
     await tester.pump();
     await reveal(tester, find.text('主动熄灭').first);
@@ -265,6 +479,8 @@ void main() {
       (await repository.getCard(child.id)).state,
       NationalFocusCardState.extinguished,
     );
+    await tester.tap(find.byTooltip('显示详情').first);
+    await tester.pump();
     expect(find.textContaining('因「坐到书桌前」连带熄灭'), findsOneWidget);
     final lightButtons = find.widgetWithText(FilledButton, '点亮');
     expect(lightButtons, findsNWidgets(2));
@@ -442,6 +658,8 @@ void main() {
       greaterThan(node(children.first).width),
     );
     expect(find.text(root.effectiveTriggerCondition), findsOneWidget);
+    await tester.tap(find.byTooltip('显示详情').first);
+    await tester.pump();
     expect(find.text(root.effectiveAction), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());

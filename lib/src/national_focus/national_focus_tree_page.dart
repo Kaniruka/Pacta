@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:timezone/timezone.dart' as timezone;
 
 import '../focus/focus_time_zones.dart';
@@ -55,7 +57,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   final Set<String> _busyCardIds = {};
   bool _confirming = false;
   Timer? _settlementTimer;
-  ScrollController? _treeHorizontalController;
 
   @override
   void initState() {
@@ -71,7 +72,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   @override
   void dispose() {
     _settlementTimer?.cancel();
-    _treeHorizontalController?.dispose();
     super.dispose();
   }
 
@@ -198,13 +198,12 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   }
 
   Future<void> _openFailureHistory() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => NationalFocusFailureHistorySheet(
-        repository: widget.repository,
-        displayTimeZoneId: _displayTimeZoneId,
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => NationalFocusFailureHistoryPage(
+          repository: widget.repository,
+          displayTimeZoneId: _displayTimeZoneId,
+        ),
       ),
     );
   }
@@ -383,20 +382,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
               cardsById,
             );
 
-        if (roots.isNotEmpty && _treeHorizontalController == null) {
-          final firstBranchWidth = _branchWidth(
-            roots.first,
-            childrenByParent,
-            _treeNodeWidth,
-          );
-          final viewportWidth = MediaQuery.sizeOf(context).width - 40;
-          _treeHorizontalController = ScrollController(
-            initialScrollOffset: math.max(
-              0,
-              (firstBranchWidth - viewportWidth) / 2,
-            ),
-          );
-        }
         return CustomScrollView(
           key: const PageStorageKey<String>('national-focus-tree'),
           slivers: [
@@ -521,9 +506,16 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
                 sliver: SliverToBoxAdapter(
-                  child: SingleChildScrollView(
-                    controller: _treeHorizontalController,
-                    scrollDirection: Axis.horizontal,
+                  child: _TreeCanvas(
+                    treeWidth: roots.fold<double>(
+                      0,
+                      (width, root) =>
+                          width +
+                          _branchWidth(root, childrenByParent, _treeNodeWidth),
+                    ),
+                    treeHeight:
+                        _treeDepth(roots, childrenByParent) *
+                        (_nodeHeight + 36),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -632,17 +624,21 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
         children: [
           SizedBox(
             width: nodeWidth,
+            height: _nodeHeight,
             child: KeyedSubtree(
               key: ValueKey('national-focus-node-${card.id}'),
               child: branch,
             ),
           ),
           if (children.isNotEmpty) ...[
-            CustomPaint(
-              size: Size(width, 36),
-              painter: _BranchConnectorPainter(
-                childWidths: childWidths,
-                color: Theme.of(context).colorScheme.outline,
+            Builder(
+              builder: (context) => CustomPaint(
+                size: Size(width, 36),
+                painter: _BranchConnectorPainter(
+                  childWidths: childWidths,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  strokeWidth: math.max(2, 1.25 / _TreeCanvasScale.of(context)),
+                ),
               ),
             ),
             Row(
@@ -668,9 +664,19 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   }
 
   double get _treeNodeWidth {
-    // A single rule always fits the viewport, including enlarged text.
-    // Only sibling branches require horizontal movement.
-    return math.min(480, math.max(224, MediaQuery.sizeOf(context).width - 56));
+    return 280;
+  }
+
+  double get _nodeHeight =>
+      (_detailed ? 730.0 : 170.0) * MediaQuery.textScalerOf(context).scale(1);
+
+  int _treeDepth(
+    List<NationalFocusCard> roots,
+    Map<String, List<NationalFocusCard>> childrenByParent,
+  ) {
+    int depth(NationalFocusCard card) =>
+        1 + (childrenByParent[card.id]?.map(depth).fold<int>(0, math.max) ?? 0);
+    return roots.map(depth).fold<int>(0, math.max);
   }
 
   double _branchWidth(
@@ -687,6 +693,324 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                 width + _branchWidth(child, childrenByParent, nodeWidth),
           );
   }
+}
+
+class _TreeCanvasScale extends InheritedWidget {
+  const _TreeCanvasScale({required this.scale, required super.child});
+
+  final double scale;
+
+  static double of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_TreeCanvasScale>()?.scale ??
+      1;
+
+  @override
+  bool updateShouldNotify(_TreeCanvasScale oldWidget) =>
+      oldWidget.scale != scale;
+}
+
+/// Touch drags stay in the surrounding scroll view until a second finger
+/// joins. Mouse drags can claim the canvas with one pointer.
+class _CanvasScaleRecognizer extends ScaleGestureRecognizer {
+  final Set<int> _touchPointers = {};
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    if (event.kind == PointerDeviceKind.touch) {
+      _touchPointers.add(event.pointer);
+    }
+    super.addAllowedPointer(event);
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    super.handleEvent(event);
+    if (event is PointerDownEvent && _touchPointers.length >= 2) {
+      super.resolve(GestureDisposition.accepted);
+    }
+    if (event is PointerUpEvent || event is PointerCancelEvent) {
+      _touchPointers.remove(event.pointer);
+    }
+  }
+
+  @override
+  void resolve(GestureDisposition disposition) {
+    if (disposition == GestureDisposition.accepted &&
+        _touchPointers.isNotEmpty &&
+        pointerCount < 2) {
+      return;
+    }
+    super.resolve(disposition);
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {
+    super.didStopTrackingLastPointer(pointer);
+    _touchPointers.clear();
+  }
+}
+
+class _TreeCanvas extends StatefulWidget {
+  const _TreeCanvas({
+    required this.treeWidth,
+    required this.treeHeight,
+    required this.child,
+  });
+
+  final double treeWidth;
+  final double treeHeight;
+  final Widget child;
+
+  @override
+  State<_TreeCanvas> createState() => _TreeCanvasState();
+}
+
+class _TreeCanvasState extends State<_TreeCanvas> {
+  final GlobalKey _gestureKey = GlobalKey();
+  final TransformationController _transform = TransformationController();
+  double _scale = 1;
+  double _gestureStartScale = 1;
+  Offset _gestureSceneFocal = Offset.zero;
+  bool _gestureIsTouch = false;
+  Size? _viewport;
+
+  @override
+  void initState() {
+    super.initState();
+    _transform.addListener(_syncScale);
+  }
+
+  @override
+  void didUpdateWidget(covariant _TreeCanvas oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.treeWidth != widget.treeWidth ||
+        oldWidget.treeHeight != widget.treeHeight) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _viewport != null) _fit(_viewport!);
+      });
+    }
+  }
+
+  void _syncScale() {
+    // The canvas only scales in X/Y. Matrix4's max-axis helper includes Z=1,
+    // so it reports 100% for every fitted tree below 100%.
+    final scale = _transform.value.entry(0, 0).abs();
+    if ((_scale - scale).abs() > 0.001 && mounted) {
+      setState(() => _scale = scale);
+    }
+  }
+
+  @override
+  void dispose() {
+    _transform.removeListener(_syncScale);
+    _transform.dispose();
+    super.dispose();
+  }
+
+  void _setScale(double scale) {
+    final viewport = _viewport;
+    if (viewport == null) return;
+    final next = scale.clamp(_minimumScale(viewport), 3.0);
+    final sceneCenter = _transform.toScene(
+      Offset(viewport.width / 2, viewport.height / 2),
+    );
+    _transform.value = Matrix4.identity()
+      ..translateByDouble(
+        viewport.width / 2 - sceneCenter.dx * next,
+        viewport.height / 2 - sceneCenter.dy * next,
+        0,
+        1,
+      )
+      ..scaleByDouble(next, next, 1, 1);
+    setState(() => _scale = next);
+  }
+
+  void _onGestureStart(ScaleStartDetails details) {
+    _gestureIsTouch = details.kind == PointerDeviceKind.touch;
+    _gestureStartScale = _scale;
+    _gestureSceneFocal = _transform.toScene(details.localFocalPoint);
+  }
+
+  void _onGestureUpdate(ScaleUpdateDetails details) {
+    if (_gestureIsTouch && details.pointerCount < 2) return;
+    final viewport = _viewport;
+    if (viewport == null) return;
+    final next = (_gestureStartScale * details.scale).clamp(
+      _minimumScale(viewport),
+      3.0,
+    );
+    _transform.value = Matrix4.identity()
+      ..translateByDouble(
+        details.localFocalPoint.dx - _gestureSceneFocal.dx * next,
+        details.localFocalPoint.dy - _gestureSceneFocal.dy * next,
+        0,
+        1,
+      )
+      ..scaleByDouble(next, next, 1, 1);
+  }
+
+  void _zoomAt(Offset focal, double factor) {
+    final viewport = _viewport;
+    if (viewport == null) return;
+    final next = (_scale * factor).clamp(_minimumScale(viewport), 3.0);
+    final sceneFocal = _transform.toScene(focal);
+    _transform.value = Matrix4.identity()
+      ..translateByDouble(
+        focal.dx - sceneFocal.dx * next,
+        focal.dy - sceneFocal.dy * next,
+        0,
+        1,
+      )
+      ..scaleByDouble(next, next, 1, 1);
+  }
+
+  double _fitScale(Size viewport) => math.min(
+    1.0,
+    math.min(
+      math.max(1, viewport.width - 24) / widget.treeWidth,
+      math.max(1, viewport.height - 24) / widget.treeHeight,
+    ),
+  );
+
+  double _minimumScale(Size viewport) => math.min(0.01, _fitScale(viewport));
+
+  void _fit(Size viewport) {
+    _viewport = viewport;
+    final scale = _fitScale(viewport);
+    _transform.value = Matrix4.identity()
+      ..translateByDouble(
+        (viewport.width - widget.treeWidth * scale) / 2,
+        (viewport.height - widget.treeHeight * scale) / 2,
+        0,
+        1,
+      )
+      ..scaleByDouble(scale, scale, 1, 1);
+    setState(() => _scale = scale);
+  }
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final viewport = Size(
+        constraints.maxWidth,
+        (MediaQuery.sizeOf(context).height * 0.65).clamp(360.0, 720.0),
+      );
+      if (_viewport != viewport) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _fit(viewport);
+        });
+      }
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
+        ),
+        child: SizedBox(
+          height: viewport.height,
+          child: Stack(
+            children: [
+              Listener(
+                onPointerSignal: (event) {
+                  if (event is! PointerScrollEvent ||
+                      !HardwareKeyboard.instance.isControlPressed) {
+                    return;
+                  }
+                  GestureBinding.instance.pointerSignalResolver.register(
+                    event,
+                    (resolved) {
+                      final renderBox = _gestureKey.currentContext
+                          ?.findRenderObject();
+                      if (renderBox is! RenderBox) return;
+                      final focal = renderBox.globalToLocal(resolved.position);
+                      _zoomAt(focal, math.exp(-event.scrollDelta.dy / 200));
+                    },
+                  );
+                },
+                child: ClipRect(
+                  child: RawGestureDetector(
+                    key: _gestureKey,
+                    behavior: HitTestBehavior.opaque,
+                    gestures: {
+                      _CanvasScaleRecognizer:
+                          GestureRecognizerFactoryWithHandlers<
+                            _CanvasScaleRecognizer
+                          >(
+                            () => _CanvasScaleRecognizer(),
+                            (recognizer) => recognizer
+                              ..onStart = _onGestureStart
+                              ..onUpdate = _onGestureUpdate,
+                          ),
+                    },
+                    child: SizedBox.expand(
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Positioned(
+                            left: 0,
+                            top: 0,
+                            child: ValueListenableBuilder<Matrix4>(
+                              valueListenable: _transform,
+                              builder: (context, matrix, _) => Transform(
+                                key: const ValueKey('national-focus-canvas'),
+                                transform: matrix,
+                                child: SizedBox(
+                                  width: widget.treeWidth,
+                                  height: widget.treeHeight,
+                                  child: _TreeCanvasScale(
+                                    scale: _scale,
+                                    child: widget.child,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Material(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: '缩小国策树',
+                        onPressed: () => _setScale(_scale / 1.25),
+                        icon: const Icon(Icons.remove),
+                      ),
+                      TextButton(
+                        onPressed: () => _setScale(1),
+                        child: Text('${(_scale * 100).round()}%'),
+                      ),
+                      IconButton(
+                        tooltip: '放大国策树',
+                        onPressed: () => _setScale(_scale * 1.25),
+                        icon: const Icon(Icons.add),
+                      ),
+                      IconButton(
+                        tooltip: '查看整棵树',
+                        onPressed: () => _fit(viewport),
+                        icon: const Icon(Icons.fit_screen),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
 }
 
 class NationalFocusCardLibraryPage extends StatefulWidget {
@@ -1299,7 +1623,11 @@ class _NationalFocusTreeNode extends StatelessWidget {
             busy: busy,
           );
 
-    if (!selecting) return Card(child: content);
+    if (!selecting) {
+      return Card(
+        child: detailed ? SingleChildScrollView(child: content) : content,
+      );
+    }
     return Semantics(
       button: true,
       enabled: !blocked,
@@ -1313,7 +1641,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
         child: InkWell(
           onTap: onSelect,
           borderRadius: BorderRadius.circular(12),
-          child: content,
+          child: detailed ? SingleChildScrollView(child: content) : content,
         ),
       ),
     );
@@ -1348,30 +1676,30 @@ class _StructureTreeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          child: Row(
+    final quickAction = card.state == NationalFocusCardState.lit
+        ? null
+        : card.state == NationalFocusCardState.pendingTodayConfirmation
+        ? '确认今日'
+        : '点亮';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
             children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: blocked
-                    ? colors.surfaceContainerHighest
-                    : colors.primaryContainer,
-                child: Icon(
-                  Icons.account_tree_outlined,
-                  color: blocked
-                      ? colors.onSurfaceVariant
-                      : colors.onPrimaryContainer,
-                  size: 21,
-                ),
+              Icon(
+                Icons.account_tree_outlined,
+                size: 20,
+                color: colors.primary,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   card.effectiveTriggerCondition,
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: Theme.of(context).textTheme.titleSmall,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
               if (blocked)
@@ -1379,86 +1707,36 @@ class _StructureTreeCard extends StatelessWidget {
                   message: card.hasPendingReview
                       ? '此节点待核对，暂不能选作父节点'
                       : '不能把有效分支放到本人、后代或熄灭分支下',
-                  child: Icon(Icons.block_outlined),
+                  child: const Icon(Icons.block_outlined),
                 )
               else
                 IconButton(
                   tooltip: '显示详情',
                   onPressed: onShowDetails,
-                  icon: const Icon(Icons.chevron_right),
+                  icon: const Icon(Icons.open_in_new),
                 ),
             ],
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          const Spacer(),
+          Row(
             children: [
-              Text(
-                card.effectiveAction,
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
+              Flexible(
                 child: _StateChip(
                   state: card.state,
                   hasPendingReview: card.hasPendingReview,
                 ),
               ),
-            ],
-          ),
-        ),
-        if (card.hasPendingReview ||
-            onLight != null ||
-            onExtinguish != null ||
-            onMoveToLibrary != null) ...[
-          const Divider(height: 1),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (cascadeSourceLabel != null) ...[
-                  const SizedBox(height: 8),
-                  _CascadeStatusNote(
-                    sourceLabel: cascadeSourceLabel!,
-                    lightBlocked: lightBlocked,
-                  ),
-                ],
-                Row(
-                  children: [
-                    Expanded(
-                      child: _NodeMaintenanceAction(
-                        card: card,
-                        onLight: onLight,
-                        onExtinguish: onExtinguish,
-                        busy: busy,
-                      ),
-                    ),
-                    if (onMoveToLibrary != null)
-                      SizedBox.square(
-                        dimension: 48,
-                        child: PopupMenuButton<String>(
-                          tooltip: '管理节点',
-                          onSelected: (_) => onMoveToLibrary?.call(),
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(
-                              value: 'library',
-                              child: Text('移入卡片库'),
-                            ),
-                          ],
-                          icon: const Icon(Icons.more_horiz),
-                        ),
-                      ),
-                  ],
+              if (quickAction != null && onLight != null) ...[
+                const SizedBox(width: 4),
+                TextButton(
+                  onPressed: busy ? null : onLight,
+                  child: Text(quickAction),
                 ),
               ],
-            ),
+            ],
           ),
         ],
-      ],
+      ),
     );
   }
 }
@@ -1667,27 +1945,34 @@ class _MaintenanceSummary extends StatelessWidget {
               ),
             ],
           ),
-          ExpansionTile(
-            key: const PageStorageKey('national-focus-checkpoint-information'),
-            tilePadding: EdgeInsets.zero,
+          ListTile(
+            contentPadding: EdgeInsets.zero,
             title: const Text('检查点与失败记录'),
-            children: [
-              Text(
-                nextCheckpoint,
-                style: Theme.of(context).textTheme.bodyMedium,
+            subtitle: Text(nextCheckpoint),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push<void>(
+              MaterialPageRoute<void>(
+                builder: (_) => Scaffold(
+                  appBar: AppBar(title: const Text('检查点与失败记录')),
+                  body: ListView(
+                    children: [
+                      ListTile(
+                        title: Text(nextCheckpoint),
+                        subtitle: Text(
+                          '固定规则为北京时间 04:00；显示时区 $displayTimeZoneId 不会移动结算边界。',
+                        ),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.history),
+                        title: const Text('查看失败记录'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: onOpenHistory,
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                '固定规则为北京时间 04:00；显示时区 $displayTimeZoneId 不会移动结算边界。',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 8),
-              TextButton.icon(
-                onPressed: onOpenHistory,
-                icon: const Icon(Icons.history),
-                label: const Text('查看失败记录'),
-              ),
-            ],
+            ),
           ),
         ],
       ),
@@ -1883,8 +2168,8 @@ class _FailureExplanationDialogState extends State<_FailureExplanationDialog> {
   );
 }
 
-class NationalFocusFailureHistorySheet extends StatefulWidget {
-  const NationalFocusFailureHistorySheet({
+class NationalFocusFailureHistoryPage extends StatefulWidget {
+  const NationalFocusFailureHistoryPage({
     super.key,
     required this.repository,
     required this.displayTimeZoneId,
@@ -1894,12 +2179,12 @@ class NationalFocusFailureHistorySheet extends StatefulWidget {
   final String displayTimeZoneId;
 
   @override
-  State<NationalFocusFailureHistorySheet> createState() =>
-      _NationalFocusFailureHistorySheetState();
+  State<NationalFocusFailureHistoryPage> createState() =>
+      _NationalFocusFailureHistoryPageState();
 }
 
-class _NationalFocusFailureHistorySheetState
-    extends State<NationalFocusFailureHistorySheet> {
+class _NationalFocusFailureHistoryPageState
+    extends State<NationalFocusFailureHistoryPage> {
   late Future<List<NationalFocusFailure>> _failures;
 
   @override
@@ -1949,16 +2234,14 @@ class _NationalFocusFailureHistorySheetState
   }
 
   @override
-  Widget build(BuildContext context) => SafeArea(
-    child: FractionallySizedBox(
-      heightFactor: 0.9,
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('国策失败记录')),
+    body: SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('国策失败记录', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
             Expanded(
               child: FutureBuilder<List<NationalFocusFailure>>(
                 future: _failures,
@@ -2377,16 +2660,18 @@ class _BranchConnectorPainter extends CustomPainter {
   const _BranchConnectorPainter({
     required this.childWidths,
     required this.color,
+    required this.strokeWidth,
   });
 
   final List<double> childWidths;
   final Color color;
+  final double strokeWidth;
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = color
-      ..strokeWidth = 2
+      ..strokeWidth = strokeWidth
       ..style = PaintingStyle.stroke;
     final centers = <double>[];
     var offset = 0.0;
@@ -2417,5 +2702,6 @@ class _BranchConnectorPainter extends CustomPainter {
   @override
   bool shouldRepaint(_BranchConnectorPainter oldDelegate) =>
       oldDelegate.color != color ||
+      oldDelegate.strokeWidth != strokeWidth ||
       !listEquals(oldDelegate.childWidths, childWidths);
 }

@@ -1,0 +1,305 @@
+{
+  "source": {
+    "label": "用户提供的国策树图片",
+    "version": "V.13",
+    "date": "8.18",
+    "transcription": "人工转录；疑似识别错误的条目标记 needs_review"
+  },
+  "root": {
+    "id": "national_focus_tree",
+    "title": "国策树",
+    "central": {
+      "id": "rural_encirclement",
+      "title": "农村包围城市",
+      "branches": [
+        {
+          "id": "risk_avoidance",
+          "title": "风险规避",
+          "groups": [
+            {
+              "id": "ready_to_go",
+              "title": "整装待发",
+              "cards": [
+                {
+                  "id": "pain_free_early_rise",
+                  "title": "无痛早起",
+                  "action": "早7:00前起床奖励一块巧克力，持续15天奖励一张专辑。",
+                  "scope": "农村包围城市 › 风险规避 › 整装待发"
+                },
+                {
+                  "id": "fully_prepared",
+                  "title": "一应俱全",
+                  "action": "离开家门前扫描是否有遗漏物品。",
+                  "scope": "农村包围城市 › 风险规避 › 整装待发",
+                  "transcriptionStatus": "needs_review"
+                },
+                {
+                  "id": "plan_ahead",
+                  "title": "未雨绸缪",
+                  "action": "如果第二天是考试、出行等非日常活动，应先查询好必备物品，再准备好放在门口。"
+                },
+                {
+                  "id": "think_before_speaking",
+                  "title": "谨言慎行",
+                  "action": "每日通勤路上重复5次，并当天复盘有没有说话带来的麻烦，如何改变。"
+                }
+              ]
+            },
+            {
+              "id": "stay_away_from_phone",
+              "title": "远离手机",
+              "cards": [
+                {
+                  "id": "phone_trap_avoidance",
+                  "title": "手机陷阱规避",
+                  "action": "禁止在任何可以躺的位置（床、沙发、懒人椅等）上使用电子产品。"
+                },
+                {
+                  "id": "app_limits",
+                  "title": "应用限制",
+                  "action": "近家门前打开 forest 种树（除非导航或编辑信息没回）。",
+                  "scope": "农村包围城市 › 风险规避 › 远离手机",
+                  "transcriptionStatus": "needs_review"
+                },
+                {
+                  "id": "talk_less",
+                  "title": "言多必失",
+                  "action": "为避免因聊天失去时间及带来不必要麻烦，非放松日非必要情况下，21:30–22:30可以发信息。",
+                  "scope": "农村包围城市 › 风险规避 › 远离手机",
+                  "transcriptionStatus": "needs_review"
+                },
+                {
+                  "id": "rough_social_feed",
+                  "title": "毛坯的朋友圈",
+                  "action": "半个月发一次朋友圈，每次编辑时间20分钟内，打开即计时。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "means_of_revolution",
+          "title": "革命的本钱",
+          "branches": [
+            {
+              "id": "physical_health",
+              "title": "强身健体",
+              "cards": [
+                {
+                  "id": "weekly_workout",
+                  "title": "每周大练",
+                  "action": "每周一次超过1小时的运动（不限于打球、跑步、瑜伽或者撸铁）。"
+                },
+                {
+                  "id": "daily_exercise",
+                  "title": "每日小练",
+                  "action": "可以是早起或晚归时每天10分钟运动。",
+                  "scope": "农村包围城市 › 革命的本钱 › 强身健体",
+                  "transcriptionStatus": "needs_review"
+                },
+                {
+                  "id": "ready_to_move",
+                  "title": "蓄势待发",
+                  "action": "客厅铺上瑜伽垫，门口摆上跑步鞋。"
+                },
+                {
+                  "id": "self_training_log",
+                  "title": "不能白练",
+                  "action": "每天记录体重，如体重增加要备注原因。"
+                }
+              ]
+            },
+            {
+              "id": "sleep_well",
+              "title": "好好睡觉",
+              "cards": [
+                {
+                  "id": "stop_in_time",
+                  "title": "适可而止",
+                  "action": "23:00前必须回家，除非有重要DDL。",
+                  "transcriptionStatus": "needs_review"
+                },
+                {
+                  "id": "sleep_checkin",
+                  "title": "夜幕降临",
+                  "action": "睡眠打卡，连续一周打卡可奖励一部电影，连续一周23:30前睡觉奖励2部电影。",
+                  "transcriptionStatus": "needs_review"
+                },
+                {
+                  "id": "refresh_after_return",
+                  "title": "神清气爽",
+                  "action": "回家后15分钟之内必须去洗澡。"
+                },
+                {
+                  "id": "bedtime_ritual",
+                  "title": "预备仪式",
+                  "action": "每天熄灯时间前半小时使用任何应用都只能站立用。",
+                  "transcriptionStatus": "needs_review"
+                },
+                {
+                  "id": "electronic_curfew",
+                  "title": "电子禁宵",
+                  "action": "晚上熄灯至次日起床时间禁止使用限制组应用包括手机、平板及电脑，也禁止移出限制组。",
+                  "scope": "农村包围城市 › 革命的本钱 › 好好睡觉",
+                  "transcriptionStatus": "needs_review"
+                }
+              ]
+            },
+            {
+              "id": "eat_well",
+              "title": "好好吃饭",
+              "cards": [
+                {
+                  "id": "eat_breakfast",
+                  "title": "早饭要吃好",
+                  "action": "9点前要吃早饭。"
+                },
+                {
+                  "id": "drink_water",
+                  "title": "喝水不能少",
+                  "action": "每天最少摄入1000ml的水。"
+                },
+                {
+                  "id": "reduce_sugar",
+                  "title": "控糖革命",
+                  "action": "饮料只能是美式或苏打水，一周可以喝一次含糖饮料。"
+                },
+                {
+                  "id": "cook_for_myself",
+                  "title": "全能战士",
+                  "action": "每周给自己做一顿饭。"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "inner_journey",
+          "title": "心灵奇旅",
+          "branches": [
+            {
+              "id": "personal_biography",
+              "title": "个人传记",
+              "cards": [
+                {
+                  "id": "echo_of_time",
+                  "title": "时光的回响",
+                  "action": "保持每天写日记，没时间就只写一句话，但一定要写（可以次日早上写）。",
+                  "transcriptionStatus": "needs_review"
+                },
+                {
+                  "id": "decision_review",
+                  "title": "决策审查",
+                  "action": "执行反失策机制，记录历史失策并及时反思。"
+                },
+                {
+                  "id": "happy_moments",
+                  "title": "赢麻了",
+                  "action": "每当任务完成或有好事发生，都可作为喜报收集到每日总结，以提升士气帮助放松，改善睡眠。",
+                  "transcriptionStatus": "needs_review"
+                }
+              ]
+            },
+            {
+              "id": "cultivate_mind_and_body",
+              "title": "修生养性",
+              "cards": [
+                {
+                  "id": "balance_effort_and_rest",
+                  "title": "张弛有度",
+                  "action": "没有 ddl 的情况下，每周需有一天执行计划内放松。"
+                },
+                {
+                  "id": "take_a_breather",
+                  "title": "空中加油",
+                  "action": "每天至少要有15min闭目养神。",
+                  "transcriptionStatus": "needs_review"
+                },
+                {
+                  "id": "learn_to_say_no",
+                  "title": "学会拒绝",
+                  "action": "非特殊时段（如过节）每周只能参加一次聚餐。"
+                }
+              ]
+            },
+            {
+              "id": "live_well",
+              "title": "好好生活",
+              "cards": [
+                {
+                  "id": "wake_myself",
+                  "title": "唤醒自己",
+                  "action": "早起20s叠被子。"
+                },
+                {
+                  "id": "all_life_is_precious",
+                  "title": "万物皆生灵",
+                  "action": "每天洗完衣服要浇花。",
+                  "transcriptionStatus": "needs_review",
+                  "specialCaseNote": "图片文案保留；此 fixture 不实现该名称可能暗示的容错规则"
+                },
+                {
+                  "id": "keep_clean",
+                  "title": "保持干净",
+                  "action": "每周预留一个晚上小扫除和刷鞋。"
+                },
+                {
+                  "id": "spend_reasonably",
+                  "title": "合理开支",
+                  "action": "每周总结花销，并于每周日记录。"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "generalRules": [
+      {
+        "id": "router",
+        "title": "路由器",
+        "action": "根据不同的生活大状态，切换不同的国策树分支。"
+      },
+      {
+        "id": "blade_commander",
+        "title": "刀名司令",
+        "action": "当某节点因突发事件熄灭，将导致其子节点连带崩塌时，不清除子节点，仅移除子节点本身。",
+        "transcriptionStatus": "needs_review"
+      },
+      {
+        "id": "archive_management",
+        "title": "档案管理",
+        "action": "每天必须点开国策树页面，任何对国策树的更新都必须当天记录于此页。",
+        "transcriptionStatus": "needs_review"
+      },
+      {
+        "id": "watertight_compartment",
+        "title": "水密隔舱",
+        "action": "出现一天以上的意外事件（如旅行、回家、生病、疫情），可临时指定时间和强度范围，期间冻结该部分国策树；在结束当天，需重新执行被冻结的国策，并将这一天满足的国策点亮，未满足的熄灭。",
+        "scope": "通用规则",
+        "specialCaseNote": "图片文案保留；此 fixture 不实现冻结、临时强度范围或恢复判定等额外业务规则"
+      },
+      {
+        "id": "rest_day",
+        "title": "休养日",
+        "action": "每月3次休养日不可累积，需要在当天早晨点亮明确宣布启动，且当日所有未完成任务自动作废（不顺延）。",
+        "scope": "通用规则",
+        "specialCaseNote": "图片文案保留；此 fixture 不实现休息日计次或自动作废任务规则"
+      },
+      {
+        "id": "emergency_evasion",
+        "title": "紧急避险",
+        "action": "如果发生无法遏制的情绪波澜，视严重情况而定是否将国策树暂停冻结一天。写下自己当时的感受。",
+        "scope": "通用规则",
+        "transcriptionStatus": "needs_review"
+      }
+    ]
+  },
+  "transcriptionNotes": [
+    "椭圆标题代表图片中的层级标签，不是原图实际矩形规则卡；演示 helper 会把这些标签映射为明确标注‘仅演示’的结构演示卡，以供国策树页面展示和交互测试。",
+    "矩形规则卡标题放入 NationalFocusCard.triggerCondition，框内正文放入 NationalFocusCard.action；分类路径作为 scope。",
+    "scope 只是本示例用来显示原图分类的普通文本，不是数据库 Group 模型。",
+    "水密隔舱、休息日、万物皆生灵等描述只作为图片文案保存；不引入规范当前不支持的冻结、容错或任务作废规则。",
+    "parentId 按演示卡层级和截图分组生成；图片规则卡的规则正文仍是人工评估，不进行自动判定。"
+  ]
+}
