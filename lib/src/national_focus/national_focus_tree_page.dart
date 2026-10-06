@@ -208,7 +208,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
 
   Future<void> _openNodeActions({
     required NationalFocusCard card,
-    required String path,
     required bool lightBlocked,
     required String? cascadeSourceLabel,
   }) async {
@@ -217,11 +216,12 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
       isScrollControlled: true,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
-        child: FractionallySizedBox(
-          heightFactor: 0.82,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.9,
+          ),
           child: _NodeActionsSheet(
             card: card,
-            path: path,
             lightBlocked: lightBlocked,
             cascadeSourceLabel: cascadeSourceLabel,
             onAction: (action) async {
@@ -236,8 +236,17 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                     repository: widget.repository,
                     cardId: card.id,
                   );
-                case _NodeAction.rename:
-                  await _renameCard(card);
+                case _NodeAction.details:
+                  await Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => _NationalFocusCardDetailPage(
+                        repository: widget.repository,
+                        card: card,
+                        lightBlocked: lightBlocked,
+                        cascadeSourceLabel: cascadeSourceLabel,
+                      ),
+                    ),
+                  );
                 case _NodeAction.addChild:
                   await _openLibrary(parentId: card.id);
                 case _NodeAction.relocate:
@@ -252,49 +261,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
         ),
       ),
     );
-  }
-
-  Future<void> _renameCard(NationalFocusCard card) async {
-    final controller = TextEditingController(text: card.name);
-    final formKey = GlobalKey<FormState>();
-    final name = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('修改卡片名称'),
-        content: Form(
-          key: formKey,
-          child: TextFormField(
-            controller: controller,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: '卡片名称'),
-            validator: (value) => _requiredFieldError(value, '卡片名称'),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.of(dialogContext).pop(controller.text.trim());
-              }
-            },
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    await Future<void>.delayed(const Duration(milliseconds: 350));
-    controller.dispose();
-    if (name == null || !mounted) return;
-    try {
-      await widget.repository.renameCard(cardId: card.id, name: name);
-      _syncInBackground();
-    } catch (error) {
-      if (mounted) setState(() => _error = _friendlyError(error));
-    }
   }
 
   String _formatCheckpoint(DateTime now, String timeZoneId) {
@@ -489,15 +455,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
 
         return Column(
           children: [
-            _TreeTopBar(
-              pendingCount: pendingCount,
-              confirming: _confirming,
-              onConfirm: _placementCard == null ? _confirmToday : null,
-              onLibrary: _placementCard == null ? () => _openLibrary() : null,
-              nextCheckpoint: _formatCheckpoint(_now, _displayTimeZoneId),
-              displayTimeZoneId: _displayTimeZoneId,
-              onOpenHistory: _openFailureHistory,
-            ),
             Expanded(
               child: CustomScrollView(
                 key: const PageStorageKey<String>('national-focus-tree'),
@@ -505,6 +462,26 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                   SliverToBoxAdapter(
                     child: Column(
                       children: [
+                        _TreePageHeader(
+                          pendingCount: pendingCount,
+                          confirming: _confirming,
+                          onConfirm: _placementCard == null
+                              ? _confirmToday
+                              : null,
+                          onLibrary: _placementCard == null
+                              ? () => _openLibrary()
+                              : null,
+                          nextCheckpoint: _formatCheckpoint(
+                            _now,
+                            _displayTimeZoneId,
+                          ),
+                          displayTimeZoneId: _displayTimeZoneId,
+                          onOpenHistory: _openFailureHistory,
+                          detailed: _detailed,
+                          onViewSelected: _placementCard == null
+                              ? (value) => setState(() => _detailed = value)
+                              : null,
+                        ),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                           child: NationalFocusReviewPrompt(
@@ -524,32 +501,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                             padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                             child: _InlineError(_error!),
                           ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: SegmentedButton<bool>(
-                              segments: const [
-                                ButtonSegment<bool>(
-                                  value: false,
-                                  icon: Icon(Icons.account_tree_outlined),
-                                  label: Text('简洁'),
-                                ),
-                                ButtonSegment<bool>(
-                                  value: true,
-                                  icon: Icon(Icons.article_outlined),
-                                  label: Text('详细'),
-                                ),
-                              ],
-                              selected: {_detailed},
-                              onSelectionChanged: _placementCard == null
-                                  ? (value) => setState(() {
-                                      _detailed = value.single;
-                                    })
-                                  : null,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -671,7 +622,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
           ? null
           : () => _openNodeActions(
               card: card,
-              path: path,
               lightBlocked: hasExtinguishedAncestor,
               cascadeSourceLabel: card.cascadeSourceCardId == null
                   ? null
@@ -1041,33 +991,49 @@ class _TreeCanvasState extends State<_TreeCanvas> {
               ),
               Positioned(
                 top: 8,
+                left: 8,
                 right: 8,
-                child: Material(
-                  color: Theme.of(context).colorScheme.surface,
-                  borderRadius: BorderRadius.circular(12),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        tooltip: '缩小国策树',
-                        onPressed: () => _setScale(_scale / 1.25),
-                        icon: const Icon(Icons.remove),
-                      ),
-                      TextButton(
-                        onPressed: () => _setScale(1),
-                        child: Text('${(_scale * 100).round()}%'),
-                      ),
-                      IconButton(
-                        tooltip: '放大国策树',
-                        onPressed: () => _setScale(_scale * 1.25),
-                        icon: const Icon(Icons.add),
-                      ),
-                      IconButton(
-                        tooltip: '查看整棵树',
-                        onPressed: () => _fit(viewport),
-                        icon: const Icon(Icons.fit_screen),
-                      ),
-                    ],
+                child: Align(
+                  alignment: Alignment.topRight,
+                  child: Material(
+                    color: Theme.of(context).colorScheme.surface,
+                    borderRadius: BorderRadius.circular(12),
+                    child: Wrap(
+                      alignment: WrapAlignment.end,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Text('${(_scale * 100).round()}%'),
+                        ),
+                        TextButton.icon(
+                          onPressed: () => _fit(viewport),
+                          icon: const Icon(Icons.fit_screen),
+                          label: const Text('适应屏幕'),
+                        ),
+                        PopupMenuButton<String>(
+                          tooltip: '画布缩放',
+                          onSelected: (value) {
+                            switch (value) {
+                              case 'in':
+                                _setScale(_scale * 1.25);
+                              case 'out':
+                                _setScale(_scale / 1.25);
+                              case 'reset':
+                                _setScale(1);
+                            }
+                          },
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(value: 'in', child: Text('放大国策树')),
+                            PopupMenuItem(value: 'out', child: Text('缩小国策树')),
+                            PopupMenuItem(
+                              value: 'reset',
+                              child: Text('恢复100%'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -1096,6 +1062,9 @@ class NationalFocusCardLibraryPage extends StatefulWidget {
 
 class _NationalFocusCardLibraryPageState
     extends State<NationalFocusCardLibraryPage> {
+  Future<void> _renameCard(NationalFocusCard card) =>
+      _renameNationalFocusCard(context, widget.repository, card);
+
   Future<void> _createCard(BuildContext context) async {
     final created = await Navigator.of(context).push<NationalFocusCard>(
       MaterialPageRoute<NationalFocusCard>(
@@ -1181,6 +1150,7 @@ class _NationalFocusCardLibraryPageState
             repository: widget.repository,
             onPlace: (card) => Navigator.of(context).pop(card),
             onDelete: _deleteCard,
+            onRename: _renameCard,
             onManageStrengthening: (card) => _openStrengtheningManager(
               context: context,
               repository: widget.repository,
@@ -1207,12 +1177,14 @@ class _LibraryCardList extends StatelessWidget {
     required this.repository,
     required this.onPlace,
     required this.onDelete,
+    required this.onRename,
     required this.onManageStrengthening,
   });
 
   final NationalFocusRepository repository;
   final ValueChanged<NationalFocusCard> onPlace;
   final ValueChanged<NationalFocusCard> onDelete;
+  final ValueChanged<NationalFocusCard> onRename;
   final ValueChanged<NationalFocusCard> onManageStrengthening;
 
   @override
@@ -1251,6 +1223,9 @@ class _LibraryCardList extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, index) => _LibraryCard(
               card: cards[index],
+              onRename: cards[index].hasPendingReview
+                  ? null
+                  : () => onRename(cards[index]),
               onPlace: cards[index].hasPendingReview
                   ? null
                   : () => onPlace(cards[index]),
@@ -1521,12 +1496,14 @@ class _LibraryCard extends StatelessWidget {
     required this.card,
     required this.onPlace,
     required this.onDelete,
+    required this.onRename,
     required this.onManageStrengthening,
   });
 
   final NationalFocusCard card;
   final VoidCallback? onPlace;
   final VoidCallback? onDelete;
+  final VoidCallback? onRename;
   final VoidCallback? onManageStrengthening;
 
   @override
@@ -1543,7 +1520,27 @@ class _LibraryCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
           ],
-          Text(card.name, style: Theme.of(context).textTheme.titleMedium),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  card.name,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              PopupMenuButton<String>(
+                tooltip: '卡片操作',
+                onSelected: (_) => onRename?.call(),
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    value: 'rename',
+                    enabled: onRename != null,
+                    child: const Text('修改名称'),
+                  ),
+                ],
+              ),
+            ],
+          ),
           _FieldText(label: '当前主要触发条件', value: card.effectiveTriggerCondition),
           const SizedBox(height: 12),
           _FieldText(label: '当前行动', value: card.effectiveAction),
@@ -1638,15 +1635,17 @@ class _DeletedLibraryCard extends StatelessWidget {
 enum _NodeAction {
   light,
   strengthening,
-  rename,
+  details,
   addChild,
   relocate,
   extinguish,
   library,
 }
 
-class _TreeTopBar extends StatelessWidget {
-  const _TreeTopBar({
+class _TreePageHeader extends StatelessWidget {
+  const _TreePageHeader({
+    required this.detailed,
+    required this.onViewSelected,
     required this.pendingCount,
     required this.confirming,
     required this.onConfirm,
@@ -1655,6 +1654,8 @@ class _TreeTopBar extends StatelessWidget {
     required this.displayTimeZoneId,
     required this.onOpenHistory,
   });
+  final bool detailed;
+  final ValueChanged<bool>? onViewSelected;
   final int pendingCount;
   final bool confirming;
   final VoidCallback? onConfirm;
@@ -1664,64 +1665,95 @@ class _TreeTopBar extends StatelessWidget {
   final VoidCallback onOpenHistory;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: Theme.of(context).colorScheme.surface,
-    elevation: 1,
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 4,
-        runSpacing: 4,
-        children: [
-          Text('国策树', style: Theme.of(context).textTheme.titleLarge),
-          TextButton.icon(
-            onPressed: pendingCount == 0 || confirming ? null : onConfirm,
-            icon: const Icon(Icons.done_all),
-            label: Text('今日确认 ($pendingCount)'),
-          ),
-          IconButton(
-            onPressed: onLibrary,
-            tooltip: '卡片库',
-            icon: const Icon(Icons.library_books_outlined),
-          ),
-          PopupMenuButton<String>(
-            tooltip: '更多',
-            icon: const Icon(Icons.more_vert),
-            onSelected: (value) {
-              if (value == 'records') {
-                Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    builder: (_) => Scaffold(
-                      appBar: AppBar(title: const Text('检查点与失败记录')),
-                      body: ListView(
-                        children: [
-                          ListTile(
-                            title: Text(nextCheckpoint),
-                            subtitle: Text(
-                              '固定规则为北京时间 04:00；显示时区 $displayTimeZoneId 不会移动结算边界。',
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 4,
+          runSpacing: 4,
+          children: [
+            Text('国策树', style: Theme.of(context).textTheme.headlineSmall),
+            TextButton.icon(
+              onPressed: pendingCount == 0 || confirming ? null : onConfirm,
+              icon: const Icon(Icons.done_all),
+              label: Text('今日确认 ($pendingCount)'),
+            ),
+          ],
+        ),
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          children: [
+            PopupMenuButton<bool>(
+              enabled: onViewSelected != null,
+              onSelected: onViewSelected,
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: false, child: Text('简洁视图')),
+                PopupMenuItem(value: true, child: Text('详细视图')),
+              ],
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(detailed ? '详细视图' : '简洁视图'),
+                      const Icon(Icons.arrow_drop_down),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Tooltip(
+              message: '卡片库',
+              child: TextButton.icon(
+                onPressed: onLibrary,
+                icon: const Icon(Icons.library_books_outlined),
+                label: const Text('卡片库'),
+              ),
+            ),
+            PopupMenuButton<String>(
+              tooltip: '更多',
+              icon: const Icon(Icons.more_vert),
+              onSelected: (value) {
+                if (value == 'records') {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => Scaffold(
+                        appBar: AppBar(title: const Text('检查点与失败记录')),
+                        body: ListView(
+                          children: [
+                            ListTile(
+                              title: Text(nextCheckpoint),
+                              subtitle: Text(
+                                '固定规则为北京时间 04:00；显示时区 $displayTimeZoneId 不会移动结算边界。',
+                              ),
                             ),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.history),
-                            title: const Text('查看失败记录'),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: onOpenHistory,
-                          ),
-                        ],
+                            ListTile(
+                              leading: const Icon(Icons.history),
+                              title: const Text('查看失败记录'),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: onOpenHistory,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                );
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'records', child: Text('检查点与失败记录')),
-            ],
-          ),
-        ],
-      ),
+                  );
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'records', child: Text('检查点与失败记录')),
+              ],
+            ),
+          ],
+        ),
+      ],
     ),
   );
 }
@@ -1729,13 +1761,11 @@ class _TreeTopBar extends StatelessWidget {
 class _NodeActionsSheet extends StatelessWidget {
   const _NodeActionsSheet({
     required this.card,
-    required this.path,
     required this.lightBlocked,
     required this.cascadeSourceLabel,
     required this.onAction,
   });
   final NationalFocusCard card;
-  final String path;
   final bool lightBlocked;
   final String? cascadeSourceLabel;
   final ValueChanged<_NodeAction> onAction;
@@ -1760,8 +1790,6 @@ class _NodeActionsSheet extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(card.name, style: Theme.of(context).textTheme.headlineSmall),
-          Text('节点 $path'),
-          _StateChip(state: card.state, hasPendingReview: reviewBlocked),
           if (reviewBlocked) const _NationalFocusReviewNotice(),
           const SizedBox(height: 12),
           Text(
@@ -1771,53 +1799,32 @@ class _NodeActionsSheet extends StatelessWidget {
           ),
           const Divider(height: 16),
 
-          if (card.state != NationalFocusCardState.lit)
-            action(
-              _NodeAction.light,
-              card.state == NationalFocusCardState.pendingTodayConfirmation
-                  ? Icons.check_circle_outline
-                  : Icons.lightbulb,
-              card.state == NationalFocusCardState.pendingTodayConfirmation
-                  ? '确认今日继续有效'
-                  : '点亮',
-              enabled: !reviewBlocked && !lightBlocked,
-            ),
-          ExpansionTile(
-            title: const Text('查看详情'),
-            leading: const Icon(Icons.article_outlined),
-            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _FieldText(
-                label: '当前主要触发条件',
-                value: card.effectiveTriggerCondition,
-              ),
-              const SizedBox(height: 10),
-              _FieldText(label: '当前行动', value: card.effectiveAction),
-              if (card.scope != null)
-                _FieldText(label: '适用范围', value: card.scope!),
-              if (card.exceptionNotes != null)
-                _FieldText(label: '例外说明', value: card.exceptionNotes!),
-              if (card.activeStrengtheningLevel != null)
-                Text('当前要求 · 强化等级 ${card.activeStrengtheningLevel}'),
-              _NationalFocusRecordSummary(card: card),
-              if (cascadeSourceLabel != null)
-                _CascadeStatusNote(
-                  sourceLabel: cascadeSourceLabel!,
-                  lightBlocked: lightBlocked,
-                ),
-            ],
+          action(
+            card.state == NationalFocusCardState.lit
+                ? _NodeAction.extinguish
+                : _NodeAction.light,
+            card.state == NationalFocusCardState.lit
+                ? Icons.lightbulb_outline
+                : Icons.lightbulb,
+            switch (card.state) {
+              NationalFocusCardState.lit => '主动熄灭',
+              NationalFocusCardState.pendingTodayConfirmation => '确认今日继续有效',
+              NationalFocusCardState.extinguished => '点亮',
+            },
+            enabled:
+                !reviewBlocked &&
+                (card.state == NationalFocusCardState.lit || !lightBlocked),
           ),
+          if (reviewBlocked) const Text('请先完成核对后再操作。'),
+          if (!reviewBlocked &&
+              lightBlocked &&
+              card.state != NationalFocusCardState.lit)
+            const Text('请先点亮父节点。'),
+          action(_NodeAction.details, Icons.article_outlined, '查看详情'),
           action(
             _NodeAction.strengthening,
             Icons.tune,
             '管理强化要求',
-            enabled: !reviewBlocked,
-          ),
-          action(
-            _NodeAction.rename,
-            Icons.edit_outlined,
-            '修改名称',
             enabled: !reviewBlocked,
           ),
           action(
@@ -1832,7 +1839,7 @@ class _NodeActionsSheet extends StatelessWidget {
             '调整树中位置',
             enabled: !reviewBlocked,
           ),
-          if (card.state != NationalFocusCardState.extinguished)
+          if (card.state == NationalFocusCardState.pendingTodayConfirmation)
             action(
               _NodeAction.extinguish,
               Icons.lightbulb_outline,
@@ -1849,6 +1856,89 @@ class _NodeActionsSheet extends StatelessWidget {
       ),
     );
   }
+}
+
+class _NationalFocusCardDetailPage extends StatelessWidget {
+  const _NationalFocusCardDetailPage({
+    required this.repository,
+    required this.card,
+    required this.lightBlocked,
+    required this.cascadeSourceLabel,
+  });
+  final NationalFocusRepository repository;
+  final NationalFocusCard card;
+  final bool lightBlocked;
+  final String? cascadeSourceLabel;
+  @override
+  Widget build(BuildContext context) => StreamBuilder<List<NationalFocusCard>>(
+    stream: repository.watchTreeCards(),
+    builder: (context, snapshot) {
+      final card =
+          snapshot.data?.where((item) => item.id == this.card.id).firstOrNull ??
+          this.card;
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('国策卡详情'),
+          actions: [
+            PopupMenuButton<String>(
+              tooltip: '卡片操作',
+              onSelected: (_) async {
+                await _renameNationalFocusCard(context, repository, card);
+              },
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: 'rename',
+                  enabled: !card.hasPendingReview,
+                  child: const Text('修改名称'),
+                ),
+              ],
+            ),
+          ],
+        ),
+        body: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            Text(card.name, style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 8),
+            Text(
+              card.state.label,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 24),
+            _FieldText(
+              label: '当前主要触发条件',
+              value: card.effectiveTriggerCondition,
+            ),
+            const SizedBox(height: 20),
+            _FieldText(label: '当前行动', value: card.effectiveAction),
+            if (card.scope != null) ...[
+              const SizedBox(height: 20),
+              _FieldText(label: '适用范围', value: card.scope!),
+            ],
+            if (card.exceptionNotes != null) ...[
+              const SizedBox(height: 20),
+              _FieldText(label: '例外说明', value: card.exceptionNotes!),
+            ],
+            const SizedBox(height: 24),
+            Text('强化要求', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              card.activeStrengtheningLevel == null
+                  ? '当前使用基础要求'
+                  : '当前要求 · 强化等级 ${card.activeStrengtheningLevel}',
+            ),
+            const SizedBox(height: 24),
+            Text('记录', style: Theme.of(context).textTheme.titleMedium),
+            _NationalFocusRecordSummary(card: card),
+            if (cascadeSourceLabel != null)
+              _CascadeStatusNote(
+                sourceLabel: cascadeSourceLabel!,
+                lightBlocked: lightBlocked,
+              ),
+          ],
+        ),
+      );
+    },
+  );
 }
 
 class _NationalFocusTreeNode extends StatelessWidget {
@@ -2445,48 +2535,6 @@ class _PlacementBanner extends StatelessWidget {
   );
 }
 
-class _StateChip extends StatelessWidget {
-  const _StateChip({required this.state, this.hasPendingReview = false});
-
-  final NationalFocusCardState state;
-  final bool hasPendingReview;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final (icon, background, foreground) = hasPendingReview
-        ? (Icons.sync_problem, colors.errorContainer, colors.onErrorContainer)
-        : switch (state) {
-            NationalFocusCardState.lit => (
-              Icons.lightbulb,
-              colors.primaryContainer,
-              colors.onPrimaryContainer,
-            ),
-            NationalFocusCardState.pendingTodayConfirmation => (
-              Icons.hourglass_top,
-              colors.tertiaryContainer,
-              colors.onTertiaryContainer,
-            ),
-            NationalFocusCardState.extinguished => (
-              Icons.lightbulb_outline,
-              colors.surfaceContainerHighest,
-              colors.onSurfaceVariant,
-            ),
-          };
-    final label = hasPendingReview ? '待核对 · ${state.label}' : state.label;
-    return Semantics(
-      label: '卡片状态：$label',
-      child: Chip(
-        avatar: Icon(icon, size: 18, color: foreground),
-        label: Text(label),
-        backgroundColor: background,
-        side: BorderSide.none,
-        visualDensity: VisualDensity.compact,
-      ),
-    );
-  }
-}
-
 class _FieldText extends StatelessWidget {
   const _FieldText({required this.label, required this.value});
 
@@ -2648,4 +2696,72 @@ class _BranchConnectorPainter extends CustomPainter {
       oldDelegate.color != color ||
       oldDelegate.strokeWidth != strokeWidth ||
       !listEquals(oldDelegate.childWidths, childWidths);
+}
+
+Future<void> _renameNationalFocusCard(
+  BuildContext context,
+  NationalFocusRepository repository,
+  NationalFocusCard card,
+) async {
+  final name = await showDialog<String>(
+    context: context,
+    builder: (_) => _RenameCardDialog(name: card.name),
+  );
+  if (name == null || !context.mounted) return;
+  try {
+    await repository.renameCard(cardId: card.id, name: name);
+    _syncNationalFocusInBackground(repository);
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(_friendlyError(error))));
+    }
+  }
+}
+
+class _RenameCardDialog extends StatefulWidget {
+  const _RenameCardDialog({required this.name});
+  final String name;
+  @override
+  State<_RenameCardDialog> createState() => _RenameCardDialogState();
+}
+
+class _RenameCardDialogState extends State<_RenameCardDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.name,
+  );
+  final _formKey = GlobalKey<FormState>();
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('修改卡片名称'),
+    content: Form(
+      key: _formKey,
+      child: TextFormField(
+        controller: _controller,
+        autofocus: true,
+        decoration: const InputDecoration(labelText: '卡片名称'),
+        validator: (value) => _requiredFieldError(value, '卡片名称'),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('取消'),
+      ),
+      FilledButton(
+        onPressed: () {
+          if (_formKey.currentState!.validate()) {
+            Navigator.of(context).pop(_controller.text.trim());
+          }
+        },
+        child: const Text('保存'),
+      ),
+    ],
+  );
 }

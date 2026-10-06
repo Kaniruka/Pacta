@@ -85,7 +85,7 @@ void main() {
         );
       }
 
-      final fitButton = find.byTooltip('查看整棵树');
+      final fitButton = find.text('适应屏幕');
       await tester.ensureVisible(fitButton);
       await tester.tap(fitButton);
       await tester.pumpAndSettle();
@@ -103,7 +103,9 @@ void main() {
 
       final scaleFinder = find.textContaining('%');
       final scaleBeforeZoom = tester.widget<Text>(scaleFinder).data;
-      await tester.tap(find.byTooltip('放大国策树'));
+      await tester.tap(find.byTooltip('画布缩放'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('放大国策树'));
       await tester.pumpAndSettle();
       expect(tester.widget<Text>(scaleFinder).data, isNot(scaleBeforeZoom));
 
@@ -130,8 +132,10 @@ void main() {
         isNot(panBefore),
       );
       await captureScreenshot(screenshotName);
-      await tester.ensureVisible(find.text('详细'));
-      await tester.tap(find.text('详细'));
+      await tester.ensureVisible(find.text('简洁视图'));
+      await tester.tap(find.text('简洁视图'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('详细视图'));
       await tester.pumpAndSettle();
       expect(find.textContaining('切换不同的国策树分支'), findsOneWidget);
       final firstCard = seed.cardId(seed.cardIdsBySourceId.keys.first);
