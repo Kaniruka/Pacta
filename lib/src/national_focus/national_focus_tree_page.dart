@@ -811,9 +811,7 @@ class _TreeCanvasState extends State<_TreeCanvas> {
     // The canvas only scales in X/Y. Matrix4's max-axis helper includes Z=1,
     // so it reports 100% for every fitted tree below 100%.
     final scale = _transform.value.entry(0, 0).abs();
-    if ((_scale - scale).abs() > 0.001 && mounted) {
-      setState(() => _scale = scale);
-    }
+    _scale = scale;
   }
 
   @override
@@ -821,24 +819,6 @@ class _TreeCanvasState extends State<_TreeCanvas> {
     _transform.removeListener(_syncScale);
     _transform.dispose();
     super.dispose();
-  }
-
-  void _setScale(double scale) {
-    final viewport = _viewport;
-    if (viewport == null) return;
-    final next = scale.clamp(_minimumScale(viewport), 3.0);
-    final sceneCenter = _transform.toScene(
-      Offset(viewport.width / 2, viewport.height / 2),
-    );
-    _transform.value = Matrix4.identity()
-      ..translateByDouble(
-        viewport.width / 2 - sceneCenter.dx * next,
-        viewport.height / 2 - sceneCenter.dy * next,
-        0,
-        1,
-      )
-      ..scaleByDouble(next, next, 1, 1);
-    setState(() => _scale = next);
   }
 
   void _onGestureStart(ScaleStartDetails details) {
@@ -991,49 +971,14 @@ class _TreeCanvasState extends State<_TreeCanvas> {
               ),
               Positioned(
                 top: 8,
-                left: 8,
                 right: 8,
-                child: Align(
-                  alignment: Alignment.topRight,
-                  child: Material(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(12),
-                    child: Wrap(
-                      alignment: WrapAlignment.end,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Text('${(_scale * 100).round()}%'),
-                        ),
-                        TextButton.icon(
-                          onPressed: () => _fit(viewport),
-                          icon: const Icon(Icons.fit_screen),
-                          label: const Text('适应屏幕'),
-                        ),
-                        PopupMenuButton<String>(
-                          tooltip: '画布缩放',
-                          onSelected: (value) {
-                            switch (value) {
-                              case 'in':
-                                _setScale(_scale * 1.25);
-                              case 'out':
-                                _setScale(_scale / 1.25);
-                              case 'reset':
-                                _setScale(1);
-                            }
-                          },
-                          itemBuilder: (_) => const [
-                            PopupMenuItem(value: 'in', child: Text('放大国策树')),
-                            PopupMenuItem(value: 'out', child: Text('缩小国策树')),
-                            PopupMenuItem(
-                              value: 'reset',
-                              child: Text('恢复100%'),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                child: Material(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  child: IconButton(
+                    tooltip: '适应屏幕',
+                    onPressed: () => _fit(viewport),
+                    icon: const Icon(Icons.fit_screen),
                   ),
                 ),
               ),

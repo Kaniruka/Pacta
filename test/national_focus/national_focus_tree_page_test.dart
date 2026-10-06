@@ -219,7 +219,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('国策画布可缩放并重新显示整棵树', (tester) async {
+  testWidgets('画布只显示适应屏幕图标，手势缩放后可恢复整树', (tester) async {
     await createPlacedCard();
     await tester.pumpWidget(
       MaterialApp(
@@ -227,20 +227,44 @@ void main() {
       ),
     );
     await pumpNationalFocusUi(tester);
-    expect(find.byKey(const ValueKey('national-focus-canvas')), findsOneWidget);
-    await tester.tap(find.byTooltip('画布缩放'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('放大国策树'));
+    final canvas = find.byKey(const ValueKey('national-focus-canvas'));
+    final surface = find
+        .ancestor(of: canvas, matching: find.byType(RawGestureDetector))
+        .first;
+    final fitted = tester.widget<Transform>(canvas).transform.clone();
+    expect(find.byTooltip('适应屏幕'), findsOneWidget);
+    expect(find.text('适应屏幕'), findsNothing);
+    expect(find.byTooltip('画布缩放'), findsNothing);
+    expect(find.textContaining('%'), findsNothing);
+    final center = tester.getCenter(surface);
+    final first = await tester.startGesture(
+      center - const Offset(25, 0),
+      pointer: 71,
+    );
+    final second = await tester.startGesture(
+      center + const Offset(25, 0),
+      pointer: 72,
+    );
+    await first.moveBy(const Offset(-25, 0));
+    await second.moveBy(const Offset(25, 0));
     await tester.pump();
-    expect(find.text('125%'), findsOneWidget);
-    await tester.tap(find.text('适应屏幕'));
+    expect(
+      tester.widget<Transform>(canvas).transform.entry(0, 0),
+      greaterThan(fitted.entry(0, 0)),
+    );
+    await first.up();
+    await second.up();
+    await tester.tap(find.byTooltip('适应屏幕'));
     await tester.pump();
-    expect(find.text('100%'), findsOneWidget);
+    expect(
+      tester.widget<Transform>(canvas).transform.storage,
+      orderedEquals(fitted.storage),
+    );
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('整树初始适应小于100%时双指缩放与百分比同步', (tester) async {
+  testWidgets('整树初始适应小于原始比例时双指缩放仍有效', (tester) async {
     for (var index = 0; index < 8; index++) {
       final card = await repository.createCard(
         NationalFocusCardDraft(
@@ -263,7 +287,6 @@ void main() {
         .first;
     final initialScale = tester.widget<Transform>(canvas).transform.entry(0, 0);
     expect(initialScale, lessThan(1));
-    expect(find.text('${(initialScale * 100).round()}%'), findsOneWidget);
 
     final center = tester.getCenter(surface);
     final first = await tester.startGesture(
@@ -281,7 +304,6 @@ void main() {
     await tester.pump();
     final zoomedScale = tester.widget<Transform>(canvas).transform.entry(0, 0);
     expect(zoomedScale, greaterThan(initialScale));
-    expect(find.text('${(zoomedScale * 100).round()}%'), findsOneWidget);
     await first.up();
     await second.up();
     await tester.pumpWidget(const SizedBox.shrink());
@@ -877,18 +899,14 @@ void main() {
     await pumpNationalFocusUi(tester);
     expect(find.byTooltip('卡片库'), findsOneWidget);
     expect(find.byTooltip('更多'), findsOneWidget);
-    await tester.ensureVisible(find.text('适应屏幕'));
+    await tester.ensureVisible(find.byTooltip('适应屏幕'));
     await tester.pump();
     final canvas = find.byKey(const ValueKey('national-focus-canvas'));
     final gestureSurface = find
         .ancestor(of: canvas, matching: find.byType(RawGestureDetector))
         .first;
     final canvasRect = tester.getRect(gestureSurface);
-    for (final control in [
-      find.textContaining('%'),
-      find.text('适应屏幕'),
-      find.byTooltip('画布缩放'),
-    ]) {
+    for (final control in [find.byTooltip('适应屏幕')]) {
       final rect = tester.getRect(control);
       expect(rect.left, greaterThanOrEqualTo(canvasRect.left));
       expect(rect.right, lessThanOrEqualTo(canvasRect.right));

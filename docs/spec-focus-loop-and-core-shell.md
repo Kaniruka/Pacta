@@ -103,7 +103,7 @@ Adding a child opens the Card Library; the user may choose an existing card or c
 
 The user authorized a one-time development reset because there are no production users. Existing test identities and business data are removed, retaining the unique administrator. This is not a client reset feature, and unnamed old National Focus data is not silently backfilled or deleted during upgrades. Unsupported old data is rejected explicitly.
 
-The density selector is a lightweight labelled view menu for Simple and Detailed. The canvas keeps Fit to Screen while placing auxiliary zoom commands in an overflow menu; pinch zoom and existing desktop mouse/Ctrl-wheel behavior remain available.
+The density selector is a lightweight labelled view menu for Simple and Detailed. The canvas displays only an icon-only Fit to Screen button with an accessible label. Zoom-in, zoom-out, reset-to-100% commands and the percentage readout are removed; pinch zoom and existing desktop mouse/Ctrl-wheel behavior remain available.
 
 ### User-defined strengthening requirements
 

@@ -85,7 +85,7 @@ void main() {
         );
       }
 
-      final fitButton = find.text('适应屏幕');
+      final fitButton = find.byTooltip('适应屏幕');
       await tester.ensureVisible(fitButton);
       await tester.tap(fitButton);
       await tester.pumpAndSettle();
@@ -100,14 +100,6 @@ void main() {
       expect(fittedScene.top, greaterThanOrEqualTo(-1));
       expect(fittedScene.right, lessThanOrEqualTo(viewportSize.width + 1));
       expect(fittedScene.bottom, lessThanOrEqualTo(viewportSize.height + 1));
-
-      final scaleFinder = find.textContaining('%');
-      final scaleBeforeZoom = tester.widget<Text>(scaleFinder).data;
-      await tester.tap(find.byTooltip('画布缩放'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('放大国策树'));
-      await tester.pumpAndSettle();
-      expect(tester.widget<Text>(scaleFinder).data, isNot(scaleBeforeZoom));
 
       final panBefore = tester
           .widget<Transform>(canvas)
