@@ -41,10 +41,18 @@ void main() {
       );
 
       final parent = await firstDevice.createCard(
-        const NationalFocusCardDraft(triggerCondition: '晨间计划', action: '安排今天'),
+        const NationalFocusCardDraft(
+          name: '晨间计划',
+          triggerCondition: '晨间计划',
+          action: '安排今天',
+        ),
       );
       final child = await firstDevice.createCard(
-        const NationalFocusCardDraft(triggerCondition: '阅读计划', action: '读一章'),
+        const NationalFocusCardDraft(
+          name: '阅读计划',
+          triggerCondition: '阅读计划',
+          action: '读一章',
+        ),
       );
       await firstDevice.placeCard(cardId: parent.id, parentId: null);
       await firstDevice.placeCard(cardId: child.id, parentId: null);

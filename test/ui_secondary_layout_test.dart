@@ -181,6 +181,7 @@ Future<void> _scan(WidgetTester tester) async {
 class _CardRepository extends UnavailableNationalFocusRepository {
   @override
   Future<NationalFocusCard> getCard(String id) async => NationalFocusCard(
+    name: '每天早餐结束后',
     id: id,
     triggerCondition: '每天早餐结束后',
     action: '整理今天的工作计划',

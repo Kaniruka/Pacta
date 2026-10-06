@@ -41,6 +41,7 @@ void main() {
       try {
         final card = await firstDevice.createCard(
           const NationalFocusCardDraft(
+            name: '开始阅读',
             triggerCondition: '开始阅读',
             action: '阅读 5 页',
           ),

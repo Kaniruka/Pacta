@@ -128,6 +128,7 @@ void main() {
         );
         final card = await seedNational.createCard(
           const NationalFocusCardDraft(
+            name: 'Before real sync',
             triggerCondition: 'Before real sync',
             action: 'Keep Android national focus history',
           ),

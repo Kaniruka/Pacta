@@ -36,16 +36,32 @@ void main() {
     final auth = FakeAuthRepository()..signedInUser = userId;
     final repository = createRepository(userId);
     final mainRoot = await repository.createCard(
-      const NationalFocusCardDraft(triggerCondition: '主父卡', action: '维持主要行动'),
+      const NationalFocusCardDraft(
+        name: '主父卡',
+        triggerCondition: '主父卡',
+        action: '维持主要行动',
+      ),
     );
     final movingRoot = await repository.createCard(
-      const NationalFocusCardDraft(triggerCondition: '分支父卡', action: '整理分支'),
+      const NationalFocusCardDraft(
+        name: '分支父卡',
+        triggerCondition: '分支父卡',
+        action: '整理分支',
+      ),
     );
     final child = await repository.createCard(
-      const NationalFocusCardDraft(triggerCondition: '子卡', action: '执行子行动'),
+      const NationalFocusCardDraft(
+        name: '子卡',
+        triggerCondition: '子卡',
+        action: '执行子行动',
+      ),
     );
     final grandchild = await repository.createCard(
-      const NationalFocusCardDraft(triggerCondition: '孙卡', action: '执行后代行动'),
+      const NationalFocusCardDraft(
+        name: '孙卡',
+        triggerCondition: '孙卡',
+        action: '执行后代行动',
+      ),
     );
     await repository.placeCard(cardId: mainRoot.id, parentId: null);
     await repository.placeCard(cardId: movingRoot.id, parentId: null);

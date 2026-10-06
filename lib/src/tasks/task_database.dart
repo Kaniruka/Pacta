@@ -40,6 +40,7 @@ class LocalTasks extends Table {
 class LocalNationalFocusCards extends Table {
   TextColumn get userId => text()();
   TextColumn get id => text()();
+  TextColumn get name => text()();
   TextColumn get triggerCondition => text()();
   TextColumn get action => text()();
   TextColumn get scope => text().nullable()();
@@ -443,7 +444,7 @@ class PactaDatabase extends _$PactaDatabase {
   }
 
   @override
-  int get schemaVersion => 22;
+  int get schemaVersion => 23;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -589,6 +590,18 @@ class PactaDatabase extends _$PactaDatabase {
       }
       if (from < 22) {
         await m.createTable(localUserLifecycleStates);
+      }
+      if (from >= 13 && from < 23) {
+        final legacyCards = await customSelect(
+          'SELECT COUNT(*) AS card_count FROM local_national_focus_cards',
+        ).getSingle();
+        if (legacyCards.read<int>('card_count') != 0) {
+          throw StateError('旧国策卡缺少必填名称，请重置开发数据库后升级。');
+        }
+        await m.addColumn(
+          localNationalFocusCards,
+          localNationalFocusCards.name,
+        );
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);

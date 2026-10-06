@@ -68,6 +68,7 @@ NationalFocusCard _card(
   NationalFocusCardState state, {
   bool hasPendingReview = false,
 }) => NationalFocusCard(
+  name: id,
   id: id,
   triggerCondition: id,
   action: '行动',

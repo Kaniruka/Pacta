@@ -158,7 +158,7 @@ class _NationalFocusSummaryCardState extends State<NationalFocusSummaryCard> {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  '${card.effectiveTriggerCondition} · 上次已确认：'
+                  '${card.name} · 上次已确认：'
                   '${card.currentConsecutiveDays} 天连续记录',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),

@@ -64,6 +64,7 @@ Future<void> _seedUser(PactaDatabase db, String userId) async {
       .into(db.localNationalFocusCards)
       .insert(
         LocalNationalFocusCardsCompanion.insert(
+          name: '工作启动',
           userId: userId,
           id: 'card-$userId',
           triggerCondition: 'start work',

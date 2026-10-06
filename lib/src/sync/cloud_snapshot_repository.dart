@@ -689,6 +689,11 @@ class CloudSnapshotRepository {
       }
     }
     for (final row in tables['local_national_focus_cards']!) {
+      final name = row['name'];
+      requireReference(
+        name is String && name.trim().isNotEmpty,
+        'National Focus card name',
+      );
       final parentId = row['parent_id'];
       if (parentId != null) {
         requireReference(cardIds.contains(parentId), 'parent card reference');

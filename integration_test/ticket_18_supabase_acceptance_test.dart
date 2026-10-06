@@ -92,6 +92,7 @@ _verifyCloudRoundTrip({
     await firstRepository.sync();
     final card = await firstRepository.createCard(
       NationalFocusCardDraft(
+        name: 'T18 云端验收 ${DateTime.now().toUtc().toIso8601String()}',
         triggerCondition:
             'T18 云端验收 ${DateTime.now().toUtc().toIso8601String()}',
         action: '保持在验收账号的国策卡片库中',

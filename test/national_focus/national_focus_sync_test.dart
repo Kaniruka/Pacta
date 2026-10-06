@@ -54,7 +54,11 @@ void main() {
 
   test('两天后上传的有效离线确认会协调仅由漏收推断的失败', () async {
     final card = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '开始阅读', action: '阅读 5 页'),
+      const NationalFocusCardDraft(
+        name: '开始阅读',
+        triggerCondition: '开始阅读',
+        action: '阅读 5 页',
+      ),
     );
     await firstDevice.placeCard(cardId: card.id, parentId: null);
     await firstDevice.lightCard(card.id);
@@ -91,10 +95,18 @@ void main() {
 
   test('真实离线操作冲突标记待核对并合并无关卡片', () async {
     final disputedCard = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '处理邮件', action: '先回一封邮件'),
+      const NationalFocusCardDraft(
+        name: '处理邮件',
+        triggerCondition: '处理邮件',
+        action: '先回一封邮件',
+      ),
     );
     final independentCard = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '整理桌面', action: '清理一个区域'),
+      const NationalFocusCardDraft(
+        name: '整理桌面',
+        triggerCondition: '整理桌面',
+        action: '清理一个区域',
+      ),
     );
     await firstDevice.placeCard(cardId: disputedCard.id, parentId: null);
     await firstDevice.placeCard(cardId: independentCard.id, parentId: null);
@@ -123,6 +135,10 @@ void main() {
       secondDevice.lightCard(disputedCard.id),
       throwsA(isA<StateError>()),
     );
+    await expectLater(
+      secondDevice.renameCard(cardId: disputedCard.id, name: '争议改名'),
+      throwsStateError,
+    );
 
     final independent = await secondDevice.getCard(independentCard.id);
     expect(independent.hasPendingReview, isFalse);
@@ -131,10 +147,18 @@ void main() {
 
   test('并发分支移动不会合成循环树，受影响节点保留待核对标记', () async {
     final firstCard = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '准备写作', action: '打开文档'),
+      const NationalFocusCardDraft(
+        name: '准备写作',
+        triggerCondition: '准备写作',
+        action: '打开文档',
+      ),
     );
     final secondCard = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '准备阅读', action: '打开书本'),
+      const NationalFocusCardDraft(
+        name: '准备阅读',
+        triggerCondition: '准备阅读',
+        action: '打开书本',
+      ),
     );
     await firstDevice.placeCard(cardId: firstCard.id, parentId: null);
     await firstDevice.placeCard(cardId: secondCard.id, parentId: null);
@@ -162,7 +186,11 @@ void main() {
 
   test('要求版本、软删除历史和永久删除墓碑跨端同步且重复投递不重放', () async {
     final card = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '打开书本', action: '阅读 5 页'),
+      const NationalFocusCardDraft(
+        name: '打开书本',
+        triggerCondition: '打开书本',
+        action: '阅读 5 页',
+      ),
     );
     await firstDevice.saveStrengtheningLevel(
       cardId: card.id,
@@ -205,7 +233,11 @@ void main() {
     );
 
     final permanentlyDeleted = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '归档便笺', action: '移除临时便笺'),
+      const NationalFocusCardDraft(
+        name: '归档便笺',
+        triggerCondition: '归档便笺',
+        action: '移除临时便笺',
+      ),
     );
     expect(
       await firstDevice.deleteCard(permanentlyDeleted.id),

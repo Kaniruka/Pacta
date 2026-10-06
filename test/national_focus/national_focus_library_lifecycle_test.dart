@@ -25,7 +25,11 @@ void main() {
   });
 
   Future<NationalFocusCard> createCard(String trigger) => repository.createCard(
-    NationalFocusCardDraft(triggerCondition: trigger, action: '执行行动'),
+    NationalFocusCardDraft(
+      name: trigger,
+      triggerCondition: trigger,
+      action: '执行行动',
+    ),
   );
 
   test('重复移入卡片库和删除已不存在的卡片可安全重试', () async {
@@ -221,7 +225,7 @@ void main() {
     expect(await repository.getDeletedCards(), isEmpty);
   });
 
-  test('T15 本地数据库升级后保留国策卡并初始化可恢复状态', () async {
+  test('T15 旧国策卡缺名称时明确拒绝升级', () async {
     final oldDatabase = PactaDatabase(
       NativeDatabase.memory(
         setup: (rawDatabase) {
@@ -310,12 +314,15 @@ void main() {
     addTearDown(migratedRepository.dispose);
     addTearDown(oldDatabase.close);
 
-    final card = await migratedRepository.getCard('legacy-card');
-    expect(card.triggerCondition, '旧触发条件');
-    expect(card.action, '旧行动');
-    expect(card.isInTree, isTrue);
-    expect(card.deletedAt, isNull);
-    expect(card.successfulDays, 3);
-    expect(await migratedRepository.getDeletedCards(), isEmpty);
+    await expectLater(
+      migratedRepository.getCard('legacy-card'),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('重置开发数据库'),
+        ),
+      ),
+    );
   });
 }

@@ -293,7 +293,11 @@ void main() {
     await secondTasks.sync();
 
     final card = await firstNationalFocus.createCard(
-      const NationalFocusCardDraft(triggerCondition: '开始工作前', action: '写下第一步'),
+      const NationalFocusCardDraft(
+        name: '开始工作前',
+        triggerCondition: '开始工作前',
+        action: '写下第一步',
+      ),
     );
     await firstNationalFocus.placeCard(cardId: card.id, parentId: null);
     await firstNationalFocus.lightCard(card.id);
@@ -336,10 +340,10 @@ void main() {
       isTrue,
     );
     final handedOffSession = (await firstFocus.getActiveSession())!;
-      expect(
-        handedOffSession.startedAt.isAtSameMomentAs(appointment.endsAt),
-        isTrue,
-      );
+    expect(
+      handedOffSession.startedAt.isAtSameMomentAs(appointment.endsAt),
+      isTrue,
+    );
     expect(focusRemote.pullCount, focusPullsBeforeSuspension);
 
     now = handedOffSession.endsAt;
@@ -586,7 +590,11 @@ void main() {
     addTearDown(secondDevice.dispose);
 
     final card = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '开始阅读', action: '阅读 5 页'),
+      const NationalFocusCardDraft(
+        name: '开始阅读',
+        triggerCondition: '开始阅读',
+        action: '阅读 5 页',
+      ),
     );
     await firstDevice.placeCard(cardId: card.id, parentId: null);
     await firstDevice.lightCard(card.id);

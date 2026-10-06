@@ -13,7 +13,8 @@ const nationalFocusReferenceDemoAction = '结构演示节点，用于还原参�
 ///
 /// Ellipse labels are materialized as explicitly marked demo cards because the
 /// current domain model has no group entity. Rectangle cards retain their
-/// screenshot title and body as Trigger Condition and Action. This helper is
+/// screenshot title as the independent card name, with the source rule text
+/// retained as Trigger Condition and Action. This helper is
 /// for fixtures and demos only; callers should use a private in-memory
 /// [PactaDatabase] rather than an authenticated account.
 class NationalFocusReferenceFixture {
@@ -78,6 +79,7 @@ class NationalFocusReferenceFixture {
     }) async {
       final card = await repository.createCard(
         NationalFocusCardDraft(
+          name: title,
           triggerCondition: title,
           action: nationalFocusReferenceDemoAction,
           scope: '仅演示',
@@ -95,6 +97,7 @@ class NationalFocusReferenceFixture {
     }) async {
       final card = await repository.createCard(
         NationalFocusCardDraft(
+          name: source['title'] as String,
           triggerCondition: source['title'] as String,
           action: source['action'] as String,
           scope: source['scope'] as String? ?? scope,

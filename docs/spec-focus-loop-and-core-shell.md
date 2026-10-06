@@ -70,12 +70,12 @@ Starting a Focus Session moves the user to a dedicated countdown surface. A Sess
 ### National Focus Tree and Card Library
 
 38. As a user, I want National Focus Tree to be a dedicated tree canvas, so that parent, branch, and child relationships remain visible.
-39. As a user, I want the tree's Simple view to show node icons and structure only, so that I can scan the whole tree.
-40. As a user, I want the tree's Detailed view to show card text, dates, records, internalization, and visible state, so that I can inspect a node without losing its position in the tree.
+39. As a user, I want the tree's Simple view to show a circular state icon and each card's independent name, so that I can scan the whole tree.
+40. As a user, I want the tree's Detailed view to add a short current effective Action summary in a compact rounded card. Tapping a node opens its action panel; full rules, dates, records, and Internalization Progress are progressively disclosed in details without enlarging nodes or moving the tree.
 41. As a user, I want the tree's relevant header actions to open daily confirmation, Card Library, and attach-from-library flow, so that actions remain local to the tree context.
 42. As a user, I want choosing to place or re-place a Card Library card to return me to the National Focus Tree main page in parent-selection mode, where I select a top-level position or click an existing tree node to make it the card's parent, so that I choose its position directly in the tree even when the tree is empty. A separate branch-list picker is not used. Card creation remains separate from placement.
 43. As a user, I want to create a new National Focus Card from the Card Library's secondary page, so that card creation and tree placement remain separate operations.
-44. As a user, I want a Card Library card to contain a primary Trigger Condition and Action with optional Scope and Exception Notes, so that I can define a small concrete rule.
+44. As a user, I want a Card Library card to have a required independent Name, a primary Trigger Condition and Action, and optional Scope and Exception Notes. Names may repeat and can be edited without changing maintenance records or creating a Requirement Version; switching Strengthening Levels does not change the card's name. New failure snapshots retain the name at the event time.
 45. As a user, I want the App to store and display card fields without evaluating whether I performed the real-world action, so that manual lighting remains authoritative.
 46. As a user, I want to move a card between tree branches without losing its current or historical records, so that restructuring reflects real progress.
 47. As a user, I want a card moved to the Card Library to retain its records and be individually placed and lit again before the checkpoint, so that timely recovery preserves its current consecutive record; removed parent-child relationships are dissolved.
@@ -94,6 +94,14 @@ Starting a Focus Session moves the user to a dedicated countdown surface. A Sess
 60. As a user, I want nodes still Pending Today Confirmation at the next National Focus Checkpoint to become Extinguished and formally failed, with current records cleared and historical maxima and Internalization Progress preserved.
 61. As a user, I want historical maximum records and Internalization Progress retained after National Focus failure, so that failure remains useful for reflection.
 62. As a user, I want Internalization Progress derived from cumulative successful National Focus Days, so that it is separate from current streak-like records and cannot be manually edited.
+
+### National Focus interaction refinement — 2026-10-05
+
+The tree has a fixed header with One-click Confirm Today and its pending-node count, Card Library, and a More menu. Checkpoint information and failure records live on secondary pages reached from More. Node actions live in a Material bottom sheet on Android: state-appropriate lighting/confirmation, details, strengthening management, name editing, adding a child, relocation, extinguishing, and moving the branch to the Card Library. Destructive or consequential actions remain explicit and preserve existing subtree behavior. States remain distinguishable beyond color, with accessible labels, text scaling, and Material touch targets.
+
+Adding a child opens the Card Library; the user may choose an existing card or create a new named card. Returning places it under the initiating node without a second parent-selection step or automatic lighting. Opening the Card Library from the header still uses the normal top-level/parent placement-selection flow.
+
+The user authorized a one-time development reset because there are no production users. Existing test identities and business data are removed, retaining the unique administrator. This is not a client reset feature, and unnamed old National Focus data is not silently backfilled or deleted during upgrades. Unsupported old data is rejected explicitly.
 
 ### User-defined strengthening requirements
 

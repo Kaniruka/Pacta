@@ -48,6 +48,7 @@ void main() {
     );
     final root = await tree.createCard(
       const NationalFocusCardDraft(
+        name: '开始一天之前',
         triggerCondition: '开始一天之前',
         action: '确定今天最重要的一步',
       ),
@@ -55,7 +56,11 @@ void main() {
     await tree.placeCard(cardId: root.id, parentId: null);
     for (final condition in ['坐到书桌前', '结束一天之后']) {
       final child = await tree.createCard(
-        NationalFocusCardDraft(triggerCondition: condition, action: '记录一次具体行动'),
+        NationalFocusCardDraft(
+          name: condition,
+          triggerCondition: condition,
+          action: '记录一次具体行动',
+        ),
       );
       await tree.placeCard(cardId: child.id, parentId: root.id);
     }

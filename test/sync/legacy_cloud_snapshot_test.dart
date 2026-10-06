@@ -223,6 +223,7 @@ void main() {
       try {
         await sourceRepository.createCard(
           const NationalFocusCardDraft(
+            name: '开始阅读',
             triggerCondition: '开始阅读',
             action: '阅读五页',
           ),

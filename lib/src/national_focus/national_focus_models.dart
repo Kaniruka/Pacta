@@ -55,6 +55,7 @@ enum NationalFocusCardDeletion { permanentlyDeleted, softDeleted }
 class NationalFocusCard {
   const NationalFocusCard({
     required this.id,
+    required this.name,
     required this.triggerCondition,
     required this.action,
     required this.isInTree,
@@ -79,6 +80,7 @@ class NationalFocusCard {
   });
 
   final String id;
+  final String name;
   final String triggerCondition;
   final String action;
   final String? scope;
@@ -184,6 +186,7 @@ class NationalFocusRequirementVersion {
 class NationalFocusCardSnapshot {
   const NationalFocusCardSnapshot({
     required this.id,
+    required this.name,
     required this.triggerCondition,
     required this.action,
     required this.isInTree,
@@ -210,6 +213,7 @@ class NationalFocusCardSnapshot {
        effectiveAction = effectiveAction ?? action;
 
   final String id;
+  final String name;
   final String triggerCondition;
   final String action;
   final String? scope;
@@ -408,12 +412,14 @@ class NationalFocusReviewState {
 
 class NationalFocusCardDraft {
   const NationalFocusCardDraft({
+    required this.name,
     required this.triggerCondition,
     required this.action,
     this.scope,
     this.exceptionNotes,
   });
 
+  final String name;
   final String triggerCondition;
   final String action;
   final String? scope;

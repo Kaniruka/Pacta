@@ -102,6 +102,7 @@ void main() {
           );
           final card = await nationalFocusRepository.createCard(
             const NationalFocusCardDraft(
+              name: 'Before offline transition',
               triggerCondition: 'Before offline transition',
               action: 'Keep the existing rule',
             ),
@@ -160,6 +161,7 @@ void main() {
           );
           final offlineCard = await nationalFocusRepository.createCard(
             const NationalFocusCardDraft(
+              name: 'While Android is offline',
               triggerCondition: 'While Android is offline',
               action: 'Save the National Focus rule locally',
             ),

@@ -36,10 +36,18 @@ void main() {
     final auth = FakeAuthRepository()..signedInUser = userId;
     final repository = createRepository(userId);
     final parent = await repository.createCard(
-      const NationalFocusCardDraft(triggerCondition: '开始工作前', action: '打开计划'),
+      const NationalFocusCardDraft(
+        name: '开始工作前',
+        triggerCondition: '开始工作前',
+        action: '打开计划',
+      ),
     );
     final child = await repository.createCard(
-      const NationalFocusCardDraft(triggerCondition: '计划打开后', action: '先做第一项'),
+      const NationalFocusCardDraft(
+        name: '计划打开后',
+        triggerCondition: '计划打开后',
+        action: '先做第一项',
+      ),
     );
     await repository.placeCard(cardId: parent.id, parentId: null);
     await repository.placeCard(cardId: child.id, parentId: parent.id);

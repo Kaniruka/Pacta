@@ -36,6 +36,7 @@ void main() {
     final repository = createRepository(userId);
     final card = await repository.createCard(
       const NationalFocusCardDraft(
+        name: '完成当天阅读',
         triggerCondition: '完成当天阅读',
         action: '每天阅读 5 页',
       ),

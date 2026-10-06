@@ -52,3 +52,7 @@ JSON 唯一来源移至 `assets/fixtures/national_focus_tree/reference_v13_8_18.
 - 独立样例 Android debug 构建、安装、启动成功；ADB 单指滑动后页面滚动，画布维持3%。
 - `flutter test integration_test/national_focus_canvas_gestures_test.dart -d emulator-5554`：通过；使用50节点样例，验证单指页面滚动且矩阵不变、双指捏合放大、双指平移。手势通过 Flutter integration tester 在真实 Android 运行时注入；单指滑动另以 ADB Android输入验证。
 - `flutter test`：217项全部通过，包括抬起一指停止平移、Windows普通/Ctrl滚轮分工、鼠标拖拽以及初始适应比例低于100%的缩放读数回归测试。
+
+## 紧凑节点与点击操作修订（2026-10-06）
+
+2026-10-05用户确认的新设计替代上文170/730高节点与节点原地展开：国策卡独立名称必填，简洁节点圆状态图标+名称，详细小卡增加当前有效行动摘要；完整内容在点击操作面板内渐进披露。今日确认进入固定标题栏，检查点/失败记录入口移到更多菜单。添加子节点进入卡片库，选择或新建后自动挂到发起节点，不自动点亮。最终决定与本轮证据见 `national-focus-design-review-20261005.md`。

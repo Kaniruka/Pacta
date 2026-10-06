@@ -68,6 +68,42 @@ void main() {
     },
   );
 
+  test(
+    'whole snapshot restores the required National Focus card name',
+    () async {
+      await database
+          .into(database.localNationalFocusCards)
+          .insert(
+            LocalNationalFocusCardsCompanion.insert(
+              userId: 'user-a',
+              id: 'card-a',
+              name: '独立名称',
+              triggerCondition: '开始工作',
+              action: '打开文档',
+              createdAt: DateTime.utc(2026, 10, 5),
+              updatedAt: DateTime.utc(2026, 10, 5),
+            ),
+          );
+      final beforeUpload = await repository.captureLocalState();
+      await repository.uploadLocal(
+        expectedRevision: 0,
+        expectedFingerprint: beforeUpload.fingerprint,
+      );
+      await (database.delete(
+        database.localNationalFocusCards,
+      )..where((row) => row.userId.equals('user-a'))).go();
+      final beforeDownload = await repository.captureLocalState();
+      await repository.downloadCloud(
+        expectedRevision: 1,
+        expectedFingerprint: beforeDownload.fingerprint,
+      );
+      final restored = await (database.select(
+        database.localNationalFocusCards,
+      )..where((row) => row.userId.equals('user-a'))).getSingle();
+      expect(restored.name, '独立名称');
+    },
+  );
+
   test('snapshot omits local preferences, lifecycle, queue, and device calendar ids', () async {
     await database
         .into(database.localCalendarSources)

@@ -27,6 +27,7 @@ void main() {
 
   NationalFocusCardDraft draft(String trigger, String action) =>
       NationalFocusCardDraft(
+        name: trigger,
         triggerCondition: trigger,
         action: action,
         scope: '仅工作日',
@@ -63,6 +64,51 @@ void main() {
     expect(restored.state, NationalFocusCardState.extinguished);
   });
 
+  test('名称独立于要求，可重名且改名不建立要求版本', () async {
+    final first = await repository.createCard(
+      const NationalFocusCardDraft(
+        name: '  阅读  ',
+        triggerCondition: '开始工作后',
+        action: '阅读 5 页',
+      ),
+    );
+    final second = await repository.createCard(
+      const NationalFocusCardDraft(
+        name: '阅读',
+        triggerCondition: '午休后',
+        action: '阅读 10 页',
+      ),
+    );
+    expect(first.name, '阅读');
+    expect(second.name, first.name);
+    await repository.placeCard(cardId: first.id, parentId: null);
+    await repository.lightCard(first.id);
+    final before = await repository.getCard(first.id);
+
+    await repository.renameCard(cardId: first.id, name: '  精读  ');
+    final renamed = await repository.getCard(first.id);
+    expect(renamed.name, '精读');
+    expect(renamed.state, before.state);
+    expect(renamed.successfulDays, before.successfulDays);
+    expect(renamed.currentConsecutiveDays, before.currentConsecutiveDays);
+    expect(renamed.requirementVersions, hasLength(1));
+    expect(renamed.requirementVersions.single.versionNumber, 1);
+    expect(renamed.effectiveAction, '阅读 5 页');
+    await expectLater(
+      repository.renameCard(cardId: first.id, name: '   '),
+      throwsArgumentError,
+    );
+    expect((await repository.getCard(first.id)).name, '精读');
+
+    await repository.dispose();
+    repository = LocalNationalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      now: () => now,
+    );
+    expect((await repository.getCard(first.id)).name, '精读');
+  });
+
   test('不同 userId 看不到其他用户的卡片', () async {
     final card = await repository.createCard(draft('早餐后', '阅读十分钟'));
     final otherUser = LocalNationalFocusRepository(
@@ -75,6 +121,11 @@ void main() {
     expect(await otherUser.getLibraryCards(), isEmpty);
     expect(await otherUser.getTreeCards(), isEmpty);
     await expectLater(otherUser.getCard(card.id), throwsStateError);
+    await expectLater(
+      otherUser.renameCard(cardId: card.id, name: '越权改名'),
+      throwsStateError,
+    );
+    expect((await repository.getCard(card.id)).name, card.name);
   });
 
   test('选择或编辑强化要求会保留生效区间且不重置国策记录', () async {
@@ -97,6 +148,7 @@ void main() {
     var strengthened = await repository.getCard(card.id);
     expect(strengthened.effectiveTriggerCondition, '开始工作后');
     expect(strengthened.effectiveAction, '阅读 10 页');
+    expect(strengthened.name, card.name);
     expect(strengthened.state, NationalFocusCardState.lit);
 
     now = DateTime.utc(2026, 9, 25, 20);
@@ -212,8 +264,11 @@ void main() {
     expect(snapshot.activeStrengtheningLevel, 1);
     expect(snapshot.requirementVersionNumber, 2);
     expect(snapshot.effectiveAction, '阅读 10 页');
+    expect(snapshot.name, card.name);
 
     now = DateTime.utc(2026, 9, 26, 20, 1);
+    await repository.renameCard(cardId: card.id, name: '新名称');
+    expect((await repository.getCard(card.id)).name, '新名称');
     await repository.saveStrengtheningLevel(
       cardId: card.id,
       levelNumber: 1,
@@ -223,6 +278,7 @@ void main() {
     snapshot = failure.treeSnapshot.singleWhere((item) => item.id == card.id);
     expect(snapshot.effectiveAction, '阅读 10 页');
     expect(snapshot.requirementVersionNumber, 2);
+    expect(snapshot.name, card.name);
   });
 
   test('拒绝把自己或自己的后代设为父节点', () async {
@@ -716,7 +772,50 @@ void main() {
     expect(await repository.getFailures(), isEmpty);
   });
 
-  test('从 T13 数据库升级后保留国策卡并初始化新的记录字段', () async {
+  test('空旧国策表升级增加必填名称且保留其他业务记录', () async {
+    final oldDatabase = PactaDatabase(
+      NativeDatabase.memory(
+        setup: (rawDatabase) {
+          rawDatabase.execute('''
+            CREATE TABLE local_national_focus_cards (
+              user_id TEXT NOT NULL,
+              id TEXT NOT NULL,
+              trigger_condition TEXT NOT NULL,
+              action TEXT NOT NULL,
+              PRIMARY KEY (user_id, id)
+            )
+          ''');
+          rawDatabase.execute('''
+            CREATE TABLE local_goals (
+              user_id TEXT NOT NULL,
+              id TEXT NOT NULL,
+              title TEXT NOT NULL,
+              PRIMARY KEY (user_id, id)
+            )
+          ''');
+          rawDatabase.execute(
+            "INSERT INTO local_goals VALUES ('user-a', 'goal-1', '保留目标')",
+          );
+          rawDatabase.execute('PRAGMA user_version = 22');
+        },
+      ),
+    );
+    addTearDown(oldDatabase.close);
+
+    final columns = await oldDatabase
+        .customSelect('PRAGMA table_info(local_national_focus_cards)')
+        .get();
+    final nameColumn = columns.singleWhere(
+      (row) => row.read<String>('name') == 'name',
+    );
+    expect(nameColumn.read<int>('notnull'), 1);
+    final goals = await oldDatabase
+        .customSelect('SELECT title FROM local_goals')
+        .get();
+    expect(goals.single.read<String>('title'), '保留目标');
+  });
+
+  test('从 T13 升级时明确拒绝缺名称的旧国策卡', () async {
     final oldDatabase = PactaDatabase(
       NativeDatabase.memory(
         setup: (rawDatabase) {
@@ -789,35 +888,19 @@ void main() {
     addTearDown(migratedRepository.dispose);
     addTearDown(oldDatabase.close);
 
-    final migrated = await migratedRepository.getCard('legacy-card');
-    expect(migrated.triggerCondition, '旧触发条件');
-    expect(migrated.action, '旧行动');
-    expect(migrated.isInTree, isTrue);
-    expect(migrated.state, NationalFocusCardState.extinguished);
-    expect(migrated.successfulDays, 0);
-    expect(migrated.currentConsecutiveDays, 0);
-    expect(migrated.bestConsecutiveDays, 0);
-    expect(migrated.maintenanceCycleStarted, isFalse);
-
-    final migratedChild = await migratedRepository.getCard(
-      'legacy-pending-child',
-    );
-    expect(migratedChild.state, NationalFocusCardState.extinguished);
-    expect(migratedChild.cascadeSourceCardId, 'legacy-parent');
-    expect(
-      migratedChild.cascadePriorState,
-      NationalFocusCardState.pendingTodayConfirmation,
-    );
-    expect(await migratedRepository.confirmToday(), 0);
-
-    await migratedRepository.lightCard(migrated.id);
-    expect(
-      (await migratedRepository.getCard(migrated.id)).state,
-      NationalFocusCardState.lit,
+    await expectLater(
+      migratedRepository.getCard('legacy-card'),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('重置开发数据库'),
+        ),
+      ),
     );
   });
 
-  test('从 T14 升级时清理已失败父节点下的旧活动状态而不补造子失败', () async {
+  test('从 T14 升级时明确拒绝缺名称的旧国策卡', () async {
     final lastSettledCheckpoint = DateTime.utc(2026, 9, 24, 20);
     var migrationNow = lastSettledCheckpoint;
     final oldDatabase = PactaDatabase(
@@ -939,18 +1022,15 @@ void main() {
     addTearDown(migratedRepository.dispose);
     addTearDown(oldDatabase.close);
 
-    final migratedChild = await migratedRepository.getCard('pending-child');
-    expect(migratedChild.state, NationalFocusCardState.extinguished);
-    expect(migratedChild.cascadeSourceCardId, 'failed-parent');
-    expect(migratedChild.cascadePriorState, NationalFocusCardState.lit);
-    expect(migratedChild.successfulDays, 4);
-    expect(migratedChild.currentConsecutiveDays, 0);
-    expect(migratedChild.maintenanceCycleStarted, isFalse);
-
-    migrationNow = lastSettledCheckpoint.add(const Duration(hours: 24));
-    await migratedRepository.settleDueCheckpoints();
-    final failures = await migratedRepository.getFailures();
-    expect(failures, hasLength(1));
-    expect(failures.single.cardId, 'failed-parent');
+    await expectLater(
+      migratedRepository.getCard('pending-child'),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('重置开发数据库'),
+        ),
+      ),
+    );
   });
 }

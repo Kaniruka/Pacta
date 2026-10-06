@@ -33,6 +33,7 @@ void main() {
   Future<NationalFocusCard> createPlacedCard() async {
     final card = await repository.createCard(
       const NationalFocusCardDraft(
+        name: '坐到书桌前',
         triggerCondition: '坐到书桌前',
         action: '先写下今天的第一步',
       ),
@@ -49,29 +50,43 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   }
 
-  Future<void> reveal(WidgetTester tester, Finder finder) async {
-    if (finder.evaluate().isEmpty &&
-        find.byType(CustomScrollView).evaluate().isNotEmpty) {
-      final scrollable = find
-          .descendant(
-            of: find.byType(CustomScrollView).first,
-            matching: find.byType(Scrollable),
-          )
-          .first;
-      tester.state<ScrollableState>(scrollable).position.jumpTo(0);
-      await tester.pump();
+  testWidgets('父节点在上方且两个子节点并排，点击面板保持布局', (tester) async {
+    final parent = await createPlacedCard();
+    final children = <NationalFocusCard>[];
+    for (var index = 0; index < 2; index++) {
+      final card = await repository.createCard(
+        NationalFocusCardDraft(
+          name: '子节点 $index',
+          triggerCondition: '条件',
+          action: '行动',
+        ),
+      );
+      await repository.placeCard(cardId: card.id, parentId: parent.id);
+      children.add(card);
     }
-    if (finder.evaluate().isEmpty &&
-        find.text('检查点与失败记录').evaluate().isNotEmpty) {
-      final checkpoint = find.text('检查点与失败记录');
-      await tester.ensureVisible(checkpoint);
-      await tester.pump();
-      await tester.tap(checkpoint);
-      await tester.pumpAndSettle();
-    }
-    await tester.ensureVisible(finder);
-    await tester.pump();
-  }
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: NationalFocusTreePage(repository: repository)),
+      ),
+    );
+    await pumpNationalFocusUi(tester);
+    Finder node(NationalFocusCard card) =>
+        find.byKey(ValueKey('national-focus-node-${card.id}'));
+    final parentRect = tester.getRect(node(parent));
+    final firstRect = tester.getRect(node(children.first));
+    final secondRect = tester.getRect(node(children.last));
+    expect(parentRect.bottom, lessThan(firstRect.top));
+    expect(firstRect.top, closeTo(secondRect.top, 0.1));
+    final siblingRects = [firstRect, secondRect]
+      ..sort((a, b) => a.left.compareTo(b.left));
+    expect(siblingRects.first.right, lessThanOrEqualTo(siblingRects.last.left));
+    await tester.tap(node(parent));
+    await tester.pumpAndSettle();
+    expect(find.text('查看详情'), findsOneWidget);
+    expect(tester.getRect(node(parent)), parentRect);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
 
   testWidgets('国策画布可缩放并重新显示整棵树', (tester) async {
     await createPlacedCard();
@@ -93,9 +108,10 @@ void main() {
   });
 
   testWidgets('整树初始适应小于100%时双指缩放与百分比同步', (tester) async {
-    for (var index = 0; index < 4; index++) {
+    for (var index = 0; index < 8; index++) {
       final card = await repository.createCard(
         NationalFocusCardDraft(
+          name: '顶层节点 $index',
           triggerCondition: '顶层节点 $index',
           action: '完成行动 $index',
         ),
@@ -140,7 +156,22 @@ void main() {
   });
 
   testWidgets('触屏单指滚动页面，双指移动画布且抬起一指即停止移动', (tester) async {
-    await createPlacedCard();
+    tester.view.physicalSize = const Size(800, 400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var parent = await createPlacedCard();
+    for (var index = 0; index < 8; index++) {
+      final child = await repository.createCard(
+        NationalFocusCardDraft(
+          name: '深层 $index',
+          triggerCondition: '深层 $index',
+          action: '行动',
+        ),
+      );
+      await repository.placeCard(cardId: child.id, parentId: parent.id);
+      parent = child;
+    }
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(body: NationalFocusTreePage(repository: repository)),
@@ -216,6 +247,10 @@ void main() {
   });
 
   testWidgets('Windows 滚轮只在按住 Ctrl 时缩放画布', (tester) async {
+    tester.view.physicalSize = const Size(800, 400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await createPlacedCard();
     await tester.pumpWidget(
       MaterialApp(
@@ -277,7 +312,34 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('国策树使用所选时区展示固定检查点并支持点亮、确认和选填熄灭原因', (tester) async {
+  Future<void> openNode(WidgetTester tester, NationalFocusCard card) async {
+    final node = find.byKey(ValueKey('national-focus-node-${card.id}'));
+    await tester.ensureVisible(node);
+    await tester.tap(node);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> tapAction(WidgetTester tester, String label) async {
+    final action = find.text(label);
+    await tester.ensureVisible(action);
+    await tester.pumpAndSettle();
+    await tester.tap(action);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> openRecords(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('检查点与失败记录'));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('固定标题栏、检查点二级入口与节点面板维护', (tester) async {
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+    });
     final card = await createPlacedCard();
     await tester.pumpWidget(
       MaterialApp(
@@ -291,159 +353,115 @@ void main() {
       ),
     );
     await pumpNationalFocusUi(tester);
-
-    await reveal(tester, find.text('检查点与失败记录'));
-    await tester.tap(find.text('检查点与失败记录'));
-    await tester.pumpAndSettle();
+    expect(find.text('今日确认 (0)'), findsOneWidget);
+    await openRecords(tester);
     expect(find.text('下次检查点：2026-09-26 05:00 · Asia/Tokyo'), findsOneWidget);
-    expect(
-      find.text('固定规则为北京时间 04:00；显示时区 Asia/Tokyo 不会移动结算边界。'),
-      findsOneWidget,
-    );
     await tester.pageBack();
     await tester.pumpAndSettle();
+    await openNode(tester, card);
     expect(find.text('点亮'), findsOneWidget);
-
-    await reveal(tester, find.text('点亮'));
-    await tester.pump();
-    await tester.tap(find.text('点亮'));
+    expect(find.text('查看详情'), findsOneWidget);
+    await tester.tap(find.text('查看详情'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('当前连续'), findsOneWidget);
+    await tapAction(tester, '点亮');
     await pumpNationalFocusUi(tester);
     expect(
       (await repository.getCard(card.id)).state,
       NationalFocusCardState.lit,
     );
-    await tester.tap(find.byTooltip('显示详情'));
-    await tester.pump();
-    expect(find.text('主动熄灭'), findsOneWidget);
-
     now = DateTime.utc(2026, 9, 25, 20);
     await repository.settleDueCheckpoints();
     await pumpNationalFocusUi(tester);
-    expect(
-      (await repository.getCard(card.id)).state,
-      NationalFocusCardState.pendingTodayConfirmation,
-    );
-    expect(find.text('确认今日继续有效'), findsOneWidget);
-    await reveal(tester, find.text('一键确认今日'));
-    await tester.pump();
-    await tester.tap(find.text('一键确认今日'));
+    expect(find.text('今日确认 (1)'), findsOneWidget);
+    await tester.tap(find.text('今日确认 (1)'));
     await pumpNationalFocusUi(tester);
     expect(
       (await repository.getCard(card.id)).state,
       NationalFocusCardState.lit,
     );
-
-    await reveal(tester, find.text('主动熄灭'));
-    await tester.pump();
-    await pumpNationalFocusUi(tester);
-    await reveal(tester, find.text('主动熄灭'));
-    await tester.pump();
-    await tester.tap(find.text('主动熄灭'));
+    await openNode(tester, card);
+    await tapAction(tester, '主动熄灭');
     await pumpNationalFocusUi(tester);
     expect(find.text('失败原因（可选）'), findsOneWidget);
-    await reveal(tester, find.text('暂不填写'));
-    await tester.pump();
     await tester.tap(find.text('暂不填写'));
     await pumpNationalFocusUi(tester);
-    final extinguished = await repository.getCard(card.id);
-    expect(extinguished.state, NationalFocusCardState.extinguished);
-    expect(extinguished.failureReason, isNull);
-
+    expect(
+      (await repository.getCard(card.id)).state,
+      NationalFocusCardState.extinguished,
+    );
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('失败历史展示完整树快照并允许非阻断补充说明', (tester) async {
+  testWidgets('待今日确认节点可直接主动熄灭，失败记录保留当时名称与说明', (tester) async {
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+    });
     final card = await createPlacedCard();
     await repository.lightCard(card.id);
     now = DateTime.utc(2026, 9, 25, 20);
     await repository.settleDueCheckpoints();
-    now = DateTime.utc(2026, 9, 26, 20);
-    await repository.settleDueCheckpoints();
-
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: NationalFocusTreePage(
-            repository: repository,
-            now: () => now,
-            displayTimeZoneLoader: () async => 'Asia/Shanghai',
-          ),
+          body: NationalFocusTreePage(repository: repository, now: () => now),
         ),
       ),
     );
     await pumpNationalFocusUi(tester);
-    await reveal(tester, find.text('查看失败记录'));
-    await tester.pump();
+    await openNode(tester, card);
+    expect(find.text('确认今日继续有效'), findsOneWidget);
+    await tapAction(tester, '主动熄灭');
+    await pumpNationalFocusUi(tester);
+    await tester.tap(find.text('暂不填写'));
+    await pumpNationalFocusUi(tester);
+    expect((await repository.getCard(card.id)).successfulDays, 1);
+    expect((await repository.getCard(card.id)).failureReason, isNull);
+    now = DateTime.utc(2026, 9, 26, 20);
+    await repository.settleDueCheckpoints();
+    await pumpNationalFocusUi(tester);
+    await openRecords(tester);
     await tester.tap(find.text('查看失败记录'));
     await pumpNationalFocusUi(tester);
-
     expect(find.text('国策失败记录'), findsOneWidget);
-    expect(find.textContaining('1 个节点'), findsOneWidget);
-    await reveal(tester, find.text('补充说明'));
-    await tester.pump();
+    await tester.tap(find.textContaining('· 1 个节点'));
+    await pumpNationalFocusUi(tester);
+    expect(find.text(card.name), findsWidgets);
     await tester.tap(find.text('补充说明'));
     await pumpNationalFocusUi(tester);
-    await tester.enterText(find.byType(TextFormField), '那天临时照顾家人');
-    await reveal(tester, find.text('保存'));
-    await tester.pump();
+    await tester.enterText(find.byType(TextFormField), '临时照顾家人');
     await tester.tap(find.text('保存'));
     await pumpNationalFocusUi(tester);
     expect(find.text('编辑共同说明'), findsOneWidget);
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(seconds: 1));
-  });
-
-  testWidgets('待今日确认节点可直接主动熄灭且不需要先确认', (tester) async {
-    final card = await createPlacedCard();
-    await repository.lightCard(card.id);
-    now = DateTime.utc(2026, 9, 25, 20);
-    await repository.settleDueCheckpoints();
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: NationalFocusTreePage(
-            repository: repository,
-            now: () => now,
-            displayTimeZoneLoader: () async => 'Asia/Shanghai',
-          ),
-        ),
-      ),
+    await tester.tap(find.text('编辑共同说明'));
+    await pumpNationalFocusUi(tester);
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).controller.text,
+      '临时照顾家人',
     );
+    await tester.tap(find.text('取消'));
     await pumpNationalFocusUi(tester);
-
-    await tester.tap(find.byTooltip('显示详情'));
-    await tester.pump();
-    expect(find.text('确认今日继续有效'), findsOneWidget);
-    expect(find.text('主动熄灭'), findsOneWidget);
-    await reveal(tester, find.text('主动熄灭'));
-    await tester.pump();
-    await pumpNationalFocusUi(tester);
-    await reveal(tester, find.text('主动熄灭'));
-    await tester.pump();
-    await tester.tap(find.text('主动熄灭'));
-    await pumpNationalFocusUi(tester);
-    await reveal(tester, find.text('暂不填写'));
-    await tester.pump();
-    await tester.tap(find.text('暂不填写'));
-    await pumpNationalFocusUi(tester);
-
-    final extinguished = await repository.getCard(card.id);
-    expect(extinguished.state, NationalFocusCardState.extinguished);
-    expect(extinguished.successfulDays, 1);
-    expect(extinguished.failureReason, isNull);
-    expect(find.text('确认今日继续有效'), findsNothing);
-
+    expect((await repository.getFailures()).single.sharedExplanation, '临时照顾家人');
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('父节点熄灭时禁用后代点亮并在失败快照中标明连带来源', (tester) async {
+  testWidgets('父节点熄灭级联后，后代在面板中不能点亮', (tester) async {
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+    });
     final parent = await createPlacedCard();
     final child = await repository.createCard(
-      const NationalFocusCardDraft(triggerCondition: '计划打开后', action: '先做第一项'),
+      const NationalFocusCardDraft(
+        name: '子节点',
+        triggerCondition: '计划打开后',
+        action: '先做第一项',
+      ),
     );
     await repository.placeCard(cardId: child.id, parentId: parent.id);
     await repository.lightCard(parent.id);
@@ -451,193 +469,45 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: NationalFocusTreePage(
-            repository: repository,
-            now: () => now,
-            displayTimeZoneLoader: () async => 'Asia/Shanghai',
-          ),
+          body: NationalFocusTreePage(repository: repository, now: () => now),
         ),
       ),
     );
     await pumpNationalFocusUi(tester);
-
-    await tester.tap(find.byTooltip('显示详情').first);
-    await tester.pump();
-    await reveal(tester, find.text('主动熄灭').first);
-    await tester.pump();
-    await reveal(tester, find.text('主动熄灭').first);
-    await tester.pump();
-    await tester.tap(find.text('主动熄灭').first);
+    await openNode(tester, parent);
+    await tapAction(tester, '主动熄灭');
     await pumpNationalFocusUi(tester);
     expect(find.textContaining('也会熄灭 1 个后代'), findsOneWidget);
-    await reveal(tester, find.text('暂不填写'));
-    await tester.pump();
     await tester.tap(find.text('暂不填写'));
     await pumpNationalFocusUi(tester);
-
     expect(
       (await repository.getCard(child.id)).state,
       NationalFocusCardState.extinguished,
     );
-    await tester.tap(find.byTooltip('显示详情').first);
-    await tester.pump();
-    expect(find.textContaining('因「坐到书桌前」连带熄灭'), findsOneWidget);
-    final lightButtons = find.widgetWithText(FilledButton, '点亮');
-    expect(lightButtons, findsNWidgets(2));
-    expect(tester.widget<FilledButton>(lightButtons.last).onPressed, isNull);
-
-    now = DateTime.utc(2026, 9, 25, 20);
-    await repository.settleDueCheckpoints();
-    await pumpNationalFocusUi(tester);
-    await reveal(tester, find.text('查看失败记录'));
-    await tester.pump();
-    await tester.tap(find.text('查看失败记录'));
-    await pumpNationalFocusUi(tester);
-    await tester.tap(find.textContaining('· 1 个节点'));
-    await pumpNationalFocusUi(tester);
-
-    expect(find.textContaining('独立失败来源'), findsOneWidget);
-    expect(find.textContaining('因「坐到书桌前」连带熄灭'), findsOneWidget);
-    final failures = await repository.getFailures();
-    expect(failures, hasLength(1));
-    expect(failures.single.cardId, parent.id);
-
+    await openNode(tester, child);
+    final light = tester.widget<ListTile>(find.widgetWithText(ListTile, '点亮'));
+    expect(light.enabled, isFalse);
+    await tester.tap(find.text('查看详情'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('因「${parent.name}」连带熄灭'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('重新放置有效节点时不能选择熄灭父节点', (tester) async {
-    tester.view.physicalSize = const Size(800, 1200);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    final extinguishedParent = await repository.createCard(
-      const NationalFocusCardDraft(triggerCondition: '准备休息', action: '关闭工作页面'),
-    );
-    final activeRoot = await createPlacedCard();
-    await repository.placeCard(cardId: extinguishedParent.id, parentId: null);
-    await repository.lightCard(activeRoot.id);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: NationalFocusTreePage(
-            repository: repository,
-            now: () => now,
-            displayTimeZoneLoader: () async => 'Asia/Shanghai',
-          ),
-        ),
+  testWidgets('卡片可改名，添加库中或新建子节点后自动放置但保持熄灭', (tester) async {
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+    });
+    final parent = await createPlacedCard();
+    final existing = await repository.createCard(
+      const NationalFocusCardDraft(
+        name: '已有子卡',
+        triggerCondition: '触发',
+        action: '行动',
       ),
     );
-    await pumpNationalFocusUi(tester);
-
-    await reveal(tester, find.text('详情'));
-    await tester.pump();
-    await tester.tap(find.text('详情'));
-    await pumpNationalFocusUi(tester);
-    await tester.drag(find.byType(CustomScrollView), const Offset(0, -350));
-    await pumpNationalFocusUi(tester);
-    final relocationButton = find.text('调整树中位置').last;
-    await reveal(tester, relocationButton);
-    await tester.pump();
-    await tester.tap(relocationButton);
-    await pumpNationalFocusUi(tester);
-
-    expect(find.text('不能把有效分支放到本人、后代或熄灭分支下。'), findsOneWidget);
-    expect((await repository.getCard(activeRoot.id)).parentId, isNull);
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(seconds: 1));
-  });
-
-  testWidgets('用户可编辑并切换强化要求且详情与卡片库显示当前内容', (tester) async {
-    final card = await createPlacedCard();
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: NationalFocusTreePage(
-            repository: repository,
-            now: () => now,
-            displayTimeZoneLoader: () async => 'Asia/Shanghai',
-          ),
-        ),
-      ),
-    );
-    await pumpNationalFocusUi(tester);
-    await reveal(tester, find.text('详情'));
-    await tester.pump();
-    await tester.tap(find.text('详情'));
-    await pumpNationalFocusUi(tester);
-    await tester.drag(find.byType(CustomScrollView), const Offset(0, -350));
-    await pumpNationalFocusUi(tester);
-    await reveal(tester, find.text('管理强化要求'));
-    await tester.pump();
-    await tester.tap(find.text('管理强化要求'));
-    await pumpNationalFocusUi(tester);
-
-    expect(find.text('国策强化要求'), findsOneWidget);
-    await tester.drag(find.byType(ListView).last, const Offset(0, -350));
-    await pumpNationalFocusUi(tester);
-    expect(find.text('强化等级 0/5'), findsOneWidget);
-    expect(find.text('基础要求'), findsOneWidget);
-    await reveal(tester, find.text('新建强化等级'));
-    await tester.pump();
-    await tester.tap(find.text('新建强化等级'));
-    await pumpNationalFocusUi(tester);
-    expect(find.text('基础行动'), findsOneWidget);
-    await tester.enterText(
-      find.byKey(const ValueKey('strengthened-action')),
-      '每天阅读 10 页',
-    );
-    await reveal(tester, find.text('保存'));
-    await tester.pump();
-    await tester.tap(find.text('保存'));
-    await pumpNationalFocusUi(tester);
-
-    expect(find.text('强化等级 1/5'), findsOneWidget);
-    expect(find.text('每天阅读 10 页'), findsOneWidget);
-    await tester.drag(find.byType(ListView).last, const Offset(0, -350));
-    await pumpNationalFocusUi(tester);
-    await reveal(tester, find.text('采用强化等级 1'));
-    await tester.pump();
-    await tester.tap(find.text('采用强化等级 1'));
-    await pumpNationalFocusUi(tester);
-    expect((await repository.getCard(card.id)).effectiveAction, '每天阅读 10 页');
-
-    await tester.pageBack();
-    await pumpNationalFocusUi(tester);
-    expect(find.text('每天阅读 10 页'), findsOneWidget);
-
-    await repository.moveCardToLibrary(card.id);
-    await pumpNationalFocusUi(tester);
-    await reveal(tester, find.text('卡片库'));
-    await tester.pump();
-    await tester.tap(find.text('卡片库'));
-    await pumpNationalFocusUi(tester);
-    expect(find.text('当前要求 · 强化等级 1'), findsOneWidget);
-    expect(find.text('每天阅读 10 页'), findsOneWidget);
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(seconds: 1));
-  });
-  testWidgets('竖向树让父节点位于并排子分支上方，首次完整显示父节点', (tester) async {
-    tester.view.physicalSize = const Size(360, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final root = await createPlacedCard();
-    final children = <NationalFocusCard>[];
-    for (var index = 0; index < 2; index++) {
-      final child = await repository.createCard(
-        NationalFocusCardDraft(
-          triggerCondition: '子条件 $index',
-          action: '子行动 $index',
-        ),
-      );
-      await repository.placeCard(cardId: child.id, parentId: root.id);
-      children.add(child);
-    }
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -646,68 +516,113 @@ void main() {
       ),
     );
     await pumpNationalFocusUi(tester);
-    Rect node(NationalFocusCard card) =>
-        tester.getRect(find.byKey(ValueKey('national-focus-node-${card.id}')));
-    final parentRect = node(root);
-    expect(parentRect.left, greaterThanOrEqualTo(20));
-    expect(parentRect.right, lessThanOrEqualTo(340));
-    expect(node(children.first).top, greaterThan(parentRect.bottom));
-    expect(node(children.first).top, node(children.last).top);
-    expect(
-      (node(children.last).center.dx - node(children.first).center.dx).abs(),
-      greaterThan(node(children.first).width),
-    );
-    expect(find.text(root.effectiveTriggerCondition), findsOneWidget);
-    await tester.tap(find.byTooltip('显示详情').first);
-    await tester.pump();
-    expect(find.text(root.effectiveAction), findsOneWidget);
-    expect(tester.takeException(), isNull);
+    await openNode(tester, parent);
+    await tapAction(tester, '修改名称');
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), '新的父名称');
+    await tester.tap(find.text('保存'));
+    await pumpNationalFocusUi(tester);
+    expect((await repository.getCard(parent.id)).name, '新的父名称');
+    await openNode(tester, parent);
+    await tapAction(tester, '添加子节点');
+    await pumpNationalFocusUi(tester);
+    await tester.tap(find.text('放入树画布'));
+    await pumpNationalFocusUi(tester);
+    final placed = await repository.getCard(existing.id);
+    expect(placed.parentId, parent.id);
+    expect(placed.state, NationalFocusCardState.extinguished);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('深层国策树在窄屏两倍字号保持卡片宽度且可滚动维护', (tester) async {
-    tester.view.physicalSize = const Size(360, 800);
+  testWidgets('有效节点不能移到熄灭父节点，移入库确认整子树语义', (tester) async {
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+    });
+    final active = await createPlacedCard();
+    final child = await repository.createCard(
+      const NationalFocusCardDraft(
+        name: '子卡',
+        triggerCondition: '触发',
+        action: '行动',
+      ),
+    );
+    await repository.placeCard(cardId: child.id, parentId: active.id);
+    final dark = await repository.createCard(
+      const NationalFocusCardDraft(
+        name: '熄灭父卡',
+        triggerCondition: '触发',
+        action: '行动',
+      ),
+    );
+    await repository.placeCard(cardId: dark.id, parentId: null);
+    await repository.lightCard(active.id);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: NationalFocusTreePage(repository: repository, now: () => now),
+        ),
+      ),
+    );
+    await pumpNationalFocusUi(tester);
+    await openNode(tester, active);
+    await tapAction(tester, '调整树中位置');
+    await pumpNationalFocusUi(tester);
+    await tester.tap(find.byKey(ValueKey('national-focus-node-${dark.id}')));
+    await pumpNationalFocusUi(tester);
+    expect((await repository.getCard(active.id)).parentId, isNull);
+    await tester.tap(find.byTooltip('取消选择位置'));
+    await pumpNationalFocusUi(tester);
+    await openNode(tester, active);
+    await tapAction(tester, '移入卡片库');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('1 张后代卡片将一起移入卡片库并解除父子关系'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, '移入卡片库'));
+    await pumpNationalFocusUi(tester);
+    expect((await repository.getCard(active.id)).isInLibrary, isTrue);
+    expect((await repository.getCard(child.id)).parentId, isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('强化要求管理仍由节点面板进入', (tester) async {
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+    });
+    final card = await createPlacedCard();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: NationalFocusTreePage(repository: repository, now: () => now),
+        ),
+      ),
+    );
+    await pumpNationalFocusUi(tester);
+    await openNode(tester, card);
+    await tapAction(tester, '管理强化要求');
+    await pumpNationalFocusUi(tester);
+    expect(find.text('国策强化要求'), findsOneWidget);
+    expect(find.text('基础要求'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('两倍字号窄屏节点和顶部操作可达且无裁切异常', (tester) async {
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+    });
+    tester.view.physicalSize = const Size(320, 700);
     tester.view.devicePixelRatio = 1;
     tester.platformDispatcher.textScaleFactorTestValue = 2;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-    final root = await createPlacedCard();
-    var parent = root;
-    for (var index = 0; index < 12; index++) {
-      final child = await repository.createCard(
-        NationalFocusCardDraft(
-          triggerCondition: '深层条件 $index',
-          action: '完整行动要求 $index',
-        ),
-      );
-      await repository.placeCard(cardId: child.id, parentId: parent.id);
-      parent = child;
-    }
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: NationalFocusTreePage(repository: repository, now: () => now),
-        ),
-      ),
-    );
-    await pumpNationalFocusUi(tester);
-    await tester.drag(find.byType(CustomScrollView), const Offset(0, -1000));
-    await tester.pump();
-    final rootFinder = find.byKey(ValueKey('national-focus-node-${root.id}'));
-    final leafFinder = find.byKey(ValueKey('national-focus-node-${parent.id}'));
-    final rootWidth = tester.getSize(rootFinder).width;
-    expect(tester.getSize(leafFinder).width, rootWidth);
-    expect(rootWidth, lessThanOrEqualTo(320));
-    await tester.ensureVisible(leafFinder);
-    await tester.pump();
-    await tester.pump();
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(seconds: 1));
-  });
-  testWidgets('结构节点的详情按钮可查看完整连续记录与内化进度', (tester) async {
     final card = await createPlacedCard();
     await tester.pumpWidget(
       MaterialApp(
@@ -717,74 +632,25 @@ void main() {
       ),
     );
     await pumpNationalFocusUi(tester);
-    expect(find.text('顶层位置'), findsNothing);
-    expect(find.textContaining('当前连续'), findsNothing);
-    final detailButton = find.byTooltip('显示详情');
-    await reveal(tester, detailButton);
-    await tester.tap(detailButton);
-    await pumpNationalFocusUi(tester);
-    expect(find.text('节点 1'), findsOneWidget);
-    expect(find.textContaining('当前连续'), findsOneWidget);
-    expect(find.textContaining('内化进度'), findsOneWidget);
-    expect(find.text(card.effectiveTriggerCondition), findsOneWidget);
+    expect(find.byTooltip('卡片库'), findsOneWidget);
+    expect(find.byTooltip('更多'), findsOneWidget);
+    final node = find.byKey(ValueKey('national-focus-node-${card.id}'));
+    await tester.ensureVisible(node);
+    await tester.tap(node);
+    await tester.pumpAndSettle();
+    expect(find.text('查看详情'), findsOneWidget);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
-  testWidgets('单节点详情只展开该节点且可收起，全局模式仍独立', (tester) async {
-    final root = await createPlacedCard();
-    for (var index = 0; index < 2; index++) {
-      final card = await repository.createCard(
-        NationalFocusCardDraft(
-          triggerCondition: '分支 $index',
-          action: '行动 $index',
-        ),
-      );
-      await repository.placeCard(cardId: card.id, parentId: root.id);
-    }
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: NationalFocusTreePage(repository: repository, now: () => now),
-        ),
-      ),
-    );
-    await pumpNationalFocusUi(tester);
-    final rootNode = find.byKey(ValueKey('national-focus-node-${root.id}'));
-    final showDetails = find.descendant(
-      of: rootNode,
-      matching: find.byTooltip('显示详情'),
-    );
-    await reveal(tester, showDetails);
-    await tester.tap(showDetails);
-    await pumpNationalFocusUi(tester);
-    expect(find.textContaining('当前连续'), findsOneWidget);
-    expect(find.byTooltip('显示详情'), findsNWidgets(2));
-    final hideDetails = find.byTooltip('收起详情');
-    await reveal(tester, hideDetails);
-    await tester.tap(hideDetails);
-    await pumpNationalFocusUi(tester);
-    expect(find.textContaining('当前连续'), findsNothing);
-    expect(find.byTooltip('显示详情'), findsNWidgets(3));
-    // A mode change clears any individually expanded node.
-    await reveal(tester, showDetails);
-    await tester.tap(showDetails);
-    await pumpNationalFocusUi(tester);
-    await reveal(tester, find.text('详情'));
-    await tester.tap(find.text('详情'));
-    await pumpNationalFocusUi(tester);
-    expect(find.textContaining('当前连续'), findsNWidgets(3));
-    expect(find.byTooltip('收起详情'), findsNothing);
-    await reveal(tester, find.text('结构'));
-    await tester.tap(find.text('结构'));
-    await pumpNationalFocusUi(tester);
-    expect(find.textContaining('当前连续'), findsNothing);
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(seconds: 1));
-  });
-
-  testWidgets('放置流程待核对节点呈现禁用语义和明确原因', (tester) async {
-    final semantics = tester.ensureSemantics();
+  testWidgets('放置时待核对父节点禁用', (tester) async {
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+    });
     final pending = NationalFocusCard(
+      name: '待核对父节点',
       id: 'pending-parent',
       triggerCondition: '待核对父节点',
       action: '行动',
@@ -795,6 +661,7 @@ void main() {
       updatedAt: now,
     );
     final library = NationalFocusCard(
+      name: '待放置卡片',
       id: 'library-card',
       triggerCondition: '待放置卡片',
       action: '行动',
@@ -812,28 +679,32 @@ void main() {
       ),
     );
     await pumpNationalFocusUi(tester);
-    await reveal(tester, find.text('卡片库'));
-    await tester.tap(find.text('卡片库'));
+    await tester.tap(find.byTooltip('卡片库'));
     await pumpNationalFocusUi(tester);
-    await tester.ensureVisible(find.text('放入树画布'));
-    await tester.pump();
     await tester.tap(find.text('放入树画布'));
     await pumpNationalFocusUi(tester);
-    final disabled = find.byWidgetPredicate(
-      (widget) =>
-          widget is Semantics &&
-          widget.properties.label == '第 1 个节点待核对，不能选作父节点',
+    final node = find.byKey(
+      const ValueKey('national-focus-node-pending-parent'),
     );
-    await reveal(tester, disabled);
-    final data = tester.getSemantics(disabled).getSemanticsData();
-    expect(data.flagsCollection.isEnabled, ui.Tristate.isFalse);
-    expect(data.flagsCollection.isButton, isTrue);
-    expect(find.byTooltip('此节点待核对，暂不能选作父节点'), findsOneWidget);
-    expect(tester.widget<Semantics>(disabled).properties.enabled, isFalse);
-    await tester.tap(find.text('待核对父节点'));
+    final semantics = find.descendant(
+      of: node,
+      matching: find.byType(Semantics),
+    );
+    expect(
+      tester.widget<Semantics>(semantics.first).properties.enabled,
+      isFalse,
+    );
+    expect(
+      tester.widget<Semantics>(semantics.first).properties.label,
+      contains('待核对'),
+    );
+    expect(
+      tester.widget<Semantics>(semantics.first).properties.label,
+      contains('待核对状态需先完成核对'),
+    );
+    await tester.tap(node);
     await pumpNationalFocusUi(tester);
     expect(fake.placeCalls, 0);
-    semantics.dispose();
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });

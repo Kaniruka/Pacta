@@ -55,10 +55,18 @@ void main() {
 
   test('核对并发分支时展示来源影响、保留证据并幂等传播裁决', () async {
     final parent = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '开始写作', action: '写一段'),
+      const NationalFocusCardDraft(
+        name: '开始写作',
+        triggerCondition: '开始写作',
+        action: '写一段',
+      ),
     );
     final child = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '开始阅读', action: '读一页'),
+      const NationalFocusCardDraft(
+        name: '开始阅读',
+        triggerCondition: '开始阅读',
+        action: '读一页',
+      ),
     );
     await firstDevice.placeCard(cardId: parent.id, parentId: null);
     await firstDevice.placeCard(cardId: child.id, parentId: null);
@@ -153,7 +161,11 @@ void main() {
 
   test('跨过检查点裁决旧分支时按选定操作重算失败快照', () async {
     final card = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '晨间复盘', action: '写下三点'),
+      const NationalFocusCardDraft(
+        name: '晨间复盘',
+        triggerCondition: '晨间复盘',
+        action: '写下三点',
+      ),
     );
     await firstDevice.placeCard(cardId: card.id, parentId: null);
     await firstDevice.lightCard(card.id);
@@ -208,7 +220,11 @@ void main() {
 
   test('跨过检查点裁决点亮分支时重算成功天数和确认状态', () async {
     final card = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '完成晨间计划', action: '逐项检查'),
+      const NationalFocusCardDraft(
+        name: '完成晨间计划',
+        triggerCondition: '完成晨间计划',
+        action: '逐项检查',
+      ),
     );
     await firstDevice.placeCard(cardId: card.id, parentId: null);
     await firstDevice.lightCard(card.id);
@@ -263,7 +279,11 @@ void main() {
 
   test('本机时间跳变不增加分支裁决的待核对项', () async {
     final card = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '开始拉伸', action: '伸展三分钟'),
+      const NationalFocusCardDraft(
+        name: '开始拉伸',
+        triggerCondition: '开始拉伸',
+        action: '伸展三分钟',
+      ),
     );
     await firstDevice.placeCard(cardId: card.id, parentId: null);
     await firstDevice.lightCard(card.id);
@@ -309,7 +329,11 @@ void main() {
   test('本机时间前跳按当前时间结算且不生成国策时钟待核对', () async {
     var wallTime = DateTime.utc(2026, 9, 20, 19, 59);
     final card = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '开始运动', action: '活动五分钟'),
+      const NationalFocusCardDraft(
+        name: '开始运动',
+        triggerCondition: '开始运动',
+        action: '活动五分钟',
+      ),
     );
     await firstDevice.placeCard(cardId: card.id, parentId: null);
     await firstDevice.lightCard(card.id);
@@ -346,10 +370,18 @@ void main() {
 
   test('升级旧时钟核对后清除仅时钟待核对并保留分支冲突与来源', () async {
     final clockOnly = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '仅时钟', action: '行动'),
+      const NationalFocusCardDraft(
+        name: '仅时钟',
+        triggerCondition: '仅时钟',
+        action: '行动',
+      ),
     );
     final conflicted = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '分支冲突', action: '行动'),
+      const NationalFocusCardDraft(
+        name: '分支冲突',
+        triggerCondition: '分支冲突',
+        action: '行动',
+      ),
     );
     await firstDevice.placeCard(cardId: clockOnly.id, parentId: null);
     await firstDevice.placeCard(cardId: conflicted.id, parentId: null);
@@ -444,7 +476,11 @@ void main() {
 
   test('临时数据库从旧来源恢复投影不结算、不增来源且不访问远端', () async {
     final card = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '旧国策', action: '行动'),
+      const NationalFocusCardDraft(
+        name: '旧国策',
+        triggerCondition: '旧国策',
+        action: '行动',
+      ),
     );
     await firstDevice.placeCard(cardId: card.id, parentId: null);
     await firstDevice.lightCard(card.id);
@@ -523,7 +559,11 @@ void main() {
       cloudSyncEnabled: false,
     );
     await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '本地任务', action: '行动'),
+      const NationalFocusCardDraft(
+        name: '本地任务',
+        triggerCondition: '本地任务',
+        action: '行动',
+      ),
     );
     await firstDevice.sync();
     expect(spy.pullCount, 0);
@@ -533,7 +573,11 @@ void main() {
 
   test('裁决采用分支时恢复完整熄灭原因并将结果同步到两个端点', () async {
     final card = await firstDevice.createCard(
-      const NationalFocusCardDraft(triggerCondition: '晨间锻炼', action: '热身三分钟'),
+      const NationalFocusCardDraft(
+        name: '晨间锻炼',
+        triggerCondition: '晨间锻炼',
+        action: '热身三分钟',
+      ),
     );
     await firstDevice.placeCard(cardId: card.id, parentId: null);
     await firstDevice.lightCard(card.id);

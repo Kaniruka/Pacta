@@ -19,6 +19,7 @@ abstract interface class NationalFocusRepository {
   Future<List<NationalFocusCard>> getDeletedCards();
   Future<NationalFocusCard> getCard(String cardId);
   Future<NationalFocusCard> createCard(NationalFocusCardDraft draft);
+  Future<void> renameCard({required String cardId, required String name});
   Future<NationalFocusStrengtheningLevel> saveStrengtheningLevel({
     required String cardId,
     int? levelNumber,
@@ -227,6 +228,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     await lifecycleAccess.requireActive();
     final timestamp = _nextTimestamp();
     final id = _uuid.v4();
+    final name = _requiredText(draft.name, '名称');
     final triggerCondition = _requiredText(draft.triggerCondition, '主要触发条件');
     final action = _requiredText(draft.action, '行动');
     final scope = _optionalText(draft.scope);
@@ -242,6 +244,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     );
     final card = NationalFocusCard(
       id: id,
+      name: name,
       triggerCondition: triggerCondition,
       action: action,
       scope: scope,
@@ -259,6 +262,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
             LocalNationalFocusCardsCompanion.insert(
               userId: userId,
               id: card.id,
+              name: card.name,
               triggerCondition: card.triggerCondition,
               action: card.action,
               scope: Value(card.scope),
@@ -289,6 +293,32 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       await _recordSyncSnapshot(operation: 'create_card');
     });
     return card;
+  }
+
+  @override
+  Future<void> renameCard({
+    required String cardId,
+    required String name,
+  }) async {
+    await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
+    final normalizedName = _requiredText(name, '名称');
+    await database.transaction(() async {
+      final card = await _findCardRow(cardId);
+      _requireResolvedCard(card);
+      if (card.deletedAt != null) {
+        throw StateError('已删除的国策卡需要先恢复到卡片库。');
+      }
+      if (card.name == normalizedName) return;
+      await _updateCard(
+        card,
+        LocalNationalFocusCardsCompanion(
+          name: Value(normalizedName),
+          updatedAt: Value(_nextTimestamp(card.updatedAt)),
+        ),
+      );
+      await _recordSyncSnapshot(operation: 'rename_card');
+    });
   }
 
   @override
@@ -2018,6 +2048,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
               .get();
       cards.add({
         'id': card.id,
+        'name': card.name,
         'triggerCondition': card.triggerCondition,
         'action': card.action,
         'scope': card.scope,
@@ -2438,6 +2469,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
               LocalNationalFocusCardsCompanion.insert(
                 userId: userId,
                 id: cardId,
+                name: _requiredText(card['name'] as String, '名称'),
                 triggerCondition: card['triggerCondition'] as String,
                 action: card['action'] as String,
                 scope: Value(card['scope'] as String?),
@@ -2879,6 +2911,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
         : versionRows.map(_requirementVersionFromRow).toList(growable: false);
     return NationalFocusCard(
       id: row.id,
+      name: row.name,
       triggerCondition: row.triggerCondition,
       action: row.action,
       scope: row.scope,
@@ -2941,6 +2974,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
             .getSingleOrNull();
     return {
       'id': row.id,
+      'name': row.name,
       'triggerCondition': row.triggerCondition,
       'action': row.action,
       'effectiveTriggerCondition':
@@ -2973,6 +3007,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
           final item = value as Map<String, dynamic>;
           return NationalFocusCardSnapshot(
             id: item['id'] as String,
+            name: item['name'] as String,
             triggerCondition: item['triggerCondition'] as String,
             action: item['action'] as String,
             scope: item['scope'] as String?,
@@ -3076,6 +3111,10 @@ class UnavailableNationalFocusRepository implements NationalFocusRepository {
 
   @override
   Future<NationalFocusCard> createCard(NationalFocusCardDraft draft) =>
+      _unavailable();
+
+  @override
+  Future<void> renameCard({required String cardId, required String name}) =>
       _unavailable();
 
   @override
@@ -3597,12 +3636,12 @@ String _nationalFocusConflictCardName(
   List<NationalFocusSyncSource> heads,
   Map<String, Map<String, dynamic>> headSnapshots,
 ) {
-  final baseName = baseCards[cardId]?['triggerCondition'];
+  final baseName = baseCards[cardId]?['name'];
   if (baseName is String) return baseName;
   for (final head in heads) {
     final name = _nationalFocusCardsById(
       headSnapshots[head.sourceId]!,
-    )[cardId]?['triggerCondition'];
+    )[cardId]?['name'];
     if (name is String) return name;
   }
   return '已删除的国策卡';

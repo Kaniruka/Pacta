@@ -43,6 +43,7 @@ void main() {
     );
     final card = await repository.createCard(
       const NationalFocusCardDraft(
+        name: 'Ticket-23 Windows acceptance',
         triggerCondition: 'Ticket-23 Windows acceptance',
         action: '确认待办国策',
       ),

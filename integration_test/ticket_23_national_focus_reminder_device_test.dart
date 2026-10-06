@@ -70,6 +70,7 @@ void main() {
 
       final card = await nationalFocus.createCard(
         const NationalFocusCardDraft(
+          name: '开始工作前',
           triggerCondition: '开始工作前',
           action: '写下第一步',
         ),

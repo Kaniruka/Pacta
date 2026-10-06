@@ -1214,6 +1214,15 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
   static const VerificationMeta _triggerConditionMeta = const VerificationMeta(
     'triggerCondition',
   );
@@ -1434,6 +1443,7 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
   List<GeneratedColumn> get $columns => [
     userId,
     id,
+    name,
     triggerCondition,
     action,
     scope,
@@ -1478,6 +1488,14 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     } else if (isInserting) {
       context.missing(_idMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
     }
     if (data.containsKey('trigger_condition')) {
       context.handle(
@@ -1651,6 +1669,10 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
         DriftSqlType.string,
         data['${effectivePrefix}id'],
       )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
       triggerCondition: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}trigger_condition'],
@@ -1740,6 +1762,7 @@ class LocalNationalFocusCard extends DataClass
     implements Insertable<LocalNationalFocusCard> {
   final String userId;
   final String id;
+  final String name;
   final String triggerCondition;
   final String action;
   final String? scope;
@@ -1762,6 +1785,7 @@ class LocalNationalFocusCard extends DataClass
   const LocalNationalFocusCard({
     required this.userId,
     required this.id,
+    required this.name,
     required this.triggerCondition,
     required this.action,
     this.scope,
@@ -1787,6 +1811,7 @@ class LocalNationalFocusCard extends DataClass
     final map = <String, Expression>{};
     map['user_id'] = Variable<String>(userId);
     map['id'] = Variable<String>(id);
+    map['name'] = Variable<String>(name);
     map['trigger_condition'] = Variable<String>(triggerCondition);
     map['action'] = Variable<String>(action);
     if (!nullToAbsent || scope != null) {
@@ -1831,6 +1856,7 @@ class LocalNationalFocusCard extends DataClass
     return LocalNationalFocusCardsCompanion(
       userId: Value(userId),
       id: Value(id),
+      name: Value(name),
       triggerCondition: Value(triggerCondition),
       action: Value(action),
       scope: scope == null && nullToAbsent
@@ -1877,6 +1903,7 @@ class LocalNationalFocusCard extends DataClass
     return LocalNationalFocusCard(
       userId: serializer.fromJson<String>(json['userId']),
       id: serializer.fromJson<String>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
       triggerCondition: serializer.fromJson<String>(json['triggerCondition']),
       action: serializer.fromJson<String>(json['action']),
       scope: serializer.fromJson<String?>(json['scope']),
@@ -1916,6 +1943,7 @@ class LocalNationalFocusCard extends DataClass
     return <String, dynamic>{
       'userId': serializer.toJson<String>(userId),
       'id': serializer.toJson<String>(id),
+      'name': serializer.toJson<String>(name),
       'triggerCondition': serializer.toJson<String>(triggerCondition),
       'action': serializer.toJson<String>(action),
       'scope': serializer.toJson<String?>(scope),
@@ -1945,6 +1973,7 @@ class LocalNationalFocusCard extends DataClass
   LocalNationalFocusCard copyWith({
     String? userId,
     String? id,
+    String? name,
     String? triggerCondition,
     String? action,
     Value<String?> scope = const Value.absent(),
@@ -1967,6 +1996,7 @@ class LocalNationalFocusCard extends DataClass
   }) => LocalNationalFocusCard(
     userId: userId ?? this.userId,
     id: id ?? this.id,
+    name: name ?? this.name,
     triggerCondition: triggerCondition ?? this.triggerCondition,
     action: action ?? this.action,
     scope: scope.present ? scope.value : this.scope,
@@ -2005,6 +2035,7 @@ class LocalNationalFocusCard extends DataClass
     return LocalNationalFocusCard(
       userId: data.userId.present ? data.userId.value : this.userId,
       id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
       triggerCondition: data.triggerCondition.present
           ? data.triggerCondition.value
           : this.triggerCondition,
@@ -2054,6 +2085,7 @@ class LocalNationalFocusCard extends DataClass
     return (StringBuffer('LocalNationalFocusCard(')
           ..write('userId: $userId, ')
           ..write('id: $id, ')
+          ..write('name: $name, ')
           ..write('triggerCondition: $triggerCondition, ')
           ..write('action: $action, ')
           ..write('scope: $scope, ')
@@ -2081,6 +2113,7 @@ class LocalNationalFocusCard extends DataClass
   int get hashCode => Object.hashAll([
     userId,
     id,
+    name,
     triggerCondition,
     action,
     scope,
@@ -2107,6 +2140,7 @@ class LocalNationalFocusCard extends DataClass
       (other is LocalNationalFocusCard &&
           other.userId == this.userId &&
           other.id == this.id &&
+          other.name == this.name &&
           other.triggerCondition == this.triggerCondition &&
           other.action == this.action &&
           other.scope == this.scope &&
@@ -2132,6 +2166,7 @@ class LocalNationalFocusCardsCompanion
     extends UpdateCompanion<LocalNationalFocusCard> {
   final Value<String> userId;
   final Value<String> id;
+  final Value<String> name;
   final Value<String> triggerCondition;
   final Value<String> action;
   final Value<String?> scope;
@@ -2155,6 +2190,7 @@ class LocalNationalFocusCardsCompanion
   const LocalNationalFocusCardsCompanion({
     this.userId = const Value.absent(),
     this.id = const Value.absent(),
+    this.name = const Value.absent(),
     this.triggerCondition = const Value.absent(),
     this.action = const Value.absent(),
     this.scope = const Value.absent(),
@@ -2179,6 +2215,7 @@ class LocalNationalFocusCardsCompanion
   LocalNationalFocusCardsCompanion.insert({
     required String userId,
     required String id,
+    required String name,
     required String triggerCondition,
     required String action,
     this.scope = const Value.absent(),
@@ -2201,6 +2238,7 @@ class LocalNationalFocusCardsCompanion
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
        id = Value(id),
+       name = Value(name),
        triggerCondition = Value(triggerCondition),
        action = Value(action),
        createdAt = Value(createdAt),
@@ -2208,6 +2246,7 @@ class LocalNationalFocusCardsCompanion
   static Insertable<LocalNationalFocusCard> custom({
     Expression<String>? userId,
     Expression<String>? id,
+    Expression<String>? name,
     Expression<String>? triggerCondition,
     Expression<String>? action,
     Expression<String>? scope,
@@ -2232,6 +2271,7 @@ class LocalNationalFocusCardsCompanion
     return RawValuesInsertable({
       if (userId != null) 'user_id': userId,
       if (id != null) 'id': id,
+      if (name != null) 'name': name,
       if (triggerCondition != null) 'trigger_condition': triggerCondition,
       if (action != null) 'action': action,
       if (scope != null) 'scope': scope,
@@ -2263,6 +2303,7 @@ class LocalNationalFocusCardsCompanion
   LocalNationalFocusCardsCompanion copyWith({
     Value<String>? userId,
     Value<String>? id,
+    Value<String>? name,
     Value<String>? triggerCondition,
     Value<String>? action,
     Value<String?>? scope,
@@ -2287,6 +2328,7 @@ class LocalNationalFocusCardsCompanion
     return LocalNationalFocusCardsCompanion(
       userId: userId ?? this.userId,
       id: id ?? this.id,
+      name: name ?? this.name,
       triggerCondition: triggerCondition ?? this.triggerCondition,
       action: action ?? this.action,
       scope: scope ?? this.scope,
@@ -2321,6 +2363,9 @@ class LocalNationalFocusCardsCompanion
     }
     if (id.present) {
       map['id'] = Variable<String>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
     }
     if (triggerCondition.present) {
       map['trigger_condition'] = Variable<String>(triggerCondition.value);
@@ -2398,6 +2443,7 @@ class LocalNationalFocusCardsCompanion
     return (StringBuffer('LocalNationalFocusCardsCompanion(')
           ..write('userId: $userId, ')
           ..write('id: $id, ')
+          ..write('name: $name, ')
           ..write('triggerCondition: $triggerCondition, ')
           ..write('action: $action, ')
           ..write('scope: $scope, ')
@@ -11720,28 +11766,26 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   ];
 }
 
-typedef $$LocalGoalsTableCreateCompanionBuilder =
-    LocalGoalsCompanion Function({
-      required String userId,
-      required String id,
-      required String title,
-      required String classification,
-      required DateTime createdAt,
-      required DateTime updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
-typedef $$LocalGoalsTableUpdateCompanionBuilder =
-    LocalGoalsCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> title,
-      Value<String> classification,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
+typedef $$LocalGoalsTableCreateCompanionBuilder = LocalGoalsCompanion Function({
+  required String userId,
+  required String id,
+  required String title,
+  required String classification,
+  required DateTime createdAt,
+  required DateTime updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
+typedef $$LocalGoalsTableUpdateCompanionBuilder = LocalGoalsCompanion Function({
+  Value<String> userId,
+  Value<String> id,
+  Value<String> title,
+  Value<String> classification,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
 
 class $$LocalGoalsTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalGoalsTable> {
@@ -11957,38 +12001,36 @@ typedef $$LocalGoalsTableProcessedTableManager =
       LocalGoal,
       PrefetchHooks Function()
     >;
-typedef $$LocalTasksTableCreateCompanionBuilder =
-    LocalTasksCompanion Function({
-      required String userId,
-      required String id,
-      required String goalId,
-      required String title,
-      required String classification,
-      Value<int?> estimatedMinutes,
-      Value<DateTime?> deadline,
-      Value<bool> isComplete,
-      Value<int> focusProgressSeconds,
-      required DateTime createdAt,
-      required DateTime updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
-typedef $$LocalTasksTableUpdateCompanionBuilder =
-    LocalTasksCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> goalId,
-      Value<String> title,
-      Value<String> classification,
-      Value<int?> estimatedMinutes,
-      Value<DateTime?> deadline,
-      Value<bool> isComplete,
-      Value<int> focusProgressSeconds,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
+typedef $$LocalTasksTableCreateCompanionBuilder = LocalTasksCompanion Function({
+  required String userId,
+  required String id,
+  required String goalId,
+  required String title,
+  required String classification,
+  Value<int?> estimatedMinutes,
+  Value<DateTime?> deadline,
+  Value<bool> isComplete,
+  Value<int> focusProgressSeconds,
+  required DateTime createdAt,
+  required DateTime updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
+typedef $$LocalTasksTableUpdateCompanionBuilder = LocalTasksCompanion Function({
+  Value<String> userId,
+  Value<String> id,
+  Value<String> goalId,
+  Value<String> title,
+  Value<String> classification,
+  Value<int?> estimatedMinutes,
+  Value<DateTime?> deadline,
+  Value<bool> isComplete,
+  Value<int> focusProgressSeconds,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
 
 class $$LocalTasksTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalTasksTable> {
@@ -12299,6 +12341,7 @@ typedef $$LocalNationalFocusCardsTableCreateCompanionBuilder =
     LocalNationalFocusCardsCompanion Function({
       required String userId,
       required String id,
+      required String name,
       required String triggerCondition,
       required String action,
       Value<String?> scope,
@@ -12324,6 +12367,7 @@ typedef $$LocalNationalFocusCardsTableUpdateCompanionBuilder =
     LocalNationalFocusCardsCompanion Function({
       Value<String> userId,
       Value<String> id,
+      Value<String> name,
       Value<String> triggerCondition,
       Value<String> action,
       Value<String?> scope,
@@ -12362,6 +12406,11 @@ class $$LocalNationalFocusCardsTableFilterComposer
 
   ColumnFilters<String> get id => $composableBuilder(
     column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -12480,6 +12529,11 @@ class $$LocalNationalFocusCardsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get triggerCondition => $composableBuilder(
     column: $table.triggerCondition,
     builder: (column) => ColumnOrderings(column),
@@ -12590,6 +12644,9 @@ class $$LocalNationalFocusCardsTableAnnotationComposer
 
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
 
   GeneratedColumn<String> get triggerCondition => $composableBuilder(
     column: $table.triggerCondition,
@@ -12719,6 +12776,7 @@ class $$LocalNationalFocusCardsTableTableManager
               ({
                 Value<String> userId = const Value.absent(),
                 Value<String> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
                 Value<String> triggerCondition = const Value.absent(),
                 Value<String> action = const Value.absent(),
                 Value<String?> scope = const Value.absent(),
@@ -12742,6 +12800,7 @@ class $$LocalNationalFocusCardsTableTableManager
               }) => LocalNationalFocusCardsCompanion(
                 userId: userId,
                 id: id,
+                name: name,
                 triggerCondition: triggerCondition,
                 action: action,
                 scope: scope,
@@ -12767,6 +12826,7 @@ class $$LocalNationalFocusCardsTableTableManager
               ({
                 required String userId,
                 required String id,
+                required String name,
                 required String triggerCondition,
                 required String action,
                 Value<String?> scope = const Value.absent(),
@@ -12790,6 +12850,7 @@ class $$LocalNationalFocusCardsTableTableManager
               }) => LocalNationalFocusCardsCompanion.insert(
                 userId: userId,
                 id: id,
+                name: name,
                 triggerCondition: triggerCondition,
                 action: action,
                 scope: scope,
@@ -14692,30 +14753,28 @@ typedef $$FocusSessionsTableProcessedTableManager =
       FocusSession,
       PrefetchHooks Function()
     >;
-typedef $$FocusNodesTableCreateCompanionBuilder =
-    FocusNodesCompanion Function({
-      required String userId,
-      required String id,
-      required String sessionId,
-      required String taskId,
-      required String mode,
-      required DateTime createdAt,
-      required int effectiveSeconds,
-      Value<String?> note,
-      Value<int> rowid,
-    });
-typedef $$FocusNodesTableUpdateCompanionBuilder =
-    FocusNodesCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> sessionId,
-      Value<String> taskId,
-      Value<String> mode,
-      Value<DateTime> createdAt,
-      Value<int> effectiveSeconds,
-      Value<String?> note,
-      Value<int> rowid,
-    });
+typedef $$FocusNodesTableCreateCompanionBuilder = FocusNodesCompanion Function({
+  required String userId,
+  required String id,
+  required String sessionId,
+  required String taskId,
+  required String mode,
+  required DateTime createdAt,
+  required int effectiveSeconds,
+  Value<String?> note,
+  Value<int> rowid,
+});
+typedef $$FocusNodesTableUpdateCompanionBuilder = FocusNodesCompanion Function({
+  Value<String> userId,
+  Value<String> id,
+  Value<String> sessionId,
+  Value<String> taskId,
+  Value<String> mode,
+  Value<DateTime> createdAt,
+  Value<int> effectiveSeconds,
+  Value<String?> note,
+  Value<int> rowid,
+});
 
 class $$FocusNodesTableFilterComposer
     extends Composer<_$PactaDatabase, $FocusNodesTable> {

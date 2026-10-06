@@ -85,7 +85,7 @@ A user-maintained progression tree of National Focus Cards, independent of Goals
 _Avoid_: Skill tree, goal hierarchy
 
 **National Focus Card (国策卡)**:
-A user-authored rule with a primary Trigger Condition and Action, optional Scope and Exception Notes, and persistent Internalization Progress. The user evaluates its real-world validity manually.
+A user-authored named rule with a primary Trigger Condition and Action, optional Scope and Exception Notes, and persistent Internalization Progress. Its user-defined name identifies the card independently of its rule content, and the user evaluates its real-world validity manually.
 _Avoid_: Executable rule, automatic evaluator
 
 **National Focus Card Library (国策卡片库)**:

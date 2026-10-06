@@ -130,10 +130,16 @@ void main() {
         isNot(panBefore),
       );
       await captureScreenshot(screenshotName);
-      await tester.ensureVisible(find.text('详情'));
-      await tester.tap(find.text('详情'));
+      await tester.ensureVisible(find.text('详细'));
+      await tester.tap(find.text('详细'));
       await tester.pumpAndSettle();
       expect(find.textContaining('切换不同的国策树分支'), findsOneWidget);
+      final firstCard = seed.cardId(seed.cardIdsBySourceId.keys.first);
+      final firstNode = find.byKey(ValueKey('national-focus-node-$firstCard'));
+      await tester.ensureVisible(firstNode);
+      await tester.tap(firstNode);
+      await tester.pumpAndSettle();
+      expect(find.text('查看详情'), findsOneWidget);
       expect(tester.takeException(), isNull);
     }
 

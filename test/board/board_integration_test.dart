@@ -57,7 +57,11 @@ void main() {
       failureReason: '验证看板采用实际投入时间',
     );
     final card = await nationalFocusRepository.createCard(
-      const NationalFocusCardDraft(triggerCondition: '开始工作前', action: '写下第一步'),
+      const NationalFocusCardDraft(
+        name: '开始工作前',
+        triggerCondition: '开始工作前',
+        action: '写下第一步',
+      ),
     );
     await nationalFocusRepository.placeCard(cardId: card.id, parentId: null);
     await nationalFocusRepository.lightCard(card.id);
@@ -97,7 +101,9 @@ void main() {
     await tester.ensureVisible(find.text('打开国策树'));
     await tester.tap(find.text('打开国策树'));
     await tester.pumpAndSettle();
-    expect(find.text('检查点与失败记录'), findsOneWidget);
+    expect(find.text('今日确认 (1)'), findsOneWidget);
+    expect(find.byTooltip('更多'), findsOneWidget);
+    expect(find.text('检查点与失败记录'), findsNothing);
     expect(find.text('整理发布材料'), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());
