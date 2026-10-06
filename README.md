@@ -22,6 +22,10 @@ Pacta 是基于 Flutter 的自我调节应用，用任务、专注链和国策�
 
 项目术语见 [CONTEXT.md](CONTEXT.md)，行为与验收依据见[核心规格](docs/spec-focus-loop-and-core-shell.md)和[验收矩阵](docs/acceptance-matrix-20260914.md)，架构决定见 [ADR](docs/adr/)。需求与实施记录使用 GitHub Issues。
 
+## 国策树交互与预览
+
+国策卡名称独立必填；简洁视图显示圆状态图标与名称，详细视图增加行动摘要。点击节点进入精简操作面板，详情单独阅读；画布只保留适应屏幕图标，缩放和平移使用原有手势。当前方案见 [画布设计](docs/national-focus-canvas-design.md)，50节点图片样例与4节点隔离UI预览的运行方法见 [预览说明](docs/national-focus-reference-fixture.md)。
+
 ## 自行部署云端
 
 以下步骤适用于**新建的、由你管理的云端 Supabase 项目**。先准备 Node.js 20+ 和 pnpm；本仓库的 `package.json` 与 `pnpm-lock.yaml` 锁定了 Supabase CLI。日常客户端开发只需连接已有项目，不需要在本机运行 Docker 或 Supabase 服务。

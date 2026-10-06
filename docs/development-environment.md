@@ -6,6 +6,12 @@
 
 技术栈依据 ADR 0001 和 0003：Flutter/Dart、Material 3、Riverpod、Drift/SQLite、Supabase Auth/PostgreSQL/RLS。Riverpod、Drift 和 Supabase Flutter SDK 已在 `pubspec.yaml` 中声明；设备日历需要平台权限，当前也没有云日历 API Key 的需求。
 
+## 开发数据状态（2026-10-06时点）
+
+此前维护的测试身份和业务数据已按用户授权进行一次性重置，云端从13个Auth用户减至1个管理员，除管理员绑定外的15张public数据表均清空；Windows旧Pacta数据库和会话/偏好缓存也已删除。保留项目结构、RLS、管理函数和管理员凭据。此状态是本次验收时点的记录，不要求新成员再次执行清理，也不替代产品的30天停用清理流程。详见 [重置证据](development-reset-20261005.md)。
+
+已有测试邮箱配置不代表对应Auth账号仍存在。之后国策UI验证使用独立内存样例，不创建真实测试用户或灌入云端业务数据，入口见 [国策预览说明](national-focus-reference-fixture.md)。本地schema23要求独立国策名称；旧国策卡表非空时升级明确拒绝，不提供随意名称回填或客户端自动擦库。
+
 ## 客户端配置
 
 本次已创建被 Git 忽略的 `.env`。新克隆仓库时，仅在该文件不存在时执行：
