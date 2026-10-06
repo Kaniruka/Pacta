@@ -318,8 +318,10 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   Future<void> _openLibrary({String? parentId}) async {
     final card = await Navigator.of(context).push<NationalFocusCard>(
       MaterialPageRoute<NationalFocusCard>(
-        builder: (_) =>
-            NationalFocusCardLibraryPage(repository: widget.repository),
+        builder: (_) => NationalFocusCardLibraryPage(
+          repository: widget.repository,
+          selectCreatedCard: parentId != null,
+        ),
       ),
     );
     if (!mounted || card == null) return;
@@ -350,13 +352,19 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     setState(() => _error = null);
     try {
       await widget.repository.placeCard(cardId: card.id, parentId: parentId);
+      final placedCard = await widget.repository.getCard(card.id);
       _syncInBackground();
       if (!mounted) return;
       setState(() => _placementCard = null);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            parentId == null ? '已放到顶层；卡片仍为熄灭状态。' : '已放置到所选父节点下；卡片仍为熄灭状态。',
+            '${parentId == null ? '已放到顶层' : '已放置到所选父节点下'}；'
+            '${switch (placedCard.state) {
+              NationalFocusCardState.extinguished => '请手动点亮。',
+              NationalFocusCardState.pendingTodayConfirmation => '请确认今日继续有效。',
+              NationalFocusCardState.lit => '当前已点亮。',
+            }}',
           ),
         ),
       );
@@ -1072,9 +1080,14 @@ class _TreeCanvasState extends State<_TreeCanvas> {
 }
 
 class NationalFocusCardLibraryPage extends StatefulWidget {
-  const NationalFocusCardLibraryPage({super.key, required this.repository});
+  const NationalFocusCardLibraryPage({
+    super.key,
+    required this.repository,
+    this.selectCreatedCard = false,
+  });
 
   final NationalFocusRepository repository;
+  final bool selectCreatedCard;
 
   @override
   State<NationalFocusCardLibraryPage> createState() =>
@@ -1090,7 +1103,7 @@ class _NationalFocusCardLibraryPageState
             NationalFocusCardEditorPage(repository: widget.repository),
       ),
     );
-    if (created != null && context.mounted) {
+    if (created != null && context.mounted && widget.selectCreatedCard) {
       Navigator.of(context).pop(created);
     }
   }

@@ -535,6 +535,109 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
+  Future<void> createInLibrary(WidgetTester tester, String name) async {
+    await tester.tap(find.text('新建国策卡'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).at(0), name);
+    await tester.enterText(find.byType(TextFormField).at(1), '条件成立后');
+    await tester.enterText(find.byType(TextFormField).at(2), '执行行动');
+    await tester.tap(find.text('保存到卡片库'));
+    await pumpNationalFocusUi(tester);
+  }
+
+  testWidgets('普通卡片库新建后留在库中，不自动选择树位置', (tester) async {
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: NationalFocusTreePage(repository: repository, now: () => now),
+        ),
+      ),
+    );
+    await pumpNationalFocusUi(tester);
+    await tester.tap(find.byTooltip('卡片库'));
+    await tester.pumpAndSettle();
+    await createInLibrary(tester, '留在库中的卡');
+    expect(find.text('国策卡片库'), findsOneWidget);
+    expect((await repository.getLibraryCards()).single.name, '留在库中的卡');
+    expect(await repository.getTreeCards(), isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('添加子节点中新建后直接挂到发起父节点且不点亮', (tester) async {
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+    final parent = await createPlacedCard();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: NationalFocusTreePage(repository: repository, now: () => now),
+        ),
+      ),
+    );
+    await pumpNationalFocusUi(tester);
+    await openNode(tester, parent);
+    await tapAction(tester, '添加子节点');
+    await tester.pumpAndSettle();
+    await createInLibrary(tester, '新建的子国策');
+    expect(find.text('国策卡片库'), findsNothing);
+    final cards = await repository.getTreeCards();
+    final child = cards.singleWhere((card) => card.id != parent.id);
+    expect(child.name, '新建的子国策');
+    expect(child.parentId, parent.id);
+    expect(child.state, NationalFocusCardState.extinguished);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('添加待确认库卡保留原状态且提示确认，不自动点亮', (tester) async {
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+    final parent = await createPlacedCard();
+    await repository.lightCard(parent.id);
+    final child = await repository.createCard(
+      const NationalFocusCardDraft(
+        name: '待恢复子卡',
+        triggerCondition: '原条件',
+        action: '原行动',
+      ),
+    );
+    await repository.placeCard(cardId: child.id, parentId: null);
+    await repository.lightCard(child.id);
+    await repository.moveCardToLibrary(child.id);
+    expect(
+      (await repository.getCard(child.id)).state,
+      NationalFocusCardState.pendingTodayConfirmation,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: NationalFocusTreePage(repository: repository, now: () => now),
+        ),
+      ),
+    );
+    await pumpNationalFocusUi(tester);
+    await openNode(tester, parent);
+    await tapAction(tester, '添加子节点');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('放入树画布'));
+    await pumpNationalFocusUi(tester);
+    final placed = await repository.getCard(child.id);
+    expect(placed.parentId, parent.id);
+    expect(placed.state, NationalFocusCardState.pendingTodayConfirmation);
+    expect(find.textContaining('请确认今日继续有效'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
   testWidgets('有效节点不能移到熄灭父节点，移入库确认整子树语义', (tester) async {
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
