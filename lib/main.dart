@@ -1958,218 +1958,236 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                 : allTasks
                       .where((task) => task.id == active.taskId)
                       .firstOrNull;
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
-              children: [
-                Text('专注链', style: Theme.of(context).textTheme.headlineSmall),
-                const SizedBox(height: 6),
-                const Text('选择一个未完成任务，设定本次模式和时长。'),
-                if (signalsRepository != null)
-                  ChainSignalsCard(repository: signalsRepository),
-                if (active != null) ...[
-                  const SizedBox(height: 16),
-                  Card(
-                    color: Theme.of(context).colorScheme.primaryContainer,
-                    child: ListTile(
-                      leading: const Icon(Icons.timer_outlined),
-                      title: const Text('已有进行中的专注'),
-                      subtitle: Text(
-                        activeTask == null
-                            ? '原任务'
-                            : _taskDisplayTitle(activeTask),
-                      ),
-                      trailing: FilledButton(
-                        onPressed: () => _openSession(
-                          active,
-                          taskTitles[active.taskId] ?? '原任务',
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 960),
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '专注链',
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
                         ),
-                        child: const Text('返回专注'),
-                      ),
-                    ),
-                  ),
-                ],
-                FutureBuilder<AppointmentPreparation?>(
-                  future: _activeAppointmentFuture,
-                  builder: (context, appointmentSnapshot) {
-                    final appointment = appointmentSnapshot.data;
-                    if (appointment == null) return const SizedBox.shrink();
-                    final title = taskTitles[appointment.taskId] ?? '原预约任务';
-                    return Card(
-                      color: Theme.of(context).colorScheme.secondaryContainer,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              leading: const Icon(Icons.event_available),
-                              title: const Text('已有预约准备'),
-                              subtitle: Text(
-                                appointment.isPendingReview
-                                    ? '$title · 待核对'
-                                    : title,
-                              ),
+                        TextButton.icon(
+                          key: const ValueKey('focus-history-entry'),
+                          icon: const Icon(Icons.history, size: 20),
+                          label: const Text('历史'),
+                          onPressed: () => Navigator.of(context).push<void>(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const FocusHistoryPage(),
                             ),
-                            Wrap(
-                              alignment: WrapAlignment.end,
-                              spacing: 8,
-                              runSpacing: 8,
-                              children: [
-                                OutlinedButton(
-                                  onPressed: () =>
-                                      _openAppointment(appointment, title),
-                                  child: const Text('返回准备'),
-                                ),
-                                FilledButton.tonal(
-                                  onPressed: () =>
-                                      _enterAppointment(appointment, title),
-                                  child: const Text('提前进入专注'),
-                                ),
-                                TextButton(
-                                  onPressed: () =>
-                                      _cancelAppointment(appointment),
-                                  child: const Text('取消预约'),
-                                ),
-                              ],
-                            ),
-                          ],
+                          ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '选一个任务，开始本次专注。',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
-                    );
-                  },
-                ),
-                const SizedBox(height: 18),
-                SegmentedButton<TaskClassification?>(
-                  segments: const [
-                    ButtonSegment<TaskClassification?>(
-                      value: null,
-                      label: Text('全部'),
                     ),
-                    ButtonSegment<TaskClassification?>(
-                      value: TaskClassification.elite,
-                      label: Text('精锐'),
-                    ),
-                    ButtonSegment<TaskClassification?>(
-                      value: TaskClassification.regular,
-                      label: Text('普通'),
-                    ),
-                  ],
-                  selected: {_filter},
-                  onSelectionChanged: (values) =>
-                      setState(() => _filter = values.single),
-                ),
-                const SizedBox(height: 12),
-                if (tasks.isEmpty)
-                  const Card(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text('当前筛选下没有可开始的任务。'),
-                    ),
-                  )
-                else
-                  for (final task in tasks)
-                    Card(
-                      child: ListTile(
-                        title: Text(task.title),
-                        subtitle: Text(
-                          '${task.classification.label} · 已专注 '
-                          '${_formatDuration(task.focusProgressSeconds)}',
-                        ),
-                        trailing: Tooltip(
-                          message: '开始任务：${task.title}',
-                          child: FilledButton.tonal(
-                            onPressed: () => _showSetup(task),
-                            child: const Text('开始'),
+                    if (active != null) ...[
+                      const SizedBox(height: 16),
+                      Card(
+                        color: Theme.of(context).colorScheme.primaryContainer,
+                        child: ListTile(
+                          leading: const Icon(Icons.timer_outlined),
+                          title: const Text('已有进行中的专注'),
+                          subtitle: Text(
+                            activeTask == null
+                                ? '原任务'
+                                : _taskDisplayTitle(activeTask),
+                          ),
+                          trailing: FilledButton(
+                            onPressed: () => _openSession(
+                              active,
+                              taskTitles[active.taskId] ?? '原任务',
+                            ),
+                            child: const Text('返回专注'),
                           ),
                         ),
                       ),
-                    ),
-                const SizedBox(height: 16),
-                FutureBuilder<List<FocusChainRecord>>(
-                  future: _chainRecordsFuture,
-                  builder: (context, recordSnapshot) {
-                    final records = recordSnapshot.data ?? const [];
-                    if (records.isEmpty) return const SizedBox.shrink();
-                    return Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(
-                              '连续记录',
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            for (final record in records)
-                              ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                title: Text(record.mode.label),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                    ],
+                    FutureBuilder<AppointmentPreparation?>(
+                      future: _activeAppointmentFuture,
+                      builder: (context, appointmentSnapshot) {
+                        final appointment = appointmentSnapshot.data;
+                        if (appointment == null) return const SizedBox.shrink();
+                        final title = taskTitles[appointment.taskId] ?? '原预约任务';
+                        return Card(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .secondaryContainer,
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                ListTile(
+                                  contentPadding: EdgeInsets.zero,
+                                  leading: const Icon(Icons.event_available),
+                                  title: const Text('已有预约准备'),
+                                  subtitle: Text(
+                                    appointment.isPendingReview
+                                        ? '$title · 待核对'
+                                        : title,
+                                  ),
+                                ),
+                                Wrap(
+                                  alignment: WrapAlignment.end,
+                                  spacing: 8,
+                                  runSpacing: 8,
                                   children: [
-                                    Text(
-                                      record.hasPendingReview
-                                          ? '待核对 · 争议结果暂不计入连续记录。'
-                                          : '${record.currentConsecutive} 次 · 最佳 ${record.bestConsecutive} 次',
+                                    OutlinedButton(
+                                      onPressed: () =>
+                                          _openAppointment(appointment, title),
+                                      child: const Text('返回准备'),
                                     ),
-                                    Text(
-                                      '累计时长 ${_formatDuration(statistics[record.mode]!.totalDurationSeconds)}',
+                                    FilledButton.tonal(
+                                      onPressed: () =>
+                                          _enterAppointment(appointment, title),
+                                      child: const Text('提前进入专注'),
                                     ),
-                                    Text(
-                                      '平均每次 ${_formatDuration(statistics[record.mode]!.averageDurationSeconds.round())}',
+                                    TextButton(
+                                      onPressed: () =>
+                                          _cancelAppointment(appointment),
+                                      child: const Text('取消预约'),
                                     ),
                                   ],
                                 ),
-                              ),
-                            const Text('时长包含已结算失败专注的有效时间，不含暂停；平均按已结算次数计算。'),
-                            FutureBuilder<AppointmentChainRecord>(
-                              future: _appointmentChainRecordFuture,
-                              builder: (context, appointmentSnapshot) {
-                                final record = appointmentSnapshot.data;
-                                if (record == null) {
-                                  return const SizedBox.shrink();
-                                }
-                                return ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  title: const Text('预约链'),
-                                  subtitle: Text(
-                                    record.hasPendingReview
-                                        ? '待核对 · 争议结果暂不计入连续记录。'
-                                        : '${record.currentConsecutive} 次 · 最佳 ${record.bestConsecutive} 次',
-                                  ),
-                                );
-                              },
+                              ],
                             ),
-                          ],
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      '开始一次专注',
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 12),
+                    SegmentedButton<TaskClassification?>(
+                      segments: const [
+                        ButtonSegment<TaskClassification?>(
+                          value: null,
+                          label: Text('全部'),
                         ),
-                      ),
-                    );
-                  },
-                ),
-                Card(
-                  key: const ValueKey('focus-history-entry'),
-                  child: ListTile(
-                    leading: const Icon(Icons.history),
-                    title: const Text('专注历史'),
-                    subtitle: Text(
-                      '${sessions.where((session) => !session.isUnfinished).length} 次已结算专注',
+                        ButtonSegment<TaskClassification?>(
+                          value: TaskClassification.elite,
+                          label: Text('精锐'),
+                        ),
+                        ButtonSegment<TaskClassification?>(
+                          value: TaskClassification.regular,
+                          label: Text('普通'),
+                        ),
+                      ],
+                      selected: {_filter},
+                      onSelectionChanged: (values) =>
+                          setState(() => _filter = values.single),
                     ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.of(context).push<void>(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const FocusHistoryPage(),
+                    const SizedBox(height: 12),
+                    if (tasks.isEmpty)
+                      const Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text('当前筛选下没有可开始的任务。'),
+                        ),
+                      )
+                    else
+                      for (final task in tasks)
+                        Card(
+                          child: ListTile(
+                            title: Text(task.title),
+                            subtitle: Text(
+                              '${task.classification.label} · 已专注 '
+                              '${_formatDuration(task.focusProgressSeconds)}',
+                            ),
+                            trailing: Tooltip(
+                              message: '开始任务：${task.title}',
+                              child: FilledButton.tonal(
+                                onPressed: () => _showSetup(task),
+                                child: const Text('开始'),
+                              ),
+                            ),
+                          ),
+                        ),
+                    const SizedBox(height: 28),
+                    Text(
+                      '我的链',
+                      style: Theme.of(context).textTheme.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 12),
+                    FutureBuilder<List<FocusChainRecord>>(
+                      future: _chainRecordsFuture,
+                      builder: (context, recordSnapshot) {
+                        if (recordSnapshot.hasError) {
+                          return _recordReadError();
+                        }
+                        if (!recordSnapshot.hasData) {
+                          return const LinearProgressIndicator();
+                        }
+                        return FutureBuilder<AppointmentChainRecord>(
+                          future: _appointmentChainRecordFuture,
+                          builder: (context, appointmentSnapshot) {
+                            if (appointmentSnapshot.hasError) {
+                              return _recordReadError();
+                            }
+                            if (!appointmentSnapshot.hasData) {
+                              return const LinearProgressIndicator();
+                            }
+                            return FocusChainOverview(
+                              repository: signalsRepository,
+                              records: recordSnapshot.data!,
+                              appointmentRecord: appointmentSnapshot.data,
+                              statistics: statistics,
+                            );
+                          },
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '累计与平均包含失败专注的有效时间，不含暂停。',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             );
           },
         );
       },
     );
   }
+
+  Widget _recordReadError() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('链记录读取失败，请重试。'),
+        TextButton(
+          onPressed: () => setState(() {
+            final repository = ref.read(focusRepositoryProvider);
+            _chainRecordsFuture = repository.getChainRecords();
+            _appointmentChainRecordFuture = repository
+                .getAppointmentChainRecord();
+          }),
+          child: const Text('重试'),
+        ),
+      ],
+    ),
+  );
 
   void _updateProjectionFutures(
     FocusRepository repository,
