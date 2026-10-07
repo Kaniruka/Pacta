@@ -7374,6 +7374,400 @@ class FocusPreferencesCompanion extends UpdateCompanion<FocusPreference> {
   }
 }
 
+class $ChainSignalsTable extends ChainSignals
+    with TableInfo<$ChainSignalsTable, ChainSignal> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ChainSignalsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _appointmentTriggerSignalMeta =
+      const VerificationMeta('appointmentTriggerSignal');
+  @override
+  late final GeneratedColumn<String> appointmentTriggerSignal =
+      GeneratedColumn<String>(
+        'appointment_trigger_signal',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(''),
+      );
+  static const VerificationMeta _eliteFocusMarkerMeta = const VerificationMeta(
+    'eliteFocusMarker',
+  );
+  @override
+  late final GeneratedColumn<String> eliteFocusMarker = GeneratedColumn<String>(
+    'elite_focus_marker',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _regularFocusMarkerMeta =
+      const VerificationMeta('regularFocusMarker');
+  @override
+  late final GeneratedColumn<String> regularFocusMarker =
+      GeneratedColumn<String>(
+        'regular_focus_marker',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(''),
+      );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    appointmentTriggerSignal,
+    eliteFocusMarker,
+    regularFocusMarker,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'chain_signals';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ChainSignal> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('appointment_trigger_signal')) {
+      context.handle(
+        _appointmentTriggerSignalMeta,
+        appointmentTriggerSignal.isAcceptableOrUnknown(
+          data['appointment_trigger_signal']!,
+          _appointmentTriggerSignalMeta,
+        ),
+      );
+    }
+    if (data.containsKey('elite_focus_marker')) {
+      context.handle(
+        _eliteFocusMarkerMeta,
+        eliteFocusMarker.isAcceptableOrUnknown(
+          data['elite_focus_marker']!,
+          _eliteFocusMarkerMeta,
+        ),
+      );
+    }
+    if (data.containsKey('regular_focus_marker')) {
+      context.handle(
+        _regularFocusMarkerMeta,
+        regularFocusMarker.isAcceptableOrUnknown(
+          data['regular_focus_marker']!,
+          _regularFocusMarkerMeta,
+        ),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId};
+  @override
+  ChainSignal map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ChainSignal(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      appointmentTriggerSignal: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}appointment_trigger_signal'],
+      )!,
+      eliteFocusMarker: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}elite_focus_marker'],
+      )!,
+      regularFocusMarker: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}regular_focus_marker'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $ChainSignalsTable createAlias(String alias) {
+    return $ChainSignalsTable(attachedDatabase, alias);
+  }
+}
+
+class ChainSignal extends DataClass implements Insertable<ChainSignal> {
+  final String userId;
+  final String appointmentTriggerSignal;
+  final String eliteFocusMarker;
+  final String regularFocusMarker;
+  final DateTime updatedAt;
+  const ChainSignal({
+    required this.userId,
+    required this.appointmentTriggerSignal,
+    required this.eliteFocusMarker,
+    required this.regularFocusMarker,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['appointment_trigger_signal'] = Variable<String>(
+      appointmentTriggerSignal,
+    );
+    map['elite_focus_marker'] = Variable<String>(eliteFocusMarker);
+    map['regular_focus_marker'] = Variable<String>(regularFocusMarker);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  ChainSignalsCompanion toCompanion(bool nullToAbsent) {
+    return ChainSignalsCompanion(
+      userId: Value(userId),
+      appointmentTriggerSignal: Value(appointmentTriggerSignal),
+      eliteFocusMarker: Value(eliteFocusMarker),
+      regularFocusMarker: Value(regularFocusMarker),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory ChainSignal.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ChainSignal(
+      userId: serializer.fromJson<String>(json['userId']),
+      appointmentTriggerSignal: serializer.fromJson<String>(
+        json['appointmentTriggerSignal'],
+      ),
+      eliteFocusMarker: serializer.fromJson<String>(json['eliteFocusMarker']),
+      regularFocusMarker: serializer.fromJson<String>(
+        json['regularFocusMarker'],
+      ),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'appointmentTriggerSignal': serializer.toJson<String>(
+        appointmentTriggerSignal,
+      ),
+      'eliteFocusMarker': serializer.toJson<String>(eliteFocusMarker),
+      'regularFocusMarker': serializer.toJson<String>(regularFocusMarker),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  ChainSignal copyWith({
+    String? userId,
+    String? appointmentTriggerSignal,
+    String? eliteFocusMarker,
+    String? regularFocusMarker,
+    DateTime? updatedAt,
+  }) => ChainSignal(
+    userId: userId ?? this.userId,
+    appointmentTriggerSignal:
+        appointmentTriggerSignal ?? this.appointmentTriggerSignal,
+    eliteFocusMarker: eliteFocusMarker ?? this.eliteFocusMarker,
+    regularFocusMarker: regularFocusMarker ?? this.regularFocusMarker,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  ChainSignal copyWithCompanion(ChainSignalsCompanion data) {
+    return ChainSignal(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      appointmentTriggerSignal: data.appointmentTriggerSignal.present
+          ? data.appointmentTriggerSignal.value
+          : this.appointmentTriggerSignal,
+      eliteFocusMarker: data.eliteFocusMarker.present
+          ? data.eliteFocusMarker.value
+          : this.eliteFocusMarker,
+      regularFocusMarker: data.regularFocusMarker.present
+          ? data.regularFocusMarker.value
+          : this.regularFocusMarker,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ChainSignal(')
+          ..write('userId: $userId, ')
+          ..write('appointmentTriggerSignal: $appointmentTriggerSignal, ')
+          ..write('eliteFocusMarker: $eliteFocusMarker, ')
+          ..write('regularFocusMarker: $regularFocusMarker, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    userId,
+    appointmentTriggerSignal,
+    eliteFocusMarker,
+    regularFocusMarker,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ChainSignal &&
+          other.userId == this.userId &&
+          other.appointmentTriggerSignal == this.appointmentTriggerSignal &&
+          other.eliteFocusMarker == this.eliteFocusMarker &&
+          other.regularFocusMarker == this.regularFocusMarker &&
+          other.updatedAt == this.updatedAt);
+}
+
+class ChainSignalsCompanion extends UpdateCompanion<ChainSignal> {
+  final Value<String> userId;
+  final Value<String> appointmentTriggerSignal;
+  final Value<String> eliteFocusMarker;
+  final Value<String> regularFocusMarker;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const ChainSignalsCompanion({
+    this.userId = const Value.absent(),
+    this.appointmentTriggerSignal = const Value.absent(),
+    this.eliteFocusMarker = const Value.absent(),
+    this.regularFocusMarker = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ChainSignalsCompanion.insert({
+    required String userId,
+    this.appointmentTriggerSignal = const Value.absent(),
+    this.eliteFocusMarker = const Value.absent(),
+    this.regularFocusMarker = const Value.absent(),
+    required DateTime updatedAt,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       updatedAt = Value(updatedAt);
+  static Insertable<ChainSignal> custom({
+    Expression<String>? userId,
+    Expression<String>? appointmentTriggerSignal,
+    Expression<String>? eliteFocusMarker,
+    Expression<String>? regularFocusMarker,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (appointmentTriggerSignal != null)
+        'appointment_trigger_signal': appointmentTriggerSignal,
+      if (eliteFocusMarker != null) 'elite_focus_marker': eliteFocusMarker,
+      if (regularFocusMarker != null)
+        'regular_focus_marker': regularFocusMarker,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ChainSignalsCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? appointmentTriggerSignal,
+    Value<String>? eliteFocusMarker,
+    Value<String>? regularFocusMarker,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return ChainSignalsCompanion(
+      userId: userId ?? this.userId,
+      appointmentTriggerSignal:
+          appointmentTriggerSignal ?? this.appointmentTriggerSignal,
+      eliteFocusMarker: eliteFocusMarker ?? this.eliteFocusMarker,
+      regularFocusMarker: regularFocusMarker ?? this.regularFocusMarker,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (appointmentTriggerSignal.present) {
+      map['appointment_trigger_signal'] = Variable<String>(
+        appointmentTriggerSignal.value,
+      );
+    }
+    if (eliteFocusMarker.present) {
+      map['elite_focus_marker'] = Variable<String>(eliteFocusMarker.value);
+    }
+    if (regularFocusMarker.present) {
+      map['regular_focus_marker'] = Variable<String>(regularFocusMarker.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ChainSignalsCompanion(')
+          ..write('userId: $userId, ')
+          ..write('appointmentTriggerSignal: $appointmentTriggerSignal, ')
+          ..write('eliteFocusMarker: $eliteFocusMarker, ')
+          ..write('regularFocusMarker: $regularFocusMarker, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $FocusPrecedentRulesTable extends FocusPrecedentRules
     with TableInfo<$FocusPrecedentRulesTable, FocusPrecedentRule> {
   @override
@@ -11721,6 +12115,7 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   late final $FocusPreferencesTable focusPreferences = $FocusPreferencesTable(
     this,
   );
+  late final $ChainSignalsTable chainSignals = $ChainSignalsTable(this);
   late final $FocusPrecedentRulesTable focusPrecedentRules =
       $FocusPrecedentRulesTable(this);
   late final $FocusAppointmentsTable focusAppointments =
@@ -11755,6 +12150,7 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
     focusNodes,
     focusChainRecords,
     focusPreferences,
+    chainSignals,
     focusPrecedentRules,
     focusAppointments,
     appointmentChainRecords,
@@ -11766,26 +12162,28 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   ];
 }
 
-typedef $$LocalGoalsTableCreateCompanionBuilder = LocalGoalsCompanion Function({
-  required String userId,
-  required String id,
-  required String title,
-  required String classification,
-  required DateTime createdAt,
-  required DateTime updatedAt,
-  Value<DateTime?> deletedAt,
-  Value<int> rowid,
-});
-typedef $$LocalGoalsTableUpdateCompanionBuilder = LocalGoalsCompanion Function({
-  Value<String> userId,
-  Value<String> id,
-  Value<String> title,
-  Value<String> classification,
-  Value<DateTime> createdAt,
-  Value<DateTime> updatedAt,
-  Value<DateTime?> deletedAt,
-  Value<int> rowid,
-});
+typedef $$LocalGoalsTableCreateCompanionBuilder =
+    LocalGoalsCompanion Function({
+      required String userId,
+      required String id,
+      required String title,
+      required String classification,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
+typedef $$LocalGoalsTableUpdateCompanionBuilder =
+    LocalGoalsCompanion Function({
+      Value<String> userId,
+      Value<String> id,
+      Value<String> title,
+      Value<String> classification,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
 
 class $$LocalGoalsTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalGoalsTable> {
@@ -12001,36 +12399,38 @@ typedef $$LocalGoalsTableProcessedTableManager =
       LocalGoal,
       PrefetchHooks Function()
     >;
-typedef $$LocalTasksTableCreateCompanionBuilder = LocalTasksCompanion Function({
-  required String userId,
-  required String id,
-  required String goalId,
-  required String title,
-  required String classification,
-  Value<int?> estimatedMinutes,
-  Value<DateTime?> deadline,
-  Value<bool> isComplete,
-  Value<int> focusProgressSeconds,
-  required DateTime createdAt,
-  required DateTime updatedAt,
-  Value<DateTime?> deletedAt,
-  Value<int> rowid,
-});
-typedef $$LocalTasksTableUpdateCompanionBuilder = LocalTasksCompanion Function({
-  Value<String> userId,
-  Value<String> id,
-  Value<String> goalId,
-  Value<String> title,
-  Value<String> classification,
-  Value<int?> estimatedMinutes,
-  Value<DateTime?> deadline,
-  Value<bool> isComplete,
-  Value<int> focusProgressSeconds,
-  Value<DateTime> createdAt,
-  Value<DateTime> updatedAt,
-  Value<DateTime?> deletedAt,
-  Value<int> rowid,
-});
+typedef $$LocalTasksTableCreateCompanionBuilder =
+    LocalTasksCompanion Function({
+      required String userId,
+      required String id,
+      required String goalId,
+      required String title,
+      required String classification,
+      Value<int?> estimatedMinutes,
+      Value<DateTime?> deadline,
+      Value<bool> isComplete,
+      Value<int> focusProgressSeconds,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
+typedef $$LocalTasksTableUpdateCompanionBuilder =
+    LocalTasksCompanion Function({
+      Value<String> userId,
+      Value<String> id,
+      Value<String> goalId,
+      Value<String> title,
+      Value<String> classification,
+      Value<int?> estimatedMinutes,
+      Value<DateTime?> deadline,
+      Value<bool> isComplete,
+      Value<int> focusProgressSeconds,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
 
 class $$LocalTasksTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalTasksTable> {
@@ -14753,28 +15153,30 @@ typedef $$FocusSessionsTableProcessedTableManager =
       FocusSession,
       PrefetchHooks Function()
     >;
-typedef $$FocusNodesTableCreateCompanionBuilder = FocusNodesCompanion Function({
-  required String userId,
-  required String id,
-  required String sessionId,
-  required String taskId,
-  required String mode,
-  required DateTime createdAt,
-  required int effectiveSeconds,
-  Value<String?> note,
-  Value<int> rowid,
-});
-typedef $$FocusNodesTableUpdateCompanionBuilder = FocusNodesCompanion Function({
-  Value<String> userId,
-  Value<String> id,
-  Value<String> sessionId,
-  Value<String> taskId,
-  Value<String> mode,
-  Value<DateTime> createdAt,
-  Value<int> effectiveSeconds,
-  Value<String?> note,
-  Value<int> rowid,
-});
+typedef $$FocusNodesTableCreateCompanionBuilder =
+    FocusNodesCompanion Function({
+      required String userId,
+      required String id,
+      required String sessionId,
+      required String taskId,
+      required String mode,
+      required DateTime createdAt,
+      required int effectiveSeconds,
+      Value<String?> note,
+      Value<int> rowid,
+    });
+typedef $$FocusNodesTableUpdateCompanionBuilder =
+    FocusNodesCompanion Function({
+      Value<String> userId,
+      Value<String> id,
+      Value<String> sessionId,
+      Value<String> taskId,
+      Value<String> mode,
+      Value<DateTime> createdAt,
+      Value<int> effectiveSeconds,
+      Value<String?> note,
+      Value<int> rowid,
+    });
 
 class $$FocusNodesTableFilterComposer
     extends Composer<_$PactaDatabase, $FocusNodesTable> {
@@ -15396,6 +15798,212 @@ typedef $$FocusPreferencesTableProcessedTableManager =
         >,
       ),
       FocusPreference,
+      PrefetchHooks Function()
+    >;
+typedef $$ChainSignalsTableCreateCompanionBuilder =
+    ChainSignalsCompanion Function({
+      required String userId,
+      Value<String> appointmentTriggerSignal,
+      Value<String> eliteFocusMarker,
+      Value<String> regularFocusMarker,
+      required DateTime updatedAt,
+      Value<int> rowid,
+    });
+typedef $$ChainSignalsTableUpdateCompanionBuilder =
+    ChainSignalsCompanion Function({
+      Value<String> userId,
+      Value<String> appointmentTriggerSignal,
+      Value<String> eliteFocusMarker,
+      Value<String> regularFocusMarker,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$ChainSignalsTableFilterComposer
+    extends Composer<_$PactaDatabase, $ChainSignalsTable> {
+  $$ChainSignalsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get appointmentTriggerSignal => $composableBuilder(
+    column: $table.appointmentTriggerSignal,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get eliteFocusMarker => $composableBuilder(
+    column: $table.eliteFocusMarker,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get regularFocusMarker => $composableBuilder(
+    column: $table.regularFocusMarker,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ChainSignalsTableOrderingComposer
+    extends Composer<_$PactaDatabase, $ChainSignalsTable> {
+  $$ChainSignalsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get appointmentTriggerSignal => $composableBuilder(
+    column: $table.appointmentTriggerSignal,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get eliteFocusMarker => $composableBuilder(
+    column: $table.eliteFocusMarker,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get regularFocusMarker => $composableBuilder(
+    column: $table.regularFocusMarker,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ChainSignalsTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $ChainSignalsTable> {
+  $$ChainSignalsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get appointmentTriggerSignal => $composableBuilder(
+    column: $table.appointmentTriggerSignal,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get eliteFocusMarker => $composableBuilder(
+    column: $table.eliteFocusMarker,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get regularFocusMarker => $composableBuilder(
+    column: $table.regularFocusMarker,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$ChainSignalsTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $ChainSignalsTable,
+          ChainSignal,
+          $$ChainSignalsTableFilterComposer,
+          $$ChainSignalsTableOrderingComposer,
+          $$ChainSignalsTableAnnotationComposer,
+          $$ChainSignalsTableCreateCompanionBuilder,
+          $$ChainSignalsTableUpdateCompanionBuilder,
+          (
+            ChainSignal,
+            BaseReferences<_$PactaDatabase, $ChainSignalsTable, ChainSignal>,
+          ),
+          ChainSignal,
+          PrefetchHooks Function()
+        > {
+  $$ChainSignalsTableTableManager(_$PactaDatabase db, $ChainSignalsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ChainSignalsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ChainSignalsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ChainSignalsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> appointmentTriggerSignal = const Value.absent(),
+                Value<String> eliteFocusMarker = const Value.absent(),
+                Value<String> regularFocusMarker = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ChainSignalsCompanion(
+                userId: userId,
+                appointmentTriggerSignal: appointmentTriggerSignal,
+                eliteFocusMarker: eliteFocusMarker,
+                regularFocusMarker: regularFocusMarker,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                Value<String> appointmentTriggerSignal = const Value.absent(),
+                Value<String> eliteFocusMarker = const Value.absent(),
+                Value<String> regularFocusMarker = const Value.absent(),
+                required DateTime updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => ChainSignalsCompanion.insert(
+                userId: userId,
+                appointmentTriggerSignal: appointmentTriggerSignal,
+                eliteFocusMarker: eliteFocusMarker,
+                regularFocusMarker: regularFocusMarker,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ChainSignalsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $ChainSignalsTable,
+      ChainSignal,
+      $$ChainSignalsTableFilterComposer,
+      $$ChainSignalsTableOrderingComposer,
+      $$ChainSignalsTableAnnotationComposer,
+      $$ChainSignalsTableCreateCompanionBuilder,
+      $$ChainSignalsTableUpdateCompanionBuilder,
+      (
+        ChainSignal,
+        BaseReferences<_$PactaDatabase, $ChainSignalsTable, ChainSignal>,
+      ),
+      ChainSignal,
       PrefetchHooks Function()
     >;
 typedef $$FocusPrecedentRulesTableCreateCompanionBuilder =
@@ -17700,6 +18308,8 @@ class $PactaDatabaseManager {
       $$FocusChainRecordsTableTableManager(_db, _db.focusChainRecords);
   $$FocusPreferencesTableTableManager get focusPreferences =>
       $$FocusPreferencesTableTableManager(_db, _db.focusPreferences);
+  $$ChainSignalsTableTableManager get chainSignals =>
+      $$ChainSignalsTableTableManager(_db, _db.chainSignals);
   $$FocusPrecedentRulesTableTableManager get focusPrecedentRules =>
       $$FocusPrecedentRulesTableTableManager(_db, _db.focusPrecedentRules);
   $$FocusAppointmentsTableTableManager get focusAppointments =>

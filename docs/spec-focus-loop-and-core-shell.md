@@ -41,7 +41,7 @@ Starting a Focus Session moves the user to a dedicated countdown surface. A Sess
 13. As a user, I want the current Elite or Regular mode shown and switchable in the duration settings, inheriting the mode list I came from or my last selection when entering from all Tasks, without a separate chain-selection or pairing page.
 14. As a user, I want chain classifications to help me find appropriate Tasks without imposing a separate start-time chain choice.
 15. As a user, I want to choose the countdown duration myself, so that Elite or Regular classification does not secretly determine Session length.
-16. As a user, I want to see the Appointment Signal and Immediate-start Signal as human-operated protocol instructions, so that I understand the App does not detect physical signals.
+16. As a user, I want to see the Trigger Signal and Focus Marker as human-operated protocol instructions, so that I understand the App does not detect physical signals.
 17. As a user, I want to start fixed 15-minute appointment preparation, with the Task and focus duration configured beforehand, so that its end automatically starts my Focus Session without another click or signal.
 18. As a user, I want to start a Focus Session immediately when I am ready, so that confidence can bypass the Appointment Chain.
 19. As a user, I want to select an existing shared Precedent Rule when handling a focus interruption, so that I can use a permission without opening rule management.
@@ -262,7 +262,7 @@ The accepted stack and product boundaries come from the four accepted ADRs. Modu
 - An Appointment Chain is a delayed-start chain with its own independent consecutive record and history. These records belong to the Appointment Chain, not to a Focus Chain. Do not infer a one-to-one association between the two chain types.
 - Before starting preparation, the user selects the Task and Focus Session duration. The preparation countdown is fixed at 15 minutes. During preparation, both preselected values may be changed without resetting the preparation countdown.
 - Preparation imposes no restrictions on what the user does in the real world and needs no exception permission for that behavior. There is no appointment pause operation.
-- At zero, automatically start the configured Focus Session without another Start action or Immediate-start Signal. The user may also end preparation early and enter the configured Session immediately without an exception rule. Either transition records exactly one appointment success and increments that Appointment Chain's consecutive record once.
+- At zero, automatically start the configured Focus Session without another Start action or Focus Marker. The user may also end preparation early and enter the configured Session immediately without an exception rule. Either transition records exactly one appointment success and increments that Appointment Chain's consecutive record once.
 - Later failure of the resulting Focus Session does not revoke the appointment success. Cancelling an appointment does not clear a Focus Chain's record.
 - Cancelling preparation requires a brief Failure Reason and settles appointment failure, clearing only the corresponding Appointment Chain's current consecutive record. There is no exception-based cancellation path. Appointment history remains; Focus Chain records are unaffected. This supersedes Q10's mistaken exception-cancellation proposal.
 - Appointment and focus run and recover on the configured timeline even when all Apps are closed. The App does not detect, judge, or request proof of real-world execution. App closure is not failure. Settle each transition and Session only once; divergent multi-device data is resolved through Manual Cloud Sync.
@@ -435,7 +435,7 @@ D01–D25 are closed: 24 confirmed decisions and D03 cancelled. See [the accepta
 - A manual “complete Session” action.
 - Separate primary pages for Elite and Regular chains.
 - Automatic switching between Elite and Regular chains.
-- App detection of user-performed Trigger Signals, such as snaps, gestures, or putting on specific headphones.
+- App detection of user-performed Sacred Seat actions, such as snaps, gestures, or putting on specific headphones.
 - Automatic failure caused only by backgrounding the App.
 - Automatic Task or Goal completion from a Session countdown or Focus Progress.
 - A separate standalone To-do navigation destination or a general project-management suite.
@@ -459,3 +459,11 @@ D01–D25 are closed: 24 confirmed decisions and D03 cancelled. See [the accepta
 - Publication status: the user confirmed the testing seams on 2026-09-21. Implementation tickets T01–T27 are now complete, and [GitHub Issue #20](https://github.com/Kaniruka/Pacta/issues/20) is closed as delivered. To fit GitHub's body-length limit, the complete normative behavior and acceptance examples remain in the [specification supplement comment](https://github.com/Kaniruka/Pacta/issues/20#issuecomment-5761444364), which is part of the same specification.
 
 - The 2026-10-04 Manual Cloud Sync decision in ADR 0005 supersedes former automatic cloud transfer and per-record multi-device reconciliation requirements, including National Focus clock review.
+
+## Chain signals and duration — 2026-10-07
+
+- The single Appointment Chain has one user-editable Trigger Signal (触发信号); Elite and Regular each have their own user-editable Focus Marker (专注标志). These real-world actions are the Sacred Seat (神圣座位). Display configured actions on Focus Chain and session setup; the App does not detect them. Empty text means not configured and does not block existing startup flows.
+- Editing or clearing action text does not reset or create chain records. Sacred Seat counting uses the existing three chain consecutive-success and historical-best rules, not a new action-execution counter. Appointment success/failure and focus success/failure retain their independent scopes. Automatic or early appointment handoff requires no second marker or click.
+- Display cumulative and average effective focus duration independently for Elite and Regular. Include accepted settled completed and failed Sessions, exclude paused time, unresolved contributions and duplicates, and reuse Task Focus Progress's effective-time basis. Average = total effective seconds / number of included settled Sessions, including zero-effective-time Sessions; with none, display zero. Preparation time is excluded.
+- Signal texts are per-User business data and participate in explicit whole-data cloud snapshots. Old snapshots without texts restore unconfigured texts. Ordinary edits never upload automatically. Failure preserves cumulative duration and average history.
+- Acceptance: configure three different actions; restart and verify persistence and isolation. Change actions after success without changing records. Complete 20 minutes then fail after 10 active minutes and 5 paused minutes: cumulative 30 minutes, average 15 minutes, only the selected focus consecutive record resets. Verify empty history, zero-duration failed attempt, duplicate/unresolved records and snapshot replacement.

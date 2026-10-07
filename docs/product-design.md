@@ -32,8 +32,8 @@ A Focus Chain records consecutive focus outcomes independently of Task identity.
 - selecting an appropriate focus practice according to the user's current state, available uninterrupted time, and task fit;
 - user selection of the Focus Chain according to their current state;
 - selecting Tasks from the current chain mode's eligible task pool;
-- using a user-performed Trigger Signal, such as putting on specific headphones or snapping one's fingers three times, as the practical form of the Sacred Seat;
-- supporting a manually invoked Trigger Signal without requiring the App to detect the real-world action;
+- using a user-performed Sacred Seat action, such as putting on specific headphones or snapping one's fingers three times, as the practical form of the Sacred Seat;
+- supporting a manually invoked Sacred Seat action without requiring the App to detect the real-world action;
 - supporting an Appointment Chain as a delayed-start path into a Focus Chain;
 - using a fixed 15-minute preparation countdown that automatically starts the preconfigured Focus Session when it ends;
 - an explicit focus trigger or start protocol;
@@ -66,7 +66,7 @@ Failure reasons begin as required short free-text summaries when the user fails 
 
 Once started, a Focus Session continues while the App is in the background. Process termination alone does not fail the Session. On recovery, an unpaused Session whose scheduled countdown has elapsed completes at its scheduled end, counting only effective focus time within the countdown rather than the later reopening delay. An approved paused Session remains paused, and recovery settles an outcome only once. A persistent notification keeps the countdown visible and active for tasks that require the user to operate the mobile device. The countdown is a boundary and progress cue, not the sole measure of completion.
 
-The CTDP-derived signal model is intentionally human-operated: a user may perform an Appointment Chain signal and open the corresponding flow, or perform an immediate-start signal and open the Focus Chain directly. The App does not listen for or verify snaps, gestures, or other physical markers. Once preparation has started, its transition into focus requires neither another signal nor another start click.
+The CTDP-derived signal model is intentionally human-operated: a user may perform an Appointment Chain Trigger Signal and open the corresponding flow, or perform an Focus Marker and open the Focus Chain directly. The App does not listen for or verify snaps, gestures, or other physical markers. Once preparation has started, its transition into focus requires neither another signal nor another start click.
 
 The Appointment Chain provides a fixed 15-minute delayed start and owns its own consecutive record and history independently of Focus Chains. Preparation does not restrict real-world behavior and cannot be paused. Users may change the preselected Task and focus duration without resetting preparation, or enter focus early without an exception. Normal and early entry each record one appointment success, which later focus failure does not revoke. Appointment and focus recover on their configured timeline even if all Apps were closed; no proof of real-world activity is required. Cancellation never resets a Focus Chain. Cancellation requires a brief Failure Reason and clears the corresponding Appointment Chain current consecutive record; there is no exception cancellation path. Users select a Task and duration, with the attempt mode shown in the existing settings area, and directly start preparation or focus without an extra chain-selection page, binding, or pairing. Classification organizes Goals and Tasks; the attempt mode determines focus attribution independently, while appointment attribution never varies by mode.
 
@@ -284,3 +284,9 @@ The reviewed business decisions D01–D24 are closed; see [the acceptance matrix
 ### No voluntary history correction
 
 The App does not offer corrections to settled focus or appointment outcomes. This withdraws the earlier completed-to-failed correction feature and related historical-maximum questions. Multi-device reconciliation of conflicting source records remains supported as a separate flow.
+
+### Chain commitment actions and duration (2026-10-07)
+
+Focus Chain shows three clearly labeled commitment actions in a Sacred Seat settings card, with corresponding current and historical-best consecutive records in the chain-record card below. The shared Appointment Chain uses “触发信号”; Elite and Regular each use “专注标志”. An explicit text edit action opens a labeled field with cancel/save; unset actions invite configuration without blocking focus. Session setup shows the selected mode's marker and the shared appointment signal, with human-operated action guidance and unchanged automatic handoff.
+
+Elite and Regular summaries show cumulative and average actual effective duration, including failed Sessions and excluding pauses. Flexible vertical groups and wrapping text preserve hierarchy on compact screens and with enlarged text. Use existing Material 3 semantic colors and typography; do not add decorative metrics, a new navigation destination, or an independent Sacred Seat counter.

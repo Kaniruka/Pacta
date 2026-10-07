@@ -408,6 +408,7 @@ class CloudSnapshotRepository {
     'focus_nodes',
     'focus_chain_records',
     'appointment_chain_records',
+    'chain_signals',
     'focus_sync_sources',
     'local_calendar_sources',
     'local_calendar_blocks',
@@ -571,7 +572,13 @@ class CloudSnapshotRepository {
     if (payload['schemaVersion'] != 1 || payload['userId'] != userId) {
       throw StateError('Snapshot version or user identity is invalid.');
     }
-    final rawTables = payload['tables'];
+    final sourceTables = payload['tables'];
+    final rawTables = sourceTables is Map<String, dynamic>
+        ? Map<String, dynamic>.from(sourceTables)
+        : sourceTables;
+    if (payload['schemaVersion'] == 1 && rawTables is Map<String, dynamic>) {
+      rawTables.putIfAbsent('chain_signals', () => <dynamic>[]);
+    }
     if (rawTables is! Map<String, dynamic> ||
         rawTables.keys.length != _businessTables.length ||
         !_businessTables.every(rawTables.containsKey)) {

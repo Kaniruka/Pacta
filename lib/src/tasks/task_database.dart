@@ -237,6 +237,18 @@ class FocusChainRecords extends Table {
   Set<Column<Object>> get primaryKey => {userId, mode};
 }
 
+class ChainSignals extends Table {
+  TextColumn get userId => text()();
+  TextColumn get appointmentTriggerSignal =>
+      text().withDefault(const Constant(''))();
+  TextColumn get eliteFocusMarker => text().withDefault(const Constant(''))();
+  TextColumn get regularFocusMarker => text().withDefault(const Constant(''))();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId};
+}
+
 class FocusPreferences extends Table {
   TextColumn get userId => text()();
   TextColumn get lastMode => text()();
@@ -330,6 +342,7 @@ class LocalUserLifecycleStates extends Table {
     FocusNodes,
     FocusChainRecords,
     FocusPreferences,
+    ChainSignals,
     FocusPrecedentRules,
     FocusAppointments,
     AppointmentChainRecords,
@@ -357,6 +370,7 @@ class PactaDatabase extends _$PactaDatabase {
       UNION SELECT user_id FROM focus_chain_records
       UNION SELECT user_id FROM appointment_chain_records
       UNION SELECT user_id FROM focus_source_devices
+      UNION SELECT user_id FROM chain_signals
       UNION SELECT user_id FROM focus_preferences
       UNION SELECT user_id FROM focus_precedent_rules
       UNION SELECT user_id FROM local_national_focus_failures
@@ -409,6 +423,9 @@ class PactaDatabase extends _$PactaDatabase {
         focusSourceDevices,
       )..where((row) => row.userId.equals(userId))).go();
       await (delete(
+        chainSignals,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
         focusPreferences,
       )..where((row) => row.userId.equals(userId))).go();
       await (delete(
@@ -444,7 +461,7 @@ class PactaDatabase extends _$PactaDatabase {
   }
 
   @override
-  int get schemaVersion => 23;
+  int get schemaVersion => 24;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -602,6 +619,9 @@ class PactaDatabase extends _$PactaDatabase {
           localNationalFocusCards,
           localNationalFocusCards.name,
         );
+      }
+      if (from < 24) {
+        await m.createTable(chainSignals);
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);

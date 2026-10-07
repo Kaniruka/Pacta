@@ -1,4 +1,5 @@
 import 'package:drift/native.dart';
+import 'package:pacta/src/focus/chain_signals_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/drift.dart';
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
@@ -22,6 +23,63 @@ void main() {
   });
 
   tearDown(() => database.close());
+
+  test(
+    'signals round-trip while legacy snapshots restore empty signal texts',
+    () async {
+      final signals = ChainSignalsRepository(
+        database: database,
+        userId: 'user-a',
+      );
+      await signals.save(
+        const ChainSignalTexts(
+          appointmentTriggerSignal: '戴耳机',
+          eliteFocusMarker: '坐下',
+        ),
+      );
+      final otherSignals = ChainSignalsRepository(
+        database: database,
+        userId: 'user-b',
+      );
+      await otherSignals.save(
+        const ChainSignalTexts(eliteFocusMarker: '他人的标志'),
+      );
+      final captured = await repository.captureLocalState();
+      await repository.uploadLocal(
+        expectedRevision: 0,
+        expectedFingerprint: captured.fingerprint,
+      );
+      await signals.save(
+        const ChainSignalTexts(appointmentTriggerSignal: '改动'),
+      );
+      var local = await repository.captureLocalState();
+      await repository.downloadCloud(
+        expectedRevision: 1,
+        expectedFingerprint: local.fingerprint,
+      );
+      expect((await signals.get()).appointmentTriggerSignal, '戴耳机');
+      expect((await signals.get()).eliteFocusMarker, '坐下');
+      final legacy = Map<String, dynamic>.from(captured.payload);
+      legacy['tables'] = Map<String, dynamic>.from(legacy['tables'] as Map)
+        ..remove('chain_signals');
+      await remote.upload(
+        userId: 'user-a',
+        expectedRevision: 1,
+        payload: legacy,
+        deviceId: 'legacy',
+        deviceName: 'Legacy',
+        dataUpdatedAt: DateTime.utc(2026, 10, 7),
+        rowCount: 0,
+      );
+      local = await repository.captureLocalState();
+      await repository.downloadCloud(
+        expectedRevision: 2,
+        expectedFingerprint: local.fingerprint,
+      );
+      expect((await signals.get()).appointmentTriggerSignal, isEmpty);
+      expect((await otherSignals.get()).eliteFocusMarker, '他人的标志');
+    },
+  );
 
   test(
     'round-trips a user snapshot and advances revision with device metadata',

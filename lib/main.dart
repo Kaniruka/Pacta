@@ -18,6 +18,9 @@ import 'src/calendar/calendar_page.dart';
 import 'src/calendar/calendar_provider.dart';
 import 'src/calendar/calendar_repository.dart';
 import 'src/focus/focus_models.dart';
+import 'src/focus/chain_signals_repository.dart';
+import 'src/focus/chain_signals_card.dart';
+import 'src/focus/focus_statistics.dart';
 import 'src/focus/focus_repository.dart';
 import 'src/focus/focus_clock_review_page.dart';
 import 'src/focus/focus_reconciliation_page.dart';
@@ -100,6 +103,14 @@ Future<void> main() async {
           userId: userId,
         ),
       ),
+      chainSignalsRepositoryFactory: (userId) => ChainSignalsRepository(
+        database: database,
+        userId: userId,
+        lifecycleAccess: LocalUserLifecycleAccess(
+          database: database,
+          userId: userId,
+        ),
+      ),
       cloudSnapshotRepositoryFactory: cloudRemote == null
           ? null
           : (userId) => CloudSnapshotRepository(
@@ -132,10 +143,14 @@ class PactaApp extends StatelessWidget {
     this.calendarRepositoryFactory,
     this.userLifecycleRepositoryFactory,
     this.cloudSnapshotRepositoryFactory,
+    this.chainSignalsRepositoryFactory,
   });
 
   final CloudSnapshotRepository Function(String userId)?
   cloudSnapshotRepositoryFactory;
+
+  final ChainSignalsRepository Function(String userId)?
+  chainSignalsRepositoryFactory;
 
   final AuthRepository authRepository;
   final UserPurgeCleanupRepository? userPurgeCleanupRepository;
@@ -152,6 +167,9 @@ class PactaApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ProviderScope(
       overrides: [
+        chainSignalsRepositoryFactoryProvider.overrideWithValue(
+          chainSignalsRepositoryFactory,
+        ),
         cloudSnapshotRepositoryFactoryProvider.overrideWithValue(
           cloudSnapshotRepositoryFactory,
         ),
@@ -222,6 +240,15 @@ final cloudSnapshotRepositoryProvider =
     Provider.autoDispose<CloudSnapshotRepository?>((ref) {
       final userId = ref.watch(authRepositoryProvider).currentUserId;
       final factory = ref.watch(cloudSnapshotRepositoryFactoryProvider);
+      return userId == null || factory == null ? null : factory(userId);
+    });
+
+final chainSignalsRepositoryFactoryProvider =
+    Provider<ChainSignalsRepository Function(String userId)?>((ref) => null);
+final chainSignalsRepositoryProvider =
+    Provider.autoDispose<ChainSignalsRepository?>((ref) {
+      final userId = ref.watch(authRepositoryProvider).currentUserId;
+      final factory = ref.watch(chainSignalsRepositoryFactoryProvider);
       return userId == null || factory == null ? null : factory(userId);
     });
 
@@ -1899,6 +1926,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
   Widget build(BuildContext context) {
     final taskRepository = ref.watch(taskRepositoryProvider);
     final focusRepository = ref.watch(focusRepositoryProvider);
+    final signalsRepository = ref.watch(chainSignalsRepositoryProvider);
     return StreamBuilder<List<Goal>>(
       stream: taskRepository.watchGoals(includeDeleted: true),
       initialData: const [],
@@ -1921,6 +1949,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
           builder: (context, sessionsSnapshot) {
             final sessions = sessionsSnapshot.data ?? const <FocusSession>[];
             _updateProjectionFutures(focusRepository, sessions);
+            final statistics = focusStatisticsByMode(sessions);
             final active = sessions
                 .where((session) => session.isUnfinished)
                 .firstOrNull;
@@ -1935,6 +1964,8 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                 Text('专注链', style: Theme.of(context).textTheme.headlineSmall),
                 const SizedBox(height: 6),
                 const Text('选择一个未完成任务，设定本次模式和时长。'),
+                if (signalsRepository != null)
+                  ChainSignalsCard(repository: signalsRepository),
                 if (active != null) ...[
                   const SizedBox(height: 16),
                   Card(
@@ -2074,12 +2105,24 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                               ListTile(
                                 contentPadding: EdgeInsets.zero,
                                 title: Text(record.mode.label),
-                                subtitle: Text(
-                                  record.hasPendingReview
-                                      ? '待核对 · 争议结果暂不计入连续记录。'
-                                      : '${record.currentConsecutive} 次 · 最佳 ${record.bestConsecutive} 次',
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      record.hasPendingReview
+                                          ? '待核对 · 争议结果暂不计入连续记录。'
+                                          : '${record.currentConsecutive} 次 · 最佳 ${record.bestConsecutive} 次',
+                                    ),
+                                    Text(
+                                      '累计时长 ${_formatDuration(statistics[record.mode]!.totalDurationSeconds)}',
+                                    ),
+                                    Text(
+                                      '平均每次 ${_formatDuration(statistics[record.mode]!.averageDurationSeconds.round())}',
+                                    ),
+                                  ],
                                 ),
                               ),
+                            const Text('时长包含已结算失败专注的有效时间，不含暂停；平均按已结算次数计算。'),
                             FutureBuilder<AppointmentChainRecord>(
                               future: _appointmentChainRecordFuture,
                               builder: (context, appointmentSnapshot) {
@@ -2839,38 +2882,48 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
   @override
   Widget build(BuildContext context) => AlertDialog(
     title: const Text('开始专注'),
-    content: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(widget.task.title, style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 14),
-        DropdownButtonFormField<FocusChainMode>(
-          initialValue: _mode,
-          decoration: const InputDecoration(labelText: '本次专注模式'),
-          items: [
-            for (final mode in FocusChainMode.values)
-              DropdownMenuItem(value: mode, child: Text(mode.label)),
-          ],
-          onChanged: _busy ? null : (value) => setState(() => _mode = value!),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _duration,
-          enabled: !_busy,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: '时长（分钟）'),
-        ),
-        if (_error != null) ...[
-          const SizedBox(height: 10),
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           Text(
-            _error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
+            widget.task.title,
+            style: Theme.of(context).textTheme.titleMedium,
           ),
+          const SizedBox(height: 14),
+          DropdownButtonFormField<FocusChainMode>(
+            initialValue: _mode,
+            decoration: const InputDecoration(labelText: '本次专注模式'),
+            items: [
+              for (final mode in FocusChainMode.values)
+                DropdownMenuItem(value: mode, child: Text(mode.label)),
+            ],
+            onChanged: _busy ? null : (value) => setState(() => _mode = value!),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _duration,
+            enabled: !_busy,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: '时长（分钟）'),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              _error!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+          const SizedBox(height: 10),
+          if (ref.watch(chainSignalsRepositoryProvider)
+              case final repository?) ...[
+            ChainSignalInstructions(repository: repository, mode: _mode),
+            const SizedBox(height: 10),
+          ],
+          const Text('触发信号和专注标志由你执行。可立即开始专注，或先准备15分钟；准备结束自动进入专注，无需再次执行专注标志。'),
         ],
-        const SizedBox(height: 10),
-        const Text('启动信号由你执行，App 不检测现实动作。可立即开始专注，或先进行固定 15 分钟准备；准备结束会自动进入专注。'),
-      ],
+      ),
     ),
     actions: [
       TextButton(
@@ -3217,7 +3270,7 @@ class _AppointmentPreparationPageState
                 appointment.isPendingReview
                     ? '两端对这份预约的配置存在分歧，自动交接已暂停，当前来源待核对。你仍可继续此预约或取消。'
                     : appointment.isActive
-                    ? '准备结束后自动进入专注，不需要再次点击或执行启动信号。'
+                    ? '准备结束后自动进入专注，不需要再次点击或执行专注标志。'
                     : appointment.isFailed
                     ? '预约已取消，预约链当前记录已清零。'
                     : '预约已成功进入专注。',

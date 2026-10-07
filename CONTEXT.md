@@ -64,9 +64,21 @@ _Avoid_: Fixed-duration chain
 A method the user may apply to a concrete Task within a Goal to test whether they can enter a working state. It is an approach to existing work, with no independent App record.
 _Avoid_: Task, Focus Chain, Focus Session
 
-**Trigger Signal (启动信号)**:
-A user-chosen action carrying an appointment or focus commitment, such as putting on specific headphones or snapping three times; it is the product adaptation of the theoretical Sacred Seat (神圣座位). The Appointment Signal initiates preparation and the Immediate-start Signal initiates focus; the App relies on the user to perform the action.
-_Avoid_: Push notification, biometric signal
+**Sacred Seat (神圣座位)**:
+A user-chosen real-world commitment action, expressed as the Appointment Chain's Trigger Signal or a Focus Chain's Focus Marker. The App records the corresponding chain outcomes and relies on the user to perform the action.
+_Avoid_: App-detected gesture, independent fourth chain
+
+**Trigger Signal (触发信号)**:
+The user-defined commitment action for the single Appointment Chain, initiating preparation. It is shared across preparations for Elite and Regular focus.
+_Avoid_: 启动信号, push notification
+
+**Focus Marker (专注标志)**:
+The user-defined commitment action for immediate entry into a Focus Chain, configured independently for Elite and Regular. Appointment handoff starts focus without requiring another marker action.
+_Avoid_: 启动信号, biometric signal
+
+**Chain Focus Duration (链专注时长)**:
+The accumulated accepted effective time from a Focus Chain's completed and failed Sessions, excluding pauses; its per-session average uses those settled Sessions, including zero-duration attempts. This is separate from the chain's consecutive success record.
+_Avoid_: Planned duration, preparation duration
 
 **Appointment Chain (预约链)**:
 The single delayed-start record shared across Elite and Regular preparation, with its own consecutive record and history; each attempt prepares a selected Task and Focus Session duration through a fixed 15-minute countdown. Normal or early entry into focus records one appointment success, while cancellation records failure and clears only the current Appointment Chain record.

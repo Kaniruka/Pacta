@@ -79,3 +79,7 @@
 | NF06 | 视图切换与画布辅助操作 | 简洁/详细由轻量视图菜单选择；画布仅有适应屏幕图标按钮，无加减/100%恢复/百分比/缩放菜单；原缩放和平移手势保留 |
 | NF07 | 点亮、待今日确认、熄灭节点点击操作 | 第一行分别为熄灭、确认、点亮；阻塞时该位置禁用并解释，不因状态变化挪到菜单末尾 |
 | NF08 | 低频名称修改 | 菜单无改名项；树卡在详情页更多、库卡在卡片更多改名，原树位置和记录保留 |
+
+## Chain action and duration supplement — 2026-10-07
+
+Verify three independently editable action texts with unchanged consecutive/best records; user isolation, restart and manual snapshot replacement preserve texts. Elite/Regular actual totals and per-settled-session averages include failures and zero-duration attempts but exclude pauses, duplicates and unresolved contributions. Check setup mode changes, unconfigured startup, automatic appointment handoff, narrow layouts and enlarged text. Normative rules are in the specification's Chain signals and duration supplement.
