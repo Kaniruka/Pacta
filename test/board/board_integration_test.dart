@@ -81,6 +81,9 @@ void main() {
     expect(find.text('整理发布材料'), findsOneWidget);
     expect(find.textContaining('已专注 13分00秒'), findsOneWidget);
     expect(find.text('国策状态'), findsOneWidget);
+    expect(find.textContaining('检查点'), findsNothing);
+    expect(find.text('时区'), findsNothing);
+    expect(find.text('日历来源'), findsNothing);
     expect(find.text('点亮 0 · 待今日确认 1 · 熄灭 0'), findsOneWidget);
     await tester.ensureVisible(find.text('近期专注活动'));
     expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);

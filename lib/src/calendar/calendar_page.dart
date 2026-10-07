@@ -18,27 +18,14 @@ class CalendarAgendaCard extends StatelessWidget {
       builder: (context, snapshot) {
         final agenda = snapshot.data;
         return Card(
+          margin: EdgeInsets.zero,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.calendar_month_outlined),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        '今日日历',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => _openSources(context),
-                      child: const Text('日历来源'),
-                    ),
-                  ],
-                ),
+                Text('今日日历', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 12),
                 if (agenda?.isStale == true)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
@@ -62,7 +49,7 @@ class CalendarAgendaCard extends StatelessWidget {
                 else if ((agenda?.blocks ?? const []).isEmpty)
                   const Padding(
                     padding: EdgeInsets.fromLTRB(2, 4, 2, 12),
-                    child: Text('今天没有已导入的日历块。日历只辅助规划，不影响专注启动。'),
+                    child: Text('今天没有已导入的日历安排。'),
                   )
                 else ...[
                   Padding(
@@ -85,17 +72,6 @@ class CalendarAgendaCard extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-
-  void _openSources(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => CalendarSourcesPage(
-          repository: repository,
-          isAndroid: Theme.of(context).platform == TargetPlatform.android,
-        ),
-      ),
     );
   }
 }
@@ -127,8 +103,16 @@ class _CalendarBlockTile extends StatelessWidget {
             ? Icons.event_busy_outlined
             : Icons.event_available_outlined,
       ),
-      title: Text(block.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-      subtitle: Text('$time · $status${sources.isEmpty ? '' : ' · $sources'}'),
+      title: Text(
+        block.title,
+        style: Theme.of(context).textTheme.bodyMedium,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        '$time · $status${sources.isEmpty ? '' : ' · $sources'}',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
     );
   }
 }

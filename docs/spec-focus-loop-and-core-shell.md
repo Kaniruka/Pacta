@@ -29,7 +29,7 @@ Starting a Focus Session moves the user to a dedicated countdown surface. A Sess
 4. As a user, I want a Goal's Tasks shown with their estimated duration and Focus Chain classification, so that I can choose a feasible action.
 5. As a user, I want to enter Focus Chain setup from a Task on the Board, so that I do not have to reconstruct the task context.
 6. As a user, I want the Board to show accumulated Focus Progress, National Focus status, and Recent Focus Activity together, so that I can understand today's state without opening a separate data dashboard.
-7. As a user, I want the Board to show a National Focus confirmation reminder, so that I remember the confirmation window ending at the next National Focus Checkpoint.
+7. As a user, I want the Board to show the count of National Focus nodes awaiting today’s confirmation, so that I remember to open the tree and confirm. Checkpoint timestamps and display-zone explanations belong to the tree’s secondary page, not the Board.
 8. As a user, I want to open the National Focus Tree from its Board summary, so that I can inspect the underlying branches when the summary is insufficient.
 9. As a user, I want the Board to remain a focused execution surface, so that it does not become a general project-management suite.
 

@@ -1,10 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:timezone/timezone.dart' as timezone;
 
-import '../focus/focus_time_zones.dart';
-import '../national_focus/national_focus_checkpoints.dart';
 import '../national_focus/national_focus_models.dart';
 import '../national_focus/national_focus_repository.dart';
 
@@ -12,15 +9,11 @@ class NationalFocusSummaryCard extends StatefulWidget {
   const NationalFocusSummaryCard({
     super.key,
     required this.repository,
-    required this.displayTimeZoneId,
     required this.onOpenTree,
-    this.now,
   });
 
   final NationalFocusRepository repository;
-  final String? displayTimeZoneId;
   final VoidCallback onOpenTree;
-  final DateTime Function()? now;
 
   @override
   State<NationalFocusSummaryCard> createState() =>
@@ -28,14 +21,12 @@ class NationalFocusSummaryCard extends StatefulWidget {
 }
 
 class _NationalFocusSummaryCardState extends State<NationalFocusSummaryCard> {
-  late DateTime _now;
   late Stream<List<NationalFocusCard>> _treeCardsStream;
   Timer? _checkpointTimer;
 
   @override
   void initState() {
     super.initState();
-    _now = _readNow();
     _treeCardsStream = widget.repository.watchTreeCards();
     _settleDueCheckpoints();
     _checkpointTimer = Timer.periodic(
@@ -57,12 +48,7 @@ class _NationalFocusSummaryCardState extends State<NationalFocusSummaryCard> {
       _treeCardsStream = widget.repository.watchTreeCards();
       _settleDueCheckpoints();
     }
-    if (oldWidget.displayTimeZoneId != widget.displayTimeZoneId) {
-      _refreshCheckpoint();
-    }
   }
-
-  DateTime _readNow() => (widget.now?.call() ?? DateTime.now()).toUtc();
 
   void _settleDueCheckpoints() {
     unawaited(
@@ -71,29 +57,8 @@ class _NationalFocusSummaryCardState extends State<NationalFocusSummaryCard> {
   }
 
   void _refreshCheckpoint() {
-    _now = _readNow();
     _settleDueCheckpoints();
     if (mounted) setState(() {});
-  }
-
-  String _checkpointLabel() {
-    final timeZoneId = widget.displayTimeZoneId;
-    if (timeZoneId == null || !FocusTimeZones.contains(timeZoneId)) {
-      return '下次检查点：正在读取显示时区';
-    }
-    final checkpoint = nextNationalFocusCheckpoint(_now);
-    final localTime = timezone.TZDateTime.from(
-      checkpoint,
-      FocusTimeZones.location(timeZoneId),
-    );
-    final date =
-        '${localTime.year}-'
-        '${localTime.month.toString().padLeft(2, '0')}-'
-        '${localTime.day.toString().padLeft(2, '0')}';
-    final time =
-        '${localTime.hour.toString().padLeft(2, '0')}:'
-        '${localTime.minute.toString().padLeft(2, '0')}';
-    return '下次检查点：$date $time · $timeZoneId';
   }
 
   @override
@@ -101,18 +66,12 @@ class _NationalFocusSummaryCardState extends State<NationalFocusSummaryCard> {
     stream: _treeCardsStream,
     builder: (context, snapshot) {
       if (snapshot.hasError) {
-        return _card(
-          context,
-          children: [const Text('国策状态暂不可用。'), Text(_checkpointLabel())],
-        );
+        return _card(context, children: [const Text('国策状态暂不可用。')]);
       }
 
       final cards = snapshot.data;
       if (cards == null) {
-        return _card(
-          context,
-          children: [const Text('正在读取国策状态…'), Text(_checkpointLabel())],
-        );
+        return _card(context, children: [const Text('正在读取国策状态…')]);
       }
 
       final pendingReview = cards
@@ -137,11 +96,6 @@ class _NationalFocusSummaryCardState extends State<NationalFocusSummaryCard> {
       return _card(
         context,
         children: [
-          Text(
-            _checkpointLabel(),
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 8),
           if (cards.isEmpty)
             const Text('国策树尚无节点。')
           else if (confirmedCards.isEmpty)
@@ -173,12 +127,12 @@ class _NationalFocusSummaryCardState extends State<NationalFocusSummaryCard> {
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        padding: const EdgeInsets.all(16),
         child: LayoutBuilder(
           builder: (context, constraints) {
             final title = Text(
               '国策状态',
-              style: Theme.of(context).textTheme.titleLarge,
+              style: Theme.of(context).textTheme.titleMedium,
             );
             final openTree = TextButton.icon(
               onPressed: widget.onOpenTree,

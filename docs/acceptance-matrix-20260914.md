@@ -83,3 +83,11 @@
 ## Chain action and duration supplement — 2026-10-07
 
 Verify three independently editable action texts with unchanged consecutive/best records; user isolation, restart and manual snapshot replacement preserve texts. Elite/Regular actual totals and per-settled-session averages include failures and zero-duration attempts but exclude pauses, duplicates and unresolved contributions. Check setup mode changes, unconfigured startup, automatic appointment handoff, narrow layouts and enlarged text. Normative rules are in the specification's Chain signals and duration supplement.
+
+## 看板精简补充（2026-10-07）
+
+| 编号 | 场景 | 验收结果 |
+| --- | --- | --- |
+| BD01 | 打开看板并滚动查看摘要 | 任务优先；保留国策状态、近期专注活动和今日日历；不显示国策检查点、时区说明或时区/日历来源设置入口 |
+| BD02 | 从“我的”设置显示时区并进入日历来源 | 时区搜索和选择可保存，跟随设备仍可选；日历来源管理从日历块入口可达；时区只改变活动日期分摊，不改变有效总时长和国策结算边界 |
+| BD03 | 常规宽屏、窄屏、两倍字体及深色外观 | 摘要标题和内边距一致；空间不足时单栏和活动行换行；内容与主要操作可滚动访问，无布局溢出 |

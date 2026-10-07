@@ -999,10 +999,6 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                   onOpenNationalFocus: widget.onOpenNationalFocus,
                   goals: goalSnapshot.data ?? const [],
                   metrics: metricsSnapshot.data,
-                  displayTimeZoneId:
-                      metricsSnapshot.data?.displayTimeZoneId ??
-                      (timeZoneSnapshot.hasError ? deviceTimeZoneId : null),
-                  deviceTimeZoneError: timeZoneSnapshot.hasError,
                 ),
               ),
         );
@@ -1020,8 +1016,6 @@ class _BoardContent extends StatelessWidget {
     required this.onOpenNationalFocus,
     required this.goals,
     required this.metrics,
-    required this.displayTimeZoneId,
-    required this.deviceTimeZoneError,
   });
 
   final TaskRepository repository;
@@ -1031,8 +1025,6 @@ class _BoardContent extends StatelessWidget {
   final VoidCallback onOpenNationalFocus;
   final List<Goal> goals;
   final FocusDashboardMetrics? metrics;
-  final String? displayTimeZoneId;
-  final bool deviceTimeZoneError;
 
   @override
   Widget build(BuildContext context) {
@@ -1058,16 +1050,16 @@ class _BoardContent extends StatelessWidget {
       ),
       _FocusClockReviewPrompt(repository: focusRepository),
       if (goals.isEmpty)
-        const Card(
+        Card(
           child: Padding(
-            padding: EdgeInsets.all(24),
+            padding: const EdgeInsets.all(24),
             child: Column(
               children: [
-                Icon(Icons.inbox_outlined, size: 48),
-                SizedBox(height: 12),
-                Text('暂无任务', style: TextStyle(fontSize: 22)),
-                SizedBox(height: 8),
-                Text('创建目标和任务后，它们会优先出现在这里。'),
+                const Icon(Icons.inbox_outlined, size: 48),
+                const SizedBox(height: 12),
+                Text('暂无任务', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                const Text('创建目标和任务后，它们会优先出现在这里。'),
               ],
             ),
           ),
@@ -1082,26 +1074,21 @@ class _BoardContent extends StatelessWidget {
           ),
     ];
     final secondary = <Widget>[
-      const SizedBox(height: 12),
       NationalFocusSummaryCard(
         repository: nationalFocusRepository,
-        displayTimeZoneId: displayTimeZoneId,
         onOpenTree: onOpenNationalFocus,
       ),
       const SizedBox(height: 12),
-      _RecentFocusActivityCard(
-        repository: focusRepository,
-        metrics: metrics,
-        deviceTimeZoneId: displayTimeZoneId ?? 'Etc/UTC',
-        deviceTimeZoneError: deviceTimeZoneError,
-      ),
+      _RecentFocusActivityCard(metrics: metrics),
       const SizedBox(height: 12),
       CalendarAgendaCard(repository: calendarRepository),
     ];
     return LayoutBuilder(
       builder: (context, constraints) => ListView(
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
-        children: constraints.maxWidth >= 840
+        children:
+            constraints.maxWidth >= 960 &&
+                MediaQuery.textScalerOf(context).scale(1) < 1.6
             ? [
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1123,7 +1110,7 @@ class _BoardContent extends StatelessWidget {
                   ],
                 ),
               ]
-            : [...primary, ...secondary],
+            : [...primary, const SizedBox(height: 20), ...secondary],
       ),
     );
   }
@@ -1135,19 +1122,9 @@ class _BoardContent extends StatelessWidget {
 }
 
 class _RecentFocusActivityCard extends StatelessWidget {
-  const _RecentFocusActivityCard({
-    required this.repository,
-    required this.metrics,
-    required this.deviceTimeZoneId,
-    required this.deviceTimeZoneError,
-  });
+  const _RecentFocusActivityCard({required this.metrics});
 
-  static const _followDevice = '__follow_device__';
-
-  final FocusRepository repository;
   final FocusDashboardMetrics? metrics;
-  final String deviceTimeZoneId;
-  final bool deviceTimeZoneError;
 
   @override
   Widget build(BuildContext context) {
@@ -1157,35 +1134,12 @@ class _RecentFocusActivityCard extends StatelessWidget {
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    '近期专注活动',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-                Tooltip(
-                  message: '显示时区：${value?.displayTimeZoneId ?? '加载中'}',
-                  child: TextButton.icon(
-                    onPressed: value == null
-                        ? null
-                        : () => _chooseTimeZone(context, value),
-                    icon: const Icon(Icons.schedule_outlined),
-                    label: const Text('时区'),
-                  ),
-                ),
-              ],
-            ),
-            if (deviceTimeZoneError)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Text('无法读取设备时区，当前按 UTC 显示。可手动选择时区。'),
-              ),
+            Text('近期专注活动', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
             if (value == null)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 20),
@@ -1193,8 +1147,7 @@ class _RecentFocusActivityCard extends StatelessWidget {
               )
             else ...[
               Text(
-                '近 7 天 · ${value.followsDeviceTimeZone ? '设备' : '显示'}时区 '
-                '${value.displayTimeZoneId} · 累计有效专注 '
+                '近 7 天 · 累计有效专注 '
                 '${_formatDuration(value.totalAcceptedFocusSeconds)}',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
@@ -1232,24 +1185,6 @@ class _RecentFocusActivityCard extends StatelessWidget {
       ),
     );
   }
-
-  Future<void> _chooseTimeZone(
-    BuildContext context,
-    FocusDashboardMetrics current,
-  ) async {
-    final choice = await showDialog<String>(
-      context: context,
-      builder: (context) => _FocusTimeZonePickerDialog(
-        deviceTimeZoneId: deviceTimeZoneId,
-        selectedTimeZoneId: current.displayTimeZoneId,
-        followsDeviceTimeZone: current.followsDeviceTimeZone,
-      ),
-    );
-    if (choice == null) return;
-    await repository.setDisplayTimeZonePreference(
-      choice == _followDevice ? null : choice,
-    );
-  }
 }
 
 class _FocusActivityDayRow extends StatelessWidget {
@@ -1277,23 +1212,47 @@ class _FocusActivityDayRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Semantics(
         label: '$label，${_formatDuration(day.activeSeconds)}',
-        child: Row(
-          children: [
-            SizedBox(width: 118, child: Text(label)),
-            Expanded(
-              child: ExcludeSemantics(
-                child: LinearProgressIndicator(value: progress),
-              ),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 68,
-              child: Text(
-                _formatDuration(day.activeSeconds),
-                textAlign: TextAlign.end,
-              ),
-            ),
-          ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final compact =
+                constraints.maxWidth < 360 ||
+                MediaQuery.textScalerOf(context).scale(1) > 1.3;
+            final bar = ExcludeSemantics(
+              child: LinearProgressIndicator(value: progress),
+            );
+            if (compact) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    spacing: 12,
+                    runSpacing: 4,
+                    children: [
+                      Text(label),
+                      Text(_formatDuration(day.activeSeconds)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  bar,
+                ],
+              );
+            }
+            return Row(
+              children: [
+                SizedBox(width: 118, child: Text(label)),
+                Expanded(child: bar),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 68,
+                  child: Text(
+                    _formatDuration(day.activeSeconds),
+                    textAlign: TextAlign.end,
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -1350,7 +1309,7 @@ class _FocusTimeZonePickerDialogState
                   : null,
               onTap: () => Navigator.pop(
                 context,
-                _RecentFocusActivityCard._followDevice,
+                _FocusTimeZoneSettingsCardState._followDevice,
               ),
             ),
             TextField(
@@ -1444,7 +1403,7 @@ class _GoalCard extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(top: 12),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -3832,6 +3791,10 @@ class _MyPageState extends ConsumerState<MyPage> {
           ),
         ),
         const SizedBox(height: 12),
+        _FocusTimeZoneSettingsCard(
+          repository: ref.watch(focusRepositoryProvider),
+        ),
+        const SizedBox(height: 12),
         const PrecedentRulesCard(),
         const SizedBox(height: 12),
         Card(
@@ -3878,6 +3841,88 @@ class _MyPageState extends ConsumerState<MyPage> {
           label: const Text('退出登录'),
         ),
       ],
+    );
+  }
+}
+
+class _FocusTimeZoneSettingsCard extends StatefulWidget {
+  const _FocusTimeZoneSettingsCard({required this.repository});
+
+  final FocusRepository repository;
+
+  @override
+  State<_FocusTimeZoneSettingsCard> createState() =>
+      _FocusTimeZoneSettingsCardState();
+}
+
+class _FocusTimeZoneSettingsCardState
+    extends State<_FocusTimeZoneSettingsCard> {
+  static const _followDevice = '__follow_device__';
+  late final Future<String> _deviceTimeZoneId;
+
+  @override
+  void initState() {
+    super.initState();
+    _deviceTimeZoneId = _loadDeviceTimeZoneId();
+  }
+
+  Future<String> _loadDeviceTimeZoneId() async {
+    final zone = await FlutterTimezone.getLocalTimezone();
+    if (!FocusTimeZones.contains(zone.identifier)) {
+      throw StateError('设备返回了无法识别的 IANA 时区。');
+    }
+    return zone.identifier;
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<String>(
+    future: _deviceTimeZoneId,
+    builder: (context, deviceSnapshot) {
+      final deviceZone = deviceSnapshot.data ?? 'Etc/UTC';
+      return StreamBuilder<FocusDashboardMetrics>(
+        stream: widget.repository.watchDashboardMetrics(
+          deviceTimeZoneId: deviceZone,
+        ),
+        builder: (context, snapshot) {
+          final current = snapshot.data;
+          return Card(
+            child: ListTile(
+              leading: const Icon(Icons.schedule_outlined),
+              title: const Text('显示时区'),
+              subtitle: Text(
+                current == null
+                    ? '加载中'
+                    : '${current.followsDeviceTimeZone ? '跟随设备' : '手动选择'} · '
+                          '${current.displayTimeZoneId}'
+                          '${deviceSnapshot.hasError ? '\n无法读取设备时区，默认使用 UTC，可手动选择。' : ''}',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: current == null
+                  ? null
+                  : () => _chooseTimeZone(context, current, deviceZone),
+            ),
+          );
+        },
+      );
+    },
+  );
+
+  Future<void> _chooseTimeZone(
+    BuildContext context,
+    FocusDashboardMetrics current,
+    String deviceZone,
+  ) async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => _FocusTimeZonePickerDialog(
+        deviceTimeZoneId: deviceZone,
+        selectedTimeZoneId: current.displayTimeZoneId,
+        followsDeviceTimeZone: current.followsDeviceTimeZone,
+      ),
+    );
+    if (choice == null) return;
+    await widget.repository.setDisplayTimeZonePreference(
+      choice == _followDevice ? null : choice,
     );
   }
 }

@@ -5,7 +5,7 @@ import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 
 void main() {
-  testWidgets('无节点时显示空状态和按显示时区换算的下次检查点', (tester) async {
+  testWidgets('无节点时显示空状态且不显示检查点与时区', (tester) async {
     var openedTree = false;
     final repository = _NationalFocusRepositoryWithCards(const []);
 
@@ -14,8 +14,6 @@ void main() {
         home: Scaffold(
           body: NationalFocusSummaryCard(
             repository: repository,
-            displayTimeZoneId: 'Asia/Shanghai',
-            now: () => DateTime.utc(2026, 9, 25, 19, 59),
             onOpenTree: () => openedTree = true,
           ),
         ),
@@ -24,7 +22,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('国策树尚无节点。'), findsOneWidget);
-    expect(find.text('下次检查点：2026-09-26 04:00 · Asia/Shanghai'), findsOneWidget);
+    expect(find.textContaining('检查点'), findsNothing);
+    expect(find.textContaining('Asia/Shanghai'), findsNothing);
     await tester.tap(find.text('打开国策树'));
     expect(openedTree, isTrue);
 
@@ -45,8 +44,6 @@ void main() {
         home: Scaffold(
           body: NationalFocusSummaryCard(
             repository: repository,
-            displayTimeZoneId: 'Asia/Shanghai',
-            now: () => DateTime.utc(2026, 9, 25, 19, 59),
             onOpenTree: () {},
           ),
         ),
