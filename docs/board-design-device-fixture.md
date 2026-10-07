@@ -17,3 +17,7 @@ flutter test integration_test/board_design_device_test.dart -d emulator-5554
 实际命令通过 Windows `cmd.exe` 调用 Flutter 3.47.2。结果：APK 构建并安装成功，`00:09 +1: All tests passed!`。常规项目完整测试由主任务验证。
 
 设备截图保存在本地 `build/ui-layout-evidence/`，不纳入版本库：`board-redesign-overview.png` 展示看板首屏，`board-redesign-activity-and-calendar.png` 展示近期活动和今日日历。窄屏、2 倍文字和深色模式由设备测试覆盖；截图驱动在视口切换时未稳定返回，因此没有将错误页面截图作为窄屏证据。
+
+## 国策入口同行修正 — 2026-10-07
+
+用户截图显示标题与“打开国策树”按钮被固定宽度阈值强制分行。改为按实际内容宽度使用 Wrap 排列，按钮文字不自行断行；空间足够时同行，放大字体后空间不足时自然分行。320宽度组件回归测试在旧版失败（按钮文字中心64、标题中心28），修复后通过。设备夹具增加320dp首屏同行断言，Android 15 模拟器重新运行通过；静态分析无问题，全量247项测试通过。Standards与Spec独立复核均通过。

@@ -31,6 +31,32 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
   });
 
+  testWidgets('320宽度国策标题与打开按钮保持同一行', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 320,
+              child: NationalFocusSummaryCard(
+                repository: _NationalFocusRepositoryWithCards(const []),
+                onOpenTree: () {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getCenter(find.text('打开国策树')).dy,
+      closeTo(tester.getCenter(find.text('国策状态')).dy, 1),
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('待核对节点不进入确定状态汇总并保留上次确认值', (tester) async {
     final repository = _NationalFocusRepositoryWithCards([
       _card('lit', NationalFocusCardState.lit),

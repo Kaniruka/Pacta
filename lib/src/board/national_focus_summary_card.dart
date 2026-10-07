@@ -137,21 +137,18 @@ class _NationalFocusSummaryCardState extends State<NationalFocusSummaryCard> {
             final openTree = TextButton.icon(
               onPressed: widget.onOpenTree,
               icon: const Icon(Icons.account_tree_outlined),
-              label: const Text('打开国策树'),
+              label: const Text('打开国策树', softWrap: false),
             );
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (constraints.maxWidth < 320) ...[
-                  title,
-                  Align(alignment: Alignment.centerRight, child: openTree),
-                ] else
-                  Row(
-                    children: [
-                      Expanded(child: title),
-                      openTree,
-                    ],
-                  ),
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 12,
+                  runSpacing: 4,
+                  children: [title, openTree],
+                ),
                 ...children,
               ],
             );

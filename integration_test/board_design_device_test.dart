@@ -107,6 +107,11 @@ void main() {
       await nationalFocus.lightCard(card.id);
       await calendar.importCalendars({source.id});
 
+      final initialPixelRatio = tester.view.devicePixelRatio;
+      tester.view.physicalSize = Size(
+        320 * initialPixelRatio,
+        800 * initialPixelRatio,
+      );
       await tester.pumpWidget(
         PactaApp(
           authRepository: FakeAuthRepository()..signedInUser = userId,
@@ -119,6 +124,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('今天先做什么'), findsOneWidget);
       expect(find.text('整理发布材料'), findsOneWidget);
+      expect(
+        tester.getCenter(find.text('打开国策树')).dy,
+        closeTo(tester.getCenter(find.text('国策状态')).dy, 1),
+      );
       expect(find.textContaining('检查点'), findsNothing);
       expect(find.textContaining('固定规则为北京时间'), findsNothing);
       expect(find.text('日历块'), findsNothing);
