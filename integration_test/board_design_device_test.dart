@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,7 +22,7 @@ import '../test/support/fake_calendar_provider.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('看板层级、我的设置入口与窄屏大字深色布局', (tester) async {
+  testWidgets('看板层级、目标折叠、我的设置入口与日历访问', (tester) async {
     const userId = 'board-design-offline-fixture';
     final database = PactaDatabase(NativeDatabase.memory());
     var now = DateTime.now().subtract(const Duration(minutes: 13));
@@ -108,10 +110,12 @@ void main() {
       await calendar.importCalendars({source.id});
 
       final initialPixelRatio = tester.view.devicePixelRatio;
-      tester.view.physicalSize = Size(
-        320 * initialPixelRatio,
-        800 * initialPixelRatio,
-      );
+      if (!Platform.isWindows) {
+        tester.view.physicalSize = Size(
+          320 * initialPixelRatio,
+          800 * initialPixelRatio,
+        );
+      }
       await tester.pumpWidget(
         PactaApp(
           authRepository: FakeAuthRepository()..signedInUser = userId,
@@ -124,6 +128,21 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('今天先做什么'), findsOneWidget);
       expect(find.text('整理发布材料'), findsOneWidget);
+      final goalCard = find.ancestor(
+        of: find.text('季度规划'),
+        matching: find.byType(Card),
+      );
+      await tester.tap(
+        find.descendant(of: goalCard, matching: find.byTooltip('收起任务')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('整理发布材料'), findsNothing);
+      expect(find.textContaining('1 项任务'), findsOneWidget);
+      await tester.tap(
+        find.descendant(of: goalCard, matching: find.byTooltip('展开任务')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('整理发布材料'), findsOneWidget);
       expect(
         tester.getCenter(find.text('打开国策树')).dy,
         closeTo(tester.getCenter(find.text('国策状态')).dy, 1),
@@ -132,42 +151,44 @@ void main() {
       expect(find.textContaining('固定规则为北京时间'), findsNothing);
       expect(find.text('日历块'), findsNothing);
       expect(find.text('显示时区'), findsNothing);
-      final devicePixelRatio = tester.view.devicePixelRatio;
-      tester.view.physicalSize = Size(
-        360 * devicePixelRatio,
-        800 * devicePixelRatio,
-      );
-      tester.platformDispatcher.textScaleFactorTestValue = 2;
-      tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
-      await tester.pumpAndSettle();
-      await tester.scrollUntilVisible(
-        find.text('近期专注活动'),
-        250,
-        scrollable: find.byType(Scrollable).first,
-      );
-      expect(find.text('近期专注活动'), findsOneWidget);
-      expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
-      expect(find.textContaining('检查点'), findsNothing);
-      expect(find.textContaining('固定规则为北京时间'), findsNothing);
-      expect(find.text('日历块'), findsNothing);
-      expect(find.text('显示时区'), findsNothing);
-      await tester.scrollUntilVisible(
-        find.text('设计评审'),
-        250,
-        scrollable: find.byType(Scrollable).first,
-      );
-      expect(find.text('设计评审'), findsOneWidget);
+      if (!Platform.isWindows) {
+        final devicePixelRatio = tester.view.devicePixelRatio;
+        tester.view.physicalSize = Size(
+          360 * devicePixelRatio,
+          800 * devicePixelRatio,
+        );
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.text('近期专注活动'),
+          250,
+          scrollable: find.byType(Scrollable).first,
+        );
+        expect(find.text('近期专注活动'), findsOneWidget);
+        expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
+        expect(find.textContaining('检查点'), findsNothing);
+        expect(find.textContaining('固定规则为北京时间'), findsNothing);
+        expect(find.text('日历块'), findsNothing);
+        expect(find.text('显示时区'), findsNothing);
+        await tester.scrollUntilVisible(
+          find.text('设计评审'),
+          250,
+          scrollable: find.byType(Scrollable).first,
+        );
+        expect(find.text('设计评审'), findsOneWidget);
+      }
       expect(tester.takeException(), isNull);
       tester.platformDispatcher.clearTextScaleFactorTestValue();
       tester.platformDispatcher.clearPlatformBrightnessTestValue();
       tester.view.resetPhysicalSize();
       await tester.pumpAndSettle();
 
+      final navigation = find.byWidgetPredicate(
+        (widget) => widget is NavigationBar || widget is NavigationRail,
+      );
       await tester.tap(
-        find.descendant(
-          of: find.byType(NavigationBar),
-          matching: find.text('我的'),
-        ),
+        find.descendant(of: navigation, matching: find.text('我的')),
       );
       await tester.pumpAndSettle();
       expect(find.text('显示时区'), findsOneWidget);

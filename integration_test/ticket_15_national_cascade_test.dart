@@ -69,7 +69,7 @@ void main() {
       await tester.tap(treeDestination);
       await tester.pumpAndSettle();
 
-      final parentExtinguish = find.text('主动熄灭').first;
+      final parentExtinguish = find.text('熄灭').first;
       await tester.ensureVisible(parentExtinguish);
       await tester.tap(parentExtinguish);
       await tester.pumpAndSettle();

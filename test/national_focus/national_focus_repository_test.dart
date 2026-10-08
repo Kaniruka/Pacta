@@ -128,6 +128,156 @@ void main() {
     expect((await repository.getCard(card.id)).name, card.name);
   });
 
+  test('可省略触发条件，完整编辑保留状态与要求生效历史', () async {
+    final actionOnly = await repository.createCard(
+      const NationalFocusCardDraft(name: '仅行动', action: '阅读'),
+    );
+    expect(actionOnly.triggerCondition, isEmpty);
+    now = DateTime.utc(2026, 9, 25, 12);
+    final card = await repository.createCard(
+      const NationalFocusCardDraft(
+        name: '阅读',
+        triggerCondition: '   ',
+        action: '阅读 5 页',
+      ),
+    );
+    expect(card.triggerCondition, '');
+    await repository.placeCard(cardId: card.id, parentId: null);
+    await repository.lightCard(card.id);
+    final before = await repository.getCard(card.id);
+    now = now.add(const Duration(minutes: 1));
+    const edited = NationalFocusCardDraft(
+      name: ' 精读 ',
+      triggerCondition: ' 睡前 ',
+      action: ' 阅读 10 页 ',
+      scope: ' 每天 ',
+      exceptionNotes: ' 生病例外 ',
+    );
+    await repository.updateCard(cardId: card.id, draft: edited);
+    final after = await repository.getCard(card.id);
+    expect(after.name, '精读');
+    expect(after.triggerCondition, '睡前');
+    expect(after.action, '阅读 10 页');
+    expect(after.scope, '每天');
+    expect(after.exceptionNotes, '生病例外');
+    expect(after.state, before.state);
+    expect(after.successfulDays, before.successfulDays);
+    expect(after.currentConsecutiveDays, before.currentConsecutiveDays);
+    expect(after.requirementVersions, hasLength(2));
+    expect(after.requirementVersions.first.effectiveTriggerCondition, '');
+    expect(after.requirementVersions.first.effectiveAction, '阅读 5 页');
+    expect(
+      after.requirementVersions.first.effectiveUntil,
+      after.requirementVersions.last.effectiveFrom,
+    );
+    expect(after.requirementVersions.last.scope, '每天');
+    await repository.updateCard(cardId: card.id, draft: edited);
+    expect((await repository.getCard(card.id)).updatedAt, after.updatedAt);
+    await expectLater(
+      repository.updateCard(
+        cardId: card.id,
+        draft: const NationalFocusCardDraft(
+          name: '坏编辑',
+          triggerCondition: '',
+          action: ' ',
+        ),
+      ),
+      throwsArgumentError,
+    );
+    expect((await repository.getCard(card.id)).name, '精读');
+  });
+
+  test('强化覆盖下编辑基础内容不改有效版本，范围和例外修改建立版本', () async {
+    final card = await repository.createCard(draft('旧触发', '旧行动'));
+    await repository.saveStrengtheningLevel(
+      cardId: card.id,
+      draft: const NationalFocusStrengtheningLevelDraft(
+        triggerCondition: '强化触发',
+        action: '强化行动',
+      ),
+    );
+    await repository.selectStrengtheningLevel(cardId: card.id, levelNumber: 1);
+    await repository.updateCard(
+      cardId: card.id,
+      draft: const NationalFocusCardDraft(
+        name: '新名称',
+        triggerCondition: '',
+        action: '新基础行动',
+        scope: '仅工作日',
+        exceptionNotes: '出差时顺延',
+      ),
+    );
+    final covered = await repository.getCard(card.id);
+    expect(covered.requirementVersions, hasLength(2));
+    expect(covered.action, '新基础行动');
+    expect(covered.effectiveAction, '强化行动');
+    await repository.updateCard(
+      cardId: card.id,
+      draft: const NationalFocusCardDraft(
+        name: '新名称',
+        triggerCondition: '',
+        action: '新基础行动',
+      ),
+    );
+    final cleared = await repository.getCard(card.id);
+    expect(cleared.requirementVersions, hasLength(3));
+    expect(cleared.requirementVersions.last.scope, isNull);
+    expect(cleared.requirementVersions.last.exceptionNotes, isNull);
+    await repository.selectStrengtheningLevel(
+      cardId: card.id,
+      levelNumber: null,
+    );
+    final base = await repository.getCard(card.id);
+    expect(base.effectiveTriggerCondition, '');
+    expect(base.effectiveAction, '新基础行动');
+  });
+
+  test('旧快照缺要求版本时编辑保留旧基础要求', () async {
+    final card = await repository.createCard(draft('旧触发', '旧行动'));
+    await database.delete(database.localNationalFocusRequirementVersions).go();
+    now = now.add(const Duration(minutes: 1));
+    await repository.updateCard(
+      cardId: card.id,
+      draft: const NationalFocusCardDraft(
+        name: '新名称',
+        triggerCondition: '',
+        action: '新行动',
+      ),
+    );
+    final updated = await repository.getCard(card.id);
+    expect(updated.requirementVersions, hasLength(2));
+    expect(updated.requirementVersions.first.effectiveTriggerCondition, '旧触发');
+    expect(updated.requirementVersions.first.scope, '仅工作日');
+    expect(updated.requirementVersions.last.effectiveTriggerCondition, '');
+    expect(updated.requirementVersions.last.scope, isNull);
+  });
+
+  test('完整编辑拒绝其他用户和已删除卡片', () async {
+    final card = await repository.createCard(draft('原触发', '原行动'));
+    final otherUser = LocalNationalFocusRepository(
+      database: database,
+      userId: 'user-b',
+      now: () => now,
+    );
+    addTearDown(otherUser.dispose);
+    await expectLater(
+      otherUser.updateCard(cardId: card.id, draft: draft('越权', '越权')),
+      throwsStateError,
+    );
+    await repository.placeCard(cardId: card.id, parentId: null);
+    await repository.lightCard(card.id);
+    await repository.extinguishCard(cardId: card.id);
+    now = now.add(const Duration(minutes: 2));
+    await repository.settleDueCheckpoints();
+    await repository.moveCardToLibrary(card.id);
+    await repository.deleteCard(card.id);
+    await expectLater(
+      repository.updateCard(cardId: card.id, draft: draft('已删除', '已删除')),
+      throwsStateError,
+    );
+    expect((await repository.getCard(card.id)).name, '原触发');
+  });
+
   test('选择或编辑强化要求会保留生效区间且不重置国策记录', () async {
     now = DateTime.utc(2026, 9, 25, 3, 59);
     final card = await repository.createCard(draft('开始工作后', '阅读 5 页'));

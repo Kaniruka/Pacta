@@ -137,12 +137,12 @@ void main() {
       ]);
       expect((await repository.getCard(grandchild.id)).parentId, isNull);
 
-      await _reveal(tester, find.text('一键确认今日'));
+      await _reveal(tester, find.textContaining('全部确认'));
       if (Platform.isWindows) {
         final confirmationButton = tester.widget<FilledButton>(
           find
               .ancestor(
-                of: find.text('一键确认今日'),
+                of: find.textContaining('全部确认'),
                 matching: find.byType(FilledButton),
               )
               .first,
@@ -150,7 +150,7 @@ void main() {
         expect(confirmationButton.onPressed, isNotNull);
         expect(await repository.confirmToday(), 1);
       } else {
-        await tester.tap(find.text('一键确认今日'));
+        await tester.tap(find.textContaining('全部确认'));
       }
       await tester.pumpAndSettle();
       expect(
@@ -172,7 +172,7 @@ void main() {
         final childCard = nodeCard('子卡');
         final placeChild = find.descendant(
           of: childCard,
-          matching: find.text('放入树画布'),
+          matching: find.text('放入国策树'),
         );
         await tester.tap(placeChild);
         await tester.pumpAndSettle();
@@ -180,8 +180,8 @@ void main() {
         expect(find.text('分支父卡'), findsOneWidget);
         await tester.tap(nodeCard('分支父卡'));
         await tester.pumpAndSettle();
-        await _reveal(tester, find.text('确认今日继续有效'));
-        await tester.tap(find.text('确认今日继续有效'));
+        await _reveal(tester, find.text('确认'));
+        await tester.tap(find.text('确认'));
       }
       await tester.pumpAndSettle();
       final restoredChild = await repository.getCard(child.id);

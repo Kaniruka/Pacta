@@ -109,7 +109,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('个人数据仅属于你'), findsOneWidget);
+    expect(find.text('数据仅供你使用'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('用户管理'),
       160,

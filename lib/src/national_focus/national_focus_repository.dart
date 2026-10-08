@@ -19,6 +19,10 @@ abstract interface class NationalFocusRepository {
   Future<List<NationalFocusCard>> getDeletedCards();
   Future<NationalFocusCard> getCard(String cardId);
   Future<NationalFocusCard> createCard(NationalFocusCardDraft draft);
+  Future<void> updateCard({
+    required String cardId,
+    required NationalFocusCardDraft draft,
+  });
   Future<void> renameCard({required String cardId, required String name});
   Future<NationalFocusStrengtheningLevel> saveStrengtheningLevel({
     required String cardId,
@@ -229,7 +233,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     final timestamp = _nextTimestamp();
     final id = _uuid.v4();
     final name = _requiredText(draft.name, '名称');
-    final triggerCondition = _requiredText(draft.triggerCondition, '主要触发条件');
+    final triggerCondition = draft.triggerCondition.trim();
     final action = _requiredText(draft.action, '行动');
     final scope = _optionalText(draft.scope);
     final exceptionNotes = _optionalText(draft.exceptionNotes);
@@ -293,6 +297,78 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       await _recordSyncSnapshot(operation: 'create_card');
     });
     return card;
+  }
+
+  @override
+  Future<void> updateCard({
+    required String cardId,
+    required NationalFocusCardDraft draft,
+  }) async {
+    await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
+    final normalized = NationalFocusCardDraft(
+      name: _requiredText(draft.name, '名称'),
+      triggerCondition: draft.triggerCondition.trim(),
+      action: _requiredText(draft.action, '行动'),
+      scope: _optionalText(draft.scope),
+      exceptionNotes: _optionalText(draft.exceptionNotes),
+    );
+    await database.transaction(() async {
+      final card = await _findCardRow(cardId);
+      _requireResolvedCard(card);
+      if (card.deletedAt != null) {
+        throw StateError('已删除的国策卡需要先恢复到卡片库。');
+      }
+      if (card.name == normalized.name &&
+          card.triggerCondition == normalized.triggerCondition &&
+          card.action == normalized.action &&
+          card.scope == normalized.scope &&
+          card.exceptionNotes == normalized.exceptionNotes) {
+        return;
+      }
+
+      final selected = card.activeStrengtheningLevel;
+      final level = selected == null
+          ? null
+          : await (database.select(
+                  database.localNationalFocusStrengtheningLevels,
+                )..where(
+                  (level) =>
+                      level.userId.equals(userId) &
+                      level.cardId.equals(cardId) &
+                      level.levelNumber.equals(selected),
+                ))
+                .getSingleOrNull();
+      final timestamp = _nextTimestamp(card.updatedAt);
+      if ((level?.triggerConditionOverride ?? card.triggerCondition) !=
+              (level?.triggerConditionOverride ??
+                  normalized.triggerCondition) ||
+          (level?.actionOverride ?? card.action) !=
+              (level?.actionOverride ?? normalized.action) ||
+          card.scope != normalized.scope ||
+          card.exceptionNotes != normalized.exceptionNotes) {
+        await _appendRequirementVersion(
+          card: card,
+          levelNumber: selected,
+          triggerOverride: level?.triggerConditionOverride,
+          actionOverride: level?.actionOverride,
+          effectiveFrom: timestamp,
+          updatedDraft: normalized,
+        );
+      }
+      await _updateCard(
+        card,
+        LocalNationalFocusCardsCompanion(
+          name: Value(normalized.name),
+          triggerCondition: Value(normalized.triggerCondition),
+          action: Value(normalized.action),
+          scope: Value(normalized.scope),
+          exceptionNotes: Value(normalized.exceptionNotes),
+          updatedAt: Value(timestamp),
+        ),
+      );
+      await _recordSyncSnapshot(operation: 'edit_card');
+    });
   }
 
   @override
@@ -507,6 +583,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     required String? triggerOverride,
     required String? actionOverride,
     required DateTime effectiveFrom,
+    NationalFocusCardDraft? updatedDraft,
   }) async {
     var versions =
         await (database.select(database.localNationalFocusRequirementVersions)
@@ -598,10 +675,20 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
             cardId: card.id,
             versionNumber: versions.last.versionNumber + 1,
             strengtheningLevelNumber: Value(levelNumber),
-            effectiveTriggerCondition: triggerOverride ?? card.triggerCondition,
-            effectiveAction: actionOverride ?? card.action,
-            scope: Value(card.scope),
-            exceptionNotes: Value(card.exceptionNotes),
+            effectiveTriggerCondition:
+                triggerOverride ??
+                updatedDraft?.triggerCondition ??
+                card.triggerCondition,
+            effectiveAction:
+                actionOverride ?? updatedDraft?.action ?? card.action,
+            scope: Value(
+              updatedDraft == null ? card.scope : updatedDraft.scope,
+            ),
+            exceptionNotes: Value(
+              updatedDraft == null
+                  ? card.exceptionNotes
+                  : updatedDraft.exceptionNotes,
+            ),
             effectiveFrom: effectiveFrom,
           ),
         );
@@ -3112,6 +3199,12 @@ class UnavailableNationalFocusRepository implements NationalFocusRepository {
   @override
   Future<NationalFocusCard> createCard(NationalFocusCardDraft draft) =>
       _unavailable();
+
+  @override
+  Future<void> updateCard({
+    required String cardId,
+    required NationalFocusCardDraft draft,
+  }) => _unavailable();
 
   @override
   Future<void> renameCard({required String cardId, required String name}) =>

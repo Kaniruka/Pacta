@@ -142,7 +142,7 @@ Future<void> _createAndPlaceCard(
   await tester.tap(find.text('保存到卡片库'));
   await tester.pumpAndSettle();
 
-  await tester.tap(find.text('放入树画布'));
+  await tester.tap(find.text('放入国策树'));
   await tester.pumpAndSettle();
   if (placement == _Placement.topLevel) {
     await tester.tap(find.text('顶层位置'));

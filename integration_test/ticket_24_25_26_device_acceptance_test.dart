@@ -108,7 +108,7 @@ void main() {
 
       expect(find.text('设备验收任务'), findsOneWidget);
       expect(find.text('国策状态'), findsOneWidget);
-      expect(find.text('点亮 0 · 待今日确认 1 · 熄灭 0'), findsOneWidget);
+      expect(find.text('点亮 0 · 确认 1 · 熄灭 0'), findsOneWidget);
       expect(find.textContaining('已专注 13分00秒'), findsOneWidget);
 
       await tester.ensureVisible(find.byTooltip('开始专注'));
@@ -132,7 +132,7 @@ void main() {
       await tester.ensureVisible(find.text('打开国策树'));
       await tester.tap(find.text('打开国策树'));
       await tester.pumpAndSettle();
-      expect(find.text('确认节点今日继续有效，并查看连续记录与内化进度。'), findsOneWidget);
+      expect(find.text('全部确认 (1)'), findsOneWidget);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
       await database.close();

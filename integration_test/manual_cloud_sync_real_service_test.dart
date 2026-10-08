@@ -192,13 +192,13 @@ void main() {
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('查看云端并选择方向'));
       await tester.tap(find.text('查看云端并选择方向'));
-      await _waitForText(tester, '选择云同步方向');
+      await _waitForText(tester, '选择同步方式');
       if (_phase == 'android-upload') {
         expect(find.text('云端暂无数据，可首次上传。'), findsOneWidget);
-        await tester.tap(find.text('本地覆盖云端'));
+        await tester.tap(find.text('上传'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('确认上传覆盖'));
-        await _waitForText(tester, '已上传整份本地数据。');
+        await tester.tap(find.text('确认上传'));
+        await _waitForText(tester, '上传完成，已覆盖云端数据。');
         expect(remote.uploads, 1);
         expect(remote.downloads, 0);
         final cloud = await tester.runAsync(
@@ -223,11 +223,11 @@ void main() {
         );
         expect(remote.downloads, 0);
         await tester.tap(find.text('查看云端并选择方向'));
-        await _waitForText(tester, '选择云同步方向');
-        await tester.tap(find.text('云端覆盖本地'));
+        await _waitForText(tester, '选择同步方式');
+        await tester.tap(find.text('下载'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('确认下载覆盖'));
-        await _waitForText(tester, '已用云端数据覆盖本地。');
+        await tester.tap(find.text('确认下载'));
+        await _waitForText(tester, '下载完成，已覆盖本机数据。');
         expect(remote.downloads, 1);
         final goals = await seedTasks.getGoals();
         expect(
@@ -249,11 +249,11 @@ void main() {
             ),
           );
           await tester.tap(find.text('查看云端并选择方向'));
-          await _waitForText(tester, '选择云同步方向');
-          await tester.tap(find.text('本地覆盖云端'));
+          await _waitForText(tester, '选择同步方式');
+          await tester.tap(find.text('上传'));
           await tester.pumpAndSettle();
-          await tester.tap(find.text('确认上传覆盖'));
-          await _waitForText(tester, '已上传整份本地数据。');
+          await tester.tap(find.text('确认上传'));
+          await _waitForText(tester, '上传完成，已覆盖云端数据。');
           expect(remote.uploads, 1);
           final cloud = await tester.runAsync(
             () => remote.inspect(userId: userId),

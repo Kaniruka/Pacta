@@ -328,7 +328,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
             '${parentId == null ? '已放到顶层' : '已放置到所选父节点下'}；'
             '${switch (placedCard.state) {
               NationalFocusCardState.extinguished => '请手动点亮。',
-              NationalFocusCardState.pendingTodayConfirmation => '请确认今日继续有效。',
+              NationalFocusCardState.pendingTodayConfirmation => '请确认。',
               NationalFocusCardState.lit => '当前已点亮。',
             }}',
           ),
@@ -522,7 +522,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                       sliver: SliverToBoxAdapter(
                         child: _TreeMessage(
                           icon: Icons.account_tree_outlined,
-                          title: '树画布还是空的',
+                          title: '还没有国策',
                           message: '先在卡片库创建国策卡，再回到这里选择顶层或父节点。',
                           action: FilledButton.icon(
                             onPressed: _openLibrary,
@@ -1154,7 +1154,7 @@ class _LibraryCardList extends StatelessWidget {
             child: _TreeMessage(
               icon: Icons.library_books_outlined,
               title: '卡片库还是空的',
-              message: '创建一张国策卡，再单独选择它在树画布中的位置。',
+              message: '新建国策卡，再放入国策树。',
             ),
           ),
         );
@@ -1168,6 +1168,26 @@ class _LibraryCardList extends StatelessWidget {
             separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, index) => _LibraryCard(
               card: cards[index],
+              onDetails: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => _NationalFocusCardDetailPage(
+                    repository: repository,
+                    card: cards[index],
+                    lightBlocked: false,
+                    cascadeSourceLabel: null,
+                  ),
+                ),
+              ),
+              onEdit: cards[index].hasPendingReview
+                  ? null
+                  : () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => NationalFocusCardEditorPage(
+                          repository: repository,
+                          card: cards[index],
+                        ),
+                      ),
+                    ),
               onRename: cards[index].hasPendingReview
                   ? null
                   : () => onRename(cards[index]),
@@ -1245,9 +1265,14 @@ class _DeletedNationalFocusCardList extends StatelessWidget {
 }
 
 class NationalFocusCardEditorPage extends StatefulWidget {
-  const NationalFocusCardEditorPage({super.key, required this.repository});
+  const NationalFocusCardEditorPage({
+    super.key,
+    required this.repository,
+    this.card,
+  });
 
   final NationalFocusRepository repository;
+  final NationalFocusCard? card;
 
   @override
   State<NationalFocusCardEditorPage> createState() =>
@@ -1264,6 +1289,18 @@ class _NationalFocusCardEditorPageState
   final _exceptionNotes = TextEditingController();
   bool _busy = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final card = widget.card;
+    if (card == null) return;
+    _name.text = card.name;
+    _trigger.text = card.triggerCondition;
+    _action.text = card.action;
+    _scope.text = card.scope ?? '';
+    _exceptionNotes.text = card.exceptionNotes ?? '';
+  }
 
   @override
   void dispose() {
@@ -1283,15 +1320,21 @@ class _NationalFocusCardEditorPageState
       _error = null;
     });
     try {
-      final card = await widget.repository.createCard(
-        NationalFocusCardDraft(
-          name: _name.text,
-          triggerCondition: _trigger.text,
-          action: _action.text,
-          scope: _scope.text,
-          exceptionNotes: _exceptionNotes.text,
-        ),
+      final draft = NationalFocusCardDraft(
+        name: _name.text,
+        triggerCondition: _trigger.text,
+        action: _action.text,
+        scope: _scope.text,
+        exceptionNotes: _exceptionNotes.text,
       );
+      final existing = widget.card;
+      final NationalFocusCard card;
+      if (existing == null) {
+        card = await widget.repository.createCard(draft);
+      } else {
+        await widget.repository.updateCard(cardId: existing.id, draft: draft);
+        card = await widget.repository.getCard(existing.id);
+      }
       _syncNationalFocusInBackground(widget.repository);
       if (mounted) Navigator.of(context).pop(card);
     } catch (error) {
@@ -1303,7 +1346,7 @@ class _NationalFocusCardEditorPageState
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('新建国策卡')),
+    appBar: AppBar(title: Text(widget.card == null ? '新建国策卡' : '编辑国策卡')),
     body: Form(
       key: _formKey,
       autovalidateMode: AutovalidateMode.onUserInteraction,
@@ -1315,7 +1358,9 @@ class _NationalFocusCardEditorPageState
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
               children: [
                 Text(
-                  '写下你自己判断是否有效的规则。应用只保存和展示内容，不会评估现实是否符合。',
+                  widget.card?.activeStrengtheningLevel != null
+                      ? '编辑基础要求；已强化的字段仍使用强化要求。'
+                      : '写下规则，由你判断是否有效。',
                   style: Theme.of(context).textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 20),
@@ -1332,11 +1377,10 @@ class _NationalFocusCardEditorPageState
                   maxLines: 4,
                   textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
-                    labelText: '主要触发条件',
+                    labelText: '触发条件（可选）',
                     hintText: '例如：坐到书桌前后',
                     alignLabelWithHint: true,
                   ),
-                  validator: (value) => _requiredFieldError(value, '主要触发条件'),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
@@ -1398,7 +1442,13 @@ class _NationalFocusCardEditorPageState
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.save_outlined),
-            label: Text(_busy ? '保存中' : '保存到卡片库'),
+            label: Text(
+              _busy
+                  ? '保存中'
+                  : widget.card == null
+                  ? '保存到卡片库'
+                  : '保存',
+            ),
           ),
         ),
       ),
@@ -1438,6 +1488,8 @@ class _NationalFocusReviewNotice extends StatelessWidget {
 
 class _LibraryCard extends StatelessWidget {
   const _LibraryCard({
+    required this.onEdit,
+    required this.onDetails,
     required this.card,
     required this.onPlace,
     required this.onDelete,
@@ -1449,6 +1501,8 @@ class _LibraryCard extends StatelessWidget {
   final VoidCallback? onPlace;
   final VoidCallback? onDelete;
   final VoidCallback? onRename;
+  final VoidCallback? onEdit;
+  final VoidCallback onDetails;
   final VoidCallback? onManageStrengthening;
 
   @override
@@ -1475,8 +1529,22 @@ class _LibraryCard extends StatelessWidget {
               ),
               PopupMenuButton<String>(
                 tooltip: '卡片操作',
-                onSelected: (_) => onRename?.call(),
+                onSelected: (value) {
+                  if (value == 'details') {
+                    onDetails();
+                  } else if (value == 'edit') {
+                    onEdit?.call();
+                  } else {
+                    onRename?.call();
+                  }
+                },
                 itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'details', child: Text('查看详情')),
+                  PopupMenuItem(
+                    value: 'edit',
+                    enabled: onEdit != null,
+                    child: const Text('编辑卡片'),
+                  ),
                   PopupMenuItem(
                     value: 'rename',
                     enabled: onRename != null,
@@ -1486,9 +1554,9 @@ class _LibraryCard extends StatelessWidget {
               ),
             ],
           ),
-          _FieldText(label: '当前主要触发条件', value: card.effectiveTriggerCondition),
+          _FieldText(label: '触发条件', value: card.effectiveTriggerCondition),
           const SizedBox(height: 12),
-          _FieldText(label: '当前行动', value: card.effectiveAction),
+          _FieldText(label: '行动', value: card.effectiveAction),
           if (card.scope != null) ...[
             const SizedBox(height: 12),
             _FieldText(label: '适用范围', value: card.scope!),
@@ -1524,7 +1592,7 @@ class _LibraryCard extends StatelessWidget {
               FilledButton.tonalIcon(
                 onPressed: onPlace,
                 icon: const Icon(Icons.account_tree_outlined),
-                label: const Text('放入树画布'),
+                label: const Text('放入国策树'),
               ),
             ],
           ),
@@ -1548,9 +1616,9 @@ class _DeletedLibraryCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(card.name, style: Theme.of(context).textTheme.titleMedium),
-          _FieldText(label: '当前主要触发条件', value: card.effectiveTriggerCondition),
+          _FieldText(label: '触发条件', value: card.effectiveTriggerCondition),
           const SizedBox(height: 12),
-          _FieldText(label: '当前行动', value: card.effectiveAction),
+          _FieldText(label: '行动', value: card.effectiveAction),
           const SizedBox(height: 12),
           _NationalFocusRecordSummary(card: card),
           if (card.hasPendingReview) ...[
@@ -1625,7 +1693,7 @@ class _TreePageHeader extends StatelessWidget {
             TextButton.icon(
               onPressed: pendingCount == 0 || confirming ? null : onConfirm,
               icon: const Icon(Icons.done_all),
-              label: Text('今日确认 ($pendingCount)'),
+              label: Text('全部确认 ($pendingCount)'),
             ),
           ],
         ),
@@ -1752,8 +1820,8 @@ class _NodeActionsSheet extends StatelessWidget {
                 ? Icons.lightbulb_outline
                 : Icons.lightbulb,
             switch (card.state) {
-              NationalFocusCardState.lit => '主动熄灭',
-              NationalFocusCardState.pendingTodayConfirmation => '确认今日继续有效',
+              NationalFocusCardState.lit => '熄灭',
+              NationalFocusCardState.pendingTodayConfirmation => '确认',
               NationalFocusCardState.extinguished => '点亮',
             },
             enabled:
@@ -1788,7 +1856,7 @@ class _NodeActionsSheet extends StatelessWidget {
             action(
               _NodeAction.extinguish,
               Icons.lightbulb_outline,
-              '主动熄灭',
+              '熄灭',
               enabled: !reviewBlocked,
             ),
           action(
@@ -1816,7 +1884,9 @@ class _NationalFocusCardDetailPage extends StatelessWidget {
   final String? cascadeSourceLabel;
   @override
   Widget build(BuildContext context) => StreamBuilder<List<NationalFocusCard>>(
-    stream: repository.watchTreeCards(),
+    stream: card.isInTree
+        ? repository.watchTreeCards()
+        : repository.watchLibraryCards(),
     builder: (context, snapshot) {
       final card =
           snapshot.data?.where((item) => item.id == this.card.id).firstOrNull ??
@@ -1827,10 +1897,26 @@ class _NationalFocusCardDetailPage extends StatelessWidget {
           actions: [
             PopupMenuButton<String>(
               tooltip: '卡片操作',
-              onSelected: (_) async {
-                await _renameNationalFocusCard(context, repository, card);
+              onSelected: (value) async {
+                if (value == 'edit') {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => NationalFocusCardEditorPage(
+                        repository: repository,
+                        card: card,
+                      ),
+                    ),
+                  );
+                } else {
+                  await _renameNationalFocusCard(context, repository, card);
+                }
               },
               itemBuilder: (_) => [
+                PopupMenuItem(
+                  value: 'edit',
+                  enabled: !card.hasPendingReview,
+                  child: const Text('编辑卡片'),
+                ),
                 PopupMenuItem(
                   value: 'rename',
                   enabled: !card.hasPendingReview,
@@ -1850,12 +1936,9 @@ class _NationalFocusCardDetailPage extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 24),
-            _FieldText(
-              label: '当前主要触发条件',
-              value: card.effectiveTriggerCondition,
-            ),
+            _FieldText(label: '触发条件', value: card.effectiveTriggerCondition),
             const SizedBox(height: 20),
-            _FieldText(label: '当前行动', value: card.effectiveAction),
+            _FieldText(label: '行动', value: card.effectiveAction),
             if (card.scope != null) ...[
               const SizedBox(height: 20),
               _FieldText(label: '适用范围', value: card.scope!),
@@ -2060,7 +2143,7 @@ class _ExtinguishReasonDialogState extends State<_ExtinguishReasonDialog> {
   @override
   Widget build(BuildContext context) => AlertDialog(
     scrollable: true,
-    title: const Text('主动熄灭这个节点？'),
+    title: const Text('熄灭这个节点？'),
     content: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2492,7 +2575,10 @@ class _FieldText extends StatelessWidget {
     children: [
       Text(label, style: Theme.of(context).textTheme.labelMedium),
       const SizedBox(height: 4),
-      SelectableText(value, style: Theme.of(context).textTheme.bodyLarge),
+      SelectableText(
+        value.isEmpty ? '未设置' : value,
+        style: Theme.of(context).textTheme.bodyLarge,
+      ),
     ],
   );
 }

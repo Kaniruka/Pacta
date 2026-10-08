@@ -55,7 +55,7 @@ class _FocusNotificationSettingsPageState
         if (mounted) {
           setState(() {
             _notificationsAllowed = false;
-            _message = '系统通知权限未开放；专注和预约仍可照常使用。';
+            _message = '未授予通知权限，专注和预约仍可使用。';
           });
         }
         return;
@@ -70,7 +70,7 @@ class _FocusNotificationSettingsPageState
           _notificationsAllowed = notificationsAllowed;
           _exactAlarmsAllowed = exactAlarmsAllowed;
           _message = enabled && !exactAlarmsAllowed && Platform.isAndroid
-              ? '已启用提醒；未允许精确提醒时，系统可能延后送达。'
+              ? '提醒已开启；未允许精确提醒时，可能延迟送达。'
               : null;
         });
       }
@@ -106,7 +106,7 @@ class _FocusNotificationSettingsPageState
         if (mounted) {
           setState(() {
             _notificationsAllowed = false;
-            _message = '系统通知权限未开放；专注流程仍可照常使用。';
+            _message = '未授予通知权限，专注流程仍可使用。';
           });
         }
         return;
@@ -121,7 +121,7 @@ class _FocusNotificationSettingsPageState
           _notificationsAllowed = notificationsAllowed;
           _exactAlarmsAllowed = exactAlarmsAllowed;
           _message = enabled && !exactAlarmsAllowed && Platform.isAndroid
-              ? '已启用国策提醒；未允许准确提醒时，系统可能延后送达。'
+              ? '国策提醒已开启；未允许精确提醒时，可能延迟送达。'
               : null;
         });
       }
@@ -165,7 +165,7 @@ class _FocusNotificationSettingsPageState
       if (!mounted) return;
       setState(() {
         _exactAlarmsAllowed = allowed;
-        _message = allowed ? null : '准确提醒尚未允许；核心专注流程不受影响。';
+        _message = allowed ? null : '尚未允许精确提醒；专注流程不受影响。';
       });
     } finally {
       if (mounted) setState(() => _updating = false);
@@ -188,7 +188,7 @@ class _FocusNotificationSettingsPageState
       setState(() {
         _notificationsAllowed = allowed;
         _exactAlarmsAllowed = exactAlarmsAllowed;
-        _message = allowed ? null : '系统通知权限未开放；专注流程仍可照常使用。';
+        _message = allowed ? null : '未授予通知权限，专注流程仍可使用。';
       });
     } finally {
       if (mounted) setState(() => _updating = false);
@@ -223,9 +223,7 @@ class _FocusNotificationSettingsPageState
                                   ? null
                                   : _setNotificationsEnabled,
                               title: const Text('专注流程通知'),
-                              subtitle: const Text(
-                                '预约进入专注和专注会话结束时提醒。任务截止时间不会通知。',
-                              ),
+                              subtitle: const Text('预约开始专注或专注结束时提醒；不提醒任务截止时间。'),
                             ),
                             if (preferences.notificationsEnabled &&
                                 !_notificationsAllowed)
@@ -253,7 +251,7 @@ class _FocusNotificationSettingsPageState
                                         ? null
                                         : _allowExactAlarms,
                                     icon: const Icon(Icons.alarm_add_outlined),
-                                    label: const Text('允许准确的专注提醒'),
+                                    label: const Text('允许精确提醒'),
                                   ),
                                 ),
                               ),
@@ -272,7 +270,7 @@ class _FocusNotificationSettingsPageState
                                   : _setNationalFocusReminderEnabled,
                               title: const Text('国策待确认提醒'),
                               subtitle: const Text(
-                                '有待今日确认的国策时提醒一次；预约、专注或批准暂停未结束时会延后。',
+                                '有国策待确认时提醒一次；预约、专注或暂停中的会话结束后再提醒。',
                               ),
                             ),
                             ListTile(
@@ -280,7 +278,7 @@ class _FocusNotificationSettingsPageState
                               subtitle: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text('各设备单独设置，不影响国策检查点。'),
+                                  const Text('仅此设备有效，不影响国策检查点。'),
                                   TextButton(
                                     key: const Key(
                                       'national-focus-reminder-time',
@@ -314,9 +312,7 @@ class _FocusNotificationSettingsPageState
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      const Text(
-                                        '系统通知权限未开放，国策提醒暂不可送达；专注流程仍可照常使用。',
-                                      ),
+                                      const Text('未授予通知权限，国策提醒暂不可送达；专注流程仍可使用。'),
                                       TextButton.icon(
                                         onPressed: _updating
                                             ? null
@@ -348,7 +344,7 @@ class _FocusNotificationSettingsPageState
                                         ? null
                                         : _allowExactAlarms,
                                     icon: const Icon(Icons.alarm_add_outlined),
-                                    label: const Text('允许准确的国策提醒'),
+                                    label: const Text('允许精确提醒'),
                                   ),
                                 ),
                               ),
@@ -363,8 +359,8 @@ class _FocusNotificationSettingsPageState
                           title: const Text('显示后台倒计时'),
                           subtitle: Text(
                             Platform.isWindows
-                                ? '在系统托盘显示当前状态；会话进行中关闭窗口时保留在后台。'
-                                : '在通知栏显示预约或专注状态，点击可返回当前会话。',
+                                ? '在系统托盘显示当前状态；关闭窗口后会话仍在后台运行。'
+                                : '在通知栏显示预约或专注状态，点按可返回会话。',
                           ),
                         ),
                       ),
@@ -381,7 +377,7 @@ class _FocusNotificationSettingsPageState
                       ],
                       const SizedBox(height: 12),
                       Text(
-                        '这些偏好仅保存在本设备，不会同步到其他设备。',
+                        '这些设置仅保存在本设备。',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],

@@ -77,9 +77,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('点亮 1 · 待今日确认 1 · 熄灭 1'), findsOneWidget);
-    expect(find.text('1 个节点待核对；争议状态不计入上方汇总。'), findsOneWidget);
-    expect(find.text('uncertain · 上次已确认：5 天连续记录'), findsOneWidget);
+    expect(find.text('点亮 1 · 确认 1 · 熄灭 1'), findsOneWidget);
+    expect(find.text('1 个节点待核对，未计入上方汇总。'), findsOneWidget);
+    expect(find.text('uncertain · 上次确认：连续 5 天'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));

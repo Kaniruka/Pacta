@@ -23,7 +23,7 @@ class _FocusClockReviewPageState extends State<FocusClockReviewPage> {
   Future<void> _defer(FocusClockReviewCase reviewCase) async {
     await _run(reviewCase, () async {
       await widget.repository.deferClockReviewCase(reviewCase.id);
-      _showMessage('已暂缓核对；原始时间证据仍会保留并同步。');
+      _showMessage('已暂缓；原始时间证据仍会保留并同步。');
     });
   }
 
@@ -74,7 +74,7 @@ class _FocusClockReviewPageState extends State<FocusClockReviewPage> {
           return const Center(child: CircularProgressIndicator());
         }
         if (cases.isEmpty) {
-          return const Center(child: Text('当前没有待核对的设备时间记录'));
+          return const Center(child: Text('没有待核对的设备时间记录'));
         }
         return SafeArea(
           child: Align(
@@ -134,7 +134,7 @@ class _FocusClockReviewPageState extends State<FocusClockReviewPage> {
             Text('跳变前已确认 ${_formatDuration(reviewCase.reliableSeconds)}'),
             Text(
               uncertainSeconds == null
-                  ? '跳变期间没有可比较的连续计时证据，暂不计入这段时间。'
+                  ? '跳变期间缺少连续计时证据，这段时间暂不计入。'
                   : '跳变期间连续计时约 ${_formatDuration(uncertainSeconds)}；原始时间仍待核对。',
             ),
             const SizedBox(height: 12),

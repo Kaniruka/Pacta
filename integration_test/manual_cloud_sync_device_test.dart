@@ -53,7 +53,11 @@ void main() {
 
       Future<void> closeApp() async {
         await tester.pumpWidget(const SizedBox.shrink());
-        await tester.pumpAndSettle();
+        await tester.pumpAndSettle(
+          const Duration(milliseconds: 100),
+          EnginePhase.sendSemanticsUpdate,
+          const Duration(seconds: 15),
+        );
         await database.close();
       }
 
@@ -112,13 +116,13 @@ void main() {
         );
         expect(find.text('云端暂无数据，可首次上传。'), findsOneWidget);
 
-        await tester.tap(find.text('本地覆盖云端'));
+        await tester.tap(find.text('上传'));
         await tester.pumpAndSettle();
         expect(find.text('上传并覆盖云端？'), findsOneWidget);
-        await tester.tap(find.text('确认上传覆盖'));
+        await tester.tap(find.text('确认上传'));
         await tester.pumpAndSettle();
         expect(cloudRemote.uploadCalls, 1);
-        expect(find.text('已上传整份本地数据。'), findsOneWidget);
+        expect(find.text('上传完成，已覆盖云端数据。'), findsOneWidget);
 
         await (database.update(
           database.localGoals,
@@ -128,13 +132,13 @@ void main() {
         await tester.tap(find.text('查看云端并选择方向'));
         await tester.pumpAndSettle();
         expect(find.text('云端来源：Android emulator test mirror'), findsOneWidget);
-        await tester.tap(find.text('云端覆盖本地'));
+        await tester.tap(find.text('下载'));
         await tester.pumpAndSettle();
         expect(find.text('下载并覆盖本地？'), findsOneWidget);
-        await tester.tap(find.text('确认下载覆盖'));
+        await tester.tap(find.text('确认下载'));
         await tester.pumpAndSettle();
         expect(cloudRemote.downloadCalls, 1);
-        expect(find.text('已用云端数据覆盖本地。'), findsOneWidget);
+        expect(find.text('下载完成，已覆盖本机数据。'), findsOneWidget);
 
         final restoredGoal = await (database.select(
           database.localGoals,

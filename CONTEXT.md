@@ -97,7 +97,7 @@ A user-maintained progression tree of National Focus Cards, independent of Goals
 _Avoid_: Skill tree, goal hierarchy
 
 **National Focus Card (国策卡)**:
-A user-authored rule with a required Name, primary Trigger Condition and Action, optional Scope and Exception Notes, and persistent Internalization Progress, whose real-world validity the user evaluates manually. Its name labels the card independently of its rule content and Strengthening Levels, and different cards may share the same name.
+A user-authored rule with a required Name and Action, optional Trigger Condition, Scope and Exception Notes, and persistent Internalization Progress, whose real-world validity the user evaluates manually. Its name labels the card independently of its rule content and Strengthening Levels, and different cards may share the same name.
 _Avoid_: Executable rule, automatic evaluator
 
 **National Focus Card Library (国策卡片库)**:
@@ -105,7 +105,7 @@ The user's collection of independent cards not currently placed in the tree, inc
 _Avoid_: Archive-only storage, task list
 
 **National Focus Node (国策节点)**:
-A National Focus Card occupying one tree position, optionally with child cards, and carrying current/historical consecutive records and Internalization Progress. Its state is Lit (点亮), Pending Today Confirmation (待今日确认; visually unlit without failure), or Extinguished (真正熄灭; requires separate manual lighting).
+A National Focus Card occupying one tree position, optionally with child cards, and carrying current/historical consecutive records and Internalization Progress. Its state is Lit (点亮), Pending Today Confirmation (确认; visually unlit without failure), or Extinguished (真正熄灭; requires separate manual lighting).
 _Avoid_: Focus Node, Task, badge
 
 **Internalization Progress (内化进度)**:

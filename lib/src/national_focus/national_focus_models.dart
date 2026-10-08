@@ -16,7 +16,7 @@ enum NationalFocusCardState {
 
   String get label => switch (this) {
     NationalFocusCardState.lit => '点亮',
-    NationalFocusCardState.pendingTodayConfirmation => '待今日确认',
+    NationalFocusCardState.pendingTodayConfirmation => '确认',
     NationalFocusCardState.extinguished => '熄灭',
   };
 
@@ -40,7 +40,7 @@ enum NationalFocusFailureCause {
 
   String get label => switch (this) {
     NationalFocusFailureCause.missedConfirmation => '未完成今日确认',
-    NationalFocusFailureCause.activeExtinguish => '主动熄灭',
+    NationalFocusFailureCause.activeExtinguish => '熄灭',
   };
 
   static NationalFocusFailureCause fromStorage(String value) => switch (value) {
@@ -413,7 +413,7 @@ class NationalFocusReviewState {
 class NationalFocusCardDraft {
   const NationalFocusCardDraft({
     required this.name,
-    required this.triggerCondition,
+    this.triggerCondition = '',
     required this.action,
     this.scope,
     this.exceptionNotes,

@@ -144,7 +144,7 @@ class _NationalFocusStrengtheningPageState
               ),
               const SizedBox(height: 8),
               Text(
-                '切换或编辑会立即采用新要求，不会自动点亮、熄灭、清除记录或要求重新确认；是否符合由你判断。',
+                '修改立即生效，不改变节点状态、清除记录或要求重新确认；是否符合由你判断。',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               if (_error != null) ...[
@@ -187,7 +187,7 @@ class _NationalFocusStrengtheningPageState
                 const Card(
                   child: Padding(
                     padding: EdgeInsets.all(16),
-                    child: Text('还没有强化等级。可单独强化触发条件、行动或两者。'),
+                    child: Text('暂无强化等级。可强化触发条件、行动，或同时强化两者。'),
                   ),
                 ),
               for (final level in card.strengtheningLevels)
@@ -267,7 +267,7 @@ class _StrengtheningLevelCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             _ComparedRequirement(
-              label: '主要触发条件',
+              label: '触发条件',
               baseValue: card.triggerCondition,
               overrideValue: level.triggerCondition,
             ),
@@ -281,7 +281,7 @@ class _StrengtheningLevelCard extends StatelessWidget {
             Align(
               alignment: Alignment.centerLeft,
               child: active
-                  ? const Text('当前要求立即生效')
+                  ? const Text('当前已生效')
                   : OutlinedButton(
                       onPressed: busy ? null : onSelect,
                       child: Text('采用$title'),
@@ -367,16 +367,16 @@ class _StrengtheningLevelEditorPageState
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
               children: [
                 Text(
-                  '基础要求和本等级要求同时显示，便于比较。留空字段会沿用基础要求；至少填写触发条件或行动其中一项。',
+                  '同时显示基础和本级要求，便于比较。空字段沿用基础要求；至少填写触发条件或行动。',
                   style: Theme.of(context).textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 20),
                 _RequirementComparisonEditor(
-                  title: '主要触发条件',
+                  title: '触发条件',
                   baseValue: widget.card.triggerCondition,
                   controller: _trigger,
                   fieldKey: const ValueKey('strengthened-trigger'),
-                  fieldLabel: '强化后的主要触发条件',
+                  fieldLabel: '强化后的触发条件',
                 ),
                 const SizedBox(height: 16),
                 _RequirementComparisonEditor(
@@ -390,7 +390,7 @@ class _StrengtheningLevelEditorPageState
                   validator: (_) =>
                       _trigger.text.trim().isEmpty &&
                           _action.text.trim().isEmpty
-                      ? '至少填写触发条件或行动其中一项。'
+                      ? '至少填写触发条件或行动。'
                       : null,
                   builder: (state) => state.hasError
                       ? Padding(
@@ -431,7 +431,10 @@ class _RequirementComparisonEditor extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
-      final base = _RequirementValueCard(title: '基础$title', value: baseValue);
+      final base = _RequirementValueCard(
+        title: '基础$title',
+        value: baseValue.trim().isEmpty ? '未设置' : baseValue,
+      );
       final strengthened = TextFormField(
         key: fieldKey,
         controller: controller,
@@ -494,7 +497,8 @@ class _ComparedRequirement extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final levelValue = overrideValue ?? '沿用基础要求：$baseValue';
+    final shownBaseValue = baseValue.trim().isEmpty ? '未设置' : baseValue;
+    final levelValue = overrideValue ?? '沿用基础要求：$shownBaseValue';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -502,7 +506,10 @@ class _ComparedRequirement extends StatelessWidget {
         const SizedBox(height: 4),
         LayoutBuilder(
           builder: (context, constraints) {
-            final base = _RequirementValueCard(title: '基础', value: baseValue);
+            final base = _RequirementValueCard(
+              title: '基础',
+              value: shownBaseValue,
+            );
             final level = _RequirementValueCard(
               title: '本等级',
               value: levelValue,
@@ -557,7 +564,10 @@ class _RequirementSummary extends StatelessWidget {
           children: [
             Text(title, style: theme.textTheme.titleMedium),
             const SizedBox(height: 12),
-            _RequirementValueCard(title: '主要触发条件', value: triggerCondition),
+            _RequirementValueCard(
+              title: '触发条件',
+              value: triggerCondition.trim().isEmpty ? '未设置' : triggerCondition,
+            ),
             const SizedBox(height: 8),
             _RequirementValueCard(title: '行动', value: action),
             if (scope != null) ...[
@@ -614,14 +624,16 @@ class _RequirementVersionTile extends StatelessWidget {
         ? '当前仍生效'
         : _formatMoment(version.effectiveUntil!);
     final end = version.effectiveUntil == null ? endText : '至 $endText';
-    final trigger = version.effectiveTriggerCondition;
+    final trigger = version.effectiveTriggerCondition.trim().isEmpty
+        ? '未设置'
+        : version.effectiveTriggerCondition;
     final action = version.effectiveAction;
     final start = _formatMoment(version.effectiveFrom);
     final versionNumber = version.versionNumber;
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text('版本 $versionNumber · $label'),
-      subtitle: Text('主要触发条件：$trigger\n行动：$action\n$start — $end'),
+      subtitle: Text('触发条件：$trigger\n行动：$action\n$start — $end'),
       isThreeLine: true,
     );
   }

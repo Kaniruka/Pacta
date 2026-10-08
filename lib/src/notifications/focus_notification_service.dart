@@ -219,16 +219,13 @@ class FocusNotificationService {
           await _showAndroidEvent(
             id: _appointmentTransitionNotificationId,
             title: '已进入专注',
-            body: '预约准备结束，$taskTitle 开始专注。',
+            body: '任务：$taskTitle',
             payload: 'appointment:$appointmentId',
             tag: notificationTag,
           );
         }
       } else if (Platform.isWindows) {
-        await _showWindowsEvent(
-          title: '已进入专注',
-          body: '预约准备结束，$taskTitle 开始专注。',
-        );
+        await _showWindowsEvent(title: '已进入专注', body: '任务：$taskTitle');
       }
     } catch (_) {
       _notifiedAppointmentTransitions.remove(appointmentId);
@@ -276,13 +273,13 @@ class FocusNotificationService {
           await _showAndroidEvent(
             id: _sessionEndNotificationId,
             title: ending,
-            body: '$taskTitle 的专注会话已结束。',
+            body: '任务：$taskTitle',
             payload: 'session:$sessionId',
             tag: notificationTag,
           );
         }
       } else if (Platform.isWindows) {
-        await _showWindowsEvent(title: ending, body: '$taskTitle 的专注会话已结束。');
+        await _showWindowsEvent(title: ending, body: '任务：$taskTitle');
       }
     } catch (_) {
       _notifiedSessionEnds.remove(eventKey);
@@ -417,7 +414,7 @@ class FocusNotificationService {
       return;
     }
 
-    await _showWindowsEvent(title: '国策待确认', body: '请确认今天仍然有效的国策。');
+    await _showWindowsEvent(title: '国策待确认', body: '请确认今日仍有效的国策。');
     await state.markSent(reminder.dayKey);
     final nextReminder = NationalFocusReminderPlan.next(
       now: _now(),
@@ -496,7 +493,7 @@ class FocusNotificationService {
       await _androidNotifications.show(
         id: _nationalFocusReminderNotificationId,
         title: '国策待确认',
-        body: '请确认今天仍然有效的国策。',
+        body: '请确认今日仍有效的国策。',
         notificationDetails: _nationalFocusReminderDetails(),
         payload: 'national-focus-reminder:${reminder.dayKey}',
       );
@@ -542,7 +539,7 @@ class FocusNotificationService {
       await _androidNotifications.show(
         id: _nationalFocusReminderNotificationId,
         title: '国策待确认',
-        body: '请确认今天仍然有效的国策。',
+        body: '请确认今日仍有效的国策。',
         notificationDetails: _nationalFocusReminderDetails(),
         payload: 'national-focus-reminder:${reminder.dayKey}',
       );
@@ -571,7 +568,7 @@ class FocusNotificationService {
     await _androidNotifications.zonedSchedule(
       id: _nationalFocusReminderNotificationId,
       title: '国策待确认',
-      body: '请确认今天仍然有效的国策。',
+      body: '请确认今日仍有效的国策。',
       scheduledDate: timezone.TZDateTime.from(
         reminder.scheduledAt,
         _beijingLocation,
@@ -645,7 +642,7 @@ class FocusNotificationService {
         await _scheduleAndroidNotification(
           id: _appointmentTransitionNotificationId,
           title: '已进入专注',
-          body: '预约准备结束，${plan.taskTitle} 开始专注。',
+          body: '任务：${plan.taskTitle}',
           at: transitionAt,
           payload: plan.notificationPayload,
           details: _eventDetails(
@@ -668,7 +665,7 @@ class FocusNotificationService {
         await _scheduleAndroidNotification(
           id: _sessionEndNotificationId,
           title: '专注已结束',
-          body: '${plan.taskTitle} 的专注会话已结束。',
+          body: '任务：${plan.taskTitle}',
           at: plan.focusEndsAt,
           payload: plan.notificationPayload,
           details: _eventDetails(
@@ -703,7 +700,7 @@ class FocusNotificationService {
         await _scheduleAndroidNotification(
           id: _sessionEndNotificationId,
           title: '专注已结束',
-          body: '${plan.taskTitle} 的专注会话已结束。',
+          body: '任务：${plan.taskTitle}',
           at: plan.focusEndsAt,
           payload: plan.notificationPayload,
           details: _eventDetails(
@@ -828,7 +825,7 @@ class FocusNotificationService {
     android: AndroidNotificationDetails(
       _nationalFocusReminderChannelId,
       '国策待确认',
-      channelDescription: '有待今日确认的国策时提醒。',
+      channelDescription: '有国策待确认时提醒。',
       importance: Importance.high,
       priority: Priority.high,
       category: AndroidNotificationCategory.reminder,

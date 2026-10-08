@@ -83,7 +83,7 @@ void main() {
       now = DateTime.utc(2026, 9, 25, 20);
       await setupRepository.settleDueCheckpoints();
       await tester.pumpAndSettle();
-      final confirmationAction = find.text('确认今日继续有效').first;
+      final confirmationAction = find.text('确认').first;
       if (Platform.isWindows) {
         await tester.ensureVisible(confirmationAction);
         final button = tester.widget<FilledButton>(

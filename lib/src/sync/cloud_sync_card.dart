@@ -34,7 +34,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
       final direction = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('选择云同步方向'),
+          title: const Text('选择同步方式'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -59,7 +59,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
                   Text(_age(cloud.dataUpdatedAt, local.dataUpdatedAt)),
                 ],
                 const SizedBox(height: 12),
-                const Text('整份覆盖会丢弃另一份独有的业务记录。设备设置与登录状态保留。'),
+                const Text('整份覆盖会丢弃另一份独有的记录；设备设置和登录状态不变。'),
                 if (local.hasUnfinishedFlow) ...[
                   const SizedBox(height: 8),
                   const Text('本机有未结束的专注或预约，请先处理后再下载。'),
@@ -76,11 +76,11 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
               onPressed: cloud == null || local.hasUnfinishedFlow
                   ? null
                   : () => Navigator.pop(context, false),
-              child: const Text('云端覆盖本地'),
+              child: const Text('下载'),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: const Text('本地覆盖云端'),
+              child: const Text('上传'),
             ),
           ],
         ),
@@ -102,7 +102,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(context, true),
-              child: Text(direction ? '确认上传覆盖' : '确认下载覆盖'),
+              child: Text(direction ? '确认上传' : '确认下载'),
             ),
           ],
         ),
@@ -121,7 +121,9 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
         if (mounted) await widget.onDownloaded();
       }
       if (mounted) {
-        setState(() => _message = direction ? '已上传整份本地数据。' : '已用云端数据覆盖本地。');
+        setState(
+          () => _message = direction ? '上传完成，已覆盖云端数据。' : '下载完成，已覆盖本机数据。',
+        );
       }
     } catch (error) {
       if (mounted) {
@@ -142,10 +144,10 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
   }
 
   static String _age(DateTime cloud, DateTime local) => cloud.isAfter(local)
-      ? '云端数据时间较新，请自主选择保留哪一份。'
+      ? '云端数据时间较新，请选择要保留的数据。'
       : cloud.isBefore(local)
-      ? '本地数据时间较新，请自主选择保留哪一份。'
-      : '双方数据时间相同，内容仍可能不同，请自主选择。';
+      ? '本地数据时间较新，请选择要保留的数据。'
+      : '更新时间相同，内容仍可能不同，请选择要保留的数据。';
 
   @override
   Widget build(BuildContext context) => Card(
@@ -156,7 +158,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
         children: [
           Text('手动云同步', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          const Text('上传或下载整份业务数据，选择哪一份覆盖另一份。'),
+          const Text('上传或下载整份数据，所选数据会覆盖另一份。'),
           const SizedBox(height: 12),
           if (widget.repository == null)
             const Text('当前未配置云端连接。')

@@ -99,21 +99,21 @@ class _NationalFocusSummaryCardState extends State<NationalFocusSummaryCard> {
           if (cards.isEmpty)
             const Text('国策树尚无节点。')
           else if (confirmedCards.isEmpty)
-            const Text('所有国策节点的当前状态均待核对。')
+            const Text('国策状态均待核对。')
           else
-            Text('点亮 $litCount · 待今日确认 $pendingCount · 熄灭 $extinguishedCount'),
+            Text('点亮 $litCount · 确认 $pendingCount · 熄灭 $extinguishedCount'),
           if (pendingReview.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
-              '${pendingReview.length} 个节点待核对；争议状态不计入上方汇总。',
+              '${pendingReview.length} 个节点待核对，未计入上方汇总。',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             for (final card in pendingReview)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  '${card.name} · 上次已确认：'
-                  '${card.currentConsecutiveDays} 天连续记录',
+                  '${card.name} · 上次确认：连续 '
+                  '${card.currentConsecutiveDays} 天',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),

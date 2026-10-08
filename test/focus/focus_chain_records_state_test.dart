@@ -40,8 +40,8 @@ void main() {
     expect(find.text('链记录读取失败，请重试。'), findsNothing);
     expect(find.text('最佳 9 次'), findsOneWidget);
     expect(find.text('最佳 6 次'), findsOneWidget);
-    expect(find.text('7  次连续', findRichText: true), findsOneWidget);
-    expect(find.text('4  次连续', findRichText: true), findsOneWidget);
+    expect(find.text('连续 7 次', findRichText: true), findsOneWidget);
+    expect(find.text('连续 4 次', findRichText: true), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();

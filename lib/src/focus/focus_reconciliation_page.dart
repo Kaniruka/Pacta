@@ -203,7 +203,7 @@ class _NoPendingReviewsCard extends StatelessWidget {
                 children: [
                   Text('当前没有待核对的专注记录'),
                   SizedBox(height: 4),
-                  Text('已完成的核对结果会保留在下方。'),
+                  Text('核对结果会保留在下方。'),
                 ],
               ),
             ),
@@ -335,7 +335,7 @@ class _PendingReconciliationCardState
             const SizedBox(height: 4),
             Text(
               reconciliation.hasOverlappingSessions
-                  ? '比较各条记录，选择实际采用的一条；其他记录会保留并标记为重复。'
+                  ? '选择实际采用的记录；其他记录会保留并标记为重复。'
                   : '配置、专注结果和有效时间分别核对，来源记录会完整保留。',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
@@ -549,7 +549,7 @@ class _ResolvedReconciliationCard extends StatelessWidget {
                   [
                     entry.session.reviewDisposition ==
                             FocusRecordDisposition.duplicate
-                        ? '已标记重复 · 不计入进度、节点或专注链'
+                        ? '已标记重复 · 不计入进度、节点和专注链'
                         : '已采用 · ${_formatDuration(entry.session.effectiveSeconds)}有效时间',
                     if (entry.selectedConfigurationSource != null)
                       '配置来源：${_sourceContext(entry.selectedConfigurationSource!)}',

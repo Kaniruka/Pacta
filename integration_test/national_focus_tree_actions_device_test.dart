@@ -58,7 +58,7 @@ void main() {
       await tester.tap(find.text('添加子节点'));
       await tester.pumpAndSettle();
       expect(find.text('国策卡片库'), findsOneWidget);
-      await tester.tap(find.text('放入树画布'));
+      await tester.tap(find.text('放入国策树'));
       await tester.pumpAndSettle();
       final placed = await repository.getCard(child.id);
       expect(placed.parentId, parent.id);

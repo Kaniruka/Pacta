@@ -501,7 +501,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _isRegistering ? '使用管理员发放的资格创建你的访问凭据。' : '把注意力带回眼前的一步。',
+                      _isRegistering ? '使用注册资格创建密码。' : '把注意力带回眼前的一步。',
                       style: Theme.of(context).textTheme.bodyLarge,
                     ),
                     const SizedBox(height: 28),
@@ -538,7 +538,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                               _error = null;
                             }),
                       child: Text(
-                        _isRegistering ? '已有账号？返回登录' : '还没有资格？请联系管理员发放注册资格',
+                        _isRegistering ? '已有账号？返回登录' : '没有注册资格？联系管理员。',
                       ),
                     ),
                   ],
@@ -1067,6 +1067,7 @@ class _BoardContent extends StatelessWidget {
       else
         for (final goal in goals)
           _GoalCard(
+            key: ValueKey(goal.id),
             repository: repository,
             goal: goal,
             focusProgressSecondsByTask: metrics?.focusProgressSecondsByTask,
@@ -1294,7 +1295,7 @@ class _FocusTimeZonePickerDialogState
         .where((zone) => zone.toLowerCase().contains(query))
         .toList();
     return AlertDialog(
-      title: const Text('显示时区'),
+      title: const Text('时区'),
       content: SizedBox(
         width: 360,
         height: 440,
@@ -1317,7 +1318,7 @@ class _FocusTimeZonePickerDialogState
               onChanged: (_) => setState(() {}),
               decoration: const InputDecoration(
                 prefixIcon: Icon(Icons.search),
-                hintText: '搜索 IANA 时区',
+                hintText: '搜索时区',
               ),
             ),
             const SizedBox(height: 8),
@@ -1356,8 +1357,9 @@ class _FocusTimeZonePickerDialogState
   }
 }
 
-class _GoalCard extends StatelessWidget {
+class _GoalCard extends StatefulWidget {
   const _GoalCard({
+    super.key,
     required this.repository,
     required this.goal,
     required this.focusProgressSecondsByTask,
@@ -1369,7 +1371,15 @@ class _GoalCard extends StatelessWidget {
   final Map<String, int>? focusProgressSecondsByTask;
   final Set<String> pendingReviewTaskIds;
 
+  @override
+  State<_GoalCard> createState() => _GoalCardState();
+}
+
+class _GoalCardState extends State<_GoalCard> {
+  var _tasksExpanded = true;
+
   Future<void> _confirmDeleteGoal(BuildContext context) async {
+    final goal = widget.goal;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -1390,16 +1400,22 @@ class _GoalCard extends StatelessWidget {
         ],
       ),
     );
-    if (confirmed == true) await repository.deleteGoal(goal.id);
+    if (confirmed == true) await widget.repository.deleteGoal(goal.id);
   }
 
   @override
   Widget build(BuildContext context) {
+    final goal = widget.goal;
     final status = goal.tasks.isEmpty
         ? '暂无任务 · 未完成'
         : goal.isComplete
         ? '已完成'
         : '进行中';
+    final summary = goal.tasks.isEmpty
+        ? '${goal.classification.label} · $status'
+        : _tasksExpanded
+        ? '${goal.classification.label} · $status · ${goal.tasks.length} 项任务'
+        : '${goal.tasks.length} 项任务\n$status';
     return Card(
       margin: const EdgeInsets.only(top: 12),
       child: Padding(
@@ -1408,11 +1424,30 @@ class _GoalCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             ListTile(
+              isThreeLine: true,
               contentPadding: EdgeInsets.zero,
-              title: Text(goal.title),
-              subtitle: Text('${goal.classification.label} · $status'),
+              title: Text(
+                goal.title,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                summary,
+                style: Theme.of(context).textTheme.bodySmall,
+                maxLines: _tasksExpanded ? 1 : 2,
+                overflow: TextOverflow.ellipsis,
+              ),
               trailing: Wrap(
                 children: [
+                  if (goal.tasks.isNotEmpty)
+                    IconButton(
+                      tooltip: _tasksExpanded ? '收起任务' : '展开任务',
+                      onPressed: () =>
+                          setState(() => _tasksExpanded = !_tasksExpanded),
+                      icon: Icon(
+                        _tasksExpanded ? Icons.expand_less : Icons.expand_more,
+                      ),
+                    ),
                   IconButton(
                     tooltip: '编辑目标',
                     onPressed: () async {
@@ -1421,7 +1456,7 @@ class _GoalCard extends StatelessWidget {
                         initial: goal,
                       );
                       if (draft != null) {
-                        await repository.updateGoal(goal.id, draft);
+                        await widget.repository.updateGoal(goal.id, draft);
                       }
                     },
                     icon: const Icon(Icons.edit_outlined),
@@ -1439,17 +1474,19 @@ class _GoalCard extends StatelessWidget {
                 padding: EdgeInsets.only(bottom: 8),
                 child: Text('暂无任务，先添加一个可执行的下一步。'),
               )
-            else
+            else if (_tasksExpanded)
               for (final task in goal.tasks)
                 _TaskTile(
-                  repository: repository,
-                  task: focusProgressSecondsByTask == null
+                  repository: widget.repository,
+                  task: widget.focusProgressSecondsByTask == null
                       ? task
                       : task.copyWith(
                           focusProgressSeconds:
-                              focusProgressSecondsByTask![task.id] ?? 0,
+                              widget.focusProgressSecondsByTask![task.id] ?? 0,
                         ),
-                  hasPendingReview: pendingReviewTaskIds.contains(task.id),
+                  hasPendingReview: widget.pendingReviewTaskIds.contains(
+                    task.id,
+                  ),
                 ),
             Align(
               alignment: Alignment.centerLeft,
@@ -1457,7 +1494,7 @@ class _GoalCard extends StatelessWidget {
                 onPressed: () async {
                   final draft = await _showTaskDialog(context, goal: goal);
                   if (draft != null) {
-                    await repository.createTask(goal.id, draft);
+                    await widget.repository.createTask(goal.id, draft);
                   }
                 },
                 icon: const Icon(Icons.add_task),
@@ -1488,6 +1525,7 @@ class _TaskTile extends ConsumerWidget {
         ? null
         : '截止 ${_formatDateTime(task.deadline!.toLocal())}';
     return ListTile(
+      isThreeLine: true,
       contentPadding: EdgeInsets.zero,
       leading: Checkbox(
         value: task.isComplete,
@@ -1499,6 +1537,8 @@ class _TaskTile extends ConsumerWidget {
       ),
       title: Text(
         task.title,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
         style: task.isComplete
             ? const TextStyle(decoration: TextDecoration.lineThrough)
             : null,
@@ -1512,6 +1552,8 @@ class _TaskTile extends ConsumerWidget {
           if (hasPendingReview) '待核对（争议部分暂不计入专注统计）',
           ?deadline,
         ].join(' · '),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
       ),
       trailing: IconButton(
         tooltip: '开始专注',
@@ -2871,7 +2913,7 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
           const SizedBox(height: 14),
           DropdownButtonFormField<FocusChainMode>(
             initialValue: _mode,
-            decoration: const InputDecoration(labelText: '本次专注模式'),
+            decoration: const InputDecoration(labelText: '专注模式'),
             items: [
               for (final mode in FocusChainMode.values)
                 DropdownMenuItem(value: mode, child: Text(mode.label)),
@@ -3347,9 +3389,7 @@ class _AppointmentPreparationPageState
                         const SizedBox(height: 12),
                         DropdownButtonFormField<FocusChainMode>(
                           initialValue: _mode,
-                          decoration: const InputDecoration(
-                            labelText: '本次专注模式',
-                          ),
+                          decoration: const InputDecoration(labelText: '专注模式'),
                           items: [
                             for (final mode in FocusChainMode.values)
                               DropdownMenuItem(
@@ -3755,7 +3795,7 @@ class _MyPageState extends ConsumerState<MyPage> {
           child: ListTile(
             leading: const CircleAvatar(child: Icon(Icons.person_outline)),
             title: Text(repository.currentUserIdentifier ?? '当前用户'),
-            subtitle: const Text('个人数据仅属于你'),
+            subtitle: const Text('数据仅供你使用'),
           ),
         ),
         const SizedBox(height: 12),
@@ -3777,7 +3817,7 @@ class _MyPageState extends ConsumerState<MyPage> {
             leading: const Icon(Icons.calendar_month_outlined),
             title: const Text('日历块'),
             subtitle: Text(
-              Platform.isAndroid ? '选择只读导入的系统日历来源' : '查看从 Android 同步的规划参考',
+              Platform.isAndroid ? '选择只读导入的系统日历来源' : '查看 Android 导入的日历',
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push(

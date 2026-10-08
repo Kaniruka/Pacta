@@ -101,11 +101,11 @@ void main() {
     await expectFirst('点亮');
     await repository.lightCard(card.id);
     await pumpNationalFocusUi(tester);
-    await expectFirst('主动熄灭');
+    await expectFirst('熄灭');
     now = DateTime.utc(2026, 9, 25, 20);
     await repository.settleDueCheckpoints();
     await pumpNationalFocusUi(tester);
-    await expectFirst('确认今日继续有效');
+    await expectFirst('确认');
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
@@ -501,7 +501,7 @@ void main() {
       ),
     );
     await pumpNationalFocusUi(tester);
-    expect(find.text('今日确认 (0)'), findsOneWidget);
+    expect(find.text('全部确认 (0)'), findsOneWidget);
     await openRecords(tester);
     expect(find.text('下次检查点：2026-09-26 05:00 · Asia/Tokyo'), findsOneWidget);
     await tester.pageBack();
@@ -525,15 +525,15 @@ void main() {
     now = DateTime.utc(2026, 9, 25, 20);
     await repository.settleDueCheckpoints();
     await pumpNationalFocusUi(tester);
-    expect(find.text('今日确认 (1)'), findsOneWidget);
-    await tester.tap(find.text('今日确认 (1)'));
+    expect(find.text('全部确认 (1)'), findsOneWidget);
+    await tester.tap(find.text('全部确认 (1)'));
     await pumpNationalFocusUi(tester);
     expect(
       (await repository.getCard(card.id)).state,
       NationalFocusCardState.lit,
     );
     await openNode(tester, card);
-    await tapAction(tester, '主动熄灭');
+    await tapAction(tester, '熄灭');
     await pumpNationalFocusUi(tester);
     expect(find.text('失败原因（可选）'), findsOneWidget);
     await tester.tap(find.text('暂不填写'));
@@ -565,8 +565,8 @@ void main() {
     );
     await pumpNationalFocusUi(tester);
     await openNode(tester, card);
-    expect(find.text('确认今日继续有效'), findsOneWidget);
-    await tapAction(tester, '主动熄灭');
+    expect(find.text('确认'), findsOneWidget);
+    await tapAction(tester, '熄灭');
     await pumpNationalFocusUi(tester);
     await tester.tap(find.text('暂不填写'));
     await pumpNationalFocusUi(tester);
@@ -627,7 +627,7 @@ void main() {
     );
     await pumpNationalFocusUi(tester);
     await openNode(tester, parent);
-    await tapAction(tester, '主动熄灭');
+    await tapAction(tester, '熄灭');
     await pumpNationalFocusUi(tester);
     expect(find.textContaining('也会熄灭 1 个后代'), findsOneWidget);
     await tester.tap(find.text('暂不填写'));
@@ -686,7 +686,7 @@ void main() {
     await openNode(tester, parent);
     await tapAction(tester, '添加子节点');
     await pumpNationalFocusUi(tester);
-    await tester.tap(find.text('放入树画布'));
+    await tester.tap(find.text('放入国策树'));
     await pumpNationalFocusUi(tester);
     final placed = await repository.getCard(existing.id);
     expect(placed.parentId, parent.id);
@@ -788,12 +788,12 @@ void main() {
     await openNode(tester, parent);
     await tapAction(tester, '添加子节点');
     await tester.pumpAndSettle();
-    await tester.tap(find.text('放入树画布'));
+    await tester.tap(find.text('放入国策树'));
     await pumpNationalFocusUi(tester);
     final placed = await repository.getCard(child.id);
     expect(placed.parentId, parent.id);
     expect(placed.state, NationalFocusCardState.pendingTodayConfirmation);
-    expect(find.textContaining('请确认今日继续有效'), findsOneWidget);
+    expect(find.textContaining('请确认。'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
@@ -970,7 +970,7 @@ void main() {
     await pumpNationalFocusUi(tester);
     await tester.tap(find.byTooltip('卡片库'));
     await pumpNationalFocusUi(tester);
-    await tester.tap(find.text('放入树画布'));
+    await tester.tap(find.text('放入国策树'));
     await pumpNationalFocusUi(tester);
     final node = find.byKey(
       const ValueKey('national-focus-node-pending-parent'),

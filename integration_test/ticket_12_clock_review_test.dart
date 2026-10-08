@@ -94,7 +94,7 @@ void main() {
       await tester.tap(find.text('采用连续计时并核对顺序'));
       await _pumpUi(tester);
 
-      expect(find.text('当前没有待核对的设备时间记录'), findsOneWidget);
+      expect(find.text('没有待核对的设备时间记录'), findsOneWidget);
       expect(await focusRepository.getClockReviewCases(), isEmpty);
       final reviewed = (await focusRepository.getSession(started.id))!;
       expect(reviewed.status, FocusSessionStatus.active);
@@ -134,7 +134,7 @@ void main() {
       expect(find.text('跳变前已确认 3分1秒'), findsOneWidget);
       await tester.tap(find.text('排除这段不确定时间'));
       await _pumpUi(tester);
-      expect(find.text('当前没有待核对的设备时间记录'), findsOneWidget);
+      expect(find.text('没有待核对的设备时间记录'), findsOneWidget);
       expect(await focusRepository.getClockReviewCases(), isEmpty);
       final backwardReviewed = (await focusRepository.getSession(started.id))!;
       expect(backwardReviewed.status, FocusSessionStatus.active);

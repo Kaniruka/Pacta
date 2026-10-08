@@ -38,11 +38,11 @@ void main() {
     expect(find.text('云端暂无数据，可首次上传。'), findsOneWidget);
     expect(
       tester
-          .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '云端覆盖本地'))
+          .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '下载'))
           .onPressed,
       isNull,
     );
-    await tester.tap(find.text('本地覆盖云端'));
+    await tester.tap(find.text('上传'));
     await tester.pumpAndSettle();
     expect(find.text('上传并覆盖云端？'), findsOneWidget);
     await tester.tap(find.text('取消'));
@@ -109,11 +109,11 @@ void main() {
     await tester.tap(find.text('查看云端并选择方向'));
     await tester.pumpAndSettle();
     expect(find.text('云端来源：家里的电脑'), findsOneWidget);
-    expect(find.text('本地数据时间较新，请自主选择保留哪一份。'), findsOneWidget);
-    await tester.tap(find.text('云端覆盖本地'));
+    expect(find.text('本地数据时间较新，请选择要保留的数据。'), findsOneWidget);
+    await tester.tap(find.text('下载'));
     await tester.pumpAndSettle();
     expect(find.text('下载并覆盖本地？'), findsOneWidget);
-    await tester.tap(find.text('确认下载覆盖'));
+    await tester.tap(find.text('确认下载'));
     await tester.pumpAndSettle();
     expect((await phoneTasks.getGoals()).single.title, '电脑记录');
     expect(refreshed, isTrue);
@@ -166,8 +166,8 @@ void main() {
     await tester.tap(find.text('查看云端并选择方向'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('云端覆盖本地'), findsOneWidget);
-    await tester.tap(find.text('云端覆盖本地'));
+    expect(find.text('下载'), findsOneWidget);
+    await tester.tap(find.text('下载'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text('下载并覆盖本地？'), findsOneWidget);

@@ -233,7 +233,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('日历权限尚未开启'), findsOneWidget);
-    expect(find.textContaining('任务和专注功能'), findsOneWidget);
+    expect(find.textContaining('其他功能'), findsOneWidget);
     expect(find.text('允许并选择日历'), findsOneWidget);
   });
 
@@ -322,7 +322,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('权限撤销日历'), findsNothing);
-    expect(find.textContaining('日历来源已从本机移除'), findsOneWidget);
+    expect(find.textContaining('日历来源已移除'), findsOneWidget);
     expect((await remote.pull(userId: 'user-a')).events, isEmpty);
   });
 }

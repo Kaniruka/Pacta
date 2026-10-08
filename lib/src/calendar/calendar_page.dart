@@ -49,7 +49,7 @@ class CalendarAgendaCard extends StatelessWidget {
                 else if ((agenda?.blocks ?? const []).isEmpty)
                   const Padding(
                     padding: EdgeInsets.fromLTRB(2, 4, 2, 12),
-                    child: Text('今天没有已导入的日历安排。'),
+                    child: Text('今天没有导入的安排。'),
                   )
                 else ...[
                   Padding(
@@ -155,7 +155,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _message = '日历状态暂时无法读取。目标、任务和专注功能仍可使用。';
+        _message = '日历状态暂时无法读取，其他功能仍可使用。';
       });
     }
   }
@@ -175,14 +175,14 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       if (state!.permission == CalendarPermissionState.unknown) {
         setState(() {
           _working = false;
-          _message = '日历权限状态暂时无法确认。已有缓存已保留并标记未更新。';
+          _message = '无法确认日历权限状态。已保留缓存并标记为未更新。';
         });
         return;
       }
       if (state.permission != CalendarPermissionState.granted) {
         setState(() {
           _working = false;
-          _message = '尚未获得读取日历权限。你仍可照常使用目标、任务和专注功能。';
+          _message = '未获得日历读取权限，其他功能仍可使用。';
         });
         return;
       }
@@ -195,7 +195,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
           _working = false;
           _message = state!.availableSources.isEmpty
               ? '设备中没有可读取的系统日历。'
-              : '当前设备上的日历来源均已导入。';
+              : '日历来源均已导入。';
         });
         return;
       }
@@ -215,13 +215,13 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
         _working = false;
         _message = result.isStale
             ? '本机日历来源暂未更新，已有缓存已保留。'
-            : '已导入 ${result.importedOccurrences} 个日历发生次。跨设备共享请前往“我的”上传或下载。';
+            : '已导入 ${result.importedOccurrences} 个日历活动。';
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _working = false;
-        _message = '日历读取未完成。现有本地数据和其他功能仍可使用。';
+        _message = '日历读取未完成，其他功能仍可使用。';
       });
     }
   }
@@ -304,9 +304,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       setState(() {
         _state = state;
         _working = false;
-        _message = state.hasPendingUpdates
-            ? '部分本机日历尚未更新，已有缓存已保留。'
-            : '本机日历已刷新。跨设备共享请前往“我的”上传或下载。';
+        _message = state.hasPendingUpdates ? '部分日历尚未更新，已保留缓存。' : '日历已刷新。';
       });
     } catch (_) {
       if (!mounted) return;
@@ -314,7 +312,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       setState(() {
         _state = state;
         _working = false;
-        _message = '本机日历暂时无法更新，已有缓存已保留。';
+        _message = '日历暂时无法更新，已保留缓存。';
       });
     }
   }
@@ -322,14 +320,14 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
   Future<void> _removeSource(CalendarSource source) => _removeSources(
     {source.id},
     title: '取消导入日历？',
-    content: '将从本机移除“${source.displayName}”及其日历块。跨设备共享请前往“我的”上传或下载。',
+    content: '将从本机移除“${source.displayName}”及其日历块。',
     confirmLabel: '取消导入',
   );
 
   Future<void> _confirmPermissionRevocation() => _removeSources(
     _state!.importedSourceIds,
     title: '移除所有已导入日历？',
-    content: '设备日历权限已关闭。确认后会从本机移除缓存的日历来源和日历块。跨设备共享请前往“我的”上传或下载。目标、任务和历史记录不受影响。',
+    content: '设备日历权限已关闭。确认后会从本机移除缓存的日历来源和日历块；目标、任务和历史记录不受影响。',
     confirmLabel: '确认移除',
   );
 
@@ -369,9 +367,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       setState(() {
         _state = state;
         _working = false;
-        _message = state.hasPendingUpdates
-            ? '已在本机移除来源；部分日历缓存仍待刷新。'
-            : '日历来源已从本机移除。跨设备共享请前往“我的”上传或下载。';
+        _message = state.hasPendingUpdates ? '已移除来源；部分缓存仍待刷新。' : '日历来源已移除。';
       });
     } catch (_) {
       final state = await widget.repository.loadImportState();
@@ -379,7 +375,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       setState(() {
         _state = state;
         _working = false;
-        _message = '本机移除未完成，请重试。';
+        _message = '移除未完成，请重试。';
       });
     }
   }
@@ -402,7 +398,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
                   child: Padding(
                     padding: EdgeInsets.all(16),
                     child: Text(
-                      '日历仅作为只读规划参考。全天活动保留原始日期；空闲活动不计入占用，日历安排不会限制专注启动。跨设备共享日历数据请前往“我的”上传或下载。',
+                      '日历只作规划参考。全天活动保留原日期；空闲活动不计入占用，也不限制开始专注。需要在设备间同步日历数据时，前往“我的”上传或下载。',
                     ),
                   ),
                 ),
@@ -415,18 +411,18 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
                     child: ListTile(
                       leading: Icon(Icons.sync_outlined),
                       title: Text('本机已保存的日历块'),
-                      subtitle: Text('跨设备上传或下载完整数据请前往“我的”。'),
+                      subtitle: Text('在设备间同步数据，请前往“我的”上传或下载。'),
                     ),
                   ),
                 if (state?.hasPendingUpdates == true)
                   Card(
                     child: Semantics(
                       liveRegion: true,
-                      label: '部分日历数据尚未更新，已有缓存已保留。',
+                      label: '部分日历数据尚未更新，已保留缓存。',
                       child: const ListTile(
                         leading: Icon(Icons.sync_problem_outlined),
                         title: Text('日历数据未更新'),
-                        subtitle: Text('已有缓存已保留；检查本机日历权限后可以重试刷新。'),
+                        subtitle: Text('已保留缓存；检查日历权限后可重试。'),
                       ),
                     ),
                   ),
@@ -507,7 +503,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
           title: Text(hasStaleSource ? '日历来源未更新' : '已允许读取日历'),
           subtitle: Text(
             hasStaleSource
-                ? '本机日历读取暂未成功，Pacta 已保留已有缓存。'
+                ? '日历读取未成功，Pacta 已保留缓存。'
                 : 'Pacta 只读取你选择的日历，不会修改源日历。',
           ),
         ),
@@ -518,7 +514,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
         child: ListTile(
           leading: Icon(Icons.cloud_off_outlined),
           title: Text('日历权限状态暂不可用'),
-          subtitle: Text('已保留已有缓存并标记未更新。确认权限状态前不会删除日历块。'),
+          subtitle: Text('已保留缓存并标记未更新。确认权限状态前不会删除日历块。'),
         ),
       );
     }
@@ -531,7 +527,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
             child: ListTile(
               leading: Icon(Icons.info_outline),
               title: Text('设备日历权限已关闭'),
-              subtitle: Text('已保留缓存并标记未更新。只有你确认后才会移除已导入来源。'),
+              subtitle: Text('已保留缓存并标记未更新。确认后才会移除已导入来源。'),
             ),
           ),
           const SizedBox(height: 8),
@@ -547,7 +543,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       child: ListTile(
         leading: Icon(Icons.info_outline),
         title: Text('日历权限尚未开启'),
-        subtitle: Text('允许后可选择要读取的日历。拒绝权限不影响目标、任务和专注功能。'),
+        subtitle: Text('允许后可选择要读取的日历。拒绝权限不影响其他功能。'),
       ),
     );
   }

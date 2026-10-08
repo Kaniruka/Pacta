@@ -174,11 +174,15 @@ class _ChainSummaryCard extends StatelessWidget {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Semantics(
-                  label: '$title当前连续 $current 次',
+                  label: '$title连续 $current 次',
                   excludeSemantics: true,
                   child: Text.rich(
                     TextSpan(
                       children: [
+                        TextSpan(
+                          text: '连续 ',
+                          style: theme.textTheme.bodyMedium,
+                        ),
                         TextSpan(
                           text: '$current',
                           style: theme.textTheme.headlineMedium?.copyWith(
@@ -186,10 +190,7 @@ class _ChainSummaryCard extends StatelessWidget {
                             color: colors.onSurface,
                           ),
                         ),
-                        TextSpan(
-                          text: '  次连续',
-                          style: theme.textTheme.bodyMedium,
-                        ),
+                        TextSpan(text: ' 次', style: theme.textTheme.bodyMedium),
                       ],
                     ),
                   ),
