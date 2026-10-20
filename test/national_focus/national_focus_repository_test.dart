@@ -732,6 +732,32 @@ void main() {
     expect(repeatedRead.currentConsecutiveDays, 1);
   });
 
+  test('并发读取与定时结算同一检查点不会把新待确认节点判为失败', () async {
+    final parent = await repository.createCard(draft('起床后', '整理床铺'));
+    final child = await repository.createCard(draft('早餐后', '阅读'));
+    await repository.placeCard(cardId: parent.id, parentId: null);
+    await repository.placeCard(cardId: child.id, parentId: parent.id);
+    await repository.lightCard(parent.id);
+    await repository.lightCard(child.id);
+
+    now = DateTime.utc(2026, 9, 25, 20);
+    await Future.wait([
+      repository.settleDueCheckpoints(),
+      repository.getTreeCards(),
+      repository.getLibraryCards(),
+      repository.getFailures(),
+    ]);
+
+    final cards = await repository.getTreeCards();
+    expect(cards, hasLength(2));
+    for (final card in cards) {
+      expect(card.state, NationalFocusCardState.pendingTodayConfirmation);
+      expect(card.successfulDays, 1);
+      expect(card.currentConsecutiveDays, 1);
+    }
+    expect(await repository.getFailures(), isEmpty);
+  });
+
   test('一键确认只处理待今日确认节点并保持已经点亮与真正熄灭节点原样', () async {
     final first = await repository.createCard(draft('起床后', '整理床铺'));
     final second = await repository.createCard(draft('到工位后', '写下第一步'));
