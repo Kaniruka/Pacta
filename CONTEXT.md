@@ -1,8 +1,16 @@
 # Pacta Context
 
-Pacta is an open-source, cross-platform self-regulation app. It combines short, executable focus commitments with a longer-term progression model so that users can turn deadlines and unfinished work into a concrete next action.
+Pacta is an open-source, cross-platform self-regulation app that supports voluntary commitments and user-directed reflection. Its focus and progression concepts adapt CTDP and RSIP to convenient assistance, with the user judging real-world compliance.
 
 ## Core concepts
+
+**CTDP (链式时延协议)**:
+The source author's approach combining a commitment signal, permissions that remain precedents, and delayed entry into focused work. Pacta's Focus Chains adapt this approach rather than reproduce all of its rules and extension mechanisms.
+_Avoid_: Pomodoro, complete Pacta protocol
+
+**RSIP (递归稳态迭代协议)**:
+The source author's approach to finding a sustainable sequence of small behavioral interventions through trial, backtracking, and retained familiarity. Pacta's National Focus Tree adapts this approach; it is not a Goal hierarchy or a daily task checklist.
+_Avoid_: Habit check-in, complete Pacta protocol
 
 **User**:
 An individual person whose tasks, focus history, chains, and focus-tree progress are private to that person.
@@ -109,8 +117,8 @@ A National Focus Card occupying one tree position, optionally with child cards, 
 _Avoid_: Focus Node, Task, badge
 
 **Internalization Progress (内化进度)**:
-A persistent card-level indication of familiarity derived from cumulative successful National Focus Days, separate from current/historical consecutive records and Strengthening Levels. It survives failure and is not manually editable; successful days are counted at National Focus Checkpoints rather than per lighting action.
-_Avoid_: Current streak, Task progress, completion percentage
+A persistent card-level display proxy for familiarity based on cumulative successful National Focus Days, separate from current/historical consecutive records and Strengthening Levels; it is not a measurement of real-world habit formation. It survives failure and is not manually editable; successful days are counted at National Focus Checkpoints rather than per lighting action.
+_Avoid_: Current streak, Task progress, completion percentage, measured habit-formation percentage
 
 **National Focus Strengthening Level (国策强化等级)**:
 A user-defined stricter set of requirements for a National Focus Card, expressed through concrete Trigger Condition and/or Action content; for example, changing a trigger from before 02:00 to before 01:00. A card retains its base requirements and supports up to five user-created strengthening levels, each with its own concrete requirements; the base is not counted toward this limit. Levels are defined independently of Internalization Progress and are not automatically earned upgrades.
