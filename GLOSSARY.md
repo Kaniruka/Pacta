@@ -1,4 +1,4 @@
-# Pacta Context
+# Pacta Glossary
 
 Pacta is an open-source, cross-platform self-regulation app that supports voluntary commitments and user-directed reflection. Its focus and progression concepts adapt CTDP and RSIP to convenient assistance, with the user judging real-world compliance.
 

@@ -20,7 +20,7 @@ Pacta 是基于 Flutter 的自我调节应用，用任务、专注链和国策�
 
 5. 提交代码前运行 `flutter analyze` 和 `flutter test`。涉及平台权限、日历或通知的改动，还应在相应设备上验证。
 
-项目术语见 [CONTEXT.md](CONTEXT.md)，行为与验收依据见[核心规格](docs/spec-focus-loop-and-core-shell.md)和[验收矩阵](docs/acceptance-matrix-20260914.md)，架构决定见 [ADR](docs/adr/)。需求与实施记录使用 GitHub Issues。
+项目术语见 [GLOSSARY.md](GLOSSARY.md)，行为与验收依据见[核心规格](docs/spec-focus-loop-and-core-shell.md)和[验收矩阵](docs/acceptance-matrix-20260914.md)，架构决定见 [ADR](docs/adr/)。需求与实施记录使用 GitHub Issues。
 
 ## 国策树交互与预览
 

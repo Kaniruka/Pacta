@@ -1,6 +1,6 @@
 # 手动整份云同步验证 — 2026-10-04
 
-决策依据：[ADR 0005](adr/0005-manual-whole-data-cloud-sync.md)。术语已更新到 `CONTEXT.md`；核心规格、产品设计及验收矩阵已更新。
+决策依据：[ADR 0005](adr/0005-manual-whole-data-cloud-sync.md)。术语已更新到 `GLOSSARY.md`；核心规格、产品设计及验收矩阵已更新。
 
 ## 已完成的行为
 

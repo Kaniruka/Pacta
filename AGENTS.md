@@ -4,7 +4,7 @@
 
 ## 先读取与任务有关的依据
 
-- 涉及领域概念、业务行为或数据边界时，先读 `CONTEXT.md` 和 `docs/adr/` 中相关的已接受决策，沿用其中的术语；具体行为与验收依据见 `docs/spec-focus-loop-and-core-shell.md`、`docs/acceptance-matrix-20260914.md`。若实现需求与 ADR 冲突，先明确指出冲突。领域文档的使用约定见 `docs/agents/domain.md`。
+- 涉及领域概念、业务行为或数据边界时，先读 `GLOSSARY.md` 和 `docs/adr/` 中相关的已接受决策，沿用其中的术语；具体行为与验收依据见 `docs/spec-focus-loop-and-core-shell.md`、`docs/acceptance-matrix-20260914.md`。若实现需求与 ADR 冲突，先明确指出冲突。领域文档的使用约定见 `docs/agents/domain.md`。
 - 涉及产品界面时，参考 `docs/product-design.md` 及 ADR 0004；涉及技术栈、平台范围时，参考 ADR 0003；涉及用户隔离、注册或管理操作时，参考 ADR 0001；涉及任务与设备日历时，参考 ADR 0002。
 - 涉及本地环境、云端连接或测试凭据时，参考 `docs/development-environment.md`；涉及 Supabase 部署与管理函数时，参考 `supabase/README.md`。
 - 需求和任务以 GitHub Issues 为跟踪入口，用 `gh` 读取和更新；操作约定见 `docs/agents/issue-tracker.md`。分诊时使用 `needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`，含义见 `docs/agents/triage-labels.md`。

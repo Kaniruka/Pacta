@@ -8,7 +8,7 @@
 
 ## 依据
 
-已阅读 MISSION.md、CONTEXT.md、docs/product-design.md、ADR 0004，以及 apple-design 的 accessibility、layout、typography、color、designing-for-ios、tab-bars、toolbars、buttons、lists-and-tables、scroll-views 和 cross-platform 引用。Apple 平台专属菜单栏、玻璃材质和字号不机械套用到 Android。
+已阅读 MISSION.md、GLOSSARY.md、docs/product-design.md、ADR 0004，以及 apple-design 的 accessibility、layout、typography、color、designing-for-ios、tab-bars、toolbars、buttons、lists-and-tables、scroll-views 和 cross-platform 引用。Apple 平台专属菜单栏、玻璃材质和字号不机械套用到 Android。
 
 - `accessibility.md › Vision`：“Support larger text sizes.” 布局需要承受至少 200% 字号。
 - `accessibility.md › Vision`：“Convey information with more than color alone.” 节点状态保留明确文字与图标。

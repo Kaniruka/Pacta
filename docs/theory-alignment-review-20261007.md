@@ -6,7 +6,7 @@ Pacta 已接住两套方法的主要结构：专注承诺与延迟启动、独�
 
 用户本次明确：app 应宽松、辅助用户，不起强约束作用。这个定位与 product-design.md 的 User agency 原则一致。本文将“理论差异”“现行范围取舍”“体验风险”分开，不把原文规则直接升级为需求，也不把有意简化报告成实现 bug。
 
-依据为 [原 PDF](references/如何提升自制力.pdf)、CONTEXT.md、product-design.md、核心规格、验收矩阵、requirements-decisions 和 ADR 0001–0005；抽查了专注仓库、国策仓库、模型和界面。页码均为 PDF 页序。本次为文档与静态代码核对，没有运行 app 或平台验收，也未对作者理论的科学有效性做外部验证。
+依据为 [原 PDF](references/如何提升自制力.pdf)、GLOSSARY.md、product-design.md、核心规格、验收矩阵、requirements-decisions 和 ADR 0001–0005；抽查了专注仓库、国策仓库、模型和界面。页码均为 PDF 页序。本次为文档与静态代码核对，没有运行 app 或平台验收，也未对作者理论的科学有效性做外部验证。
 
 ## 关键差异与缺失
 
