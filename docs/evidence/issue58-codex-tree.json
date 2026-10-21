@@ -1,0 +1,454 @@
+{
+  "client": "Installed Codex CLI/app-server 0.163.0-alpha.10.2 (WSL Linux binary)",
+  "consent": "isolated authenticated App inspect/approve RPC; native App consent separately tested Android and Windows",
+  "tree": {
+    "metadata": {
+      "contract_version": 1,
+      "status": "available",
+      "revision": 2,
+      "source_device": {
+        "id": "issue58-owner-device",
+        "name": "Issue 58 Owner Probe"
+      },
+      "uploaded_at": "2026-10-21T17:40:08.276501+00:00",
+      "data_updated_at": "2026-10-21T00:00:00+00:00",
+      "freshness": "latest_manual_upload"
+    },
+    "cards": [
+      {
+        "id": "nf58-owner-child",
+        "name": "Identity Collision",
+        "trigger_condition": "Owner trigger condition",
+        "action": "Owner base action",
+        "scope": null,
+        "exception_notes": null,
+        "is_in_tree": true,
+        "parent_id": "nf58-owner-tree",
+        "state": "pending_today_confirmation",
+        "successful_days": 2,
+        "current_consecutive_days": 2,
+        "best_consecutive_days": 4,
+        "maintenance_cycle_started": false,
+        "failure_reason": null,
+        "cascade_source_card_id": null,
+        "cascade_prior_state": null,
+        "active_strengthening_level": null,
+        "internalization_progress_percent": 3.2783899517994097,
+        "effective_requirements": {
+          "strengthening_level_number": null,
+          "trigger_condition": "Owner trigger condition",
+          "action": "Owner base action",
+          "scope": null,
+          "exception_notes": null
+        },
+        "current_requirement_version": {
+          "id": "owner-child-version-1",
+          "version_number": 1,
+          "strengthening_level_number": null,
+          "effective_trigger_condition": "Owner trigger condition",
+          "effective_action": "Owner base action",
+          "scope": null,
+          "exception_notes": null,
+          "effective_from": "2026-10-14T17:46:40.000Z",
+          "effective_until": null
+        },
+        "strengthening_levels": [],
+        "requirement_versions": [
+          {
+            "id": "owner-child-version-1",
+            "version_number": 1,
+            "strengthening_level_number": null,
+            "effective_trigger_condition": "Owner trigger condition",
+            "effective_action": "Owner base action",
+            "scope": null,
+            "exception_notes": null,
+            "effective_from": "2026-10-14T17:46:40.000Z",
+            "effective_until": null
+          }
+        ]
+      },
+      {
+        "id": "nf58-owner-tree",
+        "name": "Identity Collision",
+        "trigger_condition": "Owner trigger condition",
+        "action": "Owner base action",
+        "scope": null,
+        "exception_notes": null,
+        "is_in_tree": true,
+        "parent_id": null,
+        "state": "lit",
+        "successful_days": 7,
+        "current_consecutive_days": 2,
+        "best_consecutive_days": 4,
+        "maintenance_cycle_started": false,
+        "failure_reason": null,
+        "cascade_source_card_id": null,
+        "cascade_prior_state": null,
+        "active_strengthening_level": 2,
+        "internalization_progress_percent": 11.011822901197622,
+        "effective_requirements": {
+          "strengthening_level_number": 2,
+          "trigger_condition": "Owner strengthened trigger",
+          "action": "Owner strengthened action",
+          "scope": null,
+          "exception_notes": null
+        },
+        "current_requirement_version": {
+          "id": "owner-tree-version-2",
+          "version_number": 2,
+          "strengthening_level_number": 2,
+          "effective_trigger_condition": "Owner strengthened trigger",
+          "effective_action": "Owner strengthened action",
+          "scope": null,
+          "exception_notes": null,
+          "effective_from": "2026-10-20T12:40:00.000Z",
+          "effective_until": null
+        },
+        "strengthening_levels": [
+          {
+            "level_number": 1,
+            "trigger_condition_override": "Owner level one trigger",
+            "action_override": "Owner level one action"
+          },
+          {
+            "level_number": 2,
+            "trigger_condition_override": "Owner strengthened trigger",
+            "action_override": "Owner strengthened action"
+          }
+        ],
+        "requirement_versions": [
+          {
+            "id": "owner-tree-version-1",
+            "version_number": 1,
+            "strengthening_level_number": null,
+            "effective_trigger_condition": "Owner trigger condition",
+            "effective_action": "Owner base action",
+            "scope": null,
+            "exception_notes": null,
+            "effective_from": "2026-10-14T17:46:40.000Z",
+            "effective_until": "2026-10-20T12:40:00.000Z"
+          },
+          {
+            "id": "owner-tree-version-2",
+            "version_number": 2,
+            "strengthening_level_number": 2,
+            "effective_trigger_condition": "Owner strengthened trigger",
+            "effective_action": "Owner strengthened action",
+            "scope": null,
+            "exception_notes": null,
+            "effective_from": "2026-10-20T12:40:00.000Z",
+            "effective_until": null
+          }
+        ]
+      }
+    ],
+    "maintenance": {
+      "last_settled_checkpoint_at": "2026-10-20T12:40:00.000Z"
+    }
+  },
+  "library": {
+    "metadata": {
+      "contract_version": 1,
+      "status": "available",
+      "revision": 2,
+      "source_device": {
+        "id": "issue58-owner-device",
+        "name": "Issue 58 Owner Probe"
+      },
+      "uploaded_at": "2026-10-21T17:40:08.276501+00:00",
+      "data_updated_at": "2026-10-21T00:00:00+00:00",
+      "freshness": "latest_manual_upload"
+    },
+    "cards": [
+      {
+        "id": "nf58-owner-library",
+        "name": "Identity Collision",
+        "trigger_condition": "Owner library trigger",
+        "action": "Owner library action",
+        "scope": null,
+        "exception_notes": null,
+        "is_in_tree": false,
+        "parent_id": null,
+        "state": "extinguished",
+        "successful_days": 7,
+        "current_consecutive_days": 2,
+        "best_consecutive_days": 4,
+        "maintenance_cycle_started": false,
+        "failure_reason": null,
+        "cascade_source_card_id": null,
+        "cascade_prior_state": null,
+        "active_strengthening_level": null,
+        "internalization_progress_percent": 11.011822901197622,
+        "effective_requirements": {
+          "strengthening_level_number": null,
+          "trigger_condition": "Owner library trigger",
+          "action": "Owner library action",
+          "scope": null,
+          "exception_notes": null
+        },
+        "current_requirement_version": {
+          "id": "owner-library-version-1",
+          "version_number": 1,
+          "strengthening_level_number": null,
+          "effective_trigger_condition": "Owner library trigger",
+          "effective_action": "Owner library action",
+          "scope": null,
+          "exception_notes": null,
+          "effective_from": "2026-10-14T17:46:40.000Z",
+          "effective_until": null
+        },
+        "strengthening_levels": [],
+        "requirement_versions": [
+          {
+            "id": "owner-library-version-1",
+            "version_number": 1,
+            "strengthening_level_number": null,
+            "effective_trigger_condition": "Owner library trigger",
+            "effective_action": "Owner library action",
+            "scope": null,
+            "exception_notes": null,
+            "effective_from": "2026-10-14T17:46:40.000Z",
+            "effective_until": null
+          }
+        ]
+      }
+    ],
+    "maintenance": {
+      "last_settled_checkpoint_at": "2026-10-20T12:40:00.000Z"
+    }
+  },
+  "detail": {
+    "metadata": {
+      "contract_version": 1,
+      "status": "available",
+      "revision": 2,
+      "source_device": {
+        "id": "issue58-owner-device",
+        "name": "Issue 58 Owner Probe"
+      },
+      "uploaded_at": "2026-10-21T17:40:08.276501+00:00",
+      "data_updated_at": "2026-10-21T00:00:00+00:00",
+      "freshness": "latest_manual_upload"
+    },
+    "card": {
+      "id": "nf58-owner-child",
+      "name": "Identity Collision",
+      "trigger_condition": "Owner trigger condition",
+      "action": "Owner base action",
+      "scope": null,
+      "exception_notes": null,
+      "is_in_tree": true,
+      "parent_id": "nf58-owner-tree",
+      "state": "pending_today_confirmation",
+      "successful_days": 2,
+      "current_consecutive_days": 2,
+      "best_consecutive_days": 4,
+      "maintenance_cycle_started": false,
+      "failure_reason": null,
+      "cascade_source_card_id": null,
+      "cascade_prior_state": null,
+      "active_strengthening_level": null,
+      "internalization_progress_percent": 3.2783899517994097,
+      "effective_requirements": {
+        "strengthening_level_number": null,
+        "trigger_condition": "Owner trigger condition",
+        "action": "Owner base action",
+        "scope": null,
+        "exception_notes": null
+      },
+      "current_requirement_version": {
+        "id": "owner-child-version-1",
+        "version_number": 1,
+        "strengthening_level_number": null,
+        "effective_trigger_condition": "Owner trigger condition",
+        "effective_action": "Owner base action",
+        "scope": null,
+        "exception_notes": null,
+        "effective_from": "2026-10-14T17:46:40.000Z",
+        "effective_until": null
+      },
+      "strengthening_levels": [],
+      "requirement_versions": [
+        {
+          "id": "owner-child-version-1",
+          "version_number": 1,
+          "strengthening_level_number": null,
+          "effective_trigger_condition": "Owner trigger condition",
+          "effective_action": "Owner base action",
+          "scope": null,
+          "exception_notes": null,
+          "effective_from": "2026-10-14T17:46:40.000Z",
+          "effective_until": null
+        }
+      ]
+    },
+    "maintenance": {
+      "last_settled_checkpoint_at": "2026-10-20T12:40:00.000Z"
+    }
+  },
+  "after_manual_upload": {
+    "metadata": {
+      "contract_version": 1,
+      "status": "available",
+      "revision": 3,
+      "source_device": {
+        "id": "issue58-owner-device",
+        "name": "Issue 58 Owner Probe"
+      },
+      "uploaded_at": "2026-10-21T17:40:38.270333+00:00",
+      "data_updated_at": "2026-10-21T00:00:00+00:00",
+      "freshness": "latest_manual_upload"
+    },
+    "cards": [
+      {
+        "id": "nf58-owner-child",
+        "name": "Identity Collision after manual upload",
+        "trigger_condition": "Owner trigger condition",
+        "action": "Owner base action",
+        "scope": null,
+        "exception_notes": null,
+        "is_in_tree": true,
+        "parent_id": "nf58-owner-tree",
+        "state": "pending_today_confirmation",
+        "successful_days": 2,
+        "current_consecutive_days": 2,
+        "best_consecutive_days": 4,
+        "maintenance_cycle_started": false,
+        "failure_reason": null,
+        "cascade_source_card_id": null,
+        "cascade_prior_state": null,
+        "active_strengthening_level": null,
+        "internalization_progress_percent": 3.2783899517994097,
+        "effective_requirements": {
+          "strengthening_level_number": null,
+          "trigger_condition": "Owner trigger condition",
+          "action": "Owner base action",
+          "scope": null,
+          "exception_notes": null
+        },
+        "current_requirement_version": {
+          "id": "owner-child-version-1",
+          "version_number": 1,
+          "strengthening_level_number": null,
+          "effective_trigger_condition": "Owner trigger condition",
+          "effective_action": "Owner base action",
+          "scope": null,
+          "exception_notes": null,
+          "effective_from": "2026-10-14T17:46:40.000Z",
+          "effective_until": null
+        },
+        "strengthening_levels": [],
+        "requirement_versions": [
+          {
+            "id": "owner-child-version-1",
+            "version_number": 1,
+            "strengthening_level_number": null,
+            "effective_trigger_condition": "Owner trigger condition",
+            "effective_action": "Owner base action",
+            "scope": null,
+            "exception_notes": null,
+            "effective_from": "2026-10-14T17:46:40.000Z",
+            "effective_until": null
+          }
+        ]
+      },
+      {
+        "id": "nf58-owner-tree",
+        "name": "Identity Collision",
+        "trigger_condition": "Owner trigger condition",
+        "action": "Owner base action",
+        "scope": null,
+        "exception_notes": null,
+        "is_in_tree": true,
+        "parent_id": null,
+        "state": "lit",
+        "successful_days": 7,
+        "current_consecutive_days": 2,
+        "best_consecutive_days": 4,
+        "maintenance_cycle_started": false,
+        "failure_reason": null,
+        "cascade_source_card_id": null,
+        "cascade_prior_state": null,
+        "active_strengthening_level": 2,
+        "internalization_progress_percent": 11.011822901197622,
+        "effective_requirements": {
+          "strengthening_level_number": 2,
+          "trigger_condition": "Owner strengthened trigger",
+          "action": "Owner strengthened action",
+          "scope": null,
+          "exception_notes": null
+        },
+        "current_requirement_version": {
+          "id": "owner-tree-version-2",
+          "version_number": 2,
+          "strengthening_level_number": 2,
+          "effective_trigger_condition": "Owner strengthened trigger",
+          "effective_action": "Owner strengthened action",
+          "scope": null,
+          "exception_notes": null,
+          "effective_from": "2026-10-20T12:40:00.000Z",
+          "effective_until": null
+        },
+        "strengthening_levels": [
+          {
+            "level_number": 1,
+            "trigger_condition_override": "Owner level one trigger",
+            "action_override": "Owner level one action"
+          },
+          {
+            "level_number": 2,
+            "trigger_condition_override": "Owner strengthened trigger",
+            "action_override": "Owner strengthened action"
+          }
+        ],
+        "requirement_versions": [
+          {
+            "id": "owner-tree-version-1",
+            "version_number": 1,
+            "strengthening_level_number": null,
+            "effective_trigger_condition": "Owner trigger condition",
+            "effective_action": "Owner base action",
+            "scope": null,
+            "exception_notes": null,
+            "effective_from": "2026-10-14T17:46:40.000Z",
+            "effective_until": "2026-10-20T12:40:00.000Z"
+          },
+          {
+            "id": "owner-tree-version-2",
+            "version_number": 2,
+            "strengthening_level_number": 2,
+            "effective_trigger_condition": "Owner strengthened trigger",
+            "effective_action": "Owner strengthened action",
+            "scope": null,
+            "exception_notes": null,
+            "effective_from": "2026-10-20T12:40:00.000Z",
+            "effective_until": null
+          }
+        ]
+      }
+    ],
+    "maintenance": {
+      "last_settled_checkpoint_at": "2026-10-20T12:40:00.000Z"
+    }
+  },
+  "stale_detail": {
+    "metadata": {
+      "contract_version": 1,
+      "status": "available",
+      "revision": 3,
+      "source_device": {
+        "id": "issue58-owner-device",
+        "name": "Issue 58 Owner Probe"
+      },
+      "uploaded_at": "2026-10-21T17:40:38.270333+00:00",
+      "data_updated_at": "2026-10-21T00:00:00+00:00",
+      "freshness": "latest_manual_upload"
+    },
+    "error": {
+      "code": "snapshot_changed",
+      "recovery": "Read metadata again and restart analysis against the new revision."
+    }
+  },
+  "after_revoke": "Actual Codex client rejected read with Auth required",
+  "unuploaded_edit_excluded": true
+}

@@ -1,4 +1,6 @@
 // No external runtime dependencies: this public boundary is tested as HTTP.
+import { projectNationalFocusMetadata, projectNationalFocusSnapshot } from './projection.ts';
+
 export const SCOPE = 'national_focus:read';
 export interface Store {
   insert(table: string, value: Record<string, unknown>): Promise<void>;
@@ -31,12 +33,35 @@ function redirectAllowed(value: unknown): value is string {
       && !!u.port && !u.username && !u.password && !u.hash && !u.search;
   } catch { return false; }
 }
-const tool = {
+const metadataTool = {
   name: 'get_snapshot_metadata',
   description: 'Read metadata of your latest manual cloud upload. Does not upload, settle, or read National Focus content. No snapshot requires a manual upload in Pacta.',
   inputSchema: { type: 'object', properties: { expected_revision: { type: 'integer', minimum: 1 } }, additionalProperties: false },
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
 };
+const treeTool = {
+  name: 'get_national_focus_tree',
+  description: 'Read every current National Focus Tree card with stable ids, parent relations, rules, strengthening levels, requirement versions, state, streaks and internalization progress from your latest manual upload. Does not recompute the current time or read failure history.',
+  inputSchema: { type: 'object', properties: { expected_revision: { type: 'integer', minimum: 1 } }, additionalProperties: false },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+};
+const libraryTool = {
+  name: 'get_national_focus_library',
+  description: 'Read every current independent National Focus Library card with stable ids, rules, strengthening levels, requirement versions, state, streaks and internalization progress from your latest manual upload. Does not recompute the current time or read failure history.',
+  inputSchema: { type: 'object', properties: { expected_revision: { type: 'integer', minimum: 1 } }, additionalProperties: false },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+};
+const cardTool = {
+  name: 'get_national_focus_card',
+  description: 'Read one current National Focus card by stable card_id. expected_revision is required so the result stays on the snapshot version you are analyzing. Includes rules, strengthening levels, requirement versions, state, streaks and internalization progress; does not read failure history.',
+  inputSchema: { type: 'object', properties: {
+    card_id: { type: 'string', minLength: 1, maxLength: 200 },
+    expected_revision: { type: 'integer', minimum: 1 },
+  }, required: ['card_id', 'expected_revision'], additionalProperties: false },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+};
+const tools = [metadataTool, treeTool, libraryTool, cardTool];
+const toolNames = new Set(tools.map((item) => item.name));
 
 export function createHandler(config: Config): (request: Request) => Promise<Response> {
   const { store } = config;
@@ -102,7 +127,7 @@ export function createHandler(config: Config): (request: Request) => Promise<Res
             target.searchParams.set('iss', issuer);
             return new Response(null, { status: 302, headers: { Location: target.toString(), 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } });
           }
-          return new Response(`Pacta 国策只读连接 / National Focus read-only connection\n\n在 Pacta App 登录，打开「我的 → 国策 AI 分析」，粘贴以下请求码，检查客户端并明确同意。\nSign in to Pacta, open My → National Focus AI, paste this request code, review and approve.\n\n${ticket}\n\n仅授权你本人最近手动上传的云快照元数据。有效期30分钟，不提供业务写入。\nOnly your latest manually uploaded snapshot metadata. Expires in 30 minutes. No business writes.\n\n请求码5分钟有效。请只批准你自己刚在 Codex 发起的连接，不要批准他人发来的码。\nRequest expires in 5 minutes. Only approve a connection you initiated in Codex; never approve a code sent by someone else.\n\nApp 确认成功后刷新本页面以返回 Codex。取消则关闭页面。\nAfter App approval, refresh this page to return to Codex. Close to cancel.`, { headers: {
+          return new Response(`Pacta 国策只读连接 / National Focus read-only connection\n\n在 Pacta App 登录，打开「我的 → 国策 AI 分析」，粘贴以下请求码，检查客户端并明确同意。\nSign in to Pacta, open My → National Focus AI, paste this request code, review and approve.\n\n${ticket}\n\n仅授权读取你本人最近手动上传的国策树、卡片库、规则与进度，以及快照元数据。有效期30分钟，不提供业务写入。\nRead only your latest manually uploaded National Focus tree, library, rules, progress and snapshot metadata. Expires in 30 minutes. No business writes.\n\n请求码5分钟有效。请只批准你自己刚在 Codex 发起的连接，不要批准他人发来的码。\nRequest expires in 5 minutes. Only approve a connection you initiated in Codex; never approve a code sent by someone else.\n\nApp 确认成功后刷新本页面以返回 Codex。取消则关闭页面。\nAfter App approval, refresh this page to return to Codex. Close to cancel.`, { headers: {
             'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store',
             'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
           } });
@@ -157,7 +182,8 @@ export function createHandler(config: Config): (request: Request) => Promise<Res
       }
       if (b.id === undefined) return reply(202, undefined);
       const result = (value: unknown) => reply(200, { jsonrpc: '2.0', id: b.id, result: value });
-      const failure = (code: number, message: string) => reply(200, { jsonrpc: '2.0', id: b.id, error: { code, message } });
+      const failure = (code: number, message: string) => reply(200, { jsonrpc: '2.0', id: b.id, error: { code, message,
+        data: { recovery: 'Call tools/list for supported tools and their input schemas. Use a positive snapshot revision for card details; do not pass user selectors or SQL.' } } });
       if (b.method === 'initialize') {
         const requested = object(b.params) ? b.params.protocolVersion : undefined;
         const version = typeof requested === 'string' && ['2025-03-26', '2025-06-18', '2025-11-25'].includes(requested)
@@ -166,25 +192,57 @@ export function createHandler(config: Config): (request: Request) => Promise<Res
           serverInfo: { name: 'pacta-national-focus', version: '1.0.0' }, capabilities: { tools: {} } });
       }
       if (b.method === 'ping') return result({});
-      if (b.method === 'tools/list') return result({ tools: [tool] });
+      if (b.method === 'tools/list') return result({ tools });
       if (b.method !== 'tools/call') return failure(-32601, 'Method not found');
-      if (!object(b.params) || b.params.name !== tool.name) return failure(-32602, 'Unknown tool');
+      if (!object(b.params) || typeof b.params.name !== 'string' || !toolNames.has(b.params.name)) return failure(-32602, 'Unknown tool');
+      const name = b.params.name;
       const args = b.params.arguments ?? {};
-      if (!object(args) || Object.keys(args).some((k) => k !== 'expected_revision')
-        || (args.expected_revision !== undefined && (!Number.isSafeInteger(args.expected_revision) || Number(args.expected_revision) < 1))) {
+      const allowedKeys = name === cardTool.name ? new Set(['card_id', 'expected_revision']) : new Set(['expected_revision']);
+      if (!object(args) || Object.keys(args).some((k) => !allowedKeys.has(k))
+        || (args.expected_revision !== undefined && (!Number.isSafeInteger(args.expected_revision) || Number(args.expected_revision) < 1))
+        || (name === cardTool.name && (typeof args.card_id !== 'string' || !args.card_id.trim() || args.card_id.length > 200
+          || !Number.isSafeInteger(args.expected_revision) || Number(args.expected_revision) < 1))) {
         return failure(-32602, 'Invalid tool arguments');
       }
-      let value = metadata;
+      const toolResult = (value: unknown, isError = false) => result({ isError,
+        content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value });
       try {
-        if (args.expected_revision !== undefined) value = await store.rpc('read_national_focus_mcp_metadata', {
-          p_token_hash: tokenHash, p_expected_revision: args.expected_revision,
+        if (name === metadataTool.name) {
+          let value = metadata;
+          if (args.expected_revision !== undefined) value = await store.rpc('read_national_focus_mcp_metadata', {
+            p_token_hash: tokenHash, p_expected_revision: args.expected_revision,
+          });
+          return toolResult(projectNationalFocusMetadata(value));
+        }
+        const raw = await store.rpc('read_national_focus_mcp_snapshot', {
+          p_token_hash: tokenHash,
+          ...(args.expected_revision === undefined ? {} : { p_expected_revision: args.expected_revision }),
         });
+        const projected = projectNationalFocusSnapshot(raw);
+        if (args.expected_revision !== undefined && projected.metadata.revision !== args.expected_revision) {
+          return toolResult({ metadata: projectNationalFocusMetadata(metadata), error: {
+            code: 'snapshot_changed', recovery: 'Read metadata again and restart analysis against the new revision.',
+          } }, true);
+        }
+        if (name === treeTool.name) {
+          return toolResult({ metadata: projected.metadata,
+            cards: projected.cards.filter((card) => card.is_in_tree), maintenance: projected.maintenance });
+        }
+        if (name === libraryTool.name) {
+          return toolResult({ metadata: projected.metadata,
+            cards: projected.cards.filter((card) => !card.is_in_tree), maintenance: projected.maintenance });
+        }
+        const card = projected.cards.find((item) => item.id === args.card_id) ?? null;
+        if (projected.metadata.status !== 'available' || card) {
+          return toolResult({ metadata: projected.metadata, card, maintenance: projected.maintenance });
+        }
+        return toolResult({ metadata: projected.metadata, card: null, maintenance: projected.maintenance,
+          error: { code: 'card_not_found', recovery: 'Check card_id, then read the current tree or library at this revision.' } }, true);
       } catch (e) {
-        if (e instanceof StoreError && e.code === 'PT409') return result({ isError: true,
-          content: [{ type: 'text', text: JSON.stringify({ code: 'snapshot_changed', recovery: 'Read metadata again and restart analysis against the new revision.' }) }] });
+        if (e instanceof StoreError && e.code === 'PT409') return toolResult({ metadata: projectNationalFocusMetadata(metadata),
+          error: { code: 'snapshot_changed', recovery: 'Read metadata again and restart analysis against the new revision.' } }, true);
         throw e;
       }
-      return result({ content: [{ type: 'text', text: JSON.stringify(value) }], structuredContent: value });
     } catch (e) {
       if (e instanceof SyntaxError) return oauthError('invalid_request');
       if (e instanceof StoreError) {

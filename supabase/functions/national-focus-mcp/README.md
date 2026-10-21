@@ -1,12 +1,14 @@
-# National Focus MCP, contract v1 (Issue #57)
+# National Focus MCP, contract v1 (Issues #57–58)
 
-This release exposes **only `get_snapshot_metadata`**. National Focus content,
-failure queries, write tools and arbitrary SQL/table access are not available.
+This release exposes snapshot metadata and current National Focus tree, library
+and card details. Failure-history queries, write tools and arbitrary SQL/table
+access are not available.
 Neither connecting nor reading performs a manual upload/download or settlement.
 
 ## Deploy
 
-Apply `supabase/migrations/202610210001_national_focus_mcp.sql` after the existing
+Apply `supabase/migrations/202610210001_national_focus_mcp.sql` and then
+`202610210002_national_focus_mcp_content.sql` after the existing
 snapshot/lifecycle migrations. Review the selected project before applying it;
 use isolated test identities for validation and never overwrite ordinary users'
 snapshots.
@@ -43,7 +45,8 @@ codex mcp login pacta-national-focus --oauth-client-registration dcr
    explicitly approve only a request you just initiated yourself.
 3. Refresh the browser page. It returns the authorization code to Codex's
    registered local callback. No Pacta password or full App session reaches Codex.
-4. Ask Codex to call `get_snapshot_metadata`. To change the analyzed version,
+4. Ask Codex to call `get_national_focus_tree` and `get_national_focus_library`.
+   Use the returned revision for subsequent card details. To change the analyzed version,
    manually upload the whole-data snapshot through Pacta's existing overwrite
    confirmation; opening this guide or authorizing does not upload data.
 5. Revoke the connection in the same App page. Subsequent calls fail immediately,
@@ -92,8 +95,10 @@ paths into an Edge Function.
 - All three authorization tables have RLS and no anon/authenticated table
   privileges. Authenticated App users see redacted own grants via an RPC and can
   revoke only their own grants; only service-role code can exchange/read delegates.
-  The sole delegated SQL read builds an explicit metadata projection without
-  returning snapshot payloads, user ids, module counts, logs or Auth/admin data.
+  The metadata read projects metadata only. The content read selects four
+  National Focus tables for the service; the HTTP tools apply a typed field
+  whitelist before returning data. No whole snapshot or mixed-module log reaches
+  Codex.
 - SQL serializes public allocations: at most 200 client registrations/hour,
   5,000 retained clients, 1,000 pending requests globally and 10/client. Capacity
   returns HTTP 429. New allocations delete expired requests; registrations also
@@ -126,7 +131,7 @@ The client label is supplied by the registering client, not a verified vendor
 identity. UI must show the destination and warn against approving codes sent by
 someone else.
 
-## Shared read/error/revision contract for T2/T3
+## Shared read/error/revision contract
 
 `read_national_focus_mcp_metadata(p_token_hash, p_expected_revision default null)`
 is service-only and is the current delegate-validation seam. It checks the token,
@@ -166,10 +171,10 @@ object rows owned by this User, and nonempty standalone card names.
 | HTTP 503 `service_unavailable` | Service failure. Retry; it is not an empty tree. |
 | JSON-RPC -32602 | Unknown tool/invalid arguments, including user selectors or SQL. |
 
-T2/T3 details and pagination must require `expected_revision` and return the same
-metadata/version context. No historical cloud snapshots are retained by MCP.
-The skill and National Focus content tools remain later tickets; T1 must not
-describe their availability as complete.
+Card details require `expected_revision` and return the same metadata/version
+context. Future history pagination must preserve this revision constraint. No historical cloud snapshots are retained by MCP.
+Failure-history tools and the installable analysis skill remain later tickets.
+Current tree/library/card tools are available in T2 (#58).
 
 ## Verify
 
@@ -190,3 +195,57 @@ Primary protocol references reviewed 2026-10-21:
 [MCP authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization),
 [OpenAI Codex MCP/OAuth registration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli),
 [Supabase routing/HTML restriction](https://supabase.com/docs/guides/functions/http-methods).
+
+
+## Current National Focus tools (T2 / Issue #58)
+
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `get_snapshot_metadata` | optional `expected_revision` | Original metadata object, unchanged |
+| `get_national_focus_tree` | optional `expected_revision` | `{metadata,cards,maintenance}` for all current tree cards |
+| `get_national_focus_library` | optional `expected_revision` | `{metadata,cards,maintenance}` for independent library cards |
+| `get_national_focus_card` | required `card_id`, `expected_revision` | `{metadata,card,maintenance}`; stable ID, never a name lookup |
+
+All arguments reject additional properties. Revisions are positive safe integers.
+Tree and library return a flat list sorted by card ID; `parent_id` expresses the
+uploaded tree hierarchy. Both responses include complete card rules and progress,
+so an initial read needs no unversioned follow-up queries. Pass the same revision
+to every subsequent tool call. After a new manual upload, restart analysis if
+`snapshot_changed` is returned. No server history retains the previous upload.
+
+Each card contains `id`, `name`, `is_in_tree`, `parent_id`, the exact uploaded
+`state` (`lit`, `pending_today_confirmation`, `extinguished`), base
+`trigger_condition`, `action`, `scope`, `exception_notes`,
+`active_strengthening_level`, `effective_requirements`,
+`current_requirement_version`, all `strengthening_levels` and
+`requirement_versions`, current/best consecutive days, `successful_days` and
+`internalization_progress_percent`. Version entries carry stable IDs, version
+numbers, effective rule text, strengthening level and validity bounds;
+`effective_until: null` identifies the active requirement version. Selecting a
+level never rewrites the base rule or historical versions. Soft-deleted cards
+are excluded from both current collections and details.
+
+Internalization is the display proxy `100 * (1 - exp(-successful_days / 60))`,
+not measured habit formation or a daily success calendar. `maintenance` records
+only the uploaded settlement checkpoint; it never runs settlement. Past upload
+states remain exactly as uploaded even when the server date has advanced.
+
+The HTTP boundary reconstructs every object from a typed field whitelist,
+including nested levels, versions and source-device metadata. Unknown fields,
+other business tables, owner identifiers and mixed-module source logs are never
+forwarded. Invalid fields or broken references yield `unsupported_snapshot`
+with an update/manual-upload recovery instruction. Free text in allowed rule
+fields remains user-authored content, not executable instructions.
+
+An available empty collection has `metadata.status: available` and `cards: []`.
+No/legacy/unsupported snapshots have their distinct metadata status and recovery.
+A missing or soft-deleted detail card returns `isError: true` with
+`error.code: card_not_found`; reread the current tree/library using its revision.
+Transport/auth/service failures remain distinct from all empty results.
+
+For database scope, privilege and revision verification run the rollback-only
+`supabase/tests/national_focus_mcp_content.sql`; it creates transaction-local
+identities and fixtures and never selects an ordinary user as a test subject.
+Use a dedicated test project where available. Validation against the configured
+project with isolated identities must be described as identity isolation.
+Actual platform and remote-client evidence belongs in `docs/issue-58-validation.md`.

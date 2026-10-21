@@ -268,11 +268,11 @@ class _NationalFocusAiAnalysisPageState
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          '当前只开放最近一次手动上传的云快照元数据：版本、来源设备和上传时间。国策内容读取尚未开放。',
+                          '可读取最近一次手动上传的当前国策树、卡片库与具体规则，以及强化等级、要求版本、连续记录和内化进度。每次读取附版本、来源设备和上传时间。',
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          '你在 App 维护数据并手动上传后，Codex 才能读取新版本；打开此页或授权不会触发业务同步。',
+                          '你在 App 维护数据并手动上传后，Codex 才能读取新版本；打开此页或授权不会触发业务同步。手机尚未上传的修改不会进入分析；国策状态以上传时为准。',
                         ),
                         const SizedBox(height: 8),
                         const Text(
@@ -399,7 +399,9 @@ class _NationalFocusAiAnalysisPageState
                             style: Theme.of(context).textTheme.labelLarge,
                           ),
                           const SizedBox(height: 4),
-                          const Text('国策 AI 只读；当前仅可读取云快照元数据。'),
+                          const Text(
+                            '国策 AI 只读：云快照信息、国策树、卡片库、规则与进度。不包含目标、任务、专注、日历或管理数据。',
+                          ),
                           const SizedBox(height: 12),
                           Text(
                             '授权后返回地址',
@@ -543,7 +545,7 @@ class _NationalFocusAiAnalysisPageState
   );
 
   static String _scopeLabel(String scope) => switch (scope) {
-    'national_focus:read' => '国策 AI 只读（当前仅开放云快照元数据）',
+    'national_focus:read' => '国策 AI 只读（云快照中的树、卡片、规则与进度）',
     _ => scope,
   };
 

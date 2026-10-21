@@ -1,0 +1,34 @@
+{
+  "http": {
+    "status": "passed",
+    "boundaries": [
+      "real public OAuth DCR/PKCE/App consent",
+      "two users and same-name cards",
+      "two strengthening levels and requirement versions",
+      "typed recursive scope exclusion",
+      "stable ids and rules",
+      "foreign card and foreign revoke denied",
+      "extra identity/SQL arguments rejected",
+      "ordinary JWT and forged delegate rejected",
+      "repeat reads preserve exact snapshot",
+      "expiry/suspension/revoke fail closed",
+      "unsupported/no snapshot/empty distinguishable",
+      "manual upload revision replacement/stale details rejected"
+    ],
+    "project_isolation": "temporary identities in configured development project; no ordinary users used",
+    "owner_revision_for_codex": 1
+  },
+  "cleanup": [
+    {
+      "all_auth_users": 2,
+      "fixture_auth_users": 0,
+      "fixture_snapshots": 0,
+      "fixture_grants": 0,
+      "fixture_clients": 0,
+      "fixture_requests": 0
+    }
+  ],
+  "real_sql": "rollback-only content SQL probe passed on configured Supabase; independently verified by main agent",
+  "android_data": "7 original scoped files restored and hashes verified; generated test timestamp removed",
+  "codex_credential_status_after_cleanup": "not_logged_in"
+}

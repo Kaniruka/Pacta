@@ -9,13 +9,13 @@ import 'package:pacta/src/tasks/task_database.dart';
 
 import '../test/support/fake_auth_repository.dart';
 
-const _userId = 'ticket-57-device-user';
+const _userId = 'ticket-58-device-user';
 const _mcpUrl = 'https://pacta.example/functions/v1/national-focus-mcp/mcp';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('国策 AI 引导可完成授权与撤销，且不触发业务快照同步', (tester) async {
+  testWidgets('国策 AI 引导授权撤销不隐式同步，手动上传必须确认覆盖', (tester) async {
     final database = PactaDatabase(NativeDatabase.memory());
     final cloudRemote = _TrackingCloudSnapshotRemote();
     final cloudRepository = CloudSnapshotRepository(
@@ -57,7 +57,7 @@ void main() {
       final page = find.byKey(
         const ValueKey('national-focus-ai-analysis-page'),
       );
-      expect(find.textContaining('云快照元数据'), findsOneWidget);
+      expect(find.textContaining('当前国策树、卡片库与具体规则'), findsOneWidget);
 
       final requestCodeField = find.byKey(
         const ValueKey('national-focus-ai-request-code'),
@@ -79,6 +79,7 @@ void main() {
       await tester.tap(find.text('复制 Codex 配置'));
       await tester.pumpAndSettle();
       await _scrollToTop(tester, page);
+      await _scrollUntilVisible(tester, page, find.text('撤销此连接'));
       await tester.tap(find.text('撤销此连接'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('确认撤销'));
@@ -91,6 +92,42 @@ void main() {
       expect(cloudRemote.inspectCalls, 0);
       expect(cloudRemote.uploadCalls, 0);
       expect(cloudRemote.downloadCalls, 0);
+
+      // The guide never uploads implicitly. The existing My flow still requires
+      // direction selection and a separate whole-snapshot overwrite consent.
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      final uploadEntry = find.text('查看云端并选择方向');
+      await tester.scrollUntilVisible(
+        uploadEntry,
+        -250,
+        scrollable: find
+            .descendant(
+              of: find.byType(MyPage),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(uploadEntry);
+      await tester.pumpAndSettle();
+      expect(find.text('云端暂无数据，可首次上传。'), findsOneWidget);
+      await tester.tap(find.text('上传'));
+      await tester.pumpAndSettle();
+      expect(find.text('上传并覆盖云端？'), findsOneWidget);
+      expect(cloudRemote.uploadCalls, 0);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(cloudRemote.uploadCalls, 0);
+      await tester.tap(uploadEntry);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('上传'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确认上传'));
+      await tester.pumpAndSettle();
+      expect(cloudRemote.uploadCalls, 1);
+      expect(cloudRemote.downloadCalls, 0);
+      expect(find.text('上传完成，已覆盖云端数据。'), findsOneWidget);
     } finally {
       await closeApp();
     }

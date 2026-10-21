@@ -53,7 +53,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('最近一次手动上传'), findsOneWidget);
-    expect(find.textContaining('云快照元数据'), findsOneWidget);
+    expect(find.textContaining('当前国策树、卡片库与具体规则'), findsOneWidget);
     expect(find.text('尚未授权'), findsOneWidget);
 
     final requestCodeField = find.byKey(
