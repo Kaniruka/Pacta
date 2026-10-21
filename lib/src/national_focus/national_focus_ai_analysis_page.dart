@@ -10,10 +10,12 @@ class NationalFocusAiAnalysisEntry extends StatelessWidget {
     super.key,
     required this.mcpUrl,
     required this.repository,
+    this.onOpenSync,
   });
 
   final String? mcpUrl;
   final NationalFocusAiGrantRepository? repository;
+  final VoidCallback? onOpenSync;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -28,6 +30,7 @@ class NationalFocusAiAnalysisEntry extends StatelessWidget {
           builder: (_) => NationalFocusAiAnalysisPage(
             mcpUrl: mcpUrl,
             repository: repository,
+            onOpenSync: onOpenSync,
           ),
         ),
       ),
@@ -40,10 +43,12 @@ class NationalFocusAiAnalysisPage extends StatefulWidget {
     super.key,
     required this.mcpUrl,
     required this.repository,
+    this.onOpenSync,
   });
 
   final String? mcpUrl;
   final NationalFocusAiGrantRepository? repository;
+  final VoidCallback? onOpenSync;
 
   @override
   State<NationalFocusAiAnalysisPage> createState() =>
@@ -53,6 +58,8 @@ class NationalFocusAiAnalysisPage extends StatefulWidget {
 class _NationalFocusAiAnalysisPageState
     extends State<NationalFocusAiAnalysisPage> {
   static const _serverName = 'pacta-national-focus';
+  static const _firstQuestion =
+      '请使用 \$pacta-national-focus-analysis 分析我的国策：先读取快照版本、来源设备和上传时间，再审视当前树与卡片库的规则具体性、父子依赖与执行负担。请分开事实、可能解释和建议，引用稳定卡片 ID 和要求版本 ID，说明缺失数据；不要替我判断现实履行或修改数据。';
   final _requestCodeController = TextEditingController();
   List<NationalFocusAiGrant> _grants = const [];
   NationalFocusAiAuthorizationRequest? _request;
@@ -306,7 +313,33 @@ class _NationalFocusAiAnalysisPageState
                 ),
                 _buildGrantStatus(context),
                 const SizedBox(height: 12),
-                _sectionTitle(context, '连接 Codex'),
+                _sectionTitle(context, '1. 维护后手动上传'),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          '先在 App 维护国策，再进入云端同步，选择上传本机并核对整份覆盖确认。上传会替换云端整份业务快照，包含其他业务模块；MCP 仅向 Codex 提供国策白名单数据。',
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '上传完成后手机无须常驻，关闭 App 仍可分析。每次分析先核对来源设备、真实上传时间和版本；它们表示最近上传，不代表最后编辑时间。',
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          key: const ValueKey('national-focus-ai-open-sync'),
+                          onPressed: widget.onOpenSync,
+                          icon: const Icon(Icons.cloud_upload_outlined),
+                          label: const Text('前往手动同步'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _sectionTitle(context, '2. 连接 Codex'),
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -346,7 +379,7 @@ class _NationalFocusAiAnalysisPageState
                   ),
                 ),
                 const SizedBox(height: 12),
-                _sectionTitle(context, '确认授权请求'),
+                _sectionTitle(context, '3. 确认授权请求'),
                 Card(
                   child: Padding(
                     padding: const EdgeInsets.all(16),
@@ -440,12 +473,65 @@ class _NationalFocusAiAnalysisPageState
                     ),
                   ),
                 ),
+                const SizedBox(height: 12),
+                _sectionTitle(context, '4. 安装 skill 并开始提问'),
+                _buildSkillGuide(context),
+                const SizedBox(height: 12),
+                _sectionTitle(context, '遇到问题'),
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      '无快照或旧版快照：回到手动同步，使用当前 App 上传整份数据。\n\n数据过旧：在来源设备维护后重新上传；让 Codex 重新读取快照信息，不沿用上一版本。分析中版本变化时重新取数，避免混用。\n\n授权失效或已撤销：在 Codex 重新运行登录命令，再在此页核对并授权。账号停用时请联系管理员。\n\n离线或服务错误：检查网络与登录状态，重试授权状态或 Codex 读取；读取失败不表示国策为空。离线仍可维护本机国策，联网后由你手动上传。\n\n未配置服务：请联系应用维护者配置云服务；不需要把密码、会话或管理员密钥贴给 Codex。',
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildSkillGuide(BuildContext context) => Card(
+    child: Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            '在 Codex 中粘贴安装说明，按客户端提示完成安装。安装后重启 Codex 并新开对话，使用 \$pacta-national-focus-analysis 启用；skill 负责分析方法，MCP 授权仍须单独完成。',
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () => _copyText(_skillInstallation, '已复制 skill 安装说明'),
+            icon: const Icon(Icons.copy_outlined),
+            label: const Text('复制 skill 安装说明'),
+          ),
+          const SizedBox(height: 12),
+          const SelectableText(_firstQuestion),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: () => _copyText(_firstQuestion, '已复制首次问题'),
+            icon: const Icon(Icons.chat_bubble_outline),
+            label: const Text('复制首次问题'),
+          ),
+          const SizedBox(height: 8),
+          const Text('分析建议由你决定是否在 App 采纳。Codex 不能修改国策、替你点亮或确认，也不能认定真实习惯已经形成。'),
+        ],
+      ),
+    ),
+  );
+
+  static const _skillInstallation =
+      '请使用 \$skill-installer 从 https://github.com/Kaniruka/Pacta/tree/master/skills/pacta-national-focus-analysis 安装此 skill。安装后提示我重启 Codex 并新开对话并使用 \$pacta-national-focus-analysis。';
+
+  Future<void> _copyText(String text, String message) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   Widget _buildGrantStatus(BuildContext context) {
@@ -486,7 +572,7 @@ class _NationalFocusAiAnalysisPageState
         child: ListTile(
           leading: Icon(Icons.no_accounts_outlined),
           title: Text('尚未授权'),
-          subtitle: Text('完成上方授权后，连接会显示在这里。'),
+          subtitle: Text('完成下方授权后，连接会显示在这里。'),
         ),
       );
     }

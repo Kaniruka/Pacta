@@ -93,6 +93,7 @@ void main() {
     await _scrollToTop(tester, page);
     expect(find.text('已授权'), findsOneWidget);
     expect(find.text('Codex CLI'), findsOneWidget);
+    await _scrollUntilVisible(tester, page, find.text('复制 Codex 配置'));
     expect(find.textContaining('30 分钟'), findsOneWidget);
 
     await _scrollUntilVisible(tester, page, find.text('复制 Codex 配置'));
@@ -114,6 +115,42 @@ void main() {
     await _scrollToTop(tester, page);
     expect(find.text('已撤销'), findsOneWidget);
     expect(find.text('撤销此连接'), findsNothing);
+  });
+
+  testWidgets('引导可进入现有手动同步并复制 skill 和首次问题', (tester) async {
+    final grants = _FakeNationalFocusAiGrantRepository();
+    await tester.pumpWidget(
+      PactaApp(
+        authRepository: FakeAuthRepository()..signedInUser = 'user@example.com',
+        nationalFocusMcpUrl: mcpUrl,
+        nationalFocusAiGrantRepositoryFactory: (_) => grants,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final page = await _openMyAiPage(tester);
+    await _scrollUntilVisible(tester, page, find.text('前往手动同步'));
+    await tester.tap(find.text('前往手动同步'));
+    await tester.pumpAndSettle();
+    expect(find.text('手动同步'), findsOneWidget);
+    expect(find.textContaining('仅进入本页不会上传或下载'), findsOneWidget);
+    expect(grants.approvedCodes, isEmpty);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await _scrollUntilVisible(tester, page, find.text('复制 skill 安装说明'));
+    await tester.tap(find.text('复制 skill 安装说明'));
+    await tester.pumpAndSettle();
+    expect(copiedText, contains('https://github.com/Kaniruka/Pacta'));
+    expect(copiedText, contains('skills/pacta-national-focus-analysis'));
+    expect(copiedText, contains(r'$skill-installer'));
+    await _scrollUntilVisible(tester, page, find.text('复制首次问题'));
+    await tester.tap(find.text('复制首次问题'));
+    await tester.pumpAndSettle();
+    expect(copiedText, contains(r'$pacta-national-focus-analysis'));
+    expect(copiedText, contains('来源设备和上传时间'));
+    expect(copiedText, contains('事实、可能解释和建议'));
+    await _scrollUntilVisible(tester, page, find.textContaining('无快照或旧版快照'));
+    expect(find.textContaining('离线仍可维护本机国策'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('国策树更多菜单进入同一个国策 AI 分析页', (tester) async {

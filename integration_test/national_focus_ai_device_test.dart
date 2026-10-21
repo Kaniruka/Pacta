@@ -9,7 +9,7 @@ import 'package:pacta/src/tasks/task_database.dart';
 
 import '../test/support/fake_auth_repository.dart';
 
-const _userId = 'ticket-58-device-user';
+const _userId = 'ticket-60-device-user';
 const _mcpUrl = 'https://pacta.example/functions/v1/national-focus-mcp/mcp';
 
 void main() {
@@ -63,6 +63,21 @@ void main() {
       expect(find.textContaining('不是完整的逐日审计日志'), findsOneWidget);
       expect(find.textContaining('不能新增、修改或删除失败记录与说明'), findsOneWidget);
 
+      if (const bool.fromEnvironment('PACTA_CAPTURE_GUIDE')) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(seconds: 20)),
+        );
+      }
+      for (final label in ['复制 skill 安装说明', '复制首次问题']) {
+        await _scrollUntilVisible(tester, page, find.text(label));
+        await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+      }
+      // Let copy feedback dismiss before testing controls at the desktop edge.
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      await _scrollToTop(tester, page);
+
       final requestCodeField = find.byKey(
         const ValueKey('national-focus-ai-request-code'),
       );
@@ -99,22 +114,21 @@ void main() {
       expect(cloudRemote.uploadCalls, 0);
       expect(cloudRemote.downloadCalls, 0);
 
-      // The guide never uploads implicitly. The existing My flow still requires
-      // direction selection and a separate whole-snapshot overwrite consent.
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-      final uploadEntry = find.text('查看云端并选择方向');
-      await tester.scrollUntilVisible(
-        uploadEntry,
-        -250,
-        scrollable: find
-            .descendant(
-              of: find.byType(MyPage),
-              matching: find.byType(Scrollable),
-            )
-            .first,
+      // Follow the guide into the existing whole-snapshot preview/confirmation.
+      await _scrollUntilVisible(
+        tester,
+        page,
+        find.byKey(const ValueKey('national-focus-ai-open-sync')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('national-focus-ai-open-sync')),
       );
       await tester.pumpAndSettle();
+      expect(find.text('手动同步'), findsOneWidget);
+      expect(cloudRemote.inspectCalls, 0);
+      expect(cloudRemote.uploadCalls, 0);
+      expect(cloudRemote.downloadCalls, 0);
+      final uploadEntry = find.text('查看云端并选择方向');
       await tester.tap(uploadEntry);
       await tester.pumpAndSettle();
       expect(find.text('云端暂无数据，可首次上传。'), findsOneWidget);
@@ -134,6 +148,19 @@ void main() {
       expect(cloudRemote.uploadCalls, 1);
       expect(cloudRemote.downloadCalls, 0);
       expect(find.text('上传完成，已覆盖云端数据。'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('国策树').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('国策 AI 分析').last);
+      await tester.pumpAndSettle();
+      expect(page, findsOneWidget);
+      expect(cloudRemote.uploadCalls, 1);
+      expect(cloudRemote.downloadCalls, 0);
     } finally {
       await closeApp();
     }
@@ -152,7 +179,12 @@ Future<void> _scrollUntilVisible(
       final listRect = tester.getRect(listView.first);
       if (targetRect.top >= listRect.top &&
           targetRect.bottom <= listRect.bottom) {
-        return;
+        await Scrollable.ensureVisible(
+          tester.element(target.first),
+          alignment: 0.5,
+        );
+        await tester.pumpAndSettle();
+        if (target.hitTestable().evaluate().isNotEmpty) return;
       }
       await tester.drag(
         listView.first,
@@ -168,6 +200,7 @@ Future<void> _scrollUntilVisible(
   final listRect = tester.getRect(listView.first);
   expect(targetRect.top, greaterThanOrEqualTo(listRect.top));
   expect(targetRect.bottom, lessThanOrEqualTo(listRect.bottom));
+  expect(target.hitTestable(), findsOneWidget);
 }
 
 Future<void> _scrollToTop(WidgetTester tester, Finder page) async {

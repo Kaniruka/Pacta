@@ -1,0 +1,59 @@
+{
+  "client": "codex-cli 0.163.0-alpha.10.2",
+  "evidence_source": "Actual Codex model using real remote MCP and an isolated synthetic identity/snapshot. Dedicated short-lived delegate inserted through protected management seam; OAuth consent not retested.",
+  "calls": [
+    {
+      "server": "pacta_national_focus",
+      "tool": "get_snapshot_metadata",
+      "arguments": {},
+      "status": "completed",
+      "error": null,
+      "metadata": null
+    },
+    {
+      "server": "pacta_national_focus",
+      "tool": "get_national_focus_tree",
+      "arguments": {
+        "expected_revision": 1
+      },
+      "status": "completed",
+      "error": null,
+      "metadata": {
+        "contract_version": 1,
+        "status": "available",
+        "revision": 1,
+        "source_device": {
+          "id": "skill-probe",
+          "name": "Synthetic skill acceptance device"
+        },
+        "uploaded_at": "2026-10-21T18:05:25.722158+00:00",
+        "data_updated_at": "2026-10-21T18:05:25.722158+00:00",
+        "freshness": "latest_manual_upload"
+      }
+    },
+    {
+      "server": "pacta_national_focus",
+      "tool": "get_national_focus_library",
+      "arguments": {
+        "expected_revision": 1
+      },
+      "status": "completed",
+      "error": null,
+      "metadata": {
+        "contract_version": 1,
+        "status": "available",
+        "revision": 1,
+        "source_device": {
+          "id": "skill-probe",
+          "name": "Synthetic skill acceptance device"
+        },
+        "uploaded_at": "2026-10-21T18:05:25.722158+00:00",
+        "data_updated_at": "2026-10-21T18:05:25.722158+00:00",
+        "freshness": "latest_manual_upload"
+      }
+    }
+  ],
+  "exit_code": 0,
+  "cleanup": "Temporary auth user, delegate (cascade) and OAuth client removed in finally.",
+  "report": "issue60-codex-live-analysis.md"
+}

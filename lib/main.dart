@@ -757,6 +757,7 @@ class _AppShellState extends ConsumerState<AppShell>
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => NationalFocusAiAnalysisPage(
+          onOpenSync: () => _openAiManualSync(context, ref),
           mcpUrl: ref.read(nationalFocusMcpUrlProvider),
           repository: ref.read(nationalFocusAiGrantRepositoryProvider),
         ),
@@ -3860,6 +3861,7 @@ class _MyPageState extends ConsumerState<MyPage> {
         ),
         const SizedBox(height: 12),
         NationalFocusAiAnalysisEntry(
+          onOpenSync: () => _openAiManualSync(context, ref),
           mcpUrl: ref.watch(nationalFocusMcpUrlProvider),
           repository: ref.watch(nationalFocusAiGrantRepositoryProvider),
         ),
@@ -4414,6 +4416,37 @@ class _AdminEligibilityCardState extends ConsumerState<AdminEligibilityCard> {
             ],
           ),
         ],
+      ),
+    ),
+  );
+}
+
+void _openAiManualSync(BuildContext context, WidgetRef ref) {
+  Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => Scaffold(
+        appBar: AppBar(title: const Text('手动同步')),
+        body: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              const Text('选择上传本机，并在现有预览中核对整份覆盖范围。仅进入本页不会上传或下载。'),
+              const SizedBox(height: 12),
+              CloudSyncCard(
+                repository: ref.read(cloudSnapshotRepositoryProvider),
+                onDownloaded: () async {
+                  ref.invalidate(taskRepositoryProvider);
+                  ref.invalidate(focusRepositoryProvider);
+                  ref.invalidate(nationalFocusRepositoryProvider);
+                  ref.invalidate(calendarRepositoryProvider);
+                  await ref
+                      .read(nationalFocusRepositoryProvider)
+                      .settleDueCheckpoints();
+                },
+              ),
+            ],
+          ),
+        ),
       ),
     ),
   );

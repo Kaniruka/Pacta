@@ -1,0 +1,106 @@
+{
+  "label": "Synthetic exported evidence, not a live MCP response",
+  "metadata": {
+    "contract_version": 1,
+    "status": "available",
+    "revision": 7,
+    "source_device": {
+      "id": "fixture-device",
+      "name": "Synthetic Android"
+    },
+    "uploaded_at": "2026-10-20T01:00:00Z",
+    "data_updated_at": "2026-10-19T23:00:00Z",
+    "freshness": "latest_manual_upload"
+  },
+  "cases": [
+    {
+      "id": "same-name-and-version",
+      "tree": [
+        {
+          "id": "card-a",
+          "name": "晨间",
+          "parent_id": null,
+          "state": "pending_today_confirmation",
+          "trigger_condition": "起床后",
+          "action": "喝水",
+          "effective_requirements": {
+            "trigger_condition": "起床后五分钟内",
+            "action": "喝一杯水",
+            "scope": null,
+            "exception_notes": null
+          },
+          "current_requirement_version": {
+            "id": "version-a2",
+            "effective_until": null,
+            "version_number": 2
+          },
+          "active_strengthening_level": 1,
+          "successful_days": 12,
+          "internalization_progress_percent": 18.1
+        },
+        {
+          "id": "card-b",
+          "name": "晨间",
+          "parent_id": "card-a",
+          "state": "extinguished",
+          "trigger_condition": "早上",
+          "action": "学习",
+          "effective_requirements": {
+            "trigger_condition": "早上",
+            "action": "学习",
+            "scope": null,
+            "exception_notes": null
+          },
+          "current_requirement_version": {
+            "id": "version-b1",
+            "effective_until": null,
+            "version_number": 1
+          },
+          "active_strengthening_level": null,
+          "successful_days": 0,
+          "internalization_progress_percent": 0
+        }
+      ],
+      "library": [],
+      "history": [
+        {
+          "id": "event-1",
+          "card_id": "card-a",
+          "tree_snapshot": [
+            {
+              "id": "card-a",
+              "name": "旧名字",
+              "effective_requirements": {
+                "trigger_condition": "起床后",
+                "action": "喝水"
+              },
+              "requirement_version_id": "version-a1"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "empty-tree",
+      "tree": [],
+      "library": []
+    },
+    {
+      "id": "insufficient-evidence",
+      "tree": [
+        {
+          "id": "card-c",
+          "name": "休息",
+          "parent_id": null,
+          "state": "lit",
+          "effective_requirements": {
+            "trigger_condition": "累了",
+            "action": "休息一下"
+          },
+          "current_requirement_version": null
+        }
+      ],
+      "library": []
+    }
+  ]
+}

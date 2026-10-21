@@ -1,0 +1,13 @@
+# Pacta MCP v1 interpretation
+
+Current tools: `get_snapshot_metadata({expected_revision?})`, `get_national_focus_tree({expected_revision?})`, `get_national_focus_library({expected_revision?})`, `get_national_focus_card({card_id,expected_revision})`. Additional arguments, user selectors and arbitrary SQL are invalid. Available empty collections contain `cards: []`. `snapshot_changed` requires restarting the coherent read. `card_not_found` is not an empty collection.
+
+A card has stable `id`, `name`, `is_in_tree`, `parent_id`, `state`, base `trigger_condition`, `action`, `scope`, `exception_notes`, `active_strengthening_level`, `effective_requirements`, `current_requirement_version`, `strengthening_levels`, `requirement_versions` and progress. Version entries identify the immutable effective requirement text, strengthening level and validity period; `effective_until: null` denotes the active version. Up to five user-created strengthening levels supplement the base. Selecting a level starts a version; it does not rewrite earlier versions.
+
+- `lit`: uploaded Lit state.
+- `pending_today_confirmation`: visually unlit, awaiting today's validity confirmation, without failure merely from this state.
+- `extinguished`: formally extinguished, requiring separate manual lighting.
+- Checkpoint: fixed 04:00 Beijing time (UTC+08:00), independent of device timezone. At settlement pending nodes fail; surviving lit nodes become pending for the next National Focus Day. The MCP only exposes the uploaded maintenance checkpoint; do not advance states using your current clock.
+- Internalization Progress: cumulative successful National Focus Days displayed as a familiarity proxy, not measured habit formation, strengthening level or complete daily calendar. Current/best consecutive records are separate.
+
+Historical analysis is optional when requested. `list_national_focus_failures({start_date,end_date,expected_revision?,limit?,cursor?})` uses inclusive National Focus day start dates, maximum 366 days. Follow `next_cursor` with identical dates/limit/revision until complete or disclose truncation. `get_national_focus_failure({event_id,expected_revision})` returns the frozen tree. Cite event ID, source card ID and stored version; absent legacy version fields stay unknown. Independent failure sources are events; cascaded descendants are not extra events. Batch explanations are later editable reflections, distinct from original reason. `pending_review` stays distinct from accepted history. Failure records alone establish neither complete history nor causation. Historical soft-deleted cards are read from the frozen snapshot.
