@@ -113,8 +113,15 @@ void main() {
     await tester.scrollUntilVisible(
       find.text('用户管理'),
       160,
-      scrollable: find.byType(Scrollable).first,
+      scrollable: find
+          .descendant(
+            of: find.byType(MyPage),
+            matching: find.byType(Scrollable),
+          )
+          .first,
     );
+    await tester.ensureVisible(find.byKey(const ValueKey('admin-users-entry')));
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('admin-users-entry')));
     await tester.pumpAndSettle();
     expect(find.text('管理员：用户停用与恢复'), findsOneWidget);

@@ -35,11 +35,13 @@ class NationalFocusTreePage extends StatefulWidget {
   const NationalFocusTreePage({
     super.key,
     required this.repository,
+    this.onOpenAiAnalysis,
     this.displayTimeZoneLoader,
     this.now,
   });
 
   final NationalFocusRepository repository;
+  final VoidCallback? onOpenAiAnalysis;
   final Future<String?> Function()? displayTimeZoneLoader;
   final DateTime Function()? now;
 
@@ -477,6 +479,9 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                           ),
                           displayTimeZoneId: _displayTimeZoneId,
                           onOpenHistory: _openFailureHistory,
+                          onOpenAiAnalysis: _placementCard == null
+                              ? widget.onOpenAiAnalysis
+                              : null,
                           detailed: _detailed,
                           onViewSelected: _placementCard == null
                               ? (value) => setState(() => _detailed = value)
@@ -1666,6 +1671,7 @@ class _TreePageHeader extends StatelessWidget {
     required this.nextCheckpoint,
     required this.displayTimeZoneId,
     required this.onOpenHistory,
+    required this.onOpenAiAnalysis,
   });
   final bool detailed;
   final ValueChanged<bool>? onViewSelected;
@@ -1676,6 +1682,7 @@ class _TreePageHeader extends StatelessWidget {
   final String nextCheckpoint;
   final String displayTimeZoneId;
   final VoidCallback onOpenHistory;
+  final VoidCallback? onOpenAiAnalysis;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -1734,7 +1741,9 @@ class _TreePageHeader extends StatelessWidget {
               tooltip: '更多',
               icon: const Icon(Icons.more_vert),
               onSelected: (value) {
-                if (value == 'records') {
+                if (value == 'ai') {
+                  onOpenAiAnalysis?.call();
+                } else if (value == 'records') {
                   Navigator.of(context).push<void>(
                     MaterialPageRoute<void>(
                       builder: (_) => Scaffold(
@@ -1760,8 +1769,10 @@ class _TreePageHeader extends StatelessWidget {
                   );
                 }
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'records', child: Text('检查点与失败记录')),
+              itemBuilder: (_) => [
+                const PopupMenuItem(value: 'records', child: Text('检查点与失败记录')),
+                if (onOpenAiAnalysis != null)
+                  const PopupMenuItem(value: 'ai', child: Text('国策 AI 分析')),
               ],
             ),
           ],

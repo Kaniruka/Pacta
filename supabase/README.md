@@ -1,5 +1,8 @@
 # Supabase setup for Ticket T01
 
+For Issue #57's independent read-only National Focus MCP authorization,
+deployment and contracts, see [the MCP runbook](functions/national-focus-mcp/README.md).
+
 The Flutter client only receives `SUPABASE_URL` and the publishable/anon key.
 Never put a `service_role` or `sb_secret_` key in `.env` passed to Flutter.
 

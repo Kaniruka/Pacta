@@ -1,0 +1,26 @@
+{
+  "client": "Codex CLI 0.163.0-alpha.10.2 / Windows 11",
+  "transport": "actual Codex app-server mcpServer/tool/call, Streamable HTTP OAuth PKCE",
+  "tool": "get_snapshot_metadata",
+  "before_revoke": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"status\":\"available\",\"revision\":1,\"freshness\":\"latest_manual_upload\",\"uploaded_at\":\"2026-10-21T15:26:19.735369+00:00\",\"source_device\":{\"id\":\"pacta57-probe\",\"name\":\"Issue57 isolated probe\"},\"data_updated_at\":\"2026-01-01T00:00:00+00:00\",\"contract_version\":1}"
+      }
+    ],
+    "structuredContent": {
+      "status": "available",
+      "revision": 1,
+      "freshness": "latest_manual_upload",
+      "uploaded_at": "2026-10-21T15:26:19.735369+00:00",
+      "source_device": {
+        "id": "pacta57-probe",
+        "name": "Issue57 isolated probe"
+      },
+      "data_updated_at": "2026-01-01T00:00:00+00:00",
+      "contract_version": 1
+    }
+  },
+  "after_app_revoke": "Actual Codex stored-delegate initialization rejected: Auth required. No tool result returned."
+}

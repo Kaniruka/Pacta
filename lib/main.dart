@@ -28,6 +28,8 @@ import 'src/focus/focus_time_zones.dart';
 import 'src/national_focus/national_focus_repository.dart';
 import 'src/national_focus/national_focus_checkpoint_scheduler.dart';
 import 'src/national_focus/national_focus_models.dart';
+import 'src/national_focus/national_focus_ai_access.dart';
+import 'src/national_focus/national_focus_ai_analysis_page.dart';
 import 'src/national_focus/national_focus_tree_page.dart';
 import 'src/notifications/focus_notification_service.dart';
 import 'src/notifications/focus_notification_settings_page.dart';
@@ -46,10 +48,17 @@ Future<void> main() async {
   AuthRepository repository = const UnavailableAuthRepository();
   final database = PactaDatabase.open();
   CloudSnapshotRemote? cloudRemote;
+  NationalFocusAiGrantRepository Function(String userId)?
+  nationalFocusAiGrantRepositoryFactory;
   if (url.isNotEmpty && key.isNotEmpty) {
     await Supabase.initialize(url: url, publishableKey: key);
     repository = SupabaseAuthRepository(Supabase.instance.client);
     cloudRemote = SupabaseCloudSnapshotRemote(Supabase.instance.client);
+    nationalFocusAiGrantRepositoryFactory = (userId) =>
+        SupabaseNationalFocusAiGrantRepository(
+          client: Supabase.instance.client,
+          userId: userId,
+        );
   }
   final purgeCleanupRepository = UserPurgeCleanupRepository(
     authRepository: repository,
@@ -58,6 +67,9 @@ Future<void> main() async {
   runApp(
     PactaApp(
       authRepository: repository,
+      nationalFocusMcpUrl: _nationalFocusMcpUrl(url),
+      nationalFocusAiGrantRepositoryFactory:
+          nationalFocusAiGrantRepositoryFactory,
       userPurgeCleanupRepository: purgeCleanupRepository,
       focusNotificationService: focusNotificationService,
       taskRepositoryFactory: (userId) => LocalTaskRepository(
@@ -131,10 +143,18 @@ Future<void> main() async {
   );
 }
 
+String? _nationalFocusMcpUrl(String supabaseUrl) {
+  final baseUrl = supabaseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
+  if (baseUrl.isEmpty) return null;
+  return '$baseUrl/functions/v1/national-focus-mcp/mcp';
+}
+
 class PactaApp extends StatelessWidget {
   const PactaApp({
     super.key,
     required this.authRepository,
+    this.nationalFocusMcpUrl,
+    this.nationalFocusAiGrantRepositoryFactory,
     this.userPurgeCleanupRepository,
     this.focusNotificationService,
     this.taskRepositoryFactory,
@@ -153,6 +173,9 @@ class PactaApp extends StatelessWidget {
   chainSignalsRepositoryFactory;
 
   final AuthRepository authRepository;
+  final String? nationalFocusMcpUrl;
+  final NationalFocusAiGrantRepository Function(String userId)?
+  nationalFocusAiGrantRepositoryFactory;
   final UserPurgeCleanupRepository? userPurgeCleanupRepository;
   final FocusNotificationService? focusNotificationService;
   final TaskRepository Function(String userId)? taskRepositoryFactory;
@@ -174,6 +197,10 @@ class PactaApp extends StatelessWidget {
           cloudSnapshotRepositoryFactory,
         ),
         authRepositoryProvider.overrideWithValue(authRepository),
+        nationalFocusMcpUrlProvider.overrideWithValue(nationalFocusMcpUrl),
+        nationalFocusAiGrantRepositoryFactoryProvider.overrideWithValue(
+          nationalFocusAiGrantRepositoryFactory,
+        ),
         userPurgeCleanupRepositoryProvider.overrideWithValue(
           userPurgeCleanupRepository,
         ),
@@ -255,6 +282,13 @@ final chainSignalsRepositoryProvider =
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return const UnavailableAuthRepository();
 });
+
+final nationalFocusAiGrantRepositoryProvider =
+    Provider.autoDispose<NationalFocusAiGrantRepository?>((ref) {
+      final userId = ref.watch(authRepositoryProvider).currentUserId;
+      final factory = ref.watch(nationalFocusAiGrantRepositoryFactoryProvider);
+      return userId == null || factory == null ? null : factory(userId);
+    });
 
 final userPurgeCleanupRepositoryProvider =
     Provider<UserPurgeCleanupRepository?>((ref) => null);
@@ -719,6 +753,17 @@ class _AppShellState extends ConsumerState<AppShell>
     }
   }
 
+  void _openNationalFocusAiAnalysis() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => NationalFocusAiAnalysisPage(
+          mcpUrl: ref.read(nationalFocusMcpUrlProvider),
+          repository: ref.read(nationalFocusAiGrantRepositoryProvider),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -755,6 +800,7 @@ class _AppShellState extends ConsumerState<AppShell>
       BoardPage(onOpenNationalFocus: () => setState(() => _index = 1)),
       NationalFocusTreePage(
         repository: nationalFocusRepository,
+        onOpenAiAnalysis: _openNationalFocusAiAnalysis,
         displayTimeZoneLoader: () async {
           final deviceZone = await FlutterTimezone.getLocalTimezone();
           final dashboard = await focusRepository.getDashboardMetrics(
@@ -766,6 +812,7 @@ class _AppShellState extends ConsumerState<AppShell>
       const FocusChainPage(),
       const MyPage(),
     ];
+
     final wide = MediaQuery.sizeOf(context).width >= 840;
     final content = SafeArea(
       child: StreamBuilder<UserLifecycleStatus?>(
@@ -3810,6 +3857,11 @@ class _MyPageState extends ConsumerState<MyPage> {
                 .read(nationalFocusRepositoryProvider)
                 .settleDueCheckpoints();
           },
+        ),
+        const SizedBox(height: 12),
+        NationalFocusAiAnalysisEntry(
+          mcpUrl: ref.watch(nationalFocusMcpUrlProvider),
+          repository: ref.watch(nationalFocusAiGrantRepositoryProvider),
         ),
         const SizedBox(height: 12),
         Card(
