@@ -62,7 +62,60 @@ Flutter 不会自动加载 `.env`。应用初始化代码需要以 `const String
 
 Android 的下一步：在 Android Studio 的 SDK Manager → SDK Tools 中安装 Android SDK Command-line Tools，然后运行 `flutter doctor --android-licenses` 阅读并接受许可证，再运行 `flutter doctor -v` 复查。根目录 `.env` 无法替代 SDK 安装或许可证处理。
 
-2026-09-13 更新：已从 Google 官方下载 Command-line Tools（15859902），核对官网 SHA-256 后安装到现有 SDK 的 `cmdline-tools/latest`。`flutter doctor -v` 已识别工具、Android 36.1 平台、36.1.0 build-tools 和 Android Studio 自带 JDK 21。用户接受许可证后，已再次运行 `flutter doctor -v`：Android toolchain 检查通过，显示 `All Android licenses accepted.`。目前尚无已连接的 Android 真机或运行中的模拟器；Windows、Chrome 和网络检查通过。仍有 Flutter/Dart 的 Scoop 版本目录与 `current` 路径提示。
+2026-09-13：从 Google 下载并核验 SHA-256 后，将 Command-line Tools（15859902）装入 `cmdline-tools/latest`。当时 doctor 识别 Android 36.1、build-tools 36.1.0 和 Android Studio JDK 21；licenses、Windows、Chrome、网络检查均通过。当前 license 状态见下文。
+
+### 2026-10-21 工具检查（只读）
+
+以下记录保留当日工具检查状态。“本轮”均指该次只读检查；后续实际设备运行与数据恢复证据见 [Issue #58](issue-58-validation.md) 和 [Issue #59](issue-59-validation.md)，不从历史检查推断当前设备状态。
+
+Windows 11 主机，WSL 工作区 `/mnt/f/workspace/release/flutter/pacta`：
+
+| 工具 | 状态 |
+| --- | --- |
+| Flutter / Dart | 3.47.2 / 3.13.2；目录 `D:\Programs\UserScoop\apps\flutter\current`，可由 WSL 调用。PATH 指向 Scoop 版本目录而非 `current`。 |
+| Android | SDK `C:\Users\Stray\AppData\Local\Android\sdk`；Emulator 36.5.11.0、Android 36.1、build-tools 36.1.0；doctor 报 licenses 未全接受。 |
+| ADB / AVD | ADB 37.0.0；无连接设备；`PactaT24Peer`、`PactaT24Secondary` 可用但未启动。 |
+| Windows | Visual Studio Community 2026、Windows SDK 10.0.26100.0；doctor 检查通过。 |
+
+从仓库根目录通过 WSL 调用 Windows Flutter：
+
+```bash
+cmd.exe /c flutter --version
+cmd.exe /c flutter doctor -v
+cmd.exe /c flutter emulators
+cmd.exe /c flutter devices
+```
+
+ADB/Emulator 不在 Windows PATH。本轮用以下 C 盘 SDK 入口检查版本、设备和 AVD；WSL 路径为 `/mnt/c/Users/Stray/AppData/Local/Android/sdk/{platform-tools/adb.exe,emulator/emulator.exe}`：
+
+```bash
+cmd.exe /c "C:\Users\Stray\AppData\Local\Android\sdk\platform-tools\adb.exe version"
+cmd.exe /c "C:\Users\Stray\AppData\Local\Android\sdk\platform-tools\adb.exe devices -l"
+cmd.exe /c "C:\Users\Stray\AppData\Local\Android\sdk\emulator\emulator.exe -list-avds"
+```
+
+ADB 版本输出另自报 `D:\Program Data\Android\sdk\platform-tools\adb.exe`，该文件也存在；不推断它与 C 盘入口为同一文件。路径有空格时整体引用；环境变化后先复查工具和设备。
+
+可按任务启动现有 AVD、安装测试 APK，或在 Windows 安装/运行测试版；保留应用数据，清数据/卸载/擦除 AVD 不作为默认步骤。以下为命令示例，本轮仅检查工具：
+
+```bash
+cmd.exe /c flutter emulators --launch PactaT24Peer
+cmd.exe /c flutter devices
+'/mnt/c/Users/Stray/AppData/Local/Android/sdk/platform-tools/adb.exe' devices -l
+cmd.exe /c flutter build apk --debug
+'/mnt/c/Users/Stray/AppData/Local/Android/sdk/platform-tools/adb.exe' -s emulator-5554 install -r 'F:\workspace\release\flutter\pacta\build\app\outputs\flutter-apk\app-debug.apk'
+```
+
+将示例序列号 `emulator-5554` 替换为实际设备；第二台 AVD 是 `PactaT24Secondary`，多设备时逐台指定。应用标识 `com.pacta.pacta`。云功能只传公开客户端配置；测试账号和服务端密钥留在受保护环境。
+
+Windows 桌面工具链已由 doctor 检出。仓库根目录可运行 `cmd.exe /c flutter run -d windows`；Release 构建及启动命令如下：
+
+```bash
+cmd.exe /c flutter build windows --release
+cmd.exe /c 'build\windows\x64\runner\Release\pacta.exe'
+```
+
+默认 exe 为 `build\windows\x64\runner\Release\pacta.exe`（已核对工程）。保留 Release 的 DLL、data 等伴随文件，也可安装测试包。本轮未启动模拟器或构建/安装/运行应用。
 
 - 基础工具：Flutter SDK（包含 Dart）、Git；工程创建时确定 SDK 约束并提交应用的依赖锁文件。
 - Android：Android SDK、command-line tools、平台构建工具、兼容的 JDK，以及模拟器或真机；用 `flutter doctor -v` 检查，按结果处理 licenses。

@@ -1,17 +1,18 @@
 # Pacta 维护代理指南
 
-本文件适用于整个仓库。开始工作时先查看 `git status`，辨认已有改动；只修改当前任务需要的文件，并保留他人的未提交工作。
+适用于全仓库。先查 `git status`；只改任务相关文件，保留他人未提交改动。
 
 ## 先读取与任务有关的依据
 
-- 涉及领域概念、业务行为或数据边界时，先读 `GLOSSARY.md` 和 `docs/adr/` 中相关的已接受决策，沿用其中的术语；具体行为与验收依据见 `docs/spec-focus-loop-and-core-shell.md`、`docs/acceptance-matrix-20260914.md`。若实现需求与 ADR 冲突，先明确指出冲突。领域文档的使用约定见 `docs/agents/domain.md`。
-- 涉及产品界面时，参考 `docs/product-design.md` 及 ADR 0004；涉及技术栈、平台范围时，参考 ADR 0003；涉及用户隔离、注册或管理操作时，参考 ADR 0001；涉及任务与设备日历时，参考 ADR 0002。
-- 涉及本地环境、云端连接或测试凭据时，参考 `docs/development-environment.md`；涉及 Supabase 部署与管理函数时，参考 `supabase/README.md`。
-- 需求和任务以 GitHub Issues 为跟踪入口，用 `gh` 读取和更新；操作约定见 `docs/agents/issue-tracker.md`。分诊时使用 `needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`，含义见 `docs/agents/triage-labels.md`。
+- 领域、行为、数据边界：先读 `GLOSSARY.md`、相关已接受 ADR；沿用术语，需求与 ADR 冲突时先指出。行为/验收见 `docs/spec-focus-loop-and-core-shell.md`、`docs/acceptance-matrix-20260914.md`；领域文档约定见 `docs/agents/domain.md`。
+- UI：先读 `docs/product-design.md`、ADR 0004、[UI 与技能规范](docs/agents/ui.md)，按任务调用技能。技术栈/平台读 ADR 0003；隔离/注册/管理读 ADR 0001；任务/设备日历读 ADR 0002。
+- 环境、云连接、测试凭据：读 `docs/development-environment.md`；Supabase 部署/管理函数读 `supabase/README.md`。
+- 需求跟踪：用 `gh` 读写 GitHub Issues，操作见 `docs/agents/issue-tracker.md`；分诊标签 `needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix` 的含义见 `docs/agents/triage-labels.md`。
 
 ## 实施与验证
 
-- 客户端代码在 `lib/`，对应测试在 `test/`；平台验收测试在 `integration_test/`；数据库迁移、RLS 验证脚本和 Edge Functions 在 `supabase/`。修改行为时检查相应测试和文档，验证结果只报告实际执行过的命令、平台与结果。
-- 修改 Dart 代码后，对改动文件运行 `dart format`，再运行 `flutter analyze` 和相关 `flutter test`；影响跨模块行为时运行完整 `flutter test`。修改 Drift 表结构后，按需运行 `dart run build_runner build --delete-conflicting-outputs`，检查生成文件差异。
-- 修改同步、身份、权限或数据库行为时，核查离线恢复、重复同步、跨用户隔离和 RLS 影响；在隔离测试项目验证相关 SQL 或真实服务边界。Android/Windows 原生权限、通知和日历行为需要对应平台证据，不能仅以单元测试代替。
-- 客户端只使用可公开的 Supabase URL 和 publishable/anon key。将服务端密钥、管理员凭据与真实测试账号信息留在受保护的环境中；提交前检查改动中没有这些值。
+- 代码/测试：`lib/`、`test/`；平台验收：`integration_test/`；迁移、RLS 脚本、Edge Functions：`supabase/`。行为改动同步检查测试和文档，只报告实际命令、平台及结果。
+- Dart 改动：先对改动文件 `dart format`，再 `flutter analyze` 和相关 `flutter test`；跨模块改动跑完整测试。Drift 表变更按需运行 `dart run build_runner build --delete-conflicting-outputs` 并检查生成差异。
+- 同步/身份/权限/数据库改动：核查离线恢复、重复同步、跨用户隔离及 RLS，在隔离项目验证 SQL/真实服务边界。原生权限、通知、日历须有 Android/Windows 对应证据，单元测试不能替代。
+- 设备验收：可按任务启动现有 Android 模拟器、用 ADB 安装测试 APK，或在 Windows 构建/安装/运行测试版本；保留用户数据。路径、命令见[环境文档](docs/development-environment.md)，按实际平台取证。
+- 客户端仅用公开 Supabase URL 和 publishable/anon key；服务端密钥、管理员凭据、真实测试账号留在受保护环境，提交前检查无泄漏。
