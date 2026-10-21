@@ -1,5 +1,5 @@
 // No external runtime dependencies: this public boundary is tested as HTTP.
-import { projectNationalFocusMetadata, projectNationalFocusSnapshot } from './projection.ts';
+import { projectNationalFocusMetadata, projectNationalFocusSnapshot, projectNationalFocusHistory, nationalFocusDateBounds } from './projection.ts';
 
 export const SCOPE = 'national_focus:read';
 export interface Store {
@@ -60,7 +60,25 @@ const cardTool = {
   }, required: ['card_id', 'expected_revision'], additionalProperties: false },
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
 };
-const tools = [metadataTool, treeTool, libraryTool, cardTool];
+const historyTool = {
+  name: 'list_national_focus_failures',
+  description: 'Read independent failure events and frozen trees from the latest manual upload. Dates are inclusive National Focus days beginning at fixed Beijing 04:00 (UTC+08); maximum 366 days, limit 1–100 (default 30). Sort checkpoint ascending then event id in code-point order. Subsequent pages require the same revision, dates and limit. Cascaded nodes are not independent failures. Original reasons and editable batch reflections are separate. Historical omissions are disclosed; successful_days is not a daily success log.',
+  inputSchema: { type: 'object', properties: {
+    start_date: { type: 'string', format: 'date' }, end_date: { type: 'string', format: 'date' },
+    limit: { type: 'integer', minimum: 1, maximum: 100 }, cursor: { type: 'string', maxLength: 4096 },
+    expected_revision: { type: 'integer', minimum: 1 },
+  }, required: ['start_date', 'end_date'], additionalProperties: false },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+};
+const failureTool = {
+  name: 'get_national_focus_failure',
+  description: 'Read one independent failure event by stable event_id at expected_revision, including the immutable historical tree/rules, original reason and separate later shared reflection. Soft-deleted cards remain interpretable. No event writes or complete success timeline.',
+  inputSchema: { type: 'object', properties: {
+    event_id: { type: 'string', minLength: 1, maxLength: 200 }, expected_revision: { type: 'integer', minimum: 1 },
+  }, required: ['event_id', 'expected_revision'], additionalProperties: false },
+  annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+};
+const tools = [metadataTool, treeTool, libraryTool, cardTool, historyTool, failureTool];
 const toolNames = new Set(tools.map((item) => item.name));
 
 export function createHandler(config: Config): (request: Request) => Promise<Response> {
@@ -127,7 +145,7 @@ export function createHandler(config: Config): (request: Request) => Promise<Res
             target.searchParams.set('iss', issuer);
             return new Response(null, { status: 302, headers: { Location: target.toString(), 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } });
           }
-          return new Response(`Pacta 国策只读连接 / National Focus read-only connection\n\n在 Pacta App 登录，打开「我的 → 国策 AI 分析」，粘贴以下请求码，检查客户端并明确同意。\nSign in to Pacta, open My → National Focus AI, paste this request code, review and approve.\n\n${ticket}\n\n仅授权读取你本人最近手动上传的国策树、卡片库、规则与进度，以及快照元数据。有效期30分钟，不提供业务写入。\nRead only your latest manually uploaded National Focus tree, library, rules, progress and snapshot metadata. Expires in 30 minutes. No business writes.\n\n请求码5分钟有效。请只批准你自己刚在 Codex 发起的连接，不要批准他人发来的码。\nRequest expires in 5 minutes. Only approve a connection you initiated in Codex; never approve a code sent by someone else.\n\nApp 确认成功后刷新本页面以返回 Codex。取消则关闭页面。\nAfter App approval, refresh this page to return to Codex. Close to cancel.`, { headers: {
+          return new Response(`Pacta 国策只读连接 / National Focus read-only connection\n\n在 Pacta App 登录，打开「我的 → 国策 AI 分析」，粘贴以下请求码，检查客户端并明确同意。\nSign in to Pacta, open My → National Focus AI, paste this request code, review and approve.\n\n${ticket}\n\n仅授权读取你本人最近手动上传的国策树、卡片库、规则与进度，失败事件及冻结树、原始原因和后续反思，以及快照元数据。有效期30分钟，不提供业务写入。\nRead only your latest manually uploaded National Focus tree, library, rules, progress, failure events with frozen trees, original reasons, later reflections and snapshot metadata. Expires in 30 minutes. No business writes.\n\n请求码5分钟有效。请只批准你自己刚在 Codex 发起的连接，不要批准他人发来的码。\nRequest expires in 5 minutes. Only approve a connection you initiated in Codex; never approve a code sent by someone else.\n\nApp 确认成功后刷新本页面以返回 Codex。取消则关闭页面。\nAfter App approval, refresh this page to return to Codex. Close to cancel.`, { headers: {
             'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store',
             'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff',
           } });
@@ -197,7 +215,11 @@ export function createHandler(config: Config): (request: Request) => Promise<Res
       if (!object(b.params) || typeof b.params.name !== 'string' || !toolNames.has(b.params.name)) return failure(-32602, 'Unknown tool');
       const name = b.params.name;
       const args = b.params.arguments ?? {};
-      const allowedKeys = name === cardTool.name ? new Set(['card_id', 'expected_revision']) : new Set(['expected_revision']);
+      const isHistory = name === historyTool.name || name === failureTool.name;
+      const allowedKeys = name === historyTool.name
+        ? new Set(['start_date', 'end_date', 'limit', 'cursor', 'expected_revision'])
+        : name === failureTool.name ? new Set(['event_id', 'expected_revision'])
+        : name === cardTool.name ? new Set(['card_id', 'expected_revision']) : new Set(['expected_revision']);
       if (!object(args) || Object.keys(args).some((k) => !allowedKeys.has(k))
         || (args.expected_revision !== undefined && (!Number.isSafeInteger(args.expected_revision) || Number(args.expected_revision) < 1))
         || (name === cardTool.name && (typeof args.card_id !== 'string' || !args.card_id.trim() || args.card_id.length > 200
@@ -213,6 +235,54 @@ export function createHandler(config: Config): (request: Request) => Promise<Res
             p_token_hash: tokenHash, p_expected_revision: args.expected_revision,
           });
           return toolResult(projectNationalFocusMetadata(value));
+        }
+        if (isHistory) {
+          const detail = name === failureTool.name;
+          const limit = args.limit === undefined ? 30 : args.limit;
+          const bounds = detail ? null : nationalFocusDateBounds(args.start_date as string, args.end_date as string);
+          if ((detail && (typeof args.event_id !== 'string' || !args.event_id.trim() || args.event_id.length > 200
+              || args.expected_revision === undefined))
+            || (!detail && (!bounds || !Number.isSafeInteger(limit) || Number(limit) < 1 || Number(limit) > 100))
+            || (args.cursor !== undefined && (typeof args.cursor !== 'string' || !args.cursor || args.cursor.length > 4096
+              || args.expected_revision === undefined))) return failure(-32602, 'Invalid history arguments');
+          let after: string | null = null;
+          if (args.cursor !== undefined) {
+            try {
+              const cursor = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(atob((args.cursor as string).replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0))));
+              if (!object(cursor) || cursor.revision !== args.expected_revision || cursor.start_date !== args.start_date
+                || cursor.end_date !== args.end_date || cursor.limit !== limit || typeof cursor.after_event_id !== 'string') {
+                return failure(-32602, 'Cursor does not match query or revision');
+              }
+              after = cursor.after_event_id;
+            } catch { return failure(-32602, 'Invalid cursor'); }
+          }
+          const rawHistory = await store.rpc('read_national_focus_mcp_history_snapshot', {
+            p_token_hash: tokenHash, ...(args.expected_revision === undefined ? {} : { p_expected_revision: args.expected_revision }),
+          });
+          const history = projectNationalFocusHistory(rawHistory);
+          if (args.expected_revision !== undefined && history.metadata.revision !== args.expected_revision) {
+            return toolResult({ metadata: history.metadata, error: { code: 'snapshot_changed', recovery: 'Read metadata again and restart history queries.' } }, true);
+          }
+          const limitations = 'Only uploaded failure events are available; historical omissions are possible. Cumulative successful days are not daily success logs or a complete audit timeline. Frozen trees and original reasons are separate from editable batch reflections.';
+          if (detail) {
+            const event = history.events.find((item) => item.id === args.event_id) ?? null;
+            return toolResult({ metadata: history.metadata, event, limitations,
+              ...(history.metadata.status === 'available' && !event ? { error: { code: 'failure_not_found', recovery: 'List failures at this revision and use a returned event id.' } } : {}) }, history.metadata.status === 'available' && !event);
+          }
+          const events = history.events.filter((item) => Date.parse(item.checkpoint_at) >= bounds!.start_at
+            && Date.parse(item.checkpoint_at) < bounds!.end_before);
+          const offset = after === null ? 0 : events.findIndex((item) => item.id === after) + 1;
+          if (after !== null && offset === 0) return failure(-32602, 'Cursor event is outside this query');
+          const page = events.slice(offset, offset + Number(limit));
+          const truncated = offset + page.length < events.length;
+          const nextCursor = truncated ? btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify({ revision: history.metadata.revision,
+            start_date: args.start_date, end_date: args.end_date, limit,
+            after_event_id: page.at(-1)!.id })))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') : null;
+          return toolResult({ metadata: history.metadata, events: page, limitations,
+            coverage: { start_date: args.start_date, end_date: args.end_date,
+              start_at: new Date(bounds!.start_at).toISOString(), end_before: new Date(bounds!.end_before).toISOString(),
+              timezone: 'UTC+08:00', checkpoint: '04:00', ordering: 'checkpoint_at ASC, id ASC (code-point)' },
+            next_cursor: nextCursor, truncated });
         }
         const raw = await store.rpc('read_national_focus_mcp_snapshot', {
           p_token_hash: tokenHash,

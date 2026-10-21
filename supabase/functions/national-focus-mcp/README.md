@@ -1,14 +1,15 @@
-# National Focus MCP, contract v1 (Issues #57–58)
+# National Focus MCP, contract v1 (Issues #57–59)
 
 This release exposes snapshot metadata and current National Focus tree, library
-and card details. Failure-history queries, write tools and arbitrary SQL/table
-access are not available.
+and card details, plus read-only failure-event lists and frozen historical trees.
+Write tools and arbitrary SQL/table access are not available.
 Neither connecting nor reading performs a manual upload/download or settlement.
 
 ## Deploy
 
 Apply `supabase/migrations/202610210001_national_focus_mcp.sql` and then
-`202610210002_national_focus_mcp_content.sql` after the existing
+`202610210002_national_focus_mcp_content.sql` and
+`202610220001_national_focus_mcp_history.sql` after the existing
 snapshot/lifecycle migrations. Review the selected project before applying it;
 use isolated test identities for validation and never overwrite ordinary users'
 snapshots.
@@ -95,8 +96,8 @@ paths into an Edge Function.
 - All three authorization tables have RLS and no anon/authenticated table
   privileges. Authenticated App users see redacted own grants via an RPC and can
   revoke only their own grants; only service-role code can exchange/read delegates.
-  The metadata read projects metadata only. The content read selects four
-  National Focus tables for the service; the HTTP tools apply a typed field
+  The metadata read projects metadata only. The current-content read selects four
+  National Focus tables, and the history read selects only the failure table for the service; the HTTP tools apply a typed field
   whitelist before returning data. No whole snapshot or mixed-module log reaches
   Codex.
 - SQL serializes public allocations: at most 200 client registrations/hour,
@@ -172,8 +173,8 @@ object rows owned by this User, and nonempty standalone card names.
 | JSON-RPC -32602 | Unknown tool/invalid arguments, including user selectors or SQL. |
 
 Card details require `expected_revision` and return the same metadata/version
-context. Future history pagination must preserve this revision constraint. No historical cloud snapshots are retained by MCP.
-Failure-history tools and the installable analysis skill remain later tickets.
+context. History pagination preserves this revision constraint. No historical cloud snapshots are retained by MCP.
+The installable analysis skill remains a later ticket.
 Current tree/library/card tools are available in T2 (#58).
 
 ## Verify
@@ -181,7 +182,7 @@ Current tree/library/card tools are available in T2 (#58).
 Run the public HTTP contract tests without Supabase:
 
 ```sh
-node --experimental-transform-types --test supabase/functions/national-focus-mcp/handler.test.ts
+node --experimental-transform-types --test supabase/functions/national-focus-mcp/handler.test.ts supabase/functions/national-focus-mcp/history.test.ts
 ```
 
 Use Node 24+; production is Supabase's Deno Edge runtime. Run
@@ -249,3 +250,55 @@ identities and fixtures and never selects an ordinary user as a test subject.
 Use a dedicated test project where available. Validation against the configured
 project with isolated identities must be described as identity isolation.
 Actual platform and remote-client evidence belongs in `docs/issue-58-validation.md`.
+
+
+## Failure-history tools (T3 / Issue #59)
+
+`list_national_focus_failures` requires `start_date` and `end_date` in exact
+`YYYY-MM-DD` form. Both are inclusive **National Focus day start dates**;
+2026-10-01 means `[2026-10-01 04:00+08:00, 2026-10-02 04:00+08:00)`.
+An event exactly on a checkpoint belongs to the day starting at that checkpoint.
+This classifies event timestamps; it does not claim that the failed behavior
+occurred during the new day. Maximum range: 366 days. `limit` is 1–100,
+default 30. No clock-dependent implicit range is used.
+
+Events sort by `checkpoint_at ASC`, then stable event `id ASC` using code-point
+comparison. Equal checkpoint timestamps are therefore deterministic. Response
+`coverage` gives actual date bounds, UTC instants, timezone, checkpoint and
+ordering. `next_cursor` is null at the end; `truncated` means more events exist
+in this uploaded snapshot within the requested range. Empty history returns
+`metadata.status: available`, `events: []`, and no cursor. It never implies
+complete historical coverage.
+
+To continue, pass `cursor`, the same dates/limit and the returned revision as
+`expected_revision`. Cursors bind all these values plus the last event ID.
+Invalid/mismatched/out-of-range cursors return JSON-RPC -32602; a newer manual
+upload returns tool error `snapshot_changed`. Restart the analysis rather than
+combine versions. Cursors are opaque continuation positions, not authorization
+credentials. Every page and detail revalidates the current delegate and owner.
+
+`get_national_focus_failure` requires `event_id` and `expected_revision`.
+It returns `{metadata,event,limitations}`; an unavailable event in an available
+snapshot returns `failure_not_found`. Missing/legacy/unsupported snapshots keep
+their distinct metadata statuses. Service errors remain HTTP 503 and authorization
+errors HTTP 401, never an empty-history result.
+
+Each event carries stable `id`, `batch_id`, source `card_id`, `checkpoint_at`,
+`national_focus_date`, `cause`, original `failure_reason`, later editable
+`shared_explanation`, `review_disposition` and full frozen `tree_snapshot`.
+One stored event represents one independent failure source. Affected descendants
+appear within the frozen tree with `failure_source_card_id` and cascade fields;
+they do not create extra events. Missed confirmations can have multiple independent
+events sharing one batch reflection. Editing the reflection leaves frozen names,
+structure, effective requirements and original reasons untouched. Historical
+soft-deleted cards remain in that frozen tree and are never resolved through
+today's card collection. `pending_review` events are explicitly distinguished
+from accepted history.
+
+Frozen snapshots are reconstructed through a field whitelist, including nested
+objects. Older optional effective-rule/version/failure-source fields remain null;
+the tool does not infer them from current rules. Missing required frozen data
+returns `unsupported_snapshot` with manual-upload recovery. Every history response
+warns about omissions: only uploaded failure events are available, cumulative
+successful days are not daily success logs, and no complete audit timeline or
+causal explanation is promised. No failure creation/editing tool is exposed.

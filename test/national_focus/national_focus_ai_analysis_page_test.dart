@@ -53,7 +53,12 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('最近一次手动上传'), findsOneWidget);
-    expect(find.textContaining('当前国策树、卡片库与具体规则'), findsOneWidget);
+    expect(find.textContaining('失败时冻结的完整树快照'), findsOneWidget);
+    expect(find.textContaining('强化等级、要求版本、连续记录和内化进度'), findsOneWidget);
+    expect(find.textContaining('快照版本、来源设备和上传时间'), findsOneWidget);
+    expect(find.textContaining('原始原因与事后说明分开'), findsOneWidget);
+    expect(find.textContaining('不是完整的逐日审计日志'), findsOneWidget);
+    expect(find.textContaining('不能新增、修改或删除失败记录与说明'), findsOneWidget);
     expect(find.text('尚未授权'), findsOneWidget);
 
     final requestCodeField = find.byKey(
@@ -78,6 +83,8 @@ void main() {
     expect(grants.inspectedCodes, ['a' * 64]);
     expect(find.text('Codex CLI'), findsOneWidget);
     expect(find.text('https://127.0.0.1/callback'), findsOneWidget);
+    expect(find.textContaining('失败历史（含冻结快照'), findsOneWidget);
+    expect(find.textContaining('Codex 不能修改失败记录'), findsOneWidget);
 
     await _scrollUntilVisible(tester, page, find.text('授予 30 分钟只读授权'));
     await tester.tap(find.text('授予 30 分钟只读授权'));
@@ -138,6 +145,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('最近一次手动上传'), findsOneWidget);
+    expect(find.textContaining('失败时冻结的完整树快照'), findsOneWidget);
   });
 
   testWidgets('320 窄屏、大字号与深色主题下引导页可滚动且无溢出', (tester) async {

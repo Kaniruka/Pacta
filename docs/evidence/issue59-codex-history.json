@@ -1,0 +1,297 @@
+{
+  "client": "codex-cli 0.163.0-alpha.10.2",
+  "transport": "actual installed Codex app-server MCP client; dedicated opaque delegate via bearer_token_env_var",
+  "oauth_note": "History validation reuses the existing grant format through an isolated test grant; this run does not retest DCR/PKCE consent.",
+  "checks": {
+    "same_time_id_order_and_paging": true,
+    "frozen_rules_and_reflection_whitelist": true,
+    "local_only_fixture_does_not_change_cloud": true,
+    "explicit_upload_invalidates_cursor_and_refreshes_detail": true,
+    "revoke_refused_by_actual_client": true
+  },
+  "first_page": {
+    "metadata": {
+      "contract_version": 1,
+      "status": "available",
+      "revision": 1,
+      "source_device": {
+        "id": "history-probe",
+        "name": "History fixture device"
+      },
+      "uploaded_at": "2026-10-21T17:57:06.10374+00:00",
+      "data_updated_at": "2026-10-21T17:57:06.10374+00:00",
+      "freshness": "latest_manual_upload"
+    },
+    "events": [
+      {
+        "id": "event-a",
+        "batch_id": "batch-one",
+        "card_id": "historical-card",
+        "checkpoint_at": "2026-10-21T20:00:00Z",
+        "national_focus_date": "2026-10-22",
+        "cause": "missed_confirmation",
+        "failure_reason": "missed daily confirmation",
+        "shared_explanation": "Later reflection: planned too much",
+        "review_disposition": "accepted",
+        "tree_snapshot": [
+          {
+            "state": "pending_today_confirmation",
+            "id": "historical-card",
+            "name": "Frozen historical name",
+            "trigger_condition": "before bed",
+            "action": "read",
+            "scope": null,
+            "exception_notes": null,
+            "parent_id": null,
+            "failure_reason": null,
+            "cascade_source_card_id": null,
+            "effective_trigger_condition": "before midnight",
+            "effective_action": "read 5 pages",
+            "failure_source_card_id": "historical-card",
+            "cascade_prior_state": null,
+            "is_in_tree": true,
+            "maintenance_cycle_started": true,
+            "successful_days": 12,
+            "current_consecutive_days": 3,
+            "best_consecutive_days": 7,
+            "active_strengthening_level": 1,
+            "requirement_version_number": 2,
+            "created_at": "2026-09-01T00:00:00Z",
+            "updated_at": "2026-10-21T00:00:00Z"
+          }
+        ]
+      }
+    ],
+    "limitations": "Only uploaded failure events are available; historical omissions are possible. Cumulative successful days are not daily success logs or a complete audit timeline. Frozen trees and original reasons are separate from editable batch reflections.",
+    "coverage": {
+      "start_date": "2026-10-22",
+      "end_date": "2026-10-22",
+      "start_at": "2026-10-21T20:00:00.000Z",
+      "end_before": "2026-10-22T20:00:00.000Z",
+      "timezone": "UTC+08:00",
+      "checkpoint": "04:00",
+      "ordering": "checkpoint_at ASC, id ASC (code-point)"
+    },
+    "next_cursor": "eyJyZXZpc2lvbiI6MSwic3RhcnRfZGF0ZSI6IjIwMjYtMTAtMjIiLCJlbmRfZGF0ZSI6IjIwMjYtMTAtMjIiLCJsaW1pdCI6MSwiYWZ0ZXJfZXZlbnRfaWQiOiJldmVudC1hIn0",
+    "truncated": true
+  },
+  "second_page": {
+    "metadata": {
+      "contract_version": 1,
+      "status": "available",
+      "revision": 1,
+      "source_device": {
+        "id": "history-probe",
+        "name": "History fixture device"
+      },
+      "uploaded_at": "2026-10-21T17:57:06.10374+00:00",
+      "data_updated_at": "2026-10-21T17:57:06.10374+00:00",
+      "freshness": "latest_manual_upload"
+    },
+    "events": [
+      {
+        "id": "event-b",
+        "batch_id": "batch-one",
+        "card_id": "historical-card",
+        "checkpoint_at": "2026-10-21T20:00:00Z",
+        "national_focus_date": "2026-10-22",
+        "cause": "missed_confirmation",
+        "failure_reason": "missed daily confirmation",
+        "shared_explanation": "Later reflection: planned too much",
+        "review_disposition": "accepted",
+        "tree_snapshot": [
+          {
+            "state": "pending_today_confirmation",
+            "id": "historical-card",
+            "name": "Frozen historical name",
+            "trigger_condition": "before bed",
+            "action": "read",
+            "scope": null,
+            "exception_notes": null,
+            "parent_id": null,
+            "failure_reason": null,
+            "cascade_source_card_id": null,
+            "effective_trigger_condition": "before midnight",
+            "effective_action": "read 5 pages",
+            "failure_source_card_id": "historical-card",
+            "cascade_prior_state": null,
+            "is_in_tree": true,
+            "maintenance_cycle_started": true,
+            "successful_days": 12,
+            "current_consecutive_days": 3,
+            "best_consecutive_days": 7,
+            "active_strengthening_level": 1,
+            "requirement_version_number": 2,
+            "created_at": "2026-09-01T00:00:00Z",
+            "updated_at": "2026-10-21T00:00:00Z"
+          }
+        ]
+      }
+    ],
+    "limitations": "Only uploaded failure events are available; historical omissions are possible. Cumulative successful days are not daily success logs or a complete audit timeline. Frozen trees and original reasons are separate from editable batch reflections.",
+    "coverage": {
+      "start_date": "2026-10-22",
+      "end_date": "2026-10-22",
+      "start_at": "2026-10-21T20:00:00.000Z",
+      "end_before": "2026-10-22T20:00:00.000Z",
+      "timezone": "UTC+08:00",
+      "checkpoint": "04:00",
+      "ordering": "checkpoint_at ASC, id ASC (code-point)"
+    },
+    "next_cursor": "eyJyZXZpc2lvbiI6MSwic3RhcnRfZGF0ZSI6IjIwMjYtMTAtMjIiLCJlbmRfZGF0ZSI6IjIwMjYtMTAtMjIiLCJsaW1pdCI6MSwiYWZ0ZXJfZXZlbnRfaWQiOiJldmVudC1iIn0",
+    "truncated": true
+  },
+  "detail": {
+    "metadata": {
+      "contract_version": 1,
+      "status": "available",
+      "revision": 1,
+      "source_device": {
+        "id": "history-probe",
+        "name": "History fixture device"
+      },
+      "uploaded_at": "2026-10-21T17:57:06.10374+00:00",
+      "data_updated_at": "2026-10-21T17:57:06.10374+00:00",
+      "freshness": "latest_manual_upload"
+    },
+    "event": {
+      "id": "event-a",
+      "batch_id": "batch-one",
+      "card_id": "historical-card",
+      "checkpoint_at": "2026-10-21T20:00:00Z",
+      "national_focus_date": "2026-10-22",
+      "cause": "missed_confirmation",
+      "failure_reason": "missed daily confirmation",
+      "shared_explanation": "Later reflection: planned too much",
+      "review_disposition": "accepted",
+      "tree_snapshot": [
+        {
+          "state": "pending_today_confirmation",
+          "id": "historical-card",
+          "name": "Frozen historical name",
+          "trigger_condition": "before bed",
+          "action": "read",
+          "scope": null,
+          "exception_notes": null,
+          "parent_id": null,
+          "failure_reason": null,
+          "cascade_source_card_id": null,
+          "effective_trigger_condition": "before midnight",
+          "effective_action": "read 5 pages",
+          "failure_source_card_id": "historical-card",
+          "cascade_prior_state": null,
+          "is_in_tree": true,
+          "maintenance_cycle_started": true,
+          "successful_days": 12,
+          "current_consecutive_days": 3,
+          "best_consecutive_days": 7,
+          "active_strengthening_level": 1,
+          "requirement_version_number": 2,
+          "created_at": "2026-09-01T00:00:00Z",
+          "updated_at": "2026-10-21T00:00:00Z"
+        }
+      ]
+    },
+    "limitations": "Only uploaded failure events are available; historical omissions are possible. Cumulative successful days are not daily success logs or a complete audit timeline. Frozen trees and original reasons are separate from editable batch reflections."
+  },
+  "stale_revision": {
+    "metadata": {
+      "contract_version": 1,
+      "status": "available",
+      "revision": 2,
+      "source_device": {
+        "id": "history-probe",
+        "name": "History fixture device"
+      },
+      "uploaded_at": "2026-10-21T17:57:16.947634+00:00",
+      "data_updated_at": "2026-10-21T17:57:16.947634+00:00",
+      "freshness": "latest_manual_upload"
+    },
+    "error": {
+      "code": "snapshot_changed",
+      "recovery": "Read metadata again and restart analysis against the new revision."
+    }
+  },
+  "refreshed_detail": {
+    "metadata": {
+      "contract_version": 1,
+      "status": "available",
+      "revision": 2,
+      "source_device": {
+        "id": "history-probe",
+        "name": "History fixture device"
+      },
+      "uploaded_at": "2026-10-21T17:57:16.947634+00:00",
+      "data_updated_at": "2026-10-21T17:57:16.947634+00:00",
+      "freshness": "latest_manual_upload"
+    },
+    "event": {
+      "id": "event-a",
+      "batch_id": "batch-one",
+      "card_id": "historical-card",
+      "checkpoint_at": "2026-10-21T20:00:00Z",
+      "national_focus_date": "2026-10-22",
+      "cause": "missed_confirmation",
+      "failure_reason": "missed daily confirmation",
+      "shared_explanation": "Later reflection: planned too much",
+      "review_disposition": "accepted",
+      "tree_snapshot": [
+        {
+          "state": "pending_today_confirmation",
+          "id": "historical-card",
+          "name": "Uploaded later historical name",
+          "trigger_condition": "before bed",
+          "action": "read",
+          "scope": null,
+          "exception_notes": null,
+          "parent_id": null,
+          "failure_reason": null,
+          "cascade_source_card_id": null,
+          "effective_trigger_condition": "before midnight",
+          "effective_action": "read 5 pages",
+          "failure_source_card_id": "historical-card",
+          "cascade_prior_state": null,
+          "is_in_tree": true,
+          "maintenance_cycle_started": true,
+          "successful_days": 12,
+          "current_consecutive_days": 3,
+          "best_consecutive_days": 7,
+          "active_strengthening_level": 1,
+          "requirement_version_number": 2,
+          "created_at": "2026-09-01T00:00:00Z",
+          "updated_at": "2026-10-21T00:00:00Z"
+        }
+      ]
+    },
+    "limitations": "Only uploaded failure events are available; historical omissions are possible. Cumulative successful days are not daily success logs or a complete audit timeline. Frozen trees and original reasons are separate from editable batch reflections."
+  },
+  "revoked_client_result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Authentication required"
+      }
+    ],
+    "isError": true,
+    "_meta": {
+      "mcp/www_authenticate": [
+        "Bearer resource_metadata=\"https://wmutsplyqulanwkqtqhb.supabase.co/functions/v1/national-focus-mcp/resource-metadata\", scope=\"national_focus:read\", error=\"invalid_token\""
+      ]
+    }
+  },
+  "cleanup": {
+    "auth_user_count": 2,
+    "temporary_fixture_removed": true,
+    "fixture_users": 0,
+    "fixture_clients": 0,
+    "fixture_snapshots": 0,
+    "fixture_grants": 0,
+    "fixture_requests": 0
+  },
+  "deployment": {
+    "status": "ACTIVE",
+    "version": 9,
+    "verify_jwt": false,
+    "migration": "202610220001"
+  }
+}

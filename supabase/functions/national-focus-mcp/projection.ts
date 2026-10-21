@@ -432,3 +432,149 @@ export function projectNationalFocusSnapshot(value: unknown): NationalFocusProje
     return { metadata: safeUnsupportedMetadata(raw), cards: [], maintenance: null };
   }
 }
+
+export interface ProjectedNationalFocusFailure extends JsonObject {
+  id: string;
+  batch_id: string;
+  card_id: string;
+  checkpoint_at: string;
+  national_focus_date: string;
+  cause: string;
+  failure_reason: string | null;
+  shared_explanation: string | null;
+  review_disposition: string;
+  tree_snapshot: JsonObject[];
+}
+
+export interface NationalFocusHistoryProjection {
+  metadata: NationalFocusMetadata;
+  events: ProjectedNationalFocusFailure[];
+}
+
+const DAY_MS = 86_400_000;
+// Beijing 04:00 is the previous UTC calendar date at 20:00. No device clock
+// or settlement is involved: these bounds only classify stored event instants.
+export function nationalFocusDateBounds(start: unknown, end: unknown):
+  { start_at: number; end_before: number } | null {
+  const parse = (value: unknown): number | null => {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const instant = Date.parse(`${value}T00:00:00.000Z`);
+    if (!Number.isFinite(instant) || new Date(instant).toISOString().slice(0, 10) !== value) return null;
+    return instant;
+  };
+  const first = parse(start), last = parse(end);
+  if (first === null || last === null || last < first || last - first >= 366 * DAY_MS) return null;
+  return { start_at: first - 4 * 3_600_000, end_before: last + DAY_MS - 4 * 3_600_000 };
+}
+
+function compareCodePoints(a: string, b: string): number {
+  const left = Array.from(a), right = Array.from(b);
+  for (let i = 0; i < Math.min(left.length, right.length); i++) {
+    const difference = left[i].codePointAt(0)! - right[i].codePointAt(0)!;
+    if (difference !== 0) return difference;
+  }
+  return left.length - right.length;
+}
+
+function validateFrozenTree(cards: JsonObject[], sourceId: string): void {
+  const byId = new Map(cards.map((card) => [card.id as string, card]));
+  if (byId.size !== cards.length || !byId.has(sourceId)) return fail();
+  for (const edge of ['parent_id', 'cascade_source_card_id', 'failure_source_card_id']) {
+    const settled = new Set<string>();
+    for (const card of cards) {
+      const path = new Set<string>();
+      let current: JsonObject | undefined = card;
+      while (current) {
+        const id = current.id as string;
+        if (settled.has(id)) break;
+        if (path.has(id)) return fail();
+        path.add(id);
+        const target = current[edge] as string | null;
+        if (target === null) break;
+        if (!byId.has(target)) return fail();
+        // Independent failure sources point to themselves, unlike tree/cascade edges.
+        if (edge === 'failure_source_card_id' && target === id) break;
+        current = byId.get(target);
+      }
+      for (const id of path) settled.add(id);
+    }
+  }
+}
+
+function frozenCard(value: JsonObject): JsonObject {
+  const state = requiredString(value, 'state');
+  const prior = nullableString(value, 'cascadePriorState');
+  if (!CARD_STATES.has(state) || (prior !== null && !CARD_STATES.has(prior))) return fail();
+  const result: JsonObject = { state };
+  const strings: Record<string, string> = {
+    id: 'id', name: 'name', triggerCondition: 'trigger_condition', action: 'action',
+  };
+  for (const [source, target] of Object.entries(strings)) {
+    result[target] = requiredString(value, source, source === 'triggerCondition');
+  }
+  const nullable: Record<string, string> = {
+    scope: 'scope', exceptionNotes: 'exception_notes', parentId: 'parent_id',
+    failureReason: 'failure_reason', cascadeSourceCardId: 'cascade_source_card_id',
+  };
+  for (const [source, target] of Object.entries(nullable)) result[target] = nullableString(value, source);
+  // Older frozen snapshots lack these rule-version/failure-source fields.
+  for (const [source, target] of Object.entries({
+    effectiveTriggerCondition: 'effective_trigger_condition', effectiveAction: 'effective_action',
+    failureSourceCardId: 'failure_source_card_id',
+  })) result[target] = source in value ? nullableString(value, source) : null;
+  result.cascade_prior_state = prior;
+  result.is_in_tree = requiredBoolean(value, 'isInTree');
+  result.maintenance_cycle_started = requiredBoolean(value, 'maintenanceCycleStarted');
+  for (const [source, target] of Object.entries({
+    successfulDays: 'successful_days', currentConsecutiveDays: 'current_consecutive_days',
+    bestConsecutiveDays: 'best_consecutive_days',
+  })) result[target] = integer(value, source);
+  result.active_strengthening_level = 'activeStrengtheningLevel' in value
+    ? nullableInteger(value, 'activeStrengtheningLevel', 1, 5) : null;
+  result.requirement_version_number = 'requirementVersionNumber' in value
+    ? nullableInteger(value, 'requirementVersionNumber', 1, Number.MAX_SAFE_INTEGER) : null;
+  result.created_at = timestampField(value, 'createdAt');
+  result.updated_at = timestampField(value, 'updatedAt');
+  return result;
+}
+
+/** Whitelist only persisted failure facts; never merge with today's tree. */
+export function projectNationalFocusHistory(value: unknown): NationalFocusHistoryProjection {
+  const raw = object(value) ? value : {};
+  try {
+    const metadata = projectMetadata(raw);
+    if (metadata.status !== 'available') return { metadata, events: [] };
+    if (!object(raw.tables)) return fail();
+    const seen = new Set<string>();
+    const events = recordArray(raw.tables, 'local_national_focus_failures').map((row): ProjectedNationalFocusFailure => {
+      const id = requiredString(row, 'id');
+      if (seen.has(id)) return fail();
+      seen.add(id);
+      const cause = requiredString(row, 'cause');
+      if (!['missed_confirmation', 'active_extinguish'].includes(cause)) return fail();
+      const review = 'review_disposition' in row ? requiredString(row, 'review_disposition') : 'accepted';
+      if (!['accepted', 'pending_review'].includes(review)) return fail();
+      const checkpoint = timestampField(row, 'checkpoint_at')!;
+      const encodedTree = row.tree_snapshot;
+      if (typeof encodedTree !== 'string') return fail();
+      const tree: unknown = JSON.parse(encodedTree);
+      if (!Array.isArray(tree) || !tree.every(object)) return fail();
+      const cards = tree.map(frozenCard);
+      const cardId = requiredString(row, 'card_id');
+      validateFrozenTree(cards, cardId);
+      return {
+        id, batch_id: requiredString(row, 'batch_id'), card_id: cardId,
+        checkpoint_at: checkpoint,
+        national_focus_date: new Date(Date.parse(checkpoint) + 4 * 3_600_000).toISOString().slice(0, 10),
+        cause, failure_reason: nullableString(row, 'failure_reason'),
+        shared_explanation: nullableString(row, 'shared_explanation'),
+        review_disposition: review, tree_snapshot: cards,
+      };
+    });
+    events.sort((a, b) => Date.parse(a.checkpoint_at) - Date.parse(b.checkpoint_at)
+      || compareCodePoints(a.id, b.id));
+    return { metadata, events };
+  } catch {
+    return { metadata: safeUnsupportedMetadata(raw), events: [] };
+  }
+}

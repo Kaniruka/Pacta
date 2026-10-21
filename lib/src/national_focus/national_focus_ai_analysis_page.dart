@@ -268,7 +268,15 @@ class _NationalFocusAiAnalysisPageState
                         ),
                         const SizedBox(height: 8),
                         const Text(
-                          '可读取最近一次手动上传的当前国策树、卡片库与具体规则，以及强化等级、要求版本、连续记录和内化进度。每次读取附版本、来源设备和上传时间。',
+                          '可读取最近一次手动上传的国策树、卡片库、规则与进度，也可查询失败事件、失败时冻结的完整树快照、原始失败原因和后续共享反思说明。快照保留当时的名称、结构和规则；原始原因与事后说明分开。',
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '当前树还提供强化等级、要求版本、连续记录和内化进度；每次读取都附快照版本、来源设备和上传时间。',
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          '历史记录不是完整的逐日审计日志；累计成功日数不会展开成每日成功记录。Codex 只能读取，不能新增、修改或删除失败记录与说明。',
                         ),
                         const SizedBox(height: 8),
                         const Text(
@@ -400,7 +408,7 @@ class _NationalFocusAiAnalysisPageState
                           ),
                           const SizedBox(height: 4),
                           const Text(
-                            '国策 AI 只读：云快照信息、国策树、卡片库、规则与进度。不包含目标、任务、专注、日历或管理数据。',
+                            '国策 AI 只读：云快照信息、国策树、卡片库、规则、进度与失败历史（含冻结快照、原始原因和后续共享反思说明）。不包含目标、任务、专注、日历或管理数据；Codex 不能修改失败记录。',
                           ),
                           const SizedBox(height: 12),
                           Text(
@@ -545,7 +553,7 @@ class _NationalFocusAiAnalysisPageState
   );
 
   static String _scopeLabel(String scope) => switch (scope) {
-    'national_focus:read' => '国策 AI 只读（云快照中的树、卡片、规则与进度）',
+    'national_focus:read' => '国策 AI 只读（云快照中的树、卡片、规则、进度与失败历史）',
     _ => scope,
   };
 

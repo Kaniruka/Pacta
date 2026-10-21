@@ -192,7 +192,7 @@ test('authorization waits for separate App approval and preserves exact callback
   assert.match(pending.headers.get('Content-Type')!, /text\/plain/);
   const disclosure = await pending.text();
   assert.match(disclosure, /National Focus read-only/);
-  assert.match(disclosure, /National Focus tree, library, rules, progress and snapshot metadata/);
+  assert.match(disclosure, /National Focus tree, library, rules, progress, failure events with frozen trees/);
   assert.equal(f.tables.national_focus_mcp_grants, undefined);
   // Authenticated App's SQL approval is independently covered by the SQL probe.
   Object.assign(f.tables.national_focus_mcp_requests[0], { grant_id: 'approved', code_value: 'code' });
@@ -213,6 +213,7 @@ test('metadata and National Focus tools are exposed and metadata expected revisi
   const listed = await (await f.mcp(rpc('tools/list'))).json();
   assert.deepEqual(listed.result.tools.map((t: { name: string }) => t.name), [
     'get_snapshot_metadata', 'get_national_focus_tree', 'get_national_focus_library', 'get_national_focus_card',
+    'list_national_focus_failures', 'get_national_focus_failure',
   ]);
   for (let i = 0; i < 2; i++) {
     const r = await (await f.mcp(rpc('tools/call', { name: 'get_snapshot_metadata', arguments: { expected_revision: 2 } }))).json();

@@ -57,7 +57,11 @@ void main() {
       final page = find.byKey(
         const ValueKey('national-focus-ai-analysis-page'),
       );
-      expect(find.textContaining('当前国策树、卡片库与具体规则'), findsOneWidget);
+      expect(find.textContaining('失败时冻结的完整树快照'), findsOneWidget);
+      expect(find.textContaining('强化等级、要求版本、连续记录和内化进度'), findsOneWidget);
+      expect(find.textContaining('快照版本、来源设备和上传时间'), findsOneWidget);
+      expect(find.textContaining('不是完整的逐日审计日志'), findsOneWidget);
+      expect(find.textContaining('不能新增、修改或删除失败记录与说明'), findsOneWidget);
 
       final requestCodeField = find.byKey(
         const ValueKey('national-focus-ai-request-code'),
@@ -69,6 +73,8 @@ void main() {
       await tester.tap(find.text('核对授权码'));
       await tester.pumpAndSettle();
       expect(find.text('Codex CLI'), findsOneWidget);
+      expect(find.textContaining('失败历史（含冻结快照'), findsOneWidget);
+      expect(find.textContaining('Codex 不能修改失败记录'), findsOneWidget);
       await _scrollUntilVisible(tester, page, find.text('授予 30 分钟只读授权'));
       await tester.tap(find.text('授予 30 分钟只读授权'));
       await tester.pumpAndSettle();
