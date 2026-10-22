@@ -1,0 +1,36 @@
+10-22 11:46:40.769  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16197773, failovers=[Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    ]}
+10-22 11:46:40.769  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16197773 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:46:40.771  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16197773, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33304  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 季度规划
+10-22 11:46:40.771  9018  9018 D talkback: Pipeline: 每周回顾并调整计划
+10-22 11:46:40.771  9018  9018 D talkback: Pipeline: 1 项任务
+10-22 11:46:40.771  9018  9018 D talkback: Pipeline: 进行中"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
+10-22 11:46:40.769  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16197773 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:46:40.771  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16197773, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33304  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 季度规划
+10-22 11:46:40.771  9018  9018 D talkback: Pipeline: 每周回顾并调整计划
+10-22 11:46:40.771  9018  9018 D talkback: Pipeline: 1 项任务
+10-22 11:46:40.771  9018  9018 D talkback: Pipeline: 进行中"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
+10-22 11:46:40.772  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16197773 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33304  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 季度规划
+10-22 11:46:40.771  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16197773, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33304  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 季度规划
+10-22 11:46:40.771  9018  9018 D talkback: Pipeline: 每周回顾并调整计划
+10-22 11:46:40.771  9018  9018 D talkback: Pipeline: 1 项任务
+10-22 11:46:40.771  9018  9018 D talkback: Pipeline: 进行中"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
+10-22 11:46:40.772  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16197773 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33304  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 季度规划
+10-22 11:46:40.772  9018  9018 D talkback: Actors: 每周回顾并调整计划
+10-22 11:46:40.772  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16197773 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33304  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 季度规划
+10-22 11:46:40.772  9018  9018 D talkback: Actors: 每周回顾并调整计划
+10-22 11:46:40.772  9018  9018 D talkback: Actors: 1 项任务
+10-22 11:46:40.772  9018  9018 D talkback: Actors: 进行中"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    
+10-22 11:46:40.772  9018  9018 D talkback: NodeActionPerformer: perform Action, nodeAction = target= AccessibilityNodeInfoCompat  id=33304  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 季度规划
+10-22 11:46:40.772  9018  9018 D talkback: NodeActionPerformer: 每周回顾并调整计划
+10-22 11:46:44.620  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16201625, failovers=[Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    ]}
+10-22 11:46:44.620  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16201625 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:46:44.621  9018  9018 V talkback: Pipeline: execute() success=true for part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:46:44.622  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=null, failovers=[Part= gesture= Gesture{action=SAVE, currentGesture=AccessibilityGestureEvent[gestureId: GESTURE_DOUBLE_TAP, displayId: 0, Motion Events: []}  ]}
+10-22 11:46:44.622  9018  9018 D talkback: Actors: act() eventId=null part=Part= gesture= Gesture{action=SAVE, currentGesture=AccessibilityGestureEvent[gestureId: GESTURE_DOUBLE_TAP, displayId: 0, Motion Events: []}  
+10-22 11:46:44.622  9018  9018 V talkback: Pipeline: execute() success=false for part=Part= gesture= Gesture{action=SAVE, currentGesture=AccessibilityGestureEvent[gestureId: GESTURE_DOUBLE_TAP, displayId: 0, Motion Events: []}  
+10-22 11:46:44.620  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16201625 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:46:44.621  9018  9018 V talkback: Pipeline: execute() success=true for part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:46:44.622  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=null, failovers=[Part= gesture= Gesture{action=SAVE, currentGesture=AccessibilityGestureEvent[gestureId: GESTURE_DOUBLE_TAP, displayId: 0, Motion Events: []}  ]}
+10-22 11:46:44.622  9018  9018 D talkback: Actors: act() eventId=null part=Part= gesture= Gesture{action=SAVE, currentGesture=AccessibilityGestureEvent[gestureId: GESTURE_DOUBLE_TAP, displayId: 0, Motion Events: []}  
+10-22 11:46:44.622  9018  9018 V talkback: Pipeline: execute() success=false for part=Part= gesture= Gesture{action=SAVE, currentGesture=AccessibilityGestureEvent[gestureId: GESTURE_DOUBLE_TAP, displayId: 0, Motion Events: []}  
+10-22 11:46:44.623   602   602 E TouchExplorer: ACTION_CLICK failed. Dispatching motion events to simulate click.

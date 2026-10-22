@@ -1,0 +1,4 @@
+10-21 19:51:18.075  9018  9018 V talkback: SpeechControllerImpl: Speaking fragment text="已展开,", utteranceId=talkback_35, spans=null, event=type:EVENT_TYPE_ACCESSIBILITY subtype:TYPE_VIEW_ACCESSIBILITY_FOCUSED displayId:0 time:7198648
+10-21 19:51:18.076   449  2998 D audioserver: logFgsApiBegin: FGS Logger Transaction failed, -129
+10-21 19:51:21.066  9018  9018 V talkback: SpeechControllerImpl: Speaking fragment text="已折叠,", utteranceId=talkback_36, spans=null, event=type:EVENT_TYPE_ACCESSIBILITY subtype:TYPE_VIEW_ACCESSIBILITY_FOCUSED displayId:0 time:7201644
+10-21 19:51:21.069  9018  9018 D talkback: FailoverTextToSpeech: Speak call for talkback_36 returned 0

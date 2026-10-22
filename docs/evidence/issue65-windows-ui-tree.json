@@ -1,0 +1,10 @@
+{
+  "focus": "30116 按钮 (settable, string) 待规划目标 0 项任务 暂无任务 · 未完成. 展开任务 Value: 已折叠",
+  "tree": "Window: \"pacta\", App: pacta.exe.\n\t0 窗口 pacta Secondary Actions: Raise\n\t\t1 窗格\n\t\t\t30099 组\n\t\t\t\t30100 组\n\t\t\t\t\t30101 组\n\t\t\t\t\t\t30102 组\n\t\t\t\t\t\t\t30103 组\n\t\t\t\t\t\t\t\t30104 组\n\t\t\t\t\t\t\t\t\t30105 组 今天先做什么\n\t\t\t\t\t\t\t\t\t\t30106 按钮 新建目标\n\t\t\t\t\t\t\t\t\t30107 组\n\t\t\t\t\t\t\t\t\t\t30108 组\n\t\t\t\t\t\t\t\t\t\t\t30109 按钮 (settable, string) 季度规划 每周回顾并调整计划 1 项任务 进行中. 展开任务 Value: 已折叠\n\t\t\t\t\t\t\t\t\t\t\t30110 按钮 编辑目标\n\t\t\t\t\t\t\t\t\t\t\t\t30111 组\n\t\t\t\t\t\t\t\t\t\t\t\t\t30112 文本 编辑目标\n\t\t\t\t\t\t\t\t\t\t\t30113 按钮 删除目标\n\t\t\t\t\t\t\t\t\t30114 组\n\t\t\t\t\t\t\t\t\t\t30115 组\n\t\t\t\t\t\t\t\t\t\t\t30116 按钮 (settable, string) 待规划目标 0 项任务 暂无任务 · 未完成. 展开任务 Value: 已折叠\n\t\t\t\t\t\t\t\t\t\t\t30117 按钮 编辑目标\n\t\t\t\t\t\t\t\t\t\t\t30118 按钮 删除目标\n\t\t\t\t\t\t\t\t\t30119 组\n\t\t\t\t\t\t\t\t\t\t30120 组 国策状态 点亮 1 · 确认 0 · 熄灭 0\n\t\t\t\t\t\t\t\t\t\t\t30121 按钮 打开国策树\n\t\t\t\t\t\t\t\t\t30122 组\n\t\t\t\t\t\t\t\t\t\t30123 文本 近期专注活动 近 7 天 · 累计有效专注 13分00秒 10月16日 · 周五，0分00秒 10月16日 · 周五 0分00秒 10月17日 · 周六，0分00秒 10月17日 · 周六 0分00秒 10月18日 · 周日，0分00秒 10月18日 · 周日 0分00秒 10月19日 · 周一，0分00秒 10月19日 · 周一 0分00秒 10月20日 · 周二，0分00秒 10月20日 · 周二 0分00秒 10月21日 · 周三，0分00秒 10月21日 · 周三 0分00秒 10月22日 · 周四，13分00秒 10月22日 · 周四 13分00秒\n\t\t\t\t\t\t\t30124 组\n\t\t\t\t\t\t\t\t30125 按钮 看板 Tab 1 of 4\n\t\t\t\t\t\t\t\t30126 按钮 国策树 Tab 2 of 4\n\t\t\t\t\t\t\t\t30127 按钮 专注链 Tab 3 of 4\n\t\t\t\t\t\t\t\t30128 按钮 我的 Tab 4 of 4\n\t\t33 标题栏 (settable, string) Value: pacta\n\t\t\t34 菜单栏 系统 ID: MenuBar\n\t\t\t\t35 菜单项目 系统\n\t\t\t36 按钮 最小化\n\t\t\t37 按钮 最大化\n\t\t\t38 按钮 关闭\n\nThe focused UI element is 30116 按钮 (settable, string) 待规划目标 0 项任务 暂无任务 · 未完成. 展开任务 Value: 已折叠.",
+  "size": [
+    {
+      "w": 405,
+      "h": 714
+    }
+  ]
+}

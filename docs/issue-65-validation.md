@@ -4,6 +4,10 @@ Issue：[T02: 标题区域折叠与看板分类呈现](https://github.com/Kaniru
 开始时 HEAD：`fece2f9da89c202551ea68c781a79fe57f11e99d`，分支 `master`。
 并行工作随后将原有需求文档提交为 `7dcd449`；本票审查基点采用该提交。
 
+最新状态：重新验收完成。真实Android读屏发现的两项问题已修复；Windows实际键鼠、
+窄窗口与大字号通过。用户在本轮明确要求“不要管电脑端的无障碍了，这个部分可以忽略不做”，
+因此Windows无障碍不作为本票验收项。下文保留首轮过程，结论以末节复验为准。
+
 ## 范围与测试边界
 
 沿用已确认的看板 App 级测试，通过可见内容、公开交互与 Semantics 验证。
@@ -99,3 +103,34 @@ Windows 普通 Debug 产物已重建，Release 产物未改；原生测试仅用
 本票实现与验收证据提交到当前 master 并推送 origin/master。
 按用户要求移除 Issue 的 ready-for-agent 标签，核验 blocked_by/blocking 均为空；
 保留原生父子关系。实际读屏缺口未标为完成，Issue 保持打开。
+
+
+## 重新验收与修复（2026-10-22）
+
+用户要求重新验收并尝试修复错误。代码基点 `05babfe`，修复提交 `5afe02b`。
+独立普通运行fixture替代tester暂停，真实TalkBack原始手势定位并修复两项产品问题：
+
+1. `Semantics.expanded`未被Android桥提供给TalkBack，实际没有状态播报。增加
+   随状态更新的“已展开／已折叠”value；新增App断言先红（空value）后绿。
+2. 标题语义被并入卡片祖先，展开后连续双击可能命中任务编辑。增加独立
+   `container: true`；回归验证不合并空态/任务文案，同一公开语义节点连续激活。
+
+[Android实际复验](issue-65-android-reacceptance.md)确认真实双击、连续激活、
+两种状态实际TTS语句、空目标、编辑删除隔离以及360逻辑宽/系统2倍字号。
+主代理复核关键截图、日志和恢复后的服务/字号读回；原7文件哈希及TalkBack临时配置已恢复。
+
+[Windows实际复验](issue-65-windows-reacceptance.md)已恢复桌面工具连接，并完成
+实际鼠标、Tab/Enter/Space、编辑/删除确认、约405px实际窗口/2倍fixture字号、
+两目标折叠后原生UIA内容检查。Windows无障碍按用户本轮明确指示豁免，
+停止额外的讲述人声音补证；不将其记为测试通过，也不再作为本票未完成项。
+Android、Windows普通应用均恢复重建；所有临时环境在复验结束后清理。
+
+修复后 `dart format`、`flutter analyze`通过，全量 `flutter test --reporter compact`
+272 passed。代码与fixture独立复审：Standards 0项违反，Spec 0项未解决实现问题；
+本轮发现的两项真实读屏缺陷均已有先失败后通过的App回归及Android实际复验。
+
+
+重新验收结论：标题折叠、独立编辑删除、空/非空隐藏内容、键盘、Android TalkBack、
+两端窄布局/大字号以及#64描述组合均完成。Windows无障碍为用户明确豁免项。
+Standards复审0项，Spec复审0项未解决实现问题。修复与证据推送后，关闭#65，
+核验标签、blocked_by、blocking均为空，保留与#63的父子关系。
