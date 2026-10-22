@@ -37,3 +37,7 @@ skill、真实工具合同合成验证和 App 引导分工并行实现，主 age
 实际 Codex CLI 0.163.0-alpha.10.2 使用更新 skill 连接本地合成 Store/生产 handler 的 MCP：基线读取同 revision 当前树/卡片库、4页失败及4条冻结详情，完成中文复盘。另一次在第二个历史读取切换 revision2→3，实际返回 `snapshot_changed`，Codex 重取元数据/树/库并重新读完4页与详情，最终只按 revision3 分析。主 agent 复核两个报告的同名ID、历史强化、漏确认、独立/连带、原始原因/反思与不完整历史边界。
 
 完整命令、原始工具trace与语义逐项核对见 [合成验收](evidence/issue61-synthetic-evaluation.md)、[基线报告](evidence/issue61-codex-synthetic-analysis.md)、[revision恢复报告](evidence/issue61-codex-revision-analysis.md)。这是真实客户端调用真实工具合同，不是仅阅读提示词；合成 Store 无线上用户或认证数据，不代表重新验证远端 OAuth/RLS。
+
+## 发布与安装验证
+
+实现提交 `688adc5` 已推送 `origin/master`。使用内置 skill-installer 的 Windows Python GitHub安装脚本，以 `--repo Kaniruka/Pacta --path skills/pacta-national-focus-analysis --ref 688adc5 --dest <隔离临时目录>` 实际下载成功，发布目录全部4个文件与源码逐字节一致。未覆盖用户现有技能。发布后的结构分析和失败复盘共用同一安装目录；安装/更新说明见 [使用指南](issue-60-skill.md)。
