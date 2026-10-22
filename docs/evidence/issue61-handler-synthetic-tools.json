@@ -1,0 +1,486 @@
+{
+  "label": "Synthetic store; real createHandler HTTP JSON-RPC tools/call results; no deployed service",
+  "toolEvidence": [
+    {
+      "tool": "list_national_focus_failures",
+      "arguments": {
+        "start_date": "2026-09-23",
+        "end_date": "2026-10-22",
+        "limit": 1,
+        "expected_revision": 2
+      },
+      "result": {
+        "metadata": {
+          "contract_version": 1,
+          "status": "available",
+          "revision": 2,
+          "source_device": {
+            "id": "phone",
+            "name": "Android"
+          },
+          "uploaded_at": "2026-10-21T01:00:00Z",
+          "data_updated_at": "2026-10-20T23:00:00Z",
+          "freshness": "latest_manual_upload"
+        },
+        "events": [
+          {
+            "id": "independent-child",
+            "batch_id": "synthetic-batch",
+            "card_id": "cascade-parent",
+            "checkpoint_at": "2026-10-21T20:00:00.000Z",
+            "national_focus_date": "2026-10-22",
+            "cause": "active_extinguish",
+            "failure_reason": "child independently failed",
+            "shared_explanation": null,
+            "review_disposition": "accepted",
+            "tree_snapshot": [
+              {
+                "state": "lit",
+                "id": "root-parent",
+                "name": "同名国策",
+                "trigger_condition": "before 07:00",
+                "action": "read",
+                "scope": "home",
+                "exception_notes": "old exception",
+                "parent_id": null,
+                "failure_reason": null,
+                "cascade_source_card_id": null,
+                "effective_trigger_condition": "before 06:00",
+                "effective_action": "read two pages",
+                "failure_source_card_id": null,
+                "cascade_prior_state": null,
+                "is_in_tree": true,
+                "maintenance_cycle_started": true,
+                "successful_days": 12,
+                "current_consecutive_days": 0,
+                "best_consecutive_days": 12,
+                "active_strengthening_level": 2,
+                "requirement_version_number": 3,
+                "created_at": "2026-01-01T00:00:00.000Z",
+                "updated_at": "2026-10-01T00:00:00.000Z"
+              },
+              {
+                "state": "extinguished",
+                "id": "cascade-parent",
+                "name": "同名国策",
+                "trigger_condition": "",
+                "action": "review",
+                "scope": null,
+                "exception_notes": null,
+                "parent_id": "root-parent",
+                "failure_reason": "child independently failed",
+                "cascade_source_card_id": null,
+                "effective_trigger_condition": null,
+                "effective_action": null,
+                "failure_source_card_id": null,
+                "cascade_prior_state": null,
+                "is_in_tree": true,
+                "maintenance_cycle_started": false,
+                "successful_days": 3,
+                "current_consecutive_days": 0,
+                "best_consecutive_days": 3,
+                "active_strengthening_level": null,
+                "requirement_version_number": null,
+                "created_at": "2026-01-01T00:00:00.000Z",
+                "updated_at": "2026-10-01T00:00:00.000Z"
+              }
+            ]
+          }
+        ],
+        "limitations": "Only uploaded failure events are available; historical omissions are possible. Cumulative successful days are not daily success logs or a complete audit timeline. Frozen trees and original reasons are separate from editable batch reflections.",
+        "coverage": {
+          "start_date": "2026-09-23",
+          "end_date": "2026-10-22",
+          "start_at": "2026-09-22T20:00:00.000Z",
+          "end_before": "2026-10-22T20:00:00.000Z",
+          "timezone": "UTC+08:00",
+          "checkpoint": "04:00",
+          "ordering": "checkpoint_at ASC, id ASC (code-point)"
+        },
+        "next_cursor": "eyJyZXZpc2lvbiI6Miwic3RhcnRfZGF0ZSI6IjIwMjYtMDktMjMiLCJlbmRfZGF0ZSI6IjIwMjYtMTAtMjIiLCJsaW1pdCI6MSwiYWZ0ZXJfZXZlbnRfaWQiOiJpbmRlcGVuZGVudC1jaGlsZCJ9",
+        "truncated": true
+      }
+    },
+    {
+      "tool": "list_national_focus_failures",
+      "arguments": {
+        "start_date": "2026-09-23",
+        "end_date": "2026-10-22",
+        "limit": 1,
+        "expected_revision": 2,
+        "cursor": "eyJyZXZpc2lvbiI6Miwic3RhcnRfZGF0ZSI6IjIwMjYtMDktMjMiLCJlbmRfZGF0ZSI6IjIwMjYtMTAtMjIiLCJsaW1pdCI6MSwiYWZ0ZXJfZXZlbnRfaWQiOiJpbmRlcGVuZGVudC1jaGlsZCJ9"
+      },
+      "result": {
+        "metadata": {
+          "contract_version": 1,
+          "status": "available",
+          "revision": 2,
+          "source_device": {
+            "id": "phone",
+            "name": "Android"
+          },
+          "uploaded_at": "2026-10-21T01:00:00Z",
+          "data_updated_at": "2026-10-20T23:00:00Z",
+          "freshness": "latest_manual_upload"
+        },
+        "events": [
+          {
+            "id": "independent-parent",
+            "batch_id": "synthetic-batch",
+            "card_id": "root-parent",
+            "checkpoint_at": "2026-10-21T20:00:00.000Z",
+            "national_focus_date": "2026-10-22",
+            "cause": "active_extinguish",
+            "failure_reason": "original parent reason",
+            "shared_explanation": "edited later, not original cause",
+            "review_disposition": "accepted",
+            "tree_snapshot": [
+              {
+                "state": "extinguished",
+                "id": "root-parent",
+                "name": "同名国策",
+                "trigger_condition": "before 07:00",
+                "action": "read",
+                "scope": "home",
+                "exception_notes": "old exception",
+                "parent_id": null,
+                "failure_reason": "frozen card reason",
+                "cascade_source_card_id": null,
+                "effective_trigger_condition": "before 06:00",
+                "effective_action": "read two pages",
+                "failure_source_card_id": null,
+                "cascade_prior_state": null,
+                "is_in_tree": true,
+                "maintenance_cycle_started": true,
+                "successful_days": 12,
+                "current_consecutive_days": 0,
+                "best_consecutive_days": 12,
+                "active_strengthening_level": 2,
+                "requirement_version_number": 3,
+                "created_at": "2026-01-01T00:00:00.000Z",
+                "updated_at": "2026-10-01T00:00:00.000Z"
+              },
+              {
+                "state": "extinguished",
+                "id": "cascade-parent",
+                "name": "同名国策",
+                "trigger_condition": "",
+                "action": "review",
+                "scope": null,
+                "exception_notes": null,
+                "parent_id": "root-parent",
+                "failure_reason": null,
+                "cascade_source_card_id": "root-parent",
+                "effective_trigger_condition": null,
+                "effective_action": null,
+                "failure_source_card_id": null,
+                "cascade_prior_state": "lit",
+                "is_in_tree": true,
+                "maintenance_cycle_started": false,
+                "successful_days": 3,
+                "current_consecutive_days": 0,
+                "best_consecutive_days": 3,
+                "active_strengthening_level": null,
+                "requirement_version_number": null,
+                "created_at": "2026-01-01T00:00:00.000Z",
+                "updated_at": "2026-10-01T00:00:00.000Z"
+              }
+            ]
+          }
+        ],
+        "limitations": "Only uploaded failure events are available; historical omissions are possible. Cumulative successful days are not daily success logs or a complete audit timeline. Frozen trees and original reasons are separate from editable batch reflections.",
+        "coverage": {
+          "start_date": "2026-09-23",
+          "end_date": "2026-10-22",
+          "start_at": "2026-09-22T20:00:00.000Z",
+          "end_before": "2026-10-22T20:00:00.000Z",
+          "timezone": "UTC+08:00",
+          "checkpoint": "04:00",
+          "ordering": "checkpoint_at ASC, id ASC (code-point)"
+        },
+        "next_cursor": "eyJyZXZpc2lvbiI6Miwic3RhcnRfZGF0ZSI6IjIwMjYtMDktMjMiLCJlbmRfZGF0ZSI6IjIwMjYtMTAtMjIiLCJsaW1pdCI6MSwiYWZ0ZXJfZXZlbnRfaWQiOiJpbmRlcGVuZGVudC1wYXJlbnQifQ",
+        "truncated": true
+      }
+    },
+    {
+      "tool": "list_national_focus_failures",
+      "arguments": {
+        "start_date": "2026-09-23",
+        "end_date": "2026-10-22",
+        "limit": 1,
+        "expected_revision": 2,
+        "cursor": "eyJyZXZpc2lvbiI6Miwic3RhcnRfZGF0ZSI6IjIwMjYtMDktMjMiLCJlbmRfZGF0ZSI6IjIwMjYtMTAtMjIiLCJsaW1pdCI6MSwiYWZ0ZXJfZXZlbnRfaWQiOiJpbmRlcGVuZGVudC1wYXJlbnQifQ"
+      },
+      "result": {
+        "metadata": {
+          "contract_version": 1,
+          "status": "available",
+          "revision": 2,
+          "source_device": {
+            "id": "phone",
+            "name": "Android"
+          },
+          "uploaded_at": "2026-10-21T01:00:00Z",
+          "data_updated_at": "2026-10-20T23:00:00Z",
+          "freshness": "latest_manual_upload"
+        },
+        "events": [
+          {
+            "id": "missed-confirmation",
+            "batch_id": "synthetic-batch",
+            "card_id": "root-missed",
+            "checkpoint_at": "2026-10-21T20:00:00.000Z",
+            "national_focus_date": "2026-10-22",
+            "cause": "missed_confirmation",
+            "failure_reason": null,
+            "shared_explanation": null,
+            "review_disposition": "accepted",
+            "tree_snapshot": [
+              {
+                "state": "extinguished",
+                "id": "root-missed",
+                "name": "Historical root",
+                "trigger_condition": "before 07:00",
+                "action": "read",
+                "scope": "home",
+                "exception_notes": "old exception",
+                "parent_id": null,
+                "failure_reason": "frozen card reason",
+                "cascade_source_card_id": null,
+                "effective_trigger_condition": "before 06:00",
+                "effective_action": "read two pages",
+                "failure_source_card_id": null,
+                "cascade_prior_state": null,
+                "is_in_tree": true,
+                "maintenance_cycle_started": true,
+                "successful_days": 12,
+                "current_consecutive_days": 0,
+                "best_consecutive_days": 12,
+                "active_strengthening_level": 2,
+                "requirement_version_number": 3,
+                "created_at": "2026-01-01T00:00:00.000Z",
+                "updated_at": "2026-10-01T00:00:00.000Z"
+              },
+              {
+                "state": "extinguished",
+                "id": "cascade-missed",
+                "name": "Historical cascade child",
+                "trigger_condition": "",
+                "action": "review",
+                "scope": null,
+                "exception_notes": null,
+                "parent_id": "root-missed",
+                "failure_reason": null,
+                "cascade_source_card_id": "root-missed",
+                "effective_trigger_condition": null,
+                "effective_action": null,
+                "failure_source_card_id": null,
+                "cascade_prior_state": "lit",
+                "is_in_tree": true,
+                "maintenance_cycle_started": false,
+                "successful_days": 3,
+                "current_consecutive_days": 0,
+                "best_consecutive_days": 3,
+                "active_strengthening_level": null,
+                "requirement_version_number": null,
+                "created_at": "2026-01-01T00:00:00.000Z",
+                "updated_at": "2026-10-01T00:00:00.000Z"
+              }
+            ]
+          }
+        ],
+        "limitations": "Only uploaded failure events are available; historical omissions are possible. Cumulative successful days are not daily success logs or a complete audit timeline. Frozen trees and original reasons are separate from editable batch reflections.",
+        "coverage": {
+          "start_date": "2026-09-23",
+          "end_date": "2026-10-22",
+          "start_at": "2026-09-22T20:00:00.000Z",
+          "end_before": "2026-10-22T20:00:00.000Z",
+          "timezone": "UTC+08:00",
+          "checkpoint": "04:00",
+          "ordering": "checkpoint_at ASC, id ASC (code-point)"
+        },
+        "next_cursor": "eyJyZXZpc2lvbiI6Miwic3RhcnRfZGF0ZSI6IjIwMjYtMDktMjMiLCJlbmRfZGF0ZSI6IjIwMjYtMTAtMjIiLCJsaW1pdCI6MSwiYWZ0ZXJfZXZlbnRfaWQiOiJtaXNzZWQtY29uZmlybWF0aW9uIn0",
+        "truncated": true
+      }
+    },
+    {
+      "tool": "list_national_focus_failures",
+      "arguments": {
+        "start_date": "2026-09-23",
+        "end_date": "2026-10-22",
+        "limit": 1,
+        "expected_revision": 2,
+        "cursor": "eyJyZXZpc2lvbiI6Miwic3RhcnRfZGF0ZSI6IjIwMjYtMDktMjMiLCJlbmRfZGF0ZSI6IjIwMjYtMTAtMjIiLCJsaW1pdCI6MSwiYWZ0ZXJfZXZlbnRfaWQiOiJtaXNzZWQtY29uZmlybWF0aW9uIn0"
+      },
+      "result": {
+        "metadata": {
+          "contract_version": 1,
+          "status": "available",
+          "revision": 2,
+          "source_device": {
+            "id": "phone",
+            "name": "Android"
+          },
+          "uploaded_at": "2026-10-21T01:00:00Z",
+          "data_updated_at": "2026-10-20T23:00:00Z",
+          "freshness": "latest_manual_upload"
+        },
+        "events": [
+          {
+            "id": "soft-deleted-history",
+            "batch_id": "synthetic-batch",
+            "card_id": "root-deleted",
+            "checkpoint_at": "2026-10-21T20:00:00.000Z",
+            "national_focus_date": "2026-10-22",
+            "cause": "active_extinguish",
+            "failure_reason": "before soft deletion",
+            "shared_explanation": null,
+            "review_disposition": "accepted",
+            "tree_snapshot": [
+              {
+                "state": "extinguished",
+                "id": "root-deleted",
+                "name": "Historical root",
+                "trigger_condition": "before 07:00",
+                "action": "read",
+                "scope": "home",
+                "exception_notes": "old exception",
+                "parent_id": null,
+                "failure_reason": "frozen card reason",
+                "cascade_source_card_id": null,
+                "effective_trigger_condition": "before 06:00",
+                "effective_action": "read two pages",
+                "failure_source_card_id": null,
+                "cascade_prior_state": null,
+                "is_in_tree": true,
+                "maintenance_cycle_started": true,
+                "successful_days": 12,
+                "current_consecutive_days": 0,
+                "best_consecutive_days": 12,
+                "active_strengthening_level": 2,
+                "requirement_version_number": 3,
+                "created_at": "2026-01-01T00:00:00.000Z",
+                "updated_at": "2026-10-01T00:00:00.000Z"
+              },
+              {
+                "state": "extinguished",
+                "id": "cascade-deleted",
+                "name": "Historical cascade child",
+                "trigger_condition": "",
+                "action": "review",
+                "scope": null,
+                "exception_notes": null,
+                "parent_id": "root-deleted",
+                "failure_reason": null,
+                "cascade_source_card_id": "root-deleted",
+                "effective_trigger_condition": null,
+                "effective_action": null,
+                "failure_source_card_id": null,
+                "cascade_prior_state": "lit",
+                "is_in_tree": true,
+                "maintenance_cycle_started": false,
+                "successful_days": 3,
+                "current_consecutive_days": 0,
+                "best_consecutive_days": 3,
+                "active_strengthening_level": null,
+                "requirement_version_number": null,
+                "created_at": "2026-01-01T00:00:00.000Z",
+                "updated_at": "2026-10-01T00:00:00.000Z"
+              }
+            ]
+          }
+        ],
+        "limitations": "Only uploaded failure events are available; historical omissions are possible. Cumulative successful days are not daily success logs or a complete audit timeline. Frozen trees and original reasons are separate from editable batch reflections.",
+        "coverage": {
+          "start_date": "2026-09-23",
+          "end_date": "2026-10-22",
+          "start_at": "2026-09-22T20:00:00.000Z",
+          "end_before": "2026-10-22T20:00:00.000Z",
+          "timezone": "UTC+08:00",
+          "checkpoint": "04:00",
+          "ordering": "checkpoint_at ASC, id ASC (code-point)"
+        },
+        "next_cursor": null,
+        "truncated": false
+      }
+    }
+  ],
+  "detail": {
+    "metadata": {
+      "contract_version": 1,
+      "status": "available",
+      "revision": 2,
+      "source_device": {
+        "id": "phone",
+        "name": "Android"
+      },
+      "uploaded_at": "2026-10-21T01:00:00Z",
+      "data_updated_at": "2026-10-20T23:00:00Z",
+      "freshness": "latest_manual_upload"
+    },
+    "event": {
+      "id": "soft-deleted-history",
+      "batch_id": "synthetic-batch",
+      "card_id": "root-deleted",
+      "checkpoint_at": "2026-10-21T20:00:00.000Z",
+      "national_focus_date": "2026-10-22",
+      "cause": "active_extinguish",
+      "failure_reason": "before soft deletion",
+      "shared_explanation": null,
+      "review_disposition": "accepted",
+      "tree_snapshot": [
+        {
+          "state": "extinguished",
+          "id": "root-deleted",
+          "name": "Historical root",
+          "trigger_condition": "before 07:00",
+          "action": "read",
+          "scope": "home",
+          "exception_notes": "old exception",
+          "parent_id": null,
+          "failure_reason": "frozen card reason",
+          "cascade_source_card_id": null,
+          "effective_trigger_condition": "before 06:00",
+          "effective_action": "read two pages",
+          "failure_source_card_id": null,
+          "cascade_prior_state": null,
+          "is_in_tree": true,
+          "maintenance_cycle_started": true,
+          "successful_days": 12,
+          "current_consecutive_days": 0,
+          "best_consecutive_days": 12,
+          "active_strengthening_level": 2,
+          "requirement_version_number": 3,
+          "created_at": "2026-01-01T00:00:00.000Z",
+          "updated_at": "2026-10-01T00:00:00.000Z"
+        },
+        {
+          "state": "extinguished",
+          "id": "cascade-deleted",
+          "name": "Historical cascade child",
+          "trigger_condition": "",
+          "action": "review",
+          "scope": null,
+          "exception_notes": null,
+          "parent_id": "root-deleted",
+          "failure_reason": null,
+          "cascade_source_card_id": "root-deleted",
+          "effective_trigger_condition": null,
+          "effective_action": null,
+          "failure_source_card_id": null,
+          "cascade_prior_state": "lit",
+          "is_in_tree": true,
+          "maintenance_cycle_started": false,
+          "successful_days": 3,
+          "current_consecutive_days": 0,
+          "best_consecutive_days": 3,
+          "active_strengthening_level": null,
+          "requirement_version_number": null,
+          "created_at": "2026-01-01T00:00:00.000Z",
+          "updated_at": "2026-10-01T00:00:00.000Z"
+        }
+      ]
+    },
+    "limitations": "Only uploaded failure events are available; historical omissions are possible. Cumulative successful days are not daily success logs or a complete audit timeline. Frozen trees and original reasons are separate from editable batch reflections."
+  }
+}

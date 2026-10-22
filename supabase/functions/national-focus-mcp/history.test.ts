@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
 import { createHandler, hash, StoreError, type Store } from './handler.ts';
 
 const issuer = 'https://example.supabase.co/functions/v1/national-focus-mcp';
@@ -353,4 +354,115 @@ test('Unicode event IDs use code-point order and survive cursor continuation', a
   }));
   assert.deepEqual(second.structuredContent.events.map((event: { id: string }) => event.id), [supplementary]);
   assert.equal(second.structuredContent.next_cursor, null);
+});
+
+
+test('Issue61 synthetic replay: independent parent/child, cascade, deleted history and later reflection', async () => {
+  const snapshot = JSON.parse(JSON.stringify(rawHistory));
+  const parentTree = JSON.parse(frozenTree('parent'));
+  parentTree[0].name = '同名国策';
+  parentTree[1].name = '同名国策';
+  const childTree = JSON.parse(JSON.stringify(parentTree));
+  childTree[0].state = 'lit';
+  childTree[0].failureReason = null;
+  childTree[1].cascadeSourceCardId = null;
+  childTree[1].cascadePriorState = null;
+  childTree[1].failureReason = 'child independently failed';
+  const deletedTree = JSON.parse(frozenTree('deleted'));
+  // This card has no current-card row; history must be self-contained.
+  const events = [
+    { id: 'independent-parent', card_id: 'root-parent', cause: 'active_extinguish', tree: parentTree,
+      failure_reason: 'original parent reason', shared_explanation: 'edited later, not original cause' },
+    { id: 'independent-child', card_id: 'cascade-parent', cause: 'active_extinguish', tree: childTree,
+      failure_reason: 'child independently failed', shared_explanation: null },
+    { id: 'missed-confirmation', card_id: 'root-missed', cause: 'missed_confirmation',
+      tree: JSON.parse(frozenTree('missed')), failure_reason: null, shared_explanation: null },
+    { id: 'soft-deleted-history', card_id: 'root-deleted', cause: 'active_extinguish', tree: deletedTree,
+      failure_reason: 'before soft deletion', shared_explanation: null },
+  ].map(({ tree, ...event }) => ({ ...event, batch_id: 'synthetic-batch',
+    checkpoint_at: epoch('2026-10-21T20:00:00Z'), review_disposition: 'accepted',
+    tree_snapshot: JSON.stringify(tree) }));
+  snapshot.tables.local_national_focus_failures = events;
+  const f = fixture(token, snapshot);
+  const query = { start_date: '2026-09-23', end_date: '2026-10-22', limit: 1, expected_revision: 2 };
+  const collected: any[] = [];
+  const toolEvidence: unknown[] = [];
+  let cursor: string | null = null;
+  let pages = 0;
+  do {
+    const result = await toolResult(await f.call('list_national_focus_failures', {
+      ...query, ...(cursor ? { cursor } : {}),
+    }));
+    toolEvidence.push({ tool: 'list_national_focus_failures', arguments: {
+      ...query, ...(cursor ? { cursor } : {}),
+    }, result: result.structuredContent });
+    assert.equal(result.structuredContent.metadata.status, 'available');
+    assert.match(result.structuredContent.limitations, /historical omissions are possible/);
+    assert.match(result.structuredContent.limitations, /not daily success logs/);
+    assert.equal(result.structuredContent.coverage.start_date, '2026-09-23');
+    collected.push(...result.structuredContent.events);
+    cursor = result.structuredContent.next_cursor;
+    assert.equal(result.structuredContent.truncated, cursor !== null);
+    pages++;
+  } while (cursor);
+  assert.equal(pages, 4);
+  assert.equal(new Set(collected.map((event) => event.id)).size, 4);
+  const byId = new Map(collected.map((event) => [event.id, event]));
+  const parent = byId.get('independent-parent');
+  const child = byId.get('independent-child');
+  assert.equal(parent.card_id, 'root-parent');
+  assert.equal(child.card_id, 'cascade-parent');
+  assert.equal(parent.tree_snapshot[1].cascade_source_card_id, 'root-parent');
+  assert.equal(child.tree_snapshot[1].cascade_source_card_id, null);
+  assert.equal(child.tree_snapshot[0].state, 'lit');
+  assert.equal(parent.tree_snapshot[0].name, parent.tree_snapshot[1].name);
+  assert.notEqual(parent.tree_snapshot[0].id, parent.tree_snapshot[1].id);
+  assert.equal(parent.tree_snapshot[0].active_strengthening_level, 2);
+  assert.equal(parent.tree_snapshot[0].requirement_version_number, 3);
+  assert.equal(parent.tree_snapshot[0].effective_action, 'read two pages');
+  assert.equal(parent.failure_reason, 'original parent reason');
+  assert.equal(parent.shared_explanation, 'edited later, not original cause');
+  assert.equal(byId.get('missed-confirmation').cause, 'missed_confirmation');
+  assert.equal(byId.get('missed-confirmation').failure_reason, null);
+  const deleted = await toolResult(await f.call('get_national_focus_failure', {
+    event_id: 'soft-deleted-history', expected_revision: 2,
+  }));
+  if (process.env.PACTA_ISSUE61_EVIDENCE_PATH) {
+    writeFileSync(process.env.PACTA_ISSUE61_EVIDENCE_PATH, JSON.stringify({
+      label: 'Synthetic store; real createHandler HTTP JSON-RPC tools/call results; no deployed service',
+      toolEvidence, detail: deleted.structuredContent,
+    }, null, 2) + '\n');
+  }
+  assert.equal(deleted.structuredContent.event.card_id, 'root-deleted');
+  assert.equal(deleted.structuredContent.event.tree_snapshot[0].effective_action, 'read two pages');
+  assert.deepEqual(f.tables, {});
+});
+
+test('Issue61 an old cursor cannot continue after a revision change; restart discards prior pages', async () => {
+  const f = fixture();
+  const query = { start_date: '2026-09-23', end_date: '2026-10-22', limit: 1, expected_revision: 2 };
+  const first = await toolResult(await f.call('list_national_focus_failures', query));
+  assert.equal(first.structuredContent.truncated, true);
+  f.setSnapshot({ ...rawHistory, revision: 3 });
+  const stale = await toolResult(await f.call('list_national_focus_failures', {
+    ...query, cursor: first.structuredContent.next_cursor,
+  }));
+  assert.equal(stale.isError, true);
+  assert.equal(stale.structuredContent.error.code, 'snapshot_changed');
+  assert.equal(stale.structuredContent.events, undefined);
+  // New run with an isolated latest-revision store, never appending the old page.
+  const store: Store = { async insert() { assert.fail('write'); }, async one() { return null; },
+    async rpc(name) { return name === 'read_national_focus_mcp_metadata'
+      ? { ...metadata, revision: 3 } : { ...rawHistory, revision: 3 }; } };
+  const handle = createHandler({ issuer, store });
+  const response = await handle(new Request(resource, { method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: {
+      name: 'list_national_focus_failures', arguments: { ...query, expected_revision: 3, limit: 100 },
+    } }),
+  }));
+  const restarted = await toolResult(response);
+  assert.equal(restarted.structuredContent.metadata.revision, 3);
+  assert.deepEqual(restarted.structuredContent.events.map((event: any) => event.id), ['event-a', 'event-b', 'event-c']);
+  assert.equal(restarted.structuredContent.next_cursor, null);
 });

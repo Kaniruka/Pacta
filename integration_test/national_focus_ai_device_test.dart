@@ -1,5 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:pacta/main.dart';
@@ -68,9 +69,18 @@ void main() {
           () => Future<void>.delayed(const Duration(seconds: 20)),
         );
       }
-      for (final label in ['复制 skill 安装说明', '复制首次问题']) {
+      for (final label in ['复制 skill 安装说明', '复制首次问题', '复制失败复盘示例']) {
         await _scrollUntilVisible(tester, page, find.text(label));
         await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+        if (label == '复制失败复盘示例') {
+          final copied = await Clipboard.getData(Clipboard.kTextPlain);
+          expect(copied?.text, contains(r'$pacta-national-focus-analysis'));
+          expect(copied?.text, contains('近 30 个国策日'));
+          expect(copied?.text, contains('按工具游标读完分页'));
+          expect(copied?.text, contains('失败事件 ID 和历史要求版本 ID'));
+        }
+        await tester.pump(const Duration(seconds: 5));
         await tester.pumpAndSettle();
       }
       // Let copy feedback dismiss before testing controls at the desktop edge.

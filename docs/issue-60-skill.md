@@ -52,3 +52,17 @@ codex exec --ignore-user-config --ephemeral --skip-git-repo-check -s read-only -
 - Codex CLI `0.163.0-alpha.10.2`，只读沙箱、实际模型分析三组合成导出：成功（退出 0）。人工逐项复核上述语义条件均通过；报告见 [合成分析](evidence/issue60-codex-synthetic-analysis.md)。使用实际合同字段 `version_number`，缺失版本场景明确为不完整导出。
 - 同一 Codex CLI 实际模型通过真实远端 MCP 读取 `get_snapshot_metadata`、`get_national_focus_tree(expected_revision: 1)`、`get_national_focus_library(expected_revision: 1)`，完成同名双卡的规则、依赖与负担分析，退出 0。见 [调用证据](evidence/issue60-codex-live-tools.json)、[分析报告](evidence/issue60-codex-live-analysis.md)。测试使用独立合成账号及云快照和受保护管理接口创建的短期测试 delegate，完成后 finally 删除临时账号及客户端。此次不重复验证 OAuth DCR/PKCE/App 同意，也不是普通用户上传行为证据。
 - 发布提交 `754365b` 推送 master 后，使用 Windows Python 3.14.7 执行内置 `install-skill-from-github.py --url https://github.com/Kaniruka/Pacta/tree/master/skills/pacta-national-focus-analysis --dest <隔离临时目录>`：成功。下载后的 4 个文件与已发布源码逐字节一致。WSL 下载尝试因传输停滞中止，改用同一官方安装器的 Windows 运行时完成验证。未改用户现有 skill 安装。
+
+## 失败复盘（Issue #61）
+
+更新已有安装时，在新一轮 Codex 对话中请 skill-installer 从上述同一发布目录安装最新版本；若安装器提示目标已存在，先备份旧 `pacta-national-focus-analysis` 目录再安装，保留其他技能。安装后开启下一轮；未刷新时重启 Codex。结构分析示例继续有效。
+
+App 的“国策 AI 分析”页现有“复制失败复盘问题”，可在完成手动上传与授权后直接粘贴到真实 Codex。也可发送：
+
+```text
+$pacta-national-focus-analysis 请结合当前完整国策树和规则，复盘近30个国策日反复失败。读完历史分页并读取冻结详情，引用卡片、失败事件和当时要求版本，区分主动失败、漏确认、连带影响、原始原因和事后反思。分开事实、假设、建议；revision变化时重新取数分析。说明缺失、截断及未查更早范围；建议由我在App手动采纳。
+```
+
+默认30日锚定上传快照维护检查点的北京日期，包含当日向前29日；不以提问时钟推进设备状态。不筛除当前树/规则。可继续说“请扩展到2026-08-01至2026-09-22”，skill会按每次最多366日查询完整分页。空结果只代表上传快照在所查范围没有记录；历史不保证完整，不由累计成功量生成成功日历，也不证明因果或真实习惯形成。
+
+实际合同与Codex复盘验收见 [Issue #61验证](issue-61-validation.md)。合成服务使用生产公开handler和工具合同，隔离于真实账号；其证据不代表重新验收远端授权部署。

@@ -142,12 +142,33 @@ void main() {
     expect(copiedText, contains('https://github.com/Kaniruka/Pacta'));
     expect(copiedText, contains('skills/pacta-national-focus-analysis'));
     expect(copiedText, contains(r'$skill-installer'));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
     await _scrollUntilVisible(tester, page, find.text('复制首次问题'));
     await tester.tap(find.text('复制首次问题'));
     await tester.pumpAndSettle();
     expect(copiedText, contains(r'$pacta-national-focus-analysis'));
     expect(copiedText, contains('来源设备和上传时间'));
     expect(copiedText, contains('事实、可能解释和建议'));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    await _scrollUntilVisible(tester, page, find.text('复制失败复盘示例'));
+    await tester.tap(find.text('复制失败复盘示例'));
+    await tester.pumpAndSettle();
+    for (final evidence in [
+      r'$pacta-national-focus-analysis',
+      '近 30 个国策日',
+      '按工具游标读完分页',
+      '当前树和规则不受历史窗口过滤',
+      '失败事件 ID 和历史要求版本 ID',
+      '主动失败、漏确认和连带影响',
+      '原始失败原因和后续共享反思说明',
+      'revision 变化，重取一致数据并重新分析',
+      '查询截断',
+      '不修改或暗示写回数据',
+    ]) {
+      expect(copiedText, contains(evidence));
+    }
     await _scrollUntilVisible(tester, page, find.textContaining('无快照或旧版快照'));
     expect(find.textContaining('离线仍可维护本机国策'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -215,6 +236,12 @@ void main() {
       page,
       find.byKey(const ValueKey('national-focus-ai-request-code')),
     );
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    await _scrollUntilVisible(tester, page, find.text('复制失败复盘示例'));
+    await tester.tap(find.text('复制失败复盘示例'));
+    await tester.pumpAndSettle();
+    expect(copiedText, contains('近 30 个国策日'));
     expect(tester.takeException(), isNull);
   });
 

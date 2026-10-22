@@ -60,6 +60,8 @@ class _NationalFocusAiAnalysisPageState
   static const _serverName = 'pacta-national-focus';
   static const _firstQuestion =
       '请使用 \$pacta-national-focus-analysis 分析我的国策：先读取快照版本、来源设备和上传时间，再审视当前树与卡片库的规则具体性、父子依赖与执行负担。请分开事实、可能解释和建议，引用稳定卡片 ID 和要求版本 ID，说明缺失数据；不要替我判断现实履行或修改数据。';
+  static const _failureReviewQuestion =
+      '请使用 \$pacta-national-focus-analysis 复盘我的国策反复失败：先核对云快照 revision、来源设备和上传时间，读取当前完整树与规则，再默认查询近 30 个国策日的失败历史，按工具游标读完分页；当前树和规则不受历史窗口过滤。结合失败事件、失败时冻结的树快照和当时规则，与当前规则比较，引用稳定卡片 ID、失败事件 ID 和历史要求版本 ID，避免混淆同名卡，并保留已软删除卡片的历史证据。区分主动失败、漏确认和连带影响，以及原始失败原因和后续共享反思说明；分开事实、假设和建议，给出下一步可在 App 自行尝试的调整。若 revision 变化，重取一致数据并重新分析。明确无历史、证据不足、更早数据未查询或查询截断；需要时按我的要求扩展更早范围。不要用累计成功量生成成功日历，不宣称完整编辑史、证明因果或测量真实习惯形成，不修改或暗示写回数据。';
   final _requestCodeController = TextEditingController();
   List<NationalFocusAiGrant> _grants = const [];
   NationalFocusAiAuthorizationRequest? _request;
@@ -510,12 +512,29 @@ class _NationalFocusAiAnalysisPageState
             label: const Text('复制 skill 安装说明'),
           ),
           const SizedBox(height: 12),
+          Text('结构分析', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
           const SelectableText(_firstQuestion),
           const SizedBox(height: 8),
           FilledButton.icon(
             onPressed: () => _copyText(_firstQuestion, '已复制首次问题'),
             icon: const Icon(Icons.chat_bubble_outline),
             label: const Text('复制首次问题'),
+          ),
+          const SizedBox(height: 8),
+          const Divider(height: 28),
+          Text('失败复盘', style: Theme.of(context).textTheme.titleSmall),
+          const SizedBox(height: 8),
+          const Text(
+            '完成上方上传、连接和授权后，复制此示例到 Codex。默认复盘近 30 个国策日的失败历史，当前树和规则仍完整读取；你可以要求扩展更早范围。分页查询不等于完整编辑史，缺失或截断的历史需要在分析中说明。',
+          ),
+          const SizedBox(height: 12),
+          const SelectableText(_failureReviewQuestion),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => _copyText(_failureReviewQuestion, '已复制失败复盘示例'),
+            icon: const Icon(Icons.copy_outlined),
+            label: const Text('复制失败复盘示例'),
           ),
           const SizedBox(height: 8),
           const Text('分析建议由你决定是否在 App 采纳。Codex 不能修改国策、替你点亮或确认，也不能认定真实习惯已经形成。'),
