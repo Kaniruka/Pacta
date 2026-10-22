@@ -1,7 +1,10 @@
 import 'dart:io';
+import 'dart:ui' show Tristate;
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:pacta/main.dart';
@@ -76,16 +79,28 @@ void main() {
       cloudSyncEnabled: false,
       now: () => now,
     );
+    final semantics = tester.ensureSemantics();
     try {
       final goal = await tasks.createGoal(
-        const GoalDraft(title: '季度规划', classification: TaskClassification.both),
+        const GoalDraft(
+          title: '季度规划',
+          description: '每周回顾并调整计划',
+          classification: TaskClassification.both,
+        ),
       );
       final task = await tasks.createTask(
         goal.id,
         const TaskDraft(
           title: '整理发布材料',
+          description: '先核对发布清单',
           classification: TaskClassification.both,
           estimatedMinutes: 30,
+        ),
+      );
+      await tasks.createGoal(
+        const GoalDraft(
+          title: '待规划目标',
+          classification: TaskClassification.regular,
         ),
       );
       final session = await focus.startSession(
@@ -128,19 +143,53 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('今天先做什么'), findsOneWidget);
       expect(find.text('整理发布材料'), findsOneWidget);
+      expect(find.text('每周回顾并调整计划'), findsOneWidget);
+      expect(find.text('先核对发布清单'), findsOneWidget);
       final goalCard = find.ancestor(
         of: find.text('季度规划'),
         matching: find.byType(Card),
       );
       await tester.tap(
-        find.descendant(of: goalCard, matching: find.byTooltip('收起任务')),
+        find.text('季度规划'),
+        kind: Platform.isWindows
+            ? PointerDeviceKind.mouse
+            : PointerDeviceKind.touch,
       );
       await tester.pumpAndSettle();
       expect(find.text('整理发布材料'), findsNothing);
-      expect(find.textContaining('1 项任务'), findsOneWidget);
-      await tester.tap(
-        find.descendant(of: goalCard, matching: find.byTooltip('展开任务')),
+      expect(find.text('先核对发布清单'), findsNothing);
+      expect(find.text('每周回顾并调整计划'), findsOneWidget);
+      expect(
+        find.descendant(of: goalCard, matching: find.text('添加任务')),
+        findsNothing,
       );
+      expect(find.textContaining('1 项任务'), findsOneWidget);
+      final header = find.byKey(ValueKey('goal-header-${goal.id}'));
+      expect(
+        tester.getSemantics(header).flagsCollection.isExpanded,
+        Tristate.isFalse,
+      );
+      for (
+        var i = 0;
+        i < 40 &&
+            tester.getSemantics(header).flagsCollection.isFocused !=
+                Tristate.isTrue;
+        i++
+      ) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pump();
+      }
+      expect(
+        tester.getSemantics(header).flagsCollection.isFocused,
+        Tristate.isTrue,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text('整理发布材料'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await tester.pumpAndSettle();
+      expect(find.text('整理发布材料'), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
       expect(find.text('整理发布材料'), findsOneWidget);
       expect(
@@ -151,7 +200,7 @@ void main() {
       expect(find.textContaining('固定规则为北京时间'), findsNothing);
       expect(find.text('日历块'), findsNothing);
       expect(find.text('显示时区'), findsNothing);
-      if (!Platform.isWindows) {
+      {
         final devicePixelRatio = tester.view.devicePixelRatio;
         tester.view.physicalSize = Size(
           360 * devicePixelRatio,
@@ -179,6 +228,18 @@ void main() {
         expect(find.text('设计评审'), findsOneWidget);
       }
       expect(tester.takeException(), isNull);
+      const pause = int.fromEnvironment('BOARD_INSPECTION_SECONDS');
+      if (pause > 0) {
+        await tester.scrollUntilVisible(
+          find.text('季度规划'),
+          -250,
+          scrollable: find.byType(Scrollable).first,
+        );
+        debugPrint('ISSUE65_INSPECTION_READY');
+        await tester.runAsync(
+          () => Future<void>.delayed(Duration(seconds: pause)),
+        );
+      }
       tester.platformDispatcher.clearTextScaleFactorTestValue();
       tester.platformDispatcher.clearPlatformBrightnessTestValue();
       tester.view.resetPhysicalSize();
@@ -210,6 +271,7 @@ void main() {
       await tester.pageBack();
       await tester.pumpAndSettle();
     } finally {
+      semantics.dispose();
       tester.platformDispatcher.clearTextScaleFactorTestValue();
       tester.platformDispatcher.clearPlatformBrightnessTestValue();
       tester.view.resetPhysicalSize();

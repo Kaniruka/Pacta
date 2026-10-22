@@ -191,10 +191,14 @@ void main() {
       matching: find.byTooltip('收起任务'),
     );
     await tester.ensureVisible(collapseButton);
-    await tester.tap(collapseButton);
+    await tester.tap(find.text(longGoalTitle));
     await tester.pumpAndSettle();
 
     expect(find.text(longTaskTitle), findsNothing);
+    expect(
+      find.descendant(of: firstGoalCard, matching: find.text('添加任务')),
+      findsNothing,
+    );
     await tester.scrollUntilVisible(
       find.text('另一个任务'),
       100,
@@ -214,7 +218,7 @@ void main() {
     expect(collapsedCountFinder, findsOneWidget);
     final collapsedCount = tester.widget<Text>(collapsedCountFinder);
     expect(collapsedCount.data, '1 项任务\n进行中');
-    expect(collapsedCount.maxLines, 2);
+    expect(collapsedCount.maxLines, isNull);
     expect(
       collapsedCount.style,
       Theme.of(tester.element(collapsedCountFinder)).textTheme.bodySmall,

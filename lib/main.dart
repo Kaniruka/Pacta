@@ -1460,11 +1460,7 @@ class _GoalCardState extends State<_GoalCard> {
         : goal.isComplete
         ? '已完成'
         : '进行中';
-    final summary = goal.tasks.isEmpty
-        ? '${goal.classification.label} · $status'
-        : _tasksExpanded
-        ? '${goal.classification.label} · $status · ${goal.tasks.length} 项任务'
-        : '${goal.tasks.length} 项任务\n$status';
+    final summary = '${goal.tasks.length} 项任务\n$status';
     return Card(
       margin: const EdgeInsets.only(top: 12),
       child: Padding(
@@ -1472,97 +1468,126 @@ class _GoalCardState extends State<_GoalCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            ListTile(
-              isThreeLine: true,
-              contentPadding: EdgeInsets.zero,
-              title: Text(
-                goal.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (goal.description.isNotEmpty)
-                    Text(
-                      goal.description,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  Text(
-                    summary,
-                    style: Theme.of(context).textTheme.bodySmall,
-                    maxLines: _tasksExpanded ? 1 : 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-              trailing: Wrap(
-                children: [
-                  if (goal.tasks.isNotEmpty)
-                    IconButton(
-                      tooltip: _tasksExpanded ? '收起任务' : '展开任务',
-                      onPressed: () =>
-                          setState(() => _tasksExpanded = !_tasksExpanded),
-                      icon: Icon(
-                        _tasksExpanded ? Icons.expand_less : Icons.expand_more,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Semantics(
+                    key: ValueKey('goal-header-${goal.id}'),
+                    expanded: _tasksExpanded,
+                    button: true,
+                    child: Tooltip(
+                      message: _tasksExpanded ? '收起任务' : '展开任务',
+                      child: InkWell(
+                        onTap: () =>
+                            setState(() => _tasksExpanded = !_tasksExpanded),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minHeight: 48),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      goal.title,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium,
+                                    ),
+                                    if (goal.description.isNotEmpty)
+                                      Text(
+                                        goal.description,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall,
+                                      ),
+                                    Text(
+                                      summary,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              ExcludeSemantics(
+                                child: Icon(
+                                  _tasksExpanded
+                                      ? Icons.expand_less
+                                      : Icons.expand_more,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
-                  IconButton(
-                    tooltip: '编辑目标',
-                    onPressed: () async {
-                      final draft = await _showGoalDialog(
-                        context,
-                        initial: goal,
-                      );
-                      if (draft != null) {
-                        await widget.repository.updateGoal(goal.id, draft);
-                      }
-                    },
-                    icon: const Icon(Icons.edit_outlined),
-                  ),
-                  IconButton(
-                    tooltip: '删除目标',
-                    onPressed: () => _confirmDeleteGoal(context),
-                    icon: const Icon(Icons.delete_outline),
-                  ),
-                ],
-              ),
-            ),
-            if (goal.tasks.isEmpty)
-              const Padding(
-                padding: EdgeInsets.only(bottom: 8),
-                child: Text('暂无任务，先添加一个可执行的下一步。'),
-              )
-            else if (_tasksExpanded)
-              for (final task in goal.tasks)
-                _TaskTile(
-                  repository: widget.repository,
-                  task: widget.focusProgressSecondsByTask == null
-                      ? task
-                      : task.copyWith(
-                          focusProgressSeconds:
-                              widget.focusProgressSecondsByTask![task.id] ?? 0,
-                        ),
-                  hasPendingReview: widget.pendingReviewTaskIds.contains(
-                    task.id,
                   ),
                 ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () async {
-                  final draft = await _showTaskDialog(context, goal: goal);
-                  if (draft != null) {
-                    await widget.repository.createTask(goal.id, draft);
-                  }
-                },
-                icon: const Icon(Icons.add_task),
-                label: const Text('添加任务'),
-              ),
+                Wrap(
+                  children: [
+                    IconButton(
+                      tooltip: '编辑目标',
+                      onPressed: () async {
+                        final draft = await _showGoalDialog(
+                          context,
+                          initial: goal,
+                        );
+                        if (draft != null) {
+                          await widget.repository.updateGoal(goal.id, draft);
+                        }
+                      },
+                      icon: const Icon(Icons.edit_outlined),
+                    ),
+                    IconButton(
+                      tooltip: '删除目标',
+                      onPressed: () => _confirmDeleteGoal(context),
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ],
+                ),
+              ],
             ),
+            if (_tasksExpanded) ...[
+              if (goal.tasks.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8),
+                  child: Text('暂无任务，先添加一个可执行的下一步。'),
+                )
+              else
+                for (final task in goal.tasks)
+                  _TaskTile(
+                    repository: widget.repository,
+                    task: widget.focusProgressSecondsByTask == null
+                        ? task
+                        : task.copyWith(
+                            focusProgressSeconds:
+                                widget.focusProgressSecondsByTask![task.id] ??
+                                0,
+                          ),
+                    hasPendingReview: widget.pendingReviewTaskIds.contains(
+                      task.id,
+                    ),
+                  ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () async {
+                    final draft = await _showTaskDialog(context, goal: goal);
+                    if (draft != null) {
+                      await widget.repository.createTask(goal.id, draft);
+                    }
+                  },
+                  icon: const Icon(Icons.add_task),
+                  label: const Text('添加任务'),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -1611,7 +1636,6 @@ class _TaskTile extends ConsumerWidget {
         children: [
           Text(
             [
-              task.classification.label,
               if (task.estimatedMinutes != null) '${task.estimatedMinutes} 分钟',
               if (task.focusProgressSeconds > 0)
                 '已专注 ${_formatDuration(task.focusProgressSeconds)}',
@@ -1927,7 +1951,7 @@ class _TaskDialogState extends State<_TaskDialog> {
           const SizedBox(height: 12),
           DropdownButtonFormField<TaskClassification>(
             initialValue: _classification,
-            decoration: const InputDecoration(labelText: '任务分类'),
+            decoration: const InputDecoration(labelText: '适用专注链'),
             items: [
               for (final classification in TaskClassification.values)
                 DropdownMenuItem(

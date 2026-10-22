@@ -1,5 +1,9 @@
+import 'dart:ui' show Tristate;
+
 import 'package:drift/native.dart';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
@@ -74,6 +78,113 @@ void main() {
     expect(goal.description, isEmpty);
     expect(find.text(maximumDescription), findsNothing);
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 1));
+  });
+
+  testWidgets('空目标标题支持键盘折叠、展开语义并与编辑删除独立', (tester) async {
+    final semantics = tester.ensureSemantics();
+
+    final harness = await _BoardHarness.open(
+      PactaDatabase(NativeDatabase.memory()),
+    );
+    addTearDown(harness.database.close);
+    final goal = await harness.tasks.createGoal(
+      const GoalDraft(
+        title: '空目标',
+        description: '折叠仍可读的目标说明',
+        classification: TaskClassification.regular,
+      ),
+    );
+    await harness.show(tester);
+    final header = find.byKey(ValueKey('goal-header-${goal.id}'));
+    expect(find.text('暂无任务，先添加一个可执行的下一步。'), findsOneWidget);
+    expect(
+      tester.getSemantics(header).flagsCollection.isExpanded == Tristate.isTrue,
+      isTrue,
+    );
+    await tester.tap(find.text('空目标'));
+    await tester.pumpAndSettle();
+    expect(find.text('暂无任务，先添加一个可执行的下一步。'), findsNothing);
+    expect(find.text('添加任务'), findsNothing);
+    expect(find.text('折叠仍可读的目标说明'), findsOneWidget);
+    expect(find.text('0 项任务\n暂无任务 · 未完成'), findsOneWidget);
+    expect(
+      tester.getSemantics(header).flagsCollection.isExpanded != Tristate.none,
+      isTrue,
+    );
+    expect(
+      tester.getSemantics(header).flagsCollection.isExpanded == Tristate.isTrue,
+      isFalse,
+    );
+    for (
+      var i = 0;
+      i < 30 &&
+          tester.getSemantics(header).flagsCollection.isFocused !=
+              Tristate.isTrue;
+      i++
+    ) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+    }
+    expect(
+      tester.getSemantics(header).flagsCollection.isFocused == Tristate.isTrue,
+      isTrue,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.text('添加任务'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pumpAndSettle();
+    expect(find.text('添加任务'), findsNothing);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.text('编辑目标'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('添加任务'), findsNothing);
+    await tester.tap(find.byTooltip('删除目标'));
+    await tester.pumpAndSettle();
+    expect(find.text('删除目标和任务？'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('添加任务'), findsNothing);
+    semantics.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 1));
+  });
+
+  testWidgets('分类只在目标默认与任务适用专注链编辑中呈现', (tester) async {
+    final harness = await _BoardHarness.open(
+      PactaDatabase(NativeDatabase.memory()),
+    );
+    addTearDown(harness.database.close);
+    final goal = await harness.tasks.createGoal(
+      const GoalDraft(title: '分类目标', classification: TaskClassification.elite),
+    );
+    await harness.tasks.createTask(
+      goal.id,
+      const TaskDraft(title: '分类任务', classification: TaskClassification.both),
+    );
+    await harness.show(tester);
+    expect(find.textContaining('精锐'), findsNothing);
+    expect(find.textContaining('两者'), findsNothing);
+    await tester.tap(find.byTooltip('编辑目标'));
+    await tester.pumpAndSettle();
+    expect(find.text('新任务默认分类'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('分类任务'));
+    await tester.pumpAndSettle();
+    expect(find.text('适用专注链'), findsOneWidget);
+    expect(find.text('任务分类'), findsNothing);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(
+      (await harness.tasks.getGoals()).single.tasks.single.classification,
+      TaskClassification.both,
+    );
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
   });
