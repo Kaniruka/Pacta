@@ -1,3 +1,17 @@
+import 'package:characters/characters.dart';
+
+const taskDescriptionMaxGraphemes = 200;
+
+String normalizeDescription(String description) {
+  final normalized = description
+      .replaceAll(RegExp(r'\r\n|\r|\n|\u000b|\u000c|\u0085|\u2028|\u2029'), ' ')
+      .trim();
+  if (normalized.characters.length > taskDescriptionMaxGraphemes) {
+    throw ArgumentError('描述不能超过$taskDescriptionMaxGraphemes个用户可见字符。');
+  }
+  return normalized;
+}
+
 enum TaskClassification {
   elite,
   regular,
@@ -27,6 +41,7 @@ class Goal {
   const Goal({
     required this.id,
     required this.title,
+    this.description = '',
     required this.classification,
     required this.createdAt,
     required this.updatedAt,
@@ -36,6 +51,7 @@ class Goal {
 
   final String id;
   final String title;
+  final String description;
   final TaskClassification classification;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -48,6 +64,7 @@ class Goal {
 
   Goal copyWith({
     String? title,
+    String? description,
     TaskClassification? classification,
     DateTime? updatedAt,
     List<Task>? tasks,
@@ -56,6 +73,7 @@ class Goal {
     return Goal(
       id: id,
       title: title ?? this.title,
+      description: description ?? this.description,
       classification: classification ?? this.classification,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -72,6 +90,7 @@ class Task {
     required this.id,
     required this.goalId,
     required this.title,
+    this.description = '',
     required this.classification,
     required this.estimatedMinutes,
     required this.deadline,
@@ -85,6 +104,7 @@ class Task {
   final String id;
   final String goalId;
   final String title;
+  final String description;
   final TaskClassification classification;
   final int? estimatedMinutes;
   final DateTime? deadline;
@@ -98,6 +118,7 @@ class Task {
 
   Task copyWith({
     String? title,
+    String? description,
     TaskClassification? classification,
     Object? estimatedMinutes = _unchanged,
     Object? deadline = _unchanged,
@@ -110,6 +131,7 @@ class Task {
       id: id,
       goalId: goalId,
       title: title ?? this.title,
+      description: description ?? this.description,
       classification: classification ?? this.classification,
       estimatedMinutes: identical(estimatedMinutes, _unchanged)
           ? this.estimatedMinutes
@@ -131,21 +153,28 @@ class Task {
 const _unchanged = Object();
 
 class GoalDraft {
-  const GoalDraft({required this.title, required this.classification});
+  const GoalDraft({
+    required this.title,
+    this.description = '',
+    required this.classification,
+  });
 
   final String title;
+  final String description;
   final TaskClassification classification;
 }
 
 class TaskDraft {
   const TaskDraft({
     required this.title,
+    this.description = '',
     this.classification,
     this.estimatedMinutes,
     this.deadline,
   });
 
   final String title;
+  final String description;
   final TaskClassification? classification;
   final int? estimatedMinutes;
   final DateTime? deadline;

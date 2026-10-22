@@ -105,6 +105,7 @@ void main() {
         final goal = await seedTasks.createGoal(
           const GoalDraft(
             title: 'Android cloud goal',
+            description: 'Android goal description survives cloud sync',
             classification: TaskClassification.both,
           ),
         );
@@ -112,6 +113,7 @@ void main() {
           goal.id,
           const TaskDraft(
             title: 'Android cloud task',
+            description: 'Android task description survives cloud sync',
             classification: TaskClassification.both,
           ),
         );
@@ -235,6 +237,17 @@ void main() {
           isFalse,
         );
         expect(goals.any((goal) => goal.title == 'Android cloud goal'), isTrue);
+        final androidGoal = goals.singleWhere(
+          (goal) => goal.title == 'Android cloud goal',
+        );
+        expect(
+          androidGoal.description,
+          'Android goal description survives cloud sync',
+        );
+        expect(
+          androidGoal.tasks.single.description,
+          'Android task description survives cloud sync',
+        );
         expect(await seedFocus.getSessions(), hasLength(1));
         expect(
           (await seedFocus.getSessions()).single.status,
@@ -245,6 +258,7 @@ void main() {
           await seedTasks.createGoal(
             const GoalDraft(
               title: 'Windows cloud addition',
+              description: 'Windows goal description survives cloud sync',
               classification: TaskClassification.regular,
             ),
           );
@@ -260,10 +274,41 @@ void main() {
           );
           expect(cloud!.deviceName, 'Windows 11 acceptance client');
           expect(cloud.revision, 2);
+          final uploaded = await tester.runAsync(
+            () => remote.download(userId: userId),
+          );
+          final uploadedGoalRows =
+              (uploaded!.payload!['tables']
+                      as Map<String, dynamic>)['local_goals']
+                  as List;
+          expect(
+            uploadedGoalRows.singleWhere(
+              (row) => row['title'] == 'Windows cloud addition',
+            )['description'],
+            'Windows goal description survives cloud sync',
+          );
         } else {
           expect(
             goals.any((goal) => goal.title == 'Windows cloud addition'),
             isTrue,
+          );
+          final androidGoal = goals.singleWhere(
+            (goal) => goal.title == 'Android cloud goal',
+          );
+          final windowsGoal = goals.singleWhere(
+            (goal) => goal.title == 'Windows cloud addition',
+          );
+          expect(
+            androidGoal.description,
+            'Android goal description survives cloud sync',
+          );
+          expect(
+            androidGoal.tasks.single.description,
+            'Android task description survives cloud sync',
+          );
+          expect(
+            windowsGoal.description,
+            'Windows goal description survives cloud sync',
           );
           final preview = await sync.captureLocalState();
           final cloud = await tester.runAsync(
@@ -310,7 +355,7 @@ void main() {
   }, skip: _phase == 'windows-conflict');
 
   testWidgets(
-    'real SDK rejects stale preview promptly and retains offline data',
+    'real service rejects stale previews and malformed downloads without local loss',
     (tester) async {
       final config = await tester.runAsync(() async {
         final response = await http.get(
@@ -348,17 +393,29 @@ void main() {
           remote: const UnavailableTaskRemoteDataSource(),
           cloudSyncEnabled: false,
         );
-        await tasks.createGoal(
+        final goal = await tasks.createGoal(
           const GoalDraft(
             title: 'Retain through offline transport',
+            description:
+                'Goal text that an old version 1 snapshot cannot carry',
+            classification: TaskClassification.regular,
+          ),
+        );
+        await tasks.createTask(
+          goal.id,
+          const TaskDraft(
+            title: 'Keep linked task data',
+            description:
+                'Task text that an old version 1 snapshot cannot carry',
             classification: TaskClassification.regular,
           ),
         );
         final preview = await tester.runAsync(sync.inspectCloud);
         final local = await sync.captureLocalState();
+        final initialRevision = preview?.revision ?? 0;
         final first = await tester.runAsync(
           () => sync.uploadLocal(
-            expectedRevision: preview!.revision,
+            expectedRevision: initialRevision,
             expectedFingerprint: local.fingerprint,
           ),
         );
@@ -366,7 +423,7 @@ void main() {
         final conflict = await tester.runAsync(() async {
           try {
             await sync.uploadLocal(
-              expectedRevision: preview!.revision,
+              expectedRevision: initialRevision,
               expectedFingerprint: local.fingerprint,
             );
             return false;
@@ -406,6 +463,72 @@ void main() {
             expectedFingerprint: local.fingerprint,
           ),
         );
+        expect(
+          (await tasks.getGoals()).single.title,
+          'Retain through offline transport',
+        );
+        final currentCloud = await tester.runAsync(sync.inspectCloud);
+        final oldTables = Map<String, dynamic>.from(
+          local.payload['tables'] as Map,
+        );
+        for (final table in const ['local_goals', 'local_tasks']) {
+          oldTables[table] = [
+            for (final rawRow in oldTables[table] as List)
+              Map<String, dynamic>.from(rawRow as Map)..remove('description'),
+          ];
+        }
+        final oldCloud = await tester.runAsync(
+          () => remote.upload(
+            userId: userId,
+            expectedRevision: currentCloud!.revision,
+            payload: <String, dynamic>{...local.payload, 'tables': oldTables},
+            deviceId: 'old-version-1-probe',
+            deviceName: 'Old version 1 probe',
+            dataUpdatedAt: local.dataUpdatedAt,
+            rowCount: local.rowCount,
+          ),
+        );
+        final beforeLegacyDownload = await sync.captureLocalState();
+        await tester.runAsync(
+          () => sync.downloadCloud(
+            expectedRevision: oldCloud!.revision,
+            expectedFingerprint: beforeLegacyDownload.fingerprint,
+          ),
+        );
+        final legacyRestored = (await tasks.getGoals()).single;
+        expect(legacyRestored.title, 'Retain through offline transport');
+        expect(legacyRestored.description, isEmpty);
+        expect(legacyRestored.tasks.single.title, 'Keep linked task data');
+        expect(legacyRestored.tasks.single.description, isEmpty);
+
+        final malformedCloud = await tester.runAsync(
+          () => remote.upload(
+            userId: userId,
+            expectedRevision: oldCloud!.revision,
+            payload: {
+              'schemaVersion': 1,
+              'userId': userId,
+              'tables': <String, dynamic>{},
+            },
+            deviceId: 'malformed-download-probe',
+            deviceName: 'Malformed download probe',
+            dataUpdatedAt: local.dataUpdatedAt,
+            rowCount: 0,
+          ),
+        );
+        final beforeMalformedDownload = await sync.captureLocalState();
+        final rejectedMalformedDownload = await tester.runAsync(() async {
+          try {
+            await sync.downloadCloud(
+              expectedRevision: malformedCloud!.revision,
+              expectedFingerprint: beforeMalformedDownload.fingerprint,
+            );
+            return false;
+          } on StateError {
+            return true;
+          }
+        });
+        expect(rejectedMalformedDownload, isTrue);
         expect(
           (await tasks.getGoals()).single.title,
           'Retain through offline transport',

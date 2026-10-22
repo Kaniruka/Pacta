@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/drift.dart';
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
+import 'package:pacta/src/tasks/task_models.dart';
+import 'package:pacta/src/tasks/task_repository.dart';
 
 void main() {
   late PactaDatabase database;
@@ -526,6 +528,306 @@ void main() {
       database.localGoals,
     )..where((row) => row.id.equals('goal-a'))).getSingle();
     expect(goal.title, 'Preserve');
+  });
+
+  test(
+    'accepts version 1 cloud rows without goal and task descriptions as empty',
+    () async {
+      final tasks = LocalTaskRepository(
+        database: database,
+        userId: 'user-a',
+        remote: const UnavailableTaskRemoteDataSource(),
+        cloudSyncEnabled: false,
+      );
+      final goal = await tasks.createGoal(
+        const GoalDraft(
+          title: '本地目标',
+          description: '本地目标描述',
+          classification: TaskClassification.regular,
+        ),
+      );
+      final task = await tasks.createTask(
+        goal.id,
+        const TaskDraft(
+          title: '本地任务',
+          description: '本地任务描述',
+          classification: TaskClassification.regular,
+        ),
+      );
+      final oldCloudState = await repository.captureLocalState();
+      final tables = Map<String, dynamic>.from(
+        oldCloudState.payload['tables'] as Map,
+      );
+      for (final table in const ['local_goals', 'local_tasks']) {
+        tables[table] = [
+          for (final rawRow in tables[table] as List)
+            Map<String, dynamic>.from(rawRow as Map)
+              ..remove('description')
+              ..['title'] = table == 'local_goals' ? '云端旧目标' : '云端旧任务',
+        ];
+      }
+      final oldPayload = <String, dynamic>{
+        ...oldCloudState.payload,
+        'tables': tables,
+      };
+      await remote.upload(
+        userId: 'user-a',
+        expectedRevision: 0,
+        payload: oldPayload,
+        deviceId: 'legacy-device',
+        deviceName: 'Legacy device',
+        dataUpdatedAt: oldCloudState.dataUpdatedAt,
+        rowCount: oldCloudState.rowCount,
+      );
+      await tasks.updateGoal(
+        goal.id,
+        const GoalDraft(
+          title: '本地保留目标',
+          description: '本地保留目标描述',
+          classification: TaskClassification.regular,
+        ),
+      );
+      await tasks.updateTask(
+        task.id,
+        const TaskDraft(
+          title: '本地保留任务',
+          description: '本地保留任务描述',
+          classification: TaskClassification.regular,
+        ),
+      );
+      final beforeDownload = await repository.captureLocalState();
+
+      await repository.downloadCloud(
+        expectedRevision: 1,
+        expectedFingerprint: beforeDownload.fingerprint,
+      );
+
+      final restored = (await tasks.getGoals()).single;
+      expect(restored.title, '云端旧目标');
+      expect(restored.description, isEmpty);
+      expect(restored.tasks.single.title, '云端旧任务');
+      expect(restored.tasks.single.description, isEmpty);
+      await tasks.dispose();
+    },
+  );
+
+  test(
+    'normalizes Goal and Task descriptions when restoring a snapshot',
+    () async {
+      final tasks = LocalTaskRepository(
+        database: database,
+        userId: 'user-a',
+        remote: const UnavailableTaskRemoteDataSource(),
+        cloudSyncEnabled: false,
+      );
+      final goal = await tasks.createGoal(
+        const GoalDraft(
+          title: '本地目标',
+          classification: TaskClassification.regular,
+        ),
+      );
+      final task = await tasks.createTask(
+        goal.id,
+        const TaskDraft(
+          title: '本地任务',
+          classification: TaskClassification.regular,
+        ),
+      );
+      final local = await repository.captureLocalState();
+      final tables = Map<String, dynamic>.from(local.payload['tables'] as Map);
+      tables['local_goals'] = [
+        for (final rawRow in tables['local_goals'] as List)
+          Map<String, dynamic>.from(rawRow as Map)
+            ..['description'] = '  云端目标\r\n说明  ',
+      ];
+      tables['local_tasks'] = [
+        for (final rawRow in tables['local_tasks'] as List)
+          Map<String, dynamic>.from(rawRow as Map)
+            ..['description'] = '  云端任务\r\n说明  ',
+      ];
+      await remote.upload(
+        userId: 'user-a',
+        expectedRevision: 0,
+        payload: <String, dynamic>{...local.payload, 'tables': tables},
+        deviceId: 'device-b',
+        deviceName: 'Tablet B',
+        dataUpdatedAt: local.dataUpdatedAt,
+        rowCount: local.rowCount,
+      );
+
+      await repository.downloadCloud(
+        expectedRevision: 1,
+        expectedFingerprint: local.fingerprint,
+      );
+
+      final restored = (await tasks.getGoals()).single;
+      expect(restored.id, goal.id);
+      expect(restored.description, '云端目标 说明');
+      expect(restored.tasks.single.id, task.id);
+      expect(restored.tasks.single.description, '云端任务 说明');
+
+      final beforeInvalidDownload = await repository.captureLocalState();
+      final tooLongDescription = List.filled(201, '👨‍👩‍👧‍👦').join();
+      final invalidTables = Map<String, dynamic>.from(
+        beforeInvalidDownload.payload['tables'] as Map,
+      );
+      invalidTables['local_goals'] = [
+        for (final rawRow in invalidTables['local_goals'] as List)
+          Map<String, dynamic>.from(rawRow as Map)
+            ..['description'] = tooLongDescription,
+      ];
+      invalidTables['local_tasks'] = [
+        for (final rawRow in invalidTables['local_tasks'] as List)
+          Map<String, dynamic>.from(rawRow as Map)
+            ..['description'] = tooLongDescription,
+      ];
+      await remote.upload(
+        userId: 'user-a',
+        expectedRevision: 1,
+        payload: <String, dynamic>{
+          ...beforeInvalidDownload.payload,
+          'tables': invalidTables,
+        },
+        deviceId: 'device-b',
+        deviceName: 'Tablet B',
+        dataUpdatedAt: beforeInvalidDownload.dataUpdatedAt,
+        rowCount: beforeInvalidDownload.rowCount,
+      );
+
+      await expectLater(
+        repository.downloadCloud(
+          expectedRevision: 2,
+          expectedFingerprint: beforeInvalidDownload.fingerprint,
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      expect(
+        (await repository.captureLocalState()).fingerprint,
+        beforeInvalidDownload.fingerprint,
+      );
+      final preserved = (await tasks.getGoals()).single;
+      expect(preserved.description, '云端目标 说明');
+      expect(preserved.tasks.single.description, '云端任务 说明');
+      await tasks.dispose();
+    },
+  );
+
+  test(
+    'rejects unexpected row columns without replacing local tasks',
+    () async {
+      final tasks = LocalTaskRepository(
+        database: database,
+        userId: 'user-a',
+        remote: const UnavailableTaskRemoteDataSource(),
+        cloudSyncEnabled: false,
+      );
+      final goal = await tasks.createGoal(
+        const GoalDraft(
+          title: '保留目标',
+          description: '本地目标描述',
+          classification: TaskClassification.regular,
+        ),
+      );
+      await tasks.createTask(
+        goal.id,
+        const TaskDraft(
+          title: '保留任务',
+          description: '本地任务描述',
+          classification: TaskClassification.regular,
+        ),
+      );
+      final local = await repository.captureLocalState();
+      final tables = Map<String, dynamic>.from(local.payload['tables'] as Map);
+      tables['local_goals'] = [
+        for (final rawRow in tables['local_goals'] as List)
+          Map<String, dynamic>.from(rawRow as Map)
+            ..['title'] = '非法云端目标'
+            ..['unexpected'] = 'must be rejected',
+      ];
+      await remote.upload(
+        userId: 'user-a',
+        expectedRevision: 0,
+        payload: <String, dynamic>{...local.payload, 'tables': tables},
+        deviceId: 'device-b',
+        deviceName: 'Tablet B',
+        dataUpdatedAt: local.dataUpdatedAt,
+        rowCount: local.rowCount,
+      );
+
+      await expectLater(
+        repository.downloadCloud(
+          expectedRevision: 1,
+          expectedFingerprint: local.fingerprint,
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      final preserved = (await tasks.getGoals()).single;
+      expect(preserved.title, '保留目标');
+      expect(preserved.description, '本地目标描述');
+      expect(preserved.tasks.single.title, '保留任务');
+      expect(preserved.tasks.single.description, '本地任务描述');
+      await tasks.dispose();
+    },
+  );
+
+  test('rejects another users rows before any local replacement', () async {
+    final tasks = LocalTaskRepository(
+      database: database,
+      userId: 'user-a',
+      remote: const UnavailableTaskRemoteDataSource(),
+      cloudSyncEnabled: false,
+    );
+    final goal = await tasks.createGoal(
+      const GoalDraft(
+        title: '本地目标',
+        description: '本机内容',
+        classification: TaskClassification.regular,
+      ),
+    );
+    await tasks.createTask(
+      goal.id,
+      const TaskDraft(
+        title: '本地任务',
+        description: '本机内容',
+        classification: TaskClassification.regular,
+      ),
+    );
+    final local = await repository.captureLocalState();
+    final tables = Map<String, dynamic>.from(local.payload['tables'] as Map);
+    tables['local_goals'] = [
+      for (final rawRow in tables['local_goals'] as List)
+        Map<String, dynamic>.from(rawRow as Map)..['title'] = '别人的云目标',
+    ];
+    tables['local_tasks'] = [
+      for (final rawRow in tables['local_tasks'] as List)
+        Map<String, dynamic>.from(rawRow as Map)..['user_id'] = 'user-b',
+    ];
+    await remote.upload(
+      userId: 'user-a',
+      expectedRevision: 0,
+      payload: <String, dynamic>{...local.payload, 'tables': tables},
+      deviceId: 'device-b',
+      deviceName: 'Tablet B',
+      dataUpdatedAt: local.dataUpdatedAt,
+      rowCount: local.rowCount,
+    );
+
+    await expectLater(
+      repository.downloadCloud(
+        expectedRevision: 1,
+        expectedFingerprint: local.fingerprint,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final preserved = (await tasks.getGoals()).single;
+    expect(preserved.title, '本地目标');
+    expect(preserved.description, '本机内容');
+    expect(preserved.tasks.single.title, '本地任务');
+    expect(preserved.tasks.single.description, '本机内容');
+    await tasks.dispose();
   });
 }
 

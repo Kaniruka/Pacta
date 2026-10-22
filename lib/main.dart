@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart' hide FocusNode;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -1479,11 +1480,24 @@ class _GoalCardState extends State<_GoalCard> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              subtitle: Text(
-                summary,
-                style: Theme.of(context).textTheme.bodySmall,
-                maxLines: _tasksExpanded ? 1 : 2,
-                overflow: TextOverflow.ellipsis,
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (goal.description.isNotEmpty)
+                    Text(
+                      goal.description,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  Text(
+                    summary,
+                    style: Theme.of(context).textTheme.bodySmall,
+                    maxLines: _tasksExpanded ? 1 : 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
               trailing: Wrap(
                 children: [
@@ -1591,17 +1605,30 @@ class _TaskTile extends ConsumerWidget {
             ? const TextStyle(decoration: TextDecoration.lineThrough)
             : null,
       ),
-      subtitle: Text(
-        [
-          task.classification.label,
-          if (task.estimatedMinutes != null) '${task.estimatedMinutes} 分钟',
-          if (task.focusProgressSeconds > 0)
-            '已专注 ${_formatDuration(task.focusProgressSeconds)}',
-          if (hasPendingReview) '待核对（争议部分暂不计入专注统计）',
-          ?deadline,
-        ].join(' · '),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            [
+              task.classification.label,
+              if (task.estimatedMinutes != null) '${task.estimatedMinutes} 分钟',
+              if (task.focusProgressSeconds > 0)
+                '已专注 ${_formatDuration(task.focusProgressSeconds)}',
+              if (hasPendingReview) '待核对（争议部分暂不计入专注统计）',
+              ?deadline,
+            ].join(' · '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (task.description.isNotEmpty)
+            Text(
+              task.description,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+        ],
       ),
       trailing: IconButton(
         tooltip: '开始专注',
@@ -1706,6 +1733,36 @@ Future<TaskDraft?> _showTaskDialog(
   );
 }
 
+final _descriptionInputFormatters = <TextInputFormatter>[
+  FilteringTextInputFormatter.deny(
+    RegExp(r'\r\n|[\r\n\u000b\u000c\u0085\u2028\u2029]'),
+    replacementString: ' ',
+  ),
+];
+
+class _DescriptionField extends StatelessWidget {
+  const _DescriptionField({required this.controller});
+
+  final TextEditingController controller;
+
+  @override
+  Widget build(BuildContext context) => TextField(
+    controller: controller,
+    keyboardType: TextInputType.multiline,
+    minLines: 2,
+    maxLines: 4,
+    maxLength: taskDescriptionMaxGraphemes,
+    maxLengthEnforcement: MaxLengthEnforcement.enforced,
+    inputFormatters: _descriptionInputFormatters,
+    decoration: const InputDecoration(
+      labelText: '描述（可选）',
+      helperText: '单段，最多200个字符',
+      helperMaxLines: 2,
+      alignLabelWithHint: true,
+    ),
+  );
+}
+
 class _GoalDialog extends StatefulWidget {
   const _GoalDialog({this.initial});
 
@@ -1717,12 +1774,14 @@ class _GoalDialog extends StatefulWidget {
 
 class _GoalDialogState extends State<_GoalDialog> {
   late final TextEditingController _title;
+  late final TextEditingController _description;
   late TaskClassification _classification;
 
   @override
   void initState() {
     super.initState();
     _title = TextEditingController(text: widget.initial?.title);
+    _description = TextEditingController(text: widget.initial?.description);
     _classification =
         widget.initial?.classification ?? TaskClassification.regular;
   }
@@ -1730,36 +1789,41 @@ class _GoalDialogState extends State<_GoalDialog> {
   @override
   void dispose() {
     _title.dispose();
+    _description.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => AlertDialog(
     title: Text(widget.initial == null ? '新建目标' : '编辑目标'),
-    content: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        TextField(
-          controller: _title,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: '目标名称'),
-        ),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<TaskClassification>(
-          initialValue: _classification,
-          decoration: const InputDecoration(labelText: '新任务默认分类'),
-          items: [
-            for (final classification in TaskClassification.values)
-              DropdownMenuItem(
-                value: classification,
-                child: Text(classification.label),
-              ),
-          ],
-          onChanged: (value) {
-            if (value != null) setState(() => _classification = value);
-          },
-        ),
-      ],
+    content: SingleChildScrollView(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _title,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: '目标名称'),
+          ),
+          const SizedBox(height: 12),
+          _DescriptionField(controller: _description),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<TaskClassification>(
+            initialValue: _classification,
+            decoration: const InputDecoration(labelText: '新任务默认分类'),
+            items: [
+              for (final classification in TaskClassification.values)
+                DropdownMenuItem(
+                  value: classification,
+                  child: Text(classification.label),
+                ),
+            ],
+            onChanged: (value) {
+              if (value != null) setState(() => _classification = value);
+            },
+          ),
+        ],
+      ),
     ),
     actions: [
       TextButton(
@@ -1769,7 +1833,11 @@ class _GoalDialogState extends State<_GoalDialog> {
       FilledButton(
         onPressed: () => Navigator.pop(
           context,
-          GoalDraft(title: _title.text, classification: _classification),
+          GoalDraft(
+            title: _title.text,
+            description: _description.text,
+            classification: _classification,
+          ),
         ),
         child: const Text('保存'),
       ),
@@ -1789,6 +1857,7 @@ class _TaskDialog extends StatefulWidget {
 
 class _TaskDialogState extends State<_TaskDialog> {
   late final TextEditingController _title;
+  late final TextEditingController _description;
   late final TextEditingController _estimatedMinutes;
   late TaskClassification _classification;
   DateTime? _deadline;
@@ -1797,6 +1866,7 @@ class _TaskDialogState extends State<_TaskDialog> {
   void initState() {
     super.initState();
     _title = TextEditingController(text: widget.initial?.title);
+    _description = TextEditingController(text: widget.initial?.description);
     _estimatedMinutes = TextEditingController(
       text: widget.initial?.estimatedMinutes?.toString(),
     );
@@ -1810,6 +1880,7 @@ class _TaskDialogState extends State<_TaskDialog> {
   @override
   void dispose() {
     _title.dispose();
+    _description.dispose();
     _estimatedMinutes.dispose();
     super.dispose();
   }
@@ -1851,6 +1922,8 @@ class _TaskDialogState extends State<_TaskDialog> {
             autofocus: true,
             decoration: const InputDecoration(labelText: '任务名称'),
           ),
+          const SizedBox(height: 12),
+          _DescriptionField(controller: _description),
           const SizedBox(height: 12),
           DropdownButtonFormField<TaskClassification>(
             initialValue: _classification,
@@ -1908,6 +1981,7 @@ class _TaskDialogState extends State<_TaskDialog> {
           context,
           TaskDraft(
             title: _title.text,
+            description: _description.text,
             classification: _classification,
             estimatedMinutes: int.tryParse(_estimatedMinutes.text.trim()),
             deadline: _deadline,

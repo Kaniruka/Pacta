@@ -141,6 +141,7 @@ class LocalTaskRepository implements TaskRepository {
     final goal = Goal(
       id: _uuid.v4(),
       title: title,
+      description: normalizeDescription(draft.description),
       classification: draft.classification,
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -156,6 +157,7 @@ class LocalTaskRepository implements TaskRepository {
     final existing = await _findGoal(goalId);
     final updated = existing.copyWith(
       title: _requiredTitle(draft.title, '目标'),
+      description: normalizeDescription(draft.description),
       classification: draft.classification,
       updatedAt: _nextTimestamp(existing.updatedAt),
     );
@@ -214,6 +216,7 @@ class LocalTaskRepository implements TaskRepository {
       id: _uuid.v4(),
       goalId: goalId,
       title: _requiredTitle(draft.title, '任务'),
+      description: normalizeDescription(draft.description),
       classification: draft.classification ?? goal.classification,
       estimatedMinutes: _validEstimatedMinutes(draft.estimatedMinutes),
       deadline: draft.deadline,
@@ -232,6 +235,7 @@ class LocalTaskRepository implements TaskRepository {
     final existing = await _findTask(taskId);
     final updated = existing.copyWith(
       title: _requiredTitle(draft.title, '任务'),
+      description: normalizeDescription(draft.description),
       classification: draft.classification ?? existing.classification,
       estimatedMinutes: _validEstimatedMinutes(draft.estimatedMinutes),
       deadline: draft.deadline,
@@ -349,6 +353,7 @@ class LocalTaskRepository implements TaskRepository {
             userId: userId,
             id: goal.id,
             title: goal.title,
+            description: Value(goal.description),
             classification: goal.classification.storageValue,
             createdAt: goal.createdAt,
             updatedAt: goal.updatedAt,
@@ -367,6 +372,7 @@ class LocalTaskRepository implements TaskRepository {
             id: task.id,
             goalId: task.goalId,
             title: task.title,
+            description: Value(task.description),
             classification: task.classification.storageValue,
             estimatedMinutes: Value(task.estimatedMinutes),
             deadline: Value(task.deadline),
@@ -461,6 +467,7 @@ class LocalTaskRepository implements TaskRepository {
   Goal _goalFromRow(LocalGoal row, {List<Task> tasks = const []}) => Goal(
     id: row.id,
     title: row.title,
+    description: row.description,
     classification: TaskClassification.fromStorage(row.classification),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -472,6 +479,7 @@ class LocalTaskRepository implements TaskRepository {
     id: row.id,
     goalId: row.goalId,
     title: row.title,
+    description: row.description,
     classification: TaskClassification.fromStorage(row.classification),
     estimatedMinutes: row.estimatedMinutes,
     deadline: row.deadline,

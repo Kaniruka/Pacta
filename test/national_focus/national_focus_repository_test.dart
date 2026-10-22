@@ -969,6 +969,14 @@ void main() {
               PRIMARY KEY (user_id, id)
             )
           ''');
+          rawDatabase.execute('''
+            CREATE TABLE local_tasks (
+              user_id TEXT NOT NULL,
+              id TEXT NOT NULL,
+              title TEXT NOT NULL,
+              PRIMARY KEY (user_id, id)
+            )
+          ''');
           rawDatabase.execute(
             "INSERT INTO local_goals VALUES ('user-a', 'goal-1', '保留目标')",
           );

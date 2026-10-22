@@ -21,6 +21,37 @@ void main() {
           "INSERT INTO focus_chain_records VALUES ('a', 'regular', 3, 4, 1)",
         );
         await database.customStatement('DROP TABLE chain_signals');
+        await database.customStatement('DROP TABLE local_goals');
+        await database.customStatement('''
+          CREATE TABLE local_goals (
+          user_id TEXT NOT NULL,
+          id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          classification TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          deleted_at INTEGER,
+          PRIMARY KEY (user_id, id)
+          )
+        ''');
+        await database.customStatement('DROP TABLE local_tasks');
+        await database.customStatement('''
+          CREATE TABLE local_tasks (
+          user_id TEXT NOT NULL,
+          id TEXT NOT NULL,
+          goal_id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          classification TEXT NOT NULL,
+          estimated_minutes INTEGER,
+          deadline INTEGER,
+          is_complete INTEGER NOT NULL DEFAULT 0,
+          focus_progress_seconds INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          deleted_at INTEGER,
+          PRIMARY KEY (user_id, id)
+          )
+        ''');
         await database.customStatement('PRAGMA user_version = 23');
         await database.close();
         database = PactaDatabase(NativeDatabase(file));

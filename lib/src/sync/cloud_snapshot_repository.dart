@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../tasks/task_database.dart';
+import '../tasks/task_models.dart';
 import 'legacy_cloud_snapshot.dart';
 
 /// A whole-account business-data snapshot. Device identity, local preferences,
@@ -605,21 +606,44 @@ class CloudSnapshotRepository {
       if (rawRows is! List) throw StateError('Invalid rows for $table.');
       final rows = <Map<String, Object?>>[];
       for (final item in rawRows) {
-        if (item is! Map<String, dynamic> ||
-            item.keys.length != expectedColumns.length ||
-            !expectedColumns.every(item.containsKey) ||
-            item['user_id'] != userId) {
+        if (item is! Map<String, dynamic>) {
+          throw StateError('Invalid columns or user ownership in $table.');
+        }
+        final missingLegacyDescription =
+            payload['schemaVersion'] == 1 &&
+            const {'local_goals', 'local_tasks'}.contains(table) &&
+            expectedColumns.contains('description') &&
+            !item.containsKey('description') &&
+            item.keys.length == expectedColumns.length - 1 &&
+            expectedColumns
+                .where((column) => column != 'description')
+                .every(item.containsKey);
+        final sourceRow = missingLegacyDescription
+            ? <String, dynamic>{...item, 'description': ''}
+            : item;
+        if (sourceRow.keys.length != expectedColumns.length ||
+            !expectedColumns.every(sourceRow.containsKey) ||
+            sourceRow['user_id'] != userId) {
           throw StateError('Invalid columns or user ownership in $table.');
         }
         for (final column in expectedColumns) {
-          if (!_isValidSqliteValue(item[column], columnInfo[column]!)) {
+          if (!_isValidSqliteValue(sourceRow[column], columnInfo[column]!)) {
             throw StateError('Invalid value type in $table.$column.');
           }
         }
         final row = <String, Object?>{
           for (final column in expectedColumns)
-            column: _sqliteValue(item[column]),
+            column: _sqliteValue(sourceRow[column]),
         };
+        if (const {'local_goals', 'local_tasks'}.contains(table)) {
+          try {
+            row['description'] = normalizeDescription(
+              row['description'] as String,
+            );
+          } on ArgumentError {
+            throw StateError('Invalid value in $table.description.');
+          }
+        }
         rows.add(row);
       }
       result[table] = rows;

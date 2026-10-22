@@ -9,6 +9,7 @@ class LocalGoals extends Table {
   TextColumn get userId => text()();
   TextColumn get id => text()();
   TextColumn get title => text()();
+  TextColumn get description => text().withDefault(const Constant(''))();
   TextColumn get classification => text()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
@@ -23,6 +24,7 @@ class LocalTasks extends Table {
   TextColumn get id => text()();
   TextColumn get goalId => text()();
   TextColumn get title => text()();
+  TextColumn get description => text().withDefault(const Constant(''))();
   TextColumn get classification => text()();
   IntColumn get estimatedMinutes => integer().nullable()();
   DateTimeColumn get deadline => dateTime().nullable()();
@@ -461,7 +463,7 @@ class PactaDatabase extends _$PactaDatabase {
   }
 
   @override
-  int get schemaVersion => 24;
+  int get schemaVersion => 25;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -622,6 +624,10 @@ class PactaDatabase extends _$PactaDatabase {
       }
       if (from < 24) {
         await m.createTable(chainSignals);
+      }
+      if (from < 25) {
+        await m.addColumn(localGoals, localGoals.description);
+        await m.addColumn(localTasks, localTasks.description);
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);

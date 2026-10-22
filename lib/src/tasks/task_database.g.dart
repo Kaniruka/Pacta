@@ -36,6 +36,18 @@ class $LocalGoalsTable extends LocalGoals
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _descriptionMeta = const VerificationMeta(
+    'description',
+  );
+  @override
+  late final GeneratedColumn<String> description = GeneratedColumn<String>(
+    'description',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   static const VerificationMeta _classificationMeta = const VerificationMeta(
     'classification',
   );
@@ -85,6 +97,7 @@ class $LocalGoalsTable extends LocalGoals
     userId,
     id,
     title,
+    description,
     classification,
     createdAt,
     updatedAt,
@@ -122,6 +135,15 @@ class $LocalGoalsTable extends LocalGoals
       );
     } else if (isInserting) {
       context.missing(_titleMeta);
+    }
+    if (data.containsKey('description')) {
+      context.handle(
+        _descriptionMeta,
+        description.isAcceptableOrUnknown(
+          data['description']!,
+          _descriptionMeta,
+        ),
+      );
     }
     if (data.containsKey('classification')) {
       context.handle(
@@ -177,6 +199,10 @@ class $LocalGoalsTable extends LocalGoals
         DriftSqlType.string,
         data['${effectivePrefix}title'],
       )!,
+      description: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}description'],
+      )!,
       classification: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}classification'],
@@ -206,6 +232,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
   final String userId;
   final String id;
   final String title;
+  final String description;
   final String classification;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -214,6 +241,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
     required this.userId,
     required this.id,
     required this.title,
+    required this.description,
     required this.classification,
     required this.createdAt,
     required this.updatedAt,
@@ -225,6 +253,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
     map['user_id'] = Variable<String>(userId);
     map['id'] = Variable<String>(id);
     map['title'] = Variable<String>(title);
+    map['description'] = Variable<String>(description);
     map['classification'] = Variable<String>(classification);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -239,6 +268,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
       userId: Value(userId),
       id: Value(id),
       title: Value(title),
+      description: Value(description),
       classification: Value(classification),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
@@ -257,6 +287,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
       userId: serializer.fromJson<String>(json['userId']),
       id: serializer.fromJson<String>(json['id']),
       title: serializer.fromJson<String>(json['title']),
+      description: serializer.fromJson<String>(json['description']),
       classification: serializer.fromJson<String>(json['classification']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
@@ -270,6 +301,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
       'userId': serializer.toJson<String>(userId),
       'id': serializer.toJson<String>(id),
       'title': serializer.toJson<String>(title),
+      'description': serializer.toJson<String>(description),
       'classification': serializer.toJson<String>(classification),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
@@ -281,6 +313,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
     String? userId,
     String? id,
     String? title,
+    String? description,
     String? classification,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -289,6 +322,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
     userId: userId ?? this.userId,
     id: id ?? this.id,
     title: title ?? this.title,
+    description: description ?? this.description,
     classification: classification ?? this.classification,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
@@ -299,6 +333,9 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
       userId: data.userId.present ? data.userId.value : this.userId,
       id: data.id.present ? data.id.value : this.id,
       title: data.title.present ? data.title.value : this.title,
+      description: data.description.present
+          ? data.description.value
+          : this.description,
       classification: data.classification.present
           ? data.classification.value
           : this.classification,
@@ -314,6 +351,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
           ..write('userId: $userId, ')
           ..write('id: $id, ')
           ..write('title: $title, ')
+          ..write('description: $description, ')
           ..write('classification: $classification, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -327,6 +365,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
     userId,
     id,
     title,
+    description,
     classification,
     createdAt,
     updatedAt,
@@ -339,6 +378,7 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
           other.userId == this.userId &&
           other.id == this.id &&
           other.title == this.title &&
+          other.description == this.description &&
           other.classification == this.classification &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
@@ -349,6 +389,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
   final Value<String> userId;
   final Value<String> id;
   final Value<String> title;
+  final Value<String> description;
   final Value<String> classification;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
@@ -358,6 +399,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
     this.userId = const Value.absent(),
     this.id = const Value.absent(),
     this.title = const Value.absent(),
+    this.description = const Value.absent(),
     this.classification = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
@@ -368,6 +410,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
     required String userId,
     required String id,
     required String title,
+    this.description = const Value.absent(),
     required String classification,
     required DateTime createdAt,
     required DateTime updatedAt,
@@ -383,6 +426,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
     Expression<String>? userId,
     Expression<String>? id,
     Expression<String>? title,
+    Expression<String>? description,
     Expression<String>? classification,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
@@ -393,6 +437,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
       if (userId != null) 'user_id': userId,
       if (id != null) 'id': id,
       if (title != null) 'title': title,
+      if (description != null) 'description': description,
       if (classification != null) 'classification': classification,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
@@ -405,6 +450,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
     Value<String>? userId,
     Value<String>? id,
     Value<String>? title,
+    Value<String>? description,
     Value<String>? classification,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
@@ -415,6 +461,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
       userId: userId ?? this.userId,
       id: id ?? this.id,
       title: title ?? this.title,
+      description: description ?? this.description,
       classification: classification ?? this.classification,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -434,6 +481,9 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
     }
     if (title.present) {
       map['title'] = Variable<String>(title.value);
+    }
+    if (description.present) {
+      map['description'] = Variable<String>(description.value);
     }
     if (classification.present) {
       map['classification'] = Variable<String>(classification.value);
@@ -459,6 +509,7 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
           ..write('userId: $userId, ')
           ..write('id: $id, ')
           ..write('title: $title, ')
+          ..write('description: $description, ')
           ..write('classification: $classification, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
@@ -510,6 +561,18 @@ class $LocalTasksTable extends LocalTasks
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
+  );
+  static const VerificationMeta _descriptionMeta = const VerificationMeta(
+    'description',
+  );
+  @override
+  late final GeneratedColumn<String> description = GeneratedColumn<String>(
+    'description',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
   );
   static const VerificationMeta _classificationMeta = const VerificationMeta(
     'classification',
@@ -609,6 +672,7 @@ class $LocalTasksTable extends LocalTasks
     id,
     goalId,
     title,
+    description,
     classification,
     estimatedMinutes,
     deadline,
@@ -658,6 +722,15 @@ class $LocalTasksTable extends LocalTasks
       );
     } else if (isInserting) {
       context.missing(_titleMeta);
+    }
+    if (data.containsKey('description')) {
+      context.handle(
+        _descriptionMeta,
+        description.isAcceptableOrUnknown(
+          data['description']!,
+          _descriptionMeta,
+        ),
+      );
     }
     if (data.containsKey('classification')) {
       context.handle(
@@ -747,6 +820,10 @@ class $LocalTasksTable extends LocalTasks
         DriftSqlType.string,
         data['${effectivePrefix}title'],
       )!,
+      description: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}description'],
+      )!,
       classification: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}classification'],
@@ -793,6 +870,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
   final String id;
   final String goalId;
   final String title;
+  final String description;
   final String classification;
   final int? estimatedMinutes;
   final DateTime? deadline;
@@ -806,6 +884,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
     required this.id,
     required this.goalId,
     required this.title,
+    required this.description,
     required this.classification,
     this.estimatedMinutes,
     this.deadline,
@@ -822,6 +901,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
     map['id'] = Variable<String>(id);
     map['goal_id'] = Variable<String>(goalId);
     map['title'] = Variable<String>(title);
+    map['description'] = Variable<String>(description);
     map['classification'] = Variable<String>(classification);
     if (!nullToAbsent || estimatedMinutes != null) {
       map['estimated_minutes'] = Variable<int>(estimatedMinutes);
@@ -845,6 +925,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
       id: Value(id),
       goalId: Value(goalId),
       title: Value(title),
+      description: Value(description),
       classification: Value(classification),
       estimatedMinutes: estimatedMinutes == null && nullToAbsent
           ? const Value.absent()
@@ -872,6 +953,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
       id: serializer.fromJson<String>(json['id']),
       goalId: serializer.fromJson<String>(json['goalId']),
       title: serializer.fromJson<String>(json['title']),
+      description: serializer.fromJson<String>(json['description']),
       classification: serializer.fromJson<String>(json['classification']),
       estimatedMinutes: serializer.fromJson<int?>(json['estimatedMinutes']),
       deadline: serializer.fromJson<DateTime?>(json['deadline']),
@@ -892,6 +974,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
       'id': serializer.toJson<String>(id),
       'goalId': serializer.toJson<String>(goalId),
       'title': serializer.toJson<String>(title),
+      'description': serializer.toJson<String>(description),
       'classification': serializer.toJson<String>(classification),
       'estimatedMinutes': serializer.toJson<int?>(estimatedMinutes),
       'deadline': serializer.toJson<DateTime?>(deadline),
@@ -908,6 +991,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
     String? id,
     String? goalId,
     String? title,
+    String? description,
     String? classification,
     Value<int?> estimatedMinutes = const Value.absent(),
     Value<DateTime?> deadline = const Value.absent(),
@@ -921,6 +1005,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
     id: id ?? this.id,
     goalId: goalId ?? this.goalId,
     title: title ?? this.title,
+    description: description ?? this.description,
     classification: classification ?? this.classification,
     estimatedMinutes: estimatedMinutes.present
         ? estimatedMinutes.value
@@ -938,6 +1023,9 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
       id: data.id.present ? data.id.value : this.id,
       goalId: data.goalId.present ? data.goalId.value : this.goalId,
       title: data.title.present ? data.title.value : this.title,
+      description: data.description.present
+          ? data.description.value
+          : this.description,
       classification: data.classification.present
           ? data.classification.value
           : this.classification,
@@ -964,6 +1052,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
           ..write('id: $id, ')
           ..write('goalId: $goalId, ')
           ..write('title: $title, ')
+          ..write('description: $description, ')
           ..write('classification: $classification, ')
           ..write('estimatedMinutes: $estimatedMinutes, ')
           ..write('deadline: $deadline, ')
@@ -982,6 +1071,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
     id,
     goalId,
     title,
+    description,
     classification,
     estimatedMinutes,
     deadline,
@@ -999,6 +1089,7 @@ class LocalTask extends DataClass implements Insertable<LocalTask> {
           other.id == this.id &&
           other.goalId == this.goalId &&
           other.title == this.title &&
+          other.description == this.description &&
           other.classification == this.classification &&
           other.estimatedMinutes == this.estimatedMinutes &&
           other.deadline == this.deadline &&
@@ -1014,6 +1105,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
   final Value<String> id;
   final Value<String> goalId;
   final Value<String> title;
+  final Value<String> description;
   final Value<String> classification;
   final Value<int?> estimatedMinutes;
   final Value<DateTime?> deadline;
@@ -1028,6 +1120,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
     this.id = const Value.absent(),
     this.goalId = const Value.absent(),
     this.title = const Value.absent(),
+    this.description = const Value.absent(),
     this.classification = const Value.absent(),
     this.estimatedMinutes = const Value.absent(),
     this.deadline = const Value.absent(),
@@ -1043,6 +1136,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
     required String id,
     required String goalId,
     required String title,
+    this.description = const Value.absent(),
     required String classification,
     this.estimatedMinutes = const Value.absent(),
     this.deadline = const Value.absent(),
@@ -1064,6 +1158,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
     Expression<String>? id,
     Expression<String>? goalId,
     Expression<String>? title,
+    Expression<String>? description,
     Expression<String>? classification,
     Expression<int>? estimatedMinutes,
     Expression<DateTime>? deadline,
@@ -1079,6 +1174,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
       if (id != null) 'id': id,
       if (goalId != null) 'goal_id': goalId,
       if (title != null) 'title': title,
+      if (description != null) 'description': description,
       if (classification != null) 'classification': classification,
       if (estimatedMinutes != null) 'estimated_minutes': estimatedMinutes,
       if (deadline != null) 'deadline': deadline,
@@ -1097,6 +1193,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
     Value<String>? id,
     Value<String>? goalId,
     Value<String>? title,
+    Value<String>? description,
     Value<String>? classification,
     Value<int?>? estimatedMinutes,
     Value<DateTime?>? deadline,
@@ -1112,6 +1209,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
       id: id ?? this.id,
       goalId: goalId ?? this.goalId,
       title: title ?? this.title,
+      description: description ?? this.description,
       classification: classification ?? this.classification,
       estimatedMinutes: estimatedMinutes ?? this.estimatedMinutes,
       deadline: deadline ?? this.deadline,
@@ -1138,6 +1236,9 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
     }
     if (title.present) {
       map['title'] = Variable<String>(title.value);
+    }
+    if (description.present) {
+      map['description'] = Variable<String>(description.value);
     }
     if (classification.present) {
       map['classification'] = Variable<String>(classification.value);
@@ -1176,6 +1277,7 @@ class LocalTasksCompanion extends UpdateCompanion<LocalTask> {
           ..write('id: $id, ')
           ..write('goalId: $goalId, ')
           ..write('title: $title, ')
+          ..write('description: $description, ')
           ..write('classification: $classification, ')
           ..write('estimatedMinutes: $estimatedMinutes, ')
           ..write('deadline: $deadline, ')
@@ -12162,28 +12264,28 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   ];
 }
 
-typedef $$LocalGoalsTableCreateCompanionBuilder =
-    LocalGoalsCompanion Function({
-      required String userId,
-      required String id,
-      required String title,
-      required String classification,
-      required DateTime createdAt,
-      required DateTime updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
-typedef $$LocalGoalsTableUpdateCompanionBuilder =
-    LocalGoalsCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> title,
-      Value<String> classification,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
+typedef $$LocalGoalsTableCreateCompanionBuilder = LocalGoalsCompanion Function({
+  required String userId,
+  required String id,
+  required String title,
+  Value<String> description,
+  required String classification,
+  required DateTime createdAt,
+  required DateTime updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
+typedef $$LocalGoalsTableUpdateCompanionBuilder = LocalGoalsCompanion Function({
+  Value<String> userId,
+  Value<String> id,
+  Value<String> title,
+  Value<String> description,
+  Value<String> classification,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
 
 class $$LocalGoalsTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalGoalsTable> {
@@ -12206,6 +12308,11 @@ class $$LocalGoalsTableFilterComposer
 
   ColumnFilters<String> get title => $composableBuilder(
     column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get description => $composableBuilder(
+    column: $table.description,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -12254,6 +12361,11 @@ class $$LocalGoalsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get classification => $composableBuilder(
     column: $table.classification,
     builder: (column) => ColumnOrderings(column),
@@ -12292,6 +12404,11 @@ class $$LocalGoalsTableAnnotationComposer
 
   GeneratedColumn<String> get title =>
       $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get classification => $composableBuilder(
     column: $table.classification,
@@ -12342,6 +12459,7 @@ class $$LocalGoalsTableTableManager
                 Value<String> userId = const Value.absent(),
                 Value<String> id = const Value.absent(),
                 Value<String> title = const Value.absent(),
+                Value<String> description = const Value.absent(),
                 Value<String> classification = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
@@ -12351,6 +12469,7 @@ class $$LocalGoalsTableTableManager
                 userId: userId,
                 id: id,
                 title: title,
+                description: description,
                 classification: classification,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -12362,6 +12481,7 @@ class $$LocalGoalsTableTableManager
                 required String userId,
                 required String id,
                 required String title,
+                Value<String> description = const Value.absent(),
                 required String classification,
                 required DateTime createdAt,
                 required DateTime updatedAt,
@@ -12371,6 +12491,7 @@ class $$LocalGoalsTableTableManager
                 userId: userId,
                 id: id,
                 title: title,
+                description: description,
                 classification: classification,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
@@ -12399,38 +12520,38 @@ typedef $$LocalGoalsTableProcessedTableManager =
       LocalGoal,
       PrefetchHooks Function()
     >;
-typedef $$LocalTasksTableCreateCompanionBuilder =
-    LocalTasksCompanion Function({
-      required String userId,
-      required String id,
-      required String goalId,
-      required String title,
-      required String classification,
-      Value<int?> estimatedMinutes,
-      Value<DateTime?> deadline,
-      Value<bool> isComplete,
-      Value<int> focusProgressSeconds,
-      required DateTime createdAt,
-      required DateTime updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
-typedef $$LocalTasksTableUpdateCompanionBuilder =
-    LocalTasksCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> goalId,
-      Value<String> title,
-      Value<String> classification,
-      Value<int?> estimatedMinutes,
-      Value<DateTime?> deadline,
-      Value<bool> isComplete,
-      Value<int> focusProgressSeconds,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
+typedef $$LocalTasksTableCreateCompanionBuilder = LocalTasksCompanion Function({
+  required String userId,
+  required String id,
+  required String goalId,
+  required String title,
+  Value<String> description,
+  required String classification,
+  Value<int?> estimatedMinutes,
+  Value<DateTime?> deadline,
+  Value<bool> isComplete,
+  Value<int> focusProgressSeconds,
+  required DateTime createdAt,
+  required DateTime updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
+typedef $$LocalTasksTableUpdateCompanionBuilder = LocalTasksCompanion Function({
+  Value<String> userId,
+  Value<String> id,
+  Value<String> goalId,
+  Value<String> title,
+  Value<String> description,
+  Value<String> classification,
+  Value<int?> estimatedMinutes,
+  Value<DateTime?> deadline,
+  Value<bool> isComplete,
+  Value<int> focusProgressSeconds,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
 
 class $$LocalTasksTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalTasksTable> {
@@ -12458,6 +12579,11 @@ class $$LocalTasksTableFilterComposer
 
   ColumnFilters<String> get title => $composableBuilder(
     column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get description => $composableBuilder(
+    column: $table.description,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -12531,6 +12657,11 @@ class $$LocalTasksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get classification => $composableBuilder(
     column: $table.classification,
     builder: (column) => ColumnOrderings(column),
@@ -12592,6 +12723,11 @@ class $$LocalTasksTableAnnotationComposer
 
   GeneratedColumn<String> get title =>
       $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get description => $composableBuilder(
+    column: $table.description,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get classification => $composableBuilder(
     column: $table.classification,
@@ -12661,6 +12797,7 @@ class $$LocalTasksTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<String> goalId = const Value.absent(),
                 Value<String> title = const Value.absent(),
+                Value<String> description = const Value.absent(),
                 Value<String> classification = const Value.absent(),
                 Value<int?> estimatedMinutes = const Value.absent(),
                 Value<DateTime?> deadline = const Value.absent(),
@@ -12675,6 +12812,7 @@ class $$LocalTasksTableTableManager
                 id: id,
                 goalId: goalId,
                 title: title,
+                description: description,
                 classification: classification,
                 estimatedMinutes: estimatedMinutes,
                 deadline: deadline,
@@ -12691,6 +12829,7 @@ class $$LocalTasksTableTableManager
                 required String id,
                 required String goalId,
                 required String title,
+                Value<String> description = const Value.absent(),
                 required String classification,
                 Value<int?> estimatedMinutes = const Value.absent(),
                 Value<DateTime?> deadline = const Value.absent(),
@@ -12705,6 +12844,7 @@ class $$LocalTasksTableTableManager
                 id: id,
                 goalId: goalId,
                 title: title,
+                description: description,
                 classification: classification,
                 estimatedMinutes: estimatedMinutes,
                 deadline: deadline,
@@ -15153,30 +15293,28 @@ typedef $$FocusSessionsTableProcessedTableManager =
       FocusSession,
       PrefetchHooks Function()
     >;
-typedef $$FocusNodesTableCreateCompanionBuilder =
-    FocusNodesCompanion Function({
-      required String userId,
-      required String id,
-      required String sessionId,
-      required String taskId,
-      required String mode,
-      required DateTime createdAt,
-      required int effectiveSeconds,
-      Value<String?> note,
-      Value<int> rowid,
-    });
-typedef $$FocusNodesTableUpdateCompanionBuilder =
-    FocusNodesCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> sessionId,
-      Value<String> taskId,
-      Value<String> mode,
-      Value<DateTime> createdAt,
-      Value<int> effectiveSeconds,
-      Value<String?> note,
-      Value<int> rowid,
-    });
+typedef $$FocusNodesTableCreateCompanionBuilder = FocusNodesCompanion Function({
+  required String userId,
+  required String id,
+  required String sessionId,
+  required String taskId,
+  required String mode,
+  required DateTime createdAt,
+  required int effectiveSeconds,
+  Value<String?> note,
+  Value<int> rowid,
+});
+typedef $$FocusNodesTableUpdateCompanionBuilder = FocusNodesCompanion Function({
+  Value<String> userId,
+  Value<String> id,
+  Value<String> sessionId,
+  Value<String> taskId,
+  Value<String> mode,
+  Value<DateTime> createdAt,
+  Value<int> effectiveSeconds,
+  Value<String?> note,
+  Value<int> rowid,
+});
 
 class $$FocusNodesTableFilterComposer
     extends Composer<_$PactaDatabase, $FocusNodesTable> {
