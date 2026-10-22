@@ -1,5 +1,7 @@
 # Pacta — First-version Product Specification
 
+> 范围更新（2026-10-23）：无障碍支持已长期退出产品范围，后续实现、评审和发布验收按 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md) 执行；保留普通可读性、响应式、鼠标/触摸及 Windows 常规键盘要求。本文既有验收结果仅代表记录当时，未重新执行。
+
 Synthesized from the local requirements conversation records and confirmed decisions through 2026-09-22. Implementation tickets T01–T27 are closed. The current local verification and remaining platform evidence are recorded below.
 
 ## Problem Statement

@@ -1,5 +1,7 @@
 # Issue #65 Android 15 实际读屏复验
 
+> 历史适用范围：以下设计、评审及验收记录适用于各节所载日期（2026-10-23 范围调整之前）。原始事实、测试和证据保留；其中无障碍要求及未完成项不再构成未来交付条件，现行范围见 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md)。
+
 2026-10-22，PactaT24Peer / emulator-5554，Android 15 API 35，TalkBack 15。
 本轮使用 `integration_test/board_talkback_fixture.dart` 独立入口：普通
 WidgetsFlutterBinding、内存 Drift、fake auth，无 tester、无持久业务库和云连接。

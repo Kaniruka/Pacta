@@ -1,5 +1,7 @@
 # Issue #59 implementation and validation
 
+> 历史适用范围：以下设计、评审及验收记录适用于各节所载日期（2026-10-23 范围调整之前）。原始事实、测试和证据保留；其中无障碍要求及未完成项不再构成未来交付条件，现行范围见 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md)。
+
 Issue: **[国策 AI T3] 让 Codex 查询失败事件和当时的国策树**.
 Baseline: `d193cc4424203980e4f0e8f02edaae51d9e8ad8c` on `master`.
 Preserved pre-existing AGENTS.md and environment-document changes, and untracked
