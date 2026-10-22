@@ -1,0 +1,146 @@
+{
+  "spec": {
+    "number": 63,
+    "url": "https://github.com/Kaniruka/Pacta/issues/63",
+    "state": "OPEN",
+    "labels": [
+      "ready-for-agent"
+    ]
+  },
+  "tickets": [
+    {
+      "ticket": "T01",
+      "number": 64,
+      "id": 5972971811,
+      "url": "https://github.com/Kaniruka/Pacta/issues/64",
+      "blocked_by": [],
+      "sub_issue_linked": true,
+      "dependencies_linked": true,
+      "verified": true,
+      "state": "CLOSED",
+      "labels": [],
+      "state_reason": "COMPLETED",
+      "implementation_commit": "fece2f9da89c202551ea68c781a79fe57f11e99d",
+      "validation_document": "docs/issue-64-validation.md",
+      "implementation_pushed": true
+    },
+    {
+      "ticket": "T02",
+      "number": 65,
+      "id": 5972972572,
+      "url": "https://github.com/Kaniruka/Pacta/issues/65",
+      "blocked_by": [],
+      "sub_issue_linked": true,
+      "dependencies_linked": true,
+      "verified": true,
+      "state": "OPEN",
+      "labels": [
+        "ready-for-agent"
+      ]
+    },
+    {
+      "ticket": "T03",
+      "number": 66,
+      "id": 5972973272,
+      "url": "https://github.com/Kaniruka/Pacta/issues/66",
+      "blocked_by": [],
+      "sub_issue_linked": true,
+      "dependencies_linked": true,
+      "verified": true,
+      "state": "OPEN",
+      "labels": [
+        "ready-for-agent"
+      ]
+    },
+    {
+      "ticket": "T04",
+      "number": 67,
+      "id": 5972974086,
+      "url": "https://github.com/Kaniruka/Pacta/issues/67",
+      "blocked_by": [],
+      "sub_issue_linked": true,
+      "dependencies_linked": true,
+      "verified": true,
+      "state": "OPEN",
+      "labels": [
+        "ready-for-agent"
+      ]
+    },
+    {
+      "ticket": "T05",
+      "number": 68,
+      "id": 5972981395,
+      "url": "https://github.com/Kaniruka/Pacta/issues/68",
+      "blocked_by": [],
+      "sub_issue_linked": true,
+      "dependencies_linked": true,
+      "verified": true,
+      "state": "OPEN",
+      "labels": [
+        "ready-for-agent"
+      ]
+    },
+    {
+      "ticket": "T06",
+      "number": 69,
+      "id": 5972982159,
+      "url": "https://github.com/Kaniruka/Pacta/issues/69",
+      "blocked_by": [],
+      "sub_issue_linked": true,
+      "dependencies_linked": true,
+      "verified": true,
+      "state": "OPEN",
+      "labels": [
+        "ready-for-agent"
+      ]
+    },
+    {
+      "ticket": "T07",
+      "number": 70,
+      "id": 5972983048,
+      "url": "https://github.com/Kaniruka/Pacta/issues/70",
+      "blocked_by": [],
+      "sub_issue_linked": true,
+      "dependencies_linked": true,
+      "verified": true,
+      "state": "OPEN",
+      "labels": [
+        "ready-for-agent"
+      ]
+    },
+    {
+      "ticket": "T08",
+      "number": 71,
+      "id": 5972983966,
+      "url": "https://github.com/Kaniruka/Pacta/issues/71",
+      "blocked_by": [
+        "T06"
+      ],
+      "sub_issue_linked": true,
+      "dependencies_linked": true,
+      "verified": true,
+      "state": "OPEN",
+      "labels": [
+        "ready-for-agent"
+      ]
+    },
+    {
+      "ticket": "T09",
+      "number": 72,
+      "id": 5972985053,
+      "url": "https://github.com/Kaniruka/Pacta/issues/72",
+      "blocked_by": [
+        "T08"
+      ],
+      "sub_issue_linked": true,
+      "dependencies_linked": true,
+      "verified": true,
+      "state": "OPEN",
+      "labels": [
+        "ready-for-agent"
+      ]
+    }
+  ],
+  "verified": true,
+  "status_checked_on": "2026-10-22"
+}

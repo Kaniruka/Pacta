@@ -156,6 +156,10 @@ _Avoid_: Project, Focus Chain
 An organizational and filtering classification of a Task as Elite, Regular, or both, independent of the mode used for a particular attempt. A Goal's classification may suggest a new Task's default without requiring its Tasks to share that classification.
 _Avoid_: Fixed record ownership, success criterion
 
+**Goal/Task Description (目标／任务描述)**:
+An optional short explanation of a Goal or Task, separate from its name, classification, and focus commitment actions.
+_Avoid_: Focus Marker, required rule, completion criterion
+
 **Focus Chain Mode (本次专注模式)**:
 The Elite or Regular mode adopted for the current attempt, determining its focus record attribution; preparation always belongs to the single independent Appointment Chain regardless of mode. It is carried from the originating mode list or shown and switchable alongside duration settings, without a separate chain-selection or pairing page.
 _Avoid_: Task classification, start-time chain pairing
