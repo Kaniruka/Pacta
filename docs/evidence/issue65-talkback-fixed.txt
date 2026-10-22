@@ -5,12 +5,12 @@
 10-22 11:51:27.000  9018  9018 V talkback: Pipeline: execute() success=true for part=Part= speech= action=SPEAK  text="已展开, 季度规划
 10-22 11:51:27.000  9018  9018 V talkback: Pipeline: 每周回顾并调整计划
 10-22 11:51:29.386  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16486394, failovers=[Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    ]}
-10-22 11:51:29.386  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16486394 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:51:29.386  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16486394 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null
 10-22 11:51:29.386   602  1878 W AS.PlaybackActivityMon: No piid assigned for invalid/internal port id 338
 10-22 11:51:29.388  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16486394, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 季度规划
 10-22 11:51:29.388  9018  9018 D talkback: Pipeline: 每周回顾并调整计划
 10-22 11:51:29.388  9018  9018 D talkback: Pipeline: 1 项任务
-10-22 11:51:29.386  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16486394 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:51:29.386  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16486394 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null
 10-22 11:51:29.386   602  1878 W AS.PlaybackActivityMon: No piid assigned for invalid/internal port id 338
 10-22 11:51:29.388  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16486394, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 季度规划
 10-22 11:51:29.388  9018  9018 D talkback: Pipeline: 每周回顾并调整计划
@@ -25,16 +25,16 @@
 10-22 11:51:29.388  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16486394 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 季度规划
 10-22 11:51:29.388  9018  9018 D talkback: Actors: 每周回顾并调整计划
 10-22 11:51:29.388  9018  9018 D talkback: Actors: 1 项任务
-10-22 11:51:29.388  9018  9018 D talkback: Actors: 进行中"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    
+10-22 11:51:29.388  9018  9018 D talkback: Actors: 进行中"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK
 10-22 11:51:29.389  9018  9018 D talkback: NodeActionPerformer: perform Action, nodeAction = target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 季度规划
 10-22 11:51:29.389  9018  9018 D talkback: NodeActionPerformer: 每周回顾并调整计划
 10-22 11:51:31.480  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16488486, failovers=[Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    ]}
-10-22 11:51:31.480  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16488486 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:51:31.480  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16488486 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null
 10-22 11:51:31.481  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16488486, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 季度规划
 10-22 11:51:31.481  9018  9018 D talkback: Pipeline: 每周回顾并调整计划
 10-22 11:51:31.481  9018  9018 D talkback: Pipeline: 1 项任务
 10-22 11:51:31.481  9018  9018 D talkback: Pipeline: 进行中"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
-10-22 11:51:31.480  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16488486 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:51:31.480  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16488486 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null
 10-22 11:51:31.481  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16488486, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 季度规划
 10-22 11:51:31.481  9018  9018 D talkback: Pipeline: 每周回顾并调整计划
 10-22 11:51:31.481  9018  9018 D talkback: Pipeline: 1 项任务
@@ -49,16 +49,16 @@
 10-22 11:51:31.481  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16488486 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 季度规划
 10-22 11:51:31.481  9018  9018 D talkback: Actors: 每周回顾并调整计划
 10-22 11:51:31.481  9018  9018 D talkback: Actors: 1 项任务
-10-22 11:51:31.481  9018  9018 D talkback: Actors: 进行中"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    
+10-22 11:51:31.481  9018  9018 D talkback: Actors: 进行中"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK
 10-22 11:51:31.481  9018  9018 D talkback: NodeActionPerformer: perform Action, nodeAction = target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 季度规划
 10-22 11:51:31.481  9018  9018 D talkback: NodeActionPerformer: 每周回顾并调整计划
 10-22 11:51:33.564  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16490571, failovers=[Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    ]}
-10-22 11:51:33.564  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16490571 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:51:33.564  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16490571 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null
 10-22 11:51:33.566  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16490571, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 季度规划
 10-22 11:51:33.566  9018  9018 D talkback: Pipeline: 每周回顾并调整计划
 10-22 11:51:33.566  9018  9018 D talkback: Pipeline: 1 项任务
 10-22 11:51:33.566  9018  9018 D talkback: Pipeline: 进行中"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
-10-22 11:51:33.564  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16490571 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:51:33.564  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16490571 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null
 10-22 11:51:33.566  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16490571, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 季度规划
 10-22 11:51:33.566  9018  9018 D talkback: Pipeline: 每周回顾并调整计划
 10-22 11:51:33.566  9018  9018 D talkback: Pipeline: 1 项任务
@@ -73,7 +73,7 @@
 10-22 11:51:33.566  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16490571 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 季度规划
 10-22 11:51:33.566  9018  9018 D talkback: Actors: 每周回顾并调整计划
 10-22 11:51:33.566  9018  9018 D talkback: Actors: 1 项任务
-10-22 11:51:33.566  9018  9018 D talkback: Actors: 进行中"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    
+10-22 11:51:33.566  9018  9018 D talkback: Actors: 进行中"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK
 10-22 11:51:33.566  9018  9018 D talkback: NodeActionPerformer: perform Action, nodeAction = target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 季度规划
 10-22 11:51:33.566  9018  9018 D talkback: NodeActionPerformer: 每周回顾并调整计划
 10-22 11:52:03.748  9018  9018 V talkback: SpeechControllerImpl: Speaking fragment text="已折叠,", utteranceId=talkback_51, spans=null, event=type:EVENT_TYPE_ACCESSIBILITY subtype:TYPE_VIEW_ACCESSIBILITY_FOCUSED displayId:0 time:16520722
@@ -89,77 +89,77 @@
 10-22 11:52:05.782  9018  9018 D talkback: FailoverTextToSpeech: Speak call for talkback_52 returned 0
 10-22 11:52:05.782  9018  9018 V talkback: Pipeline: execute() success=true for part=Part= speech= action=SPEAK  text="已展开, 待规划目标
 10-22 11:52:07.174  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16524181, failovers=[Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    ]}
-10-22 11:52:07.174  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16524181 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:52:07.174  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16524181 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null
 10-22 11:52:07.175  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16524181, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
 10-22 11:52:07.175  9018  9018 D talkback: Pipeline: 0 项任务
 10-22 11:52:07.175  9018  9018 D talkback: Pipeline: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
 10-22 11:52:07.176  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16524181 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
-10-22 11:52:07.174  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16524181 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
-10-22 11:52:07.175  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16524181, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
-10-22 11:52:07.175  9018  9018 D talkback: Pipeline: 0 项任务
-10-22 11:52:07.175  9018  9018 D talkback: Pipeline: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
-10-22 11:52:07.176  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16524181 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
-10-22 11:52:07.176  9018  9018 D talkback: Actors: 0 项任务
+10-22 11:52:07.174  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16524181 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null
 10-22 11:52:07.175  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16524181, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
 10-22 11:52:07.175  9018  9018 D talkback: Pipeline: 0 项任务
 10-22 11:52:07.175  9018  9018 D talkback: Pipeline: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
 10-22 11:52:07.176  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16524181 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
 10-22 11:52:07.176  9018  9018 D talkback: Actors: 0 项任务
-10-22 11:52:07.176  9018  9018 D talkback: Actors: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    
+10-22 11:52:07.175  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16524181, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
+10-22 11:52:07.175  9018  9018 D talkback: Pipeline: 0 项任务
+10-22 11:52:07.175  9018  9018 D talkback: Pipeline: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
 10-22 11:52:07.176  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16524181 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
 10-22 11:52:07.176  9018  9018 D talkback: Actors: 0 项任务
-10-22 11:52:07.176  9018  9018 D talkback: Actors: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    
+10-22 11:52:07.176  9018  9018 D talkback: Actors: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK
+10-22 11:52:07.176  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16524181 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
+10-22 11:52:07.176  9018  9018 D talkback: Actors: 0 项任务
+10-22 11:52:07.176  9018  9018 D talkback: Actors: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK
 10-22 11:52:07.176  9018  9018 D talkback: NodeActionPerformer: perform Action, nodeAction = target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
 10-22 11:52:07.176  9018  9018 D talkback: NodeActionPerformer: 0 项任务
-10-22 11:52:07.176  9018  9018 D talkback: NodeActionPerformer: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK  
+10-22 11:52:07.176  9018  9018 D talkback: NodeActionPerformer: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK
 10-22 11:52:09.439  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16526445, failovers=[Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    ]}
-10-22 11:52:09.439  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16526445 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:52:09.439  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16526445 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null
 10-22 11:52:09.442  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16526445, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 待规划目标
 10-22 11:52:09.442  9018  9018 D talkback: Pipeline: 0 项任务
 10-22 11:52:09.442  9018  9018 D talkback: Pipeline: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
 10-22 11:52:09.442  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16526445 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 待规划目标
-10-22 11:52:09.439  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16526445 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
-10-22 11:52:09.442  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16526445, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 待规划目标
-10-22 11:52:09.442  9018  9018 D talkback: Pipeline: 0 项任务
-10-22 11:52:09.442  9018  9018 D talkback: Pipeline: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
-10-22 11:52:09.442  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16526445 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 待规划目标
-10-22 11:52:09.442  9018  9018 D talkback: Actors: 0 项任务
+10-22 11:52:09.439  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16526445 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null
 10-22 11:52:09.442  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16526445, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 待规划目标
 10-22 11:52:09.442  9018  9018 D talkback: Pipeline: 0 项任务
 10-22 11:52:09.442  9018  9018 D talkback: Pipeline: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
 10-22 11:52:09.442  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16526445 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 待规划目标
 10-22 11:52:09.442  9018  9018 D talkback: Actors: 0 项任务
-10-22 11:52:09.442  9018  9018 D talkback: Actors: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    
+10-22 11:52:09.442  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16526445, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 待规划目标
+10-22 11:52:09.442  9018  9018 D talkback: Pipeline: 0 项任务
+10-22 11:52:09.442  9018  9018 D talkback: Pipeline: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
 10-22 11:52:09.442  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16526445 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 待规划目标
 10-22 11:52:09.442  9018  9018 D talkback: Actors: 0 项任务
-10-22 11:52:09.442  9018  9018 D talkback: Actors: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    
+10-22 11:52:09.442  9018  9018 D talkback: Actors: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK
+10-22 11:52:09.442  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16526445 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 待规划目标
+10-22 11:52:09.442  9018  9018 D talkback: Actors: 0 项任务
+10-22 11:52:09.442  9018  9018 D talkback: Actors: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK
 10-22 11:52:09.442  9018  9018 D talkback: NodeActionPerformer: perform Action, nodeAction = target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 待规划目标
 10-22 11:52:09.442  9018  9018 D talkback: NodeActionPerformer: 0 项任务
-10-22 11:52:09.442  9018  9018 D talkback: NodeActionPerformer: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK  
+10-22 11:52:09.442  9018  9018 D talkback: NodeActionPerformer: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK
 10-22 11:52:11.426  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16528432, failovers=[Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    ]}
-10-22 11:52:11.426  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16528432 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:52:11.426  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16528432 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null
 10-22 11:52:11.427  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16528432, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
 10-22 11:52:11.427  9018  9018 D talkback: Pipeline: 0 项任务
 10-22 11:52:11.427  9018  9018 D talkback: Pipeline: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
 10-22 11:52:11.427  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16528432 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
-10-22 11:52:11.426  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16528432 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
-10-22 11:52:11.427  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16528432, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
-10-22 11:52:11.427  9018  9018 D talkback: Pipeline: 0 项任务
-10-22 11:52:11.427  9018  9018 D talkback: Pipeline: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
-10-22 11:52:11.427  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16528432 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
-10-22 11:52:11.427  9018  9018 D talkback: Actors: 0 项任务
+10-22 11:52:11.426  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16528432 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null
 10-22 11:52:11.427  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16528432, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
 10-22 11:52:11.427  9018  9018 D talkback: Pipeline: 0 项任务
 10-22 11:52:11.427  9018  9018 D talkback: Pipeline: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
 10-22 11:52:11.427  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16528432 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
 10-22 11:52:11.427  9018  9018 D talkback: Actors: 0 项任务
-10-22 11:52:11.427  9018  9018 D talkback: Actors: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    
+10-22 11:52:11.427  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16528432, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
+10-22 11:52:11.427  9018  9018 D talkback: Pipeline: 0 项任务
+10-22 11:52:11.427  9018  9018 D talkback: Pipeline: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
 10-22 11:52:11.427  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16528432 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
 10-22 11:52:11.427  9018  9018 D talkback: Actors: 0 项任务
-10-22 11:52:11.427  9018  9018 D talkback: Actors: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    
+10-22 11:52:11.427  9018  9018 D talkback: Actors: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK
+10-22 11:52:11.427  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16528432 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
+10-22 11:52:11.427  9018  9018 D talkback: Actors: 0 项任务
+10-22 11:52:11.427  9018  9018 D talkback: Actors: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK
 10-22 11:52:11.428  9018  9018 D talkback: NodeActionPerformer: perform Action, nodeAction = target= AccessibilityNodeInfoCompat  id=33594  class="android.widget.Button"  package="com.pacta.pacta"  content="已展开, 待规划目标
 10-22 11:52:11.428  9018  9018 D talkback: NodeActionPerformer: 0 项任务
-10-22 11:52:11.428  9018  9018 D talkback: NodeActionPerformer: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK  
+10-22 11:52:11.428  9018  9018 D talkback: NodeActionPerformer: 暂无任务 · 未完成"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK
 10-22 11:52:13.287  9018  9018 V talkback: SpeechControllerImpl: Speaking fragment text="已折叠,", utteranceId=talkback_53, spans=null, event=type:EVENT_TYPE_ACCESSIBILITY subtype:TYPE_VIEW_ACCESSIBILITY_FOCUSED displayId:0 time:16530245
 10-22 11:52:13.288   449  6813 D audioserver: logFgsApiBegin: FGS Logger Transaction failed, -129
 10-22 11:52:13.288   602  1884 W AS.PlaybackActivityMon: No piid assigned for invalid/internal port id 234
@@ -167,12 +167,12 @@
 10-22 11:52:13.289  6309  9041 I GoogleTTSServiceImpl: Synthesis request for locale eng-USA and name en-US-language
 10-22 11:52:13.289  9018  9018 V talkback: Pipeline: execute() success=true for part=Part= speech= action=SPEAK  text="已折叠, 季度规划
 10-22 11:52:14.700  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16531707, failovers=[Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    ]}
-10-22 11:52:14.700  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16531707 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:52:14.700  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16531707 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null
 10-22 11:52:14.701  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16531707, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 季度规划
 10-22 11:52:14.701  9018  9018 D talkback: Pipeline: 每周回顾并调整计划
 10-22 11:52:14.701  9018  9018 D talkback: Pipeline: 1 项任务
 10-22 11:52:14.701  9018  9018 D talkback: Pipeline: 进行中"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    ]}
-10-22 11:52:14.700  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16531707 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null    
+10-22 11:52:14.700  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16531707 part=Part= focus= action=CLICK_CURRENT  start= null  target= null  stealNextWindowTarget= null
 10-22 11:52:14.701  9018  9018 D talkback: Pipeline: execute() feedback=Feedback{eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16531707, failovers=[Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 季度规划
 10-22 11:52:14.701  9018  9018 D talkback: Pipeline: 每周回顾并调整计划
 10-22 11:52:14.701  9018  9018 D talkback: Pipeline: 1 项任务
@@ -187,7 +187,7 @@
 10-22 11:52:14.701  9018  9018 D talkback: Actors: act() eventId=type:EVENT_TYPE_GESTURE subtype:GESTURE_DOUBLE_TAP displayId:0 time:16531707 part=Part= nodeAction= target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 季度规划
 10-22 11:52:14.701  9018  9018 D talkback: Actors: 每周回顾并调整计划
 10-22 11:52:14.701  9018  9018 D talkback: Actors: 1 项任务
-10-22 11:52:14.701  9018  9018 D talkback: Actors: 进行中"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK    
+10-22 11:52:14.701  9018  9018 D talkback: Actors: 进行中"  viewIdResName=""  enabled  accessibilityFocused  focusable  clickable  visible    actionId=ACTION_CLICK
 10-22 11:52:14.701  9018  9018 D talkback: NodeActionPerformer: perform Action, nodeAction = target= AccessibilityNodeInfoCompat  id=33346  class="android.widget.Button"  package="com.pacta.pacta"  content="已折叠, 季度规划
 10-22 11:52:14.701  9018  9018 D talkback: NodeActionPerformer: 每周回顾并调整计划
 10-22 11:52:17.663  9018  9018 V talkback: SpeechControllerImpl: Speaking fragment text="已展开,", utteranceId=talkback_55, spans=null, event=type:EVENT_TYPE_ACCESSIBILITY subtype:TYPE_VIEW_ACCESSIBILITY_FOCUSED displayId:0 time:16534638
