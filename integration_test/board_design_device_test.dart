@@ -23,7 +23,7 @@ import '../test/support/fake_calendar_provider.dart';
 
 /// Offline dashboard evidence using an in-memory database and fake auth.
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('看板层级、目标折叠、我的设置入口与日历访问', (tester) async {
     const userId = 'board-design-offline-fixture';
@@ -226,20 +226,51 @@ void main() {
           scrollable: find.byType(Scrollable).first,
         );
         expect(find.text('设计评审'), findsOneWidget);
+        await tester.scrollUntilVisible(
+          header,
+          -250,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(header);
+        await tester.pumpAndSettle();
+        expect(find.text('整理发布材料'), findsNothing);
+        expect(find.text('每周回顾并调整计划'), findsOneWidget);
+        await tester.tap(header);
+        await tester.pumpAndSettle();
+        expect(find.text('整理发布材料'), findsOneWidget);
+        await tester.scrollUntilVisible(
+          find.text('待规划目标'),
+          250,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('待规划目标'));
+        await tester.pumpAndSettle();
+        expect(find.text('暂无任务，先添加一个可执行的下一步。'), findsNothing);
       }
       expect(tester.takeException(), isNull);
       const pause = int.fromEnvironment('BOARD_INSPECTION_SECONDS');
       if (pause > 0) {
+        tester.view.resetPhysicalSize();
+        await tester.pumpAndSettle();
         await tester.scrollUntilVisible(
           find.text('季度规划'),
           -250,
           scrollable: find.byType(Scrollable).first,
         );
+        binding.framePolicy =
+            LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
+        binding.shouldPropagateDevicePointerEvents = true;
+        await tester.pump();
         debugPrint('ISSUE65_INSPECTION_READY');
         await tester.runAsync(
           () => Future<void>.delayed(Duration(seconds: pause)),
         );
       }
+      binding.framePolicy =
+          LiveTestWidgetsFlutterBindingFramePolicy.fadePointers;
+      binding.shouldPropagateDevicePointerEvents = false;
       tester.platformDispatcher.clearTextScaleFactorTestValue();
       tester.platformDispatcher.clearPlatformBrightnessTestValue();
       tester.view.resetPhysicalSize();

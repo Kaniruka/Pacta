@@ -1,4 +1,4 @@
-import 'dart:ui' show Tristate;
+import 'dart:ui' show Tristate, SemanticsAction, SemanticsActionEvent;
 
 import 'package:drift/native.dart';
 
@@ -103,7 +103,20 @@ void main() {
       tester.getSemantics(header).flagsCollection.isExpanded == Tristate.isTrue,
       isTrue,
     );
-    await tester.tap(find.text('空目标'));
+    expect(
+      tester
+          .getSemantics(header)
+          .getSemanticsData()
+          .hasAction(SemanticsAction.tap),
+      isTrue,
+    );
+    tester.binding.performSemanticsAction(
+      SemanticsActionEvent(
+        nodeId: tester.getSemantics(header).id,
+        viewId: tester.view.viewId,
+        type: SemanticsAction.tap,
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('暂无任务，先添加一个可执行的下一步。'), findsNothing);
     expect(find.text('添加任务'), findsNothing);
@@ -116,6 +129,13 @@ void main() {
     expect(
       tester.getSemantics(header).flagsCollection.isExpanded == Tristate.isTrue,
       isFalse,
+    );
+    expect(
+      tester
+          .getSemantics(header)
+          .getSemanticsData()
+          .hasAction(SemanticsAction.tap),
+      isTrue,
     );
     for (
       var i = 0;
