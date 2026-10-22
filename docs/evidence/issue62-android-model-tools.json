@@ -1,0 +1,259 @@
+[
+  {
+    "tool": "get_snapshot_metadata",
+    "arguments": {},
+    "status": "completed",
+    "structured_content": {
+      "contract_version": 1,
+      "status": "available",
+      "revision": 1,
+      "source_device": {
+        "id": "issue62-android",
+        "name": "Issue62 Android real-service demo"
+      },
+      "uploaded_at": "2026-10-22T01:04:06.981026+00:00",
+      "data_updated_at": "2026-10-22T01:04:04+00:00",
+      "freshness": "latest_manual_upload"
+    }
+  },
+  {
+    "tool": "get_national_focus_tree",
+    "arguments": {
+      "expected_revision": 1
+    },
+    "status": "completed",
+    "structured_content": {
+      "metadata": {
+        "contract_version": 1,
+        "status": "available",
+        "revision": 1,
+        "source_device": {
+          "id": "issue62-android",
+          "name": "Issue62 Android real-service demo"
+        },
+        "uploaded_at": "2026-10-22T01:04:06.981026+00:00",
+        "data_updated_at": "2026-10-22T01:04:04+00:00",
+        "freshness": "latest_manual_upload"
+      },
+      "cards": [
+        {
+          "id": "bcc31230-9099-4a80-a923-add2621a43bb",
+          "name": "Issue62 bedtime reading",
+          "trigger_condition": "Before bed",
+          "action": "Read 5 pages",
+          "scope": null,
+          "exception_notes": null,
+          "is_in_tree": true,
+          "parent_id": null,
+          "state": "extinguished",
+          "successful_days": 0,
+          "current_consecutive_days": 0,
+          "best_consecutive_days": 0,
+          "maintenance_cycle_started": false,
+          "failure_reason": null,
+          "cascade_source_card_id": null,
+          "cascade_prior_state": null,
+          "active_strengthening_level": null,
+          "internalization_progress_percent": 0,
+          "effective_requirements": {
+            "strengthening_level_number": null,
+            "trigger_condition": "Before bed",
+            "action": "Read 5 pages",
+            "scope": null,
+            "exception_notes": null
+          },
+          "current_requirement_version": {
+            "id": "ee6277da-9be7-46b3-bcec-078419cd4caa",
+            "version_number": 1,
+            "strengthening_level_number": null,
+            "effective_trigger_condition": "Before bed",
+            "effective_action": "Read 5 pages",
+            "scope": null,
+            "exception_notes": null,
+            "effective_from": "2026-10-21T01:04:03.000Z",
+            "effective_until": null
+          },
+          "strengthening_levels": [],
+          "requirement_versions": [
+            {
+              "id": "ee6277da-9be7-46b3-bcec-078419cd4caa",
+              "version_number": 1,
+              "strengthening_level_number": null,
+              "effective_trigger_condition": "Before bed",
+              "effective_action": "Read 5 pages",
+              "scope": null,
+              "exception_notes": null,
+              "effective_from": "2026-10-21T01:04:03.000Z",
+              "effective_until": null
+            }
+          ]
+        }
+      ],
+      "maintenance": {
+        "last_settled_checkpoint_at": "2026-10-21T20:00:00.000Z"
+      }
+    }
+  },
+  {
+    "tool": "get_national_focus_library",
+    "arguments": {
+      "expected_revision": 1
+    },
+    "status": "completed",
+    "structured_content": {
+      "metadata": {
+        "contract_version": 1,
+        "status": "available",
+        "revision": 1,
+        "source_device": {
+          "id": "issue62-android",
+          "name": "Issue62 Android real-service demo"
+        },
+        "uploaded_at": "2026-10-22T01:04:06.981026+00:00",
+        "data_updated_at": "2026-10-22T01:04:04+00:00",
+        "freshness": "latest_manual_upload"
+      },
+      "cards": [],
+      "maintenance": {
+        "last_settled_checkpoint_at": "2026-10-21T20:00:00.000Z"
+      }
+    }
+  },
+  {
+    "tool": "list_national_focus_failures",
+    "arguments": {
+      "start_date": "2026-09-23",
+      "end_date": "2026-10-22",
+      "expected_revision": 1,
+      "limit": 100
+    },
+    "status": "completed",
+    "structured_content": {
+      "metadata": {
+        "contract_version": 1,
+        "status": "available",
+        "revision": 1,
+        "source_device": {
+          "id": "issue62-android",
+          "name": "Issue62 Android real-service demo"
+        },
+        "uploaded_at": "2026-10-22T01:04:06.981026+00:00",
+        "data_updated_at": "2026-10-22T01:04:04+00:00",
+        "freshness": "latest_manual_upload"
+      },
+      "events": [
+        {
+          "id": "f453b5f1-4271-425d-98ae-335d17f1df14",
+          "batch_id": "2dbe7a0d-df48-4a8e-912e-284ad5794364",
+          "card_id": "bcc31230-9099-4a80-a923-add2621a43bb",
+          "checkpoint_at": "2026-10-21T20:00:00.000Z",
+          "national_focus_date": "2026-10-22",
+          "cause": "active_extinguish",
+          "failure_reason": "Demo: the book was left in another room",
+          "shared_explanation": null,
+          "review_disposition": "accepted",
+          "tree_snapshot": [
+            {
+              "state": "extinguished",
+              "id": "bcc31230-9099-4a80-a923-add2621a43bb",
+              "name": "Issue62 bedtime reading",
+              "trigger_condition": "Before bed",
+              "action": "Read 5 pages",
+              "scope": null,
+              "exception_notes": null,
+              "parent_id": null,
+              "failure_reason": "Demo: the book was left in another room",
+              "cascade_source_card_id": null,
+              "effective_trigger_condition": "Before bed",
+              "effective_action": "Read 5 pages",
+              "failure_source_card_id": "bcc31230-9099-4a80-a923-add2621a43bb",
+              "cascade_prior_state": null,
+              "is_in_tree": true,
+              "maintenance_cycle_started": true,
+              "successful_days": 0,
+              "current_consecutive_days": 0,
+              "best_consecutive_days": 0,
+              "active_strengthening_level": null,
+              "requirement_version_number": 1,
+              "created_at": "2026-10-21T01:04:03.000Z",
+              "updated_at": "2026-10-21T01:04:06.000Z"
+            }
+          ]
+        }
+      ],
+      "limitations": "Only uploaded failure events are available; historical omissions are possible. Cumulative successful days are not daily success logs or a complete audit timeline. Frozen trees and original reasons are separate from editable batch reflections.",
+      "coverage": {
+        "start_date": "2026-09-23",
+        "end_date": "2026-10-22",
+        "start_at": "2026-09-22T20:00:00.000Z",
+        "end_before": "2026-10-22T20:00:00.000Z",
+        "timezone": "UTC+08:00",
+        "checkpoint": "04:00",
+        "ordering": "checkpoint_at ASC, id ASC (code-point)"
+      },
+      "next_cursor": null,
+      "truncated": false
+    }
+  },
+  {
+    "tool": "get_national_focus_failure",
+    "arguments": {
+      "event_id": "f453b5f1-4271-425d-98ae-335d17f1df14",
+      "expected_revision": 1
+    },
+    "status": "completed",
+    "structured_content": {
+      "metadata": {
+        "contract_version": 1,
+        "status": "available",
+        "revision": 1,
+        "source_device": {
+          "id": "issue62-android",
+          "name": "Issue62 Android real-service demo"
+        },
+        "uploaded_at": "2026-10-22T01:04:06.981026+00:00",
+        "data_updated_at": "2026-10-22T01:04:04+00:00",
+        "freshness": "latest_manual_upload"
+      },
+      "event": {
+        "id": "f453b5f1-4271-425d-98ae-335d17f1df14",
+        "batch_id": "2dbe7a0d-df48-4a8e-912e-284ad5794364",
+        "card_id": "bcc31230-9099-4a80-a923-add2621a43bb",
+        "checkpoint_at": "2026-10-21T20:00:00.000Z",
+        "national_focus_date": "2026-10-22",
+        "cause": "active_extinguish",
+        "failure_reason": "Demo: the book was left in another room",
+        "shared_explanation": null,
+        "review_disposition": "accepted",
+        "tree_snapshot": [
+          {
+            "state": "extinguished",
+            "id": "bcc31230-9099-4a80-a923-add2621a43bb",
+            "name": "Issue62 bedtime reading",
+            "trigger_condition": "Before bed",
+            "action": "Read 5 pages",
+            "scope": null,
+            "exception_notes": null,
+            "parent_id": null,
+            "failure_reason": "Demo: the book was left in another room",
+            "cascade_source_card_id": null,
+            "effective_trigger_condition": "Before bed",
+            "effective_action": "Read 5 pages",
+            "failure_source_card_id": "bcc31230-9099-4a80-a923-add2621a43bb",
+            "cascade_prior_state": null,
+            "is_in_tree": true,
+            "maintenance_cycle_started": true,
+            "successful_days": 0,
+            "current_consecutive_days": 0,
+            "best_consecutive_days": 0,
+            "active_strengthening_level": null,
+            "requirement_version_number": 1,
+            "created_at": "2026-10-21T01:04:03.000Z",
+            "updated_at": "2026-10-21T01:04:06.000Z"
+          }
+        ]
+      },
+      "limitations": "Only uploaded failure events are available; historical omissions are possible. Cumulative successful days are not daily success logs or a complete audit timeline. Frozen trees and original reasons are separate from editable batch reflections."
+    }
+  }
+]

@@ -1,7 +1,7 @@
 -- Rollback-only authorization, RLS, OAuth, suspension, and metadata checks.
 -- Run only in an isolated Supabase project after applying
--- 202610210001_national_focus_mcp.sql. Requires two active auth users without
--- current suspensions or existing snapshots. All fixtures and temporary table
+-- 202610210001_national_focus_mcp.sql. Creates transaction-local test identities;
+-- no ordinary user is selected or modified. All fixtures and temporary table
 -- grants used to exercise default-deny RLS are rolled back.
 
 begin;
@@ -18,36 +18,13 @@ declare
   other_token_hash text := md5(gen_random_uuid()::text);
   other_grant_id uuid;
 begin
-  select account.id into test_user_id
-  from auth.users as account
-  where not exists (
-    select 1 from public.user_suspension_periods as suspension
-    where suspension.user_id = account.id and suspension.restored_at is null
-  )
-    and not exists (
-      select 1 from public.cloud_business_snapshots as snapshot
-      where snapshot.user_id = account.id
-    )
-  order by account.created_at desc
-  limit 1;
-
-  select account.id into other_user_id
-  from auth.users as account
-  where account.id <> test_user_id
-    and not exists (
-      select 1 from public.user_suspension_periods as suspension
-      where suspension.user_id = account.id and suspension.restored_at is null
-    )
-    and not exists (
-      select 1 from public.cloud_business_snapshots as snapshot
-      where snapshot.user_id = account.id
-    )
-  order by account.created_at desc
-  limit 1;
-
-  if test_user_id is null or other_user_id is null then
-    raise exception 'two active test users without snapshots are required';
-  end if;
+  test_user_id := gen_random_uuid();
+  other_user_id := gen_random_uuid();
+  perform set_config('request.jwt.claim.role', 'service_role', true);
+  insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at)
+  values
+    ('00000000-0000-0000-0000-000000000000',test_user_id,'authenticated','authenticated','nf-access-'||test_user_id||'@probe.invalid','',now(),now(),now()),
+    ('00000000-0000-0000-0000-000000000000',other_user_id,'authenticated','authenticated','nf-access-'||other_user_id||'@probe.invalid','',now(),now(),now());
 
   request_hash := encode(
     sha256(convert_to(lower(btrim(request_code)), 'UTF8')), 'hex'
@@ -449,5 +426,51 @@ begin
   end;
 end
 $revoked_token_probe$;
+
+-- Renewal is a fresh explicit approval, never a refresh of the old credential.
+reset role;
+do $renewal_setup$
+begin
+  insert into public.national_focus_mcp_requests(
+    request_hash, client_id, redirect_uri, resource, code_challenge, state
+  ) values (
+    encode(sha256(convert_to('renewal-' || current_setting('nf_mcp_test.request_code'), 'UTF8')), 'hex'),
+    current_setting('nf_mcp_test.client_id'), 'https://probe.invalid/callback',
+    'https://probe.invalid/mcp', 'renewal-challenge', 'renewal-state'
+  );
+end
+$renewal_setup$;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', current_setting('nf_mcp_test.user_id'), true);
+select public.approve_national_focus_mcp_connection(
+  'renewal-' || current_setting('nf_mcp_test.request_code'), true
+);
+reset role;
+set local role service_role;
+do $renewal_probe$
+declare
+  renewed_request public.national_focus_mcp_requests;
+  fresh_token text := md5(gen_random_uuid()::text);
+  exchange_result jsonb;
+begin
+  select * into renewed_request from public.national_focus_mcp_requests
+  where request_hash = encode(sha256(convert_to(
+    'renewal-' || current_setting('nf_mcp_test.request_code'), 'UTF8')), 'hex');
+  exchange_result := public.exchange_national_focus_mcp_code(
+    renewed_request.code_hash, renewed_request.client_id, renewed_request.redirect_uri,
+    renewed_request.resource, renewed_request.code_challenge, fresh_token
+  );
+  if (exchange_result ->> 'expires_in')::integer not between 1790 and 1800
+    or exchange_result ? 'refresh_token' then
+    raise exception 'renewed_grant_has_wrong_lifetime_or_refresh_token';
+  end if;
+  perform public.read_national_focus_mcp_metadata(fresh_token, 7);
+  begin
+    perform public.read_national_focus_mcp_metadata(current_setting('nf_mcp_test.token_hash'), 7);
+    raise exception 'renewal_revived_revoked_token';
+  exception when sqlstate '28000' then null;
+  end;
+end
+$renewal_probe$;
 
 rollback;

@@ -4,6 +4,8 @@
 
 ## 安装与首次使用
 
+离线 ZIP 分发与匹配部署的 App 配置见 [发布操作单](issue-62-deployment.md#分发-skill)。
+
 在 Codex 中发送：
 
 ```text

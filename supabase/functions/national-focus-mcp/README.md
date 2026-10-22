@@ -1,9 +1,12 @@
-# National Focus MCP, contract v1 (Issues #57–59)
+# National Focus MCP, contract v1 (Issues #57–62)
 
 This release exposes snapshot metadata and current National Focus tree, library
 and card details, plus read-only failure-event lists and frozen historical trees.
 Write tools and arbitrary SQL/table access are not available.
 Neither connecting nor reading performs a manual upload/download or settlement.
+
+Deployment, matching App configuration and skill ZIP distribution are described
+in [the release runbook](../../../docs/issue-62-deployment.md).
 
 ## Deploy
 
@@ -174,7 +177,8 @@ object rows owned by this User, and nonempty standalone card names.
 
 Card details require `expected_revision` and return the same metadata/version
 context. History pagination preserves this revision constraint. No historical cloud snapshots are retained by MCP.
-The installable analysis skill remains a later ticket.
+The installable analysis skill supports structure analysis and failure review;
+see [installation and usage](../../../docs/issue-60-skill.md).
 Current tree/library/card tools are available in T2 (#58).
 
 ## Verify
