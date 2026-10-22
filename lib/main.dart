@@ -1474,8 +1474,10 @@ class _GoalCardState extends State<_GoalCard> {
                 Expanded(
                   child: Semantics(
                     key: ValueKey('goal-header-${goal.id}'),
+                    container: true,
                     expanded: _tasksExpanded,
                     button: true,
+                    value: _tasksExpanded ? '已展开' : '已折叠',
                     child: Tooltip(
                       message: _tasksExpanded ? '收起任务' : '展开任务',
                       child: InkWell(

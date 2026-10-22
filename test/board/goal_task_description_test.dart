@@ -98,11 +98,17 @@ void main() {
     );
     await harness.show(tester);
     final header = find.byKey(ValueKey('goal-header-${goal.id}'));
+    final headerNodeId = tester.getSemantics(header).id;
     expect(find.text('暂无任务，先添加一个可执行的下一步。'), findsOneWidget);
+    expect(
+      tester.getSemantics(header).getSemanticsData().label,
+      isNot(contains('暂无任务，先添加一个可执行的下一步。')),
+    );
     expect(
       tester.getSemantics(header).flagsCollection.isExpanded == Tristate.isTrue,
       isTrue,
     );
+    expect(tester.getSemantics(header).getSemanticsData().value, '已展开');
     expect(
       tester
           .getSemantics(header)
@@ -118,10 +124,24 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(tester.getSemantics(header).id, headerNodeId);
     expect(find.text('暂无任务，先添加一个可执行的下一步。'), findsNothing);
     expect(find.text('添加任务'), findsNothing);
     expect(find.text('折叠仍可读的目标说明'), findsOneWidget);
     expect(find.text('0 项任务\n暂无任务 · 未完成'), findsOneWidget);
+    const taskTitle = '任务内容不应并入标题语义';
+    await harness.tasks.createTask(
+      goal.id,
+      const TaskDraft(
+        title: taskTitle,
+        classification: TaskClassification.regular,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getSemantics(header).getSemanticsData().label,
+      isNot(contains(taskTitle)),
+    );
     expect(
       tester.getSemantics(header).flagsCollection.isExpanded != Tristate.none,
       isTrue,
@@ -130,6 +150,7 @@ void main() {
       tester.getSemantics(header).flagsCollection.isExpanded == Tristate.isTrue,
       isFalse,
     );
+    expect(tester.getSemantics(header).getSemanticsData().value, '已折叠');
     expect(
       tester
           .getSemantics(header)
@@ -137,6 +158,39 @@ void main() {
           .hasAction(SemanticsAction.tap),
       isTrue,
     );
+    tester.binding.performSemanticsAction(
+      SemanticsActionEvent(
+        nodeId: headerNodeId,
+        viewId: tester.view.viewId,
+        type: SemanticsAction.tap,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getSemantics(header).id, headerNodeId);
+    expect(
+      tester.getSemantics(header).flagsCollection.isExpanded == Tristate.isTrue,
+      isTrue,
+    );
+    expect(tester.getSemantics(header).getSemanticsData().value, '已展开');
+    expect(find.text(taskTitle), findsOneWidget);
+    expect(
+      tester.getSemantics(header).getSemanticsData().label,
+      isNot(contains(taskTitle)),
+    );
+    tester.binding.performSemanticsAction(
+      SemanticsActionEvent(
+        nodeId: headerNodeId,
+        viewId: tester.view.viewId,
+        type: SemanticsAction.tap,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getSemantics(header).id, headerNodeId);
+    expect(
+      tester.getSemantics(header).flagsCollection.isExpanded == Tristate.isTrue,
+      isFalse,
+    );
+    expect(tester.getSemantics(header).getSemanticsData().value, '已折叠');
     for (
       var i = 0;
       i < 30 &&
