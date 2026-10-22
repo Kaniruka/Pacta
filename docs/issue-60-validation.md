@@ -24,3 +24,7 @@ Windows screenshot tooling could not initialize: `codex/sandbox-state-meta: sand
 ## Review
 
 Separate Standards and Spec reviews found no blocking issue. Standards review checked repository rules and Fowler smells; shared download-invalidation code is a minor existing-shape duplication, without demonstrated divergence. Spec review confirmed source/upload-time guidance is fulfilled by instructions plus MCP metadata and skill reporting; this ticket does not add the #61 history-reflection workflow. UI review applies HIG accessibility/layout/user-control principles to Flutter Material, retaining existing theme and navigation.
+
+## Publication
+
+Implementation commit `754365b` pushed to `origin/master`. The built-in skill-installer, run with Windows Python 3.14.7 against the public master GitHub URL into an isolated temporary destination, installed successfully. All 4 installed files match repository contents byte-for-byte. The earlier WSL archive transfer stalled and was stopped; the Windows installer completed.

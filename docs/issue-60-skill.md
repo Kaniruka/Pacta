@@ -51,4 +51,4 @@ codex exec --ignore-user-config --ephemeral --skip-git-repo-check -s read-only -
 - `python3 .../skill-creator/scripts/quick_validate.py skills/pacta-national-focus-analysis`：通过。
 - Codex CLI `0.163.0-alpha.10.2`，只读沙箱、实际模型分析三组合成导出：成功（退出 0）。人工逐项复核上述语义条件均通过；报告见 [合成分析](evidence/issue60-codex-synthetic-analysis.md)。使用实际合同字段 `version_number`，缺失版本场景明确为不完整导出。
 - 同一 Codex CLI 实际模型通过真实远端 MCP 读取 `get_snapshot_metadata`、`get_national_focus_tree(expected_revision: 1)`、`get_national_focus_library(expected_revision: 1)`，完成同名双卡的规则、依赖与负担分析，退出 0。见 [调用证据](evidence/issue60-codex-live-tools.json)、[分析报告](evidence/issue60-codex-live-analysis.md)。测试使用独立合成账号及云快照和受保护管理接口创建的短期测试 delegate，完成后 finally 删除临时账号及客户端。此次不重复验证 OAuth DCR/PKCE/App 同意，也不是普通用户上传行为证据。
-- 远端安装验证由发布步骤在推送 master 后执行；未经推送前不声称公开 URL 已可安装。
+- 发布提交 `754365b` 推送 master 后，使用 Windows Python 3.14.7 执行内置 `install-skill-from-github.py --url https://github.com/Kaniruka/Pacta/tree/master/skills/pacta-national-focus-analysis --dest <隔离临时目录>`：成功。下载后的 4 个文件与已发布源码逐字节一致。WSL 下载尝试因传输停滞中止，改用同一官方安装器的 Windows 运行时完成验证。未改用户现有 skill 安装。
