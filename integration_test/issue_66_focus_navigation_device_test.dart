@@ -72,6 +72,7 @@ void main() {
       );
       final seededTasks = <String, Task>{};
       for (var index = 0; index < 80; index++) {
+        now = now.add(const Duration(seconds: 1));
         final classification = switch (index) {
           0 => TaskClassification.regular,
           1 => TaskClassification.elite,
@@ -98,7 +99,7 @@ void main() {
 
       // Create real local focus progress so the picker can show a non-zero value.
       final progressSession = await focus.startSession(
-        taskId: seededTasks['I66-02-两者']!.id,
+        taskId: seededTasks['I66-79-精锐']!.id,
         mode: FocusChainMode.regular,
         duration: const Duration(hours: 1),
       );
@@ -112,7 +113,6 @@ void main() {
       await tasks.dispose();
       await tree.dispose();
       await database.close();
-      now = DateTime.now().toUtc();
       database = PactaDatabase(NativeDatabase(databaseFile));
       tasks = _newTaskRepository(database, taskRemote);
       focus = _newFocusRepository(database, focusRemote, () => now);
@@ -243,8 +243,9 @@ void main() {
       );
       await tester.tap(find.text(bottomElite));
       await tester.pumpAndSettle();
-      await tester.pageBack();
+      await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
+      expect(find.text('开始倒计时'), findsNothing);
       expect(find.text(bottomElite), findsOneWidget);
       expect(
         tester.getTopLeft(find.text(bottomElite).last).dy,
@@ -528,7 +529,7 @@ Future<void> _scrollTo(
   }
   await tester.scrollUntilVisible(
     target,
-    reverse ? 400 : -400,
+    reverse ? -400 : 400,
     scrollable: find.byType(Scrollable).last,
   );
   await tester.pumpAndSettle();

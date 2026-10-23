@@ -3621,6 +3621,7 @@ class _AppointmentPreparationPageState
                           const Center(child: CircularProgressIndicator())
                         else
                           DropdownButtonFormField<String>(
+                            isExpanded: true,
                             initialValue:
                                 tasks.any((task) => task.id == _taskId)
                                 ? _taskId
@@ -3630,7 +3631,11 @@ class _AppointmentPreparationPageState
                               for (final task in tasks)
                                 DropdownMenuItem(
                                   value: task.id,
-                                  child: Text(task.title),
+                                  child: Text(
+                                    task.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
                             ],
                             onChanged: !canEdit

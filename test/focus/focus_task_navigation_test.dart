@@ -119,6 +119,7 @@ void main() {
       const GoalDraft(title: '长列表目标', classification: TaskClassification.both),
     );
     for (var i = 0; i < 60; i++) {
+      h.now = h.now.add(const Duration(seconds: 1));
       await h.tasks.createTask(
         goal.id,
         TaskDraft(title: '浏览任务 $i', classification: TaskClassification.both),
@@ -131,7 +132,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('普通').first);
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('浏览任务 30'), 300);
+    await tester.scrollUntilVisible(find.text('浏览任务 30'), 300, maxScrolls: 100);
     await tester.ensureVisible(find.text('浏览任务 30'));
     await tester.pumpAndSettle();
     final position = tester.getTopLeft(find.text('浏览任务 30'));
@@ -203,6 +204,43 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
   });
 
+  testWidgets('窄屏两倍字号恢复长任务预约时准备配置可读且不溢出', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final h = _Harness();
+    addTearDown(h.database.close);
+    final goal = await h.tasks.createGoal(
+      const GoalDraft(title: '恢复目标', classification: TaskClassification.both),
+    );
+    final task = await h.tasks.createTask(
+      goal.id,
+      const TaskDraft(
+        title: '准备一项名称很长的任务并保留原来的预约',
+        classification: TaskClassification.both,
+      ),
+    );
+    final appointment = await h.focus.startAppointment(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    await h.show(tester);
+    await tester.ensureVisible(find.text('选择任务'));
+    await tester.tap(find.text('选择任务'));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('准备配置'), 200);
+    await tester.pumpAndSettle();
+    expect(find.text('准备配置'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    expect((await h.focus.getActiveAppointment())?.id, appointment.id);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 1));
+  });
+
   for (final state in ['active', 'paused', 'appointment']) {
     testWidgets('原任务完成并删除后入口恢复 $state 原流程', (tester) async {
       final h = _Harness();
@@ -259,10 +297,12 @@ void main() {
 }
 
 class _Harness {
+  var now = DateTime.utc(2026, 10, 23, 8);
   final database = PactaDatabase(NativeDatabase.memory());
   late final tasks = LocalTaskRepository(
     database: database,
     userId: 'flows',
+    now: () => now,
     remote: InMemoryTaskRemote(),
     cloudSyncEnabled: false,
   );
@@ -271,7 +311,7 @@ class _Harness {
     userId: 'flows',
     remote: InMemoryFocusRemote(),
     cloudSyncEnabled: false,
-    now: () => DateTime.utc(2026, 10, 23, 8),
+    now: () => now,
   );
   late final tree = LocalNationalFocusRepository(
     database: database,
