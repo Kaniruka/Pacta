@@ -24,6 +24,8 @@ class CloudSnapshotMetadata {
     this.isLegacy = false,
     this.legacyToken,
     this.payload,
+    this.deviceManufacturer,
+    this.deviceModel,
   });
 
   final int revision;
@@ -35,6 +37,8 @@ class CloudSnapshotMetadata {
   final bool isLegacy;
   final String? legacyToken;
   final Map<String, dynamic>? payload;
+  final String? deviceManufacturer;
+  final String? deviceModel;
 }
 
 abstract interface class CloudSnapshotRemote {
@@ -48,6 +52,8 @@ abstract interface class CloudSnapshotRemote {
     required String deviceName,
     required DateTime dataUpdatedAt,
     required int rowCount,
+    String? deviceManufacturer,
+    String? deviceModel,
   });
 
   Future<CloudSnapshotMetadata> download({required String userId});
@@ -68,18 +74,60 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
   @override
   Future<CloudSnapshotMetadata?> inspect({required String userId}) async {
     _assertCurrentUser(userId);
-    final row = await client
-        .from('cloud_business_snapshots')
-        .select(
-          'revision,device_id,device_name,data_updated_at,uploaded_at,row_count',
-        )
-        .eq('user_id', userId)
-        .maybeSingle();
+    final row = await _inspectSnapshotRow(userId);
     if (row != null) {
       _legacyTokensByUser.remove(userId);
       return _metadataFromJson(row);
     }
     return _readLegacySnapshot(userId);
+  }
+
+  Future<Map<String, dynamic>?> _inspectSnapshotRow(String userId) async {
+    try {
+      return await client
+          .from('cloud_business_snapshots')
+          .select(
+            'revision,device_id,device_name,data_updated_at,uploaded_at,'
+            'row_count,device_manufacturer,device_model',
+          )
+          .eq('user_id', userId)
+          .maybeSingle();
+    } on PostgrestException catch (error) {
+      if (!_isMissingHardwareMetadataColumn(error)) rethrow;
+      // Older projects may not have applied the nullable metadata migration
+      // yet. Keep those snapshots inspectable using their original columns.
+      _assertCurrentUser(userId);
+      return await client
+          .from('cloud_business_snapshots')
+          .select(
+            'revision,device_id,device_name,data_updated_at,uploaded_at,row_count',
+          )
+          .eq('user_id', userId)
+          .maybeSingle();
+    }
+  }
+
+  bool _isMissingHardwareMetadataColumn(PostgrestException error) {
+    var code = error.code;
+    var message = error.message;
+    // PostgREST's maybeSingle error path can wrap a structured error body as
+    // the message while replacing its code with the HTTP status.
+    if (code == '400') {
+      try {
+        final body = jsonDecode(message);
+        if (body is Map) {
+          code = body['code']?.toString() ?? code;
+          message = body['message']?.toString() ?? message;
+        }
+      } on FormatException {
+        // Leave non-JSON errors untouched; they must still propagate.
+      }
+    }
+    if (code != '42703' && code != 'PGRST204') return false;
+    message = message.toLowerCase();
+    return message.contains('cloud_business_snapshots') &&
+        (message.contains('device_manufacturer') ||
+            message.contains('device_model'));
   }
 
   @override
@@ -108,6 +156,8 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
     required String deviceName,
     required DateTime dataUpdatedAt,
     required int rowCount,
+    String? deviceManufacturer,
+    String? deviceModel,
   }) async {
     _assertCurrentUser(userId);
     final String? expectedLegacyToken;
@@ -137,6 +187,8 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
           'p_data_updated_at': dataUpdatedAt.toUtc().toIso8601String(),
           'p_row_count': rowCount,
           'p_expected_legacy_token': expectedLegacyToken,
+          'p_device_manufacturer': _normalizeDeviceMetadata(deviceManufacturer),
+          'p_device_model': _normalizeDeviceMetadata(deviceModel),
         },
       );
     } on PostgrestException catch (error) {
@@ -218,6 +270,10 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
         payload: row['payload'] == null
             ? null
             : Map<String, dynamic>.from(row['payload'] as Map),
+        deviceManufacturer: _normalizeDeviceMetadata(
+          row['device_manufacturer'] as String?,
+        ),
+        deviceModel: _normalizeDeviceMetadata(row['device_model'] as String?),
       );
 }
 
@@ -243,6 +299,8 @@ class UnavailableCloudSnapshotRemote implements CloudSnapshotRemote {
     required String deviceName,
     required DateTime dataUpdatedAt,
     required int rowCount,
+    String? deviceManufacturer,
+    String? deviceModel,
   }) async => throw _error();
 }
 
@@ -307,6 +365,8 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
     required String deviceName,
     required DateTime dataUpdatedAt,
     required int rowCount,
+    String? deviceManufacturer,
+    String? deviceModel,
   }) async {
     _checkAccess();
     final legacy = _legacySnapshots[userId];
@@ -339,6 +399,8 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
       uploadedAt: DateTime.now().toUtc(),
       rowCount: rowCount,
       payload: jsonDecode(jsonEncode(payload)) as Map<String, dynamic>,
+      deviceManufacturer: _normalizeDeviceMetadata(deviceManufacturer),
+      deviceModel: _normalizeDeviceMetadata(deviceModel),
     );
     _snapshots[userId] = snapshot;
     _legacySnapshots.remove(userId);
@@ -366,6 +428,11 @@ class CloudSnapshotLocalState {
   final bool hasUnfinishedFlow;
 }
 
+String? _normalizeDeviceMetadata(String? value) {
+  final normalized = value?.trim();
+  return normalized == null || normalized.isEmpty ? null : normalized;
+}
+
 /// Replaces only the explicitly listed business tables for [userId]. The user
 /// must pass the fingerprint captured before showing a destructive choice.
 class CloudSnapshotRepository {
@@ -375,9 +442,12 @@ class CloudSnapshotRepository {
     required this.userId,
     this.deviceId,
     required this.deviceName,
+    String? deviceManufacturer,
+    String? deviceModel,
     this.syncResultStore = const CloudSyncResultStore(),
     this.now = DateTime.now,
-  }) {
+  }) : deviceManufacturer = _normalizeDeviceMetadata(deviceManufacturer),
+       deviceModel = _normalizeDeviceMetadata(deviceModel) {
     if (userId.isEmpty ||
         (deviceId != null && deviceId!.isEmpty) ||
         deviceName.trim().isEmpty) {
@@ -390,6 +460,8 @@ class CloudSnapshotRepository {
   final String userId;
   final String? deviceId;
   final String deviceName;
+  final String? deviceManufacturer;
+  final String? deviceModel;
   final CloudSyncResultStore syncResultStore;
   final DateTime Function() now;
 
@@ -478,6 +550,8 @@ class CloudSnapshotRepository {
       deviceName: deviceName,
       dataUpdatedAt: state.dataUpdatedAt,
       rowCount: state.rowCount,
+      deviceManufacturer: deviceManufacturer,
+      deviceModel: deviceModel,
     );
     await _saveSyncResult(cloud, state.fingerprint);
     return cloud;

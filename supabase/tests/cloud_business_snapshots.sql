@@ -1,5 +1,5 @@
 -- Rollback-only RLS and compare-and-swap checks. Run against an isolated
--- Supabase project after applying the 202610040001 and 202610040002 snapshot migrations.
+-- Supabase project after applying the snapshot and device metadata migrations.
 begin;
 
 do $setup$
@@ -179,6 +179,40 @@ begin
   end;
 end
 $owner_visibility_and_cas$;
+
+do $device_metadata_and_old_client_compatibility$
+declare
+  saved public.cloud_business_snapshots;
+begin
+  saved := public.save_cloud_business_snapshot(
+    1,
+    jsonb_build_object(
+      'schemaVersion', 1,
+      'userId', current_setting('snapshot_test.owner_id'),
+      'tables', '{}'::jsonb
+    ),
+    'device-b', 'Device B', now(), 0, null, 'Example Corp', 'Example Model'
+  );
+  if saved.device_manufacturer <> 'Example Corp'
+    or saved.device_model <> 'Example Model' then
+    raise exception 'hardware_metadata_was_not_saved';
+  end if;
+
+  -- The previous RPC contract omits the two trailing nullable parameters.
+  saved := public.save_cloud_business_snapshot(
+    2,
+    jsonb_build_object(
+      'schemaVersion', 1,
+      'userId', current_setting('snapshot_test.owner_id'),
+      'tables', '{}'::jsonb
+    ),
+    'old-client-device', 'Old client', now(), 0
+  );
+  if saved.device_manufacturer is not null or saved.device_model is not null then
+    raise exception 'old_rpc_client_metadata_was_invented';
+  end if;
+end
+$device_metadata_and_old_client_compatibility$;
 
 do $invalid_payload$
 begin

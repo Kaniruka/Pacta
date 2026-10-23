@@ -74,6 +74,62 @@ void main() {
     expect((await reopened.loadSyncResult())!.succeededAt, result.succeededAt);
   });
 
+  test(
+    'uploads optional manufacturer and model metadata without changing names',
+    () async {
+      await _addGoal(database, userId: 'user-a', id: 'goal-a', title: 'Cloud');
+      final metadataRepository = CloudSnapshotRepository(
+        database: database,
+        remote: remote,
+        userId: 'user-a',
+        deviceId: 'device-a',
+        deviceName: 'Phone A',
+        deviceManufacturer: '  Example Corp  ',
+        deviceModel: '  Example Phone  ',
+      );
+      final local = await metadataRepository.captureLocalState();
+
+      final saved = await metadataRepository.uploadLocal(
+        expectedRevision: 0,
+        expectedFingerprint: local.fingerprint,
+      );
+      final downloaded = await remote.download(userId: 'user-a');
+
+      expect(saved.deviceName, 'Phone A');
+      expect(saved.deviceManufacturer, 'Example Corp');
+      expect(saved.deviceModel, 'Example Phone');
+      expect(downloaded.deviceManufacturer, 'Example Corp');
+      expect(downloaded.deviceModel, 'Example Phone');
+    },
+  );
+
+  test(
+    'empty and absent hardware metadata stays unknown on old snapshots',
+    () async {
+      await remote.upload(
+        userId: 'user-a',
+        expectedRevision: 0,
+        payload: const {'schemaVersion': 1, 'userId': 'user-a', 'tables': {}},
+        deviceId: 'old-device',
+        deviceName: 'Older phone',
+        dataUpdatedAt: DateTime.utc(2026, 10, 4),
+        rowCount: 0,
+        deviceManufacturer: '   ',
+        deviceModel: '',
+      );
+
+      final inspected = await remote.inspect(userId: 'user-a');
+      final downloaded = await remote.download(userId: 'user-a');
+
+      expect(inspected?.deviceName, 'Older phone');
+      expect(inspected?.deviceManufacturer, isNull);
+      expect(inspected?.deviceModel, isNull);
+      expect(downloaded.deviceName, 'Older phone');
+      expect(downloaded.deviceManufacturer, isNull);
+      expect(downloaded.deviceModel, isNull);
+    },
+  );
+
   for (final upload in [true, false]) {
     test(
       '${upload ? 'upload' : 'download'} remains completed if local history cannot be saved',

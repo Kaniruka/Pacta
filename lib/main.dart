@@ -38,10 +38,12 @@ import 'src/tasks/task_database.dart' show PactaDatabase;
 import 'src/tasks/task_models.dart';
 import 'src/tasks/task_repository.dart';
 import 'src/sync/cloud_snapshot_repository.dart';
+import 'src/sync/source_device_info.dart';
 import 'src/sync/cloud_sync_card.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final sourceDevice = await SourceDeviceInfo.load();
   final focusNotificationService = FocusNotificationService();
   await focusNotificationService.initialize();
   final url = const String.fromEnvironment('SUPABASE_URL');
@@ -130,8 +132,9 @@ Future<void> main() async {
               database: database,
               remote: cloudRemote!,
               userId: userId,
-              deviceName:
-                  '${Platform.localHostname} (${Platform.isAndroid ? 'Android' : 'Windows'})',
+              deviceName: sourceDevice.deviceName,
+              deviceManufacturer: sourceDevice.manufacturer,
+              deviceModel: sourceDevice.model,
             ),
       userLifecycleRepositoryFactory: (userId) => UserLifecycleRepository(
         authRepository: repository,

@@ -101,6 +101,16 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
     return showDialog<bool>(context: context, builder: (_) => dialog);
   }
 
+  String _deviceHardware(CloudSnapshotMetadata cloud) {
+    final manufacturer = cloud.deviceManufacturer?.trim();
+    final model = cloud.deviceModel?.trim();
+    final parts = <String>[
+      if (manufacturer != null && manufacturer.isNotEmpty) manufacturer,
+      if (model != null && model.isNotEmpty) model else '型号未知',
+    ];
+    return parts.join(' · ');
+  }
+
   Future<void> _inspect() async {
     final repository = widget.repository;
     if (repository == null || _working) return;
@@ -131,6 +141,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
                   const Text('云端暂无数据，可首次上传。')
                 else ...[
                   Text('云端来源：${cloud.deviceName}'),
+                  Text(_deviceHardware(cloud)),
                   if (cloud.isLegacy)
                     const Text('发现旧版云端记录，将转换为整份数据；原设备和上传时间未记录。')
                   else ...[

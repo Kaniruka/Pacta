@@ -43,6 +43,8 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
   std::unique_ptr<
       flutter::MethodChannel<flutter::EncodableValue>> focus_status_channel_;
+  std::unique_ptr<
+      flutter::MethodChannel<flutter::EncodableValue>> source_device_info_channel_;
   NOTIFYICONDATAW tray_icon_data_{};
   bool tray_icon_added_ = false;
   bool background_running_enabled_ = false;

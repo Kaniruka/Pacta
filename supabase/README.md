@@ -141,6 +141,17 @@ checks the current server-controlled lifecycle state. Snapshots exclude local
 device settings, authentication, and administrator-controlled lifecycle state.
 The new migration also makes explicit purge remove the snapshot.
 
+For source hardware metadata, apply
+`202610240001_cloud_snapshot_device_metadata.sql`. It adds nullable
+`device_manufacturer` / `device_model` columns and trailing optional RPC
+parameters, preserving calls from older snapshot clients. Existing rows remain
+unknown; the client keeps their original device name and upload timestamp.
+Android supplies brand/model and Windows supplies BIOS manufacturer/product
+name, without serial numbers. Before this migration is applied, the new client
+can still inspect and download old snapshots using their original columns;
+uploading hardware metadata requires the new RPC contract. This is a deployment
+instruction, not evidence that the shared project has been migrated.
+
 Run `supabase/tests/cloud_business_snapshots.sql` in an isolated test
 project after applying the migration. Client tests do not prove deployed RLS
 or a successful Android/Windows transfer. Migration preparation is distinct

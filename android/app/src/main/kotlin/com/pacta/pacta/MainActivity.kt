@@ -13,6 +13,7 @@ import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
     private val channelName = "com.pacta/calendar"
+    private val sourceDeviceInfoChannelName = "com.pacta/source_device_info"
     private val permissionRequestCode = 4720
     private val calendarExecutor = Executors.newSingleThreadExecutor()
     private var permissionResult: MethodChannel.Result? = null
@@ -36,6 +37,21 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            sourceDeviceInfoChannelName,
+        ).setMethodCallHandler { call, result ->
+            if (call.method == "readHardwareMetadata") {
+                result.success(
+                    mapOf(
+                        "manufacturer" to android.os.Build.BRAND,
+                        "model" to android.os.Build.MODEL,
+                    ),
+                )
+            } else {
+                result.notImplemented()
+            }
+        }
     }
 
     private fun permissionStatus(): String =

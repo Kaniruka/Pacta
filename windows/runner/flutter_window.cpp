@@ -5,6 +5,7 @@
 #include <string>
 #include <utility>
 #include <variant>
+#include <windows.h>
 
 #include "flutter/generated_plugin_registrant.h"
 #include "resource.h"
@@ -27,6 +28,28 @@ std::wstring Utf8ToWide(const std::string& value) {
   MultiByteToWideChar(CP_UTF8, 0, value.c_str(), -1, result.data(), required);
   result.pop_back();
   return result;
+}
+
+std::string WideToUtf8(const std::wstring& value) {
+  if (value.empty()) return "";
+  const int required = WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1,
+                                           nullptr, 0, nullptr, nullptr);
+  if (required <= 1) return "";
+  std::string result(static_cast<size_t>(required), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, value.c_str(), -1, result.data(), required,
+                      nullptr, nullptr);
+  result.pop_back();
+  return result;
+}
+
+std::string ReadBiosValue(const wchar_t* value_name) {
+  wchar_t value[512] = {};
+  DWORD size = sizeof(value);
+  const auto status = RegGetValueW(
+      HKEY_LOCAL_MACHINE, L"HARDWARE\\DESCRIPTION\\System\\BIOS",
+      value_name, RRF_RT_REG_SZ, nullptr, value, &size);
+  if (status != ERROR_SUCCESS) return "";
+  return WideToUtf8(value);
 }
 
 const flutter::EncodableValue* FindValue(
@@ -87,6 +110,25 @@ bool FlutterWindow::OnCreate() {
         HandleFocusStatusCall(call, std::move(result));
       });
 
+  source_device_info_channel_ = std::make_unique<
+      flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(),
+      "com.pacta/source_device_info",
+      &flutter::StandardMethodCodec::GetInstance());
+  source_device_info_channel_->SetMethodCallHandler(
+      [](const auto& call, auto result) {
+        if (call.method_name() != "readHardwareMetadata") {
+          result->NotImplemented();
+          return;
+        }
+        flutter::EncodableMap metadata;
+        metadata[flutter::EncodableValue("manufacturer")] =
+            flutter::EncodableValue(ReadBiosValue(L"SystemManufacturer"));
+        metadata[flutter::EncodableValue("model")] =
+            flutter::EncodableValue(ReadBiosValue(L"SystemProductName"));
+        result->Success(flutter::EncodableValue(metadata));
+      });
+
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
   });
@@ -102,6 +144,7 @@ bool FlutterWindow::OnCreate() {
 void FlutterWindow::OnDestroy() {
   RemoveTrayIcon();
   focus_status_channel_.reset();
+  source_device_info_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

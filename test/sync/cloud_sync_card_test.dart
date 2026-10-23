@@ -111,6 +111,7 @@ void main() {
     await tester.tap(find.byTooltip('查看云端并选择方向'));
     await tester.pumpAndSettle();
     expect(find.text('云端来源：家里的电脑'), findsOneWidget);
+    expect(find.text('型号未知'), findsOneWidget);
     expect(find.text('本地数据时间较新，请选择要保留的数据。'), findsOneWidget);
     await tester.tap(find.text('下载'));
     await tester.pumpAndSettle();
