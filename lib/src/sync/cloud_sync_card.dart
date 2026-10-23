@@ -215,12 +215,11 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
           expectedRevision: cloud!.revision,
           expectedFingerprint: local.fingerprint,
         );
-        if (mounted) await widget.onDownloaded();
       }
+      if (!mounted || widget.repository != repository) return;
       await _loadResult();
-      if (mounted && widget.repository == repository) {
-        setState(() => _inspectedCloud = null);
-      }
+      if (!mounted || widget.repository != repository) return;
+      setState(() => _inspectedCloud = null);
       if (messenger.mounted) {
         messenger.hideCurrentSnackBar();
         messenger.showSnackBar(
@@ -229,23 +228,28 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
           ),
         );
       }
+      if (!direction && mounted && widget.repository == repository) {
+        await widget.onDownloaded();
+      }
     } on CloudSyncResultPersistenceException {
       final message = selectedDirection == true
           ? '数据已上传，但本机同步记录未保存。请重新查看云端核对结果，勿重复上传。'
           : '数据已下载，但本机同步记录未保存。请重新查看云端核对结果，勿重复下载。';
-      if (mounted && widget.repository == repository) {
-        if (selectedDirection == false) await widget.onDownloaded();
-        await _loadResult();
-        if (mounted && widget.repository == repository) {
-          setState(() {
-            _inspectedCloud = null;
-            _message = message;
-          });
-        }
-      }
+      if (!mounted || widget.repository != repository) return;
+      await _loadResult();
+      if (!mounted || widget.repository != repository) return;
+      setState(() {
+        _inspectedCloud = null;
+        _message = message;
+      });
       if (messenger.mounted) {
         messenger.hideCurrentSnackBar();
         messenger.showSnackBar(SnackBar(content: Text(message)));
+      }
+      if (selectedDirection == false &&
+          mounted &&
+          widget.repository == repository) {
+        await widget.onDownloaded();
       }
     } catch (error) {
       if (mounted && widget.repository == repository) {

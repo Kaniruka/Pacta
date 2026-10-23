@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-24",
+  "timezone": "Asia/Shanghai",
+  "isolated_project": "ekjxqxafmwbyipdrprcz",
+  "plan": "free",
+  "migrations": 26,
+  "sql_rls_cas": "passed",
+  "suspended_user_permission_and_destination_preservation": "passed",
+  "phases": {
+    "windows-conflict": "passed (1 pass, 1 intentional skip)",
+    "android-upload/emulator-5554": "passed (1 pass, 1 intentional skip)",
+    "windows-roundtrip": "passed (1 pass, 1 intentional skip)",
+    "android-download/emulator-5556": "passed (1 pass, 1 intentional skip)"
+  },
+  "cleanup": {
+    "auth_users": 0,
+    "snapshots": 0,
+    "registration_eligibility": 0,
+    "isolated_project_deleted": true,
+    "only_shared_project_remains": true,
+    "runtime_control_and_state_removed": true
+  }
+}

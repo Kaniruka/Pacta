@@ -423,7 +423,7 @@ void main() {
           ),
         );
         final preview = await tester.runAsync(sync.inspectCloud);
-        final local = await sync.captureLocalState();
+        var local = await sync.captureLocalState();
         final initialRevision = preview?.revision ?? 0;
         final first = await tester.runAsync(
           () => sync.uploadLocal(
@@ -436,6 +436,61 @@ void main() {
         expect(firstResult.localFingerprint, local.fingerprint);
         expect(firstResult.cloudRevision, first!.revision);
         syncClock = syncClock.add(const Duration(minutes: 1));
+        await tasks.updateGoal(
+          goal.id,
+          const GoalDraft(
+            title: 'Local edit after real cloud preview',
+            description:
+                'Goal text that an old version 1 snapshot cannot carry',
+            classification: TaskClassification.regular,
+          ),
+        );
+        final editedLocal = await sync.captureLocalState();
+        expect(editedLocal.fingerprint, isNot(local.fingerprint));
+        for (final upload in [true, false]) {
+          final rejectedLocalChange = await tester.runAsync(() async {
+            try {
+              if (upload) {
+                await sync.uploadLocal(
+                  expectedRevision: first.revision,
+                  expectedFingerprint: local.fingerprint,
+                );
+              } else {
+                await sync.downloadCloud(
+                  expectedRevision: first.revision,
+                  expectedFingerprint: local.fingerprint,
+                );
+              }
+              return false;
+            } on StateError catch (error) {
+              return error.message.toString().contains('本机数据在确认期间发生变化');
+            }
+          });
+          expect(rejectedLocalChange, isTrue);
+          expect(
+            (await sync.captureLocalState()).fingerprint,
+            editedLocal.fingerprint,
+          );
+          expect(
+            (await tester.runAsync(sync.inspectCloud))!.revision,
+            first.revision,
+          );
+          expect(
+            (await sync.loadSyncResult())!.succeededAt,
+            firstResult.succeededAt,
+          );
+        }
+        await tasks.updateGoal(
+          goal.id,
+          const GoalDraft(
+            title: 'Retain through offline transport',
+            description:
+                'Goal text that an old version 1 snapshot cannot carry',
+            classification: TaskClassification.regular,
+          ),
+        );
+        local = await sync.captureLocalState();
+        debugPrint('REAL_LOCAL_PREVIEW_REJECTION_PASSED');
         await tester.runAsync(sync.inspectCloud);
         expect(
           (await sync.loadSyncResult())!.succeededAt,

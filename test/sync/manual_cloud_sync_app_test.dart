@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:drift/drift.dart' show Value, driftRuntimeOptions;
 import 'package:drift/native.dart';
@@ -39,6 +41,84 @@ void main() {
           null,
         );
   });
+
+  testWidgets(
+    'signing out during upload suppresses stale completion feedback',
+    (tester) async {
+      final database = PactaDatabase(NativeDatabase.memory());
+      final auth = _StreamingAuthRepository()..signedInUser = _userId;
+      final cloudRemote = _TrackingCloudSnapshotRemote()
+        ..uploadGate = Completer<void>();
+      final cloudRepository = CloudSnapshotRepository(
+        database: database,
+        remote: cloudRemote,
+        userId: _userId,
+        deviceId: 'device-a',
+        deviceName: 'Device A',
+      );
+      try {
+        await tester.pumpWidget(
+          PactaApp(
+            authRepository: auth,
+            taskRepositoryFactory: (userId) => LocalTaskRepository(
+              database: database,
+              userId: userId,
+              remote: InMemoryTaskRemote(),
+              cloudSyncEnabled: false,
+            ),
+            focusRepositoryFactory: (userId) => LocalFocusRepository(
+              database: database,
+              userId: userId,
+              remote: InMemoryFocusRemote(),
+              cloudSyncEnabled: false,
+            ),
+            nationalFocusRepositoryFactory: (userId) =>
+                LocalNationalFocusRepository(
+                  database: database,
+                  userId: userId,
+                  cloudSyncEnabled: false,
+                ),
+            calendarRepositoryFactory: (userId) => LocalCalendarRepository(
+              database: database,
+              userId: userId,
+              provider: const UnsupportedCalendarProvider(),
+              remote: InMemoryCalendarRemote(),
+              cloudSyncEnabled: false,
+            ),
+            cloudSnapshotRepositoryFactory: (_) => cloudRepository,
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('我的'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('查看云端并选择方向'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('上传'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('确认上传'));
+        await tester.pumpAndSettle();
+        expect(find.text('处理中…'), findsOneWidget);
+        await tester.scrollUntilVisible(
+          find.text('退出登录'),
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(find.text('退出登录'));
+        await tester.pumpAndSettle();
+        expect(find.byType(AuthScreen), findsOneWidget);
+        cloudRemote.uploadGate!.complete();
+        await tester.pumpAndSettle();
+        expect((await cloudRemote.inspect(userId: _userId))!.revision, 1);
+        expect(find.text('上传完成，已覆盖云端数据。'), findsNothing);
+        expect(find.textContaining('数据已上传，但本机同步记录未保存'), findsNothing);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+        await auth.changes.close();
+        await database.close();
+      }
+    },
+  );
 
   for (final platform in [TargetPlatform.android, TargetPlatform.windows]) {
     for (final brightness in Brightness.values) {
@@ -297,6 +377,7 @@ void main() {
 }
 
 class _TrackingCloudSnapshotRemote extends InMemoryCloudSnapshotRemote {
+  Completer<void>? uploadGate;
   bool failInspect = false;
   Future<void> publishOtherDevice() async {
     final snapshot = await super.download(userId: _userId);
@@ -331,8 +412,9 @@ class _TrackingCloudSnapshotRemote extends InMemoryCloudSnapshotRemote {
     required String deviceName,
     required DateTime dataUpdatedAt,
     required int rowCount,
-  }) {
+  }) async {
     uploadCalls++;
+    await uploadGate?.future;
     return super.upload(
       userId: userId,
       expectedRevision: expectedRevision,
@@ -359,5 +441,16 @@ class _FailingResultStore extends CloudSyncResultStore {
     if (failSave) throw StateError('disk full');
     await super.save(userId, result);
     successfulSaves++;
+  }
+}
+
+class _StreamingAuthRepository extends FakeAuthRepository {
+  final changes = StreamController<String?>.broadcast();
+  @override
+  Stream<String?> get authState => changes.stream;
+  @override
+  Future<void> signOut() async {
+    await super.signOut();
+    changes.add(null);
   }
 }
