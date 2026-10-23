@@ -101,6 +101,14 @@ void main() {
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(find.text('选择任务'), findsOneWidget);
+    await tester.tap(find.text('选择任务'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('双模式任务'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: find.byType(AlertDialog), matching: find.text('普通链')),
+      findsOneWidget,
+    );
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
   });
@@ -164,7 +172,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
   });
 
-  testWidgets('二级导航保留当前主页中已成功预约的模式选择', (tester) async {
+  testWidgets('成功预约后取消并重建应用仍沿用预约模式', (tester) async {
     final h = _Harness();
     addTearDown(h.database.close);
     final goal = await h.tasks.createGoal(
@@ -191,10 +199,96 @@ void main() {
       appointmentId: appointment.id,
       failureReason: '导航模式回归验证',
     );
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    await h.show(tester);
     await tester.pumpAndSettle();
     await tester.tap(find.text('选择任务'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('可选模式任务'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: find.byType(AlertDialog), matching: find.text('精锐链')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byType(DropdownButtonFormField<FocusChainMode>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('普通链').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('可选模式任务'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: find.byType(AlertDialog), matching: find.text('精锐链')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byType(DropdownButtonFormField<FocusChainMode>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('普通链').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('开始倒计时'));
+    await tester.pumpAndSettle();
+    final session = (await h.focus.getActiveSession())!;
+    expect(session.mode, FocusChainMode.regular);
+    await h.focus.abandonSession(sessionId: session.id, failureReason: '重建验收');
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    await h.show(tester);
+    await tester.tap(find.text('选择任务'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('可选模式任务'));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(of: find.byType(AlertDialog), matching: find.text('普通链')),
+      findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 1));
+  });
+
+  testWidgets('主页已加载后从其他入口成功开始专注，下次选择任务读取最新模式', (tester) async {
+    final h = _Harness();
+    addTearDown(h.database.close);
+    final goal = await h.tasks.createGoal(
+      const GoalDraft(title: '入口目标', classification: TaskClassification.both),
+    );
+    await h.tasks.createTask(
+      goal.id,
+      const TaskDraft(title: '入口任务', classification: TaskClassification.both),
+    );
+    await h.show(tester);
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('看板'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('开始专注'));
+    await tester.pumpAndSettle();
+    expect(find.text('普通链'), findsOneWidget);
+    await tester.tap(find.byType(DropdownButtonFormField<FocusChainMode>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('精锐链').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('开始倒计时'));
+    await tester.pumpAndSettle();
+    final session = (await h.focus.getActiveSession())!;
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await h.focus.abandonSession(sessionId: session.id, failureReason: '测试结束');
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('专注链'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('选择任务'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('入口任务'));
     await tester.pumpAndSettle();
     expect(
       find.descendant(of: find.byType(AlertDialog), matching: find.text('精锐链')),

@@ -2039,7 +2039,6 @@ class FocusChainPage extends ConsumerStatefulWidget {
 }
 
 class _FocusChainPageState extends ConsumerState<FocusChainPage> {
-  FocusChainMode _lastMode = FocusChainMode.regular;
   bool _openingTaskPicker = false;
   FocusRepository? _projectionRepository;
   String? _projectionSignature;
@@ -2053,12 +2052,6 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
     _activeAppointmentFuture = ref
         .read(focusRepositoryProvider)
         .getActiveAppointment();
-    unawaited(_loadLastMode());
-  }
-
-  Future<void> _loadLastMode() async {
-    final mode = await ref.read(focusRepositoryProvider).getLastMode();
-    if (mounted) setState(() => _lastMode = mode);
   }
 
   void _refreshActiveAppointment() {
@@ -2347,23 +2340,19 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
       final activeAppointment = activeSession == null
           ? await repository.getActiveAppointment()
           : null;
+      final mode = activeSession == null && activeAppointment == null
+          ? await repository.getLastMode()
+          : FocusChainMode.regular;
       if (!mounted) return;
       final result =
           activeSession ??
           activeAppointment ??
           await Navigator.of(context).push<Object>(
             MaterialPageRoute<Object>(
-              builder: (_) => FocusTaskPickerPage(initialMode: _lastMode),
+              builder: (_) => FocusTaskPickerPage(initialMode: mode),
             ),
           );
       if (!mounted || result == null) return;
-      if (activeSession == null && activeAppointment == null) {
-        if (result is FocusSession) {
-          setState(() => _lastMode = result.mode);
-        } else if (result is AppointmentPreparation) {
-          setState(() => _lastMode = result.mode);
-        }
-      }
       final goals = await ref
           .read(taskRepositoryProvider)
           .getGoals(includeDeleted: true);

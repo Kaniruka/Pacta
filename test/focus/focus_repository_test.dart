@@ -56,6 +56,114 @@ void main() {
     );
   }
 
+  for (final appointment in [true, false]) {
+    for (final hasPreference in [true, false]) {
+      test(
+        '${hasPreference ? '已有' : '首次'}模式偏好写入失败回滚${appointment ? '预约' : '直接专注'}且保留原模式',
+        () async {
+          final task = await createTask('失败不记忆');
+          if (hasPreference) {
+            final previous = await focusRepository.startSession(
+              taskId: task.id,
+              mode: FocusChainMode.regular,
+              duration: const Duration(minutes: 25),
+            );
+            await focusRepository.abandonSession(
+              sessionId: previous.id,
+              failureReason: '结束原流程',
+            );
+          }
+          await database.customStatement('''
+        CREATE TRIGGER reject_mode_write BEFORE ${hasPreference ? 'UPDATE' : 'INSERT'} ON focus_preferences
+        BEGIN SELECT RAISE(ABORT, 'preference write rejected'); END
+      ''');
+          await expectLater(
+            appointment
+                ? focusRepository.startAppointment(
+                    taskId: task.id,
+                    mode: FocusChainMode.elite,
+                    duration: const Duration(minutes: 25),
+                  )
+                : focusRepository.startSession(
+                    taskId: task.id,
+                    mode: FocusChainMode.elite,
+                    duration: const Duration(minutes: 25),
+                  ),
+            throwsA(isA<Exception>()),
+          );
+          expect(await focusRepository.getLastMode(), FocusChainMode.regular);
+          expect(await focusRepository.getActiveSession(), isNull);
+          expect(await focusRepository.getAppointments(), isEmpty);
+          expect(
+            await focusRepository.getSessions(),
+            hasLength(hasPreference ? 1 : 0),
+          );
+        },
+      );
+    }
+  }
+
+  test('不同用户的模式分别持久化且关闭数据库重开后仍保留', () async {
+    final directory = await Directory.systemTemp.createTemp('pacta-mode-');
+    final file = File('${directory.path}/focus.sqlite');
+    var persistent = PactaDatabase(NativeDatabase(file));
+    var owner = LocalFocusRepository(
+      database: persistent,
+      userId: 'mode-owner',
+      remote: InMemoryFocusRemote(),
+      cloudSyncEnabled: false,
+      now: () => now,
+    );
+    final other = LocalFocusRepository(
+      database: persistent,
+      userId: 'other-user',
+      remote: InMemoryFocusRemote(),
+      cloudSyncEnabled: false,
+      now: () => now,
+    );
+    final tasks = LocalTaskRepository(
+      database: persistent,
+      userId: 'mode-owner',
+      remote: InMemoryTaskRemote(),
+      cloudSyncEnabled: false,
+    );
+    try {
+      expect(await owner.getLastMode(), FocusChainMode.regular);
+      final goal = await tasks.createGoal(
+        const GoalDraft(title: '持久目标', classification: TaskClassification.both),
+      );
+      final task = await tasks.createTask(
+        goal.id,
+        const TaskDraft(title: '持久任务', classification: TaskClassification.both),
+      );
+      await owner.startAppointment(
+        taskId: task.id,
+        mode: FocusChainMode.elite,
+        duration: const Duration(minutes: 25),
+      );
+      expect(await other.getLastMode(), FocusChainMode.regular);
+      await owner.dispose();
+      await other.dispose();
+      await tasks.dispose();
+      await persistent.close();
+      persistent = PactaDatabase(NativeDatabase(file));
+      owner = LocalFocusRepository(
+        database: persistent,
+        userId: 'mode-owner',
+        remote: InMemoryFocusRemote(),
+        cloudSyncEnabled: false,
+        now: () => now,
+      );
+      expect(await owner.getLastMode(), FocusChainMode.elite);
+    } finally {
+      await owner.dispose();
+      await other.dispose();
+      await tasks.dispose();
+      await persistent.close();
+      await directory.delete(recursive: true);
+    }
+  });
+
   test('关闭旧云同步时本机记录不会上传或拉取远端记录', () async {
     await focusRepository.dispose();
     focusRepository = LocalFocusRepository(

@@ -1122,6 +1122,7 @@ class LocalFocusRepository implements FocusRepository {
     await database.transaction(() async {
       await _saveAppointment(appointment, queue: false);
       await _queue('focus_appointment', appointment.id, startedAt);
+      await _saveLastMode(mode);
     });
     await _publish();
     return appointment;
@@ -1430,29 +1431,33 @@ class LocalFocusRepository implements FocusRepository {
     );
     await database.transaction(() async {
       await _saveSession(session);
-      final preferences = await (database.select(
-        database.focusPreferences,
-      )..where((entry) => entry.userId.equals(userId))).getSingleOrNull();
-      if (preferences == null) {
-        await database
-            .into(database.focusPreferences)
-            .insert(
-              db.FocusPreferencesCompanion.insert(
-                userId: userId,
-                lastMode: mode.storageValue,
-              ),
-            );
-      } else {
-        await (database.update(
-          database.focusPreferences,
-        )..where((entry) => entry.userId.equals(userId))).write(
-          db.FocusPreferencesCompanion(lastMode: Value(mode.storageValue)),
-        );
-      }
+      await _saveLastMode(mode);
     });
     _ensureClockWatchdog();
     await _publish();
     return session;
+  }
+
+  Future<void> _saveLastMode(FocusChainMode mode) async {
+    final preferences = await (database.select(
+      database.focusPreferences,
+    )..where((entry) => entry.userId.equals(userId))).getSingleOrNull();
+    if (preferences == null) {
+      await database
+          .into(database.focusPreferences)
+          .insert(
+            db.FocusPreferencesCompanion.insert(
+              userId: userId,
+              lastMode: mode.storageValue,
+            ),
+          );
+    } else {
+      await (database.update(
+        database.focusPreferences,
+      )..where((entry) => entry.userId.equals(userId))).write(
+        db.FocusPreferencesCompanion(lastMode: Value(mode.storageValue)),
+      );
+    }
   }
 
   @override
