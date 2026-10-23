@@ -36,7 +36,7 @@ void main() {
 
     await tester.tap(find.text('专注链'));
     await tester.pumpAndSettle();
-    expect(find.text('当前筛选下没有可开始的任务。'), findsOneWidget);
+    expect(find.text('可选任务 0 个'), findsOneWidget);
 
     await tester.tap(find.text('我的'));
     await tester.pumpAndSettle();
@@ -134,7 +134,7 @@ void main() {
 
     await tester.tap(find.text('专注链').last);
     await tester.pumpAndSettle();
-    expect(find.text('当前筛选下没有可开始的任务。'), findsOneWidget);
+    expect(find.text('可选任务 0 个'), findsOneWidget);
     expect(find.text('保留名称的专注（已删除）'), findsOneWidget);
     expect(find.text('保留名称的专注'), findsNothing);
 

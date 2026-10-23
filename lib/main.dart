@@ -2039,8 +2039,8 @@ class FocusChainPage extends ConsumerStatefulWidget {
 }
 
 class _FocusChainPageState extends ConsumerState<FocusChainPage> {
-  TaskClassification? _filter;
   FocusChainMode _lastMode = FocusChainMode.regular;
+  bool _openingTaskPicker = false;
   FocusRepository? _projectionRepository;
   String? _projectionSignature;
   late Future<List<FocusChainRecord>> _chainRecordsFuture;
@@ -2056,6 +2056,11 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
     unawaited(_loadLastMode());
   }
 
+  Future<void> _loadLastMode() async {
+    final mode = await ref.read(focusRepositoryProvider).getLastMode();
+    if (mounted) setState(() => _lastMode = mode);
+  }
+
   void _refreshActiveAppointment() {
     if (mounted) {
       setState(() {
@@ -2064,11 +2069,6 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
         _appointmentChainRecordFuture = repository.getAppointmentChainRecord();
       });
     }
-  }
-
-  Future<void> _loadLastMode() async {
-    final mode = await ref.read(focusRepositoryProvider).getLastMode();
-    if (mounted) setState(() => _lastMode = mode);
   }
 
   @override
@@ -2088,9 +2088,10 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
           for (final goal in snapshot.data ?? const <Goal>[]) ...goal.tasks,
         ];
         final tasks = [
-          for (final task in allTasks)
-            if (!task.isDeleted && !task.isComplete && _matchesFilter(task))
-              task,
+          for (final goal in snapshot.data ?? const <Goal>[])
+            if (!goal.isDeleted)
+              for (final task in goal.tasks)
+                if (!task.isDeleted && !task.isComplete) task,
         ];
         return StreamBuilder<List<FocusSession>>(
           stream: focusRepository.watchSessions(),
@@ -2144,20 +2145,34 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                       const SizedBox(height: 16),
                       Card(
                         color: Theme.of(context).colorScheme.primaryContainer,
-                        child: ListTile(
-                          leading: const Icon(Icons.timer_outlined),
-                          title: const Text('已有进行中的专注'),
-                          subtitle: Text(
-                            activeTask == null
-                                ? '原任务'
-                                : _taskDisplayTitle(activeTask),
-                          ),
-                          trailing: FilledButton(
-                            onPressed: () => _openSession(
-                              active,
-                              taskTitles[active.taskId] ?? '原任务',
-                            ),
-                            child: const Text('返回专注'),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: const Icon(Icons.timer_outlined),
+                                title: const Text('已有进行中的专注'),
+                                subtitle: Text(
+                                  activeTask == null
+                                      ? '原任务'
+                                      : _taskDisplayTitle(activeTask),
+                                ),
+                              ),
+                              Wrap(
+                                alignment: WrapAlignment.end,
+                                children: [
+                                  FilledButton(
+                                    onPressed: () => _openSession(
+                                      active,
+                                      taskTitles[active.taskId] ?? '原任务',
+                                    ),
+                                    child: const Text('返回专注'),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -2222,51 +2237,14 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                           ?.copyWith(fontWeight: FontWeight.w600),
                     ),
                     const SizedBox(height: 12),
-                    SegmentedButton<TaskClassification?>(
-                      segments: const [
-                        ButtonSegment<TaskClassification?>(
-                          value: null,
-                          label: Text('全部'),
-                        ),
-                        ButtonSegment<TaskClassification?>(
-                          value: TaskClassification.elite,
-                          label: Text('精锐'),
-                        ),
-                        ButtonSegment<TaskClassification?>(
-                          value: TaskClassification.regular,
-                          label: Text('普通'),
-                        ),
-                      ],
-                      selected: {_filter},
-                      onSelectionChanged: (values) =>
-                          setState(() => _filter = values.single),
-                    ),
+                    Text('可选任务 ${tasks.length} 个'),
                     const SizedBox(height: 12),
-                    if (tasks.isEmpty)
-                      const Card(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Text('当前筛选下没有可开始的任务。'),
-                        ),
-                      )
-                    else
-                      for (final task in tasks)
-                        Card(
-                          child: ListTile(
-                            title: Text(task.title),
-                            subtitle: Text(
-                              '${task.classification.label} · 已专注 '
-                              '${_formatDuration(task.focusProgressSeconds)}',
-                            ),
-                            trailing: Tooltip(
-                              message: '开始任务：${task.title}',
-                              child: FilledButton.tonal(
-                                onPressed: () => _showSetup(task),
-                                child: const Text('开始'),
-                              ),
-                            ),
-                          ),
-                        ),
+                    FilledButton.icon(
+                      key: const ValueKey('focus-task-picker-entry'),
+                      onPressed: _openingTaskPicker ? null : _openTaskPicker,
+                      icon: const Icon(Icons.playlist_play),
+                      label: const Text('选择任务'),
+                    ),
                     const SizedBox(height: 28),
                     Text(
                       '我的链',
@@ -2360,75 +2338,50 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
     _appointmentChainRecordFuture = repository.getAppointmentChainRecord();
   }
 
-  bool _matchesFilter(Task task) {
-    return switch (_filter) {
-      null => true,
-      TaskClassification.elite =>
-        task.classification == TaskClassification.elite ||
-            task.classification == TaskClassification.both,
-      TaskClassification.regular =>
-        task.classification == TaskClassification.regular ||
-            task.classification == TaskClassification.both,
-      TaskClassification.both => true,
-    };
-  }
-
-  FocusChainMode get _selectedMode => switch (_filter) {
-    TaskClassification.elite => FocusChainMode.elite,
-    TaskClassification.regular => FocusChainMode.regular,
-    _ => _lastMode,
-  };
-
-  Future<void> _showSetup(Task task) async {
-    final repository = ref.read(focusRepositoryProvider);
-    final activeAppointment = await repository.getActiveAppointment();
-    if (activeAppointment != null && mounted) {
+  Future<void> _openTaskPicker() async {
+    if (_openingTaskPicker) return;
+    setState(() => _openingTaskPicker = true);
+    try {
+      final repository = ref.read(focusRepositoryProvider);
+      final activeSession = await repository.getActiveSession();
+      final activeAppointment = activeSession == null
+          ? await repository.getActiveAppointment()
+          : null;
+      if (!mounted) return;
+      final result =
+          activeSession ??
+          activeAppointment ??
+          await Navigator.of(context).push<Object>(
+            MaterialPageRoute<Object>(
+              builder: (_) => FocusTaskPickerPage(initialMode: _lastMode),
+            ),
+          );
+      if (!mounted || result == null) return;
+      if (activeSession == null && activeAppointment == null) {
+        if (result is FocusSession) {
+          setState(() => _lastMode = result.mode);
+        } else if (result is AppointmentPreparation) {
+          setState(() => _lastMode = result.mode);
+        }
+      }
       final goals = await ref
           .read(taskRepositoryProvider)
           .getGoals(includeDeleted: true);
-      await _openAppointment(
-        activeAppointment,
-        _findTaskTitle(goals, activeAppointment.taskId) ?? task.title,
-      );
-      return;
+      if (!mounted) return;
+      if (result is FocusSession) {
+        _openSession(result, _findTaskTitle(goals, result.taskId) ?? '原任务');
+      } else if (result is AppointmentPreparation) {
+        await _openAppointment(
+          result,
+          _findTaskTitle(goals, result.taskId) ?? '原预约任务',
+        );
+      }
+      _refreshActiveAppointment();
+    } catch (error) {
+      if (mounted) _showFocusError(context, error);
+    } finally {
+      if (mounted) setState(() => _openingTaskPicker = false);
     }
-    final activeSession = await repository.getActiveSession();
-    if (activeSession != null && mounted) {
-      final goals = await ref
-          .read(taskRepositoryProvider)
-          .getGoals(includeDeleted: true);
-      _openSession(
-        activeSession,
-        _findTaskTitle(goals, activeSession.taskId) ?? task.title,
-      );
-      return;
-    }
-    if (!mounted) return;
-    final result = await showDialog<Object>(
-      context: context,
-      builder: (_) => FocusSetupDialog(task: task, initialMode: _selectedMode),
-    );
-    if (result is FocusSession && mounted) {
-      final goals = await ref
-          .read(taskRepositoryProvider)
-          .getGoals(includeDeleted: true);
-      _openSession(result, _findTaskTitle(goals, result.taskId) ?? task.title);
-    }
-    if (result is AppointmentPreparation && mounted) {
-      final goals = await ref
-          .read(taskRepositoryProvider)
-          .getGoals(includeDeleted: true);
-      await _openAppointment(
-        result,
-        _findTaskTitle(goals, result.taskId) ?? task.title,
-      );
-    }
-    if (result is FocusSession) {
-      setState(() => _lastMode = result.mode);
-    } else if (result is AppointmentPreparation) {
-      setState(() => _lastMode = result.mode);
-    }
-    _refreshActiveAppointment();
   }
 
   Future<void> _openAppointment(
@@ -2502,6 +2455,160 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
             FocusSessionPage(session: session, taskTitle: taskTitle),
       ),
     );
+  }
+}
+
+class FocusTaskPickerPage extends ConsumerStatefulWidget {
+  const FocusTaskPickerPage({
+    super.key,
+    this.initialMode = FocusChainMode.regular,
+  });
+
+  final FocusChainMode initialMode;
+
+  @override
+  ConsumerState<FocusTaskPickerPage> createState() =>
+      _FocusTaskPickerPageState();
+}
+
+class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
+  TaskClassification? _filter;
+  bool _openingSetup = false;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('选择任务')),
+    body: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 960),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: SegmentedButton<TaskClassification?>(
+                segments: const [
+                  ButtonSegment<TaskClassification?>(
+                    value: null,
+                    label: Text('全部'),
+                  ),
+                  ButtonSegment<TaskClassification?>(
+                    value: TaskClassification.elite,
+                    label: Text('精锐'),
+                  ),
+                  ButtonSegment<TaskClassification?>(
+                    value: TaskClassification.regular,
+                    label: Text('普通'),
+                  ),
+                ],
+                selected: {_filter},
+                onSelectionChanged: (values) =>
+                    setState(() => _filter = values.single),
+              ),
+            ),
+            Expanded(
+              child: StreamBuilder<List<Goal>>(
+                stream: ref.watch(taskRepositoryProvider).watchGoals(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return const Center(child: Text('任务读取失败，请返回后重试。'));
+                  }
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final goals = snapshot.data!;
+                  final entries = [
+                    for (final goal in goals)
+                      if (!goal.isDeleted)
+                        for (final task in goal.tasks)
+                          if (!task.isDeleted &&
+                              !task.isComplete &&
+                              _matchesFilter(task))
+                            (goal: goal, task: task),
+                  ];
+                  if (entries.isEmpty) {
+                    return const Center(child: Text('当前筛选下没有可开始的任务。'));
+                  }
+                  return ListView.builder(
+                    key: const PageStorageKey('focus-task-picker-list'),
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
+                    itemCount: entries.length,
+                    itemBuilder: (context, index) {
+                      final entry = entries[index];
+                      final task = entry.task;
+                      final estimate = task.estimatedMinutes == null
+                          ? '未设置'
+                          : '${task.estimatedMinutes} 分钟';
+                      return Card(
+                        child: ListTile(
+                          title: Text(task.title),
+                          subtitle: Text(
+                            '目标：${entry.goal.title} · ${task.classification.label} · '
+                            '预计时长：$estimate · 已专注 ${_formatDuration(task.focusProgressSeconds)}',
+                          ),
+                          onTap: () => _showSetup(task),
+                          trailing: Tooltip(
+                            message: '开始任务：${task.title}',
+                            child: FilledButton.tonal(
+                              onPressed: () => _showSetup(task),
+                              child: const Text('开始'),
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  bool _matchesFilter(Task task) {
+    return switch (_filter) {
+      null => true,
+      TaskClassification.elite =>
+        task.classification == TaskClassification.elite ||
+            task.classification == TaskClassification.both,
+      TaskClassification.regular =>
+        task.classification == TaskClassification.regular ||
+            task.classification == TaskClassification.both,
+      TaskClassification.both => true,
+    };
+  }
+
+  FocusChainMode get _selectedMode => switch (_filter) {
+    TaskClassification.elite => FocusChainMode.elite,
+    TaskClassification.regular => FocusChainMode.regular,
+    _ => widget.initialMode,
+  };
+
+  Future<void> _showSetup(Task task) async {
+    if (_openingSetup) return;
+    _openingSetup = true;
+    try {
+      final repository = ref.read(focusRepositoryProvider);
+      final activeSession = await repository.getActiveSession();
+      final activeAppointment = activeSession == null
+          ? await repository.getActiveAppointment()
+          : null;
+      if (!mounted) return;
+      final result =
+          activeSession ??
+          activeAppointment ??
+          await showDialog<Object>(
+            context: context,
+            builder: (_) =>
+                FocusSetupDialog(task: task, initialMode: _selectedMode),
+          );
+      if (mounted && result != null) Navigator.of(context).pop(result);
+    } catch (error) {
+      if (mounted) _showFocusError(context, error);
+    } finally {
+      _openingSetup = false;
+    }
   }
 }
 

@@ -153,6 +153,13 @@ void main() {
       if (Platform.isAndroid) {
         await binding.takeScreenshot('focus-chain-appointment-record');
       }
+      await tester.scrollUntilVisible(
+        find.text('选择任务'),
+        -300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('选择任务'));
+      await tester.pumpAndSettle();
       final start = find.byTooltip('开始任务：阅读一章，留下三个要点');
       await tester.scrollUntilVisible(
         start,
@@ -179,6 +186,8 @@ void main() {
         sessionId: active!.id,
         failureReason: '结束独立界面验收',
       );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('选择任务'));
       await tester.pumpAndSettle();
       await tester.scrollUntilVisible(
         start,

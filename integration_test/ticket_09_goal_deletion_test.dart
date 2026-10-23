@@ -70,7 +70,7 @@ void main() {
       );
       await tester.tap(find.text('专注链').last);
       await tester.pumpAndSettle();
-      expect(find.text('当前筛选下没有可开始的任务。'), findsOneWidget);
+      expect(find.text('可选任务 0 个'), findsOneWidget);
       expect(find.text('T09 保留历史名称（已删除）'), findsOneWidget);
 
       await tester.tap(find.text('提前进入专注'));

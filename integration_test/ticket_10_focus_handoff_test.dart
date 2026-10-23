@@ -88,6 +88,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('专注链').last);
       await tester.pumpAndSettle();
+      await tester.tap(find.text('选择任务'));
+      await tester.pumpAndSettle();
       expect(find.text(task.title), findsOneWidget);
       final startTaskButton = find.byTooltip('开始任务：${task.title}');
       expect(startTaskButton, findsOneWidget);
@@ -366,6 +368,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('专注链').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('选择任务'));
       await tester.pumpAndSettle();
       expect(find.text(task.title), findsOneWidget);
       await tester.tap(find.text('开始').last);
