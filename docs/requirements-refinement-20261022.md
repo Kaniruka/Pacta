@@ -1,6 +1,6 @@
 # Pacta 改进需求访谈（2026-10-22）
 
-> 现行无障碍与普通使用范围见 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md)。本文有日期的验收记录仅说明当时事实，不表示重新执行。
+> 后续范围决定：本需求访谈及确认记录保留原文。大字号和专门键盘要求已由 [ADR 0008](adr/0008-large-text-and-keyboard-out-of-product-scope.md) 替代，现行执行以专题规格和 ADR 为准；历史要求不再构成未来交付条件。
 
 > 需求发布阶段状态快照（历史，非当前进度）：Q1–Q15、最终摘要、测试边界及9票拆分/依赖已确认，Spec #63及子票#64–#72已发布。后续进展：[#64](https://github.com/Kaniruka/Pacta/issues/64)已实现、验收并关闭，代码`fece2f9`已推送；[#65–#72](tickets-pacta-refinements-20261022/README.md)仍待实施。本文保留需求整理阶段的访谈与静态证据；#64的实际结果见[验收记录](issue-64-validation.md)。 当前状态读取对应 Issue；#65 的后续实际结果见[验收记录](issue-65-validation.md)。
 

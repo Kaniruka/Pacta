@@ -23,7 +23,7 @@
 查询示例（仓库根目录；脚本在技能目录内）：
 
 ```bash
-python3 "$PWD/.agents/skills/ui-ux-pro-max/scripts/search.py" "focus order keyboard" --stack flutter
+python3 "$PWD/.agents/skills/ui-ux-pro-max/scripts/search.py" "navigation list scroll" --stack flutter
 python3 "$PWD/.agents/skills/ui-ux-pro-max/scripts/search.py" "error recovery action" --domain ux
 ```
 
@@ -38,7 +38,7 @@ python3 "$PWD/.agents/skills/ui-ux-pro-max/scripts/search.py" "error recovery ac
 | 专注链选择与执行入口 | 改进规格「专注导航与模式」及相关 User Stories | 计时/暂停/结算改变转领域路由；链摘要读产品设计「Chain commitment actions and duration」 |
 | 我的、同步卡片及更新提示 | 改进规格「云检查与元数据」及相关 User Stories | 替换/隔离契约转数据库路由 |
 
-导航职责改变读 ADR 0004；平台/栈改变读 ADR 0003。范围与技能建议冲突时读 [ADR 0007](../adr/0007-accessibility-out-of-product-scope.md)，保留其普通使用要求及既有实现、测试和历史证据。本页不重复定义该范围决定。
+导航职责改变读 ADR 0004；平台/栈改变读 ADR 0003。UI 支持范围先读 [ADR 0007](../adr/0007-accessibility-out-of-product-scope.md) 与 [ADR 0008](../adr/0008-large-text-and-keyboard-out-of-product-scope.md)；后者部分替代前者保留的大字号和键盘条款。技能建议服从这些已确认决定，无需再次确认；已有实现、测试及历史证据保留。
 
 ## UI 要求
 
@@ -46,11 +46,11 @@ python3 "$PWD/.agents/skills/ui-ux-pro-max/scripts/search.py" "error recovery ac
 - 主题：复用 Flutter Material 3、ThemeData/ColorScheme/TextTheme 和相邻组件；语义颜色区分操作/状态/错误，亮暗可读。新常量在共用主题/组件层有依据，页面不另建品牌。
 - 文案：一组内容服务一个目的，沿用领域词汇，按钮直接说动作。常规流程简短；授权/覆盖确认保留后果与恢复路径；仅配置/排错展示技术细节。
 - 状态：区分加载、正常空内容/数据、失败、离线、无权限；错误给下一步，重试不重复业务操作。状态不只靠颜色；图标操作通过可见文字或工具提示说明用途。
-- 布局：适配窄屏、Windows 可调窗口、长中文和系统大字号。Android 主要命中区至少 48×48 逻辑像素；Windows 检查焦点顺序/可见性、鼠标反馈和滚动。字号沿用语义尺度，不套网页 px/Apple pt。
+- 布局：保证正常字号可读性，适配窄屏、Windows 可调窗口和长中文。Android 主要命中区至少 48×48 逻辑像素；Windows 检查鼠标反馈和滚动。字号沿用语义尺度，不套网页 px/Apple pt。
 - 视觉：图标/间距/对齐沿用组件；动画服务反馈并考虑减少动态效果。装饰、玻璃和新图表须帮助任务。
 
 ## 验收
 
-实现后做设计评审、行为测试、对应平台检查；逐项处理发现，记录未解决项及依据。仅为改动行为添加必要测试，覆盖受影响入口/操作/状态、窄宽屏、亮暗主题、大字号和 Windows 常规键盘操作；涉及身份/授权/同步/数据库时执行根 AGENTS.md 的服务验证要求。
+实现后做设计评审、行为测试、对应平台检查；逐项处理发现，记录未解决项及依据。仅为改动行为添加必要测试，覆盖受影响入口/操作/状态、窄宽屏、正常字号可读性、亮暗主题及鼠标／触摸操作；涉及身份/授权/同步/数据库时执行根 AGENTS.md 的服务验证要求。
 
 按任务在 Android 模拟器和 Windows 构建、安装或运行，命令与数据保留见 docs/development-environment.md。视觉/可用性靠截图及实际交互，状态/布局用 widget 测试；原生权限/通知/日历及真实桌面行为须对应平台证据。未打开/运行不算目视验收；交付列明改动、实测状态/设备及限制。

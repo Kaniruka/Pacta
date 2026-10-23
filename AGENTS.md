@@ -2,6 +2,8 @@
 
 适用于全仓库。先查 `git status`；只改任务相关文件，保留他人未提交改动。
 
+UI 实施、评审和验收先按 [ADR 0007](docs/adr/0007-accessibility-out-of-product-scope.md) 与 [ADR 0008](docs/adr/0008-large-text-and-keyboard-out-of-product-scope.md) 确定支持范围；技能建议服从已确认范围，已有实现、测试及历史证据保留。
+
 ## 按任务读取
 
 先定位标题，再读取下列入口及相关章节；已取得受影响规则、边界、验收依据且无未决冲突即停止扩读。来源、历史和证据链接只在追溯问题或核验结果时跟随。文档职责与冲突处理见[领域指南](docs/agents/domain.md#文档职责与冲突)。

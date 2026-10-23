@@ -12,6 +12,8 @@
 | [验收矩阵](../acceptance-matrix-20260914.md) | 行为对应的场景、预期与边界案例 | 只读受影响行及适用补充；场景编写不等于已执行 |
 | Issue、票据与验收记录 | Issue 管当前实施状态；有日期的记录管实际命令、平台、结果及限制 | [Issue 读取方式](issue-tracker.md#when-a-skill-says-fetch-the-relevant-ticket)；本地状态快照与历史证据不替代当前状态 |
 
+UI 支持范围以 [ADR 0007](../adr/0007-accessibility-out-of-product-scope.md) 和 [ADR 0008](../adr/0008-large-text-and-keyboard-out-of-product-scope.md) 为准；旧规格、票据或技能的被替代要求按这两份决定解释，历史证据保留。
+
 沿用 GLOSSARY 的词汇；词条缺失时记录具体缺口。明确标注的后续决定仅替代其声明范围内的旧要求，其余约束继续有效。发现未被明确替代的真实冲突时，列出双方章节、证据及待决定问题，保留冲突内容，继续其他独立项。双向引用可供追溯，不要求递归读完两份文档。
 
 ## 任务章节入口

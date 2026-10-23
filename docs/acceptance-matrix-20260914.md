@@ -1,6 +1,6 @@
 # Pacta 需求验收矩阵
 
-> 现行无障碍与普通使用范围见 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md)。本文有日期的验收记录仅说明当时事实，不表示重新执行。
+> UI 实施、评审与验收范围按 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md) 和后续 [ADR 0008](adr/0008-large-text-and-keyboard-out-of-product-scope.md) 执行；被替代条款不再构成交付条件，有日期的验收记录保留当时事实。
 
 依据：核心规格、D01–D25 最终决定及已接受 ADR。范围：本轮交接指定的本地需求资料。矩阵初版于 2026-09-14 完成。历史状态快照（2026-09-26）：T01–T27 实现票均已关闭；本地 flutter test 通过 171 项、flutter analyze 无问题。Android 15、Windows 11 与隔离 Supabase 的验收证据见对应 Issue；本次审查未逐项重跑平台集成测试。矩阵继续作为预期行为与边界案例索引，不表示本次重新执行了每一行。
 
@@ -84,7 +84,7 @@
 
 ## Chain action and duration supplement — 2026-10-07
 
-Verify three independently editable action texts with unchanged consecutive/best records; user isolation, restart and manual snapshot replacement preserve texts. Elite/Regular actual totals and per-settled-session averages include failures and zero-duration attempts but exclude pauses, duplicates and unresolved contributions. Check setup mode changes, unconfigured startup, automatic appointment handoff, narrow layouts and enlarged text. Normative rules are in the specification's Chain signals and duration supplement.
+Verify three independently editable action texts with unchanged consecutive/best records; user isolation, restart and manual snapshot replacement preserve texts. Elite/Regular actual totals and per-settled-session averages include failures and zero-duration attempts but exclude pauses, duplicates and unresolved contributions. Check setup mode changes, unconfigured startup, automatic appointment handoff, responsive narrow layouts and normal-size text legibility. Normative rules are in the specification's Chain signals and duration supplement.
 
 ## 看板精简补充（2026-10-07）
 
@@ -110,14 +110,14 @@ Verify three independently editable action texts with unchanged consecutive/best
 
 | 编号 | 场景 | 验收要求 |
 | --- | --- | --- |
-| R22-01 | 目标/任务描述新增、编辑、清空、空白、换行、超长及大字号 | 可选单段，首尾去空白，换行转空格，最多200个用户可见字符；空值不占行，看板一行省略，编辑可读全文；重启与快照往返保留，旧快照缺字段按空处理 |
-| R22-02 | 空/非空目标用标题折叠，操作编辑/删除，使用 Windows 常规键盘 | 有清楚状态提示；独立操作不折叠；Tab可达、Enter/Space可切换、可见焦点与可见展开状态提示；折叠隐藏任务、内部全部添加入口及空态说明，保留目标描述和摘要，展开恢复，各目标独立 |
+| R22-01 | 目标/任务描述新增、编辑、清空、空白、换行、超长及正常字号可读性 | 可选单段，首尾去空白，换行转空格，最多200个用户可见字符；空值不占行，看板一行省略，编辑可读全文；重启与快照往返保留，旧快照缺字段按空处理 |
+| R22-02 | 空/非空目标用鼠标／触摸标题折叠，独立操作编辑/删除 | 有清楚状态提示；独立操作不折叠；鼠标／触摸可切换，有可见展开状态提示；折叠隐藏任务、内部全部添加入口及空态说明，保留目标描述和摘要，展开恢复，各目标独立 |
 | R22-03 | 看板、目标/任务编辑及模式筛选 | 看板不常驻分类标签；编辑使用新任务默认分类/适用专注链；分类仍为普通/精锐/两者；两者进入两模式筛选，不改变历史及进行中记录 |
 | R22-04 | 大量任务、二级选择、取消设置、开始、返回及已有流程 | 主页面不随任务数增长；二级页显示目标/分类/预计时长/进度；取消保留筛选滚动；执行返回主页且计时继续；已完成/删除任务不供新启动，原流程仍能恢复，无第二流程 |
 | R22-05 | 直接开始/预约开始、仅改设置或取消设置、重启 | 两种成功启动均保存上次模式，取消设置不保存；全部入口沿用，首次普通，模式筛选预选对应模式且可切换 |
 | R22-06 | Android/Windows选择详细、真正结束进程后重启，切用户，快照下载 | 保留数据退出重启后恢复；首次简洁、按本机用户隔离、不被下载覆盖；不扩大到缩放/平移；读写失败有回退/重试。必须记录真实进程重启证据 |
 | R22-07 | 冷启动/前台、5分钟节流、离线/失败、首见云快照 | 登录和可访问状态确认后只读检查；首见即提示，不按时间新旧自动决定；失败不阻断、不弹错误；未选择前本地业务数据不变，检查不算成功同步 |
-| R22-08 | 自己上传、已下载版本、点击忽略后重启、关闭提示及新版本 | 已处理版本不提示；按钮仅称忽略，停止该版本主动提醒且仍可手动处理；返回/Escape/关闭不等于忽略，下次检查可再提示；新版本可再次提示，标记按本机用户保存且不被下载覆盖 |
+| R22-08 | 自己上传、已下载版本、点击忽略后重启、关闭提示及新版本 | 已处理版本不提示；按钮仅称忽略，停止该版本主动提醒且仍可手动处理；返回/关闭不等于忽略，下次检查可再提示；新版本可再次提示，标记按本机用户保存且不被下载覆盖 |
 | R22-09 | 预约/专注/暂停期间发现更新、主动打开同步、本地另有修改 | 非阻断提示、自动选择提示延迟至流程结束；可主动查看/上传，未结束时禁止下载；不默认方向，明确覆盖丢弃后果；过期预览重新检查，失败无部分替换 |
 | R22-10 | Android/Windows同步卡片、成功同步后重启、仅检查、无记录 | Android底部弹窗/Windows限宽居中对话框；右侧优先工作/失败/待处理状态；正常仅显示本机上次成功同步时间且不附方向，无记录尚未同步；仅检查不刷新时间 |
 | R22-11 | 两端型号可用/缺失、旧快照、无新版但有旧表数据 | 显示可辨识设备名和可用型号；未知明确标注，不伪造旧来源/上传时间；旧版检查不写本机业务数据，稳定版本标记可用于忽略及新变化识别 |
