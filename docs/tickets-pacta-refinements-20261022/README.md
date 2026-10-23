@@ -1,6 +1,6 @@
 # 本轮纵向票发布索引
 
-状态（2026-10-22远端复核）：[Spec #63](https://github.com/Kaniruka/Pacta/issues/63)仍打开；9张子Issue中[#64](https://github.com/Kaniruka/Pacta/issues/64)已完成验收并关闭、无标签，其余8票打开并保留ready-for-agent。发布时已核验原生父子关系和两条阻塞边；[#64验收证据](../issue-64-validation.md)。
+历史发布状态快照（2026-10-22，不代表后续进度）：[Spec #63](https://github.com/Kaniruka/Pacta/issues/63)仍打开；9张子Issue中[#64](https://github.com/Kaniruka/Pacta/issues/64)已完成验收并关闭、无标签，其余8票打开并保留ready-for-agent。当前状态读取对应 Issue；#65 后续结果见[验收记录](../issue-65-validation.md)。发布时已核验原生父子关系和两条阻塞边；[#64验收证据](../issue-64-validation.md)。
 
 每票含自身实现和适用测试/设备取证，不拆数据库/UI/测试等横向票，无必须先行的纯prefactor。共享文件或推荐顺序不形成硬阻塞。
 
@@ -24,4 +24,4 @@
 
 真实阻塞链：T06 → T08 → T09。T08复用T06的成功版本/本地基线状态；T09消费T08发现的云版本。T01/T02和T03/T04是组合验证关系，不阻塞各自启动；后落地者补组合验收。T07可复用现有预览展示，不被T06阻塞。
 
-已按批准顺序发布；发布时每票均设置ready-for-agent并关联为spec原生子Issue。后续#64已完成并移除该标签，其余票待实施。原生阻塞链为 [#69](https://github.com/Kaniruka/Pacta/issues/69) → [#71](https://github.com/Kaniruka/Pacta/issues/71) → [#72](https://github.com/Kaniruka/Pacta/issues/72)，其他票无阻塞。既有#54未修改、仍打开。机器可读映射及核验记录见 publication.json。
+历史发布记录：已按批准顺序发布；发布时每票均设置ready-for-agent并关联为spec原生子Issue。后续#64已完成并移除该标签，其余票待实施。原生阻塞链为 [#69](https://github.com/Kaniruka/Pacta/issues/69) → [#71](https://github.com/Kaniruka/Pacta/issues/71) → [#72](https://github.com/Kaniruka/Pacta/issues/72)，其他票无阻塞。既有#54未修改、仍打开。机器可读映射及核验记录见 publication.json。

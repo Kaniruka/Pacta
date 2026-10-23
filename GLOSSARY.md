@@ -161,7 +161,7 @@ An optional short explanation of a Goal or Task, separate from its name, classif
 _Avoid_: Focus Marker, required rule, completion criterion
 
 **Focus Chain Mode (本次专注模式)**:
-The Elite or Regular mode adopted for the current attempt, determining its focus record attribution; preparation always belongs to the single independent Appointment Chain regardless of mode. It is carried from the originating mode list or shown and switchable alongside duration settings, without a separate chain-selection or pairing page.
+The Elite or Regular mode adopted for the current attempt, determining its focus record attribution; preparation always belongs to the single independent Appointment Chain regardless of mode. The selection flow is specified in [the focus-navigation requirements](docs/spec-pacta-refinements-20261022.md#专注导航与模式).
 _Avoid_: Task classification, start-time chain pairing
 
 **Task (任务)**:

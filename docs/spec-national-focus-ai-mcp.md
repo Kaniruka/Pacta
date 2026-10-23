@@ -1,6 +1,6 @@
 # 国策树只读 AI 分析：远程 MCP、Codex skill 与 App 引导
 
-> 范围更新（2026-10-23）：无障碍支持已长期退出产品范围，后续实现、评审和发布验收按 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md) 执行；保留普通可读性、响应式、鼠标/触摸及 Windows 常规键盘要求。本文既有验收结果仅代表记录当时，未重新执行。
+> 现行无障碍与普通使用范围见 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md)。本文有日期的验收记录仅说明当时事实，不表示重新执行。
 
 本文是 2026-10-20 确认的整体目标规格，验收要求覆盖多个子 Issue。当前已实现范围和验证结果见 [MCP 合同](../supabase/functions/national-focus-mcp/README.md)及 [#57](issue-57-validation.md)、[#58](issue-58-validation.md)、[#59](issue-59-validation.md) 验收记录；本规格不表示全部能力已经交付。
 

@@ -1,8 +1,8 @@
 # Pacta — First-version Product Specification
 
-> 范围更新（2026-10-23）：无障碍支持已长期退出产品范围，后续实现、评审和发布验收按 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md) 执行；保留普通可读性、响应式、鼠标/触摸及 Windows 常规键盘要求。本文既有验收结果仅代表记录当时，未重新执行。
+> 现行无障碍与普通使用范围见 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md)。本文有日期的验收记录仅说明当时事实，不表示重新执行。
 
-Synthesized from the local requirements conversation records and confirmed decisions through 2026-09-22. Implementation tickets T01–T27 are closed. The current local verification and remaining platform evidence are recorded below.
+Synthesized from the local requirements conversation records and confirmed decisions through 2026-09-22. Historical implementation snapshot (2026-09-26): tickets T01–T27 were closed. Verification records below describe their stated dates and platforms; current implementation status is tracked in the corresponding Issues.
 
 ## Problem Statement
 
@@ -178,7 +178,7 @@ Card details must display and allow the user to edit the concrete requirements o
 
 ## Implementation Decisions
 
-The accepted stack and product boundaries come from the four accepted ADRs. Module responsibilities below organize those requirements for implementation; they do not claim existing application interfaces or prescribe final database tables, endpoint names, or component layouts.
+The accepted stack and product boundaries come from the accepted ADRs. Module responsibilities below organize those requirements for implementation; they do not claim existing application interfaces or prescribe final database tables, endpoint names, or component layouts.
 
 - **Client and application shell:** use Flutter/Dart, Riverpod, Drift/SQLite, and Material 3 with custom design tokens. Deliver equivalent core and offline capabilities on Android 15 and Windows 11. Preserve the four primary destinations and their responsibilities; production visual design remains implementation work.
 - **Goal and Task operations:** own creation, editing, explicit Task completion, derived Goal completion, classification, estimates, deadlines, and deletion. Retain historical task context and prevent ordinary synchronized edits from resurrecting deleted work. Do not support Task movement between Goals or Goal/Task restoration.
@@ -383,7 +383,7 @@ National Focus Daily Confirmation means “确认今日继续有效”: acknowle
 - A cloud revision changed since preview or local records changed since preview requires a fresh preview. Network, permission, and validation failures leave the existing destination intact. Download validates the entire snapshot before transactional local replacement.
 - Downloads are unavailable while the local device has an active or paused Focus Session or unfinished Appointment. The cloud's active flow may be restored on an idle device as the same logical attempt.
 - Uploads and downloads apply only to the current User's business data. Device identity, device settings, authentication, and lifecycle authorization cannot be imported from another device.
-- No automatic sync runs on startup, resume, restored connectivity, or ordinary edits. Check-in-triggered cloud sync is outside the current scope.
+- No automatic snapshot transfer runs on startup, resume, restored connectivity, or ordinary edits. Startup/foreground read-only inspection follows [ADR 0005’s amendment](adr/0005-manual-whole-data-cloud-sync.md#read-only-update-inspection--2026-10-22) and [the refinement contract](spec-pacta-refinements-20261022.md#云检查与元数据). Check-in-triggered cloud sync is outside the current scope.
 - Historical reconciliation results remain readable in the selected snapshot; current synchronization does not merge evidence or create new cross-device review cases.
 - If no new snapshot exists but older cloud business records do, offer those records as an explicitly labeled converted whole-data choice instead of reporting an empty cloud. Missing original device/upload metadata remains unknown. The conversion never changes the current device until download is confirmed; changed old cloud content invalidates the preview. After the first snapshot upload, retired per-record cloud write interfaces reject older clients.
 
@@ -478,4 +478,4 @@ Board Goals independently collapse/expand their Tasks, initially expanded. Colla
 
 ## Confirmed refinement — 2026-10-22
 
-The [2026-10-22 product-design supplement](product-design.md#board-focus-navigation-preferences-and-cloud-inspection--2026-10-22) and [Q1–Q15 requirements record](requirements-refinement-20261022.md) define the accepted behavior for Goal/Task descriptions, title-region disclosure with hidden internal add entries, classification presentation, secondary task selection and recovery, per-device/user tree-view persistence, compact cloud-sync UI, version-based read-only inspection and “忽略”, and source device models. They supersede earlier conflicting interface descriptions, including the separate Both filter, retention of internal add controls while collapsed, and blanket prohibition on startup/foreground inspection. No prototype demo action changes existing session settlement, duration, failure, or appointment-handoff rules. Goal/Task descriptions are implemented with Android/Windows restart and isolated-cloud round-trip evidence in [Issue #64](issue-64-validation.md). The other refinements and their platform validation remain pending.
+The accepted refinement behavior is maintained in [the 2026-10-22 specification](spec-pacta-refinements-20261022.md#implementation-decisions), with task-sized sections for Board descriptions/disclosure/classification, focus navigation/mode memory, device view preferences, and cloud inspection/metadata. [Q1–Q15](requirements-refinement-20261022.md) preserves the confirmation history. These requirements supersede earlier conflicting interface descriptions only within their stated scope: the separate Both filter, retention of internal add controls while collapsed, and blanket prohibition on startup/foreground inspection. Existing session settlement, duration, failure, and appointment-handoff rules remain unchanged by prototype demonstrations. Acceptance scenarios remain in [R22](acceptance-matrix-20260914.md#2026-10-22-已确认改进验收); execution evidence and current Issue state are distinct, as described in [the document roles](agents/domain.md#文档职责与冲突).

@@ -1,8 +1,8 @@
 # Pacta 需求验收矩阵
 
-> 范围更新（2026-10-23）：无障碍支持已长期退出产品范围，后续实现、评审和发布验收按 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md) 执行；保留普通可读性、响应式、鼠标/触摸及 Windows 常规键盘要求。本文既有验收结果仅代表记录当时，未重新执行。
+> 现行无障碍与普通使用范围见 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md)。本文有日期的验收记录仅说明当时事实，不表示重新执行。
 
-依据：核心规格、D01–D25 最终决定及已接受 ADR。范围：本轮交接指定的本地需求资料。矩阵初版于 2026-09-14 完成。当前状态（2026-09-26）：T01–T27 实现票均已关闭；本地 flutter test 通过 171 项、flutter analyze 无问题。Android 15、Windows 11 与隔离 Supabase 的验收证据见对应 Issue；本次审查未逐项重跑平台集成测试。矩阵继续作为预期行为与边界案例索引，不表示本次重新执行了每一行。
+依据：核心规格、D01–D25 最终决定及已接受 ADR。范围：本轮交接指定的本地需求资料。矩阵初版于 2026-09-14 完成。历史状态快照（2026-09-26）：T01–T27 实现票均已关闭；本地 flutter test 通过 171 项、flutter analyze 无问题。Android 15、Windows 11 与隔离 Supabase 的验收证据见对应 Issue；本次审查未逐项重跑平台集成测试。矩阵继续作为预期行为与边界案例索引，不表示本次重新执行了每一行。
 
 首轮在 Android 15 与 Windows 11 执行适用场景；两端核心功能和离线能力对等。日历本机读取在 Android 验证，Windows 验证同步展示。涉及多端的场景同时使用两端，覆盖断网、重连、进程退出及重复同步。更早最低系统版本依据后续适配验证决定。
 
@@ -106,7 +106,7 @@ Verify three independently editable action texts with unchanged consecutive/best
 
 ## 2026-10-22 已确认改进验收
 
-依据：[Q1–Q15](requirements-refinement-20261022.md)、产品设计同日补充和 ADR 0005 检查更新补充。本节细化或替代旧 B03/NF06 相关边界。R22-01已通过[#64验收](issue-64-validation.md)并关闭；R22-02至R22-11仍待实施/验收。以下表格记录验收要求，不将未执行场景视为通过。
+依据：[Q1–Q15](requirements-refinement-20261022.md)、产品设计同日补充和 ADR 0005 检查更新补充。本节细化或替代旧 B03/NF06 相关边界。历史证据：[R22-01 / #64](issue-64-validation.md)、[R22-02 / #65](issue-65-validation.md)记录各自实际验收及限制；其余场景不据此推定通过。当前实施状态读取对应 Issue。以下表格记录验收要求，不将未执行场景视为通过。
 
 | 编号 | 场景 | 验收要求 |
 | --- | --- | --- |

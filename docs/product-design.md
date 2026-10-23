@@ -1,6 +1,6 @@
 # Pacta - Project Design
 
-> 范围更新（2026-10-23）：无障碍支持已长期退出产品范围，后续实现、评审和发布验收按 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md) 执行；保留普通可读性、响应式、鼠标/触摸及 Windows 常规键盘要求。本文既有验收结果仅代表记录当时，未重新执行。
+> 现行无障碍与普通使用范围见 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md)。本文有日期的验收记录仅说明当时事实，不表示重新执行。
 
 ## 1. Product intent
 
@@ -227,13 +227,13 @@ Flutter/Dart client
 Supabase Auth + PostgreSQL + RLS
 ```
 
-Cloud business data is a whole-user snapshot transferred only through Manual Cloud Sync in My. Startup, foreground recovery, connectivity restoration, and ordinary edits leave cloud business records unchanged. Android and Windows both support the same offline core capabilities. Before either direction, display the cloud source device and upload time together with local and cloud data update times. The user explicitly chooses whole-local upload to replace cloud or whole-cloud download to replace local, regardless of relative age; records unique to the overwritten snapshot are discarded. Preserve the selected snapshot's complete tree and history instead of merging divergent device records. Device settings, authentication, and administrator-controlled lifecycle status remain outside the snapshot. A preview that changed before confirmation must be refreshed, and an active local Focus Session or Appointment prevents download replacement.
+Cloud operations are accessed from My. Android and Windows support the same offline core capabilities. Whole-snapshot replacement, preview information, exclusions, stale-preview rejection, and unfinished-flow download blocking are defined in [the core synchronization contract](spec-focus-loop-and-core-shell.md#offline-focus-and-manual-cloud-sync); read-only inspection and its presentation are defined in [the refinement specification](spec-pacta-refinements-20261022.md#云检查与元数据).
 
 Daily focus duration is allocated across calendar days using effective focus intervals, excluding pauses, in the device's display time zone. Default to the device time zone and allow a manual zone preference stored per device. Changing the display zone redistributes daily totals but never changes total duration, actual occurrence order, or the three consecutive records. Different devices using different zones may show different daily totals. National Focus settlement remains fixed at 04:00 Beijing time.
 
 National Focus follows the device's current time at its fixed Beijing 04:00 checkpoint. It no longer produces clock-review prompts or blocks settlement on pending time review. Focus Session clock-anomaly handling remains unchanged. Changing the device clock may affect National Focus settlement.
 
-Recommended data groups:
+Recommended data groups (conceptual illustration, not a schema or migration contract; inspect actual migrations, constraints, and RLS for implementation):
 
 - `profiles`: user identity, lifecycle status, and activity timestamps;
 - `goals`: broader outcomes grouping related Tasks;
@@ -245,7 +245,7 @@ Recommended data groups:
 - `focus_sessions`: append-oriented history of focus attempts, outcomes, and failure reasons;
 - `sync_metadata`: device cursors, versions, or synchronization timestamps.
 
-Manual Cloud Sync replaces per-record cloud merging and cross-device reconciliation. Whole replacement has explicit confirmation and preserves the destination on network, permission, or validation failure. A missing cloud copy permits first upload; cancellation leaves both copies untouched. Source-device identity and timestamp ordering are context for the user's choice, not an automatic conflict decision. See [ADR 0005](adr/0005-manual-whole-data-cloud-sync.md) and [the core specification](spec-focus-loop-and-core-shell.md#offline-focus-and-manual-cloud-sync). Check-in-triggered synchronization is deferred.
+[ADR 0005](adr/0005-manual-whole-data-cloud-sync.md) retains the whole-snapshot decision, its rationale, accepted record-loss trade-off, and amendment history; the linked core contract carries executable synchronization requirements.
 
 ## 6. Security and privacy
 
@@ -309,13 +309,11 @@ Each Board Goal can independently collapse or expand its Tasks, initially expand
 
 ### Board, focus navigation, preferences, and cloud inspection — 2026-10-22
 
-The user confirmed the [refined requirements](requirements-refinement-20261022.md), including Q1–Q15 and the linked interactive prototype's navigation. These are accepted requirements. Goal/Task descriptions are implemented and validated in [Issue #64](issue-64-validation.md); the other refinements remain pending. Where older UI descriptions differ, this supplement takes precedence.
+本轮已确认行为统一维护在[改进专题规格](spec-pacta-refinements-20261022.md)：
 
-- Goals and Tasks have optional editable single-paragraph descriptions, at most 200 user-perceived characters after trimming; pasted line breaks become spaces. Empty descriptions occupy no row. Board descriptions show one ellipsized line, with full text available in editing. A collapsed Goal retains its own description and hides its Tasks and their descriptions.
-- The Goal title region toggles expansion, with a directional indicator instead of a separately focusable toggle button. Edit/delete remain independent. Empty Goals also collapse; all internal add entries and empty-state guidance hide while collapsed. Retain title, task count, completion state and Goal-level edit/delete actions. New instances start expanded; cross-launch collapse memory is outside this change. Windows standard keyboard operation (Tab, Enter/Space and visible focus) and a visible expansion indicator are required.
-- Keep Elite/Regular chains and task classifications. Remove classification labels from Board Goal summaries and Task rows; Goal editing uses “新任务默认分类”, Task editing uses “适用专注链”. Classification never changes settled or ongoing record attribution.
-- Focus Chain home contains recovery, eligible task count and task-picker entry, chain summaries and history; no task preview list. Use a secondary picker with All/Elite/Regular filters, including Both Tasks in both mode filters. Show Goal, classification, estimate and focus progress; an absent estimate is “未设置”. Canceling setup returns to the picker with filter and scroll retained. Starting opens execution; leaving execution returns home without ending the flow. An existing unfinished flow is recovered instead of creating a second flow. Remember the mode of the last successfully started Appointment or direct Focus Session; canceling setup does not change this default. The accepted prototype's sample data, demo controls and demo duration limits are excluded.
-- Persist Simple/Detailed tree view per device and user, outside cloud business snapshots; first use defaults to Simple. Save on selection and restore on restart. This does not persist canvas pan/zoom. Recovery failures fall back to Simple with a retry path.
-- Cloud operations open in an Android bottom sheet or Windows centered width-constrained dialog. The compact card's right side prioritizes working/error/pending-cloud status; normally it displays only the device user's last successful sync time, without direction, or “尚未同步”. Inspection never updates that time. Direction and replacement consequences remain explicit inside the sync flow.
-- Apply ADR 0005's read-only cold-start/foreground inspection amendment. Use cloud versions rather than timestamp ordering; “忽略” suppresses only that version's automatic reminders, while closing the prompt does not. Preserve explicit whole-data choice, local-change warnings, and unfinished-flow download blocking. During an unfinished flow, defer the automatic choice prompt and use a nonblocking indicator.
-- Cloud sources include Android brand/model or Windows manufacturer/model with a recognizable device name. Missing hardware information is unknown, including legacy snapshots; never fabricate old model/upload metadata or collect serial numbers for this feature.
+- 描述、折叠与分类：[看板与描述](spec-pacta-refinements-20261022.md#看板与描述)及 User Stories 1–20。
+- 选择、返回、恢复及模式记忆：[专注导航与模式](spec-pacta-refinements-20261022.md#专注导航与模式)及 User Stories 21–34。
+- 本机用户视图保存：[设备视图偏好](spec-pacta-refinements-20261022.md#设备视图偏好)及 User Stories 35–37。
+- 同步卡片、只读检查与来源型号：[云检查与元数据](spec-pacta-refinements-20261022.md#云检查与元数据)及 User Stories 38–61；整份替换决策理由仍见 ADR 0005。
+
+这些要求仅在明确声明的范围内替代旧界面描述；[验收矩阵 R22 场景](acceptance-matrix-20260914.md#2026-10-22-已确认改进验收)保留验收依据。[需求访谈](requirements-refinement-20261022.md)保留确认来源及原型依据。实施状态读取对应 Issue；有日期的记录提供历史证据，不作为本轮重新验收结果。
