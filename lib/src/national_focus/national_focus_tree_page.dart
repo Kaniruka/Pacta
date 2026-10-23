@@ -13,6 +13,7 @@ import 'national_focus_models.dart';
 import 'national_focus_reconciliation_page.dart';
 import 'national_focus_repository.dart';
 import 'national_focus_strengthening_page.dart';
+import 'national_focus_view_preferences.dart';
 
 void _syncNationalFocusInBackground(NationalFocusRepository repository) {
   unawaited(repository.sync().catchError((Object _) {}));
@@ -35,12 +36,16 @@ class NationalFocusTreePage extends StatefulWidget {
   const NationalFocusTreePage({
     super.key,
     required this.repository,
+    this.userId,
+    this.viewPreferences = const NationalFocusViewPreferences(),
     this.onOpenAiAnalysis,
     this.displayTimeZoneLoader,
     this.now,
   });
 
   final NationalFocusRepository repository;
+  final String? userId;
+  final NationalFocusViewPreferences viewPreferences;
   final VoidCallback? onOpenAiAnalysis;
   final Future<String?> Function()? displayTimeZoneLoader;
   final DateTime Function()? now;
@@ -51,6 +56,10 @@ class NationalFocusTreePage extends StatefulWidget {
 
 class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   bool _detailed = false;
+  bool _viewBusy = false;
+  bool _viewReadFailed = false;
+  bool _viewSaveFailed = false;
+  int _viewRequest = 0;
   NationalFocusCard? _placementCard;
   String? _error;
   String _displayTimeZoneId = 'Etc/UTC';
@@ -64,10 +73,70 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     super.initState();
     _now = (widget.now?.call() ?? DateTime.now()).toUtc();
     _loadDisplayTimeZone();
+    _loadView();
     _settlementTimer = Timer.periodic(
       const Duration(minutes: 1),
       (_) => _refreshCheckpointState(),
     );
+  }
+
+  @override
+  void didUpdateWidget(covariant NationalFocusTreePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId ||
+        oldWidget.viewPreferences != widget.viewPreferences) {
+      _loadView();
+    }
+  }
+
+  Future<void> _loadView() async {
+    final request = ++_viewRequest;
+    final userId = widget.userId;
+    setState(() {
+      _detailed = false;
+      _viewReadFailed = false;
+      _viewSaveFailed = false;
+      _viewBusy = userId != null;
+    });
+    if (userId == null) return;
+    try {
+      final detailed = await widget.viewPreferences.load(userId);
+      if (mounted && request == _viewRequest) {
+        setState(() => _detailed = detailed);
+      }
+    } catch (_) {
+      if (mounted && request == _viewRequest) {
+        setState(() => _viewReadFailed = true);
+      }
+    } finally {
+      if (mounted && request == _viewRequest) {
+        setState(() => _viewBusy = false);
+      }
+    }
+  }
+
+  Future<void> _saveView(bool detailed) async {
+    if (_viewBusy) return;
+    final request = ++_viewRequest;
+    final userId = widget.userId;
+    setState(() {
+      _detailed = detailed;
+      _viewReadFailed = false;
+      _viewSaveFailed = false;
+      _viewBusy = userId != null;
+    });
+    if (userId == null) return;
+    try {
+      await widget.viewPreferences.save(userId, detailed);
+    } catch (_) {
+      if (mounted && request == _viewRequest) {
+        setState(() => _viewSaveFailed = true);
+      }
+    } finally {
+      if (mounted && request == _viewRequest) {
+        setState(() => _viewBusy = false);
+      }
+    }
   }
 
   @override
@@ -483,10 +552,40 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                               ? widget.onOpenAiAnalysis
                               : null,
                           detailed: _detailed,
-                          onViewSelected: _placementCard == null
-                              ? (value) => setState(() => _detailed = value)
+                          onViewSelected: _placementCard == null && !_viewBusy
+                              ? _saveView
                               : null,
                         ),
+                        if (_viewBusy)
+                          const Padding(
+                            padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+                            child: Text('正在更新视图…'),
+                          ),
+                        if (_viewReadFailed || _viewSaveFailed)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: _InlineError(
+                                    _viewReadFailed
+                                        ? '视图偏好读取失败，暂用简洁视图。'
+                                        : '视图偏好未保存，请重试。',
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: _viewBusy
+                                      ? null
+                                      : _viewReadFailed
+                                      ? _loadView
+                                      : () => _saveView(_detailed),
+                                  child: Text(
+                                    _viewReadFailed ? '重试读取' : '重试保存',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
                           child: NationalFocusReviewPrompt(

@@ -801,6 +801,8 @@ class _AppShellState extends ConsumerState<AppShell>
     final pages = [
       BoardPage(onOpenNationalFocus: () => setState(() => _index = 1)),
       NationalFocusTreePage(
+        key: ValueKey(ref.watch(authRepositoryProvider).currentUserId),
+        userId: ref.watch(authRepositoryProvider).currentUserId,
         repository: nationalFocusRepository,
         onOpenAiAnalysis: _openNationalFocusAiAnalysis,
         displayTimeZoneLoader: () async {
