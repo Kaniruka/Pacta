@@ -105,9 +105,9 @@ void main() {
 
         await tester.tap(find.text('我的'));
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.text('查看云端并选择方向'));
+        await tester.ensureVisible(find.byTooltip('查看云端并选择方向'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('查看云端并选择方向'));
+        await tester.tap(find.byTooltip('查看云端并选择方向'));
         await tester.pumpAndSettle();
         expect(cloudRemote.inspectCalls, 1);
         expect(
@@ -129,7 +129,7 @@ void main() {
         )..where((row) => row.userId.equals(_userId))).write(
           const LocalGoalsCompanion(title: Value('Local-only edit to replace')),
         );
-        await tester.tap(find.text('查看云端并选择方向'));
+        await tester.tap(find.byTooltip('查看云端并选择方向'));
         await tester.pumpAndSettle();
         expect(find.text('云端来源：Android emulator test mirror'), findsOneWidget);
         await tester.tap(find.text('下载'));

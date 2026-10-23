@@ -20,6 +20,7 @@ import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart' show PactaDatabase;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 const _phase = String.fromEnvironment('MANUAL_SYNC_REAL_CLOUD_PHASE');
@@ -192,8 +193,8 @@ void main() {
       expect(remote.downloads, 0);
       await tester.tap(find.text('我的').last);
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('查看云端并选择方向'));
-      await tester.tap(find.text('查看云端并选择方向'));
+      await tester.ensureVisible(find.byTooltip('查看云端并选择方向'));
+      await tester.tap(find.byTooltip('查看云端并选择方向'));
       await _waitForText(tester, '选择同步方式');
       if (_phase == 'android-upload') {
         expect(find.text('云端暂无数据，可首次上传。'), findsOneWidget);
@@ -224,7 +225,7 @@ void main() {
           'Device-only draft to discard',
         );
         expect(remote.downloads, 0);
-        await tester.tap(find.text('查看云端并选择方向'));
+        await tester.tap(find.byTooltip('查看云端并选择方向'));
         await _waitForText(tester, '选择同步方式');
         await tester.tap(find.text('下载'));
         await tester.pumpAndSettle();
@@ -262,7 +263,7 @@ void main() {
               classification: TaskClassification.regular,
             ),
           );
-          await tester.tap(find.text('查看云端并选择方向'));
+          await tester.tap(find.byTooltip('查看云端并选择方向'));
           await _waitForText(tester, '选择同步方式');
           await tester.tap(find.text('上传'));
           await tester.pumpAndSettle();
@@ -324,6 +325,13 @@ void main() {
           expect(await seedFocus.getNodes(), hasLength(1));
         }
       }
+      final result = await sync.loadSyncResult();
+      expect(result, isNotNull);
+      final finalLocal = await sync.captureLocalState();
+      expect(result!.localFingerprint, finalLocal.fingerprint);
+      final inspected = await tester.runAsync(sync.inspectCloud);
+      expect(result.cloudRevision, inspected!.revision);
+      expect((await sync.loadSyncResult())!.succeededAt, result.succeededAt);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
@@ -351,6 +359,8 @@ void main() {
       }
       await client.dispose();
       await directory.delete(recursive: true);
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.remove('pacta.device.cloud_sync.result.$userId');
     }
   }, skip: _phase == 'windows-conflict');
 
@@ -380,12 +390,14 @@ void main() {
         );
         final userId = config['userId'] as String;
         final remote = SupabaseCloudSnapshotRemote(client);
+        var syncClock = DateTime.utc(2026, 10, 23, 12);
         final sync = CloudSnapshotRepository(
           database: database,
           remote: remote,
           userId: userId,
           deviceId: 'windows-conflict-probe',
           deviceName: 'Windows SDK conflict probe',
+          now: () => syncClock,
         );
         final tasks = LocalTaskRepository(
           database: database,
@@ -419,6 +431,16 @@ void main() {
             expectedFingerprint: local.fingerprint,
           ),
         );
+        final firstResult = (await sync.loadSyncResult())!;
+        expect(firstResult.succeededAt, syncClock);
+        expect(firstResult.localFingerprint, local.fingerprint);
+        expect(firstResult.cloudRevision, first!.revision);
+        syncClock = syncClock.add(const Duration(minutes: 1));
+        await tester.runAsync(sync.inspectCloud);
+        expect(
+          (await sync.loadSyncResult())!.succeededAt,
+          firstResult.succeededAt,
+        );
         final stopwatch = Stopwatch()..start();
         final conflict = await tester.runAsync(() async {
           try {
@@ -432,10 +454,15 @@ void main() {
           }
         });
         expect(conflict, isTrue);
+        expect(
+          (await sync.loadSyncResult())!.succeededAt,
+          firstResult.succeededAt,
+        );
+        expect((await sync.captureLocalState()).fingerprint, local.fingerprint);
         expect(stopwatch.elapsed, lessThan(const Duration(seconds: 15)));
         expect(
           (await tester.runAsync(sync.inspectCloud))!.revision,
-          first!.revision,
+          first.revision,
         );
         transport.online = false;
         final failedOffline = await tester.runAsync(() async {
@@ -450,6 +477,11 @@ void main() {
           }
         });
         expect(failedOffline, isTrue);
+        expect(
+          (await sync.loadSyncResult())!.succeededAt,
+          firstResult.succeededAt,
+        );
+        expect((await sync.captureLocalState()).fingerprint, local.fingerprint);
         expect(
           (await tasks.getGoals()).single.title,
           'Retain through offline transport',
@@ -517,6 +549,8 @@ void main() {
           ),
         );
         final beforeMalformedDownload = await sync.captureLocalState();
+        final beforeMalformedResult = (await sync.loadSyncResult())!;
+        syncClock = syncClock.add(const Duration(minutes: 1));
         final rejectedMalformedDownload = await tester.runAsync(() async {
           try {
             await sync.downloadCloud(
@@ -530,6 +564,14 @@ void main() {
         });
         expect(rejectedMalformedDownload, isTrue);
         expect(
+          (await sync.captureLocalState()).fingerprint,
+          beforeMalformedDownload.fingerprint,
+        );
+        expect(
+          (await sync.loadSyncResult())!.succeededAt,
+          beforeMalformedResult.succeededAt,
+        );
+        expect(
           (await tasks.getGoals()).single.title,
           'Retain through offline transport',
         );
@@ -539,6 +581,10 @@ void main() {
         await client.dispose();
         transport.close();
         await database.close();
+        final preferences = await SharedPreferences.getInstance();
+        await preferences.remove(
+          'pacta.device.cloud_sync.result.${config['userId']}',
+        );
       }
     },
     skip: _phase != 'windows-conflict',

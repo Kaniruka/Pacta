@@ -1,8 +1,10 @@
 import 'package:drift/native.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pacta/src/focus/chain_signals_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:drift/drift.dart';
+import 'package:drift/drift.dart' hide isNull;
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
+import 'package:pacta/src/sync/cloud_sync_result.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
@@ -13,18 +15,190 @@ void main() {
   late CloudSnapshotRepository repository;
 
   setUp(() {
+    SharedPreferences.setMockInitialValues({});
     database = PactaDatabase(NativeDatabase.memory());
     remote = InMemoryCloudSnapshotRemote();
+    var successfulClockReads = 0;
     repository = CloudSnapshotRepository(
       database: database,
       remote: remote,
       userId: 'user-a',
       deviceId: 'device-a',
       deviceName: 'Phone A',
+      now: () => DateTime.utc(
+        2026,
+        10,
+        23,
+      ).add(Duration(minutes: successfulClockReads++)),
     );
   });
 
   tearDown(() => database.close());
+
+  test('successful upload persists a user-isolated local baseline', () async {
+    final before = await repository.captureLocalState();
+    expect(await repository.loadSyncResult(), isNull);
+    await repository.inspectCloud();
+    expect(await repository.loadSyncResult(), isNull);
+    await repository.uploadLocal(
+      expectedRevision: 0,
+      expectedFingerprint: before.fingerprint,
+    );
+    final reopened = CloudSnapshotRepository(
+      database: database,
+      remote: remote,
+      userId: 'user-a',
+      deviceId: 'device-a',
+      deviceName: 'Phone A',
+    );
+    final result = (await reopened.loadSyncResult())!;
+    expect(result.localFingerprint, before.fingerprint);
+    expect(result.cloudRevision, 1);
+    expect(result.succeededAt, DateTime.utc(2026, 10, 23));
+    final other = CloudSnapshotRepository(
+      database: database,
+      remote: remote,
+      userId: 'user-b',
+      deviceId: 'device-a',
+      deviceName: 'Phone A',
+    );
+    expect(await other.loadSyncResult(), isNull);
+    remote.available = false;
+    await expectLater(
+      repository.uploadLocal(
+        expectedRevision: 1,
+        expectedFingerprint: before.fingerprint,
+      ),
+      throwsStateError,
+    );
+    expect((await reopened.loadSyncResult())!.succeededAt, result.succeededAt);
+  });
+
+  for (final upload in [true, false]) {
+    test(
+      '${upload ? 'upload' : 'download'} remains completed if local history cannot be saved',
+      () async {
+        await _addGoal(
+          database,
+          userId: 'user-a',
+          id: 'goal-a',
+          title: 'Original',
+        );
+        final original = await repository.captureLocalState();
+        await repository.uploadLocal(
+          expectedRevision: 0,
+          expectedFingerprint: original.fingerprint,
+        );
+        final previous = (await repository.loadSyncResult())!;
+        await _addGoal(
+          database,
+          userId: 'user-a',
+          id: 'goal-a',
+          title: 'Edited',
+        );
+        final edited = await repository.captureLocalState();
+        final failure = StateError('Device storage is unavailable');
+        final failingRepository = CloudSnapshotRepository(
+          database: database,
+          remote: remote,
+          userId: 'user-a',
+          deviceId: 'device-a',
+          deviceName: 'Phone A',
+          syncResultStore: CloudSyncResultStore(
+            preferencesLoader: () async => throw failure,
+          ),
+        );
+        CloudSyncResultPersistenceException? outcome;
+        try {
+          if (upload) {
+            await failingRepository.uploadLocal(
+              expectedRevision: 1,
+              expectedFingerprint: edited.fingerprint,
+            );
+          } else {
+            await failingRepository.downloadCloud(
+              expectedRevision: 1,
+              expectedFingerprint: edited.fingerprint,
+            );
+          }
+          fail('Expected a completed transfer with unsaved local history');
+        } on CloudSyncResultPersistenceException catch (error) {
+          outcome = error;
+        }
+        expect(outcome.cause, same(failure));
+        expect(outcome.result.cloudRevision, upload ? 2 : 1);
+        final expected = upload ? edited : original;
+        expect(outcome.result.localFingerprint, expected.fingerprint);
+        expect(
+          (await repository.captureLocalState()).fingerprint,
+          expected.fingerprint,
+        );
+        expect(
+          (await remote.download(userId: 'user-a')).payload,
+          expected.payload,
+        );
+        expect(
+          (await repository.loadSyncResult())!.succeededAt,
+          previous.succeededAt,
+        );
+        expect(
+          (await repository.loadSyncResult())!.localFingerprint,
+          previous.localFingerprint,
+        );
+      },
+    );
+  }
+
+  test(
+    'legacy downloads persist the restored baseline and stable cloud token',
+    () async {
+      await _addGoal(database, userId: 'user-a', id: 'goal-a', title: 'Cloud');
+      final cloud = await repository.captureLocalState();
+      remote.seedLegacySnapshot(
+        userId: 'user-a',
+        token: '0123456789abcdef0123456789abcdef',
+        state: cloud,
+      );
+      await _addGoal(database, userId: 'user-a', id: 'goal-a', title: 'Local');
+      final local = await repository.captureLocalState();
+      final inspected = (await repository.inspectCloud())!;
+      await repository.downloadCloud(
+        expectedRevision: inspected.revision,
+        expectedFingerprint: local.fingerprint,
+      );
+      final result = (await repository.loadSyncResult())!;
+      expect(result.localFingerprint, cloud.fingerprint);
+      expect(result.localFingerprint, isNot(local.fingerprint));
+      expect(result.cloudRevision, inspected.revision);
+      expect(result.legacyToken, '0123456789abcdef0123456789abcdef');
+      await repository.inspectCloud();
+      expect(
+        (await repository.loadSyncResult())!.succeededAt,
+        result.succeededAt,
+      );
+      await _addGoal(database, userId: 'user-a', id: 'goal-a', title: 'Edited');
+      expect(
+        (await repository.captureLocalState()).fingerprint,
+        isNot(result.localFingerprint),
+      );
+    },
+  );
+
+  test('historical success with unknown baseline stays unknown', () async {
+    await const CloudSyncResultStore().save(
+      'user-a',
+      CloudSyncResult(
+        succeededAt: DateTime.utc(2026, 10, 22),
+        localFingerprint: null,
+        cloudRevision: 3,
+      ),
+    );
+    final result = (await repository.loadSyncResult())!;
+    expect(result.succeededAt, DateTime.utc(2026, 10, 22));
+    expect(result.localFingerprint, isNull);
+    await repository.inspectCloud();
+    expect((await repository.loadSyncResult())!.localFingerprint, isNull);
+  });
 
   test(
     'signals round-trip while legacy snapshots restore empty signal texts',
@@ -375,6 +549,7 @@ void main() {
         expectedRevision: 0,
         expectedFingerprint: source.fingerprint,
       );
+      final successfulBeforeFailure = (await repository.loadSyncResult())!;
       await database.customStatement('''
         CREATE TRIGGER fail_calendar_snapshot_insert
         BEFORE INSERT ON local_calendar_blocks
@@ -396,6 +571,10 @@ void main() {
       final blockAfter = await (database.select(
         database.localCalendarBlocks,
       )..where((row) => row.occurrenceId.equals('occurrence-a'))).getSingle();
+      expect(
+        (await repository.loadSyncResult())!.succeededAt,
+        successfulBeforeFailure.succeededAt,
+      );
       expect(goal.title, 'Keep on rollback');
       expect(blockAfter.endsAt.toUtc(), DateTime.utc(2026, 10, 4, 11));
     },

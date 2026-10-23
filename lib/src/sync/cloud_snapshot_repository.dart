@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../tasks/task_database.dart';
 import '../tasks/task_models.dart';
 import 'legacy_cloud_snapshot.dart';
+import 'cloud_sync_result.dart';
 
 /// A whole-account business-data snapshot. Device identity, local preferences,
 /// lifecycle state, and the legacy per-entity upload queue are intentionally
@@ -374,6 +375,8 @@ class CloudSnapshotRepository {
     required this.userId,
     this.deviceId,
     required this.deviceName,
+    this.syncResultStore = const CloudSyncResultStore(),
+    this.now = DateTime.now,
   }) {
     if (userId.isEmpty ||
         (deviceId != null && deviceId!.isEmpty) ||
@@ -387,6 +390,27 @@ class CloudSnapshotRepository {
   final String userId;
   final String? deviceId;
   final String deviceName;
+  final CloudSyncResultStore syncResultStore;
+  final DateTime Function() now;
+
+  Future<CloudSyncResult?> loadSyncResult() => syncResultStore.load(userId);
+
+  Future<void> _saveSyncResult(
+    CloudSnapshotMetadata cloud,
+    String fingerprint,
+  ) async {
+    final result = CloudSyncResult(
+      succeededAt: now().toUtc(),
+      localFingerprint: fingerprint,
+      cloudRevision: cloud.revision,
+      legacyToken: cloud.legacyToken,
+    );
+    try {
+      await syncResultStore.save(userId, result);
+    } catch (error) {
+      throw CloudSyncResultPersistenceException(result: result, cause: error);
+    }
+  }
 
   /// Calendar source columns tied to one physical device are deliberately
   /// omitted. A download reuses this device's matching source mapping when one
@@ -446,7 +470,7 @@ class CloudSnapshotRepository {
     if (state.fingerprint != expectedFingerprint) {
       throw StateError('本机数据在确认期间发生变化，请重新检查后再同步。');
     }
-    return remote.upload(
+    final cloud = await remote.upload(
       userId: userId,
       expectedRevision: expectedRevision,
       payload: state.payload,
@@ -455,6 +479,8 @@ class CloudSnapshotRepository {
       dataUpdatedAt: state.dataUpdatedAt,
       rowCount: state.rowCount,
     );
+    await _saveSyncResult(cloud, state.fingerprint);
+    return cloud;
   }
 
   Future<void> downloadCloud({
@@ -482,6 +508,7 @@ class CloudSnapshotRepository {
 
     // Repeat both safety checks immediately before the transaction. Nothing is
     // deleted until the entire schema and every row has passed validation.
+    late String restoredFingerprint;
     await database.transaction(() async {
       final localAtCommit = await _captureLocalState();
       if (localAtCommit.hasUnfinishedFlow) {
@@ -516,12 +543,14 @@ class CloudSnapshotRepository {
           );
         }
       }
+      restoredFingerprint = (await _captureLocalState()).fingerprint;
     });
     database.notifyUpdates({
       for (final table in database.allTables)
         if (_businessTables.contains(table.actualTableName))
           drift.TableUpdate.onTable(table),
     });
+    await _saveSyncResult(cloud, restoredFingerprint);
   }
 
   Future<Map<String, LocalCalendarSource>> _localCalendarDeviceData() async {

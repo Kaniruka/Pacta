@@ -1,3 +1,4 @@
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:drift/native.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 
 void main() {
+  setUp(() => SharedPreferences.setMockInitialValues({}));
   setUpAll(() {
     // Each simulated device has its own independent in-memory executor.
     driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
@@ -33,7 +35,7 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('查看云端并选择方向'));
+    await tester.tap(find.byTooltip('查看云端并选择方向'));
     await tester.pumpAndSettle();
     expect(find.text('云端暂无数据，可首次上传。'), findsOneWidget);
     expect(
@@ -106,7 +108,7 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('查看云端并选择方向'));
+    await tester.tap(find.byTooltip('查看云端并选择方向'));
     await tester.pumpAndSettle();
     expect(find.text('云端来源：家里的电脑'), findsOneWidget);
     expect(find.text('本地数据时间较新，请选择要保留的数据。'), findsOneWidget);
@@ -162,8 +164,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    await tester.ensureVisible(find.text('查看云端并选择方向'));
-    await tester.tap(find.text('查看云端并选择方向'));
+    await tester.ensureVisible(find.byTooltip('查看云端并选择方向'));
+    await tester.tap(find.byTooltip('查看云端并选择方向'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text('下载'), findsOneWidget);
