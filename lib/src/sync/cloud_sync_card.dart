@@ -2,14 +2,17 @@ import 'package:flutter/material.dart';
 
 import 'cloud_snapshot_repository.dart';
 import 'cloud_sync_result.dart';
+import 'cloud_version_check.dart';
 
 class CloudSyncCard extends StatefulWidget {
   const CloudSyncCard({
     super.key,
     required this.repository,
     required this.onDownloaded,
+    this.versionCheck,
   });
 
+  final CloudVersionCheck? versionCheck;
   final CloudSnapshotRepository? repository;
   final Future<void> Function() onDownloaded;
 
@@ -26,12 +29,17 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
   @override
   void initState() {
     super.initState();
+    widget.versionCheck?.addListener(_versionChanged);
     _loadResult();
   }
 
   @override
   void didUpdateWidget(covariant CloudSyncCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.versionCheck != widget.versionCheck) {
+      oldWidget.versionCheck?.removeListener(_versionChanged);
+      widget.versionCheck?.addListener(_versionChanged);
+    }
     if (oldWidget.repository != widget.repository) {
       _working = false;
       _result = null;
@@ -39,6 +47,16 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
       _message = null;
       _loadResult();
     }
+  }
+
+  void _versionChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    widget.versionCheck?.removeListener(_versionChanged);
+    super.dispose();
   }
 
   Future<void> _loadResult() async {
@@ -228,6 +246,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
         );
       }
       if (!mounted || widget.repository != repository) return;
+      widget.versionCheck?.handled();
       await _loadResult();
       if (!mounted || widget.repository != repository) return;
       setState(() => _inspectedCloud = null);
@@ -243,6 +262,9 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
         await widget.onDownloaded();
       }
     } on CloudSyncResultPersistenceException {
+      if (mounted && widget.repository == repository) {
+        widget.versionCheck?.handled();
+      }
       final message = selectedDirection == true
           ? '数据已上传，但本机同步记录未保存。请重新查看云端核对结果，勿重复上传。'
           : '数据已下载，但本机同步记录未保存。请重新查看云端核对结果，勿重复下载。';
@@ -292,9 +314,13 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
   Widget build(BuildContext context) => Card(
     clipBehavior: Clip.antiAlias,
     child: Tooltip(
-      message: '查看云端并选择方向',
+      message: widget.versionCheck?.failed == true ? '重试云端检查' : '查看云端并选择方向',
       child: InkWell(
-        onTap: widget.repository == null || _working ? null : _inspect,
+        onTap: widget.repository == null || _working
+            ? null
+            : widget.versionCheck?.failed == true
+            ? () => widget.versionCheck!.check(force: true)
+            : _inspect,
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
@@ -317,6 +343,12 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
                       ? '处理中…'
                       : _message != null
                       ? _message!
+                      : widget.versionCheck?.checking == true
+                      ? '正在检查云端…'
+                      : widget.versionCheck?.failed == true
+                      ? '云端检查失败，点击重试'
+                      : widget.versionCheck?.hasPendingVersion == true
+                      ? '云端有待处理更新'
                       : ((_inspectedCloud != null &&
                             (_result?.cloudRevision !=
                                     _inspectedCloud!.revision ||
@@ -331,7 +363,11 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
                 ),
               ),
               const SizedBox(width: 4),
-              const Icon(Icons.chevron_right),
+              Icon(
+                widget.versionCheck?.failed == true
+                    ? Icons.refresh
+                    : Icons.chevron_right,
+              ),
             ],
           ),
         ),

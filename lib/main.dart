@@ -40,6 +40,7 @@ import 'src/tasks/task_repository.dart';
 import 'src/sync/cloud_snapshot_repository.dart';
 import 'src/sync/source_device_info.dart';
 import 'src/sync/cloud_sync_card.dart';
+import 'src/sync/cloud_version_check.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -167,6 +168,7 @@ class PactaApp extends StatelessWidget {
     this.calendarRepositoryFactory,
     this.userLifecycleRepositoryFactory,
     this.cloudSnapshotRepositoryFactory,
+    this.cloudCheckClock = DateTime.now,
     this.chainSignalsRepositoryFactory,
   });
 
@@ -175,6 +177,8 @@ class PactaApp extends StatelessWidget {
 
   final ChainSignalsRepository Function(String userId)?
   chainSignalsRepositoryFactory;
+
+  final DateTime Function() cloudCheckClock;
 
   final AuthRepository authRepository;
   final String? nationalFocusMcpUrl;
@@ -194,6 +198,7 @@ class PactaApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ProviderScope(
       overrides: [
+        cloudCheckClockProvider.overrideWithValue(cloudCheckClock),
         chainSignalsRepositoryFactoryProvider.overrideWithValue(
           chainSignalsRepositoryFactory,
         ),
@@ -264,21 +269,67 @@ ThemeData _pactaTheme(Brightness brightness) {
   );
 }
 
+final _authUserIdChangesProvider = StreamProvider<String?>((ref) {
+  final auth = ref.watch(authRepositoryProvider);
+  return auth.authState.map((_) => auth.currentUserId).distinct();
+});
+final authUserIdProvider = Provider<String?>((ref) {
+  final auth = ref.watch(authRepositoryProvider);
+  return ref
+      .watch(_authUserIdChangesProvider)
+      .when(
+        data: (userId) => userId,
+        loading: () => auth.currentUserId,
+        error: (_, _) => auth.currentUserId,
+      );
+});
+
 final cloudSnapshotRepositoryFactoryProvider =
     Provider<CloudSnapshotRepository Function(String userId)?>((ref) => null);
 
 final cloudSnapshotRepositoryProvider =
     Provider.autoDispose<CloudSnapshotRepository?>((ref) {
-      final userId = ref.watch(authRepositoryProvider).currentUserId;
+      final userId = ref.watch(authUserIdProvider);
       final factory = ref.watch(cloudSnapshotRepositoryFactoryProvider);
       return userId == null || factory == null ? null : factory(userId);
     });
+
+final cloudCheckClockProvider = Provider<DateTime Function()>(
+  (ref) => DateTime.now,
+);
+final cloudVersionCheckProvider = Provider.autoDispose<CloudVersionCheck?>((
+  ref,
+) {
+  final repository = ref.watch(cloudSnapshotRepositoryProvider);
+  if (repository == null) return null;
+  final lifecycle = ref.watch(userLifecycleStatusRepositoryProvider);
+  final auth = ref.watch(authRepositoryProvider);
+  final userId = repository.userId;
+  final check = CloudVersionCheck(
+    repository: repository,
+    now: ref.watch(cloudCheckClockProvider),
+    canAccess: () async {
+      if (auth.currentUserId != userId) return false;
+      final status = await lifecycle.refresh();
+      return auth.currentUserId == userId && !status.isSuspended;
+    },
+    isAccessible: () async {
+      if (auth.currentUserId != userId) return false;
+      final status = await lifecycle.readCachedStatus();
+      return auth.currentUserId == userId &&
+          status != null &&
+          !status.isSuspended;
+    },
+  );
+  ref.onDispose(check.dispose);
+  return check;
+});
 
 final chainSignalsRepositoryFactoryProvider =
     Provider<ChainSignalsRepository Function(String userId)?>((ref) => null);
 final chainSignalsRepositoryProvider =
     Provider.autoDispose<ChainSignalsRepository?>((ref) {
-      final userId = ref.watch(authRepositoryProvider).currentUserId;
+      final userId = ref.watch(authUserIdProvider);
       final factory = ref.watch(chainSignalsRepositoryFactoryProvider);
       return userId == null || factory == null ? null : factory(userId);
     });
@@ -289,7 +340,7 @@ final authRepositoryProvider = Provider<AuthRepository>((ref) {
 
 final nationalFocusAiGrantRepositoryProvider =
     Provider.autoDispose<NationalFocusAiGrantRepository?>((ref) {
-      final userId = ref.watch(authRepositoryProvider).currentUserId;
+      final userId = ref.watch(authUserIdProvider);
       final factory = ref.watch(nationalFocusAiGrantRepositoryFactoryProvider);
       return userId == null || factory == null ? null : factory(userId);
     });
@@ -314,7 +365,7 @@ final focusRepositoryFactoryProvider =
     });
 
 final taskRepositoryProvider = Provider.autoDispose<TaskRepository>((ref) {
-  final userId = ref.watch(authRepositoryProvider).currentUserId;
+  final userId = ref.watch(authUserIdProvider);
   if (userId == null) return const UnavailableTaskRepository();
   final repository = ref.watch(taskRepositoryFactoryProvider)(userId);
   ref.onDispose(repository.dispose);
@@ -322,7 +373,7 @@ final taskRepositoryProvider = Provider.autoDispose<TaskRepository>((ref) {
 });
 
 final focusRepositoryProvider = Provider.autoDispose<FocusRepository>((ref) {
-  final userId = ref.watch(authRepositoryProvider).currentUserId;
+  final userId = ref.watch(authUserIdProvider);
   if (userId == null) return const UnavailableFocusRepository();
   final repository = ref.watch(focusRepositoryFactoryProvider)(userId);
   ref.onDispose(repository.dispose);
@@ -336,7 +387,7 @@ final nationalFocusRepositoryFactoryProvider =
 
 final nationalFocusRepositoryProvider =
     Provider.autoDispose<NationalFocusRepository>((ref) {
-      final userId = ref.watch(authRepositoryProvider).currentUserId;
+      final userId = ref.watch(authUserIdProvider);
       if (userId == null) return const UnavailableNationalFocusRepository();
       final repository = ref.watch(nationalFocusRepositoryFactoryProvider)(
         userId,
@@ -353,7 +404,7 @@ final calendarRepositoryFactoryProvider =
 final calendarRepositoryProvider = Provider.autoDispose<CalendarRepository>((
   ref,
 ) {
-  final userId = ref.watch(authRepositoryProvider).currentUserId;
+  final userId = ref.watch(authUserIdProvider);
   if (userId == null) return const UnavailableCalendarRepository();
   final repository = ref.watch(calendarRepositoryFactoryProvider)(userId);
   ref.onDispose(repository.dispose);
@@ -367,7 +418,7 @@ final userLifecycleRepositoryFactoryProvider =
 
 final userLifecycleStatusRepositoryProvider =
     Provider.autoDispose<UserLifecycleStatusRepository>((ref) {
-      final userId = ref.watch(authRepositoryProvider).currentUserId;
+      final userId = ref.watch(authUserIdProvider);
       if (userId == null) {
         return const UnavailableUserLifecycleStatusRepository();
       }
@@ -452,7 +503,9 @@ class AuthGate extends ConsumerWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        return snapshot.data == null ? const AuthScreen() : const AppShell();
+        return snapshot.data == null
+            ? const AuthScreen()
+            : AppShell(key: ValueKey(repository.currentUserId));
       },
     );
   }
@@ -644,7 +697,7 @@ class _AppShellState extends ConsumerState<AppShell>
           },
         );
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      unawaited(_refreshLocalState());
+      unawaited(_refreshLocalState(checkCloud: true));
       final request = _focusNotificationService.takePendingOpenRequest();
       if (request != null) unawaited(_openFocusFlow(request));
     });
@@ -652,14 +705,25 @@ class _AppShellState extends ConsumerState<AppShell>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_refreshLocalState());
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_refreshLocalState(checkCloud: true));
+    }
   }
 
-  Future<void> _refreshLocalState() async {
+  Future<void> _refreshLocalState({bool checkCloud = false}) async {
+    final userId = ref.read(authRepositoryProvider).currentUserId;
     try {
       await ref.read(userLifecycleStatusRepositoryProvider).refresh();
     } catch (_) {
-      // A failed status check preserves the last status known on this device.
+      // Local use remains available when lifecycle refresh is offline.
+    }
+    if (!mounted || ref.read(authRepositoryProvider).currentUserId != userId) {
+      return;
+    }
+    if (checkCloud) {
+      unawaited(
+        ref.read(cloudVersionCheckProvider)?.check() ?? Future<void>.value(),
+      );
     }
     // Lifecycle and local notification refresh never transfer business records.
     try {
@@ -796,6 +860,7 @@ class _AppShellState extends ConsumerState<AppShell>
     ref.listen(focusRepositoryProvider, (previous, next) {
       unawaited(_syncFocusStatus());
     });
+    ref.watch(cloudVersionCheckProvider);
     final nationalFocusRepository = ref.watch(nationalFocusRepositoryProvider);
     final focusRepository = ref.watch(focusRepositoryProvider);
     final lifecycleStatusRepository = ref.watch(
@@ -4055,6 +4120,7 @@ class _MyPageState extends ConsumerState<MyPage> {
         const SizedBox(height: 12),
         CloudSyncCard(
           repository: ref.watch(cloudSnapshotRepositoryProvider),
+          versionCheck: ref.watch(cloudVersionCheckProvider),
           onDownloaded: () async {
             ref.invalidate(taskRepositoryProvider);
             ref.invalidate(focusRepositoryProvider);
@@ -4640,6 +4706,7 @@ void _openAiManualSync(BuildContext context, WidgetRef ref) {
               const SizedBox(height: 12),
               CloudSyncCard(
                 repository: ref.read(cloudSnapshotRepositoryProvider),
+                versionCheck: ref.read(cloudVersionCheckProvider),
                 onDownloaded: () async {
                   ref.invalidate(taskRepositoryProvider);
                   ref.invalidate(focusRepositoryProvider);

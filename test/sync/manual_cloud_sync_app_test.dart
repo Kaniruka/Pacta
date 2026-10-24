@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
+import 'package:pacta/src/auth/user_lifecycle.dart';
 import 'package:pacta/src/calendar/calendar_provider.dart';
 import 'package:pacta/src/calendar/calendar_repository.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
@@ -84,6 +85,13 @@ void main() {
               provider: const UnsupportedCalendarProvider(),
               remote: InMemoryCalendarRemote(),
               cloudSyncEnabled: false,
+            ),
+            userLifecycleRepositoryFactory: (id) => UserLifecycleRepository(
+              authRepository: auth,
+              localAccess: LocalUserLifecycleAccess(
+                database: database,
+                userId: id,
+              ),
             ),
             cloudSnapshotRepositoryFactory: (_) => cloudRepository,
           ),
@@ -177,10 +185,11 @@ void main() {
             await database.close();
           }
 
+          final auth = FakeAuthRepository()..signedInUser = _userId;
           try {
             await tester.pumpWidget(
               PactaApp(
-                authRepository: FakeAuthRepository()..signedInUser = _userId,
+                authRepository: auth,
                 taskRepositoryFactory: (userId) => LocalTaskRepository(
                   database: database,
                   userId: userId,
@@ -206,6 +215,13 @@ void main() {
                   remote: InMemoryCalendarRemote(),
                   cloudSyncEnabled: false,
                 ),
+                userLifecycleRepositoryFactory: (id) => UserLifecycleRepository(
+                  authRepository: auth,
+                  localAccess: LocalUserLifecycleAccess(
+                    database: database,
+                    userId: id,
+                  ),
+                ),
                 cloudSnapshotRepositoryFactory: (_) => cloudRepository,
               ),
             );
@@ -215,7 +231,7 @@ void main() {
             );
             await tester.pumpAndSettle();
             expect(find.byType(AppShell), findsOneWidget);
-            expect(cloudRemote.inspectCalls, 0);
+            expect(cloudRemote.inspectCalls, 1);
 
             final localBeforeUpload = await cloudRepository.captureLocalState();
             expect(localBeforeUpload.rowCount, greaterThanOrEqualTo(2));
@@ -227,7 +243,7 @@ void main() {
             await tester.pumpAndSettle();
             await tester.tap(find.byTooltip('查看云端并选择方向'));
             await tester.pumpAndSettle();
-            expect(cloudRemote.inspectCalls, 1);
+            expect(cloudRemote.inspectCalls, 2);
             expect(
               find.byType(BottomSheet),
               platform == TargetPlatform.android
