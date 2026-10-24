@@ -1,0 +1,102 @@
+{
+  "issue": 71,
+  "recordedAt": "2026-10-25",
+  "cloudRemote": "test-controlled local remote; separate from isolated Supabase service validation",
+  "windows11": {
+    "exerciseRunId": "win20261024c",
+    "exercisePid": 23132,
+    "startupInspectCount": 1,
+    "lifecycleCycles": [
+      {
+        "resumeCount": 1,
+        "clockAdvanceSeconds": 299,
+        "result": "throttled",
+        "inspectCount": 1
+      },
+      {
+        "resumeCount": 2,
+        "clockAdvanceSeconds": 1,
+        "controlledRemoteFailure": true,
+        "result": "retryable error shown",
+        "inspectCount": 2
+      },
+      {
+        "resumeCount": 3,
+        "clockAdvanceSeconds": 300,
+        "controlledRemoteFailure": false,
+        "remoteRevision": 3,
+        "result": "pending version shown",
+        "inspectCount": 3
+      }
+    ],
+    "businessTransfers": 1,
+    "businessFingerprintAndSucceededAtStable": true,
+    "hostConnectivityObservation": ["wifi,other", "other", "wifi,other"],
+    "networkReconnectTestMarkerReceived": false,
+    "coldVerify": {
+      "pid": 40656,
+      "passed": true,
+      "inspectCount": 4,
+      "businessTransfers": 1,
+      "fingerprint": "-213de28231d32763",
+      "succeededAt": "2026-10-24T07:44:55.230707Z"
+    },
+    "networkVerify": {
+      "pid": 19596,
+      "passed": true,
+      "startupCheckIncrement": 1,
+      "finalInspectCount": 6,
+      "nativeWindowLifecycle": ["hidden", "inactive", "resumed"],
+      "resumeCount": 1,
+      "windowOwnerPidChecked": true,
+      "hostConnectivity": ["wifi,other", "other", "wifi,other"],
+      "networkReconnectMarkerReceived": true,
+      "businessTransfers": 1,
+      "businessFingerprintAndSucceededAtStable": true
+    }
+  },
+  "android15Api35": {
+    "device": "emulator-5556 / PactaT24Secondary",
+    "runId": "android20261025a",
+    "exercisePid": 8771,
+    "exercisePassed": true,
+    "lifecycleStates": [
+      "inactive,hidden,paused,hidden,inactive,resumed",
+      "inactive,hidden,paused,hidden,inactive,resumed",
+      "inactive,hidden,paused,hidden,inactive,resumed"
+    ],
+    "clockAdvancesSeconds": [299, 1, 300],
+    "inspectCountAfterLifecycle": 3,
+    "businessTransfers": 1,
+    "networkConnectivity": ["wifi", "none", "wifi"],
+    "inspectCountAfterReconnect": 3,
+    "businessFingerprint": "4a4364ba3737276d",
+    "succeededAt": "2026-10-24T19:13:07.410317Z",
+    "coldVerify": {
+      "forceStopIssued": true,
+      "dataCleared": false,
+      "apkUninstalled": false,
+      "initialTransportFailures": 3,
+      "passed": true,
+      "pid": 9710,
+      "inspectCount": 4,
+      "businessTransfers": 1,
+      "fingerprint": "4a4364ba3737276d",
+      "succeededAt": "2026-10-24T19:13:07.410317Z",
+      "diagnosis": "Flutter selected a stale VM service address from logcat; clearing saved logcat buffer recovered default DDS attach without source changes",
+      "intervention": "adb logcat -c only; application data retained",
+      "defaultDds": true,
+      "freshVmDiscoveryMilliseconds": 1556,
+      "vmServiceHostPort": 1202,
+      "vmServiceDevicePort": 42937,
+      "flutterCommandExitCode": 0,
+      "testsPassed": 1,
+      "databaseAndControlFileRetained": true,
+      "summary": "issue71-android-coldverify-summary.txt"
+    },
+    "screenshots": [
+      "issue71-android-failed.png",
+      "issue71-android-recovered.png"
+    ]
+  }
+}

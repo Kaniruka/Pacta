@@ -1,0 +1,11 @@
+Android cold-verify diagnosis and recovery — 2026-10-25
+Device emulator-5556 / API 35; preserved application data; default DDS.
+Only intervention: adb -s emulator-5556 logcat -c after saving the previous log.
+Prior failed attach: VM URL selected 2 ms after activity launch; old forwarded device port refused connection.
+Fresh manual activity PID 9622: VM HTTP getVM and getIsolate succeeded via host 9351 -> device 39875.
+Recovered Flutter test: VM discovered 1556 ms after waiting; host 1202 -> device 42937.
+Flutter command exit code: 0.
+ISSUE71_COLD_VERIFY_PASS platform=android pid=9710 inspections=4 businessTransfers=1 fingerprint=4a4364ba3737276d succeededAt=2026-10-24T19:13:07.410317Z
+ISSUE71_NATIVE_PASS platform=android pid=9710 phase=cold-verify inspections=4 businessTransfers=1 database=/data/user/0/com.pacta.pacta/files/issue71-android20261025a.sqlite
+00:04 +1: All tests passed!
+No product or integration entry source modifications; no clear-data/uninstall/AVD wipe.

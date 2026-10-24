@@ -1,0 +1,124 @@
+{
+  "ticket": "Issue #71 / T08",
+  "date": "2026-10-25",
+  "isolated_project": {
+    "name": "Pacta issue71 disposable validation",
+    "ref": "jgpuzfocircarvlykzqd",
+    "region": "ap-southeast-1",
+    "plan_at_creation": "Free nano",
+    "shared_project_modified": false,
+    "deleted": true,
+    "post_delete_get_http_status": 404,
+    "projects_visible_after_cleanup": ["Pacta"]
+  },
+  "database": {
+    "repository_migrations_applied": 27,
+    "cloud_business_snapshots_rollback_rls_cas_probe": "passed",
+    "live_service_checks": {
+      "owner_reads_own_revision_1": true,
+      "other_user_cannot_read_owner_snapshot": true,
+      "legacy_rpc_scoped_to_legacy_owner": true,
+      "read_only_business_digest_unchanged": true,
+      "snapshot_revision_changed_from_1_to_2": true,
+      "legacy_token_changes_when_old_goal_changes": true,
+      "data_updated_at_unchanged_during_version_mutations": true,
+      "temporary_probe_users_and_rows_cleaned": true
+    }
+  },
+  "app_shell_phases": [
+    {
+      "platform": "Android 15 / API 35 / PactaT24Secondary",
+      "phase": "snapshot",
+      "status": "passed",
+      "flutter_test_count": 1,
+      "read_requests": 3,
+      "legacy_read_requests": 0,
+      "local_business_rows": 3,
+      "local_fingerprint_unchanged": true,
+      "revision_change_detected": true,
+      "data_updated_at_unchanged": true,
+      "metadata_select_observer_assertion": "added after this phase; covered in the remaining three phases",
+      "screenshots": [
+        "docs/evidence/issue71-android-snapshot-handled.png",
+        "docs/evidence/issue71-android-snapshot-pending.png"
+      ]
+    },
+    {
+      "platform": "Android 15 / API 35 / PactaT24Secondary",
+      "phase": "legacy",
+      "status": "passed",
+      "flutter_test_count": 1,
+      "read_requests": 4,
+      "legacy_read_requests": 4,
+      "local_business_rows": 3,
+      "local_fingerprint_unchanged": true,
+      "legacy_token_change_detected": true,
+      "data_updated_at_unchanged": true,
+      "snapshot_get_select_limited_to_metadata": true,
+      "snapshot_payload_download_or_save_requested": false,
+      "screenshots": [
+        "docs/evidence/issue71-android-legacy-pending.png",
+        "docs/evidence/issue71-android-legacy-preview.png"
+      ]
+    },
+    {
+      "platform": "Windows 11",
+      "phase": "snapshot",
+      "status": "passed",
+      "flutter_test_count": 1,
+      "read_requests": 3,
+      "legacy_read_requests": 0,
+      "local_business_rows": 3,
+      "local_fingerprint_unchanged": true,
+      "revision_change_detected": true,
+      "data_updated_at_unchanged": true,
+      "snapshot_get_select_limited_to_metadata": true,
+      "snapshot_payload_download_or_save_requested": false,
+      "screenshots": [
+        "docs/evidence/issue71-windows-snapshot-handled.png",
+        "docs/evidence/issue71-windows-snapshot-pending.png"
+      ]
+    },
+    {
+      "platform": "Windows 11",
+      "phase": "legacy",
+      "status": "passed",
+      "flutter_test_count": 1,
+      "read_requests": 4,
+      "legacy_read_requests": 4,
+      "local_business_rows": 3,
+      "local_fingerprint_unchanged": true,
+      "legacy_token_change_detected": true,
+      "data_updated_at_unchanged": true,
+      "snapshot_get_select_limited_to_metadata": true,
+      "snapshot_payload_download_or_save_requested": false,
+      "screenshots": [
+        "docs/evidence/issue71-windows-legacy-pending.png",
+        "docs/evidence/issue71-windows-legacy-preview.png"
+      ]
+    }
+  ],
+  "retry_notes": [
+    "An early Android attempt used a snapshot phase name that did not match the runtime session alias; the test now maps snapshot to device and passed.",
+    "The AVD clock lagged host UTC by about eleven hours and TLS rejected Supabase as not-yet-valid. The AVD clock was corrected to host UTC; certificate verification remained enabled.",
+    "Restarting adbd as root cleared adb reverse once; tcp:30347 reverse was re-established and subsequent Android phases passed."
+  ],
+  "cleanup": {
+    "runtime_service_stopped": true,
+    "temporary_auth_users_remaining": 0,
+    "temporary_snapshots_remaining": 0,
+    "temporary_legacy_goals_remaining": 0,
+    "control_file_removed": true,
+    "local_project_state_removed": true,
+    "isolated_project_recheck_http_status": 404,
+    "only_shared_project_remained": true,
+    "adb_reverse_removed": true,
+    "emulator_adbd_unrooted": true,
+    "avd_user_data_erased": false
+  },
+  "limits": {
+    "app_shell_resumed_callbacks_are_test_runner_callbacks": true,
+    "real_os_lifecycle_evidence_is_recorded_separately": true,
+    "android_snapshot_metadata_select_assertion_not_in_test_harness_for_first_pass": true
+  }
+}
