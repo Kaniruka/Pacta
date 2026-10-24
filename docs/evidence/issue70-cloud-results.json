@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-24",
+  "isolatedProject": {
+    "name": "Pacta issue70 disposable validation",
+    "plan": "free nano",
+    "migrationsApplied": 27,
+    "rollbackRlsCasProbe": "passed",
+    "sharedProjectModified": false,
+    "deleted": true,
+    "onlyProjectLeft": "Pacta"
+  },
+  "phases": [
+    {
+      "platform": "Android 15, emulator-5556",
+      "phase": "upload",
+      "result": "passed",
+      "source": {
+        "name": "localhost (Android)",
+        "manufacturer": "google",
+        "model": "sdk_gphone64_x86_64"
+      },
+      "revision": 1,
+      "screenshot": "issue70-android-upload-preview.png"
+    },
+    {
+      "platform": "Windows 11",
+      "phase": "download, add Windows data, upload",
+      "result": "passed; 2 integration cases",
+      "source": {
+        "name": "FA507UV (Windows)",
+        "manufacturer": "ASUSTeK COMPUTER INC.",
+        "model": "ASUS TUF Gaming A15 FA507UV_FA507UV"
+      },
+      "revision": 2,
+      "otherUserRls": "owner snapshot hidden",
+      "stalePreview": "rejected; local fingerprint unchanged",
+      "legacyOldTable": "unknown source/model/time displayed; download selectable",
+      "screenshots": [
+        "issue70-windows-android-preview.png",
+        "issue70-windows-upload-preview.png",
+        "issue70-windows-legacy-preview.png"
+      ]
+    },
+    {
+      "platform": "Android 15, emulator-5556",
+      "phase": "download Windows snapshot",
+      "result": "passed; both platforms' business records restored",
+      "previewedSource": {
+        "name": "FA507UV (Windows)",
+        "manufacturer": "ASUSTeK COMPUTER INC.",
+        "model": "ASUS TUF Gaming A15 FA507UV_FA507UV"
+      },
+      "screenshot": "issue70-android-windows-preview.png"
+    }
+  ],
+  "initialControlDefineMismatch": "HTTP 403 before client session setup; no upload. Corrected define and all phases passed.",
+  "cleanup": {
+    "temporaryAuthUsers": 0,
+    "registrationEligibilityRows": 0,
+    "snapshots": 0,
+    "legacyFixtureRows": 0,
+    "runtimeControlFile": "deleted",
+    "adbReverse": "cleared",
+    "projectState": "deleted",
+    "projectListAfterDeletion": ["Pacta"]
+  },
+  "secretsPrintedOrCommitted": false
+}
