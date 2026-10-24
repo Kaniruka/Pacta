@@ -145,6 +145,12 @@ void main() {
             userId: _userId,
             deviceId: 'android-emulator-device',
             deviceName: 'Android emulator test mirror',
+            deviceManufacturer: platform == TargetPlatform.android
+                ? 'google'
+                : 'ASUSTeK COMPUTER INC.',
+            deviceModel: platform == TargetPlatform.android
+                ? 'Pixel 8'
+                : 'ASUS TUF Gaming A15 FA507UV_FA507UV',
             now: () => DateTime(2026, 10, 23, 12, 34, 56),
           );
           final taskSeeder = LocalTaskRepository(
@@ -259,6 +265,12 @@ void main() {
               find.text('云端来源：Android emulator test mirror'),
               findsOneWidget,
             );
+            expect(
+              find.text(
+                platform == TargetPlatform.android ? 'google · Pixel 8' : 'ASUSTeK COMPUTER INC. · ASUS TUF Gaming A15 FA507UV_FA507UV',
+              ),
+              findsOneWidget,
+            );
             expect(find.text('本机有尚未同步的修改；下载将丢弃这些修改。'), findsOneWidget);
             expect(
               (await cloudRepository.loadSyncResult())!.succeededAt,
@@ -305,6 +317,7 @@ void main() {
             await cloudRemote.publishOtherDevice();
             await tester.tap(find.byTooltip('查看云端并选择方向'));
             await tester.pumpAndSettle();
+            expect(find.text('型号未知'), findsOneWidget);
             await tester.tap(find.text('取消'));
             await tester.pumpAndSettle();
             expect(find.text('云端有待处理更新'), findsOneWidget);
