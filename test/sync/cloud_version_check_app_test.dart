@@ -56,6 +56,14 @@ void main() {
         ),
       );
       await tasks.dispose();
+      // Establish ordinary local recovery metadata before measuring cloud reads.
+      final nationalFocus = LocalNationalFocusRepository(
+        database: database,
+        userId: 'reader',
+        cloudSyncEnabled: false,
+      );
+      await nationalFocus.settleDueCheckpoints();
+      await nationalFocus.dispose();
       final before = await repository.captureLocalState();
       await tester.pumpWidget(
         _app(database, auth, repository, cloudCheckClock: () => now),
