@@ -1,0 +1,45 @@
+{
+  "issue": 72,
+  "platform": "android",
+  "startedAt": "2026-10-25T06:04:37.109450+00:00",
+  "command": [
+    "cmd.exe",
+    "/c",
+    "flutter",
+    "test",
+    "integration_test/issue_72_cloud_choice_test.dart",
+    "-d",
+    "emulator-5556",
+    "--dart-define-from-file=.dart_tool/issue72-cloud-control.json",
+    "--reporter",
+    "expanded",
+    "--no-uninstall"
+  ],
+  "pointer": "touch",
+  "realCloud": true,
+  "actions": [
+    "portrait locked / light theme; adb reverse tcp:30348 tcp:30348",
+    "adb shell input keyevent KEYCODE_BACK"
+  ],
+  "androidSettingsBefore": {
+    "accelerometer_rotation": "1",
+    "user_rotation": "0",
+    "night": "yes"
+  },
+  "androidRelease": "15",
+  "exitCode": 0,
+  "assertions": [
+    "ISSUE72_ANDROID_SYSTEM_BACK_DISMISSED_NOT_IGNORED",
+    "ISSUE72_REAL_CLOUD_PASS platform=android user=device firstSeen=true dismissalReprompts=true ignoredPersisted=true manualAvailable=true sameVersionStable=true newVersionReprompts=true localFingerprintUnchanged=true crossUserDenied=true",
+    "ISSUE72_REAL_CLOUD_PASS platform=android user=legacy firstSeen=true dismissalReprompts=true ignoredPersisted=true manualAvailable=true sameVersionStable=true newVersionReprompts=true localFingerprintUnchanged=true crossUserDenied=true"
+  ],
+  "androidBackSent": true,
+  "passed": true,
+  "androidSettingsAfter": {
+    "accelerometer_rotation": "1",
+    "user_rotation": "0",
+    "night": "yes"
+  },
+  "settingsRestored": true,
+  "finishedAt": "2026-10-25T06:05:52.359249+00:00"
+}

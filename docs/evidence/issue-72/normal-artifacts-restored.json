@@ -1,0 +1,76 @@
+{
+  "issue": 72,
+  "target": "lib/main.dart",
+  "configurationFields": [
+    "SUPABASE_URL",
+    "SUPABASE_PUBLISHABLE_KEY"
+  ],
+  "commands": [
+    {
+      "command": [
+        "cmd.exe",
+        "/c",
+        "flutter",
+        "build",
+        "apk",
+        "--debug",
+        "-t",
+        "lib/main.dart",
+        "--dart-define-from-file=.dart_tool/issue72-public-config.json"
+      ],
+      "exitCode": 0
+    },
+    {
+      "command": [
+        "cmd.exe",
+        "/c",
+        "flutter",
+        "build",
+        "windows",
+        "--debug",
+        "-t",
+        "lib/main.dart",
+        "--dart-define-from-file=.dart_tool/issue72-public-config.json"
+      ],
+      "exitCode": 0
+    },
+    {
+      "command": [
+        "/mnt/c/Users/Stray/AppData/Local/Android/sdk/platform-tools/adb.exe",
+        "-s",
+        "emulator-5556",
+        "install",
+        "-r",
+        "F:\\Workspace\\Release\\Flutter\\Pacta\\build\\app\\outputs\\flutter-apk\\app-debug.apk"
+      ],
+      "exitCode": 1
+    },
+    {
+      "command": [
+        "adb",
+        "-s",
+        "emulator-5556",
+        "install",
+        "-r",
+        "build/app/outputs/flutter-apk/app-debug.apk"
+      ],
+      "exitCode": 0,
+      "stdout": "Performing Streamed Install; Success",
+      "retry": true
+    }
+  ],
+  "preservesAndroidData": true,
+  "startsRealAccount": false,
+  "temporaryConfigRemoved": true,
+  "recordedAt": "2026-10-25T06:09:04.164602+00:00",
+  "recovery": {
+    "originalRuntimeDisconnected": true,
+    "existingAvdStarted": "PactaT24Secondary",
+    "port": 5556,
+    "currentDeviceModel": "sdk_gphone64_x86_64",
+    "currentAndroidRelease": "15",
+    "preservesExistingAvdData": true,
+    "note": "Original test runtime disappeared before normal APK install. Started the pre-existing AVD without wiping data, then installed the normal APK with -r. Native/cloud acceptance above was completed before this disconnect."
+  },
+  "normalApkInstalled": true
+}

@@ -214,8 +214,9 @@ void main() {
             mode: FocusChainMode.regular,
             duration: const Duration(minutes: 25),
           )).id;
-          if (flow == 'paused')
+          if (flow == 'paused') {
             await focus.pauseSession(flowId, ruleText: 'Pause test');
+          }
         }
         await tester.pumpWidget(
           _app(database, auth, repository, focusRepository: focus),

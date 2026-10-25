@@ -1,6 +1,6 @@
 # Issue #72 原生提醒验收
 
-日期：待实际运行后填写。入口：[issue_72_reminder_device_test.dart](../integration_test/issue_72_reminder_device_test.dart)。本记录仅登记真实 Android 15 / Windows 11 生命周期验收；App 级回归和隔离服务结果见[总验收记录](issue-72-validation.md)及对应服务验收材料。
+日期：2026-10-25（Asia/Shanghai）。入口：[issue_72_reminder_device_test.dart](../integration_test/issue_72_reminder_device_test.dart)。本记录仅登记真实 Android 15 / Windows 11 生命周期验收；App 级回归和隔离服务结果见[总验收记录](issue-72-validation.md)及对应服务验收材料。
 
 ## 验收边界与隔离
 
@@ -15,9 +15,9 @@
 Windows 11：
 
 ```bat
-cmd.exe /c flutter test integration_test/issue_72_reminder_device_test.dart -d windows --dart-define=ISSUE72_PHASE=exercise --dart-define=ISSUE72_RUN_ID=win20261025a --dart-define-from-file=.dart_tool/issue72-native-control.json
+cmd.exe /c flutter test integration_test/issue_72_reminder_device_test.dart -d windows --dart-define=ISSUE72_PHASE=exercise --dart-define=ISSUE72_RUN_ID=win20261025b --dart-define-from-file=.dart_tool/issue72-native-control.json
 python .scratch/issue72/native_driver.py --platform windows --phase exercise
-cmd.exe /c flutter test integration_test/issue_72_reminder_device_test.dart -d windows --dart-define=ISSUE72_PHASE=restart-verify --dart-define=ISSUE72_RUN_ID=win20261025a --dart-define-from-file=.dart_tool/issue72-native-control.json
+cmd.exe /c flutter test integration_test/issue_72_reminder_device_test.dart -d windows --dart-define=ISSUE72_PHASE=restart-verify --dart-define=ISSUE72_RUN_ID=win20261025b --dart-define-from-file=.dart_tool/issue72-native-control.json
 python .scratch/issue72/native_driver.py --platform windows --phase restart-verify
 ```
 
@@ -40,4 +40,12 @@ Android 的 `exercise` 结束后以 `adb shell am force-stop com.pacta.pacta` �
 
 ## 实际结果
 
-尚未运行设备验收。待主代理按设备队列执行后记录实际命令、平台版本、runner PID、检查次数、业务传输数、截图路径及失败尝试；工具可用和入口已准备不算验收通过。
+Windows 11 两阶段均 **1 passed**。正式 run ID `win20261025b`，`exercise` PID **37632**、`restart-verify` PID **35928**，新进程复用同一独立 SQLite 和用户偏好。首阶段最终检查次数 4，忽略版本 1；新进程冷检查次数到 5，同版保持静默；真实最小化／恢复后，新版、预约、专注及暂停检查完成，最终 revision **5**、检查次数 **12**、业务传输 **0**。宿主 driver 每轮观察 `hidden → inactive → resumed`，并使用测试入口的窗口 owner PID guard。
+
+Windows 以 `PointerDeviceKind.mouse` 注入点击；Android 以 `touch` 注入。Windows exercise 在原始宽窗口截图后，仅对 PID 匹配的测试窗口调用 Win32 `SetWindowPos` 调整外框到 640×720，再进行关闭后前台恢复及手动预览。截图证据：[首次旧快照](evidence/issue-72/windows-first-reminder-old-cloud.png)、[窄窗口关闭后重提醒](evidence/issue-72/windows-closed-then-foreground-reminder.png)、[忽略后手动预览](evidence/issue-72/windows-manual-preview-after-ignore.png)、[新进程新版提醒](evidence/issue-72/windows-new-version-after-restart.png)、[预约非阻断](evidence/issue-72/windows-appointment-nonblocking.png)、[预约结束](evidence/issue-72/windows-appointment-ended-latest-reminder.png)、[暂停非阻断](evidence/issue-72/windows-paused-nonblocking-latest-revision.png)、[专注结束仅最新版本](evidence/issue-72/windows-focus-ended-latest-reminder.png)。
+
+Windows 首次 `win20261025a` 两阶段均不计通过：exercise 在上传确认取消后多点了一次不存在的取消；restart 把“结束后版本5来源”断言放在暂停期间，和“不弹层”断言矛盾。主代理修复夹具后，以新 run ID 完整重跑上述两阶段通过，未调整产品规则或清除旧库。初次 WSL Python 不能访问 Windows loopback，改用 Windows Python 运行同一宿主 driver，未改产品或服务绑定。
+
+Android 15/API35 两阶段均 **1 passed**，serial `emulator-5556`，run ID `android20261025a`。exercise PID **3819** 在关闭首见选择后经真实 ADB Home/monkey 恢复同版重提醒，忽略后仍可进入手动预览及上传/下载二次确认并取消，业务指纹保持不变，最终检查次数 4、传输 0。随后主代理执行 `adb -s emulator-5556 shell am force-stop com.pacta.pacta`，未清数据或卸载；restart-verify PID **4160** 打开原库，启动检查次数到 5，同版静默；四轮原生前后台后完成新版、预约、专注和暂停检查，结束仅显示 revision **5**，最终检查次数 **12**、传输 **0**。本次两阶段没有 VM 连接失败。原有 Gradle/KGP 未来兼容及 SDK XML 警告保留，但构建与断言均通过。
+
+Android 原生场景保留设备自动旋转和暗色设置：首次截图为横屏，原生前后台后的结束提醒截图为竖屏；鼠标／触摸通过 Flutter 集成 tester 在真实平台注入，原生前后台由 ADB/Win32 驱动。截图：[首见](evidence/issue-72/android-first-reminder-old-cloud.png)、[关闭后重提醒](evidence/issue-72/android-closed-then-foreground-reminder.png)、[忽略后手动查看](evidence/issue-72/android-manual-preview-after-ignore.png)、[重启后新版](evidence/issue-72/android-new-version-after-restart.png)、[预约非阻断](evidence/issue-72/android-appointment-nonblocking.png)、[预约结束](evidence/issue-72/android-appointment-ended-latest-reminder.png)、[暂停非阻断](evidence/issue-72/android-paused-nonblocking-latest-revision.png)、[专注结束最新版本](evidence/issue-72/android-focus-ended-latest-reminder.png)。四个通过阶段的 PID、版本、传输数和真实生命周期摘要见 [native-results.json](evidence/issue-72/native-results.json)。Android 竖屏浅色和真实系统返回另在隔离服务验收中取证。

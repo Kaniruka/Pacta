@@ -1,0 +1,30 @@
+{
+  "issue": 72,
+  "platform": "windows",
+  "startedAt": "2026-10-25T06:06:57.784778+00:00",
+  "command": [
+    "cmd.exe",
+    "/c",
+    "flutter",
+    "test",
+    "integration_test/issue_72_cloud_choice_test.dart",
+    "-d",
+    "windows",
+    "--dart-define-from-file=.dart_tool/issue72-cloud-control.json",
+    "--reporter",
+    "expanded",
+    "--no-uninstall"
+  ],
+  "pointer": "mouse",
+  "realCloud": true,
+  "actions": [],
+  "exitCode": 0,
+  "assertions": [
+    "ISSUE72_REAL_CLOUD_PASS platform=windows user=device firstSeen=true dismissalReprompts=true ignoredPersisted=true manualAvailable=true sameVersionStable=true newVersionReprompts=true localFingerprintUnchanged=true crossUserDenied=true",
+    "ISSUE72_REAL_CLOUD_PASS platform=windows user=legacy firstSeen=true dismissalReprompts=true ignoredPersisted=true manualAvailable=true sameVersionStable=true newVersionReprompts=true localFingerprintUnchanged=true crossUserDenied=true"
+  ],
+  "androidBackSent": null,
+  "passed": true,
+  "finishedAt": "2026-10-25T06:08:06.058199+00:00",
+  "windowsVersion": "Microsoft Windows NT 10.0.22631.0"
+}

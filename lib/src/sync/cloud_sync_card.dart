@@ -48,8 +48,9 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
       final local = await repository.captureLocalState();
       if (!mounted ||
           widget.repository != repository ||
-          local.hasUnfinishedFlow)
+          local.hasUnfinishedFlow) {
         return;
+      }
       if (!_deferred) return;
       _deferred = false;
       await widget.versionCheck?.check(force: true);
@@ -70,13 +71,17 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
         check.checking ||
         check.failed ||
         !check.hasPendingVersion ||
-        check.completedChecks == _presentedCheck)
+        check.completedChecks == _presentedCheck) {
       return;
+    }
     _evaluating = true;
     try {
       final local = await repository.captureLocalState();
-      if (!mounted || check != widget.versionCheck || !check.hasPendingVersion)
+      if (!mounted ||
+          check != widget.versionCheck ||
+          !check.hasPendingVersion) {
         return;
+      }
       _deferred = local.hasUnfinishedFlow;
       if (_deferred) {
         final messenger = ScaffoldMessenger.of(context);
@@ -119,8 +124,9 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
       final obsoleteRoute = _modalRoute;
       _modalRoute = null;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (obsoleteRoute?.isActive == true)
+        if (obsoleteRoute?.isActive == true) {
           obsoleteRoute!.navigator?.removeRoute(obsoleteRoute);
+        }
       });
       _presentedCheck = 0;
       _deferred = false;
@@ -146,8 +152,9 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
   void dispose() {
     final obsoleteRoute = _modalRoute;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (obsoleteRoute?.isActive == true)
+      if (obsoleteRoute?.isActive == true) {
         obsoleteRoute!.navigator?.removeRoute(obsoleteRoute);
+      }
     });
     widget.versionCheck?.removeListener(_versionChanged);
     _focusSubscription?.cancel();
@@ -309,8 +316,9 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
                   try {
                     if (!mounted ||
                         widget.repository != repository ||
-                        widget.versionCheck != versionCheck)
+                        widget.versionCheck != versionCheck) {
                       return;
+                    }
                     await versionCheck!.ignore(cloud);
                     if (mounted &&
                         widget.repository == repository &&

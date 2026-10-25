@@ -86,7 +86,34 @@ void main() {
           await fixture.capture(tester, 'issue72-$user-first-choice');
 
           // Dismissal remains eligible on the next throttled foreground check.
-          await tester.tap(find.text('取消'), kind: _pointerKind);
+          if (Platform.isAndroid && user == 'device') {
+            // The host runner sends actual ADB KEYCODE_BACK on this marker.
+            // ignore: avoid_print
+            print('ISSUE72_WAITING_FOR_ANDROID_BACK');
+            var dismissed = false;
+            for (var attempt = 0; attempt < 600; attempt++) {
+              await tester.pump(const Duration(milliseconds: 100));
+              if (find.text('选择同步方式').evaluate().isEmpty) {
+                dismissed = true;
+                break;
+              }
+            }
+            expect(
+              dismissed,
+              isTrue,
+              reason: 'Host ADB Back must dismiss the choice.',
+            );
+            expect(
+              preferences.getString(
+                'pacta.device.cloud_sync.ignored.${fixture.userId}',
+              ),
+              isNull,
+            );
+            // ignore: avoid_print
+            print('ISSUE72_ANDROID_SYSTEM_BACK_DISMISSED_NOT_IGNORED');
+          } else {
+            await tester.tap(find.text('取消'), kind: _pointerKind);
+          }
           await tester.pumpAndSettle();
           await _foreground(tester, fixture);
           await _waitForDialog(tester);

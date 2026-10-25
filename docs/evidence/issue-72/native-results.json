@@ -1,0 +1,86 @@
+{
+  "date": "2026-10-25",
+  "timezone": "Asia/Shanghai",
+  "android_serial": "emulator-5556",
+  "android_version": "15 / API35",
+  "windows_version": "11 / 10.0.22631.2506",
+  "runs": [
+    {
+      "platform": "windows",
+      "phase": "exercise",
+      "result": "1 passed",
+      "markers": [
+        "ISSUE72_EXERCISE_READY platform=windows pid=37632 priorPid=null revision=1 database=C:\\Users\\Stray\\AppData\\Roaming\\com.pacta\\pacta\\issue72-win20261025b.sqlite control=C:\\Users\\Stray\\AppData\\Roaming\\com.pacta\\pacta\\issue72-win20261025b-control.json",
+        "ISSUE72_WAITING_FOR_RESUME count=1",
+        "ISSUE72_IGNORE_SAVED platform=windows pid=37632 revision=1 inspections=4"
+      ],
+      "lifecycle_evidence": [
+        "CYCLE start=dismissal-recheck pid=37632 resume=0 inspections=1",
+        "WINDOW_RESIZED width=640 height=720 pid=37632",
+        "CYCLE pass=dismissal-recheck pid=37632 resume=1 inspections=2 lifecycle=['hidden', 'inactive', 'resumed']"
+      ]
+    },
+    {
+      "platform": "windows",
+      "phase": "restart-verify",
+      "result": "1 passed",
+      "markers": [
+        "ISSUE72_RESTART_SAME_VERSION_QUIET platform=windows pid=35928 priorPid=37632 inspections=5",
+        "ISSUE72_NEW_VERSION_READY pid=35928 revision=2",
+        "ISSUE72_WAITING_FOR_RESUME count=1",
+        "ISSUE72_WAITING_FOR_RESUME count=2",
+        "ISSUE72_WAITING_FOR_RESUME count=3",
+        "ISSUE72_WAITING_FOR_RESUME count=4",
+        "ISSUE72_NATIVE_PASS platform=windows pid=35928 revision=5 inspections=12 businessTransfers=0 database=C:\\Users\\Stray\\AppData\\Roaming\\com.pacta\\pacta\\issue72-win20261025b.sqlite"
+      ],
+      "lifecycle_evidence": [
+        "CYCLE start=revision-2-resume-1 pid=35928 resume=0 inspections=5",
+        "CYCLE pass=revision-2-resume-1 pid=35928 resume=1 inspections=6 lifecycle=['hidden', 'inactive', 'resumed']",
+        "CYCLE start=revision-3-resume-2 pid=35928 resume=1 inspections=6",
+        "CYCLE pass=revision-3-resume-2 pid=35928 resume=2 inspections=7 lifecycle=['hidden', 'inactive', 'resumed']",
+        "CYCLE start=revision-4-resume-3 pid=35928 resume=2 inspections=9",
+        "CYCLE pass=revision-4-resume-3 pid=35928 resume=3 inspections=10 lifecycle=['hidden', 'inactive', 'resumed']",
+        "CYCLE start=revision-5-resume-4 pid=35928 resume=3 inspections=10",
+        "CYCLE pass=revision-5-resume-4 pid=35928 resume=4 inspections=11 lifecycle=['hidden', 'inactive', 'resumed']"
+      ]
+    },
+    {
+      "platform": "android",
+      "phase": "exercise",
+      "result": "1 passed",
+      "markers": [
+        "ISSUE72_EXERCISE_READY platform=android pid=3819 priorPid=null revision=1 database=/data/user/0/com.pacta.pacta/files/issue72-android20261025a.sqlite control=/data/user/0/com.pacta.pacta/files/issue72-android20261025a-control.json",
+        "ISSUE72_WAITING_FOR_RESUME count=1",
+        "ISSUE72_IGNORE_SAVED platform=android pid=3819 revision=1 inspections=4"
+      ],
+      "lifecycle_evidence": [
+        "CYCLE start=dismissal-recheck pid=3819 resume=0 inspections=1",
+        "CYCLE pass=dismissal-recheck pid=3819 resume=1 inspections=2 lifecycle=['hidden', 'inactive', 'resumed']"
+      ]
+    },
+    {
+      "platform": "android",
+      "phase": "restart-verify",
+      "result": "1 passed",
+      "markers": [
+        "ISSUE72_RESTART_SAME_VERSION_QUIET platform=android pid=4160 priorPid=3819 inspections=5",
+        "ISSUE72_NEW_VERSION_READY pid=4160 revision=2",
+        "ISSUE72_WAITING_FOR_RESUME count=1",
+        "ISSUE72_WAITING_FOR_RESUME count=2",
+        "ISSUE72_WAITING_FOR_RESUME count=3",
+        "ISSUE72_WAITING_FOR_RESUME count=4",
+        "ISSUE72_NATIVE_PASS platform=android pid=4160 revision=5 inspections=12 businessTransfers=0 database=/data/user/0/com.pacta.pacta/files/issue72-android20261025a.sqlite"
+      ],
+      "lifecycle_evidence": [
+        "CYCLE start=revision-2-resume-1 pid=4160 resume=0 inspections=5",
+        "CYCLE pass=revision-2-resume-1 pid=4160 resume=1 inspections=6 lifecycle=['hidden', 'inactive', 'resumed']",
+        "CYCLE start=revision-3-resume-2 pid=4160 resume=1 inspections=6",
+        "CYCLE pass=revision-3-resume-2 pid=4160 resume=2 inspections=7 lifecycle=['hidden', 'inactive', 'resumed']",
+        "CYCLE start=revision-4-resume-3 pid=4160 resume=2 inspections=9",
+        "CYCLE pass=revision-4-resume-3 pid=4160 resume=3 inspections=10 lifecycle=['hidden', 'inactive', 'resumed']",
+        "CYCLE start=revision-5-resume-4 pid=4160 resume=3 inspections=10",
+        "CYCLE pass=revision-5-resume-4 pid=4160 resume=4 inspections=11 lifecycle=['hidden', 'inactive', 'resumed']"
+      ]
+    }
+  ]
+}

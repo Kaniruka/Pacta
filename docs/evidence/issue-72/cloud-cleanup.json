@@ -1,0 +1,14 @@
+{
+  "issue": 72,
+  "isolatedProjectRef": "sgeylaoiiarwkqibzydn",
+  "deletedProjectGetStatus": 404,
+  "remainingProjectNames": [
+    "Pacta"
+  ],
+  "temporaryAuthUsers": 0,
+  "temporarySnapshots": 0,
+  "temporaryLegacyGoals": 0,
+  "controlFileRemoved": true,
+  "projectStateRemoved": true,
+  "independentlyVerifiedBy": "primary agent"
+}
