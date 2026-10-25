@@ -129,16 +129,16 @@
       "number": 72,
       "id": 5972985053,
       "url": "https://github.com/Kaniruka/Pacta/issues/72",
-      "blocked_by": [
-        "T08"
-      ],
+      "blocked_by": [],
       "sub_issue_linked": true,
       "dependencies_linked": true,
       "verified": true,
-      "state": "OPEN",
-      "labels": [
-        "ready-for-agent"
-      ]
+      "state": "CLOSED",
+      "labels": [],
+      "state_reason": "COMPLETED",
+      "implementation_commit": "d8bdc7d",
+      "validation_document": "docs/issue-72-validation.md",
+      "implementation_pushed": true
     }
   ],
   "verified": true,

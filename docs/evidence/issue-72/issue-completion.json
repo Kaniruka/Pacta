@@ -1,0 +1,12 @@
+{
+  "issue": 72,
+  "state": "closed",
+  "stateReason": "completed",
+  "labels": [],
+  "checkedAcceptanceCriteria": 6,
+  "blockedBy": [],
+  "blocking": [],
+  "parentSpecRetained": 63,
+  "pushedValidationCommit": "bc49a26f1a64c1fb80133890ea68327ccb4408b2",
+  "date": "2026-10-25"
+}

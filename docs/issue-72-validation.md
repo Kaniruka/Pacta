@@ -50,3 +50,8 @@ Windows Flutter 3.47.2 / Dart 3.13.2，经 WSL `cmd.exe /c` 实际执行：
 | Android15 / Windows11 + 隔离Supabase | 两端各 **1 passed**，各含 snapshot/legacy；真实系统返回、第二认证客户端上传与旧 token，见[服务证据](issue-72-cloud-validation.md) |
 
 第一轮最终 analyze 发现7处 curly-brace lint，修正后重新format、analyze通过，再运行上述一次完整测试。没有把 lint 或夹具失败轮次记为通过。隔离项目及临时身份已清理，主代理复核删除；普通平台构建成功，Android普通APK保留数据安装成功，恢复设备身份变更的限制已在服务记录注明。
+
+
+## 远端收尾
+
+2026-10-25 代码及验收材料已推送 `origin/master`，验收提交 `bc49a26`。GitHub #72 六条验收项均已勾选，状态为 `CLOSED / completed`，标签为空；原生入向和出向阻塞均为空，保留与规格 #63 的父子关系。对应本地票据及 publication 映射同步更新。
