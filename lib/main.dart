@@ -4121,6 +4121,7 @@ class _MyPageState extends ConsumerState<MyPage> {
         CloudSyncCard(
           repository: ref.watch(cloudSnapshotRepositoryProvider),
           versionCheck: ref.watch(cloudVersionCheckProvider),
+          focusRepository: ref.watch(focusRepositoryProvider),
           onDownloaded: () async {
             ref.invalidate(taskRepositoryProvider);
             ref.invalidate(focusRepositoryProvider);

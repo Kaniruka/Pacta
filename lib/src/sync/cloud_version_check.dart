@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'cloud_snapshot_repository.dart';
 
@@ -22,6 +23,27 @@ class CloudVersionCheck extends ChangeNotifier {
   bool failed = false;
   bool hasPendingVersion = false;
   CloudSnapshotMetadata? metadata;
+  int completedChecks = 0;
+
+  String get _ignoredKey =>
+      'pacta.device.cloud_sync.ignored.${repository.userId}';
+  String _version(CloudSnapshotMetadata cloud) => cloud.isLegacy
+      ? 'legacy:${cloud.legacyToken}'
+      : 'revision:${cloud.revision}';
+
+  Future<void> ignore(CloudSnapshotMetadata cloud) async {
+    if (_disposed) return;
+    final preferences = await SharedPreferences.getInstance();
+    if (!await preferences.setString(_ignoredKey, _version(cloud))) {
+      throw StateError('忽略未保存，请重试。');
+    }
+    if (_disposed) return;
+    _generation++;
+    if (metadata != null && _version(metadata!) == _version(cloud)) {
+      hasPendingVersion = false;
+      notifyListeners();
+    }
+  }
 
   Future<void> check({bool force = false}) async {
     if (_disposed || checking) return;
@@ -46,11 +68,16 @@ class CloudVersionCheck extends ChangeNotifier {
       }
       final cloud = await repository.inspectCloud();
       final handled = await repository.loadSyncResult();
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.reload();
+      final ignored = preferences.getString(_ignoredKey);
       final accessible = await isAccessible();
       if (_disposed || generation != _generation || !accessible) return;
       metadata = cloud;
+      completedChecks++;
       hasPendingVersion =
           cloud != null &&
+          ignored != _version(cloud) &&
           (cloud.isLegacy
               ? handled?.legacyToken != cloud.legacyToken
               : handled?.cloudRevision != cloud.revision ||

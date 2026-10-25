@@ -524,9 +524,8 @@ class CloudSnapshotRepository {
         .cast<List<dynamic>>()
         .fold<int>(0, (total, rows) => total + rows.length);
     final hasUnfinished = await _hasUnfinishedFlow();
-    final json = jsonEncode(payload);
     return CloudSnapshotLocalState(
-      fingerprint: _fingerprint(json),
+      fingerprint: _fingerprint(payload),
       payload: payload,
       rowCount: rowCount,
       dataUpdatedAt: _latestDataTimestamp(payload) ?? DateTime.now().toUtc(),
@@ -989,14 +988,32 @@ class CloudSnapshotRepository {
 
   Object? _sqliteValue(Object? value) => value;
 
-  String _fingerprint(String value) {
+  String _fingerprint(Map<String, dynamic> payload) {
+    // Recovery checkpoints advance during an active focus flow without changing
+    // the user's business choices. Keep them in the uploaded payload, but exclude
+    // the same two device checkpoint fields as focus cloud serialization from
+    // the preview change detector. Pauses, interval bounds and outcomes remain.
+    final normalized = jsonDecode(jsonEncode(payload)) as Map<String, dynamic>;
+    final tables = normalized['tables'] as Map<String, dynamic>;
+    for (final row in tables['focus_sessions'] as List<dynamic>) {
+      final encoded = row['effective_intervals'] as String?;
+      if (encoded == null) continue;
+      final intervals = jsonDecode(encoded) as List<dynamic>;
+      for (final interval in intervals) {
+        (interval as Map<String, dynamic>)
+          ..remove('monotonic_checkpoint_microseconds')
+          ..remove('last_observed_wall_time');
+      }
+      row['effective_intervals'] = jsonEncode(intervals);
+    }
+    final value = jsonEncode(normalized);
     // FNV-1a is only a local change detector, never an integrity boundary.
     var hash = 0xcbf29ce484222325;
     for (final byte in utf8.encode(value)) {
       hash ^= byte;
       hash = (hash * 0x100000001b3) & 0xffffffffffffffff;
     }
-    return hash.toRadixString(16).padLeft(16, '0');
+    return 'v2:${hash.toRadixString(16).padLeft(16, '0')}';
   }
 
   String _quoteIdentifier(String identifier) =>

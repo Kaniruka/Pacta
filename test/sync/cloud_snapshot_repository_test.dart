@@ -1,6 +1,8 @@
 import 'package:drift/native.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pacta/src/focus/chain_signals_repository.dart';
+import 'package:pacta/src/focus/focus_repository.dart';
+import 'package:pacta/src/focus/focus_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
@@ -491,6 +493,61 @@ void main() {
       expect(restored.isSelected, isTrue);
     },
   );
+
+  test('pausing focus after preview still rejects an upload despite checkpoint normalization', () async {
+    final tasks = LocalTaskRepository(
+      database: database,
+      userId: 'user-a',
+      remote: InMemoryTaskRemote(),
+      cloudSyncEnabled: false,
+    );
+    final goal = await tasks.createGoal(
+      const GoalDraft(
+        title: 'Goal',
+        classification: TaskClassification.regular,
+      ),
+    );
+    final task = await tasks.createTask(
+      goal.id,
+      const TaskDraft(title: 'Task', classification: null),
+    );
+    await tasks.dispose();
+    var now = DateTime.utc(2026, 10, 25);
+    var elapsed = Duration.zero;
+    final focus = LocalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      remote: InMemoryFocusRemote(),
+      cloudSyncEnabled: false,
+      now: () => now,
+      monotonicNow: () => elapsed,
+    );
+    try {
+      final session = await focus.startSession(
+        taskId: task.id,
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 25),
+      );
+      final preview = await repository.captureLocalState();
+      now = now.add(const Duration(seconds: 3));
+      elapsed += const Duration(seconds: 3);
+      await focus.pauseSession(session.id, ruleText: 'Pause after preview');
+      await expectLater(
+        repository.uploadLocal(
+          expectedRevision: 0,
+          expectedFingerprint: preview.fingerprint,
+        ),
+        throwsStateError,
+      );
+      expect(await remote.inspect(userId: 'user-a'), isNull);
+      expect(
+        (await focus.getSession(session.id))!.status,
+        FocusSessionStatus.paused,
+      );
+    } finally {
+      await focus.dispose();
+    }
+  });
 
   test('rejects overwrite if local data changes after confirmation', () async {
     await _addGoal(database, userId: 'user-a', id: 'goal-a', title: 'Cloud');

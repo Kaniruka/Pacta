@@ -1,0 +1,16 @@
+{
+  "issue": 72,
+  "recordedAt": "2026-10-25T05:49:32.137951+00:00",
+  "target": "Pacta issue72 disposable validation",
+  "sharedProjectMutated": false,
+  "command": "python3 scripts/issue72_cloud_choice_acceptance.py prepare",
+  "result": "passed",
+  "migrationsApplied": 27,
+  "assertions": [
+    "rollback-only cloud_business_snapshots.sql (RLS/CAS)",
+    "live owner read, cross-user RLS denial, old-data read, and read-only digests",
+    "revision 1\u21922 and legacy content-token change",
+    "temporary probe users and snapshot rows removed"
+  ],
+  "fixtureProtocol": "Issue 71 reusable runtime protocol; random control capability remains local"
+}

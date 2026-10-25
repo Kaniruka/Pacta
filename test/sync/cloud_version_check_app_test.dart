@@ -4,6 +4,7 @@ import 'package:drift/native.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
+import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/calendar/calendar_provider.dart';
 import 'package:pacta/src/calendar/calendar_repository.dart';
@@ -70,6 +71,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(remote.inspections, 1);
+      expect(find.text('选择同步方式'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
       expect(find.text('云端有待处理更新'), findsOneWidget);
@@ -105,6 +109,330 @@ void main() {
     },
   );
   testWidgets(
+    'ignore persists per user across restart and only suppresses that version',
+    (tester) async {
+      final database = PactaDatabase(NativeDatabase.memory());
+      final auth = FakeAuthRepository()..signedInUser = 'reader';
+      final remote = _Remote();
+      final repository = CloudSnapshotRepository(
+        database: database,
+        remote: remote,
+        userId: 'reader',
+        deviceName: 'test',
+      );
+      var now = DateTime.utc(2026, 10, 24);
+      Future<void> open() async {
+        await tester.pumpWidget(
+          _app(database, auth, repository, cloudCheckClock: () => now),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await open();
+      expect(find.text('选择同步方式'), findsOneWidget);
+      await tester.tap(find.text('忽略'));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await open();
+      expect(find.text('选择同步方式'), findsNothing);
+      await tester.tap(find.text('我的'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('查看云端并选择方向'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择同步方式'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      remote.revision = 3;
+      now = now.add(const Duration(minutes: 5));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(find.text('选择同步方式'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      now = now.add(const Duration(minutes: 5));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(find.text('选择同步方式'), findsOneWidget);
+      expect(remote.transfers, 0);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await database.close();
+    },
+  );
+
+  for (final flow in ['appointment', 'active', 'paused']) {
+    testWidgets(
+      '$flow defers choice, preserves manual upload and offers latest version after ending',
+      (tester) async {
+        final database = PactaDatabase(NativeDatabase.memory());
+        final auth = FakeAuthRepository()..signedInUser = 'reader';
+        final remote = _Remote();
+        final repository = CloudSnapshotRepository(
+          database: database,
+          remote: remote,
+          userId: 'reader',
+          deviceName: 'test',
+        );
+        final tasks = LocalTaskRepository(
+          database: database,
+          userId: 'reader',
+          remote: InMemoryTaskRemote(),
+          cloudSyncEnabled: false,
+        );
+        final goal = await tasks.createGoal(
+          const GoalDraft(
+            title: 'Goal',
+            classification: TaskClassification.regular,
+          ),
+        );
+        final task = await tasks.createTask(
+          goal.id,
+          const TaskDraft(title: 'Focus task', classification: null),
+        );
+        await tasks.dispose();
+        final focus = LocalFocusRepository(
+          database: database,
+          userId: 'reader',
+          remote: InMemoryFocusRemote(),
+          cloudSyncEnabled: false,
+          now: () => DateTime.utc(2026, 10, 25),
+        );
+        String flowId;
+        if (flow == 'appointment') {
+          flowId = (await focus.startAppointment(
+            taskId: task.id,
+            mode: FocusChainMode.regular,
+            duration: const Duration(minutes: 25),
+          )).id;
+        } else {
+          flowId = (await focus.startSession(
+            taskId: task.id,
+            mode: FocusChainMode.regular,
+            duration: const Duration(minutes: 25),
+          )).id;
+          if (flow == 'paused')
+            await focus.pauseSession(flowId, ruleText: 'Pause test');
+        }
+        await tester.pumpWidget(
+          _app(database, auth, repository, focusRepository: focus),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('选择同步方式'), findsNothing);
+        expect(find.text('云端有待处理更新，流程结束后可选择同步。'), findsOneWidget);
+        await tester.tap(find.text('我的'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('查看云端并选择方向'));
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '下载'))
+              .onPressed,
+          isNull,
+        );
+        expect(
+          tester
+              .widget<FilledButton>(find.widgetWithText(FilledButton, '上传'))
+              .onPressed,
+          isNotNull,
+        );
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+        remote.revision = 3;
+        remote.deviceName = 'Latest device';
+        if (flow == 'appointment') {
+          await focus.cancelAppointment(
+            appointmentId: flowId,
+            failureReason: 'End test',
+          );
+        } else {
+          await focus.abandonSession(
+            sessionId: flowId,
+            failureReason: 'End test',
+          );
+        }
+        await tester.pumpAndSettle();
+        expect(find.text('选择同步方式'), findsOneWidget);
+        expect(find.text('云端来源：Latest device'), findsOneWidget);
+        expect(remote.transfers, 0);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+        await database.close();
+      },
+    );
+  }
+
+  for (final action in ['忽略', '上传']) {
+    testWidgets(
+      'manual $action during focus prevents a deferred reminder after ending',
+      (tester) async {
+        final database = PactaDatabase(NativeDatabase.memory());
+        final auth = FakeAuthRepository()..signedInUser = 'reader';
+        final remote = _Remote()..allowUpload = true;
+        final repository = CloudSnapshotRepository(
+          database: database,
+          remote: remote,
+          userId: 'reader',
+          deviceName: 'test',
+        );
+        final tasks = LocalTaskRepository(
+          database: database,
+          userId: 'reader',
+          remote: InMemoryTaskRemote(),
+          cloudSyncEnabled: false,
+        );
+        final goal = await tasks.createGoal(
+          const GoalDraft(
+            title: 'Goal',
+            classification: TaskClassification.regular,
+          ),
+        );
+        final task = await tasks.createTask(
+          goal.id,
+          const TaskDraft(title: 'Focus task', classification: null),
+        );
+        await tasks.dispose();
+        var focusNow = DateTime.utc(2026, 10, 25);
+        var focusElapsed = Duration.zero;
+        final focus = LocalFocusRepository(
+          database: database,
+          userId: 'reader',
+          remote: InMemoryFocusRemote(),
+          cloudSyncEnabled: false,
+          now: () => focusNow,
+          monotonicNow: () => focusElapsed,
+        );
+        final session = await focus.startSession(
+          taskId: task.id,
+          mode: FocusChainMode.regular,
+          duration: const Duration(minutes: 25),
+        );
+        await tester.pumpWidget(
+          _app(database, auth, repository, focusRepository: focus),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('我的'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byTooltip('查看云端并选择方向'));
+        await tester.pumpAndSettle();
+        final before = await repository.captureLocalState();
+        await tester.tap(find.text(action));
+        await tester.pumpAndSettle();
+        if (action == '上传') {
+          focusNow = focusNow.add(const Duration(seconds: 3));
+          focusElapsed += const Duration(seconds: 3);
+          await focus.settleDueSessions();
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('确认上传'));
+          await tester.pumpAndSettle();
+          expect(find.textContaining('同步未完成：'), findsNothing);
+          expect(await repository.loadSyncResult(), isNotNull);
+        } else {
+          expect(
+            (await repository.captureLocalState()).fingerprint,
+            before.fingerprint,
+          );
+          expect(await repository.loadSyncResult(), isNull);
+        }
+        await focus.abandonSession(
+          sessionId: session.id,
+          failureReason: 'End test',
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('选择同步方式'), findsNothing);
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+        await database.close();
+      },
+    );
+  }
+
+  testWidgets(
+    'download preserves ignored version metadata independently of business replacement',
+    (tester) async {
+      final database = PactaDatabase(NativeDatabase.memory());
+      final auth = FakeAuthRepository()..signedInUser = 'reader';
+      final remote = _Remote();
+      final repository = CloudSnapshotRepository(
+        database: database,
+        remote: remote,
+        userId: 'reader',
+        deviceName: 'test',
+      );
+      remote.payload = (await repository.captureLocalState()).payload;
+      Future<void> open() async {
+        await tester.pumpWidget(_app(database, auth, repository));
+        await tester.pumpAndSettle();
+      }
+
+      await open();
+      await tester.tap(find.text('忽略'));
+      await tester.pumpAndSettle();
+      remote.revision = 3;
+      await tester.tap(find.text('我的'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('查看云端并选择方向'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('下载'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('本机独有的记录将被丢弃'), findsOneWidget);
+      await tester.tap(find.text('确认下载'));
+      await tester.pumpAndSettle();
+      expect((await repository.loadSyncResult())!.cloudRevision, 3);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await open();
+      expect(find.text('选择同步方式'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      // Re-present the ignored version at the external boundary. Its reminder
+      // preference must survive even though download replaced all business rows.
+      remote.revision = 2;
+      await open();
+      expect(find.text('选择同步方式'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await database.close();
+    },
+  );
+
+  testWidgets(
+    'old fingerprint baselines remain unknown rather than claiming unsynced changes',
+    (tester) async {
+      final database = PactaDatabase(NativeDatabase.memory());
+      final auth = FakeAuthRepository()..signedInUser = 'reader';
+      final remote = _Remote();
+      final repository = CloudSnapshotRepository(
+        database: database,
+        remote: remote,
+        userId: 'reader',
+        deviceName: 'test',
+      );
+      await repository.syncResultStore.save(
+        'reader',
+        CloudSyncResult(
+          succeededAt: DateTime.utc(2026),
+          localFingerprint: '0123456789abcdef',
+          cloudRevision: 2,
+        ),
+      );
+      await tester.pumpWidget(_app(database, auth, repository));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('我的'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('查看云端并选择方向'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('尚无可靠的本地同步基线'), findsOneWidget);
+      expect(find.text('本机有尚未同步的修改；下载将丢弃这些修改。'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await database.close();
+    },
+  );
+
+  testWidgets(
     'offline discovery is silent and the card retries without transfer',
     (tester) async {
       final database = PactaDatabase(NativeDatabase.memory());
@@ -124,6 +452,9 @@ void main() {
       expect(find.text('云端检查失败，点击重试'), findsOneWidget);
       remote.fail = false;
       await tester.tap(find.text('云端检查失败，点击重试'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择同步方式'), findsOneWidget);
+      await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       expect(find.text('云端有待处理更新'), findsOneWidget);
       expect(remote.transfers, 0);
@@ -200,6 +531,9 @@ void main() {
           AppLifecycleState.resumed,
         );
         await tester.pumpAndSettle();
+        expect(find.text('选择同步方式'), findsOneWidget);
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
         expect(find.text('云端有待处理更新'), findsOneWidget);
         expect(remote.transfers, 0);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -208,6 +542,44 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'switching user closes the previous choice without ignoring the new user version',
+    (tester) async {
+      final database = PactaDatabase(NativeDatabase.memory());
+      final auth = _Auth()..signedInUser = 'reader';
+      final remote = _Remote();
+      final repository = CloudSnapshotRepository(
+        database: database,
+        remote: remote,
+        userId: 'reader',
+        deviceName: 'test',
+      );
+      await tester.pumpWidget(_app(database, auth, repository));
+      await tester.pumpAndSettle();
+      expect(find.text('选择同步方式'), findsOneWidget);
+      remote.empty = true;
+      auth.signedInUser = 'other-reader';
+      auth.changes.add('same-email@example.test');
+      await tester.pumpAndSettle();
+      expect(find.text('选择同步方式'), findsNothing);
+      remote.empty = false;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('我的'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('查看云端并选择方向'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择同步方式'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await auth.changes.close();
+      await database.close();
+    },
+  );
 
   testWidgets(
     'direct user switch discards a late result even with the same identifier',
@@ -325,9 +697,12 @@ class _Remote implements CloudSnapshotRemote {
   bool fail = false;
   bool legacy = false;
   int revision = 2;
+  String deviceName = 'Other device';
   String token = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   int inspections = 0;
   int transfers = 0;
+  bool allowUpload = false;
+  Map<String, dynamic>? payload;
   @override
   Future<CloudSnapshotMetadata?> inspect({required String userId}) async {
     inspections++;
@@ -340,17 +715,19 @@ class _Remote implements CloudSnapshotRemote {
       isLegacy: legacy,
       legacyToken: legacy ? token : null,
       deviceId: 'other',
-      deviceName: 'Other device',
+      deviceName: deviceName,
       dataUpdatedAt: DateTime.utc(2020),
       uploadedAt: DateTime.utc(2020),
       rowCount: 0,
+      payload: payload,
     );
   }
 
   @override
   Future<CloudSnapshotMetadata> download({required String userId}) async {
     transfers++;
-    throw StateError('Unexpected download');
+    if (payload == null) throw StateError('Unexpected download');
+    return (await inspect(userId: userId))!;
   }
 
   @override
@@ -366,7 +743,10 @@ class _Remote implements CloudSnapshotRemote {
     String? deviceModel,
   }) async {
     transfers++;
-    throw StateError('Unexpected upload');
+    if (!allowUpload) throw StateError('Unexpected upload');
+    revision++;
+    this.payload = payload;
+    return (await inspect(userId: userId))!;
   }
 }
 
@@ -375,6 +755,7 @@ PactaApp _app(
   FakeAuthRepository auth,
   CloudSnapshotRepository repository, {
   DateTime Function() cloudCheckClock = DateTime.now,
+  FocusRepository? focusRepository,
 }) => PactaApp(
   authRepository: auth,
   cloudCheckClock: cloudCheckClock,
@@ -384,12 +765,14 @@ PactaApp _app(
     remote: InMemoryTaskRemote(),
     cloudSyncEnabled: false,
   ),
-  focusRepositoryFactory: (id) => LocalFocusRepository(
-    database: database,
-    userId: id,
-    remote: InMemoryFocusRemote(),
-    cloudSyncEnabled: false,
-  ),
+  focusRepositoryFactory: (id) =>
+      focusRepository ??
+      LocalFocusRepository(
+        database: database,
+        userId: id,
+        remote: InMemoryFocusRemote(),
+        cloudSyncEnabled: false,
+      ),
   nationalFocusRepositoryFactory: (id) => LocalNationalFocusRepository(
     database: database,
     userId: id,

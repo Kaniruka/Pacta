@@ -1,4 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+
+import '../focus/focus_repository.dart';
 
 import 'cloud_snapshot_repository.dart';
 import 'cloud_sync_result.dart';
@@ -10,9 +14,11 @@ class CloudSyncCard extends StatefulWidget {
     required this.repository,
     required this.onDownloaded,
     this.versionCheck,
+    this.focusRepository,
   });
 
   final CloudVersionCheck? versionCheck;
+  final FocusRepository? focusRepository;
   final CloudSnapshotRepository? repository;
   final Future<void> Function() onDownloaded;
 
@@ -22,6 +28,73 @@ class CloudSyncCard extends StatefulWidget {
 
 class _CloudSyncCardState extends State<CloudSyncCard> {
   bool _working = false;
+  bool _deferred = false;
+  bool _evaluating = false;
+  int _presentedCheck = 0;
+  StreamSubscription<dynamic>? _focusSubscription;
+  ModalRoute<dynamic>? _modalRoute;
+
+  void _watchFocus() {
+    _focusSubscription?.cancel();
+    _focusSubscription = widget.focusRepository?.watchSessions().listen((_) {
+      if (_deferred) unawaited(_checkAfterFlow());
+    });
+  }
+
+  Future<void> _checkAfterFlow() async {
+    final repository = widget.repository;
+    if (repository == null) return;
+    try {
+      final local = await repository.captureLocalState();
+      if (!mounted ||
+          widget.repository != repository ||
+          local.hasUnfinishedFlow)
+        return;
+      if (!_deferred) return;
+      _deferred = false;
+      await widget.versionCheck?.check(force: true);
+    } catch (_) {
+      // A failed discovery cannot interrupt a focus flow.
+    }
+  }
+
+  Future<void> _maybeAutomatic() async {
+    final check = widget.versionCheck;
+    final repository = widget.repository;
+    if (!mounted ||
+        _working ||
+        _evaluating ||
+        repository == null ||
+        widget.focusRepository == null ||
+        check == null ||
+        check.checking ||
+        check.failed ||
+        !check.hasPendingVersion ||
+        check.completedChecks == _presentedCheck)
+      return;
+    _evaluating = true;
+    try {
+      final local = await repository.captureLocalState();
+      if (!mounted || check != widget.versionCheck || !check.hasPendingVersion)
+        return;
+      _deferred = local.hasUnfinishedFlow;
+      if (_deferred) {
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          const SnackBar(content: Text('云端有待处理更新，流程结束后可选择同步。')),
+        );
+        return;
+      }
+      _presentedCheck = check.completedChecks;
+      await _inspect(automatic: true);
+    } catch (_) {
+      // Discovery must never block ordinary local use.
+    } finally {
+      _evaluating = false;
+    }
+  }
+
   String? _message;
   CloudSyncResult? _result;
   CloudSnapshotMetadata? _inspectedCloud;
@@ -31,6 +104,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
     super.initState();
     widget.versionCheck?.addListener(_versionChanged);
     _loadResult();
+    _watchFocus();
   }
 
   @override
@@ -40,7 +114,16 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
       oldWidget.versionCheck?.removeListener(_versionChanged);
       widget.versionCheck?.addListener(_versionChanged);
     }
+    if (oldWidget.focusRepository != widget.focusRepository) _watchFocus();
     if (oldWidget.repository != widget.repository) {
+      final obsoleteRoute = _modalRoute;
+      _modalRoute = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (obsoleteRoute?.isActive == true)
+          obsoleteRoute!.navigator?.removeRoute(obsoleteRoute);
+      });
+      _presentedCheck = 0;
+      _deferred = false;
       _working = false;
       _result = null;
       _inspectedCloud = null;
@@ -50,12 +133,24 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
   }
 
   void _versionChanged() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      if (widget.versionCheck?.hasPendingVersion != true) _deferred = false;
+      setState(() {});
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_maybeAutomatic());
+      });
+    }
   }
 
   @override
   void dispose() {
+    final obsoleteRoute = _modalRoute;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (obsoleteRoute?.isActive == true)
+        obsoleteRoute!.navigator?.removeRoute(obsoleteRoute);
+    });
     widget.versionCheck?.removeListener(_versionChanged);
+    _focusSubscription?.cancel();
     super.dispose();
   }
 
@@ -80,43 +175,52 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
         isScrollControlled: true,
         useSafeArea: true,
         showDragHandle: true,
-        builder: (context) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.viewInsetsOf(context).bottom,
-          ),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(context).height * .85,
+        builder: (context) {
+          _modalRoute = ModalRoute.of(context);
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(context).bottom,
             ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  DefaultTextStyle(
-                    style: Theme.of(context).textTheme.titleLarge!,
-                    child: dialog.title!,
-                  ),
-                  const SizedBox(height: 16),
-                  Flexible(
-                    child: SingleChildScrollView(child: dialog.content!),
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    alignment: WrapAlignment.end,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: dialog.actions!,
-                  ),
-                ],
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * .85,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    DefaultTextStyle(
+                      style: Theme.of(context).textTheme.titleLarge!,
+                      child: dialog.title!,
+                    ),
+                    const SizedBox(height: 16),
+                    Flexible(
+                      child: SingleChildScrollView(child: dialog.content!),
+                    ),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      alignment: WrapAlignment.end,
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: dialog.actions!,
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       );
     }
-    return showDialog<bool>(context: context, builder: (_) => dialog);
+    return showDialog<bool>(
+      context: context,
+      builder: (context) {
+        _modalRoute = ModalRoute.of(context);
+        return dialog;
+      },
+    );
   }
 
   String _deviceHardware(CloudSnapshotMetadata cloud) {
@@ -129,8 +233,9 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
     return parts.join(' · ');
   }
 
-  Future<void> _inspect() async {
+  Future<void> _inspect({bool automatic = false}) async {
     final repository = widget.repository;
+    final versionCheck = widget.versionCheck;
     if (repository == null || _working) return;
     setState(() {
       _working = true;
@@ -139,9 +244,18 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
     bool? selectedDirection;
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final cloud = await repository.inspectCloud();
+      final cloud = automatic
+          ? widget.versionCheck?.metadata
+          : await repository.inspectCloud();
       final local = await repository.captureLocalState();
       if (!mounted || widget.repository != repository) return;
+      if (automatic &&
+          (local.hasUnfinishedFlow ||
+              widget.versionCheck?.hasPendingVersion != true ||
+              widget.versionCheck?.metadata != cloud)) {
+        _deferred = local.hasUnfinishedFlow;
+        return;
+      }
       setState(() => _inspectedCloud = cloud);
       final direction = await _showModal(
         AlertDialog(
@@ -175,7 +289,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
                 const Text('整份覆盖会丢弃另一份独有的记录；设备设置和登录状态不变。'),
                 const SizedBox(height: 8),
                 Text(
-                  _result?.localFingerprint == null
+                  _result?.localFingerprint?.startsWith('v2:') != true
                       ? '尚无可靠的本地同步基线，无法确认本机是否有未同步修改；下载可能丢弃本机数据。'
                       : _result!.localFingerprint != local.fingerprint
                       ? '本机有尚未同步的修改；下载将丢弃这些修改。'
@@ -189,6 +303,31 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
             ),
           ),
           actions: [
+            if (cloud != null && widget.versionCheck != null)
+              TextButton(
+                onPressed: () async {
+                  try {
+                    if (!mounted ||
+                        widget.repository != repository ||
+                        widget.versionCheck != versionCheck)
+                      return;
+                    await versionCheck!.ignore(cloud);
+                    if (mounted &&
+                        widget.repository == repository &&
+                        context.mounted) {
+                      setState(() => _inspectedCloud = null);
+                      Navigator.pop(context);
+                    }
+                  } catch (_) {
+                    if (messenger.mounted) {
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('忽略未保存，请重试。')),
+                      );
+                    }
+                  }
+                },
+                child: const Text('忽略'),
+              ),
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('取消'),
@@ -320,7 +459,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
             ? null
             : widget.versionCheck?.failed == true
             ? () => widget.versionCheck!.check(force: true)
-            : _inspect,
+            : () => _inspect(),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Row(
