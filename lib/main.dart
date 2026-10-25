@@ -3547,6 +3547,7 @@ class _AppointmentPreparationPageState
       required: true,
     );
     if (reason == null || !mounted) return;
+    final pageRoute = ModalRoute.of(context);
     setState(() {
       _busy = true;
       _error = null;
@@ -3556,7 +3557,13 @@ class _AppointmentPreparationPageState
           .read(focusRepositoryProvider)
           .cancelAppointment(appointmentId: current.id, failureReason: reason);
       await _syncAppointmentNotification(null);
-      if (mounted) Navigator.of(context).pop();
+      if (mounted && pageRoute?.isActive == true) {
+        if (pageRoute!.isCurrent) {
+          pageRoute.navigator?.pop();
+        } else {
+          pageRoute.navigator?.removeRoute(pageRoute);
+        }
+      }
     } catch (error) {
       if (mounted) setState(() => _error = _friendlyFocusError(error));
     } finally {

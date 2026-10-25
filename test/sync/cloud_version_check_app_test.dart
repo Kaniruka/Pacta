@@ -5,6 +5,7 @@ import 'package:pacta/src/tasks/task_repository.dart';
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/focus/focus_models.dart';
+import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/calendar/calendar_provider.dart';
 import 'package:pacta/src/calendar/calendar_repository.dart';
@@ -17,7 +18,7 @@ import 'package:pacta/main.dart';
 import 'package:pacta/src/auth/user_lifecycle.dart';
 import 'package:pacta/src/auth/user_lifecycle_models.dart';
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
-import 'package:pacta/src/tasks/task_database.dart';
+import 'package:pacta/src/tasks/task_database.dart' hide FocusSession;
 
 import '../support/fake_auth_repository.dart';
 
@@ -332,6 +333,105 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('选择同步方式'), findsNothing);
       expect(remote.transfers, 0);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await database.close();
+    },
+  );
+
+  testWidgets(
+    'appointment cancellation keeps a newer cloud choice open while notification cleanup completes',
+    (tester) async {
+      final database = PactaDatabase(NativeDatabase.memory());
+      final auth = FakeAuthRepository()..signedInUser = 'reader';
+      final remote = _Remote();
+      final notifications = _DelayedNotificationCleanup();
+      final repository = CloudSnapshotRepository(
+        database: database,
+        remote: remote,
+        userId: 'reader',
+        deviceName: 'test',
+      );
+      final tasks = LocalTaskRepository(
+        database: database,
+        userId: 'reader',
+        remote: InMemoryTaskRemote(),
+        cloudSyncEnabled: false,
+      );
+      final goal = await tasks.createGoal(
+        const GoalDraft(
+          title: 'Goal',
+          classification: TaskClassification.regular,
+        ),
+      );
+      final task = await tasks.createTask(
+        goal.id,
+        const TaskDraft(title: 'Focus task', classification: null),
+      );
+      await tasks.dispose();
+      final focus = LocalFocusRepository(
+        database: database,
+        userId: 'reader',
+        remote: InMemoryFocusRemote(),
+        cloudSyncEnabled: false,
+        now: () => DateTime.utc(2026, 10, 25),
+      );
+      await focus.startAppointment(
+        taskId: task.id,
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 25),
+      );
+      await tester.pumpWidget(
+        _app(
+          database,
+          auth,
+          repository,
+          focusRepository: focus,
+          notificationService: notifications,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('专注链'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('返回准备'));
+      await tester.tap(find.text('返回准备'));
+      await tester.pumpAndSettle();
+      expect(find.text('预约准备'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('取消预约并填写失败原因'),
+        300,
+        scrollable: find
+            .descendant(
+              of: find.byType(AppointmentPreparationPage),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.tap(find.text('取消预约并填写失败原因'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(TextField),
+        ),
+        'Cancel appointment',
+      );
+      remote.revision = 3;
+      remote.deviceName = 'Latest device';
+      notifications.armed = true;
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择同步方式'), findsOneWidget);
+      expect(find.text('云端来源：Latest device'), findsOneWidget);
+      notifications.release.complete();
+      await tester.pumpAndSettle();
+      expect(find.text('选择同步方式'), findsOneWidget);
+      expect(find.text('云端来源：Latest device'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(find.text('预约准备'), findsNothing);
+      expect(find.text('选择任务'), findsOneWidget);
+      expect(await focus.getActiveAppointment(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
       await database.close();
@@ -830,9 +930,11 @@ PactaApp _app(
   CloudSnapshotRepository repository, {
   DateTime Function() cloudCheckClock = DateTime.now,
   FocusRepository? focusRepository,
+  FocusNotificationService? notificationService,
 }) => PactaApp(
   authRepository: auth,
   cloudCheckClock: cloudCheckClock,
+  focusNotificationService: notificationService,
   taskRepositoryFactory: (id) => LocalTaskRepository(
     database: database,
     userId: id,
@@ -892,5 +994,19 @@ class _RaceRemote extends InMemoryCloudSnapshotRemote {
       await gate.future;
     }
     return snapshot;
+  }
+}
+
+class _DelayedNotificationCleanup extends DisabledFocusNotificationService {
+  bool armed = false;
+  final release = Completer<void>();
+
+  @override
+  Future<void> sync({
+    AppointmentPreparation? appointment,
+    FocusSession? session,
+    required String taskTitle,
+  }) async {
+    if (armed && appointment == null && session == null) await release.future;
   }
 }
