@@ -215,8 +215,6 @@ void main() {
         expect(find.text('上传并覆盖云端？'), findsOneWidget);
         await _tap(tester, find.text('取消'));
         await tester.pumpAndSettle();
-        await _tap(tester, find.text('取消'));
-        await tester.pumpAndSettle();
         await _expectBusinessUnchanged(
           repository,
           localBaseline,
@@ -357,11 +355,6 @@ void main() {
           findsNothing,
           reason: 'A paused session must not be interrupted.',
         );
-        expect(
-          find.text('云端来源：Issue 72 controlled snapshot revision 5'),
-          findsOneWidget,
-          reason: 'The delayed choice must describe the latest revision, not revision 4.',
-        );
         await _capture(tester, 'issue72-paused-nonblocking-latest-revision');
         await focus.resumeSession(session.id);
         await focus.completeEarlySession(
@@ -374,6 +367,11 @@ void main() {
           find.text(_reminderText),
           findsOneWidget,
           reason: 'After focus ends, offer only latest revision 5.',
+        );
+        expect(
+          find.text('云端来源：Issue 72 controlled snapshot revision 5'),
+          findsOneWidget,
+          reason: 'The delayed choice must describe the latest revision, not revision 4.',
         );
         await _capture(tester, 'issue72-focus-ended-latest-reminder');
         await _tap(tester, find.text('取消'));

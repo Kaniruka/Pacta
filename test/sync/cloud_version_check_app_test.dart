@@ -264,6 +264,80 @@ void main() {
     );
   }
 
+  testWidgets(
+    'ending focus while manual preview is open offers the latest version after cancellation once',
+    (tester) async {
+      final database = PactaDatabase(NativeDatabase.memory());
+      final auth = FakeAuthRepository()..signedInUser = 'reader';
+      final remote = _Remote();
+      final repository = CloudSnapshotRepository(
+        database: database,
+        remote: remote,
+        userId: 'reader',
+        deviceName: 'test',
+      );
+      final tasks = LocalTaskRepository(
+        database: database,
+        userId: 'reader',
+        remote: InMemoryTaskRemote(),
+        cloudSyncEnabled: false,
+      );
+      final goal = await tasks.createGoal(
+        const GoalDraft(
+          title: 'Goal',
+          classification: TaskClassification.regular,
+        ),
+      );
+      final task = await tasks.createTask(
+        goal.id,
+        const TaskDraft(title: 'Focus task', classification: null),
+      );
+      await tasks.dispose();
+      var now = DateTime.utc(2026, 10, 25);
+      final focus = LocalFocusRepository(
+        database: database,
+        userId: 'reader',
+        remote: InMemoryFocusRemote(),
+        cloudSyncEnabled: false,
+        now: () => now,
+      );
+      await focus.startSession(
+        taskId: task.id,
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 25),
+      );
+      await tester.pumpWidget(
+        _app(database, auth, repository, focusRepository: focus),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('选择同步方式'), findsNothing);
+      await tester.tap(find.text('我的'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('查看云端并选择方向'));
+      await tester.pumpAndSettle();
+      expect(find.text('云端来源：Other device'), findsOneWidget);
+      remote.revision = 3;
+      remote.deviceName = 'Latest device';
+      now = now.add(const Duration(minutes: 25));
+      await focus.settleDueSessions();
+      await tester.pumpAndSettle();
+      // The user's open preview stays stable until it is closed.
+      expect(find.text('云端来源：Other device'), findsOneWidget);
+      expect(find.text('云端来源：Latest device'), findsNothing);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择同步方式'), findsOneWidget);
+      expect(find.text('云端来源：Latest device'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择同步方式'), findsNothing);
+      expect(remote.transfers, 0);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await database.close();
+    },
+  );
+
   for (final action in ['忽略', '上传']) {
     testWidgets(
       'manual $action during focus prevents a deferred reminder after ending',

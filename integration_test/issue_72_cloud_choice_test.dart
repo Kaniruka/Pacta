@@ -25,6 +25,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 const _surfaceKey = ValueKey<String>('issue72-capture-surface');
+bool _surfaceConverted = false;
 ui.PointerDeviceKind get _pointerKind => Platform.isWindows
     ? ui.PointerDeviceKind.mouse
     : ui.PointerDeviceKind.touch;
@@ -100,7 +101,7 @@ void main() {
           expect(sameCloud.legacyToken, baseline.legacyToken);
 
           await _foreground(tester, fixture);
-          expect(find.byType(AlertDialog), findsNothing);
+          expect(find.text('选择同步方式'), findsNothing);
           // Native restart persistence is exercised independently by the
           // Issue 72 device lifecycle fixture; this test retains a live service.
           await tester.tap(find.text('我的').last, kind: _pointerKind);
@@ -396,9 +397,10 @@ class _Fixture {
       ),
     );
     await tester.pumpAndSettle();
-    if (Platform.isAndroid) {
+    if (Platform.isAndroid && !_surfaceConverted) {
       await IntegrationTestWidgetsFlutterBinding.ensureInitialized()
           .convertFlutterSurfaceToImage();
+      _surfaceConverted = true;
       await tester.pump();
     }
   }

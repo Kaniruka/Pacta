@@ -433,6 +433,9 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
     } finally {
       if (mounted && widget.repository == repository) {
         setState(() => _working = false);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          unawaited(_maybeAutomatic());
+        });
       }
     }
   }
