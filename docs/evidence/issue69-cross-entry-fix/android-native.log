@@ -1,0 +1,17 @@
+00:00 +0: loading F:/Workspace/Release/Flutter/Pacta/integration_test/issue_69_sync_result_device_test.dart
+Running Gradle task 'assembleDebug'...
+WARNING: Your app uses the following plugins that apply Kotlin Gradle Plugin (KGP): flutter_timezone
+Future versions of Flutter will fail to build if your app uses plugins that apply KGP.
+
+Please check the changelogs of these plugins and upgrade to a version that supports Built-in Kotlin.
+If no such version exists, report the issue to the plugin. If necessary, here is a guide on filing
+an issue against a plugin: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-app-developers#report-incompatible-kotlin-gradle-plugin-usage-to-plugin-authors
+
+If you are a plugin author, please migrate your plugin to Built-in Kotlin using this guide: https://docs.flutter.dev/release/breaking-changes/migrate-to-built-in-kotlin/for-plugin-authors
+Running Gradle task 'assembleDebug'...                             17.5s
+√ Built build\app\outputs\flutter-apk\app-debug.apk
+Installing build\app\outputs\flutter-apk\app-debug.apk...          762ms
+00:00 +0: Issue69 native sync result cross-entry
+ISSUE69_NATIVE_PASS platform=android pid=3683 phase=cross-entry db=/data/user/0/com.pacta.pacta/files/issue69-fix20261026android2.sqlite
+00:21 +1: (tearDownAll)
+00:22 +1: All tests passed!

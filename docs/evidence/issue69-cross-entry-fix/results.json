@@ -1,0 +1,44 @@
+{
+  "date": "2026-10-26",
+  "base": "70e0fa20bd897d48205e46aceb5f22d307283842",
+  "format": "3 modified Dart files, 0 changed on final pass",
+  "analyze": "Analyzing Pacta...                                              \nNo issues found! (ran in 2.4s)",
+  "red_pre_fix": "Permanent App regression: upload success visible, but after returning twice still 尚未同步; exit 1",
+  "red_delayed_read": "An old null disk result overwrote the new result before request protection; exit 1",
+  "sync_tests": 63,
+  "full_tests": 329,
+  "windows": {
+    "os": "Windows 11 / 10.0.22631.2506",
+    "run": "fix20261026win5",
+    "pid": 21400,
+    "passed": 1
+  },
+  "android": {
+    "os": "Android 15 / API35",
+    "device": "emulator-5554 / PactaT24Peer",
+    "run": "fix20261026android2",
+    "pid": 3683,
+    "passed": 1,
+    "no_uninstall": true
+  },
+  "external_cloud": "InMemoryCloudSnapshotRemote; no live Supabase requests or RLS revalidation",
+  "review": {
+    "standards": 0,
+    "spec": 0,
+    "method": "git diff 70e0fa2 -- tracked implementation/tests; read new validation doc separately"
+  },
+  "screenshots": {
+    "android-first-summary.png": "d165fbc7e5587fc2a7d018842a59a54650a8f9a4cc12ebc16b4a3f80bbccb69d",
+    "android-second-summary.png": "b532ae86aa7b14360b3d5be3e947d6292f0a4d76c6ed722a90fb80c58e54bb9c",
+    "windows-first-summary.png": "b2d6a04461b6778b317f3e18608e30ccdb13ef2e69b8ae92d476d7f5ec96ad39",
+    "windows-second-summary.png": "e4e433c2985cf27d2ef624390f55bc693d47e1568ee5c34536a59a14fb18e0a9"
+  },
+  "restoration": {
+    "android_debug_build": "passed",
+    "android_install_r": "Success",
+    "android_fixture_sqlite_bytes": 188416,
+    "windows_debug_build": "passed",
+    "public_config_removed": true,
+    "normal_app_launched": false
+  }
+}

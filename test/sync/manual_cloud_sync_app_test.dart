@@ -43,6 +43,145 @@ void main() {
         );
   });
 
+  for (final delayInitialResult in [false, true]) {
+    testWidgets(
+      'AI manual sync refreshes the existing summary and local baseline '
+      '(delayed initial result: $delayInitialResult)',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1000, 1800));
+        final database = PactaDatabase(NativeDatabase.memory());
+        final auth = _StreamingAuthRepository()..signedInUser = _userId;
+        final cloudRemote = _TrackingCloudSnapshotRemote();
+        final resultStore = _DelayedInitialResultStore(delayInitialResult);
+        var syncTime = DateTime(2026, 10, 26, 10, 0, 0);
+        final cloudRepository = CloudSnapshotRepository(
+          database: database,
+          remote: cloudRemote,
+          syncResultStore: resultStore,
+          userId: _userId,
+          deviceId: 'device-a',
+          deviceName: 'Device A',
+          now: () => syncTime,
+        );
+        try {
+          await tester.pumpWidget(
+            PactaApp(
+              authRepository: auth,
+              taskRepositoryFactory: (userId) => LocalTaskRepository(
+                database: database,
+                userId: userId,
+                remote: InMemoryTaskRemote(),
+                cloudSyncEnabled: false,
+              ),
+              focusRepositoryFactory: (userId) => LocalFocusRepository(
+                database: database,
+                userId: userId,
+                remote: InMemoryFocusRemote(),
+                cloudSyncEnabled: false,
+              ),
+              nationalFocusRepositoryFactory: (userId) =>
+                  LocalNationalFocusRepository(
+                    database: database,
+                    userId: userId,
+                    cloudSyncEnabled: false,
+                  ),
+              calendarRepositoryFactory: (userId) => LocalCalendarRepository(
+                database: database,
+                userId: userId,
+                provider: const UnsupportedCalendarProvider(),
+                remote: InMemoryCalendarRemote(),
+                cloudSyncEnabled: false,
+              ),
+              userLifecycleRepositoryFactory: (id) => UserLifecycleRepository(
+                authRepository: auth,
+                localAccess: LocalUserLifecycleAccess(
+                  database: database,
+                  userId: id,
+                ),
+              ),
+              cloudSnapshotRepositoryFactory: (_) => cloudRepository,
+            ),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('我的'));
+          await tester.pumpAndSettle();
+          expect(find.text('尚未同步'), findsOneWidget);
+          await tester.tap(find.text('国策 AI 分析'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('前往手动同步'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byTooltip('查看云端并选择方向'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('上传'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('确认上传'));
+          await tester.pumpAndSettle();
+          expect(find.text('上传完成，已覆盖云端数据。'), findsOneWidget);
+          resultStore.release();
+          await tester.pumpAndSettle();
+          await tester.pageBack();
+          await tester.pumpAndSettle();
+          await tester.pageBack();
+          await tester.pumpAndSettle();
+          expect(find.text('尚未同步'), findsNothing);
+          expect(find.text('2026-10-26 10:00:00'), findsOneWidget);
+
+          // A second successful upload must replace an already visible summary
+          // and the baseline used by this still-mounted card's next preview.
+          await tester.tap(find.text('看板'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('新建目标'));
+          await tester.pumpAndSettle();
+          await tester.enterText(
+            find.widgetWithText(TextField, '目标名称'),
+            'Changed between successful uploads',
+          );
+          await tester.tap(find.text('保存'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('我的'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byTooltip('查看云端并选择方向'));
+          await tester.pumpAndSettle();
+          expect(find.text('本机有尚未同步的修改；下载将丢弃这些修改。'), findsOneWidget);
+          await tester.tap(find.text('取消'));
+          await tester.pumpAndSettle();
+          syncTime = DateTime(2026, 10, 26, 11, 30, 0);
+          await tester.tap(find.text('国策 AI 分析'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('前往手动同步'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byTooltip('查看云端并选择方向'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('上传'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('确认上传'));
+          await tester.pumpAndSettle();
+          expect(find.text('上传完成，已覆盖云端数据。'), findsOneWidget);
+          await tester.pageBack();
+          await tester.pumpAndSettle();
+          await tester.pageBack();
+          await tester.pumpAndSettle();
+          expect(find.text('2026-10-26 11:30:00'), findsOneWidget);
+          expect(find.text('2026-10-26 10:00:00'), findsNothing);
+          await tester.tap(find.byTooltip('查看云端并选择方向'));
+          await tester.pumpAndSettle();
+          expect(find.text('本机数据与上次成功同步时一致。'), findsOneWidget);
+          expect(find.textContaining('本机有尚未同步的修改'), findsNothing);
+          await tester.tap(find.text('取消'));
+          await tester.pumpAndSettle();
+          expect(find.text('2026-10-26 11:30:00'), findsOneWidget);
+        } finally {
+          resultStore.release();
+          await tester.pumpWidget(const SizedBox.shrink());
+          await tester.pumpAndSettle();
+          await auth.changes.close();
+          await database.close();
+          await tester.binding.setSurfaceSize(null);
+        }
+      },
+    );
+  }
+
   testWidgets(
     'signing out during upload suppresses stale completion feedback',
     (tester) async {
@@ -485,5 +624,27 @@ class _StreamingAuthRepository extends FakeAuthRepository {
   Future<void> signOut() async {
     await super.signOut();
     changes.add(null);
+  }
+}
+
+/// Models an older disk read finishing after another entry saved a new result.
+class _DelayedInitialResultStore extends CloudSyncResultStore {
+  _DelayedInitialResultStore(this.delayInitialResult);
+
+  final bool delayInitialResult;
+  final _release = Completer<void>();
+  bool _firstRead = true;
+
+  void release() {
+    if (!_release.isCompleted) _release.complete();
+  }
+
+  @override
+  Future<CloudSyncResult?> load(String userId) async {
+    final delay = _firstRead && delayInitialResult;
+    _firstRead = false;
+    final result = await super.load(userId);
+    if (delay) await _release.future;
+    return result;
   }
 }

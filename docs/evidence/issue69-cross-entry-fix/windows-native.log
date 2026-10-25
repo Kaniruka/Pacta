@@ -1,0 +1,7 @@
+00:00 +0: loading F:/Workspace/Release/Flutter/Pacta/integration_test/issue_69_sync_result_device_test.dart
+Building Windows application...                                    27.0s
+√ Built build\windows\x64\runner\Debug\pacta.exe
+00:00 +0: Issue69 native sync result cross-entry
+ISSUE69_NATIVE_PASS platform=windows pid=21400 phase=cross-entry db=C:\Users\Stray\AppData\Roaming\com.pacta\pacta/issue69-fix20261026win5.sqlite
+00:15 +1: (tearDownAll)
+00:15 +1: All tests passed!

@@ -1,0 +1,38 @@
+00:00 +0: loading F:/Workspace/Release/Flutter/Pacta/test/sync/manual_cloud_sync_app_test.dart
+00:00 +0: AI manual sync refreshes the existing summary and local baseline (delayed initial result: false)
+══╡ EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK ╞════════════════════════════════════════════════════
+The following TestFailure was thrown running a test:
+Expected: no matching candidates
+  Actual: _TextWidgetFinder:<Found 1 widget with text "尚未同步": [
+            Text("尚未同步", debugLabel: (englishLike bodySmall 2021).merge((blackMountainView
+bodySmall).apply), inherit: false, color: Color(alpha: 1.0000, red: 0.0902, green: 0.1137, blue:
+0.1059, colorSpace: ColorSpace.sRGB), family: Roboto, size: 12.0, weight: 400, letterSpacing: 0.4,
+baseline: alphabetic, height: 1.3x, leadingDistribution: even, decoration: Color(alpha: 1.0000, red:
+0.0902, green: 0.1137, blue: 0.1059, colorSpace: ColorSpace.sRGB) TextDecoration.none, textAlign:
+end, dependencies: [DefaultSelectionStyle, DefaultTextStyle, MediaQuery]),
+          ]>
+   Which: means one was found but none were expected
+
+When the exception was thrown, this was the stack:
+#4      main.<anonymous closure> (file:///F:/Workspace/Release/Flutter/Pacta/test/sync/manual_cloud_sync_app_test.dart:126:11)
+<asynchronous suspension>
+#5      testWidgets.<anonymous closure>.<anonymous closure> (package:flutter_test/src/widget_tester.dart:192:15)
+<asynchronous suspension>
+#6      TestWidgetsFlutterBinding._runTestBody (package:flutter_test/src/binding.dart:1953:5)
+<asynchronous suspension>
+<asynchronous suspension>
+(elided one frame from package:stack_trace)
+
+This was caught by the test expectation on the following line:
+  file:///F:/Workspace/Release/Flutter/Pacta/test/sync/manual_cloud_sync_app_test.dart line 126
+The test description was:
+  AI manual sync refreshes the existing summary and local baseline (delayed initial result: false)
+════════════════════════════════════════════════════════════════════════════════════════════════════
+00:01 +0 -1: AI manual sync refreshes the existing summary and local baseline (delayed initial result: false) [E]
+  Test failed. See exception logs above.
+  The test description was: AI manual sync refreshes the existing summary and local baseline (delayed initial result: false)
+
+00:01 +0 -1: Some tests failed.
+
+Failing tests:
+  F:/Workspace/Release/Flutter/Pacta/test/sync/manual_cloud_sync_app_test.dart: AI manual sync refreshes the existing summary and local baseline (delayed initial result: false)

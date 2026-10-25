@@ -102,6 +102,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
 
   String? _message;
   CloudSyncResult? _result;
+  int _resultRequest = 0;
   CloudSnapshotMetadata? _inspectedCloud;
 
   @override
@@ -141,7 +142,9 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
   void _versionChanged() {
     if (mounted) {
       if (widget.versionCheck?.hasPendingVersion != true) _deferred = false;
+      if (widget.versionCheck?.metadata == null) _inspectedCloud = null;
       setState(() {});
+      unawaited(_loadResult());
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_maybeAutomatic());
       });
@@ -162,14 +165,19 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
   }
 
   Future<void> _loadResult() async {
+    final request = ++_resultRequest;
     final repository = widget.repository;
     try {
       final result = await repository?.loadSyncResult();
-      if (mounted && widget.repository == repository) {
+      if (mounted &&
+          widget.repository == repository &&
+          request == _resultRequest) {
         setState(() => _result = result);
       }
     } catch (_) {
-      if (mounted && widget.repository == repository) {
+      if (mounted &&
+          widget.repository == repository &&
+          request == _resultRequest) {
         setState(() => _message = '同步记录读取失败，请重新查看云端。');
       }
     }
