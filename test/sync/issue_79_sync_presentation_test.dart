@@ -16,6 +16,7 @@ import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 
 import '../support/fake_auth_repository.dart';
+import '../support/frozen_ui79_remote.dart';
 
 const _captureRoot = String.fromEnvironment('ISSUE79_CAPTURE');
 const _baseline = bool.fromEnvironment('ISSUE79_BASELINE');
@@ -68,7 +69,7 @@ void main() {
       final auth = FakeAuthRepository()..signedInUser = user;
       final sync = CloudSnapshotRepository(
         database: database,
-        remote: _Ui79Remote(),
+        remote: FrozenUi79Remote(),
         userId: user,
         deviceId: 'issue79-desktop',
         deviceName: '家里的工作电脑',
@@ -186,24 +187,4 @@ Future<void> _capture(WidgetTester tester, String name) async {
     }
     await file.writeAsBytes(bytes!.buffer.asUint8List());
   });
-}
-
-// Frozen cloud metadata.
-class _Ui79Remote extends InMemoryCloudSnapshotRemote {
-  @override
-  Future<CloudSnapshotMetadata?> inspect({required String userId}) async {
-    final value = await super.inspect(userId: userId);
-    if (value == null) return null;
-    return CloudSnapshotMetadata(
-      revision: value.revision,
-      deviceId: value.deviceId,
-      deviceName: value.deviceName,
-      dataUpdatedAt: value.dataUpdatedAt,
-      uploadedAt: DateTime(2026, 11, 12, 10, 30),
-      rowCount: value.rowCount,
-      payload: value.payload,
-      deviceManufacturer: value.deviceManufacturer,
-      deviceModel: value.deviceModel,
-    );
-  }
 }
