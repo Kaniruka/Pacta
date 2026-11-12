@@ -496,7 +496,8 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
           : view == 'narrow'
           ? const Size(546, 682)
           : const Size(1265, 682);
-      // Native Android capture must match the actual ImageView surface.
+      // Native Android screenshots require the render viewport to match the
+      // actual ImageView surface, including its fractional logical dimensions.
       if (Platform.isAndroid) {
         tester.view.resetPhysicalSize();
       } else {
