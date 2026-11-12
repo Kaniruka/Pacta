@@ -27,7 +27,13 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: SafeArea(child: NationalFocusTreePage(repository: repository)),
+          body: SafeArea(
+            // Keep page overflow explicit on tall native device viewports.
+            child: SizedBox(
+              height: 500,
+              child: NationalFocusTreePage(repository: repository),
+            ),
+          ),
         ),
       ),
     );
@@ -64,6 +70,7 @@ void main() {
         )
         .first;
     final position = tester.state<ScrollableState>(scrollable).position;
+    expect(position.maxScrollExtent, greaterThan(0));
     final pageOffset = position.pixels;
     final beforeSingle = tester.widget<Transform>(canvas).transform.clone();
     await tester.drag(gestureSurface, const Offset(0, -80));
