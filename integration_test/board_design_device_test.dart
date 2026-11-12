@@ -552,8 +552,33 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
         ),
       );
       await tester.pumpAndSettle();
-      await shot('expanded');
-      if (hold > 0) {
+      final androidManual = Platform.isAndroid && hold > 0;
+      if (androidManual) {
+        // As in the accepted focus pilot, retain the native surface for actual
+        // system touch input. Convert to screenshot ImageView only after hold.
+        debugPrint(
+          '[board-pilot] manual-expanded hold=${hold}s nativeSurface=true',
+        );
+        final previous = binding.shouldPropagateDevicePointerEvents;
+        binding.shouldPropagateDevicePointerEvents = true;
+        debugPrint('BOARD_PILOT_INSPECTION_READY');
+        try {
+          final deadline = DateTime.now().add(Duration(seconds: hold));
+          while (DateTime.now().isBefore(deadline)) {
+            await tester.pump(const Duration(milliseconds: 100));
+            await tester.runAsync(
+              () => Future<void>.delayed(const Duration(milliseconds: 100)),
+            );
+          }
+        } finally {
+          binding.shouldPropagateDevicePointerEvents = previous;
+        }
+        await tester.pumpAndSettle();
+        await shot('after-hold');
+      } else {
+        await shot('expanded');
+      }
+      if (hold > 0 && !androidManual) {
         binding.framePolicy =
             LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
         binding.shouldPropagateDevicePointerEvents = true;
