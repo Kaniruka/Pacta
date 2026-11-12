@@ -55,3 +55,13 @@ Final support images (absolute):
 - `C:/Users/Stray/.codex/worktrees/spec75-review-fixes/Pacta/build/ui-layout-evidence/board-pilot/runs/review75-repaint-support-default-narrow/board-default-narrow-support.png`
 
 Final commands: existing runner with `--target board --scenario long --view narrow --device emulator-5554 --run-id review75-repaint-long`, then scenario`default`, run-id`review75-repaint-support`. Final code formatted and analyzed without issues. Twenty-two relevant widget tests and twelve runner tests passed as listed above. Device released immediately after final support images were opened; no running acceptance job left. No claim of Windows verification or real-cloud verification is made by this helper/capture-only work.
+
+## Android interactive hold follow-up
+
+The later native-board-touch run against40649e9 returned runner rc0 without source drift, but showed Android ANR before any task interaction. Clicking Wait once did not establish recovery, and no real task touch path was completed. It does **not** pass native interactive acceptance. Read-only lastanr evidence reports `FocusEvent(hasFocus=true)`5004ms timeout; this does not establish the ImageView as the ANR cause.
+
+The accepted focus-chain pilot already retains Android's native surface during manual input and pumps every100ms. Board now reuses that local pattern: when Android hold>0, skip initial expanded screenshot/conversion, enable native pointer propagation, emit `BOARD_PILOT_INSPECTION_READY`, then alternate100ms tester.pump and100ms runAsync delay until the hold deadline. Restore the prior pointer setting in finally, settle, and only then capture `after-hold`. This is an interactive evidence path; it does not assert that the ANR cause is proven or resolved. Windows resize/capture loop and automatic Android long/default paths are unchanged.
+
+For `--target board --scenario long --view narrow --manual-hold 180`, the post-hold driver image is `board-long-narrow-after-hold.png` inside that run's unique evidence directory. Before READY, expected log is `[board-pilot] manual-expanded hold=180s nativeSurface=true`; there must be no `[board-capture] convert begin` before READY/hold completion. After hold, expect `[board-pilot] after-hold ...`, conversion/capture stage logs, and natural runner rc. The independent native-board-touch worker must verify actual Android interactions and native screenshots; no device was started for this follow-up implementation.
+
+Follow-up validation: `dart format integration_test/board_design_device_test.dart`; `flutter analyze --no-pub` no issues; `python -m unittest discover -s scripts -p test_run_focus_pilot.py`12 pass. `git diff --check` clean. Native manual acceptance remains pending the independent worker rerun.
