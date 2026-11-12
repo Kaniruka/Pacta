@@ -112,6 +112,7 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(find.byTooltip('查看云端并选择方向'));
           await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text('上传'));
           await tester.tap(find.text('上传'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('确认上传'));
@@ -152,6 +153,7 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(find.byTooltip('查看云端并选择方向'));
           await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text('上传'));
           await tester.tap(find.text('上传'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('确认上传'));
@@ -240,6 +242,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.byTooltip('查看云端并选择方向'));
         await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('上传'));
         await tester.tap(find.text('上传'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('确认上传'));
@@ -396,6 +399,7 @@ void main() {
             );
             expect(find.text('云端暂无数据，可首次上传。'), findsOneWidget);
 
+            await tester.ensureVisible(find.text('上传'));
             await tester.tap(find.text('上传'));
             await tester.pumpAndSettle();
             expect(find.text('上传并覆盖云端？'), findsOneWidget);
@@ -431,6 +435,7 @@ void main() {
               (await cloudRepository.loadSyncResult())!.succeededAt,
               successfulTime,
             );
+            await tester.ensureVisible(find.text('下载'));
             await tester.tap(find.text('下载'));
             await tester.pumpAndSettle();
             expect(find.text('下载并覆盖本地？'), findsOneWidget);
@@ -502,6 +507,7 @@ void main() {
                   .onPressed,
               isNull,
             );
+            await tester.ensureVisible(find.text('上传'));
             await tester.tap(find.text('上传'));
             await tester.pumpAndSettle();
             expect(find.text('上传并覆盖云端？'), findsOneWidget);
@@ -510,6 +516,7 @@ void main() {
             await focusSeeder.dispose();
             await tester.tap(find.byTooltip('查看云端并选择方向'));
             await tester.pumpAndSettle();
+            await tester.ensureVisible(find.text('上传'));
             await tester.tap(find.text('上传'));
             await tester.pumpAndSettle();
             await (database.update(
