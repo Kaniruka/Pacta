@@ -82,3 +82,7 @@ Windows 实际窗口、正常字号、系统暗主题，DPR 1.25。未设 `physi
 `cloud_sync_card.dart` SHA256：`3E8E5C44136CC91BA0235530652A830141690A78298E325E0E77D7A24EFC7B72`。去重后 Android 源 hash 保存在 `build/issue79/android-final-dedup-sourcehash.txt`，最终格式化为 0 changes；`git diff --check` 通过。设备初始两图基线生产源来自比较基点，最终两端生产源为上述 hash。
 
 集成复核：将 incoming integration/spec-75-ui 合入本票分支（merge 65d553f）后，再次执行 flutter analyze --no-pub（No issues found，rc 0）与 flutter test --no-pub test/sync（64项通过，rc 0）。日志为 build/issue79/analyze-after-merge.log 和 sync-tests-after-merge.log。未push、未创建PR、未关闭Issue。
+
+## 证据归档定位
+
+原工作树路径和原 manifest 保留作历史溯源；本票图片及日志已保全到主树稳定根 `F:/Workspace/Release/Flutter/Pacta/build/spec75/evidence/79/`，下接本文所列原工作树相对路径（包括 `build/`）。归档不改写证据记录的提交、源码哈希、设备或视口；Windows 实际536.8×682.4等实测值及原失败限制继续适用。

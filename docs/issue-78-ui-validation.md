@@ -103,3 +103,7 @@
 目视复查已打开宽窄最终 `issue78-board-setup.png` 及宽档前后 `issue78-board-settled.png`：任务、模式、时长、信号与两开始动作均清晰；结算文案由“返回专注链”改为“返回上一页”，实际落点保持一致。窗口内正常输入框完整矩形断言也通过：宽档input.bottom367 <= content.bottom455，窄档337 <= 485。Android输入法仍只采用上节field-final的独立原生证据。
 
 四轮结束后立即释放Windows给主线程；本节取代前文“Windows两档待验”的状态记录。既有原生拖窗、看板长任务鼠标操作与其他票结果不计作本票实施。
+
+## 证据保全定位
+
+本票图片及原日志已在主树 `F:/Workspace/Release/Flutter/Pacta/build/spec75/` 下，继续使用本文记录的原目录，无须从工作树搬迁。历史工作树、比较提交及 manifest 路径保留作溯源；归档与 review 分支重组不改写证据所记源码哈希。
