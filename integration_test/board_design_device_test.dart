@@ -529,7 +529,8 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
           ? const Size(546, 682)
           : const Size(1265, 682);
       const hold = int.fromEnvironment('FOCUS_PILOT_HOLD_SECONDS');
-      // Native Android capture must match the actual ImageView surface.
+      // Native Android screenshots require the render viewport to match the
+      // actual ImageView surface, including its fractional logical dimensions.
       if (Platform.isAndroid || (Platform.isWindows && hold > 0)) {
         tester.view.resetPhysicalSize();
       } else {
