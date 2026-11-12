@@ -12,7 +12,7 @@
 | #79 | 窄卡完整状态独占一行；覆盖后果紧邻方向，取消/忽略及下载限制保持 | [#86](https://github.com/Kaniruka/Pacta/pull/86) |
 | #80 | 未复现国策页头生产缺陷，保留现状；补短窗、放置、视图恢复与画布证据 | [#82](https://github.com/Kaniruka/Pacta/pull/82) |
 
-汇总分支 `integration/spec-75-ui`，总 PR [#81](https://github.com/Kaniruka/Pacta/pull/81)。独立 PR 按80→76→77→78→79堆叠，以保持每票差异可审查；集成分支包含全部实现。未代替用户合并远端 PR；合并总 PR 后通过 closing references 关闭规格与实施票。#54 不修改、不关闭。
+汇总分支 `integration/spec-75-ui`，总 PR [#81](https://github.com/Kaniruka/Pacta/pull/81)。独立 PR 按80→76→77→78→79堆叠，以保持每票差异可审查；集成分支包含全部实现。分票 PR 未由代理合并；总 PR 已由用户合入 `master`（`a254bb6`），tag `ui-spec75-accepted-20261113` 已推送。#54 不修改、不关闭。
 
 没有新增业务字段、状态或导航目的地，没有改变数据库、身份、同步协议、任务分类或结算规则。设备只用隔离本地fixture、真实本地仓储与外部服务替身，无真实账号或云端往返。
 
@@ -74,6 +74,15 @@ Standards与Spec由两个新上下文并行审查，固定整体 `b033249...3ee2
 稳定本地索引：`build/spec75/evidence/README.md`，三个不可覆盖manifest记录原路径、目标路径、SHA256和大小。76/77/79/80工作树证据保存到对应编号目录，Android截图诊断保存到review-fixes目录；78及系统原生触摸图原本就在主树build/spec75，直接保留。历史失败、空帧与中断记录不删除、不覆盖。清理临时工作树前先保全ignored证据，原分支与审查历史仍保留。
 
 DSH预检发现执行通道未注册，两个worker已关闭；用户明确同意改由Codex子Agent实现。没有暗中绕过DSH连接；实现、合并与审查分工已按票留证。
+
+## 交付后复盘与工具跟进（2026-11-13）
+
+合并后按本批证据链复盘取证返工，只改取证工具与指南，未改产品码、未重跑 Flutter／设备：
+
+- 返工事实：board 人工路径共 12 次 runner 才得到 repaint long／support 两张终图。Android 初轮强制物理视口造成截图等待，修复后首帧全暗；现由取消 physicalSize 覆盖（`board_design_device_test.dart:534`）与首次转换后 `markNeedsPaint`（`:382-390`）机械保证。失败探针、空帧与 ANR 轮记录原样保留。
+- runner：`--manual-hold` 成功改记 `status=captured`＋`native_review_required=true`，失败／漂移仍优先、退出码不变；自动轮仍 `passed`，两者都写 `visual_review_required=true`。指纹改为按 target 取实际渲染输入；新增开跑前 `head_start`／`git_status_start`。
+- `--verify <run_dir>`：只读比对该 manifest 开跑前记录的文件与当前工作树，输出 match／missing／mismatch／unsafe／unverifiable；HEAD 不同只报告，不重跑、不判复用通过，未记录依赖不可证明。
+- DSH 执行通道未注册导致两个 worker 关闭、改由 Codex 子 Agent；属运行环境，后续交接以 `--verify` 复核既有证据代替重跑。未新增脚本、审计文档或 CI。
 
 ## 公开证据副本（2026-11-13）
 
