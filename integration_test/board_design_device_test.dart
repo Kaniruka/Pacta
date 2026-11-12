@@ -337,7 +337,7 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
     const light = bool.fromEnvironment('FOCUS_PILOT_LIGHT');
     final database = PactaDatabase(NativeDatabase.memory());
     final remote = InMemoryFocusRemote();
-    final now = DateTime(2026, 11, 12, 10);
+    var now = DateTime(2026, 11, 12, 10);
     var taskNow = now;
     final tasks = LocalTaskRepository(
       database: database,
@@ -408,10 +408,11 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
     }
 
     try {
+      final support = scenario == 'default' || scenario == 'few';
       if (scenario != 'zero') {
         final goal = await tasks.createGoal(
-          const GoalDraft(
-            title: goalTitle,
+          GoalDraft(
+            title: scenario == 'few' ? '今日目标' : goalTitle,
             description: description,
             classification: TaskClassification.both,
           ),
@@ -419,41 +420,44 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
         final task = await tasks.createTask(
           goal.id,
           TaskDraft(
-            title: taskTitle,
+            title: scenario == 'few' ? '准备材料' : taskTitle,
             description: description,
             estimatedMinutes: 120,
             deadline: DateTime(2026, 11, 15, 18, 30),
             classification: TaskClassification.both,
           ),
         );
-        final done = await tasks.createTask(
-          goal.id,
-          const TaskDraft(
-            title: '已完成的资料校对',
-            estimatedMinutes: 25,
-            classification: TaskClassification.regular,
-          ),
-        );
-        await tasks.setTaskCompletion(done.id, isComplete: true);
-        await tasks.createTask(
-          goal.id,
-          const TaskDraft(
-            title: '准备下一轮发布',
-            classification: TaskClassification.regular,
-          ),
-        );
-        await tasks.createGoal(
-          const GoalDraft(
-            title: '待规划目标',
-            classification: TaskClassification.regular,
-          ),
-        );
+        if (scenario != 'few') {
+          final done = await tasks.createTask(
+            goal.id,
+            const TaskDraft(
+              title: '已完成的资料校对',
+              estimatedMinutes: 25,
+              classification: TaskClassification.regular,
+            ),
+          );
+          await tasks.setTaskCompletion(done.id, isComplete: true);
+          await tasks.createTask(
+            goal.id,
+            const TaskDraft(
+              title: '准备下一轮发布',
+              classification: TaskClassification.regular,
+            ),
+          );
+          await tasks.createGoal(
+            const GoalDraft(
+              title: '待规划目标',
+              classification: TaskClassification.regular,
+            ),
+          );
+        }
         FocusSession session(
           String id,
           int hour,
-          FocusRecordDisposition disposition,
-        ) {
-          final start = DateTime(2026, 11, 11, hour);
+          FocusRecordDisposition disposition, [
+          int day = 11,
+        ]) {
+          final start = DateTime(2026, 11, day, hour);
           final end = start.add(const Duration(minutes: 13));
           return FocusSession(
             id: id,
@@ -475,10 +479,38 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
         await remote.upsertSessions(
           userId: userId,
           sessions: [
-            session('accepted', 9, FocusRecordDisposition.accepted),
-            session('pending', 10, FocusRecordDisposition.pendingReview),
+            if (!support)
+              session('accepted', 9, FocusRecordDisposition.accepted),
+            if (!support)
+              session('pending', 10, FocusRecordDisposition.pendingReview),
           ],
         );
+        if (support) {
+          await remote.upsertSessions(
+            userId: userId,
+            sessions: [
+              for (var day = 0; day < (scenario == 'few' ? 1 : 7); day++)
+                session(
+                  'support-$day',
+                  8,
+                  FocusRecordDisposition.accepted,
+                  12 - day,
+                ),
+            ],
+          );
+          final card = await tree.createCard(
+            const NationalFocusCardDraft(
+              name: '开始前先写一步',
+              triggerCondition: '开始前',
+              action: '写一步',
+            ),
+          );
+          await tree.placeCard(cardId: card.id, parentId: null);
+          await tree.lightCard(card.id);
+          now = DateTime(2026, 11, 13, 10);
+          await tree.settleDueCheckpoints();
+          now = DateTime(2026, 11, 12, 10);
+        }
         await focus.sync();
       }
       final logical = Platform.isAndroid
@@ -486,7 +518,12 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
           : view == 'narrow'
           ? const Size(546, 682)
           : const Size(1265, 682);
-      tester.view.physicalSize = logical * tester.view.devicePixelRatio;
+      const hold = int.fromEnvironment('FOCUS_PILOT_HOLD_SECONDS');
+      if (Platform.isWindows && hold > 0) {
+        tester.view.resetPhysicalSize();
+      } else {
+        tester.view.physicalSize = logical * tester.view.devicePixelRatio;
+      }
       tester.platformDispatcher.textScaleFactorTestValue = 1;
       tester.platformDispatcher.platformBrightnessTestValue = light
           ? Brightness.light
@@ -504,7 +541,6 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
       );
       await tester.pumpAndSettle();
       await shot('expanded');
-      const hold = int.fromEnvironment('FOCUS_PILOT_HOLD_SECONDS');
       if (hold > 0) {
         binding.framePolicy =
             LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
@@ -519,7 +555,28 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
             LiveTestWidgetsFlutterBindingFramePolicy.fadePointers;
       }
       if (const bool.fromEnvironment('FOCUS_DESIGN_SNAPSHOT_ONLY')) return;
-      if (scenario != 'zero') {
+      if (support || scenario == 'zero') {
+        await tester.scrollUntilVisible(
+          find.text('今日日历'),
+          200,
+          scrollable: find
+              .descendant(
+                of: find.byType(BoardPage),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        await tester.pumpAndSettle();
+        await shot('support');
+        expect(find.text('今天没有导入的安排。'), findsOneWidget);
+        await click(find.text('打开国策树'));
+        expect(find.byTooltip('更多'), findsOneWidget);
+        final navigation = find.byType(NavigationRail).evaluate().isNotEmpty
+            ? find.byType(NavigationRail)
+            : find.byType(NavigationBar);
+        await click(find.descendant(of: navigation, matching: find.text('看板')));
+        expect(find.text('今天先做什么'), findsOneWidget);
+      } else {
         expect(find.text(taskTitle), findsOneWidget);
         expect(find.textContaining('待核对'), findsWidgets);
         await click(find.text(goalTitle));
