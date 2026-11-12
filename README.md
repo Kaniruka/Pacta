@@ -20,11 +20,11 @@ Pacta 是基于 Flutter 的自我调节应用，用任务、专注链和国策�
 
 5. 提交代码前运行 `flutter analyze` 和 `flutter test`。涉及平台权限、日历或通知的改动，还应在相应设备上验证。
 
-项目术语见 [GLOSSARY.md](GLOSSARY.md)，行为与验收依据见[核心规格](docs/spec-focus-loop-and-core-shell.md)和[验收矩阵](docs/acceptance-matrix-20260914.md)，架构决定见 [ADR](docs/adr/)。需求与实施记录使用 GitHub Issues。
+维护入口见 [AGENTS.md](AGENTS.md#按任务读取)：行为与同步任务走[领域指南](docs/agents/domain.md#任务章节入口)，页面改动走[UI 指南](docs/agents/ui.md#页面章节入口)。两份指南按任务连接现行要求、实现/复用入口及验收依据；取得这些信息即可停止扩读。术语见 [GLOSSARY.md](GLOSSARY.md)，需求来源和有日期的执行记录仅在追溯时读取；当前实施状态使用 GitHub Issues。
 
 ## 国策树交互与预览
 
-国策卡名称独立必填；简洁视图显示圆状态图标与名称，详细视图增加行动摘要。点击节点进入精简操作面板，详情单独阅读；画布只保留适应屏幕图标，缩放和平移使用原有手势。当前方案见 [画布设计](docs/national-focus-canvas-design.md)，50节点图片样例与4节点隔离UI预览的运行方法见 [预览说明](docs/national-focus-reference-fixture.md)。
+国策页面呈现见[产品设计](docs/product-design.md#other-primary-destinations)，几何与手势见[画布当前方案](docs/national-focus-canvas-design.md#当前实施方案2026-10-06)；50节点图片样例与4节点隔离 UI 预览的运行方法见[预览说明](docs/national-focus-reference-fixture.md)。
 
 ## 自行部署云端
 

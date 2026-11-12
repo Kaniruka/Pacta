@@ -4,7 +4,7 @@ status: accepted
 
 # Use Flutter/Dart with Drift, Riverpod, and Material 3 for the client
 
-Pacta will use one Flutter/Dart client with Android 15 and Windows 11 both included in the first implementation and acceptance round. Both clients provide the core business capabilities and offline operation; the currently committed platform scope is Android and Windows only, with minimum versions for earlier systems subject to compatibility validation. The client will use Drift/SQLite for its offline cache, Riverpod for explicit state management, and Material 3 as the component foundation with custom design tokens for Pacta's visual language. Supabase PostgreSQL, Auth, and RLS remain the cloud boundary established by ADR 0001. This combination keeps Focus Session and National Focus state transitions testable while preserving one cross-platform client; the final screen composition and visual details remain open until the UI prototype is validated.
+Pacta will use one Flutter/Dart client with Android 15 and Windows 11 both included in the first implementation and acceptance round. Both clients provide the core business capabilities and offline operation; the currently committed platform scope is Android and Windows only, with minimum versions for earlier systems subject to compatibility validation. The client will use Drift/SQLite for its offline cache, Riverpod for explicit state management, and Material 3 as the component foundation with custom design tokens for Pacta's visual language. Supabase PostgreSQL, Auth, and RLS remain the cloud boundary established by ADR 0001. This combination keeps Focus Session and National Focus state transitions testable while preserving one cross-platform client; current page composition and visual rules are maintained in the [product design](../product-design.md#25-core-screen-information-architecture) and [UI guide](../agents/ui.md#页面章节入口).
 
 ## Considered options
 
@@ -15,7 +15,7 @@ Pacta will use one Flutter/Dart client with Android 15 and Windows 11 both inclu
 
 ## Delivery scope clarification — 2026-09-12 (platform scope superseded below)
 
-The user confirmed Android 15 and Windows 11 as the initial acceptance pair, replacing the earlier desktop-follows wording. This changes delivery scope, not the accepted client stack, and does not exclude other platforms from the final product.
+历史：当日确认 Android 15 / Windows 11 同轮验收，取代桌面随后交付；当时未排除其他平台。9月14日的下节决定将承诺范围明确收窄为 Android/Windows，其余栈选择保持有效。
 
 ## Committed platform scope — 2026-09-14
 

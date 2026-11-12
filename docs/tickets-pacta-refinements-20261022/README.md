@@ -1,27 +1,21 @@
-# 本轮纵向票发布索引
+# 改进分票与执行证据索引
 
-历史发布状态快照（2026-10-22，不代表后续进度）：[Spec #63](https://github.com/Kaniruka/Pacta/issues/63)仍打开；9张子Issue中[#64](https://github.com/Kaniruka/Pacta/issues/64)已完成验收并关闭、无标签，其余8票打开并保留ready-for-agent。当前状态读取对应 Issue；#65 后续结果见[验收记录](../issue-65-validation.md)。发布时已核验原生父子关系和两条阻塞边；[#64验收证据](../issue-64-validation.md)。
+本页连接 [现行规格](../spec-pacta-refinements-20261022.md#implementation-decisions)、发布拆分与实际执行证据。改行为先读规格相关章节；查实现历史或复现验证时，才读下表记录。**当前状态读取对应 GitHub Issue**；本地记录中的完成状态、测试数字及设备结论均只代表记录当时。
 
-每票含自身实现和适用测试/设备取证，不拆数据库/UI/测试等横向票，无必须先行的纯prefactor。共享文件或推荐顺序不形成硬阻塞。
+| 分票 / Issue | 现行要求 | 有日期的执行证据 |
+| --- | --- | --- |
+| [T01 描述](01.md) / [#64](https://github.com/Kaniruka/Pacta/issues/64) | 看板与描述 | [实施、两端与隔离云往返](../issue-64-validation.md) |
+| [T02 折叠与分类](02.md) / [#65](https://github.com/Kaniruka/Pacta/issues/65) | 看板与描述 | [实施及复验入口](../issue-65-validation.md)；其读屏/键盘证据按 ADR 0007/0008 保留为历史 |
+| [T03 任务选择与恢复](03.md) / [#66](https://github.com/Kaniruka/Pacta/issues/66) | 专注导航与模式 | [实施与两端验收入口](../issue-66-validation.md) |
+| [T04 模式记忆](04.md) / [#67](https://github.com/Kaniruka/Pacta/issues/67) | 专注导航与模式 | [实施与保留数据重启](../issue-67-validation.md) |
+| [T05 视图偏好](05.md) / [#68](https://github.com/Kaniruka/Pacta/issues/68) | 设备视图偏好 | [实施](../issue-68-validation.md)、[跨进程设备验收](../issue-68-device-validation.md) |
+| [T06 同步卡片](06.md) / [#69](https://github.com/Kaniruka/Pacta/issues/69) | 云检查与元数据 | [实施](../issue-69-validation.md)、[跨入口修复](../issue-69-cross-entry-fix-validation.md) |
+| [T07 设备型号](07.md) / [#70](https://github.com/Kaniruka/Pacta/issues/70) | 云检查与元数据 | [实施及服务证据入口](../issue-70-validation.md) |
+| [T08 只读检查](08.md) / [#71](https://github.com/Kaniruka/Pacta/issues/71) | 云检查与元数据 | [实施](../issue-71-validation.md)、[原生生命周期](../issue-71-native-validation.md)、[隔离云](../issue-71-cloud-validation.md) |
+| [T09 选择与延迟提醒](09.md) / [#72](https://github.com/Kaniruka/Pacta/issues/72) | 云检查与元数据 | [实施](../issue-72-validation.md)、[原生提醒](../issue-72-native-validation.md)、[隔离云](../issue-72-cloud-validation.md) |
 
-1. **[T01 描述贯通目标、任务与整份快照](01.md)** · [#64](https://github.com/Kaniruka/Pacta/issues/64) — **已完成并关闭**；提交`fece2f9`已推送。描述编辑、重启及隔离云同步均已验收。
+## 发布拆分与依赖
 
-2. **[T02 标题区域折叠与看板分类呈现](02.md)** · [#65](https://github.com/Kaniruka/Pacta/issues/65) — 阻塞：无。点击目标标题区域独立折叠，隐藏内部任务和添加入口，清楚区分任务分类与本次模式。
+每票承担自身实现和适用测试/设备取证，不拆数据库/UI/测试等横向票。共享文件或推荐顺序不形成硬阻塞。原生依赖为 T06 → T08 → T09：T08复用T06的成功版本/本地基线状态，T09消费T08发现的云版本。T01/T02和T03/T04是组合验证关系，后落地者补组合验收；T07可复用预览展示，不被T06阻塞。
 
-3. **[T03 专注链二级任务选择与执行恢复路径](03.md)** · [#66](https://github.com/Kaniruka/Pacta/issues/66) — 已实施验收（2026-10-23，[证据](../issue-66-validation.md)）；阻塞：无。完整任务列表已迁入二级页面，主页保留数量、入口、链记录、历史和现有流程恢复。
-
-4. **[T04 统一预约和直接专注的上次模式记忆](04.md)** · [#67](https://github.com/Kaniruka/Pacta/issues/67) — 已实施验收（2026-10-23，[证据](../issue-67-validation.md)）；阻塞：无。两种成功启动均记住模式，全部任务入口沿用；试选、取消和失败不保存，已完成两端保留数据进程重启验证。
-
-5. **[T05 国策树视图偏好跨进程重启恢复](05.md)** · [#68](https://github.com/Kaniruka/Pacta/issues/68) — 阻塞：无。本机按用户记住简洁/详细视图，切换立即保存，重启恢复，首次简洁。
-
-6. **[T06 简洁同步卡片与可持久的安全同步结果](06.md)** · [#69](https://github.com/Kaniruka/Pacta/issues/69) — 阻塞：无。同步卡片以时间/状态摘要呈现，在适配平台的弹层内完成现有整份覆盖，并记住本机同步结果。
-
-7. **[T07 云端来源设备型号与旧元数据兼容](07.md)** · [#70](https://github.com/Kaniruka/Pacta/issues/70) — 阻塞：无。上传并展示实际可用的设备名和型号，使用户能识别来源设备，旧数据未知信息明确标注。
-
-8. **[T08 冷启动与前台只读检查云版本](08.md)** · [#71](https://github.com/Kaniruka/Pacta/issues/71) — 已完成；T06 依赖已交付。进入应用及符合节流条件的前台恢复可发现尚未处理的云快照，卡片显示待处理或失败并可重试，未选择前不写业务数据。
-
-9. **[T09 云版本选择提醒、忽略与专注期间延迟](09.md)** · [#72](https://github.com/Kaniruka/Pacta/issues/72) — 已完成实施、验收和推送，Issue已关闭、标签移除，当前无阻塞；验收见 [#72记录](../issue-72-validation.md)。未处理版本获得明确用户选择；忽略只抑制当前版本自动提醒，进行中流程不中断，结束后再提示。
-
-原阻塞链：T06 → T08 → T09。2026-10-25：T06、T08、T09 已完成，当前无剩余原生阻塞；T08 验收见 [#71 记录](../issue-71-validation.md)。T08复用T06的成功版本/本地基线状态；T09消费T08发现的云版本。T01/T02和T03/T04是组合验证关系，不阻塞各自启动；后落地者补组合验收。T07可复用现有预览展示，不被T06阻塞。
-
-历史发布记录：已按批准顺序发布；发布时每票均设置ready-for-agent并关联为spec原生子Issue。后续#64已完成并移除该标签，其余票待实施。原生阻塞链为 [#69](https://github.com/Kaniruka/Pacta/issues/69) → [#71](https://github.com/Kaniruka/Pacta/issues/71) → [#72](https://github.com/Kaniruka/Pacta/issues/72)，其他票无阻塞。既有#54未修改、仍打开。机器可读映射及核验记录见 publication.json。
+历史发布时9张子Issue均关联 Spec #63、设置 ready-for-agent 并核验两条阻塞边。发布后的关闭、标签与阻塞变化见各 Issue 和执行记录，机器可读发布映射保留于 [publication.json](publication.json)。既有 [#54](https://github.com/Kaniruka/Pacta/issues/54) 不由本轮增量规格替代。

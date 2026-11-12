@@ -1,5 +1,7 @@
 # 无障碍产品范围调整核查（2026-10-23）
 
+> 历史时点：本文涉及大字号和 Windows 键盘“继续保留”的结论形成于 ADR 0007，后已被 [ADR 0008](adr/0008-large-text-and-keyboard-out-of-product-scope.md) 部分替代；原始检查与执行事实保留。后续范围同步见[记录](input-scope-change-20261023.md)。
+
 依据：产品负责人本日明确的长期范围决策，以及已接受的 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md)。本次仅调整文档与 GitHub Issue 要求，未修改应用、平台、测试代码或既有证据。
 
 ## 取消与保留

@@ -33,12 +33,24 @@ python3 "$PWD/.agents/skills/ui-ux-pro-max/scripts/search.py" "error recovery ac
 
 | 改动触发 | 必读章节 | 仅在涉及时扩读 |
 | --- | --- | --- |
-| 看板布局、文案、摘要 | 产品设计「Board content hierarchy — 2026-10-07」 | 折叠/描述/分类行为读改进规格「看板与描述」及矩阵 R22-01–03 |
+| 看板布局、文案、摘要 | [看板信息层级](../product-design.md#board-content-hierarchy--2026-10-07) | 折叠/描述/分类行为读[看板与描述](../spec-pacta-refinements-20261022.md#看板与描述)及矩阵 R22-01–03 |
 | 国策树页面 | 产品设计「Other primary destinations」国策树段；国策画布设计「当前实施方案」 | 视图保存读改进规格「设备视图偏好」；结算行为转领域路由；旧评审只作历史证据 |
 | 专注链选择与执行入口 | 改进规格「专注导航与模式」及相关 User Stories | 计时/暂停/结算改变转领域路由；链摘要读产品设计「Chain commitment actions and duration」 |
 | 我的、同步卡片及更新提示 | 改进规格「云检查与元数据」及相关 User Stories | 替换/隔离契约转数据库路由 |
 
 导航职责改变读 ADR 0004；平台/栈改变读 ADR 0003。UI 支持范围先读 [ADR 0007](../adr/0007-accessibility-out-of-product-scope.md) 与 [ADR 0008](../adr/0008-large-text-and-keyboard-out-of-product-scope.md)；后者部分替代前者保留的大字号和键盘条款。技能建议服从这些已确认决定，无需再次确认；已有实现、测试及历史证据保留。
+
+## 页面实现与复用
+
+按命中页面查下表符号，再读相邻组件；取得页面要求、实现边界及验收依据即可停止。行为变化另走[领域路由](domain.md#任务章节入口)，仅查对应行。
+
+| 页面改动 | 已有入口与职责 | 验证入口 |
+| --- | --- | --- |
+| 看板与目标/任务展示 | [lib/main.dart](../../lib/main.dart) 的 `BoardPage` / `_BoardContent` 及目标任务控件；[国策摘要](../../lib/src/board/national_focus_summary_card.dart)已独立。沿用仓储进度投影、描述规范化与已有折叠状态，不在页面另建业务数据 | [看板集成](../../test/board/board_integration_test.dart)、[描述](../../test/board/goal_task_description_test.dart)、[布局](../../test/ui_layout_test.dart) |
+| 专注选择/执行恢复 | [lib/main.dart](../../lib/main.dart) 的 `FocusChainPage` / `FocusTaskPickerPage` / `FocusSetupDialog` / `AppointmentPreparationPage` / `FocusSessionPage`；另查 `_TaskTile` 的看板入口和 `AppShell._openFocusFlow` 的通知恢复调度；业务操作复用[领域实现入口](domain.md#现有实现与复用) | [任务导航](../../test/focus/focus_task_navigation_test.dart)、[预约设置](../../test/focus/appointment_configuration_page_test.dart) |
+| 国策画布与视图偏好 | [NationalFocusTreePage](../../lib/src/national_focus/national_focus_tree_page.dart) 与 [NationalFocusViewPreferences](../../lib/src/national_focus/national_focus_view_preferences.dart)；本机偏好与业务快照分开 | [国策页面测试目录](../../test/national_focus/)、[真实重启证据](../issue-68-device-validation.md) |
+| 我的同步卡片与弹层 | [CloudSyncCard](../../lib/src/sync/cloud_sync_card.dart)复用共享检查和结果状态，跨入口刷新由 App 组合负责；检查 `MyPage` 与 `_openAiManualSync` 两处接入参数及下载后刷新，保持受影响入口一致 | [卡片](../../test/sync/cloud_sync_card_test.dart)、[App 级同步](../../test/sync/manual_cloud_sync_app_test.dart) |
+| 共用主题 | [lib/main.dart](../../lib/main.dart) 的 `_pactaTheme`；先取语义主题与现有相邻组件，再决定是否需要公共扩展 | [布局](../../test/ui_layout_test.dart)、[二级页面布局](../../test/ui_secondary_layout_test.dart) |
 
 ## UI 要求
 
@@ -53,4 +65,4 @@ python3 "$PWD/.agents/skills/ui-ux-pro-max/scripts/search.py" "error recovery ac
 
 实现后做设计评审、行为测试、对应平台检查；逐项处理发现，记录未解决项及依据。仅为改动行为添加必要测试，覆盖受影响入口/操作/状态、窄宽屏、正常字号可读性、亮暗主题及鼠标／触摸操作；涉及身份/授权/同步/数据库时执行根 AGENTS.md 的服务验证要求。
 
-按任务在 Android 模拟器和 Windows 构建、安装或运行，命令与数据保留见 docs/development-environment.md。视觉/可用性靠截图及实际交互，状态/布局用 widget 测试；原生权限/通知/日历及真实桌面行为须对应平台证据。未打开/运行不算目视验收；交付列明改动、实测状态/设备及限制。
+按任务在 Android 模拟器和 Windows 构建、安装或运行，命令与数据保留见[开发环境](../development-environment.md#工具与平台)。视觉/可用性靠截图及实际交互，状态/布局用 widget 测试；原生权限/通知/日历及真实桌面行为须对应平台证据。未打开/运行不算目视验收；交付列明改动、实测状态/设备及限制。
