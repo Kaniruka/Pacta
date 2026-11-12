@@ -63,3 +63,9 @@ Android 由主线程协调，实施者没有运行 Android，也没有接触物�
 协调者的最终 Android long 证据位于 `C:/Users/Stray/.codex/worktrees/spec75-review-fixes/Pacta/build/ui-layout-evidence/board-pilot/runs/review75-repaint-long-long-narrow/`：`board-long-narrow-expanded.png`、`board-long-narrow-collapsed.png`、`board-long-narrow-restored.png`，原 runner/process rc0，source_drift=[]。实际逻辑视口411.43×731.43、正常字号、暗色，触摸折叠、编辑取消/保存/恢复、开始取消完成。原 manifest 保留当时源码/提交，不把证据改记为本补充提交。诊断详情和完整证据路径见集成分支 `docs/spec75-review-fixes.md`。
 
 该轮 `native-during-flow.png` 的 ADB 图出现 Android “Pacta isn't responding” 覆盖，协调者只点了隔离应用的 Wait；原因未确定。FlutterView 驱动图不包含原生系统覆盖，不能据此宣称不存在 ANR 或无人干预原生响应正常。本补充未改生产性能。
+
+## 证据归档定位
+
+原工作树路径和原 manifest 保留作历史溯源；其 Windows 证据已保全到主树稳定根 `F:/Workspace/Release/Flutter/Pacta/build/spec75/evidence/76/`，下接本文原工作树相对路径（例如 `build/ui-layout-evidence/board-pilot/runs/`）。最终 Android long 图的稳定根为 `F:/Workspace/Release/Flutter/Pacta/build/spec75/evidence/review-fixes/build/ui-layout-evidence/board-pilot/runs/review75-repaint-long-long-narrow/`。这些归档不改写原提交或源码哈希。
+
+系统层补验材料保存在主树 `build/spec75/native-board-touch-20261113/`；当前尚未完成，不计通过。其启动发生一次 FocusEvent 超时 ANR，协调者仅点 Wait 一次；既有 Flutter 驱动触摸断言和截图不能证明系统无遮挡或无人干预启动。
