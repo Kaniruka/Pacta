@@ -4,7 +4,9 @@ import 'dart:ui' as ui;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
 import 'package:pacta/src/tasks/task_database.dart';
@@ -12,6 +14,133 @@ import 'package:pacta/src/tasks/task_database.dart';
 import '../support/national_focus_reference_fixture.dart';
 
 void main() {
+  final fontPath = Platform.environment['PACTA_UI_FONT'];
+  setUpAll(() async {
+    await (FontLoader(
+      'MaterialIcons',
+    )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
+    if (fontPath != null) {
+      await (FontLoader('UiEvidence')
+            ..addFont(File(fontPath).readAsBytes().then(ByteData.sublistView)))
+          .load();
+    }
+  });
+  testWidgets('窄窗少量节点的确认、次级入口和放置状态保持可用', (tester) async {
+    final database = PactaDatabase(NativeDatabase.memory());
+    var now = DateTime.utc(2026, 10, 5, 19, 59);
+    final repository = LocalNationalFocusRepository(
+      database: database,
+      userId: 'issue-80-small-tree',
+      cloudSyncEnabled: false,
+      now: () => now,
+    );
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 800);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await repository.dispose();
+      await database.close();
+    });
+    final root = await repository.createCard(
+      const NationalFocusCardDraft(
+        name: '根国策',
+        action: '安排今天',
+        triggerCondition: '每天',
+      ),
+    );
+    await repository.placeCard(cardId: root.id, parentId: null);
+    await repository.lightCard(root.id);
+    for (final name in ['每日阅读', '规律运动']) {
+      final card = await repository.createCard(
+        NationalFocusCardDraft(
+          name: name,
+          action: '完成今天的小行动',
+          triggerCondition: '晚饭后',
+        ),
+      );
+      await repository.placeCard(cardId: card.id, parentId: root.id);
+    }
+    await repository.createCard(
+      const NationalFocusCardDraft(
+        name: '记录收获',
+        action: '写下一句话',
+        triggerCondition: '读书后',
+      ),
+    );
+    now = DateTime.utc(2026, 10, 5, 20, 1);
+    await repository.settleDueCheckpoints();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(
+          colorSchemeSeed: const Color(0xff385a52),
+          fontFamily: fontPath == null ? null : 'UiEvidence',
+        ),
+        home: RepaintBoundary(
+          key: const ValueKey('small-tree-evidence'),
+          child: Scaffold(
+            body: NationalFocusTreePage(repository: repository, now: () => now),
+          ),
+        ),
+      ),
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 30)),
+    );
+    await tester.pumpAndSettle();
+    Future<void> capture(String name) async {
+      final path = Platform.environment['PACTA_UI_EVIDENCE_DIR'];
+      if (path == null) return;
+      await tester.runAsync(() async {
+        await Directory(path).create(recursive: true);
+        final boundary = tester.renderObject<RenderRepaintBoundary>(
+          find.byKey(const ValueKey('small-tree-evidence')),
+        );
+        final image = await boundary.toImage();
+        try {
+          final data = await image.toByteData(format: ui.ImageByteFormat.png);
+          await File('$path/$name.png')
+              .writeAsBytes(data!.buffer.asUint8List());
+        } finally {
+          image.dispose();
+        }
+      });
+    }
+
+    await capture('small-320-pending');
+    await tester.tap(find.text('全部确认 (1)'));
+    await tester.pumpAndSettle();
+    expect(find.text('全部确认 (0)'), findsOneWidget);
+    await tester.tap(find.byTooltip('卡片库'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('放入国策树'));
+    await tester.pumpAndSettle();
+    expect(find.text('为「记录收获」选择位置：点顶层或一个节点。'), findsOneWidget);
+    await capture('small-320-placement');
+    await tester.tap(find.text('简洁视图'));
+    await tester.tap(find.byTooltip('卡片库'));
+    await tester.pumpAndSettle();
+    expect(find.text('详细视图'), findsNothing);
+    expect(find.text('国策卡片库'), findsNothing);
+    await tester.tap(find.byTooltip('取消选择位置'));
+    await tester.pumpAndSettle();
+    tester.view.physicalSize = const Size(546, 400);
+    await tester.pumpAndSettle();
+    await capture('small-short');
+    await tester.tap(find.byTooltip('适应屏幕'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byTooltip('更多'));
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('检查点与失败记录'));
+    await tester.pumpAndSettle();
+    expect(find.text('查看失败记录'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
   testWidgets('整棵图片样例在宽窄视口可适配、缩放、平移并查看卡片内容', (tester) async {
     final database = PactaDatabase(NativeDatabase.memory());
     final repository = LocalNationalFocusRepository(
@@ -34,7 +163,8 @@ void main() {
     });
 
     final screenshotDirectory = Directory(
-      'build/national_focus_reference_preview',
+      Platform.environment['PACTA_UI_EVIDENCE_DIR'] ??
+          'build/national_focus_reference_preview',
     );
     await tester.runAsync(() => screenshotDirectory.create(recursive: true));
 
@@ -58,10 +188,14 @@ void main() {
       tester.view.physicalSize = size;
       await tester.pumpWidget(
         MaterialApp(
-          home: Scaffold(
-            body: RepaintBoundary(
-              key: const ValueKey('reference-preview-screen'),
-              child: NationalFocusTreePage(repository: repository),
+          theme: ThemeData(
+            colorSchemeSeed: const Color(0xff385a52),
+            fontFamily: fontPath == null ? null : 'UiEvidence',
+          ),
+          home: RepaintBoundary(
+            key: const ValueKey('reference-preview-screen'),
+            child: Scaffold(
+              body: NationalFocusTreePage(repository: repository),
             ),
           ),
         ),
@@ -125,11 +259,18 @@ void main() {
       );
       await captureScreenshot(screenshotName);
       await tester.ensureVisible(find.text('简洁视图'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('简洁视图'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('详细视图'));
       await tester.pumpAndSettle();
       expect(find.textContaining('切换不同的国策树分支'), findsOneWidget);
+      await tester.ensureVisible(find.byTooltip('适应屏幕'));
+      await tester.tap(find.byTooltip('适应屏幕'));
+      await tester.pumpAndSettle();
+      await captureScreenshot(
+        screenshotName.replaceFirst('.png', '-detailed.png'),
+      );
       final firstCard = seed.cardId(seed.cardIdsBySourceId.keys.first);
       final firstNode = find.byKey(ValueKey('national-focus-node-$firstCard'));
       await tester.ensureVisible(firstNode);
@@ -139,10 +280,18 @@ void main() {
       expect(tester.takeException(), isNull);
     }
 
-    await verifyViewport(const Size(1280, 900), 'wide.png');
+    await verifyViewport(const Size(1265, 682), 'wide.png');
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
-    await verifyViewport(const Size(390, 844), 'narrow.png');
+    await verifyViewport(const Size(546, 682), 'narrow.png');
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    await verifyViewport(const Size(320, 800), 'compact.png');
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    await verifyViewport(const Size(546, 400), 'short.png');
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
