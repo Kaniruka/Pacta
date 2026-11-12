@@ -98,6 +98,24 @@ Android最终人工hold完整600秒正常结束，`android/manual-live.log` 两�
 
 独立AVD `PactaFocusPilot20261112` 为本次使用现有镜像新建，已核对设备AVD名称后正常关闭，配置／磁盘保留供复用，不擦用户数据。DSH worker已释放，无本次未结束的验收任务。
 
+### 收尾：截图工具与证据目录（2026-11-12 22:35）
+
+- 运行工具改为 `scripts/run_focus_pilot.py`（Python，替换临时 bash 流程）；旧 `run_pilot.sh` 原样留在 `build/ui-layout-evidence/focus-pilot/` 作历史，不再维护。一次运行建立唯一目录 `focus-pilot/runs/<run-id>-<scenario>-<view>[-light][-holdN]`，driver 的 `UI_EVIDENCE_SUBDIR` 与 fixture 的 `FOCUS_PILOT_DIR` 由同一变量派生；`run.log`、`run.rc`、`manifest.json` 与图同目录，manifest 记 HEAD、工作树源码与 runner 自身的 SHA256（运行开始与结束各一次）、实参和输出目录，退出码即失败传播，不以 HEAD 单独标识未提交代码。
+- 参数收敛：`--scenario`/`--view` 限定取值，`--run-id` 只允许 `[A-Za-z0-9][A-Za-z0-9._-]*` 且拒绝 `..`，负 `--manual-hold` 报错；`--manual-hold` 隐含 `--snapshot-only`（人工改变状态后不再继续自动流程，避免历史 zero 那类 finder 失败）。`--flutter` 接受单一路径（可含空格、无需引号）或带引号命令行。运行开始与结束之间源码或 runner 发生变化即标 `invalid` 并返回 3，不宣称通过。工具不提供硬超时：仅杀父进程无法保证 Windows 子进程停止写盘，故不写未保证的能力。
+- 验证（无设备）：`python -m unittest discover -s scripts -p 'test_run_focus_pilot.py'` 8 项通过（落盘与同源、失败码传播、目录复用拒绝、浅色+hold 强制 snapshot-only、源码漂移 invalid、非法 scenario/view/run-id/hold 拒绝、含空格路径分词与实跑）；命令行冒烟 rc=0 且同 run-id 重跑 rc=2；`dart format` 两文件 0 changed；`flutter analyze` No issues found。持久日志 `build/ui-layout-evidence/focus-pilot/scripts-tests.log`、`final-smoke-cli.log` 与 `runs/final-smoke-20261112-default-wide/`（假 flutter 冒烟证据保留，不删）。
+- fixture/driver 调整：pilot 模式桌面截图缺 RepaintBoundary、PNG 编码失败或同名文件已存在时直接失败；driver 仅在 `UI_EVIDENCE_FAIL_ON_EXIST=1` 时拒绝覆盖，其他入口保持原覆盖行为。Android hold 段与 `convertFlutterSurfaceToImage` 调用时机未改。
+- 证据目录备注：`after/` 与 `after-final/` 的 default-wide overview 与 records-scroll 字节相同（sha256 前缀 `c58402bac87b…`、`40eaf7e5e222…`）。单凭 hash 无法区分“重跑得到相同画面”与“复制旧图”，本记录不据此肯定或否定任一方，也不改写以上各节所述批次事实。
+- 文档：`docs/agents/ui.md` 验收段改为四条短规则（分轴审查、测试范围、证据目录与前后对照约束、平台证据），`docs/development-environment.md` 的「工具与平台」增加本工具入口。Standards/Spec 双轴结果稍后单独补充。
+
+### 增量双轴审查（2026-11-12 22:43）
+
+- 基点 `8aef5ca`；覆盖 5 个未提交 Dart 文件（`lib/main.dart`、`lib/src/focus/chain_signals_card.dart`、`test/focus/chain_signals_card_test.dart`、`integration_test/focus_chain_design_device_test.dart`、`test_driver/ui_layout_acceptance_test.dart`）与新增 runner/test（`scripts/run_focus_pilot.py`、`scripts/test_run_focus_pilot.py`）及指南改动（`docs/agents/ui.md`、`docs/development-environment.md`）。
+- 初始产品代码：Standards 0 项、Spec 0 项保留，未由此新增功能缺陷结论。
+- 工具 Spec 2 条指南发现已修：开发环境新增小节曾插在基础工具清单中间，已整体移到工具清单与平台声明之后；`ui.md` 验收末条补回「按任务在 Android 模拟器和 Windows 构建、安装或运行」。
+- 工具 Standards 1 项 CLI 启动发现已修复并经 Codex 核验：`flutter` 经 `shutil.which` 按 PATH/PATHEXT 解析到 `flutter.bat`，显式路径原样保留，新增默认解析与显式路径两条测试；Windows 下 `subprocess` 直接执行 `flutter` 的 FileNotFoundError 已消除。真实 Flutter `--version` 进程 exit 0（主线程打印遇 GBK 编码错误仅为检查器输出，runner 二进制日志无此问题）。
+- 工具 Spec 2 条指南发现已修复并经 Codex 核验：开发环境小节已归位，`ui.md` 末条平台运行要求已恢复。产品代码两轴仍为 Standards 0 项、Spec 0 项。
+- 脚本测试 11 项 exit 0，含 `process_rc` 与 `run.rc`/manifest `rc` 一致性补测；`dart format` 两文件 0 改动、`flutter analyze` 通过、`git diff --check` 通过。最终无未解决阻断，核验完成。
+
 ## 公开 PR 截图副本（2026-11-12）
 
 为 GitHub PR 提供可直接打开的图片，8 张代表图已复制到 `docs/evidence/focus-chain-pilot-20261112/`。均为上文既有批次的逐字节副本（复制前后 SHA-256 一致），保留 PNG 原格式、原始尺寸与元数据，未重新截图、未重新运行、未编辑像素，因此不构成新增补测。
@@ -121,4 +139,3 @@ Android最终人工hold完整600秒正常结束，`android/manual-live.log` 两�
 - Android 两张为 zero 场景人工 hold 的原生 ADB 截屏（emulator-5554 模拟器、1080×1920），非物理真机；`14-edit-saved` 的 `pilot-save` 是人工输入文本。图片只证明可见结果，Session id 相等仍由自动断言支撑，不从图片推断。
 - 逐张打开核对：只含离线 fixture 文案、示例任务／链／动作与系统时钟状态栏，无账号、邮箱、令牌、云端界面或本机路径。
 - 同批其余原图仍在未跟踪的 `build/ui-layout-evidence/focus-pilot/`（构建证据，不纳入版本库）。本目录只作为 PR 与评审的引用入口，原位保留不动。
-

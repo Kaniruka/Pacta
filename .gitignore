@@ -38,6 +38,7 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+/android/build/
 /coverage/
 node_modules/
 supabase/.branches/

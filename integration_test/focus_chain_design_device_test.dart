@@ -47,21 +47,34 @@ const _holdSeconds = int.fromEnvironment(
 const _longAction = '打开笔记本，写下今天最重要的第一步，然后把手机放到看不见的地方，再核对明天的三个要点';
 
 /// 桌面端截图：Android 走 driver 的 takeScreenshot，桌面用 RepaintBoundary。
+///
+/// [strict] 为 pilot 模式：缺 boundary、编码失败或同名文件已存在都直接失败，
+/// 避免一次运行里的截图被静默跳过或覆盖。历史流程保持原来的静默返回。
 Future<void> _captureDesktop(
   WidgetTester tester,
   GlobalKey boundaryKey,
-  String name,
-) async {
+  String name, {
+  bool strict = false,
+}) async {
   final object = boundaryKey.currentContext?.findRenderObject();
-  if (object is! RenderRepaintBoundary) return;
+  if (object is! RenderRepaintBoundary) {
+    if (strict) fail('screenshot "$name": repaint boundary not found');
+    return;
+  }
   final image = await object.toImage(pixelRatio: tester.view.devicePixelRatio);
   final data = await image.toByteData(format: ui.ImageByteFormat.png);
   image.dispose();
-  if (data == null) return;
+  if (data == null) {
+    if (strict) fail('screenshot "$name": PNG encoding returned null');
+    return;
+  }
   final directory = Directory('build/ui-layout-evidence/$_pilotDir');
   await directory.create(recursive: true);
-  await File('${directory.path}/$name.png')
-      .writeAsBytes(data.buffer.asUint8List());
+  final file = File('${directory.path}/$name.png');
+  if (strict && await file.exists()) {
+    fail('screenshot "$name": refusing to overwrite ${file.absolute.path}');
+  }
+  await file.writeAsBytes(data.buffer.asUint8List());
 }
 
 /// 打印逻辑窗口、DPR、textScaler 与系统内边距。
@@ -194,7 +207,7 @@ void main() {
         }
         await binding.takeScreenshot(name);
       } else {
-        await _captureDesktop(tester, boundaryKey, name);
+        await _captureDesktop(tester, boundaryKey, name, strict: true);
       }
       print('[focus-pilot] shot=$name dir=$_pilotDir');
     }
