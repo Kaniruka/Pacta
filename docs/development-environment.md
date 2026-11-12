@@ -127,7 +127,7 @@ cmd.exe /c 'build\windows\x64\runner\Release\pacta.exe'
 
 ### 专注链试点截图工具（2026-11-12）
 
-`scripts/run_focus_pilot.py` 运行现有 focus-chain 试点 fixture 的单个场景：一次运行建立唯一目录 `build/ui-layout-evidence/focus-pilot/runs/<run-id>-<scenario>-<view>[-light][-holdN]`，driver 与 fixture 共用同一子目录，同名截图拒绝覆盖，`run.log`（stdout+stderr 合并）、`run.rc`、`manifest.json`（HEAD、工作树源码 SHA256、实参、输出目录）与图同目录落盘，`run.rc` 与进程退出码为 runner 最终码，Flutter 自身码另记 `process_rc`。运行前后各取一次源码与 runner 自身 SHA256，出现漂移标记 `invalid` 并以退出码 3 结束；`--manual-hold` 隐含 `--snapshot-only`，避免人工操作后自动流程继续。命令按 PATH/PATHEXT 解析（Windows 落到 `flutter.bat`），显式路径原样使用；不提供硬超时：终止父进程不能保证 Windows 子进程停止写盘。
+`scripts/run_focus_pilot.py` 运行现有 focus-chain 试点 fixture 的单个场景：一次运行建立唯一目录 `build/ui-layout-evidence/focus-pilot/runs/<run-id>-<scenario>-<view>[-light][-holdN]`，driver 与 fixture 共用同一子目录，同名截图拒绝覆盖，`run.log`（stdout+stderr 合并）、`run.rc`、`manifest.json`（HEAD、工作树源码 SHA256、实参、输出目录）与图同目录落盘，`run.rc` 与进程退出码为 runner 最终码，Flutter 自身码另记 `process_rc`。运行前后各取一次源码与 runner 自身 SHA256，出现漂移标记 `invalid` 并以退出码 3 结束；`--manual-hold` 隐含 `--snapshot-only`，避免人工操作后自动流程继续。命令按 PATH/PATHEXT 解析（Windows 落到 `flutter.bat`），显式路径原样使用；不提供硬超时：终止父进程不能保证 Windows 子进程停止写盘。成功状态分 `passed`（自动）与 `captured`（`--manual-hold`）：两者都写 `visual_review_required=true`（不代表视觉验收），`captured` 另写 `native_review_required=true`，因为 driver 图可能不含系统遮挡；失败与源码漂移仍优先，`run.rc` 契约不变。manifest 同时记录开跑前 `head_start`／`git_status_start` 与结束值。`--verify <run_dir>` 只读比对 manifest 开跑前记录的文件与当前工作树，输出 match／missing／mismatch／unsafe／unverifiable 与覆盖限制（未记录依赖、HEAD 等价不可证明），不重跑、不改旧记录、不把复用判为通过。
 
 ```bash
 python scripts/run_focus_pilot.py --scenario default --view wide

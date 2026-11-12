@@ -67,3 +67,6 @@ python3 "$PWD/.agents/skills/ui-ux-pro-max/scripts/search.py" "error recovery ac
 - 测试只为改动行为补充，覆盖受影响入口/操作/状态、窄宽屏、正常字号可读性、亮暗主题及鼠标／触摸操作；涉及身份/授权/同步/数据库时执行根 AGENTS.md 的服务验证要求。
 - 截图按[开发环境](../development-environment.md#工具与平台)的命令取得：一次运行一个独立目录，同名不覆盖，stdout/stderr 与退出码随图保存；前后对照须同 fixture、视口、字号、主题，旧图只作历史，不作最终通过依据。
 - 状态/布局用 widget 测试；按任务在 Android 模拟器和 Windows 构建、安装或运行，原生权限/通知/日历及真实桌面行为须对应平台证据。未打开/运行不算目视验收；交付列明改动、实测状态/设备及限制。
+- 人工轮的 driver 截图只截应用画面，可能不含系统弹窗、ANR 或输入法面板；原生 ADB／系统截图与 run 目录同源保存，实际打开判读后才算验收（#78 的 IME 图即 ADB 截图）。
+- 复用既有截图前运行 `python scripts/run_focus_pilot.py --verify <run_dir>`：以 manifest 开跑前记录为基线，报告 match／missing／mismatch／unsafe／unverifiable；不一致须说明取舍，HEAD 不同不自动作废，未记录依赖不能视为未变更。
+- DSH／子 Agent 通道预检失败时停止派工并报告，不自行换通道补设备取证。
