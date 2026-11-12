@@ -23,16 +23,33 @@ const _runId = String.fromEnvironment(
   defaultValue: 'default',
 );
 const _user = 'issue68-native-$_runId';
+const _view = String.fromEnvironment('ISSUE68_VIEW');
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('Issue 68 native view preference $_phase', (tester) async {
+    final nativeLogicalSize =
+        tester.view.physicalSize / tester.view.devicePixelRatio;
+    if (Platform.isWindows && _view == 'narrow') {
+      tester.view.physicalSize =
+          const Size(546, 682) * tester.view.devicePixelRatio;
+      addTearDown(tester.view.resetPhysicalSize);
+    }
+    // ignore: avoid_print
+    print(
+      'ISSUE68_VIEW native=$nativeLogicalSize '
+      'render=${tester.view.physicalSize / tester.view.devicePixelRatio}',
+    );
     final root = await getApplicationSupportDirectory();
     final file = File(
       '${root.path}${Platform.pathSeparator}issue68-native-$_runId.sqlite',
     );
-    if (_phase == 'seed' && await file.exists()) await file.delete();
+    if (_phase == 'seed' && await file.exists()) {
+      throw StateError(
+        'Use a new ISSUE68_RUN_ID; refusing to replace ${file.path}',
+      );
+    }
 
     final database = PactaDatabase(NativeDatabase(file));
     final tasks = LocalTaskRepository(
@@ -145,6 +162,14 @@ Future<void> _capture(WidgetTester tester, String stage) async {
   final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
   image.dispose();
   final root = await getApplicationSupportDirectory();
-  final file = File('${root.path}${Platform.pathSeparator}issue68-$stage.png');
-  await file.writeAsBytes(bytes!.buffer.asUint8List());
+  final file = File(
+    '${root.path}${Platform.pathSeparator}issue68-$_runId-$stage.png',
+  );
+  if (await file.exists()) {
+    throw StateError('Refusing to overwrite ${file.path}');
+  }
+  if (bytes == null) throw StateError('Unable to encode screenshot: $stage');
+  await file.writeAsBytes(bytes.buffer.asUint8List());
+  // ignore: avoid_print
+  print('ISSUE68_SCREENSHOT:${file.path}');
 }
