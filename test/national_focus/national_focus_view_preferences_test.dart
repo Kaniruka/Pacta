@@ -32,13 +32,18 @@ void main() {
     if (path == null) return;
     await tester.runAsync(() async {
       await Directory(path).create(recursive: true);
+      final output = File('$path/$name.png');
+      if (await output.exists()) {
+        throw StateError('Refusing to overwrite ${output.path}');
+      }
       final boundary = tester.renderObject<RenderRepaintBoundary>(
         find.byKey(const ValueKey('preferences-evidence')),
       );
       final image = await boundary.toImage();
       try {
         final data = await image.toByteData(format: ui.ImageByteFormat.png);
-        await File('$path/$name.png').writeAsBytes(data!.buffer.asUint8List());
+        if (data == null) throw StateError('PNG encoding failed: $name');
+        await output.writeAsBytes(data.buffer.asUint8List());
       } finally {
         image.dispose();
       }
