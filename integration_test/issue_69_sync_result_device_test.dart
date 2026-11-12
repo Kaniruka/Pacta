@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/auth/user_lifecycle.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
+import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
@@ -21,15 +22,24 @@ import '../test/support/fake_auth_repository.dart';
 
 const _phase = String.fromEnvironment('ISSUE69_PHASE', defaultValue: 'write');
 const _run = String.fromEnvironment('ISSUE69_RUN', defaultValue: '20261023');
-const _user = 'issue69-native-$_run';
+const _holdSeconds = int.fromEnvironment('ISSUE79_HOLD_SECONDS');
+const _captureDir = String.fromEnvironment(
+  'ISSUE79_CAPTURE_DIR',
+  defaultValue: 'build/ui-layout-evidence/issue79',
+);
+const _user = _phase == 'ui79' ? 'issue79-ui-fixture' : 'issue69-native-$_run';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets('Issue69 native sync result $_phase', (tester) async {
     final root = await getApplicationSupportDirectory();
     final file = File('${root.path}/issue69-$_run.sqlite');
-    final database = PactaDatabase(NativeDatabase(file));
-    final remote = InMemoryCloudSnapshotRemote();
+    final database = PactaDatabase(
+      _phase == 'ui79' ? NativeDatabase.memory() : NativeDatabase(file),
+    );
+    final remote = _phase == 'ui79'
+        ? _Ui79Remote()
+        : InMemoryCloudSnapshotRemote();
     final auth = FakeAuthRepository()..signedInUser = _user;
     var syncTime = _phase == 'cross-entry'
         ? DateTime(2026, 10, 26, 10)
@@ -40,12 +50,17 @@ void main() {
       userId: _user,
       deviceId: 'issue69-${Platform.operatingSystem}',
       deviceName: 'Issue69 isolated native device',
-      now: () => _phase == 'cross-entry' ? syncTime : DateTime.now(),
+      now: () => _phase == 'ui79'
+          ? DateTime(2026, 11, 12, 10, 30)
+          : _phase == 'cross-entry'
+          ? syncTime
+          : DateTime.now(),
     );
     final tasks = LocalTaskRepository(
       database: database,
       userId: _user,
       remote: InMemoryTaskRemote(),
+      now: _phase == 'ui79' ? () => DateTime(2026, 11, 12, 10) : DateTime.now,
       cloudSyncEnabled: false,
     );
     final focus = LocalFocusRepository(
@@ -55,12 +70,26 @@ void main() {
       cloudSyncEnabled: false,
     );
     final tree = LocalNationalFocusRepository(
+      now: _phase == 'ui79' ? () => DateTime(2026, 11, 12, 10) : DateTime.now,
       database: database,
       userId: _user,
       cloudSyncEnabled: false,
     );
     try {
-      if (_phase == 'write') {
+      if (_phase == 'ui79') {
+        await tasks.createGoal(
+          const GoalDraft(
+            title: '同步呈现离线样例',
+            classification: TaskClassification.regular,
+          ),
+        );
+        await tree.settleDueCheckpoints();
+        final local = await sync.captureLocalState();
+        await sync.uploadLocal(
+          expectedRevision: 0,
+          expectedFingerprint: local.fingerprint,
+        );
+      } else if (_phase == 'write') {
         await tasks.createGoal(
           const GoalDraft(
             title: 'Issue69 preserved native goal',
@@ -95,7 +124,20 @@ void main() {
           ),
         ),
       );
+      if (_phase == 'ui79' && Platform.isAndroid) {
+        await IntegrationTestWidgetsFlutterBinding.instance
+            .convertFlutterSurfaceToImage();
+      }
       await tester.pumpAndSettle();
+      if (_phase == 'ui79' && _holdSeconds > 0) {
+        // Bounded pause for real Windows resize through Computer Use.
+        // ignore: avoid_print
+        print('ISSUE79_RESIZE_READY');
+        await tester.runAsync(
+          () => Future<void>.delayed(Duration(seconds: _holdSeconds)),
+        );
+        await tester.pumpAndSettle();
+      }
       final navigation = find.byWidgetPredicate(
         (widget) => widget is NavigationBar || widget is NavigationRail,
       );
@@ -103,7 +145,43 @@ void main() {
         find.descendant(of: navigation, matching: find.text('我的')).last,
       );
       await tester.pumpAndSettle();
-      if (_phase == 'write') {
+      if (_phase == 'ui79') {
+        expect(find.text('2026-11-12 10:30:00'), findsOneWidget);
+        await _capture(tester, 'ui79-$_run-summary');
+        await _open(tester);
+        await _capture(tester, 'ui79-$_run-choice');
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.text('选择同步方式'), findsNothing);
+        await _open(tester);
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+        expect(find.text('2026-11-12 10:30:00'), findsOneWidget);
+        final goal = (await tasks.getGoals()).single;
+        final task = await tasks.createTask(
+          goal.id,
+          const TaskDraft(title: '进行中的同步样例', classification: null),
+        );
+        await focus.startSession(
+          taskId: task.id,
+          mode: FocusChainMode.regular,
+          duration: const Duration(minutes: 25),
+        );
+        await tester.pumpAndSettle();
+        await _open(tester);
+        await tester.ensureVisible(find.text('下载'));
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '下载'))
+              .onPressed,
+          isNull,
+        );
+        expect(find.text('本机有未结束的专注或预约，请先处理后再下载。'), findsOneWidget);
+        await _capture(tester, 'ui79-$_run-unfinished');
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+      } else if (_phase == 'write') {
         expect(find.text('尚未同步'), findsOneWidget);
         await _open(tester);
         await _capture(tester, 'choice');
@@ -113,6 +191,7 @@ void main() {
         expect(find.text('选择同步方式'), findsNothing);
         expect(await remote.inspect(userId: _user), isNull);
         await _open(tester);
+        await tester.ensureVisible(find.text('上传'));
         await tester.tap(find.text('上传'));
         await tester.pumpAndSettle();
         await _capture(tester, 'confirmation');
@@ -120,6 +199,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(await remote.inspect(userId: _user), isNull);
         await _open(tester);
+        await tester.ensureVisible(find.text('上传'));
         await tester.tap(find.text('上传'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('确认上传'));
@@ -204,7 +284,7 @@ void main() {
       await tree.dispose();
       await database.close();
     }
-  });
+  }, timeout: const Timeout(Duration(minutes: 5)));
 }
 
 Future<void> _openAiSyncEntry(WidgetTester tester) async {
@@ -226,6 +306,7 @@ Future<void> _openAiSyncEntry(WidgetTester tester) async {
 Future<void> _uploadThroughAiEntry(WidgetTester tester) async {
   await tester.tap(find.byTooltip('查看云端并选择方向'));
   await tester.pumpAndSettle();
+  await tester.ensureVisible(find.text('上传'));
   await tester.tap(find.text('上传'));
   await tester.pumpAndSettle();
   await tester.tap(find.text('确认上传'));
@@ -260,13 +341,50 @@ Future<void> _open(WidgetTester tester) async {
 }
 
 Future<void> _capture(WidgetTester tester, String phase) async {
+  if (_phase == 'ui79' && Platform.isAndroid) {
+    await IntegrationTestWidgetsFlutterBinding.instance.takeScreenshot(phase);
+    return;
+  }
   final boundary = tester.renderObject<RenderRepaintBoundary>(
     find.byKey(const ValueKey('issue69-capture')),
   );
   final image = await boundary.toImage(pixelRatio: 1);
   final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
   image.dispose();
-  final root = await getApplicationSupportDirectory();
-  await File('${root.path}/issue69-$phase.png')
-      .writeAsBytes(bytes!.buffer.asUint8List());
+  if (_phase == 'ui79') {
+    final file = File('$_captureDir/$phase.png');
+    await file.parent.create(recursive: true);
+    if (await file.exists()) {
+      throw StateError('Refusing to overwrite ${file.path}');
+    }
+    await file.writeAsBytes(bytes!.buffer.asUint8List());
+    // ignore: avoid_print
+    print(
+      'ISSUE79_SCREENSHOT ${file.absolute.path} logical=${tester.view.physicalSize / tester.view.devicePixelRatio} dpr=${tester.view.devicePixelRatio}',
+    );
+  } else {
+    final root = await getApplicationSupportDirectory();
+    await File('${root.path}/issue69-$phase.png')
+        .writeAsBytes(bytes!.buffer.asUint8List());
+  }
+}
+
+// Freeze external cloud metadata for like-for-like visual captures.
+class _Ui79Remote extends InMemoryCloudSnapshotRemote {
+  @override
+  Future<CloudSnapshotMetadata?> inspect({required String userId}) async {
+    final value = await super.inspect(userId: userId);
+    if (value == null) return null;
+    return CloudSnapshotMetadata(
+      revision: value.revision,
+      deviceId: value.deviceId,
+      deviceName: value.deviceName,
+      dataUpdatedAt: value.dataUpdatedAt,
+      uploadedAt: DateTime(2026, 11, 12, 10, 30),
+      rowCount: value.rowCount,
+      payload: value.payload,
+      deviceManufacturer: value.deviceManufacturer,
+      deviceModel: value.deviceModel,
+    );
+  }
 }

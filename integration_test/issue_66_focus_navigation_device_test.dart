@@ -26,6 +26,21 @@ void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('Issue 78 设置输入法、看板返回与预约恢复', (tester) async {
+    if (Platform.isWindows) {
+      const view = String.fromEnvironment('ISSUE78_VIEW', defaultValue: 'wide');
+      final dpr = tester.view.devicePixelRatio;
+      // Render viewport override; this is not a native window resize test.
+      // ignore: avoid_print
+      print(
+        'ISSUE78_WINDOWS_NATIVE:${tester.view.physicalSize / dpr} DPR:$dpr',
+      );
+      tester.view.physicalSize = Size(
+        (view == 'narrow' ? 546 : 1265) * dpr,
+        682 * dpr,
+      );
+      // ignore: avoid_print
+      print('ISSUE78_WINDOWS_RENDER:$view ${tester.view.physicalSize / dpr}');
+    }
     final root = await getTemporaryDirectory();
     final screenshots = await Directory(
       '${root.path}/pacta-issue78-${DateTime.now().microsecondsSinceEpoch}/screenshots',
@@ -96,6 +111,19 @@ void main() {
           () => Future<void>.delayed(const Duration(seconds: 5)),
         );
       }
+      final durationBounds = tester.getRect(find.byType(TextField));
+      final contentBounds = tester.getRect(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(SingleChildScrollView),
+        ),
+      );
+      // ignore: avoid_print
+      print(
+        'ISSUE78_IME_BOUNDS:duration=$durationBounds content=$contentBounds insets=${tester.view.viewInsets}',
+      );
+      expect(durationBounds.top, greaterThanOrEqualTo(contentBounds.top));
+      expect(durationBounds.bottom, lessThanOrEqualTo(contentBounds.bottom));
       expect(find.text('开始倒计时').hitTestable(), findsOneWidget);
       expect(find.text('开始准备（15分钟）').hitTestable(), findsOneWidget);
       await tester.enterText(find.byType(TextField), '0');
@@ -187,6 +215,7 @@ void main() {
       expect(tester.takeException(), isNull);
     } finally {
       await _unmountAndClose(tester, tasks, focus, tree, database);
+      if (Platform.isWindows) tester.view.resetPhysicalSize();
     }
   });
 

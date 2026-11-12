@@ -301,7 +301,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
                   Text(_age(cloud.dataUpdatedAt, local.dataUpdatedAt)),
                 ],
                 const SizedBox(height: 12),
-                const Text('整份覆盖会丢弃另一份独有的记录；设备设置和登录状态不变。'),
+                const Text('设备设置和登录状态不变。'),
                 const SizedBox(height: 8),
                 Text(
                   _result?.localFingerprint?.startsWith('v2:') != true
@@ -314,6 +314,30 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
                   const SizedBox(height: 8),
                   const Text('本机有未结束的专注或预约，请先处理后再下载。'),
                 ],
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Expanded(child: Text('覆盖本机，丢弃本机独有记录。')),
+                    const SizedBox(width: 12),
+                    OutlinedButton(
+                      onPressed: cloud == null || local.hasUnfinishedFlow
+                          ? null
+                          : () => Navigator.pop(context, false),
+                      child: const Text('下载'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Expanded(child: Text('覆盖云端，丢弃云端独有记录。')),
+                    const SizedBox(width: 12),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('上传'),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -347,16 +371,6 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('取消'),
-            ),
-            OutlinedButton(
-              onPressed: cloud == null || local.hasUnfinishedFlow
-                  ? null
-                  : () => Navigator.pop(context, false),
-              child: const Text('下载'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('上传'),
             ),
           ],
         ),
@@ -468,6 +482,26 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
       ? '本地数据时间较新，请选择要保留的数据。'
       : '更新时间相同，内容仍可能不同，请选择要保留的数据。';
 
+  String get _statusLabel => widget.repository == null
+      ? '当前未配置云端连接。'
+      : _working
+      ? '处理中…'
+      : _message != null
+      ? _message!
+      : widget.versionCheck?.checking == true
+      ? '正在检查云端…'
+      : widget.versionCheck?.failed == true
+      ? '云端检查失败，点击重试'
+      : widget.versionCheck?.hasPendingVersion == true
+      ? '云端有待处理更新'
+      : ((_inspectedCloud != null &&
+            (_result?.cloudRevision != _inspectedCloud!.revision ||
+                _result?.legacyToken != _inspectedCloud!.legacyToken)))
+      ? '云端有待处理更新'
+      : _result == null
+      ? '尚未同步'
+      : _time(_result!.succeededAt);
+
   @override
   Widget build(BuildContext context) => Card(
     clipBehavior: Clip.antiAlias,
@@ -481,52 +515,42 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
             : () => _inspect(),
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              const Icon(Icons.cloud_sync_outlined),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  '手动云同步',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Flexible(
-                fit: FlexFit.tight,
-                child: Text(
-                  widget.repository == null
-                      ? '当前未配置云端连接。'
-                      : _working
-                      ? '处理中…'
-                      : _message != null
-                      ? _message!
-                      : widget.versionCheck?.checking == true
-                      ? '正在检查云端…'
-                      : widget.versionCheck?.failed == true
-                      ? '云端检查失败，点击重试'
-                      : widget.versionCheck?.hasPendingVersion == true
-                      ? '云端有待处理更新'
-                      : ((_inspectedCloud != null &&
-                            (_result?.cloudRevision !=
-                                    _inspectedCloud!.revision ||
-                                _result?.legacyToken !=
-                                    _inspectedCloud!.legacyToken)))
-                      ? '云端有待处理更新'
-                      : _result == null
-                      ? '尚未同步'
-                      : _time(_result!.succeededAt),
-                  textAlign: TextAlign.end,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-              const SizedBox(width: 4),
-              Icon(
-                widget.versionCheck?.failed == true
-                    ? Icons.refresh
-                    : Icons.chevron_right,
-              ),
-            ],
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 400;
+              final status = Text(
+                _statusLabel,
+                style: Theme.of(context).textTheme.bodySmall,
+                textAlign: compact ? TextAlign.start : TextAlign.end,
+              );
+              final heading = Row(
+                children: [
+                  const Icon(Icons.cloud_sync_outlined),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      '手动云同步',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  if (!compact) ...[
+                    const SizedBox(width: 12),
+                    Flexible(fit: FlexFit.tight, child: status),
+                    const SizedBox(width: 4),
+                  ],
+                  Icon(
+                    widget.versionCheck?.failed == true
+                        ? Icons.refresh
+                        : Icons.chevron_right,
+                  ),
+                ],
+              );
+              if (!compact) return heading;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [heading, const SizedBox(height: 4), status],
+              );
+            },
           ),
         ),
       ),
