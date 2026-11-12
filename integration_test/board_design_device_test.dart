@@ -370,7 +370,7 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
       final name = 'board-$scenario-$view-$state';
       final size = tester.view.physicalSize / tester.view.devicePixelRatio;
       debugPrint(
-        '[board-pilot] $state logical=$size dpr=${tester.view.devicePixelRatio} textScale=1.0 light=$light',
+        '[board-pilot] $state logical=$size boardWidth=${tester.getSize(find.byType(BoardPage)).width} dpr=${tester.view.devicePixelRatio} textScale=1.0 light=$light',
       );
       if (Platform.isAndroid) {
         if (!androidReady) {
@@ -547,9 +547,18 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
         binding.shouldPropagateDevicePointerEvents = true;
         await tester.pump();
         debugPrint('BOARD_PILOT_INSPECTION_READY');
-        await tester.runAsync(
-          () => Future<void>.delayed(const Duration(seconds: hold)),
-        );
+        await tester.runAsync(() async {
+          var lastSize = tester.view.physicalSize;
+          var capture = 0;
+          for (var elapsed = 0; elapsed < hold; elapsed += 2) {
+            await Future<void>.delayed(const Duration(seconds: 2));
+            final size = tester.view.physicalSize;
+            if (Platform.isWindows && size != lastSize) {
+              lastSize = size;
+              await shot('native-${capture++}');
+            }
+          }
+        });
         binding.shouldPropagateDevicePointerEvents = false;
         binding.framePolicy =
             LiveTestWidgetsFlutterBindingFramePolicy.fadePointers;
@@ -575,6 +584,17 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
             ? find.byType(NavigationRail)
             : find.byType(NavigationBar);
         await click(find.descendant(of: navigation, matching: find.text('看板')));
+        await tester.scrollUntilVisible(
+          find.text('今天先做什么'),
+          -250,
+          scrollable: find
+              .descendant(
+                of: find.byType(BoardPage),
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        await tester.pumpAndSettle();
         expect(find.text('今天先做什么'), findsOneWidget);
       } else {
         expect(find.text(taskTitle), findsOneWidget);
