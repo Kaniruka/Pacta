@@ -67,3 +67,9 @@ Android仍由主线程协调。独立设计轴需主审打开宽窄图给结论�
 
 
 完成设备取证后，将当前integration `7d11f13` 合入本票分支（merge `85d1e81`），包括其他票同步呈现与专注IME修正；本票生产看板代码仍未改变。最终 `flutter analyze --no-pub` 无问题（4.4s，`build/t77-integrated-analyze.log/.rc`，rc0）；`flutter test --no-pub test/board test/ui_layout_test.dart` 19/19通过（`build/t77-integrated-tests.log/.rc`，rc0）。Windows取证均在合并前的a4e1177源码上；合并后仅运行上述检查，未重新声称整合后平台截图通过。
+
+## 证据归档定位
+
+原路径与原 manifest 保留作历史溯源。Windows/本票 widget 证据稳定根为 `F:/Workspace/Release/Flutter/Pacta/build/spec75/evidence/77/`，下接本文原工作树相对路径。最终 Android 支撑图稳定目录为 `F:/Workspace/Release/Flutter/Pacta/build/spec75/evidence/review-fixes/build/ui-layout-evidence/board-pilot/runs/review75-repaint-support-default-narrow/`；归档不改写原提交或源码哈希。
+
+共享系统层触摸补验位于主树 `build/spec75/native-board-touch-20261113/`，尚未完成，不计通过；启动曾发生 FocusEvent 超时 ANR 并人工点 Wait 一次。FlutterView 截图与 instrumented 触摸通过不代表系统层无遮挡或无人干预启动正常。
