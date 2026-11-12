@@ -64,3 +64,6 @@
 300秒轮尾部报 `A SemanticsHandle was active at the end of the test`，期间有引擎AXTree pending警告；原始日志保留，未关闭Semantics检查、未手工释放不属于fixture的handle、未归因成已修复产品缺陷。查本机Flutter源码：`semantics/binding.dart:162` 在平台semanticsEnabled改变为true时自动ensureSemantics，`widget_tester.dart:179/1066` 记录起始handle数并在结尾比较。平台动态启用可能解释尾部增量，但未插桩验证，根因仍未确定；同一源码短120秒sky操作轮rc0，普通自动轮也rc0，不能据此声称长轮问题已修复。
 
 Android仍由主线程协调。独立设计轴需主审打开宽窄图给结论；实现Standards/Spec比较基点仍取本票开始的c9bbef2，集成的其他票差异应按commit/path区分。
+
+
+完成设备取证后，将当前integration `7d11f13` 合入本票分支（merge `85d1e81`），包括其他票同步呈现与专注IME修正；本票生产看板代码仍未改变。最终 `flutter analyze --no-pub` 无问题（4.4s，`build/t77-integrated-analyze.log/.rc`，rc0）；`flutter test --no-pub test/board test/ui_layout_test.dart` 19/19通过（`build/t77-integrated-tests.log/.rc`，rc0）。Windows取证均在合并前的a4e1177源码上；合并后仅运行上述检查，未重新声称整合后平台截图通过。
