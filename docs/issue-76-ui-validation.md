@@ -69,3 +69,5 @@ Android 由主线程协调，实施者没有运行 Android，也没有接触物�
 原工作树路径和原 manifest 保留作历史溯源；其 Windows 证据已保全到主树稳定根 `F:/Workspace/Release/Flutter/Pacta/build/spec75/evidence/76/`，下接本文原工作树相对路径（例如 `build/ui-layout-evidence/board-pilot/runs/`）。最终 Android long 图的稳定根为 `F:/Workspace/Release/Flutter/Pacta/build/spec75/evidence/review-fixes/build/ui-layout-evidence/board-pilot/runs/review75-repaint-long-long-narrow/`。这些归档不改写原提交或源码哈希。
 
 系统层补验材料保存在主树 `build/spec75/native-board-touch-20261113/`；当前尚未完成，不计通过。其启动发生一次 FocusEvent 超时 ANR，协调者仅点 Wait 一次；既有 Flutter 驱动触摸断言和截图不能证明系统无遮挡或无人干预启动。
+
+共享 manualhold fixture 修正（来源4534318）：Android 人工触摸等待期保留原生 surface，等待前不截图/转换，100ms pump/runAsync 接收原生触摸，等待结束后才取 `after-hold` 图。Windows原等待路径与自动Android截图保持；本票未引入 #77 支撑样例或Windows尺寸轮询。此前系统触摸被ANR遮罩阻挡，未实际执行；新模式正在独立重跑，本记录不宣称补验通过。
