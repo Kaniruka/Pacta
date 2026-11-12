@@ -41,9 +41,12 @@ VIEWS = ('wide', 'narrow')
 # The runner itself is included: editing it mid-run invalidates the evidence.
 SOURCE_FILES = (
     'lib/main.dart',
+    'lib/src/board/national_focus_summary_card.dart',
+    'lib/src/calendar/calendar_page.dart',
     'lib/src/focus/chain_signals_card.dart',
     'test/focus/chain_signals_card_test.dart',
     'integration_test/focus_chain_design_device_test.dart',
+    'integration_test/board_design_device_test.dart',
     'test_driver/ui_layout_acceptance_test.dart',
     'scripts/run_focus_pilot.py',
 )
@@ -110,6 +113,7 @@ def non_negative_int(text):
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument('--target', default='focus', choices=('focus', 'board'))
     parser.add_argument('--scenario', default='default', choices=SCENARIOS,
                         help='one scenario per run (default: %(default)s)')
     parser.add_argument('--view', default='wide', choices=VIEWS)
@@ -144,7 +148,7 @@ def main(argv=None):
     if args.manual_hold:
         name += f'-hold{args.manual_hold}'
 
-    subdir = f'focus-pilot/runs/{name}'
+    subdir = f'{args.target}-pilot/runs/{name}'
     out_dir = REPO / EVIDENCE_ROOT / subdir
     if out_dir.exists():
         print(f'refusing to reuse evidence directory: {out_dir}', file=sys.stderr)
@@ -162,7 +166,8 @@ def main(argv=None):
         *flutter_cmd,
         'drive',
         '--driver=test_driver/ui_layout_acceptance_test.dart',
-        '--target=integration_test/focus_chain_design_device_test.dart',
+        ('--target=integration_test/board_design_device_test.dart' if args.target == 'board'
+         else '--target=integration_test/focus_chain_design_device_test.dart'),
         '-d',
         args.device,
         '--dart-define=FOCUS_PILOT_MODE=true',
@@ -170,6 +175,8 @@ def main(argv=None):
         f'--dart-define=FOCUS_PILOT_VIEW={args.view}',
         f'--dart-define=FOCUS_PILOT_DIR={subdir}',
     ]
+    if args.target == 'board':
+        command.append('--dart-define=BOARD_PILOT_MODE=true')
     if args.theme == 'light':
         command.append('--dart-define=FOCUS_PILOT_LIGHT=true')
     if args.manual_hold:

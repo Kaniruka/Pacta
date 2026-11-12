@@ -109,6 +109,18 @@ class RunFocusPilotTest(unittest.TestCase):
                       record['argv'])
         self.assertIn('drive', record['argv'])
 
+    def test_board_target_uses_existing_fixture_and_tracks_its_source(self):
+        rc = self.module.main(['--flutter', self.flutter, '--run-id', 'board',
+                               '--target', 'board', '--scenario', 'long'])
+        self.assertEqual(rc, 0)
+        record = json.loads(self.record.read_text(encoding='utf-8'))
+        self.assertIn('--target=integration_test/board_design_device_test.dart',
+                      record['argv'])
+        self.assertIn('--dart-define=BOARD_PILOT_MODE=true', record['argv'])
+        run_dir = self.root / 'build/ui-layout-evidence/board-pilot/runs/board-long-wide'
+        manifest = json.loads((run_dir / 'manifest.json').read_text(encoding='utf-8'))
+        self.assertIn('integration_test/board_design_device_test.dart', manifest['source_files'])
+
     def test_source_drift_marks_evidence_invalid(self):
         os.environ['FAKE_FLUTTER_TOUCH'] = str(self.root / 'lib/main.dart')
         rc = self.module.main(['--flutter', self.flutter, '--run-id', 'drift'])
