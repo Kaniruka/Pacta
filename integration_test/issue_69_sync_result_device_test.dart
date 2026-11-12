@@ -19,6 +19,7 @@ import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 
 import '../test/support/fake_auth_repository.dart';
+import '../test/support/frozen_ui79_remote.dart';
 
 const _phase = String.fromEnvironment('ISSUE69_PHASE', defaultValue: 'write');
 const _run = String.fromEnvironment('ISSUE69_RUN', defaultValue: '20261023');
@@ -38,7 +39,7 @@ void main() {
       _phase == 'ui79' ? NativeDatabase.memory() : NativeDatabase(file),
     );
     final remote = _phase == 'ui79'
-        ? _Ui79Remote()
+        ? FrozenUi79Remote()
         : InMemoryCloudSnapshotRemote();
     final auth = FakeAuthRepository()..signedInUser = _user;
     var syncTime = _phase == 'cross-entry'
@@ -366,25 +367,5 @@ Future<void> _capture(WidgetTester tester, String phase) async {
     final root = await getApplicationSupportDirectory();
     await File('${root.path}/issue69-$phase.png')
         .writeAsBytes(bytes!.buffer.asUint8List());
-  }
-}
-
-// Freeze external cloud metadata for like-for-like visual captures.
-class _Ui79Remote extends InMemoryCloudSnapshotRemote {
-  @override
-  Future<CloudSnapshotMetadata?> inspect({required String userId}) async {
-    final value = await super.inspect(userId: userId);
-    if (value == null) return null;
-    return CloudSnapshotMetadata(
-      revision: value.revision,
-      deviceId: value.deviceId,
-      deviceName: value.deviceName,
-      dataUpdatedAt: value.dataUpdatedAt,
-      uploadedAt: DateTime(2026, 11, 12, 10, 30),
-      rowCount: value.rowCount,
-      payload: value.payload,
-      deviceManufacturer: value.deviceManufacturer,
-      deviceModel: value.deviceModel,
-    );
   }
 }
