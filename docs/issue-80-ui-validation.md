@@ -56,3 +56,28 @@ flutter test integration_test/national_focus_canvas_gestures_test.dart -d <devic
 ```
 
 少量节点预览已有三态，50 节点入口已有完整树与手势。Android 411×731，Windows 1265×682 / 546×682；另手调短高窗口。先截打开页头，切详细后 fit，放大阅读、平移及普通页面滚动，再进入库发起放置并截禁用/取消状态，最后核验更多记录页。每次独立目录保存截图、命令输出及退出码；本轮未运行以上设备命令。保存中和实际进程重启沿用视图偏好设备验证边界，由主 Agent 取证，不把 widget 页面重建记作真实重启。
+
+## 主线程原生补验（2026-11-13）
+
+主线程独立运行本票三个 widget 测试文件：28 项通过。全规格集成分支另有完整 354 项通过，日志位于主树 `build/spec75/root-checks/`。
+
+现有 `integration_test/issue_68_view_memory_device_test.dart` 补充隔离取证保护：seed 遇到已有同名数据库拒绝替换，要求新 RUN_ID；截图文件包含 RUN_ID、拒绝覆盖及空编码；可选 `ISSUE68_VIEW=narrow` 只在 Windows 设置 546×682 逻辑渲染视口并记录 native/render 两种尺寸。Android 不覆盖原生尺寸。没有改变产品偏好代码或用户数据。
+
+两平台均以同一平台内相同 RUN_ID 顺序执行 `seed` 与 `restored-detailed`，每阶段单独启动进程，均为退出码0、1完整场景通过。命令使用 `flutter test --no-pub --no-uninstall integration_test/issue_68_view_memory_device_test.dart -d <device> --dart-define=ISSUE68_PHASE=<phase> --dart-define=ISSUE68_RUN_ID=<run>`。
+
+| 平台 | RUN_ID | seed PID → restored PID | 结果 |
+| --- | --- | --- | --- |
+| Windows | spec75_20261113_w1 | 45612 → 55220 | 保存详细，新进程恢复详细，再切回简洁；同一隔离SQLite卡片保留 |
+| Android emulator-5554 | spec75_20261113_a1 | 10091 → 10210 | 同上；1080×1920、density420，约411×731 |
+
+`restored-detailed` 在断言恢复详细后会切回简洁再截图，因此该PNG显示简洁；恢复详细依据是不同PID与该阶段已通过的真实持久化断言，不把截图误读为详细。
+
+Windows 另以 `spec75_20261113_wn1` 的新隔离seed通过窄视口：日志记录 native1265.6×682.4、render546×682，未声称原生拖窗。主线程实际打开窄暗图及Android亮色seed/恢复图：页头、次级入口、适应屏幕和视图模式可读，无新增布局问题。
+
+本工作树原始证据目录：`build/issue80-native-windows-20261113/`、`build/issue80-native-android-20261113/`，每个阶段 `.log/.rc/.png`。Windows纯内存四节点demo也由主线程实际打开，通过sky鼠标切换详细及适应屏幕；截图保存在主树 `build/spec75/issue80-native-ui/windows-wide-{simple,detailed}.png`。桌面出现用户操作后停止窗口抢占，其余验证采用隔离设备测试，未控制Codex界面。
+
+Android画布手势及节点操作续验结果另补；首轮手势入口在测试开始前因debug log reader中断退出，未把未启动的场景记为功能通过。
+
+Android手势补验最终通过：`canvas-final.log/.exitcode` 为1测试、rc0；`tree-actions-final.log/.exitcode` 为1测试、rc0。主线程核对原始日志与最终diff。首个真正执行的画布轮失败源于样例页面在当前原生高度恰好无溢出（maxScrollExtent=0），不是单指被画布抢占。仅给测试页面500逻辑像素短高约束并增加maxScrollExtent>0前提；原单指滚动不平移画布、双指缩放/平移断言全部保留。诊断中实测maxExtent139.43、viewport500，最终去除debug日志后仍通过。节点操作原入口未修改，原生进入库、添加子节点和更多记录路径通过。
+
+归档后的稳定本地证据根为主树 `build/spec75/evidence/80/`，保留原工作树相对路径；PNG和日志逐文件SHA256校验。上文原路径保留作取证来源，不依赖工作树继续存在。Windows手动预览图另留主树 `build/spec75/issue80-native-ui/`。没有把Android测试边界/PNG当作真实云服务证据。
