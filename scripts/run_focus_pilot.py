@@ -41,6 +41,8 @@ VIEWS = ('wide', 'narrow')
 # The runner itself is included: editing it mid-run invalidates the evidence.
 SOURCE_FILES = (
     'lib/main.dart',
+    'lib/src/board/national_focus_summary_card.dart',
+    'lib/src/calendar/calendar_page.dart',
     'lib/src/focus/chain_signals_card.dart',
     'test/focus/chain_signals_card_test.dart',
     'integration_test/focus_chain_design_device_test.dart',
