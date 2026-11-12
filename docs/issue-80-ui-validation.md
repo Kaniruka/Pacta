@@ -35,6 +35,8 @@ flutter analyze --no-pub
 
 取证可通过两个可选进程环境变量复跑：`PACTA_UI_FONT` 加载本机中文字库（不提交字体），`PACTA_UI_EVIDENCE_DIR` 指定本次唯一输出目录。默认测试不依赖 Windows 字体。截图加载 MaterialIcons，并包含 Scaffold 底色。首次扩展跑次 `01` 因测试清理计时器及短窗滚动等待不足失败，修正测试清理与 `pumpAndSettle` 后 `02`、最终 `03` 通过；没有为此修改产品代码。
 
+后续取证健全性修正：写入前遇同名文件明确失败，PNG 编码为空也明确失败；未指定目录的 reference 截图使用时间戳子目录。相同两文件在唯一目录 `build/issue80-widget-20261112-04/` 重跑 8 项通过、退出码 0，分析再次无问题（`build/issue80-analyze-capture-guard.log` / `.rc`）。故意重复该目录运行少量节点用例，退出码 1，日志 `build/issue80-capture-overwrite-guard.log` 出现 `Refusing to overwrite`，既有图片 SHA256 前后相同。这一预期失败只用于核验保护生效。
+
 ## 设计自查与实现自查（非独立评审）
 
 设计依据为 UI 指南及 apple-design 的 `layout.md › Visual hierarchy / Adaptability`（相关动作分组、按可用空间布局）、`menus.md › Labels`（次级动作渐进披露）与 `scroll-views.md › Best practices`（滚动和缩放边界）。转译为 Flutter Material/Android/Windows 原则，不套 Apple 导航或材质。ui-ux-pro-max 查询 `responsive scroll constraints --stack flutter` 返回 LayoutBuilder 与 CustomScrollView 建议；现有布局与其一致。ADR 0007/0008 的读屏、大字号与专门键盘排除继续适用。

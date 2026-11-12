@@ -95,14 +95,18 @@ void main() {
       if (path == null) return;
       await tester.runAsync(() async {
         await Directory(path).create(recursive: true);
+        final output = File('$path/$name.png');
+        if (await output.exists()) {
+          throw StateError('Refusing to overwrite ${output.path}');
+        }
         final boundary = tester.renderObject<RenderRepaintBoundary>(
           find.byKey(const ValueKey('small-tree-evidence')),
         );
         final image = await boundary.toImage();
         try {
           final data = await image.toByteData(format: ui.ImageByteFormat.png);
-          await File('$path/$name.png')
-              .writeAsBytes(data!.buffer.asUint8List());
+          if (data == null) throw StateError('PNG encoding failed: $name');
+          await output.writeAsBytes(data.buffer.asUint8List());
         } finally {
           image.dispose();
         }
@@ -164,20 +168,24 @@ void main() {
 
     final screenshotDirectory = Directory(
       Platform.environment['PACTA_UI_EVIDENCE_DIR'] ??
-          'build/national_focus_reference_preview',
+          'build/national_focus_reference_preview/${DateTime.now().microsecondsSinceEpoch}',
     );
     await tester.runAsync(() => screenshotDirectory.create(recursive: true));
 
     Future<void> captureScreenshot(String filename) async {
       await tester.runAsync(() async {
+        final output = File('${screenshotDirectory.path}/$filename');
+        if (await output.exists()) {
+          throw StateError('Refusing to overwrite ${output.path}');
+        }
         final boundary = tester.renderObject<RenderRepaintBoundary>(
           find.byKey(const ValueKey('reference-preview-screen')),
         );
         final image = await boundary.toImage(pixelRatio: 1);
         try {
           final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-          await File('${screenshotDirectory.path}/$filename')
-              .writeAsBytes(bytes!.buffer.asUint8List());
+          if (bytes == null) throw StateError('PNG encoding failed: $filename');
+          await output.writeAsBytes(bytes.buffer.asUint8List());
         } finally {
           image.dispose();
         }
