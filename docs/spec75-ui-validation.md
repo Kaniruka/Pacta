@@ -74,3 +74,26 @@ Standards与Spec由两个新上下文并行审查，固定整体 `b033249...3ee2
 稳定本地索引：`build/spec75/evidence/README.md`，三个不可覆盖manifest记录原路径、目标路径、SHA256和大小。76/77/79/80工作树证据保存到对应编号目录，Android截图诊断保存到review-fixes目录；78及系统原生触摸图原本就在主树build/spec75，直接保留。历史失败、空帧与中断记录不删除、不覆盖。清理临时工作树前先保全ignored证据，原分支与审查历史仍保留。
 
 DSH预检发现执行通道未注册，两个worker已关闭；用户明确同意改由Codex子Agent实现。没有暗中绕过DSH连接；实现、合并与审查分工已按票留证。
+
+## 公开证据副本（2026-11-13）
+
+为便于在 PR 内直接查看，8 张代表图已复制到 `docs/evidence/spec75-final-20261113/`，均为既有批次的逐字节副本（复制前后 SHA-256 一致），保留 PNG 原始尺寸，未重新截图、未重跑设备、未编辑像素，不构成新增补测。源哈希为各轮 manifest／记录中当时**工作树文件**的 SHA-256；`b033249` 只固定提交基线，不固定未提交工作树。最终产品源码已核对与 `169dd44` 等价（`lib`/`test`/`integration_test`/`scripts` 树哈希一致）。
+
+| 文件 | 状态（同 fixture／视口／字号／主题） | 原图路径、源哈希与最终一致性 |
+| --- | --- | --- |
+| [board-tasks-before-windows-narrow-dark.png](evidence/spec75-final-20261113/board-tasks-before-windows-narrow-dark.png) | 看板长任务，Windows 渲染视口 546×682、暗、正常字号 | `build/spec75/evidence/76/build/ui-layout-evidence/board-pilot/runs/t76-baseline-stable-narrow-long-narrow/board-long-narrow-expanded.png`；`lib/main.dart` `5c9d9a9c…81878`（HEAD `b033249` 的未提交原实现） |
+| [board-tasks-after-windows-narrow-dark.png](evidence/spec75-final-20261113/board-tasks-after-windows-narrow-dark.png) | 同上状态，改后；待核对完整说明与截止同屏 | `build/spec75/evidence/76/build/ui-layout-evidence/board-pilot/runs/t76-final-narrow-long-narrow/board-long-narrow-expanded.png`；`lib/main.dart` `c80a0705…01eb9`（同为 HEAD `b033249` 的未提交工作树，同 HEAD 不代表同源）。与最终的关系是**相关页面 diff 核对，非全文件同 hash**：该票看板元信息改动随后进入历史，`0ec65101→最终` 的 `lib/main.dart` 差异只在 `FocusSetupDialog`（#78），看板区域代码相同 |
+| [board-support-after-windows-narrow-light.png](evidence/spec75-final-20261113/board-support-after-windows-narrow-light.png) | 看板三张支撑卡，546×682、亮，七日 91分00秒 | `build/spec75/evidence/77/build/ui-layout-evidence/board-pilot/runs/t77-seven-narrow2-default-narrow-light/board-default-narrow-support.png`；`lib/main.dart` `a215b7ca…6ef9b`（`a4e1177` 提交内容的 CRLF 形式）。同样为相关页面 diff 核对，非全文件同 hash；本票未改生产 |
+| [focus-ime-after-android.png](evidence/spec75-final-20261113/focus-ime-after-android.png) | 专注设置＋系统键盘，emulator-5554、1080×1920/420、≈411.43×731.43、fontScale 1.0 | `build/spec75/t78-android-field-final/native-ime.png`；**原生 ADB 截图（`exec-out screencap -p`）**，含系统状态栏与 Gboard 数字键盘；同轮 RepaintBoundary 图为 412×732 且日志只登记 `issue78-board-ime.png`，本图由 `ISSUE78_NATIVE_IME` 标记后另行截取。`lib/main.dart` `4841f94a…79ef` 与最终文件逐字节一致 |
+| [focus-return-after-windows-narrow.png](evidence/spec75-final-20261113/focus-return-after-windows-narrow.png) | 结算返回，Windows 渲染视口 546×682、系统暗；文案“返回上一页” | `build/spec75/t78-windows-narrow-final/issue78-board-settled.png`；`lib/main.dart` `4841f94a…79ef`（工作树含未提交 #78 改动）与最终文件逐字节一致；原生 client 1265.6×682.4，非原生缩窗 |
+| [sync-choice-before-android.png](evidence/spec75-final-20261113/sync-choice-before-android.png) | 同步选择层，同 fixture／冻结时钟、亮、正常字号 | `build/spec75/evidence/79/build/ui-layout-evidence/issue79/android-baseline-fixed-20261112/ui79-79-baseline-fixed-20261112-choice.png`；生产源为比较基点 `b033249`（`cloud_sync_card.dart` 提交态 `0093d86e`），旧实现对照 |
+| [sync-choice-after-android.png](evidence/spec75-final-20261113/sync-choice-after-android.png) | 同上状态，改后；方向与覆盖后果成组 | `build/spec75/evidence/79/build/ui-layout-evidence/issue79/android-final-dedup-20261112/ui79-79-final-dedup-20261112-choice.png`；`lib/src/sync/cloud_sync_card.dart` `3E8E5C44…FC7B72`（`build/spec75/issue79/android-final-dedup-sourcehash.txt`）与当前仓库该文件相同 |
+| [national-focus-after-android-simple-view.png](evidence/spec75-final-20261113/national-focus-after-android-simple-view.png) | 国策树跨进程恢复后，emulator-5554、≈411×731；**图面为简洁视图** | `build/spec75/evidence/80/build/issue80-native-android-20261113/restored-detailed.png`（原名保留历史）；RUN_ID `spec75_20261113_a1`；`national_focus_tree_page.dart` `62c3138f…`、`national_focus_view_preferences.dart` `52bb2bf5…`、`national_focus_summary_card.dart` `22f56238…` 与最终相同（#80 未改生产） |
+
+使用限制：
+
+- Windows 546×682／1265×682 多为 `tester.view` 逻辑渲染视口，不是原生拖窗证据；原生缩窗实测仅 #77（545.6）与 #79（536.8）。
+- `focus-ime-after-android` 是原生 ADB 截图，含真实系统键盘与状态栏；同轮 RepaintBoundary 图（412×732）不含系统覆盖层，两类图不能互相替代。#76 的 `native-during-flow.png`（ANR 覆盖）与旧失败／中断批次未复制，仍在 `build/spec75/` 原目录。
+- `national-focus-after-android-simple-view` 的详细视图恢复由不同 PID 与阶段断言支撑，不从该 PNG 推断；文件名不暗示详细状态。
+- `build/spec75/issue80-native-ui/windows-wide-simple.png` 与 `windows-wide-detailed.png` 实为 JPEG 字节（`ffd8ff` 头）、扩展名却为 `.png`；按历史不改名，仅在此标注，未纳入副本。
+- 逐张打开核对：仅含离线 fixture 文案、示例任务／链／国策节点与状态栏时钟，无账号、邮箱、令牌、云端界面或本机路径。
