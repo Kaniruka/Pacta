@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pacta/main.dart';
+import 'package:pacta/src/focus/chain_signals_repository.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
@@ -23,6 +24,171 @@ const _userId = 'issue-66-offline-device-fixture';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('Issue 78 设置输入法、看板返回与预约恢复', (tester) async {
+    final root = await getTemporaryDirectory();
+    final screenshots = await Directory(
+      '${root.path}/pacta-issue78-${DateTime.now().microsecondsSinceEpoch}/screenshots',
+    ).create(recursive: true);
+    final database = PactaDatabase(NativeDatabase.memory());
+    var now = DateTime.now().toUtc();
+    final tasks = _newTaskRepository(database, InMemoryTaskRemote());
+    final focus = _newFocusRepository(
+      database,
+      InMemoryFocusRemote(),
+      () => now,
+    );
+    final tree = _newTreeRepository(database);
+    final signals = ChainSignalsRepository(database: database, userId: _userId);
+    try {
+      final goal = await tasks.createGoal(
+        const GoalDraft(
+          title: '设置验收目标',
+          classification: TaskClassification.both,
+        ),
+      );
+      await tasks.createTask(
+        goal.id,
+        const TaskDraft(
+          title: '整理今天需要完成的长中文任务并记录思路与下一步行动',
+          classification: TaskClassification.both,
+        ),
+      );
+      await signals.save(
+        const ChainSignalTexts(
+          appointmentTriggerSignal: '把手机放到书架上然后倒一杯温水，整理桌面并确认接下来只处理当前任务',
+          regularFocusMarker: '翻开笔记写下当前任务的第一个具体步骤，再把计时器放在眼前开始行动',
+          eliteFocusMarker: '关掉所有通知并把任务目标读一遍，确认执行期间只专心完成这项任务',
+        ),
+      );
+      await tester.pumpWidget(
+        RepaintBoundary(
+          key: const ValueKey('issue66-screenshot-root'),
+          child: PactaApp(
+            authRepository: FakeAuthRepository()..signedInUser = _userId,
+            focusNotificationService: DisabledFocusNotificationService(),
+            taskRepositoryFactory: (_) => tasks,
+            focusRepositoryFactory: (_) => focus,
+            nationalFocusRepositoryFactory: (_) => tree,
+            chainSignalsRepositoryFactory: (_) => signals,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      if (Platform.isAndroid) {
+        await binding.convertFlutterSurfaceToImage();
+        await tester.pump();
+      }
+      await tester.tap(find.byTooltip('开始专注'));
+      await tester.pumpAndSettle();
+      await _capture(binding, tester, screenshots, 'issue78-board-setup');
+      await tester.showKeyboard(find.byType(TextField));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 800)),
+      );
+      await tester.pumpAndSettle();
+      await _capture(binding, tester, screenshots, 'issue78-board-ime');
+      if (Platform.isAndroid) {
+        // Host evidence collection captures the native keyboard during this pause.
+        // ignore: avoid_print
+        print('ISSUE78_NATIVE_IME');
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(seconds: 5)),
+        );
+      }
+      expect(find.text('开始倒计时').hitTestable(), findsOneWidget);
+      expect(find.text('开始准备（15分钟）').hitTestable(), findsOneWidget);
+      await tester.enterText(find.byType(TextField), '0');
+      await tester.tap(find.text('开始倒计时'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      await _capture(binding, tester, screenshots, 'issue78-invalid-duration');
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(await focus.getSessions(), isEmpty);
+      expect(await focus.getAppointments(), isEmpty);
+      expect(await focus.getLastMode(), FocusChainMode.regular);
+      await tester.tap(find.byTooltip('开始专注'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('开始倒计时'));
+      await tester.pumpAndSettle();
+      final session = (await focus.getActiveSession())!;
+      await _capture(binding, tester, screenshots, 'issue78-board-execution');
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byType(BoardPage), findsOneWidget);
+      await _capture(binding, tester, screenshots, 'issue78-board-returned');
+      await tester.tap(find.byTooltip('开始专注'));
+      await tester.pumpAndSettle();
+      expect((await focus.getActiveSession())?.id, session.id);
+      expect(await focus.getSessions(), hasLength(1));
+      now = now.add(const Duration(minutes: 26));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      await _capture(binding, tester, screenshots, 'issue78-board-settled');
+      // Baseline and final use the same fixture; verify the real pop destination.
+      final settledReturn = find.text('返回上一页').evaluate().isNotEmpty
+          ? find.text('返回上一页')
+          : find.text('返回专注链');
+      await tester.tap(settledReturn);
+      await tester.pumpAndSettle();
+      expect(find.byType(BoardPage), findsOneWidget);
+      await tester.tap(find.byTooltip('开始专注'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('开始准备（15分钟）'));
+      await tester.pumpAndSettle();
+      final appointment = (await focus.getActiveAppointment())!;
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('开始专注'));
+      await tester.pumpAndSettle();
+      expect(find.text('预约准备'), findsOneWidget);
+      expect((await focus.getActiveAppointment())?.id, appointment.id);
+      expect(await focus.getAppointments(), hasLength(1));
+      await _capture(
+        binding,
+        tester,
+        screenshots,
+        'issue78-board-restored-appointment',
+      );
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await focus.cancelAppointment(
+        appointmentId: appointment.id,
+        failureReason: '设备验收准备路径已验证',
+      );
+      await _openFocusHome(tester);
+      await _openPicker(tester);
+      await tester.tap(find.text('整理今天需要完成的长中文任务并记录思路与下一步行动'));
+      await tester.pumpAndSettle();
+      await _capture(binding, tester, screenshots, 'issue78-focus-setup');
+      await tester.tap(find.text('开始倒计时'));
+      await tester.pumpAndSettle();
+      final focusSession = (await focus.getActiveSession())!;
+      await _capture(binding, tester, screenshots, 'issue78-focus-execution');
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('选择任务'), findsOneWidget);
+      await _capture(binding, tester, screenshots, 'issue78-focus-returned');
+      await _openPicker(tester);
+      expect((await focus.getActiveSession())?.id, focusSession.id);
+      expect(await focus.getSessions(), hasLength(2));
+      now = now.add(const Duration(minutes: 26));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      await _capture(binding, tester, screenshots, 'issue78-focus-settled');
+      await tester.tap(
+        find.text('返回上一页').evaluate().isNotEmpty
+            ? find.text('返回上一页')
+            : find.text('返回专注链'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('选择任务'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await _unmountAndClose(tester, tasks, focus, tree, database);
+    }
+  });
 
   testWidgets('Issue 66 二级任务选择与专注流程恢复（本地设备）', (tester) async {
     final tempRoot = await getTemporaryDirectory();
