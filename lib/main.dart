@@ -1530,7 +1530,7 @@ class _GoalCardState extends State<_GoalCard> {
         : goal.isComplete
         ? '已完成'
         : '进行中';
-    final summary = '${goal.tasks.length} 项任务\n$status';
+    final summary = '${goal.tasks.length} 项任务 · $status';
     return Card(
       margin: const EdgeInsets.only(top: 12),
       child: Padding(
@@ -1582,7 +1582,12 @@ class _GoalCardState extends State<_GoalCard> {
                                       summary,
                                       style: Theme.of(context)
                                           .textTheme
-                                          .bodySmall,
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -1706,16 +1711,17 @@ class _TaskTile extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            [
-              if (task.estimatedMinutes != null) '${task.estimatedMinutes} 分钟',
+          Wrap(
+            spacing: 8,
+            runSpacing: 2,
+            children: [
+              if (task.estimatedMinutes != null)
+                Text('${task.estimatedMinutes} 分钟'),
               if (task.focusProgressSeconds > 0)
-                '已专注 ${_formatDuration(task.focusProgressSeconds)}',
-              if (hasPendingReview) '待核对（争议部分暂不计入专注统计）',
-              ?deadline,
-            ].join(' · '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+                Text('已专注 ${_formatDuration(task.focusProgressSeconds)}'),
+              if (hasPendingReview) const Text('待核对（争议部分暂不计入专注统计）'),
+              if (deadline != null) Text(deadline),
+            ],
           ),
           if (task.description.isNotEmpty)
             Text(

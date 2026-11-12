@@ -15,6 +15,59 @@ import 'package:pacta/src/tasks/task_repository.dart';
 import '../support/fake_auth_repository.dart';
 
 void main() {
+  testWidgets('目标摘要紧凑呈现任务数和状态，折叠保留标识并明显缩短', (tester) async {
+    tester.view.physicalSize = const Size(546, 682);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final harness = await _BoardHarness.open(
+      PactaDatabase(NativeDatabase.memory()),
+    );
+    addTearDown(harness.database.close);
+    final goal = await harness.tasks.createGoal(
+      const GoalDraft(
+        title: '季度规划',
+        description: '保留目标描述',
+        classification: TaskClassification.regular,
+      ),
+    );
+    await harness.tasks.createTask(
+      goal.id,
+      const TaskDraft(
+        title: '准备资料',
+        classification: TaskClassification.regular,
+      ),
+    );
+    await harness.tasks.createTask(
+      goal.id,
+      const TaskDraft(
+        title: '核对材料',
+        classification: TaskClassification.regular,
+      ),
+    );
+    await harness.show(tester);
+    expect(find.text('2 项任务 · 进行中'), findsOneWidget);
+    final card = find.ancestor(
+      of: find.text('季度规划'),
+      matching: find.byType(Card),
+    );
+    final expandedHeight = tester.getSize(card).height;
+    await tester.tap(find.text('季度规划'));
+    await tester.pumpAndSettle();
+    expect(find.text('2 项任务 · 进行中'), findsOneWidget);
+    expect(find.text('保留目标描述'), findsOneWidget);
+    expect(find.text('准备资料'), findsNothing);
+    expect(tester.getSize(card).height, lessThan(expandedHeight - 100));
+    await tester.tap(find.byTooltip('编辑目标'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('准备资料'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 1));
+  });
+
   testWidgets('目标描述可新增、编辑、清空并限制为200个用户可见字符', (tester) async {
     tester.view.physicalSize = const Size(320, 800);
     tester.view.devicePixelRatio = 1;
@@ -128,7 +181,7 @@ void main() {
     expect(find.text('暂无任务，先添加一个可执行的下一步。'), findsNothing);
     expect(find.text('添加任务'), findsNothing);
     expect(find.text('折叠仍可读的目标说明'), findsOneWidget);
-    expect(find.text('0 项任务\n暂无任务 · 未完成'), findsOneWidget);
+    expect(find.text('0 项任务 · 暂无任务 · 未完成'), findsOneWidget);
     const taskTitle = '任务内容不应并入标题语义';
     await harness.tasks.createTask(
       goal.id,
