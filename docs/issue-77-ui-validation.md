@@ -73,3 +73,5 @@ Android仍由主线程协调。独立设计轴需主审打开宽窄图给结论�
 原路径与原 manifest 保留作历史溯源。Windows/本票 widget 证据稳定根为 `F:/Workspace/Release/Flutter/Pacta/build/spec75/evidence/77/`，下接本文原工作树相对路径。最终 Android 支撑图稳定目录为 `F:/Workspace/Release/Flutter/Pacta/build/spec75/evidence/review-fixes/build/ui-layout-evidence/board-pilot/runs/review75-repaint-support-default-narrow/`；归档不改写原提交或源码哈希。
 
 共享系统层触摸补验位于主树 `build/spec75/native-board-touch-20261113/`，尚未完成，不计通过；启动曾发生 FocusEvent 超时 ANR 并人工点 Wait 一次。FlutterView 截图与 instrumented 触摸通过不代表系统层无遮挡或无人干预启动正常。
+
+最终共享原生触摸补验已完成，取代上节待验状态：主树 `build/spec75/native-board-touch-fixed-20261113/`、`native-board-touch-fixed-retry-20261113/`、`native-board-touch-focus-cancel-20261113/` 三轮组合覆盖折叠/展开、编辑取消、追加 `_BoardTouch20261113` 保存、开始设置打开取消回看板；第二轮到期后的focus取消不计。三轮HEAD45343184e、runner/process rc0、status=passed、drift=[]、git_status=[]，READY/nativeSurface=true先于capture/convert。主审实际打开原生操作图；新三轮无系统遮挡和Wait点击。详见 #76 最终补验段及首目录notes.md。早期FocusEvent超时ANR记录保留、根因未明，不宣称已根治；旧受遮罩及部分路径不追记成功。
