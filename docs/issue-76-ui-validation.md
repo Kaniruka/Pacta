@@ -55,3 +55,11 @@
 实现自查相对 b033249：Standards 使用现有 bodySmall、onSurfaceVariant 与 ListTile 默认语义样式；无品牌色/字体常量，无新导航/数据字段；仅目标摘要及任务元信息改变。Spec 对应 US1–4：主操作和任务优先位置保持，摘要紧凑且自然换行，关键事实完整，折叠和编辑/开始事件代码未变，并有真实仓储路径测试与 Windows 鼠标事件证据。独立 Standards / Spec 审查由主线程在实施提交上执行，尚未伪记通过。
 
 Android 由主线程协调，实施者没有运行 Android，也没有接触物理设备。411×731 正常字号、触摸折叠/编辑取消/保存与截图需后续平台证据；同一 fixture 的 Android 分支已支持。320×800 为 widget 几何/可读性/操作测试，不提供 Ahem 默认测试字体下的视觉截图。Windows 运行和本地截图不替代 Android 验收。未改身份、同步、权限、数据库或原生能力，因此不报告相关真实服务验证。
+
+## Android 后续验收与视口说明
+
+共享截图修复已独立补入本票 fixture：Android 保留原生 physicalSize，转换图面后对既有 RepaintBoundary 标记重绘并 pumpAndSettle；转换和截图各设20秒超时及阶段日志。本票仍仅提供原 long/zero fixture，未引入 #77 支撑场景。Windows 上述固定图使用 tester.view logical override，不是实际窗口拖动；真实窗口跨断点与人工交互见 #77。
+
+协调者的最终 Android long 证据位于 `C:/Users/Stray/.codex/worktrees/spec75-review-fixes/Pacta/build/ui-layout-evidence/board-pilot/runs/review75-repaint-long-long-narrow/`：`board-long-narrow-expanded.png`、`board-long-narrow-collapsed.png`、`board-long-narrow-restored.png`，原 runner/process rc0，source_drift=[]。实际逻辑视口411.43×731.43、正常字号、暗色，触摸折叠、编辑取消/保存/恢复、开始取消完成。原 manifest 保留当时源码/提交，不把证据改记为本补充提交。诊断详情和完整证据路径见集成分支 `docs/spec75-review-fixes.md`。
+
+该轮 `native-during-flow.png` 的 ADB 图出现 Android “Pacta isn't responding” 覆盖，协调者只点了隔离应用的 Wait；原因未确定。FlutterView 驱动图不包含原生系统覆盖，不能据此宣称不存在 ANR 或无人干预原生响应正常。本补充未改生产性能。

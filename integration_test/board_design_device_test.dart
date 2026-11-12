@@ -374,11 +374,21 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
       );
       if (Platform.isAndroid) {
         if (!androidReady) {
-          await binding.convertFlutterSurfaceToImage();
-          await tester.pump();
+          debugPrint('[board-capture] convert begin');
+          await binding.convertFlutterSurfaceToImage().timeout(
+            const Duration(seconds: 20),
+          );
+          debugPrint('[board-capture] convert done');
+          // Surface conversion needs a new scene even when the UI is idle.
+          (boundaryKey.currentContext!.findRenderObject()!
+                  as RenderRepaintBoundary)
+              .markNeedsPaint();
+          await tester.pumpAndSettle();
           androidReady = true;
         }
-        await binding.takeScreenshot(name);
+        debugPrint('[board-capture] screenshot begin');
+        await binding.takeScreenshot(name).timeout(const Duration(seconds: 20));
+        debugPrint('[board-capture] screenshot done');
       } else {
         final boundary =
             boundaryKey.currentContext!.findRenderObject()!
@@ -486,7 +496,12 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
           : view == 'narrow'
           ? const Size(546, 682)
           : const Size(1265, 682);
-      tester.view.physicalSize = logical * tester.view.devicePixelRatio;
+      // Native Android capture must match the actual ImageView surface.
+      if (Platform.isAndroid) {
+        tester.view.resetPhysicalSize();
+      } else {
+        tester.view.physicalSize = logical * tester.view.devicePixelRatio;
+      }
       tester.platformDispatcher.textScaleFactorTestValue = 1;
       tester.platformDispatcher.platformBrightnessTestValue = light
           ? Brightness.light
