@@ -1,8 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
@@ -12,6 +16,40 @@ import 'package:pacta/src/tasks/task_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  final fontPath = Platform.environment['PACTA_UI_FONT'];
+  setUpAll(() async {
+    if (fontPath != null) {
+      await (FontLoader('UiEvidence')
+            ..addFont(File(fontPath).readAsBytes().then(ByteData.sublistView)))
+          .load();
+    }
+    await (FontLoader(
+      'MaterialIcons',
+    )..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
+  });
+  Future<void> capture(WidgetTester tester, String name) async {
+    final path = Platform.environment['PACTA_UI_EVIDENCE_DIR'];
+    if (path == null) return;
+    await tester.runAsync(() async {
+      await Directory(path).create(recursive: true);
+      final output = File('$path/$name.png');
+      if (await output.exists()) {
+        throw StateError('Refusing to overwrite ${output.path}');
+      }
+      final boundary = tester.renderObject<RenderRepaintBoundary>(
+        find.byKey(const ValueKey('preferences-evidence')),
+      );
+      final image = await boundary.toImage();
+      try {
+        final data = await image.toByteData(format: ui.ImageByteFormat.png);
+        if (data == null) throw StateError('PNG encoding failed: $name');
+        await output.writeAsBytes(data.buffer.asUint8List());
+      } finally {
+        image.dispose();
+      }
+    });
+  }
+
   late PactaDatabase database;
   late LocalNationalFocusRepository repository;
 
@@ -40,16 +78,20 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(
+          fontFamily: fontPath == null ? null : 'UiEvidence',
           colorScheme: ColorScheme.fromSeed(
             seedColor: const Color(0xFF385A52),
             brightness: brightness,
           ),
         ),
-        home: Scaffold(
-          body: NationalFocusTreePage(
-            repository: repository,
-            userId: userId,
-            viewPreferences: viewPreferences,
+        home: RepaintBoundary(
+          key: const ValueKey('preferences-evidence'),
+          child: Scaffold(
+            body: NationalFocusTreePage(
+              repository: repository,
+              userId: userId,
+              viewPreferences: viewPreferences,
+            ),
           ),
         ),
       ),
@@ -90,7 +132,7 @@ void main() {
 
   testWidgets('视图偏好读取失败时回退简洁并可重试', (tester) async {
     tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(375, 812);
+    tester.view.physicalSize = const Size(320, 800);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
     final preferences = await SharedPreferences.getInstance();
@@ -113,6 +155,7 @@ void main() {
     expect(find.text('简洁视图'), findsOneWidget);
     expect(find.text('视图偏好读取失败，暂用简洁视图。'), findsOneWidget);
     expect(find.text('重试读取'), findsOneWidget);
+    await capture(tester, 'preferences-read-failure-dark-320');
 
     await tester.tap(find.text('重试读取'));
     await tester.pumpAndSettle();
@@ -123,6 +166,10 @@ void main() {
   });
 
   testWidgets('视图偏好写入失败不误报且可再次保存', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 800);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
     final preferences = await SharedPreferences.getInstance();
     final failingPreferences = _FailFirstSetBoolPreferences(preferences);
     final viewPreferences = NationalFocusViewPreferences(
@@ -136,6 +183,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('视图偏好未保存，请重试。'), findsOneWidget);
     expect(find.text('重试保存'), findsOneWidget);
+    await capture(tester, 'preferences-save-failure-320');
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
