@@ -87,6 +87,15 @@ void main() {
               tester,
               '${size.width.toInt()}-${dark ? 'dark' : 'light'}-ime',
             );
+            final inputBounds = tester.getRect(find.byType(TextField));
+            final viewport = tester.getRect(
+              find.descendant(
+                of: find.byType(AlertDialog),
+                matching: find.byType(SingleChildScrollView),
+              ),
+            );
+            expect(inputBounds.top, greaterThanOrEqualTo(viewport.top));
+            expect(inputBounds.bottom, lessThanOrEqualTo(viewport.bottom));
             expect(find.text('开始倒计时').hitTestable(), findsOneWidget);
             expect(find.text('开始准备（15分钟）').hitTestable(), findsOneWidget);
           }

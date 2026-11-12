@@ -2,6 +2,8 @@
 
 实施比较基点：`7732db0`（开始实施前合并 integration/spec-75-ui 后的 HEAD）；checkout 来源 `b033249`。设计基线为 `ui-focus-pilot-accepted-20261112`。规格为 #75 用户故事 7–8 与 #78；ADR 0007/0008 适用，正常字号与移动输入法仍在范围内。
 
+> 验收修正：主线程独立目视复核发现初轮 Android final/native-ime.png 的聚焦时长框被裁掉。初轮 104/11 与设备通过结果只代表当时的断言，不能作为完整 IME 通过。下方“聚焦输入框复核”补充更强断言、实际失败和修复后证据，取代初轮 IME 结论。旧图原样保留。
+
 ## 实证与局部修改
 
 - 设置弹层沿用任务、模式、时长、信号及预约自动交接说明。长中文信号是用户实际动作，说明段解释手动执行及自动交接，未发现内容重复到需要删除的实证；保留原文及层级。
@@ -58,3 +60,23 @@
 - Android baseline3：rc79，测试连接 did not complete，未作为验收；同源重试 baseline4 通过。baseline4/final 等待键盘异步尺寸更新后再截图，input-method.txt 记载 mInputShown=true。
 
 本票设备 fixture 允许旧/新结算返回文字以便使用完全相同源码获取基线与最终落点；最终文字严格由 widget 行为测试断言“返回上一页”。既有 issue66 测试保持原样，本轮 Android filter 没有重跑该旧场景。
+
+
+## 聚焦输入框复核
+
+主线程在 `t78-android-final/native-ime.png` 发现时长框完全裁切，光标水滴落在动作区。这是有效缺陷，不能因开始按钮可点而判定 IME 通过，也不能仅归于截图转场。
+
+补充公开 UI 几何断言：聚焦 TextField 的完整上下边界必须位于弹层滚动内容视口内，既用于 widget 320/411+模拟 IME，也用于真实 Android。红线：
+
+- Widget：`t78-field-widget-baseline.log`，320 时 input.bottom306 > viewport.bottom284；411 时 input.bottom282 > viewport.bottom215，亮暗四例失败。
+- Android：`t78-android-field-red/`，input 为 Rect(64,250,347.4,306)，内容底部227.43，真实键盘 mInputShown=true；相同 fixture 截图后断言失败，退出1。`native-ime.png` 保留失败状态，manifest 前后源码哈希一致。
+
+原因是 AlertDialog 的 AnimatedPadding 在输入法尺寸通知之后仍继续缩小可视内容。单次聚焦/metrics 回调太早，不能保证最后一帧完整显示。最小修复仅在 FocusSetupDialog 内使用 FocusNode 和 SizeChangedLayoutNotifier：当时长框保持焦点、弹层内容实际尺寸改变时，在该帧布局完成后将整个输入框（已有错误时优先提示）滚入可视区。保留 mounted、焦点与 context 有效性检查；取消时释放 FocusNode。没有固定延时、全局 metrics 监听或输入法关闭行为。
+
+- 完整同 fixture widget 截图轮：`t78-widget-field-final/`，日志 `t78-widget-field-final.log`，11 通过。320/411 的 field 矩形完整可见；时长提示仍完整可见，亮暗及宽窄布局保持通过。
+- `flutter analyze`：No issues found（7.4s），`t78-field-analyze.log`。
+- Windows宽窗初轮在构建阶段按主线程要求中止，目录 `t78-windows-wide-baseline/` 的 interrupted.txt 如实记录；尚无Windows本票设备通过结论。fixture新增 `ISSUE78_VIEW=wide|narrow` 渲染视口 override，明确不是原生窗口缩放验收；默认 Android 行为不受影响。Windows已释放给#77。
+
+补充修复最终结果：`t78-android-field-final/` 完整设备场景1通过、run.rc=0（40s）；同 fixture 与 field-red 的源前后哈希各自一致，fixture相同。最终duration Rect(64,171.4,347.4,227.4)完整落在content Rect(64,120,347.4,227.4)内。主线程实际打开新native-ime.png，确认label、完整边框、25与光标在内容区，两个开始按钮与数字键盘同时可见，设计复查通过。模式顶部随内部滚动裁切属当前输入时长状态的正常滚动。
+
+`flutter test test/focus test/ui_layout_test.dart test/ui_secondary_layout_test.dart --reporter expanded`：104通过（19s），`t78-field-regression.log`，包括完整错误提示断言；Android和Windows设备均已释放。Windows两档最终验收仍待主线程安排，未追记为通过。

@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart' hide FocusNode;
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' as flutter show FocusNode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -3155,6 +3156,8 @@ class FocusSetupDialog extends ConsumerStatefulWidget {
 
 class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
   final _errorKey = GlobalKey();
+  final _durationKey = GlobalKey();
+  final _durationFocus = flutter.FocusNode();
   late FocusChainMode _mode;
   late final TextEditingController _duration;
   String? _error;
@@ -3163,12 +3166,14 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
   @override
   void initState() {
     super.initState();
+    _durationFocus.addListener(_revealFocusedDuration);
     _mode = widget.initialMode;
     _duration = TextEditingController(text: '25');
   }
 
   @override
   void dispose() {
+    _durationFocus.dispose();
     _duration.dispose();
     super.dispose();
   }
@@ -3242,51 +3247,74 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
     });
   }
 
+  void _revealFocusedDuration() {
+    if (!_durationFocus.hasFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_durationFocus.hasFocus) return;
+      final context = _errorKey.currentContext ?? _durationKey.currentContext;
+      if (context != null) Scrollable.ensureVisible(context, alignment: 1);
+    });
+  }
+
   @override
   Widget build(BuildContext context) => AlertDialog(
     title: const Text('开始专注'),
-    content: SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            widget.task.title,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 14),
-          DropdownButtonFormField<FocusChainMode>(
-            initialValue: _mode,
-            decoration: const InputDecoration(labelText: '专注模式'),
-            items: [
-              for (final mode in FocusChainMode.values)
-                DropdownMenuItem(value: mode, child: Text(mode.label)),
+    content: NotificationListener<SizeChangedLayoutNotification>(
+      onNotification: (_) {
+        _revealFocusedDuration();
+        return false;
+      },
+      child: SizeChangedLayoutNotifier(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                widget.task.title,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 14),
+              DropdownButtonFormField<FocusChainMode>(
+                initialValue: _mode,
+                decoration: const InputDecoration(labelText: '专注模式'),
+                items: [
+                  for (final mode in FocusChainMode.values)
+                    DropdownMenuItem(value: mode, child: Text(mode.label)),
+                ],
+                onChanged: _busy
+                    ? null
+                    : (value) => setState(() => _mode = value!),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                key: _durationKey,
+                focusNode: _durationFocus,
+                controller: _duration,
+                enabled: !_busy,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: '时长（分钟）'),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  key: _errorKey,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+              const SizedBox(height: 10),
+              if (ref.watch(chainSignalsRepositoryProvider)
+                  case final repository?) ...[
+                ChainSignalInstructions(repository: repository, mode: _mode),
+                const SizedBox(height: 10),
+              ],
+              const Text(
+                '触发信号和专注标志由你执行。可立即开始专注，或先准备15分钟；准备结束自动进入专注，无需再次执行专注标志。',
+              ),
             ],
-            onChanged: _busy ? null : (value) => setState(() => _mode = value!),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _duration,
-            enabled: !_busy,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: '时长（分钟）'),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              _error!,
-              key: _errorKey,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ],
-          const SizedBox(height: 10),
-          if (ref.watch(chainSignalsRepositoryProvider)
-              case final repository?) ...[
-            ChainSignalInstructions(repository: repository, mode: _mode),
-            const SizedBox(height: 10),
-          ],
-          const Text('触发信号和专注标志由你执行。可立即开始专注，或先准备15分钟；准备结束自动进入专注，无需再次执行专注标志。'),
-        ],
+        ),
       ),
     ),
     actions: [
