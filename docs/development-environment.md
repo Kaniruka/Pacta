@@ -125,6 +125,18 @@ cmd.exe /c 'build\windows\x64\runner\Release\pacta.exe'
 
 依据 ADR 0003，当前承诺平台为 Android 和 Windows，首轮验收使用 Android 15 和 Windows 11；更早系统版本需兼容性验证后确定。
 
+### 专注链试点截图工具（2026-11-12）
+
+`scripts/run_focus_pilot.py` 运行现有 focus-chain 试点 fixture 的单个场景：一次运行建立唯一目录 `build/ui-layout-evidence/focus-pilot/runs/<run-id>-<scenario>-<view>[-light][-holdN]`，driver 与 fixture 共用同一子目录，同名截图拒绝覆盖，`run.log`（stdout+stderr 合并）、`run.rc`、`manifest.json`（HEAD、工作树源码 SHA256、实参、输出目录）与图同目录落盘，`run.rc` 与进程退出码为 runner 最终码，Flutter 自身码另记 `process_rc`。运行前后各取一次源码与 runner 自身 SHA256，出现漂移标记 `invalid` 并以退出码 3 结束；`--manual-hold` 隐含 `--snapshot-only`，避免人工操作后自动流程继续。命令按 PATH/PATHEXT 解析（Windows 落到 `flutter.bat`），显式路径原样使用；不提供硬超时：终止父进程不能保证 Windows 子进程停止写盘。
+
+```bash
+python scripts/run_focus_pilot.py --scenario default --view wide
+python scripts/run_focus_pilot.py --scenario zero --theme light --manual-hold 300 --device emulator-5554
+python -m unittest discover -s scripts -p 'test_run_focus_pilot.py'   # 假 flutter，无需设备
+```
+
+不指定 `--scenario` 时只跑默认单场景，不展开矩阵；`--flutter` 可替换命令（供测试）。旧 `build/ui-layout-evidence/focus-pilot/run_pilot.sh` 保留为历史，不再维护。
+
 ## Supabase 开发路径
 
 2026-09-22 已确定：本项目使用云端 Supabase 进行开发，Flutter 客户端在本机运行，通过根目录 `.env` 连接云端开发项目。日常开发不以本地 Supabase 实例或 Docker 为前提。远端 Auth 已启用 Email；为满足 T01 的无验证邮件约束，Supabase 控制台的 Confirm email 必须关闭。

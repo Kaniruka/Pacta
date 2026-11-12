@@ -2294,13 +2294,27 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                       },
                     ),
                     const SizedBox(height: 24),
-                    Text(
-                      '开始一次专注',
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
+                    Wrap(
+                      spacing: 16,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          '开始一次专注',
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          '可选任务 ${tasks.length} 个',
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 12),
-                    Text('可选任务 ${tasks.length} 个'),
                     const SizedBox(height: 12),
                     FilledButton.icon(
                       key: const ValueKey('focus-task-picker-entry'),

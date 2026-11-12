@@ -2,7 +2,7 @@
 
 > UI 实施、评审与验收范围按 [ADR 0007](adr/0007-accessibility-out-of-product-scope.md) 和后续 [ADR 0008](adr/0008-large-text-and-keyboard-out-of-product-scope.md) 执行；被替代条款不再构成交付条件，有日期的验收记录保留当时事实。
 
-Synthesized from the local requirements conversation records and confirmed decisions through 2026-09-22. Historical implementation snapshot (2026-09-26): tickets T01–T27 were closed. Verification records below describe their stated dates and platforms; current implementation status is tracked in the corresponding Issues.
+本文维护核心行为；后续已接受变更已整合到相关章节，10月22日增量见[改进专题规格](spec-pacta-refinements-20261022.md#implementation-decisions)。术语、决策和证据职责见[领域指南](agents/domain.md#文档职责与冲突)，实现与复用入口见其[导航](agents/domain.md#现有实现与复用)。日期记录描述当时事实，当前实施状态读取对应 Issue。
 
 ## Problem Statement
 
@@ -47,6 +47,8 @@ Starting a Focus Session moves the user to a dedicated countdown surface. A Sess
 17. As a user, I want to start fixed 15-minute appointment preparation, with the Task and focus duration configured beforehand, so that its end automatically starts my Focus Session without another click or signal.
 18. As a user, I want to start a Focus Session immediately when I am ready, so that confidence can bypass the Appointment Chain.
 19. As a user, I want to select an existing shared Precedent Rule when handling a focus interruption, so that I can use a permission without opening rule management.
+
+Session setup shows the countdown boundary and available Precedent Rule operations before starting.
 
 ### Focus Session
 
@@ -428,6 +430,20 @@ National Focus Daily Confirmation means “确认今日继续有效”: acknowle
 - Acceptance: known suspension during preparation does not cancel it: it hands off and settles unpaused focus locally on schedule. A previously paused Session remains paused. No business upload occurs until restoration.
 - Acceptance: login failure, token expiry, permission denial, and network failure each preserve the local cache. Only a trustworthy purge result for the old identity authorizes local cleanup; later registration with the same identifier does not reconnect old data.
 
+### Chain signals and duration — 2026-10-07
+
+- The single Appointment Chain has one user-editable Trigger Signal (触发信号); Elite and Regular each have their own user-editable Focus Marker (专注标志). These real-world actions are the Sacred Seat (神圣座位). Display configured actions on Focus Chain and session setup; the App does not detect them. Empty text means not configured and does not block existing startup flows.
+- Editing or clearing action text does not reset or create chain records. Sacred Seat counting uses the existing three chain consecutive-success and historical-best rules, not a new action-execution counter. Appointment success/failure and focus success/failure retain their independent scopes. Automatic or early appointment handoff requires no second marker or click.
+- Display cumulative and average effective focus duration independently for Elite and Regular. Include accepted settled completed and failed Sessions, exclude paused time, unresolved contributions and duplicates, and reuse Task Focus Progress's effective-time basis. Average = total effective seconds / number of included settled Sessions, including zero-effective-time Sessions; with none, display zero. Preparation time is excluded.
+- Signal texts are per-User business data and participate in explicit whole-data cloud snapshots. Old snapshots without texts restore unconfigured texts. Ordinary edits never upload automatically. Failure preserves cumulative duration and average history.
+- Acceptance: configure three different actions; restart and verify persistence and isolation. Change actions after success without changing records. Complete 20 minutes then fail after 10 active minutes and 5 paused minutes: cumulative 30 minutes, average 15 minutes, only the selected focus consecutive record resets. Verify empty history, zero-duration failed attempt, duplicate/unresolved records and snapshot replacement.
+
+### Card and Board refinement (2026-10-08)
+
+Card details reached from both the tree and Library allow editing Name, base Trigger Condition, base Action, Scope, and Exception Notes. Trigger Condition is optional and can be cleared; Name and Action remain required. Saving preserves card position, state, records, and Internalization Progress. Existing strengthening overrides remain effective; a change to effective requirements, Scope, or Exception Notes starts a new Requirement Version and preserves prior requirements. Changing only the name does not start a version.
+
+Board disclosure and descriptions follow the [current refinement requirements](spec-pacta-refinements-20261022.md#看板与描述); title presentation and concise copy follow [the page design](product-design.md#card-editing-board-disclosure-and-concise-copy-2026-10-08).
+
 ### Requirements review closure
 
 D01–D25 are closed: 24 confirmed decisions and D03 cancelled. See [the acceptance matrix](acceptance-matrix-20260914.md); local automated verification is recorded above and platform evidence is tracked by T01–T27.
@@ -461,20 +477,6 @@ D01–D25 are closed: 24 confirmed decisions and D03 cancelled. See [the accepta
 - Publication status: the user confirmed the testing seams on 2026-09-21. Implementation tickets T01–T27 are now complete, and [GitHub Issue #20](https://github.com/Kaniruka/Pacta/issues/20) is closed as delivered. To fit GitHub's body-length limit, the complete normative behavior and acceptance examples remain in the [specification supplement comment](https://github.com/Kaniruka/Pacta/issues/20#issuecomment-5761444364), which is part of the same specification.
 
 - The 2026-10-04 Manual Cloud Sync decision in ADR 0005 supersedes former automatic cloud transfer and per-record multi-device reconciliation requirements, including National Focus clock review.
-
-## Chain signals and duration — 2026-10-07
-
-- The single Appointment Chain has one user-editable Trigger Signal (触发信号); Elite and Regular each have their own user-editable Focus Marker (专注标志). These real-world actions are the Sacred Seat (神圣座位). Display configured actions on Focus Chain and session setup; the App does not detect them. Empty text means not configured and does not block existing startup flows.
-- Editing or clearing action text does not reset or create chain records. Sacred Seat counting uses the existing three chain consecutive-success and historical-best rules, not a new action-execution counter. Appointment success/failure and focus success/failure retain their independent scopes. Automatic or early appointment handoff requires no second marker or click.
-- Display cumulative and average effective focus duration independently for Elite and Regular. Include accepted settled completed and failed Sessions, exclude paused time, unresolved contributions and duplicates, and reuse Task Focus Progress's effective-time basis. Average = total effective seconds / number of included settled Sessions, including zero-effective-time Sessions; with none, display zero. Preparation time is excluded.
-- Signal texts are per-User business data and participate in explicit whole-data cloud snapshots. Old snapshots without texts restore unconfigured texts. Ordinary edits never upload automatically. Failure preserves cumulative duration and average history.
-- Acceptance: configure three different actions; restart and verify persistence and isolation. Change actions after success without changing records. Complete 20 minutes then fail after 10 active minutes and 5 paused minutes: cumulative 30 minutes, average 15 minutes, only the selected focus consecutive record resets. Verify empty history, zero-duration failed attempt, duplicate/unresolved records and snapshot replacement.
-
-### Card and Board refinement (2026-10-08)
-
-Card details reached from both the tree and Library allow editing Name, base Trigger Condition, base Action, Scope, and Exception Notes. Trigger Condition is optional and can be cleared; Name and Action remain required. Saving preserves card position, state, records, and Internalization Progress. Existing strengthening overrides remain effective; a change to effective requirements, Scope, or Exception Notes starts a new Requirement Version and preserves prior requirements. Changing only the name does not start a version.
-
-Board Goals independently collapse/expand their Tasks, initially expanded. Collapsed Goals keep their title, task count, completion state, and actions. Long Goal/Task titles occupy at most two lines, with full names available in editing. Visible labels use concise wording while consequential confirmations retain the effects of the action.
 
 ## Confirmed refinement — 2026-10-22
 
