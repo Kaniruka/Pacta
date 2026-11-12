@@ -29,4 +29,38 @@
 
 日志位于此工作树 `build/`，同名 `.rc` 保留退出码。`dart format` 已执行改动Dart文件。`flutter analyze --no-pub` 在fixture准备后No issues found（`t77-analyze-final.log`，rc0）。最终 `flutter test --no-pub test/board test/ui_layout_test.dart` 19/19通过（`t77-tests-final2.log`，rc0）；`python -m unittest scripts.test_run_focus_pilot` 12/12通过（`t77-runner.log`，rc0）。活动行关系断言首次将相邻边界写成严格大于，Ahem标签恰好填满118宽时失败；修为允许相邻后通过，没有改生产代码。fixture最终格式化后再次 analyze 结果见 `t77-analyze-ready.log`。
 
-设备尚未执行：Windows真实拖窗跨断点、1265×682/546×682平台宽窄图、Android411×731单列顺序及触摸复核。没有将 #76 的Windows physicalSize override旧图充作本票原生拖窗证据。
+设备阶段完成的Windows证据见下；Android411×731单列顺序及触摸尚未执行，未将Windows图替代Android。
+
+
+## Windows 实机证据（2026-11-12至13）
+
+设备阶段先fast-forward集成 `a4e1177cf9a75b1b8e99af2684e58b96d818c218`。该轮 main SHA256 `A215B7CA7E9156F88AB2E92C12D3FBC5E3A48148DB4A45CA1C288D33CC96EF9B`；最终fixture SHA256 `4180256368A4870B82C6405AB9E88E478771B8FD5ED1BBF2FF5D4726135FF523`。每轮manifest记录HEAD、源码起止SHA256与参数，以下所有轮 `source_drift=[]`。后续合入同步/专注票时不把这些截图冒称为其新源码证据。
+
+绝对证据根 `C:/Users/Stray/.codex/worktrees/spec75-t77/Pacta/build/ui-layout-evidence/board-pilot/runs/`。各目录均保留 `run.log`、`run.rc`、`manifest.json` 和独立PNG，不覆盖原图。所有Windows DPR1.25、正常字号。
+
+| 目录 | 条件/结果 |
+| --- | --- |
+| `t77-seven-wide-default-wide` | 测试视口1265×682、七日91分00秒、长任务列、确认1/空日历、暗；rc0，展开/支撑两图 |
+| `t77-seven-narrow-default-narrow-light` | 测试视口546×682、同七日fixture、亮；两图完成，返回看板后页头断言失败rc1（保持滚动位置后页头未构建），只修测试滚回顶部 |
+| `t77-seven-narrow2-default-narrow-light` | 同窄亮fixture重跑，rc0；主操作首屏优先，滚动到完整三张支撑卡、进入国策树并返回 |
+| `t77-one-narrow-few-narrow` | 测试视口546×682、短任务列、单日13分00秒/其余六日0、确认1/空日历、暗；rc0，展开/支撑两图 |
+| `t77-native-long-long-wide-hold300` | 原生窗口1265.6×682.4→1041.6（Board960并排）→517.6（单列）→216（误操作，低于支持范围，不纳入验收）→最大化1536×792.8（Board960）；实际跨条件图保留，尾部SemanticsHandle断言rc1，不计整轮通过 |
+| `t77-native-threshold-long-wide-hold120` | 原生窗口1265.6×682.4（Board960）→545.6×682.4（Board545.6单列）；rc0。目录名是初始计划，实际执行为正常窄窗操作；不声称取到了精确1040.8 |
+
+固定视口轮是Windows app上的physicalSize override；只有两轮manualhold resetPhysicalSize、由sky系统窗口操作产生的native图是原生拖窗。新增最小fixture记录：仅首次及每2秒观测到尺寸改变时，复用shot保存新编号图，log同时写视口和公开BoardPage的实际宽度。没有新增测试框架或关闭框架检查。
+
+实际拖窗方法按computer-use技能，仅sky：系统菜单Alt+Space→大小→Right选择右边框→drag；一次拖完用Return结束尺寸模式，再点页面。首轮第二次调整中的越界/unknown screenshotId后只刷新，不继续用旧状态；意外窄至216后退出模式并最大化恢复。该工具操作问题不作为产品缺陷；成功短轮从初始窗口直接拖545.6，未复用该异常流程。
+
+### 实际打开的图与操作
+
+实现者打开七日宽暗 `board-default-wide-expanded.png`、七日窄亮重跑的 `board-default-narrow-expanded.png` / `support.png`、单日窄暗 `board-few-narrow-support.png`、成功原生窄窗 `board-long-wide-native-0.png`。结论：任务首屏与新建操作优先；三卡独立，完整七日日期/时长/柱关系可读；窄窗单列横排活动行，宽窗窄支撑卡采用日期/时长在柱上方；待确认国策计数及空日历真实，无新增层级或密度问题。原生1041.6并排/517.6单列在sky中当场观察，截帧没有横向溢出。未录制拖动视频，不能以静态截帧保证每一过渡帧。
+
+成功120秒轮的sky鼠标操作：真实545.6窄窗点长任务开始，看到完整“开始专注”与任务名并取消；点任务文字，看到“编辑任务”、原始名称/描述/120分钟/截止并取消；点击目标标题折叠并展开，任务按预期隐藏和恢复。操作图为该目录 `sky-narrow-start-dialog.png`、`sky-narrow-edit-dialog.png`、`sky-narrow-collapsed.png`（保存自已显示的sky截图，用于持久化验收证据）。首轮最大化窗口也完成开始/编辑与取消，保存 `sky-wide-start-dialog.png`、`sky-wide-edit-dialog.png`，因该轮rc1仅作为实际操作事实。未确认删除、未启动倒计时、未改变用户数据。
+
+短轮鼠标滚动一次看到国策与近期活动；下一次滚动时120秒自然结束、窗口关闭，sky报告foreground没有process id，未继续输入；不把该动作算作完整滚动验收。完整支撑滚动和树往返已由上述rc0普通轮完成。
+
+### 尾部框架失败边界
+
+300秒轮尾部报 `A SemanticsHandle was active at the end of the test`，期间有引擎AXTree pending警告；原始日志保留，未关闭Semantics检查、未手工释放不属于fixture的handle、未归因成已修复产品缺陷。查本机Flutter源码：`semantics/binding.dart:162` 在平台semanticsEnabled改变为true时自动ensureSemantics，`widget_tester.dart:179/1066` 记录起始handle数并在结尾比较。平台动态启用可能解释尾部增量，但未插桩验证，根因仍未确定；同一源码短120秒sky操作轮rc0，普通自动轮也rc0，不能据此声称长轮问题已修复。
+
+Android仍由主线程协调。独立设计轴需主审打开宽窄图给结论；实现Standards/Spec比较基点仍取本票开始的c9bbef2，集成的其他票差异应按commit/path区分。
