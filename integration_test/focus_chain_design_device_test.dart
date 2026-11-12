@@ -1,7 +1,11 @@
+// ignore_for_file: avoid_print
+
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:pacta/main.dart';
@@ -14,6 +18,78 @@ import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 
 import '../test/support/fake_auth_repository.dart';
+
+/// 离线基线截图目录（相对 build/ui-layout-evidence）。
+const _pilotDir = String.fromEnvironment(
+  'FOCUS_PILOT_DIR',
+  defaultValue: 'focus-pilot/current',
+);
+
+const _snapshotOnly = bool.fromEnvironment('FOCUS_DESIGN_SNAPSHOT_ONLY');
+const _pilotMode = bool.fromEnvironment('FOCUS_PILOT_MODE');
+const _scenario = String.fromEnvironment(
+  'FOCUS_PILOT_SCENARIO',
+  defaultValue: 'default',
+);
+const _viewName = String.fromEnvironment(
+  'FOCUS_PILOT_VIEW',
+  defaultValue: 'wide',
+);
+
+const _lightMode = bool.fromEnvironment('FOCUS_PILOT_LIGHT');
+
+/// >0 时在首屏保持，供 Computer Use 做真实鼠标/窗口操作。
+const _holdSeconds = int.fromEnvironment(
+  'FOCUS_PILOT_HOLD_SECONDS',
+  defaultValue: 0,
+);
+
+const _longAction = '打开笔记本，写下今天最重要的第一步，然后把手机放到看不见的地方，再核对明天的三个要点';
+
+/// 桌面端截图：Android 走 driver 的 takeScreenshot，桌面用 RepaintBoundary。
+Future<void> _captureDesktop(
+  WidgetTester tester,
+  GlobalKey boundaryKey,
+  String name,
+) async {
+  final object = boundaryKey.currentContext?.findRenderObject();
+  if (object is! RenderRepaintBoundary) return;
+  final image = await object.toImage(pixelRatio: tester.view.devicePixelRatio);
+  final data = await image.toByteData(format: ui.ImageByteFormat.png);
+  image.dispose();
+  if (data == null) return;
+  final directory = Directory('build/ui-layout-evidence/$_pilotDir');
+  await directory.create(recursive: true);
+  await File('${directory.path}/$name.png')
+      .writeAsBytes(data.buffer.asUint8List());
+}
+
+/// 打印逻辑窗口、DPR、textScaler 与系统内边距。
+void _printPilotMetrics(WidgetTester tester, String label) {
+  final view = tester.view;
+  final logical = view.physicalSize / view.devicePixelRatio;
+  final media = MediaQuery.of(tester.element(find.byType(PactaApp)));
+  print(
+    '[focus-pilot] $label platform=${Platform.operatingSystem} '
+    'scenario=$_scenario view=$_viewName '
+    'logical=${logical.width.toStringAsFixed(1)}x'
+    '${logical.height.toStringAsFixed(1)} '
+    'dpr=${view.devicePixelRatio} '
+    'textScaler=${media.textScaler.scale(1.0)} '
+    'padding=${media.padding} '
+    'viewPadding=${media.viewPadding} '
+    'viewInsets=${media.viewInsets}',
+  );
+}
+
+/// 宽屏（Windows）用 NavigationRail，窄屏用 NavigationBar。
+Future<void> _openFocusChain(WidgetTester tester) async {
+  final bar = find.byType(NavigationBar);
+  final rail = find.byType(NavigationRail);
+  final host = bar.evaluate().isNotEmpty ? bar : rail;
+  await tester.tap(find.descendant(of: host, matching: find.text('专注链')));
+  await tester.pumpAndSettle();
+}
 
 /// Offline UI evidence: no credentials, persistent database, or cloud writes.
 void main() {
@@ -40,11 +116,14 @@ void main() {
       cloudSyncEnabled: false,
     );
     final signals = ChainSignalsRepository(database: database, userId: userId);
+    final longScenario = _scenario == 'long';
     await signals.save(
-      const ChainSignalTexts(
-        appointmentTriggerSignal: '合上手机，倒一杯水',
-        eliteFocusMarker: '戴上耳机，坐到书桌前',
-        regularFocusMarker: '打开笔记本，写下第一步',
+      ChainSignalTexts(
+        appointmentTriggerSignal: longScenario
+            ? '合上手机，倒一杯水，把桌面清空后坐下'
+            : '合上手机，倒一杯水',
+        eliteFocusMarker: longScenario ? '戴上耳机，坐到书桌前，关掉所有通知' : '戴上耳机，坐到书桌前',
+        regularFocusMarker: longScenario ? _longAction : '打开笔记本，写下第一步',
       ),
     );
     final goal = await tasks.createGoal(
@@ -55,8 +134,8 @@ void main() {
     );
     final task = await tasks.createTask(
       goal.id,
-      const TaskDraft(
-        title: '阅读一章，留下三个要点',
+      TaskDraft(
+        title: longScenario ? '阅读一章专业书并留下三个要点，然后再复述一遍给明天的自己' : '阅读一章，留下三个要点',
         classification: TaskClassification.both,
         estimatedMinutes: 30,
       ),
@@ -69,52 +148,184 @@ void main() {
         estimatedMinutes: 15,
       ),
     );
-    for (final mode in FocusChainMode.values) {
-      final failed = await focus.startSession(
-        taskId: task.id,
-        mode: mode,
-        duration: const Duration(minutes: 25),
-      );
-      now = now.add(const Duration(minutes: 10));
-      await focus.abandonSession(
-        sessionId: failed.id,
-        failureReason: '独立界面样例：临时事务',
-      );
-      for (var index = 0; index < 3; index++) {
-        await focus.startSession(
-          taskId: task.id,
-          mode: mode,
-          duration: const Duration(minutes: 25),
-        );
-        now = now.add(const Duration(minutes: 25));
-        await focus.settleDueSessions();
+    if (_scenario != 'zero') {
+      final rounds = _scenario == 'few' ? 1 : 3;
+      for (final mode in FocusChainMode.values) {
+        if (_scenario == 'default' || longScenario) {
+          final failed = await focus.startSession(
+            taskId: task.id,
+            mode: mode,
+            duration: const Duration(minutes: 25),
+          );
+          now = now.add(const Duration(minutes: 10));
+          await focus.abandonSession(
+            sessionId: failed.id,
+            failureReason: '独立界面样例：临时事务',
+          );
+        }
+        for (var index = 0; index < rounds; index++) {
+          await focus.startSession(
+            taskId: task.id,
+            mode: mode,
+            duration: const Duration(minutes: 25),
+          );
+          now = now.add(const Duration(minutes: 25));
+          await focus.settleDueSessions();
+        }
       }
     }
+    if (_viewName == 'narrow') {
+      final dpr = tester.view.devicePixelRatio;
+      tester.view.physicalSize = Size(420 * dpr, 820 * dpr);
+    }
+    if (_lightMode) {
+      tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
+    }
+    final boundaryKey = GlobalKey();
+    var androidSurfaceReady = false;
+    Future<void> shot(String state) async {
+      _printPilotMetrics(tester, state);
+      final name = 'focus-$_scenario-$_viewName-$state';
+      if (Platform.isAndroid) {
+        if (!androidSurfaceReady) {
+          await binding.convertFlutterSurfaceToImage();
+          await tester.pump();
+          androidSurfaceReady = true;
+        }
+        await binding.takeScreenshot(name);
+      } else {
+        await _captureDesktop(tester, boundaryKey, name);
+      }
+      print('[focus-pilot] shot=$name dir=$_pilotDir');
+    }
+
     try {
       await tester.pumpWidget(
-        PactaApp(
-          authRepository: FakeAuthRepository()..signedInUser = userId,
-          taskRepositoryFactory: (_) => tasks,
-          focusRepositoryFactory: (_) => focus,
-          nationalFocusRepositoryFactory: (_) => tree,
-          chainSignalsRepositoryFactory: (_) => signals,
+        RepaintBoundary(
+          key: boundaryKey,
+          child: PactaApp(
+            authRepository: FakeAuthRepository()..signedInUser = userId,
+            taskRepositoryFactory: (_) => tasks,
+            focusRepositoryFactory: (_) => focus,
+            nationalFocusRepositoryFactory: (_) => tree,
+            chainSignalsRepositoryFactory: (_) => signals,
+          ),
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.descendant(
-          of: find.byType(NavigationBar),
-          matching: find.text('专注链'),
-        ),
-      );
-      await tester.pumpAndSettle();
+      _printPilotMetrics(tester, 'shell');
+      await _openFocusChain(tester);
       expect(tester.takeException(), isNull);
+      if (_pilotMode) {
+        // Android's screenshot ImageView only acquires a new frame when the
+        // driver captures it. Keep the native surface live for manual input.
+        if (Platform.isAndroid && _holdSeconds > 0) {
+          _printPilotMetrics(tester, 'manual-overview');
+        } else {
+          await shot('overview');
+        }
+        if (_holdSeconds > 0) {
+          print('[focus-pilot] hold=${_holdSeconds}s');
+          final previous = binding.shouldPropagateDevicePointerEvents;
+          binding.shouldPropagateDevicePointerEvents = true;
+          try {
+            final deadline = DateTime.now().add(
+              Duration(seconds: _holdSeconds),
+            );
+            while (DateTime.now().isBefore(deadline)) {
+              await tester.pump(const Duration(milliseconds: 100));
+              await tester.runAsync(
+                () => Future<void>.delayed(const Duration(milliseconds: 100)),
+              );
+            }
+          } finally {
+            binding.shouldPropagateDevicePointerEvents = previous;
+          }
+          await tester.pumpAndSettle();
+          await shot('overview-after-hold');
+        }
+        if (_snapshotOnly) {
+          return;
+        }
+        final regularEdit = find.byKey(
+          const ValueKey('focus-signal-edit-regular'),
+        );
+        await tester.scrollUntilVisible(
+          regularEdit,
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.pumpAndSettle();
+        await shot('records-scroll');
+        await tester.tap(regularEdit);
+        await tester.pumpAndSettle();
+        await shot('edit-dialog');
+        await tester.enterText(find.byType(TextField).first, '取消不应保存');
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+        final afterCancel = await signals.get();
+        expect(afterCancel.regularFocusMarker, isNot('取消不应保存'));
+        await shot('edit-cancel');
+        await tester.tap(regularEdit);
+        await tester.pumpAndSettle();
+        final saved = longScenario ? _longAction : '打开笔记本，开始第一步';
+        await tester.enterText(find.byType(TextField).first, saved);
+        await tester.tap(find.text('保存'));
+        await tester.pumpAndSettle();
+        expect((await signals.get()).regularFocusMarker, saved);
+        await shot('edit-save');
+        await tester.scrollUntilVisible(
+          find.text('选择任务'),
+          -300,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(find.text('选择任务'));
+        await tester.pumpAndSettle();
+        final start = find.byTooltip('开始任务：${task.title}');
+        await tester.scrollUntilVisible(
+          start,
+          -300,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(start);
+        await tester.pumpAndSettle();
+        expect(find.text('开始倒计时'), findsOneWidget);
+        await tester.tap(find.text('开始倒计时'));
+        await tester.pumpAndSettle();
+        final active = await focus.getActiveSession();
+        expect(active, isNotNull);
+        expect(tester.takeException(), isNull);
+        await shot('active');
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.text('已有进行中的专注'), findsOneWidget);
+        await shot('after-back');
+        await tester.tap(find.text('返回专注'));
+        await tester.pumpAndSettle();
+        expect(find.text('暂停'), findsWidgets);
+        await shot('restore');
+        final activeId = active!.id;
+        final restored = await focus.getActiveSession();
+        expect(restored?.id, activeId);
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        await focus.abandonSession(
+          sessionId: activeId,
+          failureReason: '结束独立界面验收',
+        );
+        await tester.pumpAndSettle();
+        return;
+      }
+      _printPilotMetrics(tester, 'focus-chain-normal');
       if (Platform.isAndroid) {
         await binding.convertFlutterSurfaceToImage();
         await tester.pump();
+        androidSurfaceReady = true;
         await binding.takeScreenshot('focus-chain-overview');
+      } else {
+        await _captureDesktop(tester, boundaryKey, 'focus-chain-normal');
       }
-      if (const bool.fromEnvironment('FOCUS_DESIGN_SNAPSHOT_ONLY')) {
+      if (_snapshotOnly) {
         return;
       }
       final editor = find.byKey(const ValueKey('focus-signal-edit-regular'));
@@ -139,8 +350,11 @@ void main() {
       await tester.ensureVisible(editor);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
+      _printPilotMetrics(tester, 'focus-chain-large-dark');
       if (Platform.isAndroid) {
         await binding.takeScreenshot('focus-chain-large-dark');
+      } else {
+        await _captureDesktop(tester, boundaryKey, 'focus-chain-large-dark');
       }
       tester.platformDispatcher.clearTextScaleFactorTestValue();
       tester.platformDispatcher.clearPlatformBrightnessTestValue();
@@ -160,7 +374,7 @@ void main() {
       );
       await tester.tap(find.text('选择任务'));
       await tester.pumpAndSettle();
-      final start = find.byTooltip('开始任务：阅读一章，留下三个要点');
+      final start = find.byTooltip('开始任务：${task.title}');
       await tester.scrollUntilVisible(
         start,
         -300,
@@ -204,6 +418,7 @@ void main() {
         await binding.takeScreenshot('focus-chain-appointment');
       }
     } finally {
+      tester.view.reset();
       tester.platformDispatcher.clearTextScaleFactorTestValue();
       tester.platformDispatcher.clearPlatformBrightnessTestValue();
       await tester.pumpWidget(const SizedBox.shrink());

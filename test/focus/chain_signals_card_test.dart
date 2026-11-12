@@ -62,6 +62,39 @@ void main() {
   }
 
   for (final brightness in Brightness.values) {
+    for (final width in [320.0, 600.0, 960.0]) {
+      testWidgets(
+        'normal text keeps long actions and durations at $width in $brightness',
+        (tester) async {
+          const action = '坐到书桌前，整理所有准备材料，戴上耳机并写下本次专注要完成的第一步';
+          await repository.save(
+            const ChainSignalTexts(eliteFocusMarker: action),
+          );
+          await _pumpOverview(
+            tester,
+            repository,
+            width: width,
+            brightness: brightness,
+            totalSeconds: 360000001,
+          );
+          expect(find.text(action), findsOneWidget);
+          expect(find.text('100000 小时 1 秒'), findsOneWidget);
+          expect(find.text('最佳 12 次'), findsOneWidget);
+          final edit = find.byKey(const ValueKey('focus-signal-edit-elite'));
+          await tester.ensureVisible(edit);
+          await tester.tap(edit);
+          await tester.pumpAndSettle();
+          expect(find.widgetWithText(TextField, action), findsOneWidget);
+          await tester.enterText(find.byType(TextField), '取消的修改');
+          await tester.tap(find.widgetWithText(TextButton, '取消'));
+          await tester.pumpAndSettle();
+          expect((await repository.get()).eliteFocusMarker, action);
+          expect(tester.takeException(), isNull);
+          await _disposeWidget(tester);
+        },
+      );
+    }
+
     testWidgets('overview survives narrow 2x text in $brightness', (
       tester,
     ) async {
@@ -93,6 +126,22 @@ void main() {
     expect(find.byType(IconButton), findsNothing);
     await _disposeWidget(tester);
   });
+
+  testWidgets(
+    'zero records keep all three chains and both duration summaries',
+    (tester) async {
+      await _pumpCard(tester, repository);
+      for (final title in ['精锐链', '普通链', '预约链']) {
+        expect(find.text(title), findsOneWidget);
+      }
+      expect(find.text('最佳 0 次'), findsNWidgets(3));
+      expect(find.text('累计专注'), findsNWidgets(2));
+      expect(find.text('平均每次'), findsNWidgets(2));
+      expect(find.text('0 秒'), findsNWidgets(4));
+      expect(find.text('尚未设置'), findsNWidgets(3));
+      await _disposeWidget(tester);
+    },
+  );
 
   testWidgets('editor saves the selected signal and preserves the others', (
     tester,
@@ -314,7 +363,12 @@ Future<void> _pumpOverview(
   double width = 700,
   double scale = 1,
   Brightness brightness = Brightness.light,
+  int totalSeconds = 5401,
 }) async {
+  tester.view.devicePixelRatio = 1;
+  tester.view.physicalSize = Size(width, 800);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  addTearDown(tester.view.resetPhysicalSize);
   await tester.pumpWidget(
     MaterialApp(
       theme: ThemeData(
@@ -343,9 +397,9 @@ Future<void> _pumpOverview(
                         updatedAt: DateTime(2026),
                       ),
                     ],
-                    statistics: const {
+                    statistics: {
                       FocusChainMode.elite: FocusSessionStatistics(
-                        totalDurationSeconds: 5401,
+                        totalDurationSeconds: totalSeconds,
                         acceptedSessionCount: 3,
                       ),
                     },

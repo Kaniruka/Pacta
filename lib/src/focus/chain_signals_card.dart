@@ -154,7 +154,7 @@ class _ChainSummaryCard extends StatelessWidget {
         side: BorderSide(color: colors.outlineVariant),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -167,38 +167,47 @@ class _ChainSummaryCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 16,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
               children: [
-                Semantics(
-                  label: '$title连续 $current 次',
-                  excludeSemantics: true,
-                  child: Text.rich(
-                    TextSpan(
-                      children: [
-                        TextSpan(
-                          text: '连续 ',
-                          style: theme.textTheme.bodyMedium,
-                        ),
-                        TextSpan(
-                          text: '$current',
-                          style: theme.textTheme.headlineMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            color: colors.onSurface,
+                Flexible(
+                  fit: appointment ? FlexFit.loose : FlexFit.tight,
+                  child: Semantics(
+                    label: '$title连续 $current 次',
+                    excludeSemantics: true,
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: '连续 ',
+                            style: theme.textTheme.bodyMedium,
                           ),
-                        ),
-                        TextSpan(text: ' 次', style: theme.textTheme.bodyMedium),
-                      ],
+                          TextSpan(
+                            text: '$current',
+                            style: theme.textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: colors.onSurface,
+                            ),
+                          ),
+                          TextSpan(
+                            text: ' 次',
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-                Text(
-                  '最佳 $best 次',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
+                SizedBox(width: appointment ? 16 : 12),
+                Flexible(
+                  fit: appointment ? FlexFit.loose : FlexFit.tight,
+                  child: Text(
+                    '最佳 $best 次',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
                   ),
                 ),
               ],
@@ -208,6 +217,38 @@ class _ChainSummaryCard extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 8),
                 child: Text('记录待核对', style: theme.textTheme.bodyMedium),
               ),
+            if (!appointment) ...[
+              const SizedBox(height: 12),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final wide =
+                      constraints.maxWidth >= 240 &&
+                      MediaQuery.textScalerOf(context).scale(1) < 1.5;
+                  final total = _DurationMetric(
+                    label: '累计专注',
+                    seconds: statistics?.totalDurationSeconds ?? 0,
+                  );
+                  final average = _DurationMetric(
+                    label: '平均每次',
+                    seconds: statistics?.averageDurationSeconds.round() ?? 0,
+                  );
+                  if (wide) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(child: total),
+                        const SizedBox(width: 12),
+                        Expanded(child: average),
+                      ],
+                    );
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [total, const SizedBox(height: 12), average],
+                  );
+                },
+              ),
+            ],
             const SizedBox(height: 16),
             Divider(height: 1, color: colors.outlineVariant),
             const SizedBox(height: 8),
@@ -245,38 +286,6 @@ class _ChainSummaryCard extends StatelessWidget {
                   ),
               ],
             ),
-            if (!appointment) ...[
-              const SizedBox(height: 20),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final wide =
-                      constraints.maxWidth >= 240 &&
-                      MediaQuery.textScalerOf(context).scale(1) < 1.5;
-                  final total = _DurationMetric(
-                    label: '累计专注',
-                    seconds: statistics?.totalDurationSeconds ?? 0,
-                  );
-                  final average = _DurationMetric(
-                    label: '平均每次',
-                    seconds: statistics?.averageDurationSeconds.round() ?? 0,
-                  );
-                  if (wide) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(child: total),
-                        const SizedBox(width: 12),
-                        Expanded(child: average),
-                      ],
-                    );
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [total, const SizedBox(height: 12), average],
-                  );
-                },
-              ),
-            ],
           ],
         ),
       ),
