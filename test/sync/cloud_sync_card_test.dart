@@ -44,6 +44,7 @@ void main() {
           .onPressed,
       isNull,
     );
+    await tester.ensureVisible(find.text('上传'));
     await tester.tap(find.text('上传'));
     await tester.pumpAndSettle();
     expect(find.text('上传并覆盖云端？'), findsOneWidget);
@@ -113,6 +114,7 @@ void main() {
     expect(find.text('云端来源：家里的电脑'), findsOneWidget);
     expect(find.text('型号未知'), findsOneWidget);
     expect(find.text('本地数据时间较新，请选择要保留的数据。'), findsOneWidget);
+    await tester.ensureVisible(find.text('下载'));
     await tester.tap(find.text('下载'));
     await tester.pumpAndSettle();
     expect(find.text('下载并覆盖本地？'), findsOneWidget);
@@ -170,6 +172,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text('下载'), findsOneWidget);
+    await tester.ensureVisible(find.text('下载'));
     await tester.tap(find.text('下载'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);

@@ -4,6 +4,7 @@ import 'dart:io' show Platform;
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart' hide FocusNode;
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart' as flutter show FocusNode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -1530,7 +1531,7 @@ class _GoalCardState extends State<_GoalCard> {
         : goal.isComplete
         ? '已完成'
         : '进行中';
-    final summary = '${goal.tasks.length} 项任务\n$status';
+    final summary = '${goal.tasks.length} 项任务 · $status';
     return Card(
       margin: const EdgeInsets.only(top: 12),
       child: Padding(
@@ -1582,7 +1583,12 @@ class _GoalCardState extends State<_GoalCard> {
                                       summary,
                                       style: Theme.of(context)
                                           .textTheme
-                                          .bodySmall,
+                                          .bodySmall
+                                          ?.copyWith(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant,
+                                          ),
                                     ),
                                   ],
                                 ),
@@ -1706,16 +1712,17 @@ class _TaskTile extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            [
-              if (task.estimatedMinutes != null) '${task.estimatedMinutes} 分钟',
+          Wrap(
+            spacing: 8,
+            runSpacing: 2,
+            children: [
+              if (task.estimatedMinutes != null)
+                Text('${task.estimatedMinutes} 分钟'),
               if (task.focusProgressSeconds > 0)
-                '已专注 ${_formatDuration(task.focusProgressSeconds)}',
-              if (hasPendingReview) '待核对（争议部分暂不计入专注统计）',
-              ?deadline,
-            ].join(' · '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+                Text('已专注 ${_formatDuration(task.focusProgressSeconds)}'),
+              if (hasPendingReview) const Text('待核对（争议部分暂不计入专注统计）'),
+              if (deadline != null) Text(deadline),
+            ],
           ),
           if (task.description.isNotEmpty)
             Text(
@@ -3148,6 +3155,9 @@ class FocusSetupDialog extends ConsumerStatefulWidget {
 }
 
 class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
+  final _errorKey = GlobalKey();
+  final _durationKey = GlobalKey();
+  final _durationFocus = flutter.FocusNode();
   late FocusChainMode _mode;
   late final TextEditingController _duration;
   String? _error;
@@ -3156,12 +3166,14 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
   @override
   void initState() {
     super.initState();
+    _durationFocus.addListener(_revealFocusedDuration);
     _mode = widget.initialMode;
     _duration = TextEditingController(text: '25');
   }
 
   @override
   void dispose() {
+    _durationFocus.dispose();
     _duration.dispose();
     super.dispose();
   }
@@ -3169,7 +3181,7 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
   Future<void> _start() async {
     final minutes = int.tryParse(_duration.text.trim());
     if (minutes == null || minutes <= 0) {
-      setState(() => _error = '请输入大于 0 的分钟数。');
+      _showDurationError();
       return;
     }
     setState(() {
@@ -3199,7 +3211,7 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
   Future<void> _startAppointment() async {
     final minutes = int.tryParse(_duration.text.trim());
     if (minutes == null || minutes <= 0) {
-      setState(() => _error = '请输入大于 0 的分钟数。');
+      _showDurationError();
       return;
     }
     setState(() {
@@ -3226,50 +3238,83 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
     }
   }
 
+  void _showDurationError() {
+    setState(() => _error = '请输入大于 0 的分钟数。');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _errorKey.currentContext;
+      if (!mounted || context == null) return;
+      Scrollable.ensureVisible(context, alignment: 1);
+    });
+  }
+
+  void _revealFocusedDuration() {
+    if (!_durationFocus.hasFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_durationFocus.hasFocus) return;
+      final context = _errorKey.currentContext ?? _durationKey.currentContext;
+      if (context != null) Scrollable.ensureVisible(context, alignment: 1);
+    });
+  }
+
   @override
   Widget build(BuildContext context) => AlertDialog(
     title: const Text('开始专注'),
-    content: SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            widget.task.title,
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 14),
-          DropdownButtonFormField<FocusChainMode>(
-            initialValue: _mode,
-            decoration: const InputDecoration(labelText: '专注模式'),
-            items: [
-              for (final mode in FocusChainMode.values)
-                DropdownMenuItem(value: mode, child: Text(mode.label)),
+    content: NotificationListener<SizeChangedLayoutNotification>(
+      onNotification: (_) {
+        _revealFocusedDuration();
+        return false;
+      },
+      child: SizeChangedLayoutNotifier(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                widget.task.title,
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 14),
+              DropdownButtonFormField<FocusChainMode>(
+                initialValue: _mode,
+                decoration: const InputDecoration(labelText: '专注模式'),
+                items: [
+                  for (final mode in FocusChainMode.values)
+                    DropdownMenuItem(value: mode, child: Text(mode.label)),
+                ],
+                onChanged: _busy
+                    ? null
+                    : (value) => setState(() => _mode = value!),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                key: _durationKey,
+                focusNode: _durationFocus,
+                controller: _duration,
+                enabled: !_busy,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: '时长（分钟）'),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  key: _errorKey,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ],
+              const SizedBox(height: 10),
+              if (ref.watch(chainSignalsRepositoryProvider)
+                  case final repository?) ...[
+                ChainSignalInstructions(repository: repository, mode: _mode),
+                const SizedBox(height: 10),
+              ],
+              const Text(
+                '触发信号和专注标志由你执行。可立即开始专注，或先准备15分钟；准备结束自动进入专注，无需再次执行专注标志。',
+              ),
             ],
-            onChanged: _busy ? null : (value) => setState(() => _mode = value!),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _duration,
-            enabled: !_busy,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: '时长（分钟）'),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 10),
-            Text(
-              _error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-          ],
-          const SizedBox(height: 10),
-          if (ref.watch(chainSignalsRepositoryProvider)
-              case final repository?) ...[
-            ChainSignalInstructions(repository: repository, mode: _mode),
-            const SizedBox(height: 10),
-          ],
-          const Text('触发信号和专注标志由你执行。可立即开始专注，或先准备15分钟；准备结束自动进入专注，无需再次执行专注标志。'),
-        ],
+        ),
       ),
     ),
     actions: [
@@ -4086,7 +4131,7 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
                   const SizedBox(height: 20),
                   FilledButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('返回专注链'),
+                    child: const Text('返回上一页'),
                   ),
                 ],
               ],
