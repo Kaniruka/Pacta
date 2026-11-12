@@ -80,3 +80,26 @@
 补充修复最终结果：`t78-android-field-final/` 完整设备场景1通过、run.rc=0（40s）；同 fixture 与 field-red 的源前后哈希各自一致，fixture相同。最终duration Rect(64,171.4,347.4,227.4)完整落在content Rect(64,120,347.4,227.4)内。主线程实际打开新native-ime.png，确认label、完整边框、25与光标在内容区，两个开始按钮与数字键盘同时可见，设计复查通过。模式顶部随内部滚动裁切属当前输入时长状态的正常滚动。
 
 `flutter test test/focus test/ui_layout_test.dart test/ui_secondary_layout_test.dart --reporter expanded`：104通过（19s），`t78-field-regression.log`，包括完整错误提示断言；Android和Windows设备均已释放。Windows两档最终验收仍待主线程安排，未追记为通过。
+
+## Windows 两档补验（2026-11-13）
+
+本轮开始先合并当时 integration 至 `7d11f13`，不把其他票的看板与同步改动算入 #78。基线保留该组合的其他代码，仅反向移除 #78 `1d36f9b` 与 `15fae98` 在 main.dart 的两组局部差异；最终轮恢复 `7d11f13` 原样 main.dart，`git diff --exit-code -- lib/main.dart` 确认没有残留基线修改。四轮 fixture 完全相同。
+
+命令为 `flutter test integration_test/issue_66_focus_navigation_device_test.dart -d windows --no-uninstall --plain-name "Issue 78" --reporter expanded --dart-define=ISSUE78_VIEW=wide`（窄档最后一项为 narrow）。真实 Windows 原生运行程序，testWidgets 自动点击、输入与返回；不是 widget-only 测试。四轮系统暗色、正常字号，fixture 使用相同长中文任务和 signals。没有操作 Android。
+
+| 轮次 / 证据目录（位于 F:/Workspace/Release/Flutter/Pacta/build/spec75/） | 结果 | 图片 |
+| --- | --- | --- |
+| t78-windows-wide-baseline2 | 1通过，退出0 | 11 |
+| t78-windows-narrow-baseline | 1通过，退出0 | 11 |
+| t78-windows-wide-final | 1通过，退出0 | 11 |
+| t78-windows-narrow-final | 1通过，退出0 | 11 |
+
+每目录各有 `run.log`、`run.rc`、`manifest.json`，记录命令、HEAD、main/fixture SHA256。已逐一核对四轮 before==after；四轮 fixture 哈希相同，基线两档 main 哈希相同，最终两档 main 哈希相同。
+
+尺寸边界：四轮实际启动原生 client 都为1265.6×682.4、DPR1.25。fixture 渲染视口分别 override 为1265×682与546×682；窄图是运行在 Windows 引擎内的窄渲染视口证据，**不代表原生窗口已缩至546宽**，也不宣称本票执行了OS拖窗或原生鼠标缩窗验收。Windows未弹移动软键盘，`board-ime`文件名仅沿用跨平台fixture，不能视为Windows软键盘证据。
+
+两档均完整执行打开设置、输入非法时长不关闭、取消不保存、默认25分钟直接开始、进行中返回再恢复同一会话、结算按钮返回、准备后返回再恢复唯一预约，以及专注链入口执行/返回/恢复/结算返回。实际结果仍是看板入口回看板、专注链入口回专注主页；唯一流程的ID/数量断言通过。主生产代码无新增修改。
+
+目视复查已打开宽窄最终 `issue78-board-setup.png` 及宽档前后 `issue78-board-settled.png`：任务、模式、时长、信号与两开始动作均清晰；结算文案由“返回专注链”改为“返回上一页”，实际落点保持一致。窗口内正常输入框完整矩形断言也通过：宽档input.bottom367 <= content.bottom455，窄档337 <= 485。Android输入法仍只采用上节field-final的独立原生证据。
+
+四轮结束后立即释放Windows给主线程；本节取代前文“Windows两档待验”的状态记录。既有原生拖窗、看板长任务鼠标操作与其他票结果不计作本票实施。
