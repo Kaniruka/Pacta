@@ -3154,6 +3154,7 @@ class FocusSetupDialog extends ConsumerStatefulWidget {
 }
 
 class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
+  final _errorKey = GlobalKey();
   late FocusChainMode _mode;
   late final TextEditingController _duration;
   String? _error;
@@ -3175,7 +3176,7 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
   Future<void> _start() async {
     final minutes = int.tryParse(_duration.text.trim());
     if (minutes == null || minutes <= 0) {
-      setState(() => _error = '请输入大于 0 的分钟数。');
+      _showDurationError();
       return;
     }
     setState(() {
@@ -3205,7 +3206,7 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
   Future<void> _startAppointment() async {
     final minutes = int.tryParse(_duration.text.trim());
     if (minutes == null || minutes <= 0) {
-      setState(() => _error = '请输入大于 0 的分钟数。');
+      _showDurationError();
       return;
     }
     setState(() {
@@ -3230,6 +3231,15 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  void _showDurationError() {
+    setState(() => _error = '请输入大于 0 的分钟数。');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _errorKey.currentContext;
+      if (!mounted || context == null) return;
+      Scrollable.ensureVisible(context, alignment: 1);
+    });
   }
 
   @override
@@ -3265,6 +3275,7 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
             const SizedBox(height: 10),
             Text(
               _error!,
+              key: _errorKey,
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ],
@@ -4092,7 +4103,7 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
                   const SizedBox(height: 20),
                   FilledButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('返回专注链'),
+                    child: const Text('返回上一页'),
                   ),
                 ],
               ],
