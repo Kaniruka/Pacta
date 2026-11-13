@@ -133,7 +133,7 @@ class _NationalFocusStrengtheningPageState
               ),
               const SizedBox(height: 8),
               Text(
-                '修改立即生效，不改变节点状态、清除记录或要求重新确认；是否符合由你判断。',
+                '切换即时生效，已有记录保持不变。是否符合由你判断。',
                 style: theme.textTheme.bodySmall,
               ),
               if (_error != null) ...[
@@ -426,8 +426,8 @@ class _StrengtheningLevelEditorPageState
               children: [
                 Text(
                   _isEditingExistingLevel
-                      ? '同时显示基础和本级国策规则，便于比较。留空会沿用基础要求。'
-                      : '同时显示基础和本级国策规则，便于比较。填写强化后的国策规则。',
+                      ? '可展开基础规则对照。留空会沿用基础要求。'
+                      : '填写强化后的国策规则，需要时展开基础规则对照。',
                   style: Theme.of(context).textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 20),
