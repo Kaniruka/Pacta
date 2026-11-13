@@ -114,3 +114,20 @@ flutter test -d windows integration_test/profile_real_service_test.dart \
 运行顺序：先 Android 建立资料，再 Windows 采用与修改。
 
 注意：为验证"业务快照上传/恢复不改资料"，fixture 会以 `device` 身份上传一次业务快照（revision 前进 1，历史保留 15 份），因此建议在 #92 的 snapshot history fixture 之后运行，或为该轮使用新的隔离会话；共享项目不得运行本 fixture。
+
+## 主审修复（2026-11-13 第三轮）：PostgreSQL base64 行换行
+
+事实链：PostgreSQL `encode(bytea, 'base64')` 每 76 个字符插入一个 LF（主 Agent 真实 SQL 已测）；Dart 3.13 的 `base64Decode('YQ==\n')` 抛 `FormatException`（padding 之后的空白不被接受）。`remoteProfileFromJson` 直接解码 RPC 返回的 `avatarBase64`，因此**任何超过一行的头像**（76 字符 ≈ 57 字节原始 PNG 以上）都会读取失败，而短头像恰好不换行掩盖了缺陷。
+
+修复（`lib/src/profile/profile_remote.dart`）：
+
+- 解码前只剔除 base64 允许的 ASCII 空白（HT 0x09、LF 0x0A、VT 0x0B、FF 0x0C、CR 0x0D、SP 0x20），其余字符原样交给 `base64Decode`；非法字符仍抛 `FormatException`，不静默丢弃。
+- 无空白时跳过重写，保持原有开销；编码方向（`save` 的 `base64Encode`）不变，未改动已部署隔离项目的 SQL。
+
+TDD（先红后绿，`test/profile/profile_remote_test.dart`）：
+
+- `PostgreSQL 76 列换行的头像 base64 仍能往返解码`：67 字节有效 1x1 PNG（`\x89PNG...IEND`）编码为 92 字符、按 76 列插入 LF，断言字节与 mime 完全往返；红态报 `Invalid character (at character 77)`。
+- `头像 base64 允许的 ASCII 空白都被忽略`：同一载荷穿插空格、TAB、CRLF、VT、FF 后仍解码出原字节。
+- `头像 base64 含非法字符时继续拒绝`：合法 payload 追加 `!!` 后仍抛 `FormatException`。
+
+验证：`flutter analyze` 无问题；`flutter test test/profile` 43 项通过。未改 SQL 与真实服务 fixture（仍为准备未执行）。

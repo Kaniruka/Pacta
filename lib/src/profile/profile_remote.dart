@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -119,7 +120,7 @@ RemoteProfile? remoteProfileFromJson(Object? response) {
   final avatarBase64 = json['avatarBase64'];
   final avatar = avatarBase64 is String && avatarBase64.isNotEmpty
       ? ProfileAvatar(
-          bytes: base64Decode(avatarBase64),
+          bytes: _decodeBase64Avatar(avatarBase64),
           mimeType: json['avatarMimeType'] as String? ?? 'image/png',
         )
       : null;
@@ -128,4 +129,20 @@ RemoteProfile? remoteProfileFromJson(Object? response) {
     avatar: avatar,
     updatedAt: updatedAt.toUtc(),
   );
+}
+
+/// ASCII whitespace that base64 payloads are allowed to carry.
+const _base64Whitespace = <int>{0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20};
+
+/// PostgreSQL's `encode(bytea, 'base64')` wraps its output every 76
+/// characters with a line feed, and `base64Decode` rejects whitespace that
+/// follows the padding. Only those whitespace bytes are dropped; every other
+/// character still has to be valid base64 or decoding throws [FormatException].
+Uint8List _decodeBase64Avatar(String value) {
+  final normalized = value.codeUnits.any(_base64Whitespace.contains)
+      ? String.fromCharCodes(
+          value.codeUnits.where((unit) => !_base64Whitespace.contains(unit)),
+        )
+      : value;
+  return base64Decode(normalized);
 }
