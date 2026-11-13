@@ -243,14 +243,19 @@ declare
   revision bigint := current_setting(
     'history_test.request_two_revision'
   )::bigint;
+  current bigint;
   index integer;
   before_count integer;
   after_count integer;
   current_after public.cloud_business_snapshots;
 begin
+  -- 从实际当前版本继续写，否则 compare-and-swap 会先报 PT409。
+  select snapshot.revision into current
+  from public.cloud_business_snapshots as snapshot
+  where snapshot.user_id = current_setting('history_test.owner_id')::uuid;
   for index in 1..16 loop
     perform public.save_cloud_business_snapshot(
-      revision + index - 1,
+      current,
       jsonb_build_object(
         'schemaVersion', 1,
         'userId', current_setting('history_test.owner_id'),
@@ -258,6 +263,7 @@ begin
       ),
       'device-c', 'Filler device', now(), 0
     );
+    current := current + 1;
   end loop;
 
   select count(*) into before_count
@@ -273,7 +279,7 @@ begin
 
   begin
     perform public.save_cloud_business_snapshot(
-      revision + 16,
+      current,
       jsonb_build_object(
         'schemaVersion', 1,
         'userId', current_setting('history_test.owner_id'),
@@ -296,7 +302,7 @@ begin
   select * into current_after
   from public.cloud_business_snapshots
   where user_id = current_setting('history_test.owner_id')::uuid;
-  if current_after.revision <> revision + 16 then
+  if current_after.revision <> current then
     raise exception 'evicted_request_retry_changed_the_current_version';
   end if;
 end

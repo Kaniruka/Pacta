@@ -126,7 +126,8 @@ SQL 增加版本 19/20 之后重试必须返回 19、`PT422`、`PT425` 及台账
 之后；`reset role` 也提前到全部可信断言之前。现约定：`authenticated` 段只访问授权表
 （`cloud_business_snapshots`、`cloud_business_snapshot_history`）与授权 RPC，`auth.users`、`app_admins`、
 请求台账、purge receipt、停用记录一律只在可信段读写；台账在 authenticated 段只保留一条「必须不可读」的
-隐私反证。
+隐私反证。淘汰场景的填充上传改为先读 `cloud_business_snapshots` 的实际当前版本再逐次推进，否则会先撞
+`PT409` 而测不到 `PT425`。结构自检：16 个 DO 块 dollar-quote 全部配对，单引号配平。
 主 Agent 提供 admin + 非 admin 两个身份后该段会真实执行。
 
 ## 已知限制与其他说明
