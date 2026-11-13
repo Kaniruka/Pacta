@@ -277,6 +277,12 @@ void main() {
       await tapText('对照基础规则');
       await shot('08-strengthening-level-editor');
       await back();
+      await tester.scrollUntilVisible(
+        find.text('当前使用 · 强化等级 1'),
+        -200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.pumpAndSettle();
       expect(find.text('当前使用 · 强化等级 1'), findsOneWidget);
       await back();
       expect(find.text('编辑国策卡'), findsOneWidget);
