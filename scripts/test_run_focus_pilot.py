@@ -115,6 +115,7 @@ class RunFocusPilotTest(unittest.TestCase):
         self.assertIn('--dart-define=FOCUS_PILOT_DIR=focus-pilot/runs/r1-default-wide',
                       record['argv'])
         self.assertIn('drive', record['argv'])
+        self.assertIn('--keep-app-running', record['argv'])
 
     def test_board_target_uses_existing_fixture_and_tracks_its_source(self):
         rc = self.module.main(['--flutter', self.flutter, '--run-id', 'board',

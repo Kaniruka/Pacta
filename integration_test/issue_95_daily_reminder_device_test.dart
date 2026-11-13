@@ -1,5 +1,6 @@
 // ignore_for_file: avoid_print
 
+import 'dart:async';
 import 'dart:io' show File, FileMode, Platform;
 
 import 'package:flutter/material.dart';
@@ -197,24 +198,43 @@ void main() {
 
       if (_holdSeconds > 0) {
         lifecycle.arm();
+        final nativeTap = Completer<void>();
+        final tapSubscription = service.openFlowRequests.listen((payload) {
+          if (payload == 'daily-open-reminder:${scheduled.dayKey}' &&
+              !nativeTap.isCompleted) {
+            nativeTap.complete();
+          }
+        });
         _record(
           'ISSUE95_HOLD_STARTED seconds=$_holdSeconds '
           'expectedAt=${plan.scheduledAt.toLocal().toIso8601String()} '
           'action=tap the system notification when it appears',
         );
-        await tester.runAsync(
-          () => Future<void>.delayed(Duration(seconds: _holdSeconds)),
-        );
+        try {
+          await tester.runAsync(
+            () => nativeTap.future.timeout(Duration(seconds: _holdSeconds)),
+          );
+        } finally {
+          await tapSubscription.cancel();
+        }
         _record(
           'ISSUE95_HOLD_ENDED '
           'backgrounded=${lifecycle.backgrounded} '
           'resumedAfterBackground=${lifecycle.resumedAfterBackground} '
           'states=${lifecycle.states.join(',')}',
         );
+        await _pumpFrames(tester);
+        _record('ISSUE95_NATIVE_ROUTE index=${_selectedDestination(tester)}');
         expect(
           lifecycle.resumedAfterBackground,
           isTrue,
           reason: 'A native tap must return the app to the foreground.',
+        );
+        expect(
+          _selectedDestination(tester),
+          0,
+          reason:
+              'The real native notification, before injection, opens Board.',
         );
       }
 
