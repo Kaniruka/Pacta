@@ -27,6 +27,9 @@ class _FakeProfileRepository implements ProfileRepository {
 
   /// 同步直接抛出（错误甚至没能写入缓存行）。
   Object? syncThrownError;
+
+  /// 让同步停在请求中，测试可在此期间触发另一入口的保存。
+  Completer<void>? syncGate;
   int saveCalls = 0;
   int syncCalls = 0;
   ProfileAvatar? lastSavedAvatar;
@@ -66,6 +69,8 @@ class _FakeProfileRepository implements ProfileRepository {
   @override
   Future<ProfileAccount> syncProfile() async {
     syncCalls++;
+    final gate = syncGate;
+    if (gate != null) await gate.future;
     final thrown = syncThrownError;
     if (thrown != null) throw thrown;
     if (syncErrorMessage != null) {
@@ -337,6 +342,39 @@ void main() {
     expect(find.text('资料服务暂时不可用'), findsNothing);
     expect(find.text('小林二号'), findsOneWidget);
     expect(repository.syncCalls, 1, reason: '重试只由用户触发');
+  });
+
+  testWidgets('同步期间并发保存成功后，这次尝试的失败不挂到新版本', (tester) async {
+    final repository = _FakeProfileRepository(
+      account: ProfileAccount(
+        userId: 'user-a',
+        displayName: '小林',
+        updatedAt: DateTime.utc(2026, 11, 12),
+      ),
+    );
+    final gate = Completer<void>();
+    repository.syncGate = gate;
+    repository.syncThrownError = StateError('资料服务暂时不可用');
+    final overview = _FakeOverviewSource();
+    await pumpCard(tester, repository: repository, overview: overview);
+    await overview.emit();
+    await tester.pump();
+
+    // 请求仍在途中时另一入口保存成功：缓存行推进到新版本。
+    await repository.saveProfile(displayName: '小林二号');
+    await tester.pump();
+    expect(find.text('小林二号'), findsOneWidget);
+    expect(repository.syncThrownError, isA<StateError>());
+
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('资料服务暂时不可用'),
+      findsNothing,
+      reason: '失败属于请求开始时的那一版缓存，不得挂到新版本',
+    );
+    expect(find.text('小林二号'), findsOneWidget);
   });
 
   testWidgets('统计尚未读到记录时显示加载状态而不是零', (tester) async {

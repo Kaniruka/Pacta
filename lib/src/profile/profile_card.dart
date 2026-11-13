@@ -71,31 +71,29 @@ class _MyProfileCardState extends State<MyProfileCard> {
     } else {
       setState(() => _syncing = true);
     }
+    // 错误归属在请求开始前固定：这次尝试只对当时那一版缓存负责。请求期间
+    // 另一入口把缓存推进到新版本后，失败就不属于新版本，不能再显示。
+    final observed = await _readCachedRow();
+    ProfileAccount? profile;
+    String? failure;
     try {
-      final profile = await widget.repository.syncProfile();
-      if (!mounted) return;
-      setState(() {
-        _profile = profile;
-        _syncError = profile.syncError;
-        _syncErrorCache = null;
-        _syncing = false;
-      });
+      profile = await widget.repository.syncProfile();
     } catch (error) {
-      if (!mounted) return;
-      final observed = await _readCachedRow();
-      if (!mounted) return;
-      setState(() {
-        _syncError = error is StateError ? error.message : error.toString();
-        _syncErrorCache = observed;
-        _syncing = false;
-      });
+      failure = error is StateError ? error.message : error.toString();
     }
+    if (!mounted) return;
+    final error = failure ?? profile?.syncError;
+    setState(() {
+      if (profile != null) _profile = profile;
+      _syncError = error;
+      _syncErrorCache = error == null ? null : observed;
+      _syncing = false;
+    });
   }
 
-  /// The cached row as it was when this attempt failed. Read from the
-  /// repository rather than the last build so a row that the stream has not
-  /// delivered yet still counts as "this state"; a failed read falls back to
-  /// what the card already knows.
+  /// The cached row this attempt starts from. Read before the request instead
+  /// of after a failure, so a concurrent save cannot hand the older error to a
+  /// newer version; a failed read falls back to what the card already shows.
   Future<ProfileAccount?> _readCachedRow() async {
     try {
       final cached = await widget.repository.getProfile();
