@@ -91,7 +91,7 @@ profile_repository_test（P2 两条）: Expected: empty  Actual: [LocalProfileAc
 
 ## 复验边界
 
-本节是该轮复验时点。后续主 Agent 已完成真实云资料/自动上传、Android 原生验收及 Windows 原生头像，最新结果见[接续验收](issue90-resume-validation-20261113.md)。同步分层增量 `d516d60...aac19b7` 的独立 Standards / Spec 均无发现，主检出全量测试 605 通过；Windows 原生通知点击尚未通过。
+本节是该轮复验时点。后续主 Agent 已完成真实云资料/自动上传、Android 原生验收及 Windows 原生头像，最新结果见[接续验收](issue90-resume-validation-20261113.md)。同步分层增量 `d516d60...aac19b7` 的独立 Standards / Spec 均无发现，主检出全量测试 605 通过；Windows 原生通知点击与窗口恢复已于 2026-11-14 完成，通过证据和测试探针复核见接续验收的最终收口。
 
 - 原生与真实云验收仍由主 Agent 执行：本文件只记录本地代码与自动化测试证据，不把替身测试当设备或真实服务通过。
 - Windows 当前系统仍返回 QUNS_BUSY；未观察到的气泡点击不得记为通过。

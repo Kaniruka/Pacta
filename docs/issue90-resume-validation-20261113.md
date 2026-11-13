@@ -1,6 +1,16 @@
 # #90 / PR #96 接续验收（2026-11-13）
 
-本记录接续 `issue90-interruption-20261113.md` 顶部最新停点；旧实施记录中的“尚未合入”“真实云未运行”等均为当时状态，不代表当前状态。PR 仍须在最后的平台验收完成后才转 ready；未授权合并 master 或部署共享云。
+本记录接续 `issue90-interruption-20261113.md` 顶部最新停点；旧实施记录中的“尚未合入”“真实云未运行”等均为当时状态，不代表当前状态。**2026-11-14 02:01，最后的 Windows 原生通知点击与窗口恢复验收通过，已达到 PR 转 ready 条件。** 未授权合并 master 或部署共享云。
+
+## 最终收口（2026-11-14）
+
+- 真实 Windows 验收：`build/ui-layout-evidence/issue90/reminder-native-windows-20261114-015938`，`run.rc=0`。用户手动最小化和点击系统提醒，Agent 无桌面输入。02:00:12 收到 hidden；02:01:01 收到 inactive、resumed 和真实通知回调；02:01:03 的 `ISSUE95_NATIVE_ROUTE index=0` 在注入之前；其后才执行既有路由注入检查、关闭清理和偏好恢复。manifest 已按事件顺序核实标记 `nativeTap=true`。
+- 前一轮 `reminder-native-windows-20261114-015441` 也证明真实点击与注入前看板 index=0，但未记录 hidden/resumed，未计为完整通过；用户确认已最小化，因此修正探针观测后重测，没有降低断言。
+- 测试探针提交 `4fbefdc`：记录 arm 前后生命周期；开始时读取真实当前状态，避免丢弃提前最小化；原生点击后最多等 5 秒，让真实平台恢复事件到达。原生点击、后台后恢复、注入前看板三项断言全部保留，不合成生命周期状态、不改变生产逻辑。
+- `dart format integration_test/issue_95_daily_reminder_device_test.dart` 完成；`flutter analyze` 无问题（`.scratch/issue90/reminder-lifecycle-analyze.log`）；`flutter test test/notifications` 57 通过（`reminder-lifecycle-tests.log`）。生产代码仍对应此前 605 项完整测试，不因测试探针小改重复全量运行。
+- 独立 Standards / Spec 对 `8c05f74...4fbefdc` 复核均无发现，报告 `.scratch/issue90/final-native-{standards,spec}-review.md`。同步视觉结论沿用四组已判读的新图；本轮无视觉或生产代码变更。
+- 临时项目 `Pacta issue90 disposable validation` 已于 02:02 删除，管理 API 读回 404 确认不存在，项目状态与运行时控制文件已移除；证据 `.scratch/issue90/cleanup-final.json`。删除前按实时名称及共享配置 URL 双重核验，共享 Pacta 项目未改。
+- 测试进程已退出，30390 无监听。当前聊天没有可归档的 managed-worktree 附件；旧同步工作树仍有未提交变更，因此保留所有旧工作树及证据，不强制移除、不丢弃改动。此保留不影响 PR 评审。
 
 ## 本轮代码与复核
 
@@ -26,7 +36,7 @@
 
 Windows 图片首轮 `avatar-native-windows-20261113-resume` 选图与图片处理成功，但无障碍树读取触发 Flutter 测试结束时的 SemanticsHandle 检查失败；第二轮只用截图操作后完整通过，不把首轮算作通过。
 
-## Windows 原生提醒待完成
+## Windows 原生提醒验收历史（已于上方最终收口完成）
 
 本轮 `reminder-native-windows-20261113-resume` 排程到本机 22:15，应用已最小化。到点后系统 `SHQueryUserNotificationState` 返回 2（BUSY），未观察到可点击通知。fixture 因真实点击超时失败，打印 `ISSUE95_PREFERENCES_RESTORED`。没有注入回调冒充点击，没有改系统通知/隐私设置。已请求用户桌面空闲时再补测。
 
@@ -57,7 +67,7 @@ Android 后两次增加 `--no-start-paused`；深色增加 `--dart-define=SYNC_P
 
 Flutter 本机源码 `packages/flutter_tools/lib/src/commands/drive.dart` 的 `startPausedDefault=true`，运行日志也确认等待驱动时 isolate 暂停。仅增加 `--no-start-paused` 后亮色、深色窄屏均通过且原生画面正常，未改业务代码；这支持调试启动等待是诱因，但不声称穷尽所有资源压力原因。深色运行后的 `anr-index-after.txt` 最新 ANR 仍是设备 UTC 14:20:59，早于两次 unpaused 运行；`density-restored.txt` 确认恢复完成。未来验收仍须检查原生系统画面，Flutter 通过日志本身不足以排除遮罩。
 
-## 保留与清理边界
+## 2026-11-13 的保留与清理边界（后续清理见最终收口）
 
 - 所有 Android 命令使用 emulator-5556，未操作实体设备；截图命令含 `--keep-app-running`，原生 test 含 `--no-uninstall`，未卸载或清应用数据。
 - loopback 30390 检查无监听，本轮未启动真实云会话服务。隔离云项目及原工作树保留到验收收口；共享项目未部署。
