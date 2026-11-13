@@ -351,17 +351,46 @@ void main() {
     expect(await profileRows('user-a'), isEmpty);
   });
 
-  test('清除代次只拦在途请求，清除之后的新保存仍可写入', () async {
+  test('账号清除后已排队的旧保存不再写入', () async {
+    final repository = buildRepository();
+    final gate = Completer<RemoteProfile?>();
+    remote.fetchGate = gate;
+
+    // 读取先占住串行队列，随后的编辑只能排队等待。
+    final syncing = repository.syncProfile();
+    await Future<void>.delayed(Duration.zero);
+    final saving = repository.saveProfile(
+      displayName: '旧昵称',
+      avatar: _avatar(),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(remote.saveCalls, 0, reason: '排队期间不得开始上传');
+
+    await purgeUser('user-a');
+    gate.complete(null);
+    await syncing;
+    await saving;
+
+    expect(await profileRows('user-a'), isEmpty, reason: '排队的旧编辑不得复活资料');
+    final after = await repository.getProfile();
+    expect(after.hasDisplayName, isFalse);
+    expect(after.avatar, isNull);
+    expect(remote.saveCalls, 0, reason: '已清除账号不再上传');
+  });
+
+  test('已清除账号的旧 UUID 不再接受资料写入（重新注册使用新 UUID）', () async {
     final repository = buildRepository();
     await repository.saveProfile(displayName: '小林');
     await purgeUser('user-a');
     expect(await profileRows('user-a'), isEmpty);
 
-    final reopened = buildRepository();
-    await reopened.saveProfile(displayName: '重新登录');
-    final saved = await reopened.getProfile();
-    expect(saved.displayName, '重新登录');
-    expect(saved.hasPendingSave, isFalse);
+    // 依据 supabase/README.md 的 Explicit cloud purge：清除后重新注册会得到
+    // 新的 auth UUID，因此旧 UUID 上的任何资料写入都只可能是失效的旧操作。
+    final stale = buildRepository();
+    final saved = await stale.saveProfile(displayName: '失效写入');
+    expect(saved.hasDisplayName, isFalse);
+    expect(await profileRows('user-a'), isEmpty);
+    expect(remote.saveCalls, 1, reason: '只有清除前那次成功写入');
   });
 
   test('晚到的上传失败不覆盖另一入口的新编辑', () async {

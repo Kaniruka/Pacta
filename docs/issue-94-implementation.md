@@ -147,12 +147,15 @@ TDD（先红后绿，`test/profile/profile_remote_test.dart`）：
 ## 最终评审修复（S1／S2／P2 与截断 PNG 前缀）
 
 - **S1 首次读取失败可见**：名片自己持有首次 `syncProfile` 的返回值与错误，空缓存时显示原因和“重试”；
-  有缓存行时仍以数据库记录为准。名片不写资料行，失败不制造本机版本。
+  有缓存行时仍以数据库记录为准。同步直接抛异常（错误甚至没能写库）时，只要缓存行仍停在失败时的状态，
+  瞬态原因照常显示；缓存行前进到另一状态或重试成功即清除。名片不写资料行，失败不制造本机版本。
 - **S2 统计不把加载与失败当 0**：两组统计各自订阅、各自区分加载／失败／真实数据；失败给组内“重试”，
   只重建读取。
-- **P2 清除代次**：新增 Drift 表 `local_profile_clear_marks`（schema 29，清除时同一事务内代次 +1）与
-  `LocalProfileRepository` 的事务内代次校验（覆盖本地保存、采用远端、上传成功／失败、读取失败状态），
-  `dispose()` 失效在途写入；清除代次不进业务快照、不参与重复清扫，云服务 RLS 未改。
+- **P2 清除标记**：新增 Drift 表 `local_profile_clear_marks`（schema 29，清除时同一事务内记录并累计代次）；
+  `LocalProfileRepository` 在事务内按「该 UUID 存在清除标记即拒绝写入」处理全部写路径（本地保存、采用远端、
+  上传成功／失败、读取失败状态），因此排队中的旧编辑与晚到应答都无法复活资料，`dispose()` 另行失效在途写入。
+  清除标记是旧 UUID 的永久写入禁令（`supabase/README.md`：重新注册得到新 UUID）；该表不进业务快照、
+  不参与重复清扫，云服务 RLS 未改。
 - **附加**：`detectAvatarFormat` 的 PNG 分支要求完整 8 字节签名，3–7 字节截断前缀改为
   `AvatarValidationException` 而非 `RangeError`；允许格式范围不变。
 - 证据与逐条命令见[双轴评审记录](review-sync-profile-cards-20261113.md)。

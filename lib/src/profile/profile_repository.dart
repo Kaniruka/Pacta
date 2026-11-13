@@ -76,27 +76,29 @@ class LocalProfileRepository implements ProfileRepository {
 
   bool _disposed = false;
 
-  /// The account-clear generation this repository last observed. Every write
-  /// re-reads it inside the write transaction, so an account purge that lands
-  /// while a read or upload is in flight cannot be undone by the late result.
-  Future<int> _readClearGeneration() async {
+  /// A confirmed purge keeps its mark forever, and a fresh registration gets a
+  /// new auth UUID (see supabase/README.md "Explicit cloud purge"). Any profile
+  /// write for a marked UUID can therefore only be a stale operation — an
+  /// in-flight read answer, an upload answer, or an edit still queued behind a
+  /// blocked operation — so the mark is a permanent write ban, not a counter
+  /// that a later operation may read as "already current".
+  Future<bool> _isPurgedAccount() async {
     final row = await (database.select(
       database.localProfileClearMarks,
     )..where((row) => row.userId.equals(userId))).getSingleOrNull();
-    return row?.generation ?? 0;
+    return row != null;
   }
 
   /// Runs [write] in one transaction that first proves the account was not
-  /// cleared and that this repository is still live. A rejected write returns
+  /// cleared and that this repository is still live, so a late answer or a
+  /// queued operation cannot write after the purge. A rejected write returns
   /// false and leaves the account data untouched.
-  Future<bool> _guardedWrite({
-    required int clearGeneration,
-    required Future<bool> Function() write,
-  }) => database.transaction(() async {
-    if (_disposed) return false;
-    if (await _readClearGeneration() != clearGeneration) return false;
-    return write();
-  });
+  Future<bool> _guardedWrite({required Future<bool> Function() write}) =>
+      database.transaction(() async {
+        if (_disposed) return false;
+        if (await _isPurgedAccount()) return false;
+        return write();
+      });
 
   Future<T> _serialized<T>(Future<T> Function() action) {
     final result = _operationQueue.then((_) => action());
@@ -125,12 +127,10 @@ class LocalProfileRepository implements ProfileRepository {
     ProfileAvatar? avatar,
     bool clearAvatar = false,
   }) => _serialized(() async {
-    final clearGeneration = await _readClearGeneration();
     final name = validateDisplayName(displayName);
     final current = await getProfile();
     final nextAvatar = clearAvatar ? null : (avatar ?? current.avatar);
     final written = await _guardedWrite(
-      clearGeneration: clearGeneration,
       write: () async {
         await _writeLocal(
           displayName: name,
@@ -146,16 +146,15 @@ class LocalProfileRepository implements ProfileRepository {
     // 账号已清除或本仓储已 dispose：这次编辑不再落到本机，也不再上传。
     if (!written) return getProfile();
     if (!remote.isAvailable) return getProfile();
-    return _upload(clearGeneration);
+    return _upload();
   });
 
   @override
   Future<ProfileAccount> syncProfile() => _serialized(() async {
-    final clearGeneration = await _readClearGeneration();
     final local = await getProfile();
     if (local.hasPendingSave) {
       if (!remote.isAvailable) return local;
-      return _upload(clearGeneration);
+      return _upload();
     }
     if (!remote.isAvailable) return local;
 
@@ -166,12 +165,12 @@ class LocalProfileRepository implements ProfileRepository {
       // A failed read only records the failure. It must not create or advance a
       // local version, otherwise a later read could make the empty cache look
       // newer than the stored profile and upload over it.
-      return _recordFailure(local, _failureText(error), clearGeneration);
+      return _recordFailure(local, _failureText(error));
     }
 
     if (remoteProfile == null) {
       if (local.syncError == null) return local;
-      await _clearFailureIfUnchanged(local.editSequence, clearGeneration);
+      await _clearFailureIfUnchanged(local.editSequence);
       return getProfile();
     }
 
@@ -182,7 +181,6 @@ class LocalProfileRepository implements ProfileRepository {
       // advances the edit sequence and invalidates in-flight commits.
       await _writeLocalIfSequenceUnchanged(
         expectedSequence: local.editSequence,
-        clearGeneration: clearGeneration,
         displayName: remoteProfile.displayName,
         avatar: remoteProfile.avatar,
         updatedAt: remoteProfile.updatedAt,
@@ -193,7 +191,7 @@ class LocalProfileRepository implements ProfileRepository {
     return getProfile();
   });
 
-  Future<ProfileAccount> _upload(int clearGeneration) async {
+  Future<ProfileAccount> _upload() async {
     final local = await getProfile();
     final sequence = local.editSequence;
     try {
@@ -205,7 +203,6 @@ class LocalProfileRepository implements ProfileRepository {
       );
       await _writeLocalIfSequenceUnchanged(
         expectedSequence: sequence,
-        clearGeneration: clearGeneration,
         displayName: saved.displayName,
         avatar: saved.avatar,
         updatedAt: saved.updatedAt,
@@ -216,7 +213,6 @@ class LocalProfileRepository implements ProfileRepository {
       // Keep the pending intent; only a matching sequence may carry the error.
       await _updateStateIfUnchanged(
         expectedSequence: sequence,
-        clearGeneration: clearGeneration,
         syncError: _failureText(error),
         pendingSave: true,
       );
@@ -227,7 +223,6 @@ class LocalProfileRepository implements ProfileRepository {
   Future<ProfileAccount> _recordFailure(
     ProfileAccount local,
     String message,
-    int clearGeneration,
   ) async {
     if (local.updatedAt == null) {
       // No cached version yet: report the failure without inventing a row.
@@ -235,30 +230,24 @@ class LocalProfileRepository implements ProfileRepository {
     }
     await _updateStateIfUnchanged(
       expectedSequence: local.editSequence,
-      clearGeneration: clearGeneration,
       syncError: message,
       pendingSave: local.hasPendingSave,
     );
     return getProfile();
   }
 
-  Future<void> _clearFailureIfUnchanged(
-    int expectedSequence,
-    int clearGeneration,
-  ) => _updateStateIfUnchanged(
-    expectedSequence: expectedSequence,
-    clearGeneration: clearGeneration,
-    syncError: null,
-    pendingSave: false,
-  );
+  Future<void> _clearFailureIfUnchanged(int expectedSequence) =>
+      _updateStateIfUnchanged(
+        expectedSequence: expectedSequence,
+        syncError: null,
+        pendingSave: false,
+      );
 
   Future<bool> _updateStateIfUnchanged({
     required int expectedSequence,
-    required int clearGeneration,
     required String? syncError,
     required bool pendingSave,
   }) => _guardedWrite(
-    clearGeneration: clearGeneration,
     write: () async {
       final updated =
           await (database.update(database.localProfileAccounts)..where(
@@ -278,14 +267,12 @@ class LocalProfileRepository implements ProfileRepository {
 
   Future<bool> _writeLocalIfSequenceUnchanged({
     required int expectedSequence,
-    required int clearGeneration,
     required String displayName,
     required ProfileAvatar? avatar,
     required DateTime updatedAt,
     required bool pendingSave,
     required String? syncError,
   }) => _guardedWrite(
-    clearGeneration: clearGeneration,
     write: () async {
       final existing = await (database.select(
         database.localProfileAccounts,

@@ -24,6 +24,9 @@ class _FakeProfileRepository implements ProfileRepository {
 
   /// 首次读取失败：仓储只在内存里报告错误，不写本机版本。
   String? syncErrorMessage;
+
+  /// 同步直接抛出（错误甚至没能写入缓存行）。
+  Object? syncThrownError;
   int saveCalls = 0;
   int syncCalls = 0;
   ProfileAvatar? lastSavedAvatar;
@@ -63,6 +66,8 @@ class _FakeProfileRepository implements ProfileRepository {
   @override
   Future<ProfileAccount> syncProfile() async {
     syncCalls++;
+    final thrown = syncThrownError;
+    if (thrown != null) throw thrown;
     if (syncErrorMessage != null) {
       // 与真实仓储一致：没有缓存行时只返回内存错误，不产生本机资料版本。
       return _account.copyWith(syncError: syncErrorMessage);
@@ -304,6 +309,34 @@ void main() {
 
     expect(find.text('保存失败：云端暂不可用'), findsNothing);
     expect(repository.syncCalls, 2);
+  });
+
+  testWidgets('已有缓存时同步抛异常仍显示这次尝试的错误，缓存更新后清掉', (tester) async {
+    final repository = _FakeProfileRepository(
+      account: ProfileAccount(
+        userId: 'user-a',
+        displayName: '小林',
+        updatedAt: DateTime.utc(2026, 11, 12),
+      ),
+    );
+    repository.syncThrownError = StateError('资料服务暂时不可用');
+    final overview = _FakeOverviewSource();
+    await pumpCard(tester, repository: repository, overview: overview);
+    await overview.emit();
+    await tester.pump();
+
+    // 缓存行没有记录这次错误（错误没能写库），瞬态原因不能被缓存掩盖。
+    expect(find.text('资料服务暂时不可用'), findsOneWidget);
+    expect(find.text('小林'), findsOneWidget);
+
+    // 另一入口更新了缓存：旧的瞬态错误作废，不再提示。
+    repository.syncThrownError = null;
+    await repository.saveProfile(displayName: '小林二号');
+    await tester.pump();
+
+    expect(find.text('资料服务暂时不可用'), findsNothing);
+    expect(find.text('小林二号'), findsOneWidget);
+    expect(repository.syncCalls, 1, reason: '重试只由用户触发');
   });
 
   testWidgets('统计尚未读到记录时显示加载状态而不是零', (tester) async {

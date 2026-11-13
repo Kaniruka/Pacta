@@ -29,6 +29,7 @@ Spec：2项实质行为发现；最高为取消后继续覆盖云端。未发现
 - 事实：`initState` 里 `syncProfile()` 的返回值被丢弃，空缓存失败只存在于内存返回值，数据库流不会发出它，于是只显示占位昵称。
 - 修复：`profile_card.dart` 自己持有首次同步的返回结果、错误文案与同步中标记；数据库里没有缓存行时显示该原因和“重试”；已有缓存行时仍以数据库记录的错误为准（仓储只在有行时写 `syncError`）。名片不写任何资料行，失败不会制造本机版本。
 - 回归：`test/profile/profile_card_test.dart` → `首次资料读取失败在名片显示原因并可重试，且不编造本机资料`（断言失败文案可见、`saveCalls == 0`、重试后文案消失且 `syncCalls == 2`）。
+- 复核边界（同步抛异常 + 已有缓存）：这次尝试捕获到的瞬态错误可能根本没写进缓存行，若只取 `stored.syncError`，已有缓存会把它掩盖。修复：`stored.syncError` 为空时回退到本次尝试的错误，并记录失败时缓存行的状态（`updatedAt` + `editSequence`，通过 `getProfile()` 读取而非等待流）；缓存行前进到另一状态即视为过期不再显示，成功重试也直接清除。回归：`已有缓存时同步抛异常仍显示这次尝试的错误，缓存更新后清掉`（断言缓存同行时显示原因与昵称、另一入口保存后原因消失）。
 
 ### 2. Standards 2 — 统计的加载与失败不再当成零
 
@@ -48,9 +49,10 @@ Spec：2项实质行为发现；最高为取消后继续覆盖云端。未发现
 - 修复：
   - 新增 Drift 表 `local_profile_clear_marks`（`userId`、只前进的 `generation`、`clearedAt`），schema 28 → **29**，迁移 `if (from < 29) createTable`；`dart run build_runner build` 生成，g.dart 为纯新增（+462/−0）。
   - `PactaDatabase.purgeUserDataForReceipt` 在同一事务内删除资料行之后把该用户代次 +1 并保留标记。
-  - `LocalProfileRepository` 在操作开始时读取代次，所有写路径（`saveProfile` 本地保存、`syncProfile` 采用远端、上传成功、上传失败状态、读取失败状态）都经 `_guardedWrite`：单个事务内先证明 `dispose` 未发生且代次未前进，否则放弃写入；`dispose()` 置失效标记，之后到达的应答不再写入。
+  - `LocalProfileRepository` 的所有写路径（`saveProfile` 本地保存、`syncProfile` 采用远端、上传成功、上传失败状态、读取失败状态）都经 `_guardedWrite`：单个事务内先证明 `dispose` 未发生、且该 UUID 没有清除标记，否则放弃写入；`dispose()` 置失效标记，之后到达的应答不再写入。
+  - 已确认清除标记是**旧 UUID 的永久写入禁令**，不是可被后续操作读成“已是最新”的计数器：依据 `supabase/README.md` 的 Explicit cloud purge，清除后重新注册会得到新的 auth UUID，因此在旧 UUID 上出现的任何资料写入都只可能是失效的旧操作（晚到应答、已排队的编辑）。立即读取代次仍会漏掉“排队时已失效、开始时才读到新代次”的编辑（复核反例），故改为存在性判断。
   - 边界保持：标记表不属于业务快照表清单（恢复不回滚、也不上传），不加入 `localUserIdsWithData`（不会被重复清扫），恢复点/资料/队列的 purge 边界与云服务 RLS 均未改。
-- 回归：`test/profile/profile_repository_test.dart` → `账号清除后晚到的首次读取不得复活昵称与头像`、`账号清除后晚到的上传成功应答不再写回资料`、`dispose 之后晚到的读取结果不再写入`、`清除代次只拦在途请求，清除之后的新保存仍可写入`；`test/auth/user_purge_cleanup_repository_test.dart` → `清除后留下只前进的资料清除代次，且不会被重复清扫`。
+- 回归：`test/profile/profile_repository_test.dart` → `账号清除后晚到的首次读取不得复活昵称与头像`、`账号清除后晚到的上传成功应答不再写回资料`、`账号清除后已排队的旧保存不再写入`（读取占住串行队列 → 编辑排队 → 清除 → 释放读取，断言无资料行、无上传）、`已清除账号的旧 UUID 不再接受资料写入（重新注册使用新 UUID）`、`dispose 之后晚到的读取结果不再写入`；`test/auth/user_purge_cleanup_repository_test.dart` → `清除后留下只前进的资料清除代次，且不会被重复清扫`。复核指出原“清除之后的新保存仍可写入”用例与既有账号永久清除契约冲突，已改为上述两个用例。
 
 ### 5. 附加 — 截断 PNG 前缀正常拒绝
 

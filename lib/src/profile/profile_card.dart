@@ -44,6 +44,12 @@ class _MyProfileCardState extends State<MyProfileCard> {
   /// repository must not invent a local version for it. The card therefore
   /// keeps that reason so an empty cache still says what went wrong.
   String? _syncError;
+
+  /// The cached row this attempt observed when it failed. The transient reason
+  /// is only shown while the cache is still in that same state: a newer row
+  /// (save or adopted profile) makes it stale.
+  ProfileAccount? _syncErrorCache;
+
   bool _syncing = false;
 
   /// Rebuilding with a new key resubscribes the record streams; retrying a
@@ -71,24 +77,55 @@ class _MyProfileCardState extends State<MyProfileCard> {
       setState(() {
         _profile = profile;
         _syncError = profile.syncError;
+        _syncErrorCache = null;
         _syncing = false;
       });
     } catch (error) {
       if (!mounted) return;
+      final observed = await _readCachedRow();
+      if (!mounted) return;
       setState(() {
         _syncError = error is StateError ? error.message : error.toString();
+        _syncErrorCache = observed;
         _syncing = false;
       });
     }
   }
 
+  /// The cached row as it was when this attempt failed. Read from the
+  /// repository rather than the last build so a row that the stream has not
+  /// delivered yet still counts as "this state"; a failed read falls back to
+  /// what the card already knows.
+  Future<ProfileAccount?> _readCachedRow() async {
+    try {
+      final cached = await widget.repository.getProfile();
+      return cached.updatedAt == null ? null : cached;
+    } catch (_) {
+      final known = _profile;
+      return known == null || known.updatedAt == null ? null : known;
+    }
+  }
+
   void _retryStatistics() => setState(() => _statisticsAttempt++);
 
-  /// A cached row owns its own last error; without a row only the first sync
-  /// that never reached the database can report one.
+  /// A cached row reports its own last error, but a failure of this attempt may
+  /// never have reached the row (the write itself can fail). Such a transient
+  /// reason still belongs on the card while the cache has not moved on; a newer
+  /// row means the older reason is stale and must not be shown again.
   String? _profileError(ProfileAccount? stored) {
-    if (stored != null && stored.updatedAt != null) return stored.syncError;
-    return stored?.syncError ?? _syncError;
+    final storedError = stored?.syncError;
+    if (storedError != null) return storedError;
+    final transient = _syncError;
+    if (transient == null) return null;
+    final cached = stored != null && stored.updatedAt != null ? stored : null;
+    final observed = _syncErrorCache;
+    if (observed == null) return cached == null ? transient : null;
+    if (observed.updatedAt == null) return cached == null ? transient : null;
+    if (cached == null) return null;
+    final sameRow =
+        cached.updatedAt == observed.updatedAt &&
+        cached.editSequence == observed.editSequence;
+    return sameRow ? transient : null;
   }
 
   Future<void> _openEdit() async {
