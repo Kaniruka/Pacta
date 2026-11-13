@@ -75,13 +75,15 @@ dart format <改动文件>                                   -> 完成
 flutter analyze                                          -> No issues found!
 flutter test test/sync/cloud_auto_upload_queue_test.dart -> +5  All tests passed!
 flutter test test/sync/cloud_snapshot_frozen_retry_test.dart -> +4 All tests passed!
-flutter test test/sync/cloud_auto_upload_test.dart       -> +15 All tests passed!
+flutter test test/sync/cloud_auto_upload_test.dart       -> +20 All tests passed!
 flutter test test/national_focus/national_focus_auto_upload_trigger_test.dart -> +5 All tests passed!
 flutter test test/sync/cloud_snapshot_history_page_test.dart -> +7 All tests passed!
+flutter test test/auth/user_purge_cleanup_repository_test.dart -> +6 All tests passed!
 flutter test test/sync/cloud_auto_upload_card_test.dart  -> +3  All tests passed!
 flutter test test/sync/cloud_auto_upload_app_test.dart   -> +4  All tests passed!
-flutter test                                             -> +486 All tests passed!
+flutter test                                             -> +496 All tests passed!
 git diff --check                                         -> 通过
+flutter analyze（含 integration_test）                    -> No issues found!
 ```
 
 ## 新增测试覆盖
@@ -101,6 +103,8 @@ git diff --check                                         -> 通过
 - 卡片与历史页（`cloud_auto_upload_card_test.dart`、`cloud_snapshot_history_page_test.dart`）：
   开关默认关闭/开启后按用户保存；手动下载前取消待传请求；停止原因在卡片提示与面板展示；
   云历史离线时本机恢复点仍可查看与找回、两个错误独立呈现与重试、恢复前取消队列。
+- 账号清除（`user_purge_cleanup_repository_test.dart`）：确认清除后删冻结队列与开关且不跨用户；
+  只剩队列残留的旧用户按 receipt 清除；清除失败可重试。
 - App 级（`cloud_auto_upload_app_test.dart`）：默认关闭时批量确认不上传；开启后整批一次、
   普通编辑不触发；未处理云版本停止覆盖且队列保留；离线确认后前台恢复重试同一请求只落一份；
   切换账号清除上一账号队列且不代为上传。
@@ -134,4 +138,36 @@ git diff --check                                       -> 通过
 离线确认成功、队列跨重启保留并在联网/前台/登录/生命周期恢复后上传最新快照；未处理云版本、
 首次遇到的既有云快照、恢复旧版本后都不自动覆盖，忽略提示不授权；关闭开关、切换账号、恢复备份
 取消旧请求；恢复结果不会被自动上传；PT422/PT425 停止且不改写请求；无自动下载。
+
+## 复核修复（2026-11-13 第二轮）
+
+主 Agent 复核提出六项异步/兼容边界，均已按“可复现反例 → 修复 → 用公开协调器与可控 Future 验证”的方式处理：
+
+| 问题 | 修复 | 反例测试 |
+| --- | --- | --- |
+| `uploadLocal` 在远端返回后无条件写基线，协调器随后才查代次；上传在途期间恢复备份，晚到应答会把基线改回这次上传的 revision | 新增 `uploadLocal(isCancelled:)`：基线提交在串行化的锁内先判取消，取消后只返回元数据、不写基线；恢复、手动同步、自动上传的基线写入共用同一条链 | `上传途中恢复旧备份：晚到应答不覆盖恢复后的基线`（延迟应答 → 恢复 → 释放，断言基线仍是恢复的 revision，且之后的新确认不会静默覆盖） |
+| 新确认可能落在 `captureLocalState` 之后、`queue.startRequest` 之前；`startRequest` 无条件清 pending 会吃掉新意图 | 队列增加意图序号 `pendingSequence`；`startRequest(servedThrough:)` 只消费自己捕获之前的意图，`clearPending(through:)` 同样条件消费 | `捕获之后到达的新确认不被开始请求吞掉`（捕获处可控 Future，窗口内再确认 → 两次上传、最终基线与本机一致） |
+| 取消后晚到的 PT422/PT425/PT409 仍能 `_block`/`clearRequest` 改写已清空的队列；`_accessAllowed` 末端缺少代次复核；关闭开关要等偏好落盘才失效 | 所有队列写入带代次校验（`_mutateQueue(..., generation)`，在锁内前后各查一次）；`_accessAllowed` 每个 await 后复核；`setEnabled(false)` 先同步失效代次再落盘 | `取消之后到达的冲突应答不再改写已清空的队列`（服务端已判 PT422、应答被挂起 → 关闭开关 → 释放，断言队列为空且无停止原因） |
+| `_finish` 无条件 `versionCheck.handled()` 会清掉其他设备已发现的新版本（尤其去重返回旧 revision 时） | 只在“已发现的版本 == 本次写入版本”时清提示；不同则强制只读重新检查，不吞掉更新 | `去重返回旧版本时不吞掉其他设备的新版本提示`（丢应答 → 另一设备写入 v2 → 检查发现 v2 → 重试返回 v1，断言 pending 与 metadata 仍是 v2） |
+| 账号清除只按数据库枚举 UUID，冻结在偏好里的整份业务载荷不会被清除；只剩队列残留的旧用户永远发现不了 | `UserPurgeCleanupRepository` 注入队列与开关存储：**receipt 校验通过后**先清该用户的队列（含冻结载荷）与开关，再清业务表；枚举为「数据库用户 ∪ 队列用户」；任一步失败抛出，receipt 仍在可重试；只处理该 userId | `确认清除后一并删除冻结队列与开关`、`只剩队列残留的旧用户也按 receipt 清除`、`清除队列失败时抛错保留 receipt`（三条在修复前均红） |
+| 旧服务缺 `p_request_id` 时抛普通 `StateError`，协调器按离线静默重试 | 类型化 `CloudUploadRequestIdUnsupported`（`StateError` 子类，保留原文案），协调器按其停止并持久化停止原因；手动 `requestId: null` 的旧兼容路径不变 | `旧服务不支持请求去重时只失败一次并显示升级提示，手动兼容仍可用`；远端用例断言具体类型而非 `StateError` |
+
+实现细节：串行链改为**惰性**（`Future<void>? _mutationChain` / `_baselineChain`），不再在构造时创建
+`Future.value()`。预先创建的已完成 Future 属于构造时的 Zone，在 `testWidgets` 的 fake-async 之外
+完成时回调不会回到测试 Zone，会让 `await` 永远不返回（本轮曾因此让整批测试挂起）。
+
+## 真实服务 fixture（只准备，不占设备）
+
+新增 [integration_test/auto_upload_real_service_test.dart](../integration_test/auto_upload_real_service_test.dart)，
+与历史备份真实服务用例共用 loopback 控制端点（`ISSUE71_RUNTIME_CONTROL` + `ISSUE90_RUNTIME_PORT`，默认 30390，
+不编译 `.env`）：
+
+1. 取 `device` 临时会话，真实 `SupabaseCloudSnapshotRemote` + 本机 Drift + 持久队列/开关偏好；先手动上传一份有效快照建立基线。
+2. 包装 remote 只丢“客户端应答”（上传本身仍到隔离云）：服务端已写入 rev+1，本机基线保持不动、请求身份保留。
+3. 期间新增今日确认意图；恢复后旧 request 按台账去重（不增版本），新意图写入 rev+2；核对云上内容含两次确认、队列清空。
+4. 另一台设备（另一个 `device_id`/名称，同一用户）真实写入新版本；本机再确认后自动上传停止，云 revision 与基线不变，队列 intent 保留、停止原因为未处理云版本。
+5. `finally` 恢复队列/开关/同步结果三个偏好键并关闭连接。
+
+App 级真实今日确认（真机点“全部确认”）仍由主 Agent 在两端执行；本 fixture 直接驱动公开协调器与真实云，
+不能替代设备上的确认入口证据。
 

@@ -23,6 +23,13 @@ class CloudUploadRequestEvicted extends StateError {
   CloudUploadRequestEvicted() : super('该上传请求已处理，但对应备份已不在最近 15 份内；请重新查看云端数据。');
 }
 
+/// 服务端不支持上传请求去重（旧 RPC 没有 p_request_id）。这是能力缺失，
+/// 不是网络故障：自动上传必须停止并提示升级服务，不能反复静默重试。
+class CloudUploadRequestIdUnsupported extends StateError {
+  CloudUploadRequestIdUnsupported()
+    : super('云端服务尚未支持上传请求去重，请升级服务后再重试自动上传。');
+}
+
 /// 并发版本校验失败（PT409）：云端已被推进，本次请求没有写入。
 class CloudUploadRevisionChanged extends StateError {
   CloudUploadRevisionChanged() : super('云端数据在确认期间发生变化，请重新查看并选择覆盖方向。');
@@ -280,7 +287,7 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
         // 幂等上传依赖 p_request_id：旧服务没有该参数时不能静默降级成
         // 会重复落档的上传，必须让调用方先升级服务端。
         if (requestId != null && !fallback.containsKey('p_request_id')) {
-          throw StateError('云端服务尚未支持上传请求去重，请升级服务后再重试自动上传。');
+          throw CloudUploadRequestIdUnsupported();
         }
         // PGRST202 means no function ran. Retry only the confirmed older
         // signature, preserving the same payload and concurrency guards.
@@ -710,7 +717,35 @@ class CloudSnapshotRepository {
 
   Future<CloudSyncResult?> loadSyncResult() => syncResultStore.load(userId);
 
+  /// 基线写入串行化：恢复、手动同步与自动上传的应答彼此有序；取消后的
+  /// 晚到应答即使在恢复之后到达，也不会覆盖恢复写入的基线。
+  ///
+  /// 用惰性链而不是预先创建的 Future.value()：它可能在本组件构造的 Zone 里
+  /// 完成，之后的 then 回调就跑在测试的 fake-async 之外。
+  Future<void>? _baselineChain;
+
+  Future<T> _serializeBaseline<T>(Future<T> Function() action) {
+    final previous = _baselineChain;
+    final run = previous == null ? action() : previous.then((_) => action());
+    _baselineChain = run.then((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  Future<void> _commitSyncResult(
+    CloudSnapshotMetadata cloud,
+    String fingerprint,
+  ) => _serializeBaseline(() => _writeSyncResult(cloud, fingerprint));
+
+  /// 清除基线同样串行化，避免与在途应答交错。
+  Future<void> _clearSyncResult() =>
+      _serializeBaseline(() => syncResultStore.clear(userId));
+
   Future<void> _saveSyncResult(
+    CloudSnapshotMetadata cloud,
+    String fingerprint,
+  ) => _commitSyncResult(cloud, fingerprint);
+
+  Future<void> _writeSyncResult(
     CloudSnapshotMetadata cloud,
     String fingerprint,
   ) async {
@@ -787,6 +822,7 @@ class CloudSnapshotRepository {
     required String expectedFingerprint,
     String? requestId,
     CloudSnapshotLocalState? captured,
+    bool Function()? isCancelled,
   }) async {
     final state = captured ?? await captureLocalState();
     if (state.fingerprint != expectedFingerprint) {
@@ -804,9 +840,20 @@ class CloudSnapshotRepository {
       deviceModel: deviceModel,
       requestId: requestId,
     );
-    await _saveSyncResult(cloud, state.fingerprint);
+    // 取消（恢复、关闭开关、切换账号）之后到达的应答不得写基线：
+    // 否则恢复后的“已处理版本”会被改回这次上传的 revision。
+    await _commitSyncResultGuarded(cloud, state.fingerprint, isCancelled);
     return cloud;
   }
+
+  Future<void> _commitSyncResultGuarded(
+    CloudSnapshotMetadata cloud,
+    String fingerprint,
+    bool Function()? isCancelled,
+  ) => _serializeBaseline(() async {
+    if (isCancelled?.call() == true) return;
+    await _writeSyncResult(cloud, fingerprint);
+  });
 
   /// 载荷的变更指纹，与 [CloudSnapshotLocalState.fingerprint] 同口径。
   /// 用于校验持久化请求中的冻结载荷没有与指纹脱节。
@@ -891,7 +938,7 @@ class CloudSnapshotRepository {
     if (point == null) throw StateError('本机恢复点不存在，可能已被清理。');
     final validatedRows = await _validatePayload(point.payload);
     _throwIfCancelled(isCancelled);
-    await syncResultStore.clear(userId);
+    await _clearSyncResult();
     await _replaceWithRecoveryPoint(
       validatedRows: validatedRows,
       expectedFingerprint: expectedFingerprint,

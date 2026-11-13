@@ -61,9 +61,10 @@ void main() {
   CloudAutoUploadCoordinator coordinatorFor({
     bool Function()? accessible,
     CloudVersionCheck? versionCheck,
+    CloudSnapshotRepository? target,
   }) => CloudAutoUploadCoordinator(
     userId: _userId,
-    repository: repository,
+    repository: target ?? repository,
     preference: const CloudAutoUploadPreference(),
     queueStore: store,
     canAccess: () async => accessible?.call() ?? true,
@@ -386,6 +387,159 @@ void main() {
     expect(coordinator.blockedReason, cloudAutoUploadUnhandledCloudReason);
   });
 
+  test('上传途中恢复旧备份：晚到应答不覆盖恢复后的基线', () async {
+    final coordinator = coordinatorFor();
+    await coordinator.setEnabled(true);
+    await coordinator.enqueue();
+    await seedGoal('第二版内容');
+
+    remote.armLateResponse();
+    final upload = coordinator.enqueue();
+    await remote.responseReady!.future;
+    // 历史页行为：先取消队列，再恢复旧版本。
+    await coordinator.cancelPending();
+    final beforeRestore = await repository.captureLocalState();
+    await repository.restoreCloudVersion(
+      revision: 1,
+      expectedFingerprint: beforeRestore.fingerprint,
+    );
+    expect((await repository.loadSyncResult())!.cloudRevision, 1);
+
+    remote.releaseLateResponse();
+    await upload;
+
+    final baseline = await repository.loadSyncResult();
+    expect(baseline!.cloudRevision, 1, reason: '晚到应答不得把基线改回这次上传的 revision');
+    await seedGoal('恢复之后的确认');
+    final uploadsBefore = remote.uploadCalls;
+    await coordinator.enqueue();
+    expect(remote.uploadCalls, uploadsBefore);
+    expect(coordinator.blockedReason, cloudAutoUploadUnhandledCloudReason);
+  });
+
+  test('捕获之后到达的新确认不被开始请求吞掉', () async {
+    final gated = _GatedCaptureRepository(
+      database: database,
+      remote: remote,
+      userId: _userId,
+      deviceId: 'device-a',
+      deviceName: 'Device A（Windows）',
+    );
+    gated.captureGate = Completer<void>();
+    final coordinator = coordinatorFor(target: gated);
+    await coordinator.setEnabled(true);
+    final first = coordinator.enqueue();
+    await gated.captured.future;
+    await seedGoal('捕获之后确认');
+    await coordinator.enqueue();
+    gated.captureGate!.complete();
+    await first;
+
+    expect(remote.requestIds, ['request-1', 'request-2']);
+    expect(await remote.history(userId: _userId), hasLength(2));
+    expect((await store.load(_userId)).hasWork, isFalse);
+    final baseline = await gated.loadSyncResult();
+    expect(
+      baseline!.localFingerprint,
+      (await gated.captureLocalState()).fingerprint,
+    );
+  });
+
+  test('取消之后到达的冲突应答不再改写已清空的队列', () async {
+    final coordinator = coordinatorFor();
+    await coordinator.setEnabled(true);
+    final captured = await repository.captureLocalState();
+    await repository.uploadLocal(
+      expectedRevision: 0,
+      expectedFingerprint: captured.fingerprint,
+      requestId: 'request-1',
+      captured: captured,
+    );
+    // 同一 requestId 换了内容：服务端会回 PT422。
+    await seedGoal('冲突载荷');
+    final other = await repository.captureLocalState();
+    await store.save(
+      _userId,
+      CloudAutoUploadQueue(
+        pending: true,
+        requestedAt: DateTime.utc(2026, 11, 13, 13),
+        request: CloudAutoUploadAttempt(
+          requestId: 'request-1',
+          fingerprint: other.fingerprint,
+          expectedRevision: 1,
+          startedAt: DateTime.utc(2026, 11, 13, 13),
+          attempted: true,
+          payload: other.payload,
+          rowCount: other.rowCount,
+          dataUpdatedAt: other.dataUpdatedAt,
+        ),
+      ),
+    );
+
+    remote.armLateResponse();
+    final run = coordinator.trigger();
+    await remote.responseReady!.future;
+    await coordinator.setEnabled(false);
+    remote.releaseLateResponse();
+    await run;
+
+    expect((await store.load(_userId)).hasWork, isFalse);
+    expect(coordinator.blockedReason, isNull);
+  });
+
+  test('去重返回旧版本时不吞掉其他设备的新版本提示', () async {
+    final check = CloudVersionCheck(
+      repository: repository,
+      now: () => DateTime.utc(2026, 11, 13, 12),
+      canAccess: () async => true,
+      isAccessible: () async => true,
+    );
+    final coordinator = coordinatorFor(versionCheck: check);
+    await coordinator.setEnabled(true);
+    remote.loseNextResponse = true;
+    await coordinator.enqueue();
+    expect((await store.load(_userId)).request, isNotNull);
+    await publishOtherDevice(1);
+    await check.check(force: true);
+    expect(check.hasPendingVersion, isTrue);
+    expect(check.metadata!.revision, 2);
+
+    await coordinator.trigger();
+    for (var turn = 0; turn < 5; turn++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    expect((await repository.loadSyncResult())!.cloudRevision, 1);
+    expect(check.hasPendingVersion, isTrue);
+    expect(check.metadata!.revision, 2);
+    coordinator.dispose();
+    check.dispose();
+  });
+
+  test('旧服务不支持请求去重时只失败一次并显示升级提示，手动兼容仍可用', () async {
+    remote.requestIdUnsupported = true;
+    final coordinator = coordinatorFor();
+    await coordinator.setEnabled(true);
+
+    await coordinator.enqueue();
+    expect(remote.uploadCalls, 1);
+    expect(coordinator.blockedReason, '云端服务尚未支持上传请求去重，请升级服务后再重试自动上传。');
+    expect((await store.load(_userId)).blockedReason, isNotNull);
+
+    // 不能反复静默尝试：再次确认也不会打回旧服务。
+    await coordinator.enqueue();
+    expect(remote.uploadCalls, 1);
+
+    // 手动上传（requestId 为空）保留旧兼容路径，仍然写入云端。
+    final state = await repository.captureLocalState();
+    final manual = await repository.uploadLocal(
+      expectedRevision: 0,
+      expectedFingerprint: state.fingerprint,
+    );
+    expect(manual.revision, 1);
+    expect(await remote.history(userId: _userId), hasLength(1));
+  });
+
   test('恢复备份前取消队列后不再自动上传历史内容', () async {
     final coordinator = coordinatorFor();
     await coordinator.setEnabled(true);
@@ -405,8 +559,25 @@ class _TrackingRemote extends InMemoryCloudSnapshotRemote {
   int uploadCalls = 0;
   bool failUploads = false;
   bool loseNextResponse = false;
+  bool requestIdUnsupported = false;
   Completer<void>? uploadGate;
+
+  /// 服务端已处理、应答尚未返回的窗口。
+  Completer<void>? responseGate;
+  Completer<void>? responseReady;
   final Completer<void> uploadStarted = Completer<void>();
+
+  void armLateResponse() {
+    responseGate = Completer<void>();
+    responseReady = Completer<void>();
+  }
+
+  void releaseLateResponse() {
+    final gate = responseGate;
+    responseGate = null;
+    responseReady = null;
+    if (gate != null && !gate.isCompleted) gate.complete();
+  }
 
   @override
   Future<CloudSnapshotMetadata> upload({
@@ -423,13 +594,17 @@ class _TrackingRemote extends InMemoryCloudSnapshotRemote {
   }) async {
     uploadCalls++;
     requestIds.add(requestId);
+    if (requestIdUnsupported && requestId != null) {
+      throw CloudUploadRequestIdUnsupported();
+    }
     if (!uploadStarted.isCompleted) uploadStarted.complete();
     final gate = uploadGate;
     if (gate != null) await gate.future;
     if (failUploads) throw StateError('测试网络不可用');
-    if (loseNextResponse) {
-      loseNextResponse = false;
-      await super.upload(
+    CloudSnapshotMetadata? saved;
+    Object? failure;
+    try {
+      saved = await super.upload(
         userId: userId,
         expectedRevision: expectedRevision,
         payload: payload,
@@ -441,19 +616,41 @@ class _TrackingRemote extends InMemoryCloudSnapshotRemote {
         deviceModel: deviceModel,
         requestId: requestId,
       );
+    } catch (error) {
+      failure = error;
+    }
+    final ready = responseReady;
+    if (ready != null && !ready.isCompleted) ready.complete();
+    final late = responseGate;
+    if (late != null) await late.future;
+    if (failure != null) throw failure;
+    if (loseNextResponse) {
+      loseNextResponse = false;
       throw StateError('响应丢失');
     }
-    return super.upload(
-      userId: userId,
-      expectedRevision: expectedRevision,
-      payload: payload,
-      deviceId: deviceId,
-      deviceName: deviceName,
-      dataUpdatedAt: dataUpdatedAt,
-      rowCount: rowCount,
-      deviceManufacturer: deviceManufacturer,
-      deviceModel: deviceModel,
-      requestId: requestId,
-    );
+    return saved!;
+  }
+}
+
+/// 在“捕获本机快照之后、写入请求身份之前”制造可控窗口。
+class _GatedCaptureRepository extends CloudSnapshotRepository {
+  _GatedCaptureRepository({
+    required super.database,
+    required super.remote,
+    required super.userId,
+    required super.deviceName,
+    super.deviceId,
+  });
+
+  Completer<void>? captureGate;
+  final Completer<void> captured = Completer<void>();
+
+  @override
+  Future<CloudSnapshotLocalState> captureLocalState() async {
+    final state = await super.captureLocalState();
+    if (!captured.isCompleted) captured.complete();
+    final gate = captureGate;
+    if (gate != null) await gate.future;
+    return state;
   }
 }

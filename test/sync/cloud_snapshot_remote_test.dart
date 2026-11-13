@@ -215,7 +215,7 @@ void main() {
           rowCount: 0,
           requestId: 'request-93',
         ),
-        throwsA(isA<StateError>()),
+        throwsA(isA<CloudUploadRequestIdUnsupported>()),
       );
       expect(calls, 1);
     },

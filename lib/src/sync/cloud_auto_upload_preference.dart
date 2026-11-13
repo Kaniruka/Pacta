@@ -24,4 +24,10 @@ class CloudAutoUploadPreference {
     final saved = await preferences.setBool(_key(userId), enabled);
     if (!saved) throw StateError('自动上传开关未保存，请重试。');
   }
+
+  /// 账号清除时一并移除该用户的开关状态。
+  Future<void> clear(String userId) async {
+    final preferences = await preferencesLoader();
+    await preferences.remove(_key(userId));
+  }
 }

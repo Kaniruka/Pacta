@@ -19,6 +19,9 @@ const String cloudAutoUploadUnhandledCloudReason =
 /// - 排队意图只合并成一条，执行时才捕获最新本机快照（不排队陈旧副本）；
 /// - 已发出但结果未知的请求保留身份与冻结载荷，重试先确认旧应答；
 /// - 关闭开关、切换账号或恢复备份会取消旧请求；不做自动下载。
+///
+/// 并发约定：每次异步等待之后都比较取消代次 [_generation]；所有队列写入都带
+/// 代次校验，取消之后到达的应答（含冲突/淘汰错误）不能再改写状态。
 class CloudAutoUploadCoordinator extends ChangeNotifier {
   CloudAutoUploadCoordinator({
     required this.userId,
@@ -54,7 +57,10 @@ class CloudAutoUploadCoordinator extends ChangeNotifier {
   int _generation = 0;
   CloudAutoUploadQueue _queue = CloudAutoUploadQueue.empty;
   String? _blockedReason;
-  Future<void> _mutationLock = Future<void>.value();
+
+  /// 惰性串行链：预先创建的 Future.value() 若在构造 Zone 里完成，
+  /// 后续 then 回调会跑在 fake-async 之外。
+  Future<void>? _mutationChain;
 
   bool get enabled => _enabled;
   bool get busy => _busy;
@@ -76,17 +82,28 @@ class CloudAutoUploadCoordinator extends ChangeNotifier {
     await load();
   }
 
-  /// 开关按本机用户保存；关闭即取消待上传请求，如实控制传输。
+  /// 开关按本机用户保存；关闭即同步失效代次并取消待上传请求。
   Future<void> setEnabled(bool value) async {
     await _ensureLoaded();
     if (_disposed) return;
+    final previous = _enabled;
     _enabled = value;
-    await preference.save(userId, value);
-    if (_disposed) return;
     if (!value) {
-      await cancelPending();
-      return;
+      // 不等偏好落盘：在途请求的晚到应答必须立刻作废。
+      _generation++;
+      _rerun = false;
+      _blockedReason = null;
+      await _mutateQueue((queue) => queue.reset());
+      _notify();
     }
+    try {
+      await preference.save(userId, value);
+    } catch (error) {
+      _enabled = previous;
+      _notify();
+      rethrow;
+    }
+    if (!value || _disposed) return;
     _notify();
     await trigger();
   }
@@ -95,7 +112,9 @@ class CloudAutoUploadCoordinator extends ChangeNotifier {
   Future<void> enqueue() async {
     await _ensureLoaded();
     if (_disposed || !_enabled) return;
-    await _mutateQueue((queue) => queue.recordIntent(now().toUtc()));
+    await _mutateQueue(
+      (queue) => _enabled ? queue.recordIntent(now().toUtc()) : queue,
+    );
     await trigger();
   }
 
@@ -138,6 +157,7 @@ class CloudAutoUploadCoordinator extends ChangeNotifier {
 
   Future<void> _drain(int generation) async {
     var queue = await _readQueue();
+    if (!_active(generation)) return;
     if (!queue.hasWork) return;
     if (queue.blockedReason != null) return;
     if (!await _accessAllowed(generation)) return;
@@ -147,10 +167,11 @@ class CloudAutoUploadCoordinator extends ChangeNotifier {
       if (!await _resolveAttempt(attempt, generation)) return;
       if (!_active(generation)) return;
       queue = await _readQueue();
+      if (!_active(generation)) return;
     }
     if (!queue.pending) return;
     if (queue.blockedReason != null) return;
-    await _uploadLatest(generation);
+    await _uploadLatest(generation, queue.pendingSequence);
   }
 
   /// 先确认已发出请求的原始结果，再考虑新的待传意图。
@@ -160,8 +181,7 @@ class CloudAutoUploadCoordinator extends ChangeNotifier {
   ) async {
     // 从未发出的请求没有服务端身份，直接按最新本机快照重新生成。
     if (!attempt.attempted || !_isReproducible(attempt)) {
-      await _mutateQueue((queue) => queue.clearRequest());
-      return true;
+      return _mutateQueue((queue) => queue.clearRequest(), generation);
     }
     try {
       final saved = await repository.uploadLocal(
@@ -169,20 +189,26 @@ class CloudAutoUploadCoordinator extends ChangeNotifier {
         expectedFingerprint: attempt.fingerprint,
         requestId: attempt.requestId,
         captured: _stateOf(attempt),
+        isCancelled: () => !_active(generation),
       );
       if (!_active(generation)) return false;
-      await _finish(saved);
+      await _finish(saved, generation);
       return true;
     } on CloudUploadRequestConflict catch (error) {
-      await _block(error.message);
+      await _block(error.message, generation);
       return false;
     } on CloudUploadRequestEvicted catch (error) {
-      await _block(error.message);
+      await _block(error.message, generation);
+      return false;
+    } on CloudUploadRequestIdUnsupported catch (error) {
+      await _block(error.message, generation);
       return false;
     } on CloudUploadRevisionChanged {
       // 服务端台账没有该请求，说明它没有被写入；云端已被其他设备推进。
-      await _mutateQueue((queue) => queue.clearRequest());
-      await _stopForUnhandledCloud();
+      if (!await _mutateQueue((queue) => queue.clearRequest(), generation)) {
+        return false;
+      }
+      await _stopForUnhandledCloud(generation);
       return false;
     } catch (_) {
       // 离线、超时或登录状态变化：保留身份，下次继续。
@@ -190,13 +216,14 @@ class CloudAutoUploadCoordinator extends ChangeNotifier {
     }
   }
 
-  Future<void> _uploadLatest(int generation) async {
+  Future<void> _uploadLatest(int generation, int servedThrough) async {
     final cloud = await repository.inspectCloud();
     if (!_active(generation)) return;
     final result = await repository.loadSyncResult();
+    if (!_active(generation)) return;
     final cloudRevision = cloud?.revision ?? 0;
     if (cloud != null && result?.cloudRevision != cloud.revision) {
-      await _stopForUnhandledCloud();
+      await _stopForUnhandledCloud(generation);
       return;
     }
     final snapshot = await repository.captureLocalState();
@@ -205,7 +232,10 @@ class CloudAutoUploadCoordinator extends ChangeNotifier {
         result.cloudRevision == cloudRevision &&
         result.localFingerprint == snapshot.fingerprint) {
       // 本机内容已经是上次成功同步的那一份，重复上传只会多出一份相同备份。
-      await _mutateQueue((queue) => queue.clearPending());
+      await _mutateQueue(
+        (queue) => queue.clearPending(through: servedThrough),
+        generation,
+      );
       return;
     }
     final attempt = CloudAutoUploadAttempt(
@@ -219,49 +249,88 @@ class CloudAutoUploadCoordinator extends ChangeNotifier {
       dataUpdatedAt: snapshot.dataUpdatedAt,
     );
     // 先落盘请求身份与冻结载荷，再发送：响应丢失后仍能重发同一请求。
-    await _mutateQueue((queue) => queue.startRequest(attempt));
-    if (!_active(generation)) return;
+    if (!await _mutateQueue(
+      (queue) => queue.startRequest(attempt, servedThrough: servedThrough),
+      generation,
+    )) {
+      return;
+    }
     try {
       final saved = await repository.uploadLocal(
         expectedRevision: attempt.expectedRevision,
         expectedFingerprint: attempt.fingerprint,
         requestId: attempt.requestId,
         captured: _stateOf(attempt),
+        isCancelled: () => !_active(generation),
       );
       if (!_active(generation)) return;
-      await _finish(saved);
+      await _finish(saved, generation);
     } on CloudUploadRequestConflict catch (error) {
-      await _block(error.message);
+      await _block(error.message, generation);
     } on CloudUploadRequestEvicted catch (error) {
-      await _block(error.message);
+      await _block(error.message, generation);
+    } on CloudUploadRequestIdUnsupported catch (error) {
+      await _block(error.message, generation);
     } on CloudUploadRevisionChanged {
-      await _mutateQueue((queue) => queue.clearRequest());
-      await _stopForUnhandledCloud();
+      if (!await _mutateQueue((queue) => queue.clearRequest(), generation)) {
+        return;
+      }
+      await _stopForUnhandledCloud(generation);
     } catch (_) {
       // 失败保留请求与意图，联网或恢复访问后重试。
     }
   }
 
-  Future<void> _finish(CloudSnapshotMetadata saved) async {
-    await _mutateQueue((queue) => queue.clearRequest());
+  Future<void> _finish(CloudSnapshotMetadata saved, int generation) async {
+    if (!await _mutateQueue((queue) => queue.clearRequest(), generation)) {
+      return;
+    }
     _blockedReason = null;
-    // 刚写入的版本就是最新，不必再提示自己的版本。
-    versionCheck?.handled();
     _notify();
+    _reconcileVersionCheck(saved);
   }
 
-  Future<void> _stopForUnhandledCloud() async {
-    await _block(cloudAutoUploadUnhandledCloudReason);
+  /// 只在“已发现的版本就是本次写入的版本”时清掉提示；
+  /// 已知版本不同（去重返回旧 revision、另一设备已写入新版本）时强制只读
+  /// 重新检查，避免吞掉更新。
+  void _reconcileVersionCheck(CloudSnapshotMetadata saved) {
+    final check = versionCheck;
+    if (check == null) return;
+    final known = check.metadata;
+    if (known == null) return;
+    if (_sameVersion(known, saved)) {
+      check.handled();
+      return;
+    }
+    unawaited(check.check(force: true));
+  }
+
+  bool _sameVersion(CloudSnapshotMetadata left, CloudSnapshotMetadata right) {
+    if (left.isLegacy || right.isLegacy) {
+      return left.isLegacy &&
+          right.isLegacy &&
+          left.legacyToken == right.legacyToken;
+    }
+    return left.revision == right.revision;
+  }
+
+  Future<void> _stopForUnhandledCloud(int generation) async {
+    if (!await _block(cloudAutoUploadUnhandledCloudReason, generation)) return;
     final check = versionCheck;
     if (check != null && !check.checking) {
       unawaited(check.check(force: true));
     }
   }
 
-  Future<void> _block(String reason) async {
-    await _mutateQueue((queue) => queue.block(reason));
+  Future<bool> _block(String reason, int generation) async {
+    final written = await _mutateQueue(
+      (queue) => queue.block(reason),
+      generation,
+    );
+    if (!written) return false;
     _blockedReason = reason;
     _notify();
+    return true;
   }
 
   Future<bool> _accessAllowed(int generation) async {
@@ -269,7 +338,8 @@ class CloudAutoUploadCoordinator extends ChangeNotifier {
     try {
       if (!await canAccess()) return false;
       if (!_active(generation)) return false;
-      return await isAccessible();
+      if (!await isAccessible()) return false;
+      return _active(generation);
     } catch (_) {
       return false;
     }
@@ -295,18 +365,26 @@ class CloudAutoUploadCoordinator extends ChangeNotifier {
     return _queue;
   }
 
-  /// 队列的读改写串行化：并发意图不会覆盖已发出的请求身份。
-  Future<void> _mutateQueue(
-    CloudAutoUploadQueue Function(CloudAutoUploadQueue) transform,
-  ) {
-    final run = _mutationLock.then((_) async {
+  /// 队列的读改写串行化；带 [generation] 时在锁内先校验取消代次，
+  /// 取消之后到达的写入不会落盘，返回 false。
+  Future<bool> _mutateQueue(
+    CloudAutoUploadQueue Function(CloudAutoUploadQueue) transform, [
+    int? generation,
+  ]) {
+    Future<bool> mutate() async {
+      if (generation != null && !_active(generation)) return false;
       final current = await queueStore.load(userId);
       final next = transform(current);
+      if (generation != null && !_active(generation)) return false;
       await queueStore.save(userId, next);
       _queue = next;
       _blockedReason = next.blockedReason;
-    });
-    _mutationLock = run.catchError((Object _) {});
+      return true;
+    }
+
+    final previous = _mutationChain;
+    final run = previous == null ? mutate() : previous.then((_) => mutate());
+    _mutationChain = run.then((_) {}, onError: (Object _) {});
     return run;
   }
 

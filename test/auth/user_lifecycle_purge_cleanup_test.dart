@@ -3,15 +3,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/auth/user_lifecycle.dart';
 import 'package:pacta/src/auth/user_lifecycle_models.dart';
 import 'package:pacta/src/tasks/task_database.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../support/fake_auth_repository.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late PactaDatabase database;
   late FakeAuthRepository auth;
   late UserLifecycleRepository repository;
 
   setUp(() {
+    SharedPreferences.setMockInitialValues({});
     database = PactaDatabase(NativeDatabase.memory());
     auth = FakeAuthRepository();
     repository = UserLifecycleRepository(
