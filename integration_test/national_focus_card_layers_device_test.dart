@@ -181,6 +181,9 @@ void main() {
         fail('NF_CARD_LAYERS_THEME 只支持 light、dark 或 system');
       }
       if (_width.trim().isNotEmpty) {
+        if (Platform.isAndroid) {
+          fail('Android 窄屏验收请调整模拟器实际显示密度，不覆盖测试视图尺寸。');
+        }
         final width = int.tryParse(_width.trim());
         if (width == null || width < 320) {
           fail('NF_CARD_LAYERS_WIDTH 必须是至少 320 的逻辑像素宽度');
@@ -263,13 +266,23 @@ void main() {
         const ValueKey('national-focus-strengthening-level-2'),
       );
       // Editing an inactive level must not change the requirement in force.
-      await tester.tap(
-        find.descendant(of: secondLevel, matching: find.byTooltip('编辑强化等级 2')),
+      final editSecondLevel = find.descendant(
+        of: secondLevel,
+        matching: find.byTooltip('编辑强化等级 2'),
       );
+      await tester.ensureVisible(editSecondLevel);
+      await tester.pumpAndSettle();
+      await tester.tap(editSecondLevel);
       await tester.pumpAndSettle();
       await tapText('对照基础规则');
       await shot('08-strengthening-level-editor');
       await back();
+      await tester.scrollUntilVisible(
+        find.text('当前使用 · 强化等级 1'),
+        -200,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.pumpAndSettle();
       expect(find.text('当前使用 · 强化等级 1'), findsOneWidget);
       await back();
       expect(find.text('编辑国策卡'), findsOneWidget);
