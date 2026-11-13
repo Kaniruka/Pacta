@@ -2,9 +2,11 @@
 -- atomic failure, upload request idempotency (including returning the request's
 -- original version rather than the current one), request-ledger limits, cross-user
 -- RLS and lifecycle clearing. Run against an isolated Supabase project after
--- applying 202611130001_cloud_snapshot_history.sql. Every step is asserted; the
--- last purge probe runs only when the project has a spare non-admin identity and
--- raises a notice instead of pretending to pass.
+-- applying 202611130001_cloud_snapshot_history.sql. Every step is asserted and
+-- nothing is skipped: the purge probe requires one administrator and one
+-- non-administrator identity. Identity selection, seeding and result checks run
+-- in the trusted session (reset role); the authenticated role is used only for
+-- RLS checks, so the script never reads auth.users as a client role.
 begin;
 
 do $setup$
@@ -371,11 +373,13 @@ begin
 end
 $cross_user_isolation$;
 
--- Lifecycle clearing must cover retained history and the request ledger.
-do $purge_covers_history$
+-- Lifecycle clearing must cover retained history and the request ledger.-- 生命周期清除：身份选择与前置条件准备都在可信会话里完成，绝不在
+-- authenticated 角色下读 auth.users；随后只以 service_role 执行清除 RPC。
+reset role;
+
+do $purge_function_definition$
 declare
   definition text;
-  target_id uuid;
 begin
   definition := pg_get_functiondef(
     'public.admin_delete_user_business_data(uuid)'::regprocedure
@@ -386,31 +390,37 @@ begin
   if position('cloud_business_snapshot_upload_requests' in definition) = 0 then
     raise exception 'purge_does_not_delete_upload_request_ledger';
   end if;
+end
+$purge_function_definition$;
 
-  select id into target_id
-  from auth.users
-  where id <> current_setting('history_test.owner_id')::uuid
-    and id not in (select user_id from public.app_admins)
-  order by created_at desc
+do $pick_purge_target$
+declare
+  owner_id uuid := current_setting('history_test.owner_id')::uuid;
+  target_id uuid;
+begin
+  select account.id into target_id
+  from auth.users as account
+  where account.id <> owner_id
+    and account.id not in (select admin.user_id from public.app_admins as admin)
+  order by account.created_at desc
   limit 1;
   if target_id is null then
-    raise notice 'no spare non-admin identity; dynamic purge probe skipped';
-    return;
+    raise exception 'purge probe requires an isolated non-administrator identity';
   end if;
   perform set_config('history_test.purge_target', target_id::text, true);
 end
-$purge_covers_history$;
+$pick_purge_target$;
 
+-- 种入待清除的历史与台账，并准备好已过保留期的停用记录；这些都在可信会话
+-- 内完成，因此不依赖 service_role 的表权限，也不读取受保护的用户表给客户端。
 do $seed_purge_target$
 declare
-  target_id uuid := nullif(
-    current_setting('history_test.purge_target', true),
-    ''
-  );
+  target_id uuid := current_setting('history_test.purge_target')::uuid;
+  owner_id uuid := current_setting('history_test.owner_id')::uuid;
 begin
-  if target_id is null then
-    return;
-  end if;
+  delete from public.cloud_business_snapshot_upload_requests where user_id = target_id;
+  delete from public.cloud_business_snapshot_history where user_id = target_id;
+  delete from public.user_purge_receipts where user_id = target_id;
   insert into public.cloud_business_snapshot_history (
     user_id, revision, payload, device_id, device_name,
     data_updated_at, row_count
@@ -429,33 +439,39 @@ begin
   ) values (
     target_id, 'seed-request', 1, md5('{}'::jsonb::text)
   );
+  insert into public.user_suspension_periods (user_id, suspended_at, suspended_by)
+  values (target_id, now() - interval '31 days', owner_id)
+  on conflict (user_id) where restored_at is null do update
+    set suspended_at = excluded.suspended_at;
 end
 $seed_purge_target$;
 
+set local role service_role;
+select public.admin_begin_user_purge(
+  current_setting('history_test.purge_target')::uuid,
+  current_setting('history_test.owner_id')::uuid
+);
+select public.admin_delete_user_business_data(
+  current_setting('history_test.purge_target')::uuid
+);
+reset role;
+
 do $purge_probe$
 declare
-  target_id uuid := nullif(
-    current_setting('history_test.purge_target', true),
-    ''
-  );
-  admin_id uuid := current_setting('history_test.owner_id')::uuid;
-  before_count integer;
-  after_count integer;
-  ledger_after integer;
+  target_id uuid := current_setting('history_test.purge_target')::uuid;
+  history_left integer;
+  ledger_left integer;
+  snapshot_left integer;
 begin
-  if target_id is null then
-    return;
-  end if;
-  select count(*) into before_count
+  select count(*) into history_left
   from public.cloud_business_snapshot_history where user_id = target_id;
-  perform public.admin_begin_user_purge(target_id, admin_id);
-  perform public.admin_delete_user_business_data(target_id);
-  select count(*) into after_count
-  from public.cloud_business_snapshot_history where user_id = target_id;
-  select count(*) into ledger_after
+  select count(*) into ledger_left
   from public.cloud_business_snapshot_upload_requests where user_id = target_id;
-  if before_count = 0 or after_count <> 0 or ledger_after <> 0 then
-    raise exception 'purge_left_cloud_backup_history_or_ledger_behind';
+  select count(*) into snapshot_left
+  from public.cloud_business_snapshots where user_id = target_id;
+  if history_left <> 0 or ledger_left <> 0 or snapshot_left <> 0 then
+    raise exception 'purge_left_cloud_backups_behind_history_%_ledger_%_snapshot_%',
+      history_left, ledger_left, snapshot_left;
   end if;
 end
 $purge_probe$;

@@ -212,12 +212,16 @@ Explicit purge now deletes the request ledger and the history table before the
 snapshot, so account clearing leaves no cloud business copy behind.
 
 Run `supabase/tests/cloud_snapshot_history.sql` in an isolated test project
-after applying this migration. It asserts the retention limit, that a rejected
+after applying this migration. It needs one administrator identity and one
+non-administrator identity and skips nothing: identity selection, seeding and
+result assertions run in the trusted session, while the authenticated role is
+used only for the RLS and compare-and-swap checks, so the script never reads
+`auth.users` as a client role. It asserts the retention limit, that a rejected
 write leaves no history row, that a retried request returns its own version after
 another device wrote a newer one, `PT422`/`PT425` handling, owner read access
 without direct writes, ledger privacy, cross-user isolation, and that the purge
-function covers history and the request ledger;
-the dynamic purge probe is skipped with a notice when no spare non-admin
-identity exists. Client tests in `test/sync/` use in-memory remotes and a
+function covers history and the request ledger. The purge probe suspends and
+clears a real non-admin test identity before asserting that no cloud backup or
+ledger row survives. Client tests in `test/sync/` use in-memory remotes and a
 temporary Drift database, so they do not prove deployed RLS or a real transfer.
 Migration preparation is not evidence that any project has been migrated.

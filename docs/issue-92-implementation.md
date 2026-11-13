@@ -114,6 +114,12 @@ flutter test test/sync/source_device_info_test.dart          -> +5  All tests pa
 事务内取消仍不替换、requestId 非空不回退旧签名、`PT422`/`PT425` 错误映射。
 SQL 增加版本 19/20 之后重试必须返回 19、`PT422`、`PT425` 及台账清除断言。
 
+第三轮（真实隔离云诊断反馈）：SQL probe 的 purge 段原先仍在 `authenticated` 角色下读 `auth.users`，
+在真实项目上以 `42501 permission denied` 失败。已改为身份选择、种子数据与结果断言都在 `reset role`
+的可信会话里完成，`authenticated` 只用于 RLS 与 CAS 检查，`service_role` 只用于执行清除 RPC；
+并移除「无空闲非管理员身份就跳过」的分支——缺少管理员或非管理员身份时直接报错，不再静默跳过 purge。
+主 Agent 提供 admin + 非 admin 两个身份后该段会真实执行。
+
 ## 已知限制与其他说明
 
 - 本 worktree 检出时工作区为 CRLF 而仓库 blob 为 LF，`git status` 曾把整棵树报为改动；
