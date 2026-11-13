@@ -27,6 +27,8 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  void NotifyReminderOpened();
+
   bool EnsureTrayIcon();
   void RemoveTrayIcon();
   bool UpdateTrayTooltip(const std::wstring& text);
@@ -52,6 +54,7 @@ class FlutterWindow : public Win32Window {
   bool window_hidden_ = false;
   bool notification_cleanup_pending_ = false;
   std::wstring focus_status_text_;
+  std::wstring last_notification_payload_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_
