@@ -706,6 +706,7 @@ class _AppShellState extends ConsumerState<AppShell>
     with WidgetsBindingObserver {
   int _index = 0;
   late final FocusNotificationService _focusNotificationService;
+  late final String? _reminderOwnerUserId;
   late final StreamSubscription<List<ConnectivityResult>>
   _connectivitySubscription;
   late final StreamSubscription<String> _notificationOpenSubscription;
@@ -724,6 +725,11 @@ class _AppShellState extends ConsumerState<AppShell>
   void initState() {
     super.initState();
     _focusNotificationService = ref.read(focusNotificationServiceProvider);
+    // Reminder settings belong to this installation's current user, so the
+    // owner is bound before any reconciliation runs. The identifier is kept in
+    // a field because dispose() must not read providers.
+    _reminderOwnerUserId = ref.read(authRepositoryProvider).currentUserId;
+    unawaited(_focusNotificationService.setUserId(_reminderOwnerUserId));
     _nationalFocusCheckpointScheduler = NationalFocusCheckpointScheduler(
       settleDueCheckpoints: () =>
           ref.read(nationalFocusRepositoryProvider).settleDueCheckpoints(),
@@ -902,11 +908,7 @@ class _AppShellState extends ConsumerState<AppShell>
     _notificationOpenSubscription.cancel();
     _nationalFocusReminderSubscription.cancel();
     _nationalFocusCheckpointScheduler.dispose();
-    unawaited(
-      _focusNotificationService.syncNationalFocusReminder(
-        hasPendingConfirmations: false,
-      ),
-    );
+    unawaited(_focusNotificationService.releaseUser(_reminderOwnerUserId));
     super.dispose();
   }
 
@@ -935,6 +937,9 @@ class _AppShellState extends ConsumerState<AppShell>
         userId: ref.watch(authRepositoryProvider).currentUserId,
         repository: nationalFocusRepository,
         onOpenAiAnalysis: _openNationalFocusAiAnalysis,
+        onNotificationCapabilityUse: () => unawaited(
+          _focusNotificationService.ensureNotificationPermissionForUse(),
+        ),
         displayTimeZoneLoader: () async {
           final deviceZone = await FlutterTimezone.getLocalTimezone();
           final dashboard = await focusRepository.getDashboardMetrics(
@@ -3396,6 +3401,13 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
       _busy = true;
       _error = null;
     });
+    // The first focus flow is a real user action that relies on the reminder
+    // notification, so this is where the permission is requested once.
+    unawaited(
+      ref
+          .read(focusNotificationServiceProvider)
+          .ensureNotificationPermissionForUse(),
+    );
     try {
       final session = await ref
           .read(focusRepositoryProvider)
@@ -3426,6 +3438,11 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
       _busy = true;
       _error = null;
     });
+    unawaited(
+      ref
+          .read(focusNotificationServiceProvider)
+          .ensureNotificationPermissionForUse(),
+    );
     try {
       final appointment = await ref
           .read(focusRepositoryProvider)

@@ -18,15 +18,26 @@ import '../test/support/fake_auth_repository.dart';
 
 /// Rerunnable native fixture for the daily open-Pacta reminder.
 ///
-/// Run on Windows and Android; every observable fact is printed with an
-/// ISSUE95_ prefix so the same run can be attached as evidence:
-///
 ///   flutter test integration_test/issue_95_daily_reminder_device_test.dart -d windows
 ///   flutter test integration_test/issue_95_daily_reminder_device_test.dart -d DEVICE
 ///
-/// The fixture never writes business data. It only touches this device's
-/// reminder preferences, which are device-local by product definition.
-const _userId = 'issue95-native-fixture';
+/// Optional real-arrival window (minutes of manual observation):
+///
+///   flutter test integration_test/issue_95_daily_reminder_device_test.dart \
+///     -d DEVICE --dart-define=ISSUE95_HOLD_SECONDS=240
+///
+/// The fixture owns every side effect it creates:
+/// - it signs in as a fixture user, so reminder keys are scoped to that user and
+///   never touch the device owner's saved choices;
+/// - it snapshots the whole preference store first and restores it afterwards;
+/// - it cancels the reminder it scheduled before restoring.
+///
+/// Payload injection below only proves the in-app route. Native arrival and a
+/// real notification tap must be observed by a human during the hold window;
+/// the fixture prints lifecycle evidence and never claims the injection is a
+/// native click.
+const _fixtureUser = 'issue95-native-fixture';
+const _holdSeconds = int.fromEnvironment('ISSUE95_HOLD_SECONDS');
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -40,7 +51,36 @@ void main() {
       );
 
       final preferences = await SharedPreferences.getInstance();
-      final store = FocusDevicePreferencesStore(preferences);
+      final snapshot = _PreferencesSnapshot.capture(preferences);
+      final store = FocusDevicePreferencesStore(
+        preferences,
+        userId: _fixtureUser,
+      );
+      final state = DailyOpenReminderStateStore(
+        preferences,
+        userId: _fixtureUser,
+      );
+      final service = FocusNotificationService();
+      final lifecycle = _LifecycleProbe();
+      WidgetsBinding.instance.addObserver(lifecycle);
+
+      addTearDown(() async {
+        WidgetsBinding.instance.removeObserver(lifecycle);
+        try {
+          await service.setUserId(_fixtureUser);
+          await store.save(
+            (await store.load()).copyWith(dailyOpenReminderEnabled: false),
+          );
+          await service.syncDailyOpenReminder();
+          await service.clear();
+        } catch (error) {
+          print('ISSUE95_CLEANUP_ERROR $error');
+        }
+        await service.dispose();
+        await snapshot.restore(preferences);
+        print('ISSUE95_PREFERENCES_RESTORED');
+      });
+
       // A time four minutes ahead keeps the arrival inside a short run.
       final now = DateTime.now();
       final targetMinutes = (now.minute + 4) % 60;
@@ -58,19 +98,17 @@ void main() {
         ),
       );
 
-      final service = FocusNotificationService(now: () => DateTime.now());
-      addTearDown(service.dispose);
       await service.initialize();
+      await service.setUserId(_fixtureUser);
       final allowed = await service.notificationsAllowed();
       final exactAlarms = await service.exactAlarmsAllowed();
       print(
-        'ISSUE95_PERMISSIONS notifications=$allowed '
-        'exactAlarms=$exactAlarms platform=${Platform.operatingSystem}',
+        'ISSUE95_PERMISSIONS notifications=$allowed exactAlarms=$exactAlarms '
+        'platform=${Platform.operatingSystem}',
       );
 
       await service.syncDailyOpenReminder();
-      final scheduled = DailyOpenReminderStateStore(preferences)
-          .loadScheduled();
+      final scheduled = state.loadScheduled();
       expect(scheduled, isNotNull, reason: 'The reminder must be planned.');
       final plan = DailyOpenReminderPlan.next(
         now: DateTime.now(),
@@ -79,7 +117,8 @@ void main() {
       print(
         'ISSUE95_PLAN day=${scheduled!.dayKey} '
         'scheduledAt=${scheduled.scheduledAt.toLocal().toIso8601String()} '
-        'timeZone=${scheduled.timeZoneId} nextPlan=${plan.scheduledAt.toIso8601String()}',
+        'timeZone=${scheduled.timeZoneId} '
+        'nextPlan=${plan.scheduledAt.toIso8601String()}',
       );
       expect(
         scheduled.scheduledAt.isAtSameMomentAs(plan.scheduledAt) ||
@@ -91,15 +130,12 @@ void main() {
       if (Platform.isAndroid) {
         final plugin = FlutterLocalNotificationsPlugin();
         final pending = await plugin.pendingNotificationRequests();
-        final reminder = pending
-            .where((request) => request.id == 2205)
-            .toList();
         print(
-          'ISSUE95_ANDROID_PENDING count=${reminder.length} '
-          'ids=${pending.map((request) => request.id).join(',')}',
+          'ISSUE95_ANDROID_PENDING ids='
+          '${pending.map((request) => request.id).join(',')}',
         );
         expect(
-          reminder,
+          pending.where((request) => request.id == 2205),
           isNotEmpty,
           reason: 'Android must hold one scheduled daily reminder.',
         );
@@ -107,7 +143,7 @@ void main() {
 
       await tester.pumpWidget(
         PactaApp(
-          authRepository: FakeAuthRepository()..signedInUser = _userId,
+          authRepository: FakeAuthRepository()..signedInUser = _fixtureUser,
           focusNotificationService: service,
         ),
       );
@@ -123,6 +159,29 @@ void main() {
       await tester.pageBack();
       await _pumpFrames(tester);
 
+      if (_holdSeconds > 0) {
+        lifecycle.arm();
+        print(
+          'ISSUE95_HOLD_STARTED seconds=$_holdSeconds '
+          'expectedAt=${plan.scheduledAt.toLocal().toIso8601String()} '
+          'action=tap the system notification when it appears',
+        );
+        await tester.runAsync(
+          () => Future<void>.delayed(Duration(seconds: _holdSeconds)),
+        );
+        print(
+          'ISSUE95_HOLD_ENDED '
+          'backgrounded=${lifecycle.backgrounded} '
+          'resumedAfterBackground=${lifecycle.resumedAfterBackground} '
+          'states=${lifecycle.states.join(',')}',
+        );
+        expect(
+          lifecycle.resumedAfterBackground,
+          isTrue,
+          reason: 'A native tap must return the app to the foreground.',
+        );
+      }
+
       service.handleNotificationResponse(
         NotificationResponse(
           notificationResponseType:
@@ -133,20 +192,23 @@ void main() {
       );
       await _pumpFrames(tester);
       final destination = _selectedDestination(tester);
-      print('ISSUE95_TAP_DESTINATION index=$destination');
-      expect(destination, 0, reason: 'A reminder tap opens the board.');
+      print(
+        'ISSUE95_ROUTE_INJECTED index=$destination '
+        'note=payload injection proves routing only, not a native tap',
+      );
+      expect(destination, 0, reason: 'A reminder payload opens the board.');
 
       await store.save(
         (await store.load()).copyWith(dailyOpenReminderEnabled: false),
       );
       await service.syncDailyOpenReminder();
-      final cleared =
-          DailyOpenReminderStateStore(preferences).loadScheduled() == null;
-      print('ISSUE95_DISABLED_CLEARED cleared=$cleared');
-      expect(cleared, isTrue);
+      print(
+        'ISSUE95_DISABLED_CLEARED cleared=${state.loadScheduled() == null}',
+      );
+      expect(state.loadScheduled(), isNull);
       print('ISSUE95_NATIVE_PASS platform=${Platform.operatingSystem}');
     },
-    timeout: const Timeout(Duration(minutes: 6)),
+    timeout: const Timeout(Duration(minutes: 8)),
     skip: !(Platform.isAndroid || Platform.isWindows),
   );
 }
@@ -185,4 +247,63 @@ int _selectedDestination(WidgetTester tester) {
           .widget<NavigationRail>(find.byType(NavigationRail))
           .selectedIndex ??
       0;
+}
+
+class _LifecycleProbe extends WidgetsBindingObserver {
+  final List<AppLifecycleState> states = [];
+  bool backgrounded = false;
+  bool resumedAfterBackground = false;
+  bool _armed = false;
+
+  void arm() {
+    _armed = true;
+    backgrounded = false;
+    resumedAfterBackground = false;
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_armed) return;
+    states.add(state);
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      backgrounded = true;
+      return;
+    }
+    if (state == AppLifecycleState.resumed && backgrounded) {
+      resumedAfterBackground = true;
+    }
+  }
+}
+
+/// Restores the whole preference store so the device owner keeps their choices.
+class _PreferencesSnapshot {
+  _PreferencesSnapshot._(this._values);
+
+  final Map<String, Object?> _values;
+
+  static _PreferencesSnapshot capture(SharedPreferences preferences) =>
+      _PreferencesSnapshot._({
+        for (final key in preferences.getKeys()) key: preferences.get(key),
+      });
+
+  Future<void> restore(SharedPreferences preferences) async {
+    for (final key in preferences.getKeys().toList()) {
+      if (!_values.containsKey(key)) await preferences.remove(key);
+    }
+    for (final entry in _values.entries) {
+      final value = entry.value;
+      if (value is bool) {
+        await preferences.setBool(entry.key, value);
+      } else if (value is int) {
+        await preferences.setInt(entry.key, value);
+      } else if (value is double) {
+        await preferences.setDouble(entry.key, value);
+      } else if (value is String) {
+        await preferences.setString(entry.key, value);
+      } else if (value is List<String>) {
+        await preferences.setStringList(entry.key, value);
+      }
+    }
+  }
 }

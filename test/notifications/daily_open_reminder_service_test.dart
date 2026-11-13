@@ -185,6 +185,105 @@ void main() {
     expect(fixture.pendingTimers, hasLength(1));
   }, skip: !Platform.isWindows);
 
+  test('each user keeps their own daily reminder choice', () async {
+    final fixture = await _OwnedFixture.create(now: DateTime(2026, 11, 13, 7));
+    addTearDown(fixture.dispose);
+    await fixture.service.setUserId('user-a');
+    await fixture
+        .storeFor('user-a')
+        .save(
+          const FocusDevicePreferences(
+            notificationsEnabled: true,
+            backgroundRunningEnabled: false,
+            dailyOpenReminderEnabled: true,
+            dailyOpenReminderMinutesAfterMidnight: 8 * 60,
+            dailyOpenReminderTimeChosen: true,
+          ),
+        );
+    await fixture.service.syncDailyOpenReminder();
+    expect(fixture.pendingTimers, hasLength(1));
+    expect(fixture.stateFor('user-a').loadScheduled()?.dayKey, '2026-11-13');
+
+    await fixture.service.setUserId('user-b');
+    await fixture.service.syncDailyOpenReminder();
+
+    expect(
+      fixture.pendingTimers,
+      isEmpty,
+      reason: "The previous user's timer must be cancelled on a switch.",
+    );
+    expect(fixture.notifications, isEmpty);
+    expect(
+      (await fixture.storeFor('user-b').load()).dailyOpenReminderEnabled,
+      isFalse,
+    );
+
+    await fixture.service.setUserId('user-a');
+    await fixture.service.syncDailyOpenReminder();
+
+    expect(fixture.pendingTimers, hasLength(1));
+    expect(
+      fixture.pendingTimers.single.delay,
+      const Duration(hours: 1),
+      reason: "The first user's own choice must survive the round trip.",
+    );
+    expect(fixture.notifications, isEmpty);
+  });
+
+  test('signing out cancels the daily reminder', () async {
+    final fixture = await _OwnedFixture.create(now: DateTime(2026, 11, 13, 7));
+    addTearDown(fixture.dispose);
+    await fixture.service.setUserId('user-a');
+    await fixture
+        .storeFor('user-a')
+        .save(
+          const FocusDevicePreferences(
+            notificationsEnabled: true,
+            backgroundRunningEnabled: false,
+            dailyOpenReminderEnabled: true,
+            dailyOpenReminderMinutesAfterMidnight: 8 * 60,
+            dailyOpenReminderTimeChosen: true,
+          ),
+        );
+    await fixture.service.syncDailyOpenReminder();
+    expect(fixture.pendingTimers, hasLength(1));
+
+    await fixture.service.setUserId(null);
+
+    expect(fixture.pendingTimers, isEmpty);
+    expect(
+      fixture.stateFor('user-a').loadScheduled(),
+      isNull,
+      reason: 'A signed-out installation holds no pending reminder.',
+    );
+  });
+
+  test('a switch discards a reconciliation that is still in flight', () async {
+    final fixture = await _OwnedFixture.create(now: DateTime(2026, 11, 13, 7));
+    addTearDown(fixture.dispose);
+    await fixture.service.setUserId('user-a');
+    await fixture
+        .storeFor('user-a')
+        .save(
+          const FocusDevicePreferences(
+            notificationsEnabled: true,
+            backgroundRunningEnabled: false,
+            dailyOpenReminderEnabled: true,
+            dailyOpenReminderMinutesAfterMidnight: 8 * 60,
+            dailyOpenReminderTimeChosen: true,
+          ),
+        );
+
+    final inFlight = fixture.service.syncDailyOpenReminder();
+    await fixture.service.setUserId('user-b');
+    await inFlight;
+    await fixture.service.pendingDailyReminderWork;
+
+    expect(fixture.pendingTimers, isEmpty);
+    expect(fixture.notifications, isEmpty);
+    expect(fixture.stateFor('user-a').loadScheduled(), isNull);
+  });
+
   test('a Windows tray click forwards the reminder payload', () async {
     final fixture = await _Fixture.create(
       now: DateTime(2026, 11, 13, 7),
@@ -243,6 +342,69 @@ void main() {
       'daily-open-reminder:2026-11-13',
     );
   }, skip: !Platform.isWindows);
+}
+
+/// A service that resolves its own per-user stores from shared preferences.
+class _OwnedFixture {
+  _OwnedFixture._(this.service, this.preferences, this.timers);
+
+  final FocusNotificationService service;
+  final SharedPreferences preferences;
+  final List<_RecordedTimer> timers;
+  final List<Map<Object?, Object?>> notifications = [];
+
+  List<_RecordedTimer> get pendingTimers =>
+      timers.where((recorded) => recorded.timer.isActive).toList();
+
+  FocusDevicePreferencesStore storeFor(String userId) =>
+      FocusDevicePreferencesStore(preferences, userId: userId);
+
+  DailyOpenReminderStateStore stateFor(String userId) =>
+      DailyOpenReminderStateStore(preferences, userId: userId);
+
+  static Future<_OwnedFixture> create({required DateTime now}) async {
+    const channel = MethodChannel('issue95/owned_reminder_status');
+    final preferences = await SharedPreferences.getInstance();
+    final timers = <_RecordedTimer>[];
+    final fixture = _OwnedFixture._(
+      FocusNotificationService(
+        windowsChannel: channel,
+        now: () => now,
+        localTimeZone: () async => 'Asia/Shanghai',
+        reminderTimers: (delay, callback) {
+          final timer = Timer(delay, callback);
+          timers.add(_RecordedTimer(delay, callback, timer));
+          return timer;
+        },
+      ),
+      preferences,
+      timers,
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'showNotification') {
+            fixture.notifications.add(call.arguments as Map<Object?, Object?>);
+          }
+          return null;
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    return fixture;
+  }
+
+  Future<void> dispose() async {
+    for (final recorded in timers) {
+      recorded.timer.cancel();
+    }
+    try {
+      await service.clear();
+    } catch (_) {
+      // A removed test channel must not hide assertion results.
+    }
+    await service.dispose();
+  }
 }
 
 class _RecordedTimer {
