@@ -38,6 +38,9 @@ import 'src/notifications/focus_notification_settings_page.dart';
 import 'src/tasks/task_database.dart' show PactaDatabase;
 import 'src/tasks/task_models.dart';
 import 'src/tasks/task_repository.dart';
+import 'src/sync/cloud_auto_upload.dart';
+import 'src/sync/cloud_auto_upload_preference.dart';
+import 'src/sync/cloud_auto_upload_queue.dart';
 import 'src/sync/cloud_snapshot_repository.dart';
 import 'src/sync/source_device_info.dart';
 import 'src/sync/cloud_sync_card.dart';
@@ -376,6 +379,46 @@ final cloudVersionCheckProvider = Provider.autoDispose<CloudVersionCheck?>((
   ref.onDispose(check.dispose);
   return check;
 });
+
+final cloudAutoUploadPreferenceProvider = Provider<CloudAutoUploadPreference>(
+  (ref) => const CloudAutoUploadPreference(),
+);
+final cloudAutoUploadQueueStoreProvider = Provider<CloudAutoUploadQueueStore>(
+  (ref) => const SharedPreferencesCloudAutoUploadQueueStore(),
+);
+
+/// 今日确认后的自动上传协调器。它与版本检查共用同一仓储、访问判定与时钟，
+/// 因此自动上传和手动同步看到的是同一份云端状态。
+final cloudAutoUploadCoordinatorProvider =
+    Provider.autoDispose<CloudAutoUploadCoordinator?>((ref) {
+      final repository = ref.watch(cloudSnapshotRepositoryProvider);
+      if (repository == null) return null;
+      final lifecycle = ref.watch(userLifecycleStatusRepositoryProvider);
+      final auth = ref.watch(authRepositoryProvider);
+      final userId = repository.userId;
+      final coordinator = CloudAutoUploadCoordinator(
+        userId: userId,
+        repository: repository,
+        preference: ref.watch(cloudAutoUploadPreferenceProvider),
+        queueStore: ref.watch(cloudAutoUploadQueueStoreProvider),
+        versionCheck: ref.watch(cloudVersionCheckProvider),
+        now: ref.watch(cloudCheckClockProvider),
+        canAccess: () async {
+          if (auth.currentUserId != userId) return false;
+          final status = await lifecycle.refresh();
+          return auth.currentUserId == userId && !status.isSuspended;
+        },
+        isAccessible: () async {
+          if (auth.currentUserId != userId) return false;
+          final status = await lifecycle.readCachedStatus();
+          return auth.currentUserId == userId &&
+              status != null &&
+              !status.isSuspended;
+        },
+      );
+      ref.onDispose(coordinator.dispose);
+      return coordinator;
+    });
 
 final chainSignalsRepositoryFactoryProvider =
     Provider<ChainSignalsRepository Function(String userId)?>((ref) => null);
@@ -777,6 +820,11 @@ class _AppShellState extends ConsumerState<AppShell>
         ref.read(cloudVersionCheckProvider)?.check() ?? Future<void>.value(),
       );
     }
+    // 登录、联网或生命周期恢复后重试待上传请求；访问判定在协调器内完成。
+    unawaited(
+      ref.read(cloudAutoUploadCoordinatorProvider)?.trigger() ??
+          Future<void>.value(),
+    );
     // Lifecycle and local notification refresh never transfer business records.
     try {
       await ref.read(focusRepositoryProvider).settleDueSessions();
@@ -912,7 +960,14 @@ class _AppShellState extends ConsumerState<AppShell>
     ref.listen(focusRepositoryProvider, (previous, next) {
       unawaited(_syncFocusStatus());
     });
+    ref.listen(authUserIdProvider, (previous, next) {
+      if (previous != null && previous != next) {
+        // 切换账号作废旧用户的待上传请求，避免随后按错误身份继续。
+        unawaited(ref.read(cloudAutoUploadQueueStoreProvider).clear(previous));
+      }
+    });
     ref.watch(cloudVersionCheckProvider);
+    final autoUpload = ref.watch(cloudAutoUploadCoordinatorProvider);
     final nationalFocusRepository = ref.watch(nationalFocusRepositoryProvider);
     final focusRepository = ref.watch(focusRepositoryProvider);
     final lifecycleStatusRepository = ref.watch(
@@ -925,6 +980,7 @@ class _AppShellState extends ConsumerState<AppShell>
         userId: ref.watch(authRepositoryProvider).currentUserId,
         repository: nationalFocusRepository,
         onOpenAiAnalysis: _openNationalFocusAiAnalysis,
+        onTodayConfirmed: autoUpload?.enqueue,
         displayTimeZoneLoader: () async {
           final deviceZone = await FlutterTimezone.getLocalTimezone();
           final dashboard = await focusRepository.getDashboardMetrics(
@@ -4385,6 +4441,7 @@ class _MyPageState extends ConsumerState<MyPage> {
         CloudSyncCard(
           repository: ref.watch(cloudSnapshotRepositoryProvider),
           versionCheck: ref.watch(cloudVersionCheckProvider),
+          autoUpload: ref.watch(cloudAutoUploadCoordinatorProvider),
           focusRepository: ref.watch(focusRepositoryProvider),
           onDownloaded: () async {
             ref.invalidate(taskRepositoryProvider);
@@ -4978,6 +5035,7 @@ void _openAiManualSync(BuildContext context, WidgetRef ref) {
               CloudSyncCard(
                 repository: ref.read(cloudSnapshotRepositoryProvider),
                 versionCheck: ref.read(cloudVersionCheckProvider),
+                autoUpload: ref.read(cloudAutoUploadCoordinatorProvider),
                 onDownloaded: () async {
                   ref.invalidate(taskRepositoryProvider);
                   ref.invalidate(focusRepositoryProvider);

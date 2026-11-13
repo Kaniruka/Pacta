@@ -66,6 +66,13 @@ class CloudSyncResultStore {
     }
   }
 
+  /// 清除本机“已处理云版本”基线：恢复本机旧数据后，原来那条成功同步记录
+  /// 不再能证明当前本机内容与云端一致，必须让用户重新核对。
+  Future<void> clear(String userId) async {
+    final preferences = await preferencesLoader();
+    await preferences.remove(_key(userId));
+  }
+
   Future<void> save(String userId, CloudSyncResult result) async {
     final preferences = await preferencesLoader();
     final saved = await preferences.setString(
