@@ -123,6 +123,15 @@ flutter analyze（含 integration_test）                    -> No issues found!
   成功、取消或关闭后立即清除。它是本机数据，与被上传内容等价。
 - 队列每用户只保留一条合并意图，不记录每次确认的来源；这是“整批只上传一次”的直接结果。
 - 自动上传不会修改“上次成功同步时间”以外的界面状态；停止原因只在同步卡片提示与面板中显示。
+## 合并与复核（第二轮）
+
+```text
+git merge --no-edit feat/sync-profile-cards-20261113   -> 两处纯增量冲突（main.dart 国策页参数、
+                                                         tree page 构造参数），保留双方；其余自动合并
+flutter analyze（含 integration_test）                  -> No issues found!
+flutter test                                           -> +542 All tests passed!
+```
+
 ## 合并与复核
 
 ```text
