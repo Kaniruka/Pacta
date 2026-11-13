@@ -18,7 +18,7 @@
 | #91 | pacta91_cards / session-0c9bd49f-8719-4f83-aafc-fee7e09e5e9c | C:/Users/Stray/.codex/worktrees/pacta-card-layers/Pacta / impl/pacta91-card-layers | 实施中 |
 | #92 | pacta92_backups / session-3538425b-4617-4520-a42e-50e36c889634 | C:/Users/Stray/.codex/worktrees/pacta-snapshot-history/Pacta / impl/pacta92-backup-history | 实施中 |
 | #95 | pacta95_reminders / session-24a59a18-e96c-40a1-b1b7-eccfd3e01973 | C:/Users/Stray/.codex/worktrees/pacta-daily-reminder/Pacta / impl/pacta95-reminders | 实施中 |
-| #94 | 待空闲worker | 待创建 | 就绪 |
+| #94 | pacta94_profile / session-addb0e2a-6335-4ce4-81ea-3213f78c8be3 | C:/Users/Stray/.codex/worktrees/pacta-profile-stats/Pacta / impl/pacta94-profile-stats | 实施中；DSH接受独立执行位 |
 | #93 | 待#92 | 待创建 | 阻塞于#92 |
 
 主Agent独立复核和执行集成检查，worker不得直接部署共享云、操作真实用户数据或关闭Issue。合并后按implement-spec双轴评审。
@@ -28,6 +28,13 @@
 - Android：已启动现有AVD PactaFocusPilot20261112，序列emulator-5556，Android15。未擦除数据。发现另有实体设备，默认验收只使用该模拟器。
 - 云：通过受保护管理凭据读回仅有共享Pacta项目；沿用已有脚本的免费组织/独立项目保护创建 `Pacta issue90 disposable validation`。状态文件保存在忽略目录 `.scratch/issue90/isolated-state.json`。仅该明确隔离项目可应用测试迁移；共享项目未修改。
 - 凭据留在受保护环境，不传入Flutter构建配置；运行时会话经本地受控通道提供。尚未执行本轮云验收。
+
+## 已执行的基线验证
+
+- 隔离项目全部既有迁移已应用；`cloud_business_snapshots.sql`回滚探针通过，真实owner读取、跨用户RLS拒绝、旧数据读取、只读前后摘要、revision和legacy token变化通过。临时探针用户和快照已清理。新迁移仍待各票交付后验证。
+- Android15：`flutter drive --driver=test_driver/ui_layout_acceptance_test.dart --target=integration_test/ui_layout_acceptance_test.dart -d emulator-5556`通过；5张图在`build/ui-layout-evidence/issue90/20261113-171635-baseline-android`。manifest记录源码指纹，`sourceUnchanged=true`。已打开My页基线图；该旧fixture显示时区回退UTC，已提醒通知worker核实本机时区读取，不据此扩改无关模块。
+- Windows：同一fixture以`-d windows`运行通过，证据`build/ui-layout-evidence/issue90/20261113-172107-baseline-windows`。Windows旧fixture不产截图；没有宣称Windows目视验收。
+- #91初版`385dc56`已复核，返回worker修复库卡直达强化入口、非当前等级编辑不应要求先切换生效，以及fixture应使用真实主题和Android host截图导出。尚未合入。
 
 ## 后续
 
