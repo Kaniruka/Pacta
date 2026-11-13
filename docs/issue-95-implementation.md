@@ -34,7 +34,9 @@
 | --- | --- |
 | `dart format lib/main.dart lib/src/notifications lib/src/calendar/calendar_page.dart test/notifications integration_test/issue_95_daily_reminder_device_test.dart` | 23 files formatted（13 变更） |
 | `flutter analyze` | No issues found |
-| `flutter test` | All tests passed（434 passed（含本票新增测试）） |
+| `flutter test` | All tests passed（434） |
+| `git merge feat/sync-profile-cards-20261113` 后 `flutter analyze` | No issues found |
+| `git merge feat/sync-profile-cards-20261113` 后 `flutter test` | All tests passed（446） |
 | `flutter test test/calendar test/notifications` | All tests passed（64） |
 | `flutter build windows --debug` | √ Built build\windows\x64\runner\Debug\pacta.exe |
 | `flutter build apk --debug` | √ Built build\app\outputs\flutter-apk\app-debug.apk |
