@@ -97,13 +97,6 @@ Future<void> _openLibrary(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-List<String> _popupLabels(WidgetTester tester) => find
-    .byType(PopupMenuItem<String>)
-    .evaluate()
-    .map((e) => ((e.widget as PopupMenuItem<String>).child as Text).data)
-    .whereType<String>()
-    .toList();
-
 Finder _goalCard(String title) =>
     find.ancestor(of: find.text(title), matching: find.byType(Card));
 
@@ -430,10 +423,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('国策卡详情'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('卡片操作'));
-      await tester.pumpAndSettle();
-      final detailLabels = _popupLabels(tester);
-      expect(detailLabels, ['编辑卡片']);
+      // The detail offers a single visible edit entry and no separate rename.
+      expect(find.text('编辑卡片'), findsOneWidget);
+      expect(find.byTooltip('卡片操作'), findsNothing);
       expect(find.text('修改名称'), findsNothing);
 
       await tester.tap(find.text('编辑卡片'));
@@ -485,28 +477,38 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('查看详情'));
       await tester.pumpAndSettle();
-      expect(find.text('强化要求'), findsOneWidget);
-      expect(find.textContaining('当前要求 · 强化等级 1'), findsOneWidget);
+      expect(find.textContaining('当前规则 · 强化等级 1'), findsOneWidget);
+      // Strengthening management is entered from the card editor only.
+      expect(find.text('管理强化要求'), findsNothing);
+      await tester.tap(find.text('编辑卡片'));
+      await tester.pumpAndSettle();
       final entry = find.text('管理强化要求');
       expect(entry, findsOneWidget);
       await tester.ensureVisible(entry);
       await tester.tap(entry);
       await tester.pumpAndSettle();
       expect(find.text('国策强化要求'), findsOneWidget);
-      expect(find.text('当前采用 · 强化等级 1'), findsOneWidget);
+      expect(find.text('当前使用 · 强化等级 1'), findsOneWidget);
       expect(find.textContaining('生效版本记录'), findsOneWidget);
 
-      final reset = find.text('切换到基础要求');
+      final reset = find.descendant(
+        of: find.byKey(
+          const ValueKey('national-focus-strengthening-level-base'),
+        ),
+        matching: find.text('选择'),
+      );
       await tester.ensureVisible(reset);
       await tester.tap(reset);
       await tester.pumpAndSettle();
-      expect(find.text('当前采用 · 基础要求'), findsOneWidget);
+      expect(find.text('当前使用 · 基础要求'), findsOneWidget);
 
       await tester.pageBack();
       await tester.pumpAndSettle();
+      expect(find.text('编辑国策卡'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
       expect(find.text('国策卡详情'), findsOneWidget);
-      expect(find.text('当前使用基础要求'), findsOneWidget);
-      expect(find.textContaining('当前要求 · 强化等级 1'), findsNothing);
+      expect(find.text('国策规则'), findsOneWidget);
       expect(tester.takeException(), isNull);
     } finally {
       await _unmountAndSettle(tester);

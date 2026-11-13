@@ -98,11 +98,11 @@ void main() {
           cardId: 'card',
         ),
       );
-      await _reveal(tester, find.text('新建强化等级'));
-      final heading = tester.getRect(find.text('强化等级 0/5'));
-      final action = tester.getRect(find.text('新建强化等级'));
+      await _reveal(tester, find.text('新建强化要求'));
+      final heading = tester.getRect(find.text('0 / 5 级'));
+      final action = tester.getRect(find.text('新建强化要求'));
       expect(action.top, greaterThan(heading.bottom));
-      await tester.tap(find.text('新建强化等级'));
+      await tester.tap(find.text('新建强化要求'));
       await tester.pumpAndSettle();
       expect(find.text('保存'), findsOneWidget);
       await _reveal(tester, find.byKey(const ValueKey('strengthened-rule')));

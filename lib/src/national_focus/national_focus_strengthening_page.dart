@@ -112,11 +112,10 @@ class _NationalFocusStrengtheningPageState
     }
 
     final activeLevel = card.activeStrengtheningLevel;
-    final currentTitle = activeLevel == null
-        ? '当前采用 · 基础要求'
-        : '当前采用 · 强化等级 $activeLevel';
     final versionCount = card.requirementVersions.length;
     final levelCount = card.strengtheningLevels.length;
+    final atCapacity = levelCount >= maxNationalFocusStrengtheningLevels;
+    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('国策强化要求')),
@@ -126,28 +125,22 @@ class _NationalFocusStrengtheningPageState
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
             children: [
-              _RequirementSummary(
-                title: '基础要求',
-                action: card.action,
-                exceptionNotes: card.exceptionNotes,
-              ),
-              const SizedBox(height: 12),
-              _RequirementSummary(
-                title: currentTitle,
-                action: card.effectiveAction,
-                exceptionNotes: card.exceptionNotes,
-                emphasized: true,
+              _CurrentRequirementPanel(
+                label: activeLevel == null
+                    ? '当前使用 · 基础要求'
+                    : '当前使用 · 强化等级 $activeLevel',
+                rule: card.effectiveAction,
               ),
               const SizedBox(height: 8),
               Text(
                 '修改立即生效，不改变节点状态、清除记录或要求重新确认；是否符合由你判断。',
-                style: Theme.of(context).textTheme.bodySmall,
+                style: theme.textTheme.bodySmall,
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
                 _InlineError(message: _error!),
               ],
-              const SizedBox(height: 12),
+              const SizedBox(height: 4),
               ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 title: Text('生效版本记录 · $versionCount'),
@@ -157,58 +150,69 @@ class _NationalFocusStrengtheningPageState
                     _RequirementVersionTile(version: version),
                 ],
               ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 16,
-                runSpacing: 8,
-                crossAxisAlignment: WrapCrossAlignment.center,
+              const SizedBox(height: 16),
+              Row(
                 children: [
-                  Text(
-                    '强化等级 $levelCount/$maxNationalFocusStrengtheningLevels',
-                    style: Theme.of(context).textTheme.titleMedium,
+                  Expanded(
+                    child: Text('可用要求', style: theme.textTheme.titleMedium),
                   ),
-                  FilledButton.icon(
-                    onPressed:
-                        _busy ||
-                            levelCount >= maxNationalFocusStrengtheningLevels
-                        ? null
-                        : () => _editLevel(card),
-                    icon: const Icon(Icons.add),
-                    label: const Text('新建强化等级'),
+                  Text(
+                    '$levelCount / $maxNationalFocusStrengtheningLevels 级',
+                    style: theme.textTheme.bodySmall,
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              if (card.strengtheningLevels.isEmpty)
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text('暂无强化等级。可为这张卡设置更严格的国策规则。'),
-                  ),
-                ),
-              for (final level in card.strengtheningLevels)
+              if (atCapacity)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _StrengtheningLevelCard(
-                    card: card,
-                    level: level,
-                    active: activeLevel == level.levelNumber,
-                    busy: _busy,
-                    onEdit: () => _editLevel(card, level),
-                    onSelect: () => _selectLevel(level.levelNumber),
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    '已达 $maxNationalFocusStrengtheningLevels 级上限',
+                    style: theme.textTheme.bodySmall,
                   ),
                 ),
-              if (activeLevel != null) ...[
-                const SizedBox(height: 4),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: OutlinedButton.icon(
-                    onPressed: _busy ? null : () => _selectLevel(null),
-                    icon: const Icon(Icons.restart_alt),
-                    label: const Text('切换到基础要求'),
+              const SizedBox(height: 4),
+              _AvailableRequirementRow(
+                key: const ValueKey('national-focus-strengthening-level-base'),
+                numberLabel: '基础',
+                rule: card.action.trim().isEmpty ? '未设置' : card.action,
+                active: activeLevel == null,
+                busy: _busy,
+                onSelect: () => _selectLevel(null),
+              ),
+              for (final level in card.strengtheningLevels)
+                _AvailableRequirementRow(
+                  key: ValueKey(
+                    'national-focus-strengthening-level-${level.levelNumber}',
+                  ),
+                  numberLabel: '${level.levelNumber} 级',
+                  rule: level.action == null
+                      ? '沿用基础要求：${card.action}'
+                      : level.action!,
+                  active: activeLevel == level.levelNumber,
+                  busy: _busy,
+                  onSelect: () => _selectLevel(level.levelNumber),
+                  onEdit: () => _editLevel(card, level),
+                  editTooltip: '编辑强化等级 ${level.levelNumber}',
+                ),
+              if (card.strengtheningLevels.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    '暂无强化等级。可为这张卡设置更严格的国策规则。',
+                    style: theme.textTheme.bodySmall,
                   ),
                 ),
-              ],
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.tonalIcon(
+                  onPressed: _busy || atCapacity
+                      ? null
+                      : () => _editLevel(card),
+                  icon: const Icon(Icons.add),
+                  label: const Text('新建强化要求'),
+                ),
+              ),
             ],
           ),
         ),
@@ -217,68 +221,131 @@ class _NationalFocusStrengtheningPageState
   }
 }
 
-class _StrengtheningLevelCard extends StatelessWidget {
-  const _StrengtheningLevelCard({
-    required this.card,
-    required this.level,
-    required this.active,
-    required this.busy,
-    required this.onEdit,
-    required this.onSelect,
-  });
+/// The requirement in force, set apart from the list of the other levels.
+class _CurrentRequirementPanel extends StatelessWidget {
+  const _CurrentRequirementPanel({required this.label, required this.rule});
 
-  final NationalFocusCard card;
-  final NationalFocusStrengtheningLevel level;
-  final bool active;
-  final bool busy;
-  final VoidCallback onEdit;
-  final VoidCallback onSelect;
+  final String label;
+  final String rule;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final levelNumber = level.levelNumber;
-    final title = '强化等级 $levelNumber';
-    return Card(
-      color: active ? theme.colorScheme.secondaryContainer : null,
+    final colors = theme.colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.secondaryContainer,
+        borderRadius: BorderRadius.circular(18),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Expanded(child: Text(title, style: theme.textTheme.titleSmall)),
-                if (active)
-                  const Chip(
-                    label: Text('当前采用'),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                IconButton(
-                  tooltip: '编辑$title',
-                  onPressed: busy ? null : onEdit,
-                  icon: const Icon(Icons.edit_outlined),
-                ),
-              ],
+            Text(
+              label,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: colors.onSecondaryContainer,
+              ),
             ),
-            const SizedBox(height: 8),
-            _ComparedRequirement(
-              label: '国策规则',
-              baseValue: card.action,
-              overrideValue: level.action,
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: active
-                  ? const Text('当前已生效')
-                  : OutlinedButton(
-                      onPressed: busy ? null : onSelect,
-                      child: Text('采用$title'),
-                    ),
+            const SizedBox(height: 6),
+            Text(
+              rule,
+              style: theme.textTheme.titleMedium?.copyWith(
+                color: colors.onSecondaryContainer,
+              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// One compact row in the available requirements list. The active row is the
+/// only one carrying the in-use marker and the edit affordance.
+class _AvailableRequirementRow extends StatelessWidget {
+  const _AvailableRequirementRow({
+    super.key,
+    required this.numberLabel,
+    required this.rule,
+    required this.active,
+    required this.busy,
+    required this.onSelect,
+    this.onEdit,
+    this.editTooltip,
+  });
+
+  final String numberLabel;
+  final String rule;
+  final bool active;
+  final bool busy;
+  final VoidCallback onSelect;
+  final VoidCallback? onEdit;
+  final String? editTooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final foreground = active ? colors.onSecondaryContainer : colors.onSurface;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      decoration: active
+          ? BoxDecoration(
+              color: colors.secondaryContainer,
+              borderRadius: BorderRadius.circular(14),
+            )
+          : null,
+      padding: EdgeInsets.symmetric(horizontal: active ? 12 : 0, vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 52,
+            child: Text(
+              numberLabel,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: active ? foreground : colors.primary,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              rule,
+              style: theme.textTheme.bodyMedium?.copyWith(color: foreground),
+            ),
+          ),
+          if (active) ...[
+            const SizedBox(width: 8),
+            Text(
+              '正在使用',
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: colors.primary,
+              ),
+            ),
+            if (onEdit != null)
+              IconButton(
+                tooltip: editTooltip,
+                onPressed: busy ? null : onEdit,
+                icon: const Icon(Icons.edit_outlined),
+              ),
+          ] else ...[
+            TextButton(
+              onPressed: busy ? null : onSelect,
+              child: const Text('选择'),
+            ),
+            // Editing a level and putting it in force stay separate actions:
+            // an inactive level can be edited without changing which
+            // requirement is currently active.
+            if (onEdit != null)
+              IconButton(
+                tooltip: editTooltip,
+                onPressed: busy ? null : onEdit,
+                icon: const Icon(Icons.edit_outlined),
+              ),
+          ],
+        ],
       ),
     );
   }
@@ -364,12 +431,34 @@ class _StrengtheningLevelEditorPageState
                   style: Theme.of(context).textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 20),
-                _RequirementComparisonEditor(
-                  title: '国策规则',
-                  baseValue: widget.card.action,
+                TextFormField(
+                  key: const ValueKey('strengthened-rule'),
                   controller: _action,
-                  fieldKey: const ValueKey('strengthened-rule'),
-                  fieldLabel: '强化后的国策规则',
+                  minLines: 3,
+                  maxLines: 6,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    labelText: '强化后的国策规则',
+                    helperText: '留空则沿用基础要求',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: const EdgeInsets.only(bottom: 12),
+                  title: const Text('对照基础规则'),
+                  children: [
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        widget.card.action.trim().isEmpty
+                            ? '未设置'
+                            : widget.card.action,
+                      ),
+                    ),
+                  ],
                 ),
                 FormField<bool>(
                   validator: (_) =>
@@ -396,191 +485,6 @@ class _StrengtheningLevelEditorPageState
       ),
     );
   }
-}
-
-class _RequirementComparisonEditor extends StatelessWidget {
-  const _RequirementComparisonEditor({
-    required this.title,
-    required this.baseValue,
-    required this.controller,
-    required this.fieldKey,
-    required this.fieldLabel,
-  });
-
-  final String title;
-  final String baseValue;
-  final TextEditingController controller;
-  final Key fieldKey;
-  final String fieldLabel;
-
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      final base = _RequirementValueCard(
-        title: '基础$title',
-        value: baseValue.trim().isEmpty ? '未设置' : baseValue,
-      );
-      final strengthened = TextFormField(
-        key: fieldKey,
-        controller: controller,
-        minLines: 2,
-        maxLines: 4,
-        textCapitalization: TextCapitalization.sentences,
-        decoration: InputDecoration(
-          labelText: fieldLabel,
-          helperText: '留空则沿用基础要求',
-          border: const OutlineInputBorder(),
-          alignLabelWithHint: true,
-        ),
-      );
-      final heading = Text(
-        title,
-        style: Theme.of(context).textTheme.titleSmall,
-      );
-      if (constraints.maxWidth < 620) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            heading,
-            const SizedBox(height: 8),
-            base,
-            const SizedBox(height: 10),
-            strengthened,
-          ],
-        );
-      }
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          heading,
-          const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: base),
-              const SizedBox(width: 16),
-              Expanded(child: strengthened),
-            ],
-          ),
-        ],
-      );
-    },
-  );
-}
-
-class _ComparedRequirement extends StatelessWidget {
-  const _ComparedRequirement({
-    required this.label,
-    required this.baseValue,
-    required this.overrideValue,
-  });
-
-  final String label;
-  final String baseValue;
-  final String? overrideValue;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final shownBaseValue = baseValue.trim().isEmpty ? '未设置' : baseValue;
-    final levelValue = overrideValue ?? '沿用基础要求：$shownBaseValue';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(label, style: theme.textTheme.labelLarge),
-        const SizedBox(height: 4),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final base = _RequirementValueCard(
-              title: '基础',
-              value: shownBaseValue,
-            );
-            final level = _RequirementValueCard(
-              title: '本等级',
-              value: levelValue,
-            );
-            if (constraints.maxWidth < 520) {
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [base, const SizedBox(height: 8), level],
-              );
-            }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: base),
-                const SizedBox(width: 12),
-                Expanded(child: level),
-              ],
-            );
-          },
-        ),
-      ],
-    );
-  }
-}
-
-class _RequirementSummary extends StatelessWidget {
-  const _RequirementSummary({
-    required this.title,
-    required this.action,
-    required this.exceptionNotes,
-    this.emphasized = false,
-  });
-
-  final String title;
-  final String action;
-  final String? exceptionNotes;
-  final bool emphasized;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      color: emphasized ? theme.colorScheme.primaryContainer : null,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(title, style: theme.textTheme.titleMedium),
-            const SizedBox(height: 12),
-            _RequirementValueCard(title: '国策规则', value: action),
-            if (exceptionNotes != null) ...[
-              const SizedBox(height: 8),
-              _RequirementValueCard(title: '例外与判例', value: exceptionNotes!),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RequirementValueCard extends StatelessWidget {
-  const _RequirementValueCard({required this.title, required this.value});
-
-  final String title;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.surfaceContainerLow,
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(title, style: Theme.of(context).textTheme.labelMedium),
-          const SizedBox(height: 4),
-          Text(value),
-        ],
-      ),
-    ),
-  );
 }
 
 class _RequirementVersionTile extends StatelessWidget {

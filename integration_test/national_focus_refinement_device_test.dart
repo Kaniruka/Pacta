@@ -292,10 +292,12 @@ void main() {
       await _tapNode(tester, directException);
       await _tapAndSettle(tester, _nodeSheetText('查看详情'), '打开例外节点详情');
       expect(find.text('国策卡详情'), findsOneWidget);
-      await _tapAndSettle(tester, find.byTooltip('卡片操作'), '打开例外卡片操作菜单');
       await _tapAndSettle(tester, find.text('编辑卡片'), '打开三字段编辑页');
       expect(find.text('卡片名称'), findsOneWidget);
       expect(find.text('国策规则'), findsOneWidget);
+      // The exception notes are a collapsed section of the editor.
+      expect(find.byType(TextFormField), findsNWidgets(2));
+      await _tapAndSettle(tester, find.text('例外与判例'), '展开例外与判例字段');
       expect(find.text('例外与判例（可选）'), findsOneWidget);
       expect(find.byType(TextFormField), findsNWidgets(3));
       await shot('three-field-card-editor');
@@ -307,7 +309,9 @@ void main() {
 
       await _tapNode(tester, directException);
       expect(_nodeSheetText('确认'), findsOneWidget);
-      expect(_nodeSheetText('发热时休息，恢复后再继续。'), findsOneWidget);
+      // The node sheet keeps one layer: the rule in force and its actions.
+      expect(_nodeSheetText('例外与判例'), findsNothing);
+      expect(_nodeSheetText('发热时休息，恢复后再继续。'), findsNothing);
       await shot('single-node-exception-confirm-sheet');
       await _tapAndSettle(tester, _nodeSheetText('确认'), '单点确认带例外节点');
       expect(find.byType(AlertDialog), findsNothing);
