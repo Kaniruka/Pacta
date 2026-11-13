@@ -12684,6 +12684,535 @@ class LocalProfileAccountsCompanion
   }
 }
 
+class $LocalCloudRecoveryPointsTable extends LocalCloudRecoveryPoints
+    with TableInfo<$LocalCloudRecoveryPointsTable, LocalCloudRecoveryPoint> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalCloudRecoveryPointsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _reasonMeta = const VerificationMeta('reason');
+  @override
+  late final GeneratedColumn<String> reason = GeneratedColumn<String>(
+    'reason',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceDeviceNameMeta = const VerificationMeta(
+    'sourceDeviceName',
+  );
+  @override
+  late final GeneratedColumn<String> sourceDeviceName = GeneratedColumn<String>(
+    'source_device_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _dataUpdatedAtMeta = const VerificationMeta(
+    'dataUpdatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> dataUpdatedAt =
+      GeneratedColumn<DateTime>(
+        'data_updated_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _rowCountMeta = const VerificationMeta(
+    'rowCount',
+  );
+  @override
+  late final GeneratedColumn<int> rowCount = GeneratedColumn<int>(
+    'row_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _payloadMeta = const VerificationMeta(
+    'payload',
+  );
+  @override
+  late final GeneratedColumn<String> payload = GeneratedColumn<String>(
+    'payload',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    userId,
+    createdAt,
+    reason,
+    sourceDeviceName,
+    dataUpdatedAt,
+    rowCount,
+    payload,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_cloud_recovery_points';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalCloudRecoveryPoint> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('reason')) {
+      context.handle(
+        _reasonMeta,
+        reason.isAcceptableOrUnknown(data['reason']!, _reasonMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_reasonMeta);
+    }
+    if (data.containsKey('source_device_name')) {
+      context.handle(
+        _sourceDeviceNameMeta,
+        sourceDeviceName.isAcceptableOrUnknown(
+          data['source_device_name']!,
+          _sourceDeviceNameMeta,
+        ),
+      );
+    }
+    if (data.containsKey('data_updated_at')) {
+      context.handle(
+        _dataUpdatedAtMeta,
+        dataUpdatedAt.isAcceptableOrUnknown(
+          data['data_updated_at']!,
+          _dataUpdatedAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_dataUpdatedAtMeta);
+    }
+    if (data.containsKey('row_count')) {
+      context.handle(
+        _rowCountMeta,
+        rowCount.isAcceptableOrUnknown(data['row_count']!, _rowCountMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_rowCountMeta);
+    }
+    if (data.containsKey('payload')) {
+      context.handle(
+        _payloadMeta,
+        payload.isAcceptableOrUnknown(data['payload']!, _payloadMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_payloadMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  LocalCloudRecoveryPoint map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalCloudRecoveryPoint(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      reason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reason'],
+      )!,
+      sourceDeviceName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_device_name'],
+      ),
+      dataUpdatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}data_updated_at'],
+      )!,
+      rowCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}row_count'],
+      )!,
+      payload: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payload'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalCloudRecoveryPointsTable createAlias(String alias) {
+    return $LocalCloudRecoveryPointsTable(attachedDatabase, alias);
+  }
+}
+
+class LocalCloudRecoveryPoint extends DataClass
+    implements Insertable<LocalCloudRecoveryPoint> {
+  final String id;
+  final String userId;
+  final DateTime createdAt;
+  final String reason;
+  final String? sourceDeviceName;
+  final DateTime dataUpdatedAt;
+  final int rowCount;
+  final String payload;
+  const LocalCloudRecoveryPoint({
+    required this.id,
+    required this.userId,
+    required this.createdAt,
+    required this.reason,
+    this.sourceDeviceName,
+    required this.dataUpdatedAt,
+    required this.rowCount,
+    required this.payload,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['user_id'] = Variable<String>(userId);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['reason'] = Variable<String>(reason);
+    if (!nullToAbsent || sourceDeviceName != null) {
+      map['source_device_name'] = Variable<String>(sourceDeviceName);
+    }
+    map['data_updated_at'] = Variable<DateTime>(dataUpdatedAt);
+    map['row_count'] = Variable<int>(rowCount);
+    map['payload'] = Variable<String>(payload);
+    return map;
+  }
+
+  LocalCloudRecoveryPointsCompanion toCompanion(bool nullToAbsent) {
+    return LocalCloudRecoveryPointsCompanion(
+      id: Value(id),
+      userId: Value(userId),
+      createdAt: Value(createdAt),
+      reason: Value(reason),
+      sourceDeviceName: sourceDeviceName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceDeviceName),
+      dataUpdatedAt: Value(dataUpdatedAt),
+      rowCount: Value(rowCount),
+      payload: Value(payload),
+    );
+  }
+
+  factory LocalCloudRecoveryPoint.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalCloudRecoveryPoint(
+      id: serializer.fromJson<String>(json['id']),
+      userId: serializer.fromJson<String>(json['userId']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      reason: serializer.fromJson<String>(json['reason']),
+      sourceDeviceName: serializer.fromJson<String?>(json['sourceDeviceName']),
+      dataUpdatedAt: serializer.fromJson<DateTime>(json['dataUpdatedAt']),
+      rowCount: serializer.fromJson<int>(json['rowCount']),
+      payload: serializer.fromJson<String>(json['payload']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'userId': serializer.toJson<String>(userId),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'reason': serializer.toJson<String>(reason),
+      'sourceDeviceName': serializer.toJson<String?>(sourceDeviceName),
+      'dataUpdatedAt': serializer.toJson<DateTime>(dataUpdatedAt),
+      'rowCount': serializer.toJson<int>(rowCount),
+      'payload': serializer.toJson<String>(payload),
+    };
+  }
+
+  LocalCloudRecoveryPoint copyWith({
+    String? id,
+    String? userId,
+    DateTime? createdAt,
+    String? reason,
+    Value<String?> sourceDeviceName = const Value.absent(),
+    DateTime? dataUpdatedAt,
+    int? rowCount,
+    String? payload,
+  }) => LocalCloudRecoveryPoint(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    createdAt: createdAt ?? this.createdAt,
+    reason: reason ?? this.reason,
+    sourceDeviceName: sourceDeviceName.present
+        ? sourceDeviceName.value
+        : this.sourceDeviceName,
+    dataUpdatedAt: dataUpdatedAt ?? this.dataUpdatedAt,
+    rowCount: rowCount ?? this.rowCount,
+    payload: payload ?? this.payload,
+  );
+  LocalCloudRecoveryPoint copyWithCompanion(
+    LocalCloudRecoveryPointsCompanion data,
+  ) {
+    return LocalCloudRecoveryPoint(
+      id: data.id.present ? data.id.value : this.id,
+      userId: data.userId.present ? data.userId.value : this.userId,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      reason: data.reason.present ? data.reason.value : this.reason,
+      sourceDeviceName: data.sourceDeviceName.present
+          ? data.sourceDeviceName.value
+          : this.sourceDeviceName,
+      dataUpdatedAt: data.dataUpdatedAt.present
+          ? data.dataUpdatedAt.value
+          : this.dataUpdatedAt,
+      rowCount: data.rowCount.present ? data.rowCount.value : this.rowCount,
+      payload: data.payload.present ? data.payload.value : this.payload,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalCloudRecoveryPoint(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('reason: $reason, ')
+          ..write('sourceDeviceName: $sourceDeviceName, ')
+          ..write('dataUpdatedAt: $dataUpdatedAt, ')
+          ..write('rowCount: $rowCount, ')
+          ..write('payload: $payload')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    userId,
+    createdAt,
+    reason,
+    sourceDeviceName,
+    dataUpdatedAt,
+    rowCount,
+    payload,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalCloudRecoveryPoint &&
+          other.id == this.id &&
+          other.userId == this.userId &&
+          other.createdAt == this.createdAt &&
+          other.reason == this.reason &&
+          other.sourceDeviceName == this.sourceDeviceName &&
+          other.dataUpdatedAt == this.dataUpdatedAt &&
+          other.rowCount == this.rowCount &&
+          other.payload == this.payload);
+}
+
+class LocalCloudRecoveryPointsCompanion
+    extends UpdateCompanion<LocalCloudRecoveryPoint> {
+  final Value<String> id;
+  final Value<String> userId;
+  final Value<DateTime> createdAt;
+  final Value<String> reason;
+  final Value<String?> sourceDeviceName;
+  final Value<DateTime> dataUpdatedAt;
+  final Value<int> rowCount;
+  final Value<String> payload;
+  final Value<int> rowid;
+  const LocalCloudRecoveryPointsCompanion({
+    this.id = const Value.absent(),
+    this.userId = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.reason = const Value.absent(),
+    this.sourceDeviceName = const Value.absent(),
+    this.dataUpdatedAt = const Value.absent(),
+    this.rowCount = const Value.absent(),
+    this.payload = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalCloudRecoveryPointsCompanion.insert({
+    required String id,
+    required String userId,
+    required DateTime createdAt,
+    required String reason,
+    this.sourceDeviceName = const Value.absent(),
+    required DateTime dataUpdatedAt,
+    required int rowCount,
+    required String payload,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       userId = Value(userId),
+       createdAt = Value(createdAt),
+       reason = Value(reason),
+       dataUpdatedAt = Value(dataUpdatedAt),
+       rowCount = Value(rowCount),
+       payload = Value(payload);
+  static Insertable<LocalCloudRecoveryPoint> custom({
+    Expression<String>? id,
+    Expression<String>? userId,
+    Expression<DateTime>? createdAt,
+    Expression<String>? reason,
+    Expression<String>? sourceDeviceName,
+    Expression<DateTime>? dataUpdatedAt,
+    Expression<int>? rowCount,
+    Expression<String>? payload,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (userId != null) 'user_id': userId,
+      if (createdAt != null) 'created_at': createdAt,
+      if (reason != null) 'reason': reason,
+      if (sourceDeviceName != null) 'source_device_name': sourceDeviceName,
+      if (dataUpdatedAt != null) 'data_updated_at': dataUpdatedAt,
+      if (rowCount != null) 'row_count': rowCount,
+      if (payload != null) 'payload': payload,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalCloudRecoveryPointsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? userId,
+    Value<DateTime>? createdAt,
+    Value<String>? reason,
+    Value<String?>? sourceDeviceName,
+    Value<DateTime>? dataUpdatedAt,
+    Value<int>? rowCount,
+    Value<String>? payload,
+    Value<int>? rowid,
+  }) {
+    return LocalCloudRecoveryPointsCompanion(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      createdAt: createdAt ?? this.createdAt,
+      reason: reason ?? this.reason,
+      sourceDeviceName: sourceDeviceName ?? this.sourceDeviceName,
+      dataUpdatedAt: dataUpdatedAt ?? this.dataUpdatedAt,
+      rowCount: rowCount ?? this.rowCount,
+      payload: payload ?? this.payload,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (reason.present) {
+      map['reason'] = Variable<String>(reason.value);
+    }
+    if (sourceDeviceName.present) {
+      map['source_device_name'] = Variable<String>(sourceDeviceName.value);
+    }
+    if (dataUpdatedAt.present) {
+      map['data_updated_at'] = Variable<DateTime>(dataUpdatedAt.value);
+    }
+    if (rowCount.present) {
+      map['row_count'] = Variable<int>(rowCount.value);
+    }
+    if (payload.present) {
+      map['payload'] = Variable<String>(payload.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalCloudRecoveryPointsCompanion(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('reason: $reason, ')
+          ..write('sourceDeviceName: $sourceDeviceName, ')
+          ..write('dataUpdatedAt: $dataUpdatedAt, ')
+          ..write('rowCount: $rowCount, ')
+          ..write('payload: $payload, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$PactaDatabase extends GeneratedDatabase {
   _$PactaDatabase(QueryExecutor e) : super(e);
   $PactaDatabaseManager get managers => $PactaDatabaseManager(this);
@@ -12731,6 +13260,8 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
       $LocalUserLifecycleStatesTable(this);
   late final $LocalProfileAccountsTable localProfileAccounts =
       $LocalProfileAccountsTable(this);
+  late final $LocalCloudRecoveryPointsTable localCloudRecoveryPoints =
+      $LocalCloudRecoveryPointsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -12758,6 +13289,7 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
     localCalendarBlocks,
     localUserLifecycleStates,
     localProfileAccounts,
+    localCloudRecoveryPoints,
   ];
 }
 
@@ -19164,6 +19696,286 @@ typedef $$LocalProfileAccountsTableProcessedTableManager =
       LocalProfileAccount,
       PrefetchHooks Function()
     >;
+typedef $$LocalCloudRecoveryPointsTableCreateCompanionBuilder =
+    LocalCloudRecoveryPointsCompanion Function({
+      required String id,
+      required String userId,
+      required DateTime createdAt,
+      required String reason,
+      Value<String?> sourceDeviceName,
+      required DateTime dataUpdatedAt,
+      required int rowCount,
+      required String payload,
+      Value<int> rowid,
+    });
+typedef $$LocalCloudRecoveryPointsTableUpdateCompanionBuilder =
+    LocalCloudRecoveryPointsCompanion Function({
+      Value<String> id,
+      Value<String> userId,
+      Value<DateTime> createdAt,
+      Value<String> reason,
+      Value<String?> sourceDeviceName,
+      Value<DateTime> dataUpdatedAt,
+      Value<int> rowCount,
+      Value<String> payload,
+      Value<int> rowid,
+    });
+
+class $$LocalCloudRecoveryPointsTableFilterComposer
+    extends Composer<_$PactaDatabase, $LocalCloudRecoveryPointsTable> {
+  $$LocalCloudRecoveryPointsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceDeviceName => $composableBuilder(
+    column: $table.sourceDeviceName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get dataUpdatedAt => $composableBuilder(
+    column: $table.dataUpdatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get rowCount => $composableBuilder(
+    column: $table.rowCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalCloudRecoveryPointsTableOrderingComposer
+    extends Composer<_$PactaDatabase, $LocalCloudRecoveryPointsTable> {
+  $$LocalCloudRecoveryPointsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceDeviceName => $composableBuilder(
+    column: $table.sourceDeviceName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get dataUpdatedAt => $composableBuilder(
+    column: $table.dataUpdatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get rowCount => $composableBuilder(
+    column: $table.rowCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalCloudRecoveryPointsTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $LocalCloudRecoveryPointsTable> {
+  $$LocalCloudRecoveryPointsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get reason =>
+      $composableBuilder(column: $table.reason, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceDeviceName => $composableBuilder(
+    column: $table.sourceDeviceName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get dataUpdatedAt => $composableBuilder(
+    column: $table.dataUpdatedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get rowCount =>
+      $composableBuilder(column: $table.rowCount, builder: (column) => column);
+
+  GeneratedColumn<String> get payload =>
+      $composableBuilder(column: $table.payload, builder: (column) => column);
+}
+
+class $$LocalCloudRecoveryPointsTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $LocalCloudRecoveryPointsTable,
+          LocalCloudRecoveryPoint,
+          $$LocalCloudRecoveryPointsTableFilterComposer,
+          $$LocalCloudRecoveryPointsTableOrderingComposer,
+          $$LocalCloudRecoveryPointsTableAnnotationComposer,
+          $$LocalCloudRecoveryPointsTableCreateCompanionBuilder,
+          $$LocalCloudRecoveryPointsTableUpdateCompanionBuilder,
+          (
+            LocalCloudRecoveryPoint,
+            BaseReferences<
+              _$PactaDatabase,
+              $LocalCloudRecoveryPointsTable,
+              LocalCloudRecoveryPoint
+            >,
+          ),
+          LocalCloudRecoveryPoint,
+          PrefetchHooks Function()
+        > {
+  $$LocalCloudRecoveryPointsTableTableManager(
+    _$PactaDatabase db,
+    $LocalCloudRecoveryPointsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalCloudRecoveryPointsTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$LocalCloudRecoveryPointsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$LocalCloudRecoveryPointsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> userId = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<String> reason = const Value.absent(),
+                Value<String?> sourceDeviceName = const Value.absent(),
+                Value<DateTime> dataUpdatedAt = const Value.absent(),
+                Value<int> rowCount = const Value.absent(),
+                Value<String> payload = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalCloudRecoveryPointsCompanion(
+                id: id,
+                userId: userId,
+                createdAt: createdAt,
+                reason: reason,
+                sourceDeviceName: sourceDeviceName,
+                dataUpdatedAt: dataUpdatedAt,
+                rowCount: rowCount,
+                payload: payload,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String userId,
+                required DateTime createdAt,
+                required String reason,
+                Value<String?> sourceDeviceName = const Value.absent(),
+                required DateTime dataUpdatedAt,
+                required int rowCount,
+                required String payload,
+                Value<int> rowid = const Value.absent(),
+              }) => LocalCloudRecoveryPointsCompanion.insert(
+                id: id,
+                userId: userId,
+                createdAt: createdAt,
+                reason: reason,
+                sourceDeviceName: sourceDeviceName,
+                dataUpdatedAt: dataUpdatedAt,
+                rowCount: rowCount,
+                payload: payload,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalCloudRecoveryPointsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $LocalCloudRecoveryPointsTable,
+      LocalCloudRecoveryPoint,
+      $$LocalCloudRecoveryPointsTableFilterComposer,
+      $$LocalCloudRecoveryPointsTableOrderingComposer,
+      $$LocalCloudRecoveryPointsTableAnnotationComposer,
+      $$LocalCloudRecoveryPointsTableCreateCompanionBuilder,
+      $$LocalCloudRecoveryPointsTableUpdateCompanionBuilder,
+      (
+        LocalCloudRecoveryPoint,
+        BaseReferences<
+          _$PactaDatabase,
+          $LocalCloudRecoveryPointsTable,
+          LocalCloudRecoveryPoint
+        >,
+      ),
+      LocalCloudRecoveryPoint,
+      PrefetchHooks Function()
+    >;
 
 class $PactaDatabaseManager {
   final _$PactaDatabase _db;
@@ -19237,4 +20049,9 @@ class $PactaDatabaseManager {
       );
   $$LocalProfileAccountsTableTableManager get localProfileAccounts =>
       $$LocalProfileAccountsTableTableManager(_db, _db.localProfileAccounts);
+  $$LocalCloudRecoveryPointsTableTableManager get localCloudRecoveryPoints =>
+      $$LocalCloudRecoveryPointsTableTableManager(
+        _db,
+        _db.localCloudRecoveryPoints,
+      );
 }

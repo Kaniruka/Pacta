@@ -190,7 +190,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('单点待确认例外节点在弹窗查看规则与例外后直接确认', (tester) async {
+  testWidgets('单点待确认例外节点在弹层只看当前规则并直接确认', (tester) async {
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
@@ -206,8 +206,9 @@ void main() {
 
     await openNode(tester, card);
     expect(find.text('阅读十分钟'), findsOneWidget);
-    expect(find.text('例外与判例'), findsOneWidget);
-    expect(find.text('出差时顺延'), findsOneWidget);
+    // The node sheet keeps one reading layer: the rule in force and actions.
+    expect(find.text('例外与判例'), findsNothing);
+    expect(find.text('出差时顺延'), findsNothing);
     await tester.tap(find.text('确认'));
     await settleUi(tester);
 

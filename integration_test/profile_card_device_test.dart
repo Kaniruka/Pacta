@@ -188,8 +188,9 @@ Future<void> _savePng(
   String name,
 ) async {
   final object = boundaryKey.currentContext?.findRenderObject();
-  if (object is! RenderRepaintBoundary)
+  if (object is! RenderRepaintBoundary) {
     fail('screenshot "$name": boundary missing');
+  }
   final image = await object.toImage(pixelRatio: tester.view.devicePixelRatio);
   final data = await image.toByteData(format: ui.ImageByteFormat.png);
   image.dispose();
