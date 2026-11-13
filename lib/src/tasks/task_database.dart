@@ -330,6 +330,27 @@ class LocalUserLifecycleStates extends Table {
   Set<Column<Object>> get primaryKey => {userId};
 }
 
+/// Cached account profile: display name and a bounded avatar binary.
+///
+/// Kept outside the business snapshot so restoring one never rolls the
+/// account identity back, and so an offline device can still show it.
+class LocalProfileAccounts extends Table {
+  TextColumn get userId => text()();
+  TextColumn get displayName => text().withDefault(const Constant(''))();
+  TextColumn get avatarMimeType => text().nullable()();
+  BlobColumn get avatarBytes => blob().nullable()();
+  BoolColumn get pendingSave => boolean().withDefault(const Constant(false))();
+  TextColumn get syncError => text().nullable()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  /// Increments on every payload change so a late network response can only
+  /// commit when no newer local edit happened meanwhile.
+  IntColumn get editSequence => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId};
+}
+
 /// 恢复前保存的本机业务快照。刻意不属于可上传的业务表清单：恢复准备动作
 /// 因此不会覆盖云端数据，且按用户隔离并参与账号清除。
 class LocalCloudRecoveryPoints extends Table {
@@ -369,6 +390,7 @@ class LocalCloudRecoveryPoints extends Table {
     LocalCalendarSources,
     LocalCalendarBlocks,
     LocalUserLifecycleStates,
+    LocalProfileAccounts,
     LocalCloudRecoveryPoints,
   ],
 )
@@ -400,6 +422,7 @@ class PactaDatabase extends _$PactaDatabase {
       UNION SELECT user_id FROM local_tasks
       UNION SELECT user_id FROM local_goals
       UNION SELECT user_id FROM local_user_lifecycle_states
+      UNION SELECT user_id FROM local_profile_accounts
       UNION SELECT user_id FROM local_cloud_recovery_points
     ''').get();
     return rows.map((row) => row.read<String>('user_id')).toSet();
@@ -478,13 +501,16 @@ class PactaDatabase extends _$PactaDatabase {
       await (delete(
         localUserLifecycleStates,
       )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        localProfileAccounts,
+      )..where((row) => row.userId.equals(userId))).go();
     });
 
     return true;
   }
 
   @override
-  int get schemaVersion => 26;
+  int get schemaVersion => 28;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -652,6 +678,15 @@ class PactaDatabase extends _$PactaDatabase {
       }
       if (from < 26) {
         await m.createTable(localCloudRecoveryPoints);
+      }
+      if (from < 27) {
+        await m.createTable(localProfileAccounts);
+      }
+      if (from >= 27 && from < 28) {
+        await m.addColumn(
+          localProfileAccounts,
+          localProfileAccounts.editSequence,
+        );
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);

@@ -12190,6 +12190,554 @@ class LocalUserLifecycleStatesCompanion
   }
 }
 
+class $LocalProfileAccountsTable extends LocalProfileAccounts
+    with TableInfo<$LocalProfileAccountsTable, LocalProfileAccount> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalProfileAccountsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _displayNameMeta = const VerificationMeta(
+    'displayName',
+  );
+  @override
+  late final GeneratedColumn<String> displayName = GeneratedColumn<String>(
+    'display_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _avatarMimeTypeMeta = const VerificationMeta(
+    'avatarMimeType',
+  );
+  @override
+  late final GeneratedColumn<String> avatarMimeType = GeneratedColumn<String>(
+    'avatar_mime_type',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _avatarBytesMeta = const VerificationMeta(
+    'avatarBytes',
+  );
+  @override
+  late final GeneratedColumn<Uint8List> avatarBytes =
+      GeneratedColumn<Uint8List>(
+        'avatar_bytes',
+        aliasedName,
+        true,
+        type: DriftSqlType.blob,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _pendingSaveMeta = const VerificationMeta(
+    'pendingSave',
+  );
+  @override
+  late final GeneratedColumn<bool> pendingSave = GeneratedColumn<bool>(
+    'pending_save',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("pending_save" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _syncErrorMeta = const VerificationMeta(
+    'syncError',
+  );
+  @override
+  late final GeneratedColumn<String> syncError = GeneratedColumn<String>(
+    'sync_error',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _editSequenceMeta = const VerificationMeta(
+    'editSequence',
+  );
+  @override
+  late final GeneratedColumn<int> editSequence = GeneratedColumn<int>(
+    'edit_sequence',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    displayName,
+    avatarMimeType,
+    avatarBytes,
+    pendingSave,
+    syncError,
+    updatedAt,
+    editSequence,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_profile_accounts';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalProfileAccount> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('display_name')) {
+      context.handle(
+        _displayNameMeta,
+        displayName.isAcceptableOrUnknown(
+          data['display_name']!,
+          _displayNameMeta,
+        ),
+      );
+    }
+    if (data.containsKey('avatar_mime_type')) {
+      context.handle(
+        _avatarMimeTypeMeta,
+        avatarMimeType.isAcceptableOrUnknown(
+          data['avatar_mime_type']!,
+          _avatarMimeTypeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('avatar_bytes')) {
+      context.handle(
+        _avatarBytesMeta,
+        avatarBytes.isAcceptableOrUnknown(
+          data['avatar_bytes']!,
+          _avatarBytesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('pending_save')) {
+      context.handle(
+        _pendingSaveMeta,
+        pendingSave.isAcceptableOrUnknown(
+          data['pending_save']!,
+          _pendingSaveMeta,
+        ),
+      );
+    }
+    if (data.containsKey('sync_error')) {
+      context.handle(
+        _syncErrorMeta,
+        syncError.isAcceptableOrUnknown(data['sync_error']!, _syncErrorMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('edit_sequence')) {
+      context.handle(
+        _editSequenceMeta,
+        editSequence.isAcceptableOrUnknown(
+          data['edit_sequence']!,
+          _editSequenceMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId};
+  @override
+  LocalProfileAccount map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalProfileAccount(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      displayName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}display_name'],
+      )!,
+      avatarMimeType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}avatar_mime_type'],
+      ),
+      avatarBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.blob,
+        data['${effectivePrefix}avatar_bytes'],
+      ),
+      pendingSave: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}pending_save'],
+      )!,
+      syncError: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sync_error'],
+      ),
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      editSequence: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}edit_sequence'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalProfileAccountsTable createAlias(String alias) {
+    return $LocalProfileAccountsTable(attachedDatabase, alias);
+  }
+}
+
+class LocalProfileAccount extends DataClass
+    implements Insertable<LocalProfileAccount> {
+  final String userId;
+  final String displayName;
+  final String? avatarMimeType;
+  final Uint8List? avatarBytes;
+  final bool pendingSave;
+  final String? syncError;
+  final DateTime updatedAt;
+
+  /// Increments on every payload change so a late network response can only
+  /// commit when no newer local edit happened meanwhile.
+  final int editSequence;
+  const LocalProfileAccount({
+    required this.userId,
+    required this.displayName,
+    this.avatarMimeType,
+    this.avatarBytes,
+    required this.pendingSave,
+    this.syncError,
+    required this.updatedAt,
+    required this.editSequence,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['display_name'] = Variable<String>(displayName);
+    if (!nullToAbsent || avatarMimeType != null) {
+      map['avatar_mime_type'] = Variable<String>(avatarMimeType);
+    }
+    if (!nullToAbsent || avatarBytes != null) {
+      map['avatar_bytes'] = Variable<Uint8List>(avatarBytes);
+    }
+    map['pending_save'] = Variable<bool>(pendingSave);
+    if (!nullToAbsent || syncError != null) {
+      map['sync_error'] = Variable<String>(syncError);
+    }
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    map['edit_sequence'] = Variable<int>(editSequence);
+    return map;
+  }
+
+  LocalProfileAccountsCompanion toCompanion(bool nullToAbsent) {
+    return LocalProfileAccountsCompanion(
+      userId: Value(userId),
+      displayName: Value(displayName),
+      avatarMimeType: avatarMimeType == null && nullToAbsent
+          ? const Value.absent()
+          : Value(avatarMimeType),
+      avatarBytes: avatarBytes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(avatarBytes),
+      pendingSave: Value(pendingSave),
+      syncError: syncError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(syncError),
+      updatedAt: Value(updatedAt),
+      editSequence: Value(editSequence),
+    );
+  }
+
+  factory LocalProfileAccount.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalProfileAccount(
+      userId: serializer.fromJson<String>(json['userId']),
+      displayName: serializer.fromJson<String>(json['displayName']),
+      avatarMimeType: serializer.fromJson<String?>(json['avatarMimeType']),
+      avatarBytes: serializer.fromJson<Uint8List?>(json['avatarBytes']),
+      pendingSave: serializer.fromJson<bool>(json['pendingSave']),
+      syncError: serializer.fromJson<String?>(json['syncError']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      editSequence: serializer.fromJson<int>(json['editSequence']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'displayName': serializer.toJson<String>(displayName),
+      'avatarMimeType': serializer.toJson<String?>(avatarMimeType),
+      'avatarBytes': serializer.toJson<Uint8List?>(avatarBytes),
+      'pendingSave': serializer.toJson<bool>(pendingSave),
+      'syncError': serializer.toJson<String?>(syncError),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'editSequence': serializer.toJson<int>(editSequence),
+    };
+  }
+
+  LocalProfileAccount copyWith({
+    String? userId,
+    String? displayName,
+    Value<String?> avatarMimeType = const Value.absent(),
+    Value<Uint8List?> avatarBytes = const Value.absent(),
+    bool? pendingSave,
+    Value<String?> syncError = const Value.absent(),
+    DateTime? updatedAt,
+    int? editSequence,
+  }) => LocalProfileAccount(
+    userId: userId ?? this.userId,
+    displayName: displayName ?? this.displayName,
+    avatarMimeType: avatarMimeType.present
+        ? avatarMimeType.value
+        : this.avatarMimeType,
+    avatarBytes: avatarBytes.present ? avatarBytes.value : this.avatarBytes,
+    pendingSave: pendingSave ?? this.pendingSave,
+    syncError: syncError.present ? syncError.value : this.syncError,
+    updatedAt: updatedAt ?? this.updatedAt,
+    editSequence: editSequence ?? this.editSequence,
+  );
+  LocalProfileAccount copyWithCompanion(LocalProfileAccountsCompanion data) {
+    return LocalProfileAccount(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      displayName: data.displayName.present
+          ? data.displayName.value
+          : this.displayName,
+      avatarMimeType: data.avatarMimeType.present
+          ? data.avatarMimeType.value
+          : this.avatarMimeType,
+      avatarBytes: data.avatarBytes.present
+          ? data.avatarBytes.value
+          : this.avatarBytes,
+      pendingSave: data.pendingSave.present
+          ? data.pendingSave.value
+          : this.pendingSave,
+      syncError: data.syncError.present ? data.syncError.value : this.syncError,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      editSequence: data.editSequence.present
+          ? data.editSequence.value
+          : this.editSequence,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalProfileAccount(')
+          ..write('userId: $userId, ')
+          ..write('displayName: $displayName, ')
+          ..write('avatarMimeType: $avatarMimeType, ')
+          ..write('avatarBytes: $avatarBytes, ')
+          ..write('pendingSave: $pendingSave, ')
+          ..write('syncError: $syncError, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('editSequence: $editSequence')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    userId,
+    displayName,
+    avatarMimeType,
+    $driftBlobEquality.hash(avatarBytes),
+    pendingSave,
+    syncError,
+    updatedAt,
+    editSequence,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalProfileAccount &&
+          other.userId == this.userId &&
+          other.displayName == this.displayName &&
+          other.avatarMimeType == this.avatarMimeType &&
+          $driftBlobEquality.equals(other.avatarBytes, this.avatarBytes) &&
+          other.pendingSave == this.pendingSave &&
+          other.syncError == this.syncError &&
+          other.updatedAt == this.updatedAt &&
+          other.editSequence == this.editSequence);
+}
+
+class LocalProfileAccountsCompanion
+    extends UpdateCompanion<LocalProfileAccount> {
+  final Value<String> userId;
+  final Value<String> displayName;
+  final Value<String?> avatarMimeType;
+  final Value<Uint8List?> avatarBytes;
+  final Value<bool> pendingSave;
+  final Value<String?> syncError;
+  final Value<DateTime> updatedAt;
+  final Value<int> editSequence;
+  final Value<int> rowid;
+  const LocalProfileAccountsCompanion({
+    this.userId = const Value.absent(),
+    this.displayName = const Value.absent(),
+    this.avatarMimeType = const Value.absent(),
+    this.avatarBytes = const Value.absent(),
+    this.pendingSave = const Value.absent(),
+    this.syncError = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.editSequence = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalProfileAccountsCompanion.insert({
+    required String userId,
+    this.displayName = const Value.absent(),
+    this.avatarMimeType = const Value.absent(),
+    this.avatarBytes = const Value.absent(),
+    this.pendingSave = const Value.absent(),
+    this.syncError = const Value.absent(),
+    required DateTime updatedAt,
+    this.editSequence = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       updatedAt = Value(updatedAt);
+  static Insertable<LocalProfileAccount> custom({
+    Expression<String>? userId,
+    Expression<String>? displayName,
+    Expression<String>? avatarMimeType,
+    Expression<Uint8List>? avatarBytes,
+    Expression<bool>? pendingSave,
+    Expression<String>? syncError,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? editSequence,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (displayName != null) 'display_name': displayName,
+      if (avatarMimeType != null) 'avatar_mime_type': avatarMimeType,
+      if (avatarBytes != null) 'avatar_bytes': avatarBytes,
+      if (pendingSave != null) 'pending_save': pendingSave,
+      if (syncError != null) 'sync_error': syncError,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (editSequence != null) 'edit_sequence': editSequence,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalProfileAccountsCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? displayName,
+    Value<String?>? avatarMimeType,
+    Value<Uint8List?>? avatarBytes,
+    Value<bool>? pendingSave,
+    Value<String?>? syncError,
+    Value<DateTime>? updatedAt,
+    Value<int>? editSequence,
+    Value<int>? rowid,
+  }) {
+    return LocalProfileAccountsCompanion(
+      userId: userId ?? this.userId,
+      displayName: displayName ?? this.displayName,
+      avatarMimeType: avatarMimeType ?? this.avatarMimeType,
+      avatarBytes: avatarBytes ?? this.avatarBytes,
+      pendingSave: pendingSave ?? this.pendingSave,
+      syncError: syncError ?? this.syncError,
+      updatedAt: updatedAt ?? this.updatedAt,
+      editSequence: editSequence ?? this.editSequence,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (displayName.present) {
+      map['display_name'] = Variable<String>(displayName.value);
+    }
+    if (avatarMimeType.present) {
+      map['avatar_mime_type'] = Variable<String>(avatarMimeType.value);
+    }
+    if (avatarBytes.present) {
+      map['avatar_bytes'] = Variable<Uint8List>(avatarBytes.value);
+    }
+    if (pendingSave.present) {
+      map['pending_save'] = Variable<bool>(pendingSave.value);
+    }
+    if (syncError.present) {
+      map['sync_error'] = Variable<String>(syncError.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (editSequence.present) {
+      map['edit_sequence'] = Variable<int>(editSequence.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalProfileAccountsCompanion(')
+          ..write('userId: $userId, ')
+          ..write('displayName: $displayName, ')
+          ..write('avatarMimeType: $avatarMimeType, ')
+          ..write('avatarBytes: $avatarBytes, ')
+          ..write('pendingSave: $pendingSave, ')
+          ..write('syncError: $syncError, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('editSequence: $editSequence, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $LocalCloudRecoveryPointsTable extends LocalCloudRecoveryPoints
     with TableInfo<$LocalCloudRecoveryPointsTable, LocalCloudRecoveryPoint> {
   @override
@@ -12764,6 +13312,8 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
       $LocalCalendarBlocksTable(this);
   late final $LocalUserLifecycleStatesTable localUserLifecycleStates =
       $LocalUserLifecycleStatesTable(this);
+  late final $LocalProfileAccountsTable localProfileAccounts =
+      $LocalProfileAccountsTable(this);
   late final $LocalCloudRecoveryPointsTable localCloudRecoveryPoints =
       $LocalCloudRecoveryPointsTable(this);
   @override
@@ -12792,6 +13342,7 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
     localCalendarSources,
     localCalendarBlocks,
     localUserLifecycleStates,
+    localProfileAccounts,
     localCloudRecoveryPoints,
   ];
 }
@@ -18937,6 +19488,289 @@ typedef $$LocalUserLifecycleStatesTableProcessedTableManager =
       LocalUserLifecycleState,
       PrefetchHooks Function()
     >;
+typedef $$LocalProfileAccountsTableCreateCompanionBuilder =
+    LocalProfileAccountsCompanion Function({
+      required String userId,
+      Value<String> displayName,
+      Value<String?> avatarMimeType,
+      Value<Uint8List?> avatarBytes,
+      Value<bool> pendingSave,
+      Value<String?> syncError,
+      required DateTime updatedAt,
+      Value<int> editSequence,
+      Value<int> rowid,
+    });
+typedef $$LocalProfileAccountsTableUpdateCompanionBuilder =
+    LocalProfileAccountsCompanion Function({
+      Value<String> userId,
+      Value<String> displayName,
+      Value<String?> avatarMimeType,
+      Value<Uint8List?> avatarBytes,
+      Value<bool> pendingSave,
+      Value<String?> syncError,
+      Value<DateTime> updatedAt,
+      Value<int> editSequence,
+      Value<int> rowid,
+    });
+
+class $$LocalProfileAccountsTableFilterComposer
+    extends Composer<_$PactaDatabase, $LocalProfileAccountsTable> {
+  $$LocalProfileAccountsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get avatarMimeType => $composableBuilder(
+    column: $table.avatarMimeType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<Uint8List> get avatarBytes => $composableBuilder(
+    column: $table.avatarBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get pendingSave => $composableBuilder(
+    column: $table.pendingSave,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get syncError => $composableBuilder(
+    column: $table.syncError,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get editSequence => $composableBuilder(
+    column: $table.editSequence,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalProfileAccountsTableOrderingComposer
+    extends Composer<_$PactaDatabase, $LocalProfileAccountsTable> {
+  $$LocalProfileAccountsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get avatarMimeType => $composableBuilder(
+    column: $table.avatarMimeType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<Uint8List> get avatarBytes => $composableBuilder(
+    column: $table.avatarBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get pendingSave => $composableBuilder(
+    column: $table.pendingSave,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get syncError => $composableBuilder(
+    column: $table.syncError,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get editSequence => $composableBuilder(
+    column: $table.editSequence,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalProfileAccountsTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $LocalProfileAccountsTable> {
+  $$LocalProfileAccountsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get avatarMimeType => $composableBuilder(
+    column: $table.avatarMimeType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<Uint8List> get avatarBytes => $composableBuilder(
+    column: $table.avatarBytes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get pendingSave => $composableBuilder(
+    column: $table.pendingSave,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get syncError =>
+      $composableBuilder(column: $table.syncError, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get editSequence => $composableBuilder(
+    column: $table.editSequence,
+    builder: (column) => column,
+  );
+}
+
+class $$LocalProfileAccountsTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $LocalProfileAccountsTable,
+          LocalProfileAccount,
+          $$LocalProfileAccountsTableFilterComposer,
+          $$LocalProfileAccountsTableOrderingComposer,
+          $$LocalProfileAccountsTableAnnotationComposer,
+          $$LocalProfileAccountsTableCreateCompanionBuilder,
+          $$LocalProfileAccountsTableUpdateCompanionBuilder,
+          (
+            LocalProfileAccount,
+            BaseReferences<
+              _$PactaDatabase,
+              $LocalProfileAccountsTable,
+              LocalProfileAccount
+            >,
+          ),
+          LocalProfileAccount,
+          PrefetchHooks Function()
+        > {
+  $$LocalProfileAccountsTableTableManager(
+    _$PactaDatabase db,
+    $LocalProfileAccountsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalProfileAccountsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalProfileAccountsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$LocalProfileAccountsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> displayName = const Value.absent(),
+                Value<String?> avatarMimeType = const Value.absent(),
+                Value<Uint8List?> avatarBytes = const Value.absent(),
+                Value<bool> pendingSave = const Value.absent(),
+                Value<String?> syncError = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> editSequence = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalProfileAccountsCompanion(
+                userId: userId,
+                displayName: displayName,
+                avatarMimeType: avatarMimeType,
+                avatarBytes: avatarBytes,
+                pendingSave: pendingSave,
+                syncError: syncError,
+                updatedAt: updatedAt,
+                editSequence: editSequence,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                Value<String> displayName = const Value.absent(),
+                Value<String?> avatarMimeType = const Value.absent(),
+                Value<Uint8List?> avatarBytes = const Value.absent(),
+                Value<bool> pendingSave = const Value.absent(),
+                Value<String?> syncError = const Value.absent(),
+                required DateTime updatedAt,
+                Value<int> editSequence = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalProfileAccountsCompanion.insert(
+                userId: userId,
+                displayName: displayName,
+                avatarMimeType: avatarMimeType,
+                avatarBytes: avatarBytes,
+                pendingSave: pendingSave,
+                syncError: syncError,
+                updatedAt: updatedAt,
+                editSequence: editSequence,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalProfileAccountsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $LocalProfileAccountsTable,
+      LocalProfileAccount,
+      $$LocalProfileAccountsTableFilterComposer,
+      $$LocalProfileAccountsTableOrderingComposer,
+      $$LocalProfileAccountsTableAnnotationComposer,
+      $$LocalProfileAccountsTableCreateCompanionBuilder,
+      $$LocalProfileAccountsTableUpdateCompanionBuilder,
+      (
+        LocalProfileAccount,
+        BaseReferences<
+          _$PactaDatabase,
+          $LocalProfileAccountsTable,
+          LocalProfileAccount
+        >,
+      ),
+      LocalProfileAccount,
+      PrefetchHooks Function()
+    >;
 typedef $$LocalCloudRecoveryPointsTableCreateCompanionBuilder =
     LocalCloudRecoveryPointsCompanion Function({
       required String id,
@@ -19288,6 +20122,8 @@ class $PactaDatabaseManager {
         _db,
         _db.localUserLifecycleStates,
       );
+  $$LocalProfileAccountsTableTableManager get localProfileAccounts =>
+      $$LocalProfileAccountsTableTableManager(_db, _db.localProfileAccounts);
   $$LocalCloudRecoveryPointsTableTableManager get localCloudRecoveryPoints =>
       $$LocalCloudRecoveryPointsTableTableManager(
         _db,

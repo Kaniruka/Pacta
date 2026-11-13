@@ -37,6 +37,9 @@ class FlutterWindow : public Win32Window {
   void HandleFocusStatusCall(
       const flutter::MethodCall<flutter::EncodableValue>& call,
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
+  void HandleProfileAvatarCall(
+      const flutter::MethodCall<flutter::EncodableValue>& call,
+      std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
   // The project to run.
   flutter::DartProject project_;
@@ -47,6 +50,8 @@ class FlutterWindow : public Win32Window {
       flutter::MethodChannel<flutter::EncodableValue>> focus_status_channel_;
   std::unique_ptr<
       flutter::MethodChannel<flutter::EncodableValue>> source_device_info_channel_;
+  std::unique_ptr<
+      flutter::MethodChannel<flutter::EncodableValue>> profile_avatar_channel_;
   NOTIFYICONDATAW tray_icon_data_{};
   bool tray_icon_added_ = false;
   bool background_running_enabled_ = false;

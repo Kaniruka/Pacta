@@ -50,7 +50,8 @@ python3 "$PWD/.agents/skills/ui-ux-pro-max/scripts/search.py" "error recovery ac
 | 专注选择/执行恢复 | [lib/main.dart](../../lib/main.dart) 的 `FocusChainPage` / `FocusTaskPickerPage` / `FocusSetupDialog` / `AppointmentPreparationPage` / `FocusSessionPage`；另查 `_TaskTile` 的看板入口和 `AppShell._openFocusFlow` 的通知恢复调度；业务操作复用[领域实现入口](domain.md#现有实现与复用) | [任务导航](../../test/focus/focus_task_navigation_test.dart)、[预约设置](../../test/focus/appointment_configuration_page_test.dart) |
 | 国策画布与视图偏好 | [NationalFocusTreePage](../../lib/src/national_focus/national_focus_tree_page.dart) 与 [NationalFocusViewPreferences](../../lib/src/national_focus/national_focus_view_preferences.dart)；本机偏好与业务快照分开 | [国策页面测试目录](../../test/national_focus/)、[真实重启证据](../issue-68-device-validation.md) |
 | 我的同步卡片与弹层 | [CloudSyncCard](../../lib/src/sync/cloud_sync_card.dart)复用共享检查和结果状态，跨入口刷新由 App 组合负责；检查 `MyPage` 与 `_openAiManualSync` 两处接入参数及下载后刷新，保持受影响入口一致 | [卡片](../../test/sync/cloud_sync_card_test.dart)、[App 级同步](../../test/sync/manual_cloud_sync_app_test.dart) |
-| 共用主题 | [lib/main.dart](../../lib/main.dart) 的 `_pactaTheme`；先取语义主题与现有相邻组件，再决定是否需要公共扩展 | [布局](../../test/ui_layout_test.dart)、[二级页面布局](../../test/ui_secondary_layout_test.dart) |
+| 我的名片、资料编辑与统计明细 | [lib/src/profile/](../../lib/src/profile/) 的 `MyProfileCard`、`ProfileEditPage` 与两个统计明细页；资料缓存和账号写入走 `LocalProfileRepository`，业务快照不包含资料，名片统计只读保留记录 | [名片与编辑](../../test/profile/profile_card_test.dart)、[统计边界](../../test/profile/profile_statistics_test.dart)、[快照与清除隔离](../../test/profile/profile_snapshot_isolation_test.dart) |
+| 共用主题 | [lib/main.dart](../../lib/main.dart) 的 `pactaTheme`；先取语义主题与现有相邻组件，再决定是否需要公共扩展 | [布局](../../test/ui_layout_test.dart)、[二级页面布局](../../test/ui_secondary_layout_test.dart) |
 
 ## UI 要求
 

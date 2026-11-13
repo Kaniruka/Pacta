@@ -60,7 +60,13 @@ Map<FocusChainMode, FocusSessionStatistics> focusStatisticsByMode(
   });
 }
 
-int _focusSecondsForProjection(FocusSession session) {
+/// Reliable effective time of one settled session.
+///
+/// Shared by the focus statistics and the My-page profile statistics so both
+/// surfaces keep one time basis: paused or excluded intervals are absent,
+/// intervals awaiting clock review are omitted, and legacy sessions without
+/// interval data fall back to [FocusSession.effectiveSeconds].
+int focusEffectiveSecondsForSession(FocusSession session) {
   final intervals = session.effectiveIntervals;
   if (intervals.isEmpty) {
     return session.effectiveSeconds > 0 ? session.effectiveSeconds : 0;
@@ -76,3 +82,6 @@ int _focusSecondsForProjection(FocusSession session) {
     return seconds + interval.durationSeconds;
   });
 }
+
+int _focusSecondsForProjection(FocusSession session) =>
+    focusEffectiveSecondsForSession(session);

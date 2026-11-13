@@ -1,11 +1,17 @@
 #include "flutter_window.h"
 
+#include <objbase.h>
+#include <shobjidl.h>
+#include <windows.h>
+
 #include <algorithm>
+#include <cstdint>
+#include <fstream>
 #include <optional>
 #include <string>
 #include <utility>
 #include <variant>
-#include <windows.h>
+#include <vector>
 
 #include "flutter/generated_plugin_registrant.h"
 #include "resource.h"
@@ -17,6 +23,7 @@ constexpr UINT kTrayIconId = 1;
 constexpr UINT kOpenWindowCommand = 4201;
 constexpr UINT kExitAppCommand = 4202;
 constexpr UINT_PTR kTrayCleanupTimerId = 4203;
+constexpr std::streamsize kMaxAvatarSelectionBytes = 5 * 1024 * 1024 + 1;
 constexpr UINT kTrayCleanupDelayMs = 12000;
 
 std::wstring Utf8ToWide(const std::string& value) {
@@ -129,6 +136,16 @@ bool FlutterWindow::OnCreate() {
         result->Success(flutter::EncodableValue(metadata));
       });
 
+  profile_avatar_channel_ =
+      std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
+          flutter_controller_->engine()->messenger(),
+          "com.pacta/profile_avatar",
+          &flutter::StandardMethodCodec::GetInstance());
+  profile_avatar_channel_->SetMethodCallHandler(
+      [this](const auto& call, auto result) {
+        HandleProfileAvatarCall(call, std::move(result));
+      });
+
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
   });
@@ -145,6 +162,7 @@ void FlutterWindow::OnDestroy() {
   RemoveTrayIcon();
   focus_status_channel_.reset();
   source_device_info_channel_.reset();
+  profile_avatar_channel_.reset();
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }
@@ -290,6 +308,81 @@ void FlutterWindow::HandleFocusStatusCall(
   }
 
   result->NotImplemented();
+}
+
+// Opens the native single-image picker. The dialog is modal to the Pacta window
+// and only reads the file the person selected, so no folder or library access is
+// requested.
+void FlutterWindow::HandleProfileAvatarCall(
+    const flutter::MethodCall<flutter::EncodableValue>& call,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  if (call.method_name() != "pickImage") {
+    result->NotImplemented();
+    return;
+  }
+
+  const HRESULT com_status = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  const bool owns_com = SUCCEEDED(com_status);
+
+  IFileOpenDialog* dialog = nullptr;
+  HRESULT status = CoCreateInstance(CLSID_FileOpenDialog, nullptr,
+                                    CLSCTX_INPROC_SERVER,
+                                    IID_PPV_ARGS(&dialog));
+  if (FAILED(status) || dialog == nullptr) {
+    if (owns_com) CoUninitialize();
+    result->Error("avatar-pick-failed", "The system image picker could not open.");
+    return;
+  }
+
+  DWORD options = 0;
+  if (SUCCEEDED(dialog->GetOptions(&options))) {
+    dialog->SetOptions(options | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST |
+                       FOS_PATHMUSTEXIST);
+  }
+  COMDLG_FILTERSPEC filters[] = {{L"图片", L"*.png;*.jpg;*.jpeg"}};
+  dialog->SetFileTypes(1, filters);
+  dialog->SetTitle(L"选择头像图片");
+
+  status = dialog->Show(GetHandle());
+  if (FAILED(status)) {
+    dialog->Release();
+    if (owns_com) CoUninitialize();
+    if (status == HRESULT_FROM_WIN32(ERROR_CANCELLED)) {
+      result->Success();
+      return;
+    }
+    result->Error("avatar-pick-failed", "The system image picker could not open.");
+    return;
+  }
+
+  IShellItem* item = nullptr;
+  if (FAILED(dialog->GetResult(&item)) || item == nullptr) {
+    dialog->Release();
+    if (owns_com) CoUninitialize();
+    result->Error("avatar-pick-empty", "No image was returned.");
+    return;
+  }
+
+  PWSTR path = nullptr;
+  std::vector<uint8_t> bytes;
+  if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &path)) && path != nullptr) {
+    std::ifstream input(path, std::ios::binary);
+    if (input) {
+      bytes.resize(static_cast<size_t>(kMaxAvatarSelectionBytes));
+      input.read(reinterpret_cast<char*>(bytes.data()), kMaxAvatarSelectionBytes);
+      bytes.resize(static_cast<size_t>(input.gcount()));
+    }
+    CoTaskMemFree(path);
+  }
+  item->Release();
+  dialog->Release();
+  if (owns_com) CoUninitialize();
+
+  if (bytes.empty()) {
+    result->Error("avatar-pick-empty", "The selected image could not be read.");
+    return;
+  }
+  result->Success(flutter::EncodableValue(std::move(bytes)));
 }
 
 void FlutterWindow::NotifyReminderOpened() {
