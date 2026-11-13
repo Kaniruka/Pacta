@@ -1,0 +1,121 @@
+<!-- THROWAWAY UI PROTOTYPE: compare three information hierarchies for Pacta card actions and strengthening. In-memory sample data only; no production changes. -->
+<div id="pacta-q5">
+  <div class="viz-carousel viz-dotted-background" aria-label="国策卡片设计方案" data-previous-label="上一方案" data-next-label="下一方案">
+    <section data-variant="轻量分层" aria-label="轻量分层方案"><div class="p-stage"><div class="p-app" data-design="a"></div></div></section>
+    <section data-variant="阅读优先" aria-label="阅读优先方案" hidden><div class="p-stage"><div class="p-app" data-design="b"></div></div></section>
+    <section data-variant="编辑工作台" aria-label="编辑工作台方案" hidden><div class="p-stage"><div class="p-app" data-design="c"></div></div></section>
+  </div>
+</div>
+<style>
+#pacta-q5 .p-stage{min-height:790px;padding:20px 8px;box-sizing:border-box;display:flex;justify-content:center;align-items:flex-start}
+#pacta-q5 .p-app{--bg:light-dark(#f7f9fd,#101318);--surface:light-dark(#ffffff,#191e26);--text:light-dark(#202936,#e4e8ef);--sub:light-dark(#5b6676,#a9b3c3);--blue:light-dark(#235bb7,#abcaff);--soft:light-dark(#e9f0ff,#25354e);--line:light-dark(#e2e7ef,#323b48);width:100%;max-width:412px;min-height:720px;background:var(--bg);color:var(--text);border-radius:26px;overflow:hidden;font-family:'MiSans','Microsoft YaHei',sans-serif;font-size:14px;line-height:1.65;box-shadow:0 10px 40px #00000018;position:relative}
+#pacta-q5 .p-app *{box-sizing:border-box}
+#pacta-q5 .p-app button,#pacta-q5 .p-app input,#pacta-q5 .p-app textarea{font:inherit;color:inherit}
+#pacta-q5 .p-app button{border:0;background:none;min-height:46px;padding:10px 14px;border-radius:12px;text-align:left}
+#pacta-q5 .p-app button:hover{background:var(--soft)}
+#pacta-q5 .p-app .primary{background:var(--blue);color:var(--bg);text-align:center}
+#pacta-q5 .p-app .soft{background:var(--soft);color:var(--blue)}
+#pacta-q5 .status{display:flex;justify-content:space-between;padding:13px 22px 5px;font-size:12px}
+#pacta-q5 .toolbar{display:flex;align-items:center;justify-content:space-between;padding:6px 12px}
+#pacta-q5 .toolbar strong{font-size:16px;font-weight:500}
+#pacta-q5 .content{padding:18px 24px 28px;display:flex;flex-direction:column;gap:22px}
+#pacta-q5 h2{font-size:26px;font-weight:500;line-height:1.4;margin:0 0 10px}
+#pacta-q5 h3{font-size:16px;font-weight:500;margin:0 0 8px}
+#pacta-q5 p{margin:0}
+#pacta-q5 .muted{color:var(--sub);font-size:13px}
+#pacta-q5 .label{color:var(--sub);font-size:12px;margin-bottom:7px;display:block}
+#pacta-q5 .row{display:flex;gap:12px;align-items:center;justify-content:space-between}
+#pacta-q5 .row>*{min-width:0}
+#pacta-q5 .actions{display:flex;gap:10px}
+#pacta-q5 .actions button{flex:1;text-align:center}
+#pacta-q5 .links{display:flex;flex-direction:column;gap:3px}
+#pacta-q5 .links button{display:flex;justify-content:space-between;align-items:center;padding:13px 0;border-radius:0}
+#pacta-q5 .group{background:var(--surface);padding:18px;border-radius:18px}
+#pacta-q5 .sheet{background:var(--surface);padding:10px 24px 28px;border-radius:26px 26px 0 0;margin-top:20px;min-height:535px}
+#pacta-q5 .handle{width:32px;height:4px;background:var(--sub);border-radius:3px;margin:0 auto 24px}
+#pacta-q5 .sheet .actions{margin:24px 0 18px}
+#pacta-q5 .tree{padding:12px 24px;color:var(--sub);display:flex;justify-content:center;gap:24px;align-items:center}
+#pacta-q5 .node{padding:8px 14px;border:1px solid var(--line);border-radius:14px}
+#pacta-q5 details summary{padding:10px 0;list-style:none;display:flex;justify-content:space-between;align-items:center;min-height:44px}
+#pacta-q5 details summary:after{content:'⌄';color:var(--sub)}
+#pacta-q5 details[open] summary:after{content:'⌃'}
+#pacta-q5 details p{color:var(--sub);padding:4px 0 12px}
+#pacta-q5 .metrics{display:flex;gap:20px;justify-content:space-between;margin-top:10px}
+#pacta-q5 .metrics strong{font-size:24px;display:block;font-weight:500}
+#pacta-q5 .track{height:4px;background:var(--line);margin-top:18px;border-radius:4px}
+#pacta-q5 .track span{display:block;width:14%;height:100%;background:var(--blue)}
+#pacta-q5 input,#pacta-q5 textarea{width:100%;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px;resize:vertical}
+#pacta-q5 textarea{min-height:110px}
+#pacta-q5 .level{display:flex;align-items:center;gap:12px;margin:8px 0;padding:12px 0}
+#pacta-q5 .level .number{color:var(--blue);width:30px;flex-shrink:0}
+#pacta-q5 .level .description{flex:1}
+#pacta-q5 .level.selected{background:var(--soft);padding:15px;border-radius:16px}
+#pacta-q5 .pill{color:var(--blue);font-size:12px}
+#pacta-q5 .tabs{display:flex;gap:5px;background:var(--surface);border-radius:14px;padding:4px}
+#pacta-q5 .tabs button{flex:1;text-align:center;padding:8px}
+#pacta-q5 .tabs .selected{background:var(--soft);color:var(--blue)}
+#pacta-q5 .notice{margin:0 24px 16px;color:var(--blue);font-size:13px;min-height:21px}
+#pacta-q5 .prototype-state{font-size:11px;color:var(--sub);padding:12px 24px}
+#pacta-q5 .reading-title{border-left:3px solid var(--blue);padding-left:16px}
+@media(max-width:400px){#pacta-q5 .p-stage{padding:8px 0;min-height:850px}#pacta-q5 .content{padding:16px 20px}#pacta-q5 .metrics{gap:10px}#pacta-q5 .sheet{padding-left:20px;padding-right:20px}}
+</style>
+<script>
+(()=>{
+ const root=document.getElementById('pacta-q5');
+ const base='预定起床闹钟第一次响起时，打开床边灯，或拉开伸手可及的床帘；选最省力的一种即可。';
+ const exception='当天决定取消起床安排、继续休息，记“不适用”；正常触发却没有开灯或拉帘，记未完成。';
+ const rules=[base,'闹钟第一次响起时，打开床边灯，并坐起保持一分钟。','闹钟第一次响起时，打开床边灯，离床并拉开窗帘。'];
+ const esc=t=>String(t).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ root.querySelectorAll('.p-app').forEach(app=>{
+  const variant=app.dataset.design;
+  const state={page:variant==='b'?'detail':variant==='c'?'edit':'actions',level:0,confirmed:false,name:'晨光校准',rules:[...rules],editing:1,note:'',tab:'basic'};
+  const btn=(text,action,cls='')=>`<button type="button" class="cursor-interaction ${cls}" data-action="${action}">${text}</button>`;
+  const current=()=>esc(state.rules[state.level]);
+  const exceptions=()=>`<details><summary class="cursor-interaction">例外与判例</summary><p>${exception}</p></details>`;
+  const record=()=>`<div><h3>记录</h3><div class="metrics"><div><strong>9 <small>天</small></strong><span class="muted">当前连续</span></div><div><strong>9 <small>天</small></strong><span class="muted">历史最高</span></div><div><strong>9 <small>天</small></strong><span class="muted">累计成功</span></div></div><div class="track"><span></span></div><p class="muted" style="margin-top:8px">内化进度 13.9%</p></div>`;
+  function levels(){return state.rules.map((r,i)=>`<div class="level ${i===state.level?'selected':''}"><span class="number">${i===0?'基础':i+'级'}</span><div class="description"><p>${i===0?'基础要求':esc(r)}</p>${i===state.level?'<span class="pill">正在使用</span>':''}</div>${btn(i===state.level?'编辑':'选择',i===state.level?'rule-'+i:'select-'+i)}</div>`).join('');}
+  function strength(){
+   if(variant==='a')return `<div class="group"><span class="label">当前使用 · ${state.level===0?'基础要求':state.level+'级强化'}</span><p>${current()}</p></div><div><div class="row"><h3>可用要求</h3><span class="muted">${state.rules.length-1} / 5 级</span></div>${levels()}</div>${btn('＋ 新建强化要求','new','soft')}`;
+   if(variant==='b')return `<div><span class="label">晨光校准</span><h2>选择适合今天的要求</h2><p class="muted">切换立即生效，连续记录保持不变。</p></div>${levels()}${btn('＋ 新建一级','new','soft')}`;
+   return `<p class="muted">点击选择要求，再编辑具体规则。</p>${levels()}${btn('＋ 新建强化要求','new','soft')}`;
+  }
+  function render(){
+   let title='',body='';
+   if(state.page==='actions'){
+    title='国策树';
+    body=`<div class="tree"><span class="node">生活节律</span><span>—</span><span class="node">晨光校准</span></div><div class="sheet"><div class="handle"></div><h2>${esc(state.name)}</h2><p>${current()}</p><div class="actions">${btn(state.confirmed?'今日已确认':'确认今日','confirm','primary')}${btn('熄灭','extinguish','soft')}</div><div class="links">${btn('查看详情 <span>›</span>','detail')}${btn('添加子节点 <span>＋</span>','child')}${btn('调整树中位置 <span>›</span>','move')}${btn('移入卡片库 <span>›</span>','library')}</div></div>`;
+   }else if(state.page==='detail'){
+    title='国策卡详情';
+    body=`<div class="content"><div class="${variant==='b'?'reading-title':''}"><span class="label">${state.confirmed?'今日已确认':'待今日确认'}</span><h2>${esc(state.name)}</h2></div><div><span class="label">${state.level===0?'国策规则':'当前规则 · '+state.level+'级强化'}</span><p>${current()}</p></div>${variant==='b'?`<div class="actions">${btn('确认今日','confirm','primary')}${btn('更多操作','actions','soft')}</div>`:''}${exceptions()}${record()}${btn('编辑卡片','edit','soft')}</div>`;
+   }else if(state.page==='edit'){
+    title='编辑卡片';
+    body=`<div class="content">${variant==='c'?`<div class="tabs">${btn('基本资料','tab-basic',state.tab==='basic'?'selected':'')}${btn('强化要求','tab-strength',state.tab==='strength'?'selected':'')}</div>`:''}${variant==='c'&&state.tab==='strength'?strength():`<label><span class="label">名称</span><input data-field="name" value="${esc(state.name)}"></label><label><span class="label">基础规则</span><textarea data-field="base">${esc(state.rules[0])}</textarea></label><details><summary class="cursor-interaction">例外与判例</summary><textarea aria-label="例外与判例">${exception}</textarea></details>${variant!=='c'?`<div class="group"><div class="row"><div><h3>强化要求</h3><p class="muted">当前使用${state.level===0?'基础要求':state.level+'级强化'} · 已设 ${state.rules.length-1} 级</p></div>${btn('管理 ›','strength','soft')}</div></div>`:''}${btn('保存卡片','save','primary')}`}</div>`;
+   }else if(state.page==='strength'){
+    title='强化要求';body=`<div class="content">${strength()}</div>`;
+   }else{
+    title=state.editing===state.rules.length?'新建强化要求':'编辑要求';
+    body=`<div class="content"><span class="label">${esc(state.name)} · ${state.editing===0?'基础要求':state.editing+'级强化'}</span><label><span class="label">具体规则</span><textarea data-field="rule">${esc(state.rules[state.editing]||'')}</textarea></label>${state.editing===0?'':`<details><summary class="cursor-interaction">对照基础规则</summary><p>${esc(state.rules[0])}</p></details>`}<p class="muted">规则变更保留历史版本，不重置已有记录。</p>${btn('保存要求','save-rule','primary')}</div>`;
+   }
+   app.innerHTML=`<div class="status"><span>16:04</span><span>● ▰</span></div><div class="toolbar">${btn('‹','back')}<strong>${title}</strong>${btn(state.page==='actions'?'关闭':'完成','done')}</div>${body}<div class="notice" aria-live="polite">${esc(state.note)}</div><div class="prototype-state">交互原型 · ${state.level===0?'基础要求':state.level+'级强化'} · ${state.confirmed?'已确认':'待确认'} · 示例数据</div>`;
+  }
+  app.addEventListener('click',e=>{
+   const b=e.target.closest('[data-action]');if(!b)return;
+   const a=b.dataset.action;state.note='';
+   if(['actions','detail','edit','strength'].includes(a))state.page=a;
+   else if(a==='back')state.page=state.page==='rule'?'strength':state.page==='strength'?'edit':state.page==='edit'?'detail':'actions';
+   else if(a==='done')state.page='detail';
+   else if(a==='confirm'){state.confirmed=true;state.note='已确认今日继续有效';}
+   else if(a==='extinguish'){state.confirmed=false;state.note='已熄灭（仅演示）';}
+   else if(a==='save'){state.name=app.querySelector('[data-field="name"]').value;state.rules[0]=app.querySelector('[data-field="base"]').value;state.page='detail';state.note='卡片已保存（仅本次预览）';}
+   else if(a.startsWith('select-')){state.level=Number(a.split('-')[1]);state.note='已切换要求，记录保持不变';}
+   else if(a.startsWith('rule-')){state.editing=Number(a.split('-')[1]);state.page='rule';}
+   else if(a==='new'){if(state.rules.length>=6){state.note='最多可设 5 级强化';}else{state.editing=state.rules.length;state.page='rule';}}
+   else if(a==='save-rule'){const value=app.querySelector('[data-field="rule"]').value.trim();if(!value){state.note='请填写具体规则';app.querySelector('.notice').textContent=state.note;return;}state.rules[state.editing]=value;state.page='strength';state.note='要求已保存';}
+   else if(a.startsWith('tab-')){state.tab=a.slice(4);}
+   else{state.note='此入口保留原有功能，本原型只演示卡片与强化要求。';}
+   render();
+  });
+  render();
+ });
+})();
+</script>

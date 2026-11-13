@@ -120,6 +120,10 @@ _Avoid_: Focus Node, Task, badge
 A persistent card-level display proxy for familiarity based on cumulative successful National Focus Days, separate from current/historical consecutive records and Strengthening Levels; it is not a measurement of real-world habit formation. It survives failure and is not manually editable; successful days are counted at National Focus Checkpoints rather than per lighting action.
 _Avoid_: Current streak, Task progress, completion percentage, measured habit-formation percentage
 
+**Internalized Card (已内化国策卡)**:
+A National Focus Card with at least 180 cumulative successful National Focus Days, as finally confirmed on 2026-11-13. Its Internalization Progress reaches and remains at 100%; rounded display values do not determine eligibility. This is a product classification, not a measurement of real-world habit formation, and does not automatically change Strengthening Levels.
+_Avoid_: Rounded-display eligibility, automatic strengthening upgrade
+
 **National Focus Strengthening Level (国策强化等级)**:
 A user-defined stricter set of requirements for a National Focus Card, expressed as a single 国策规则 override; for example, raising "read 5 pages" to "read 10 pages". A card retains its base rule and supports up to five user-created strengthening levels, each requiring its own override; the base is not counted toward this limit. Legacy trigger-condition overrides already stored remain as history and are not offered as a new input. Levels are defined independently of Internalization Progress and are not automatically earned upgrades.
 _Avoid_: Internalization Progress, automatic upgrade, numeric-only bonus
