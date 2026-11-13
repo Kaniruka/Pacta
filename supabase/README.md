@@ -179,3 +179,39 @@ Both snapshot migrations were applied to the configured development project
 on 2026-10-04. Live acceptance used isolated temporary identities, not normal
 users' data. Full results are in
 [the validation record](../docs/manual-cloud-sync-validation-20261004.md).
+
+## Account profile and avatar — 2026-11-13
+
+Apply `202611130002_profile_account.sql` for Issue #94. The account display
+name and one bounded avatar binary live in `public.profile_accounts`, never in
+`cloud_business_snapshots`, so restoring a business snapshot cannot rewind the
+profile. Clients reach it only through two owner-scoped RPCs:
+
+- `read_profile_account()` returns the caller's profile, or null when none is
+  stored.
+- `save_profile_account(display_name, avatar_base64, clear_avatar)` trims the
+  name, decodes at most 256 KB, verifies the PNG/JPEG signature, and upserts the
+  caller's own row. Passing no avatar keeps the stored binary; `clear_avatar`
+  removes it.
+
+RLS is enabled with owner-only, active-user policies, and the table grants no
+direct privileges to `anon` or `authenticated`. Avatar binaries are limited to
+256 KB and must match their declared image signature; there is no public avatar
+URL or shared bucket. The row references `auth.users(id) on delete cascade`, so
+an explicit account purge removes the profile and its avatar with the identity.
+This migration deliberately does not replace `admin_delete_user_business_data()`;
+the backup/history migration extends that function, and the FK keeps both
+migrations composable.
+
+Run the rollback-only probe against an isolated project after applying the
+migration. It needs two signed-in users, rejects non-image and oversized
+avatars, checks cross-user reads and direct table access, and verifies the
+identity cascade:
+
+```powershell
+supabase db query --linked -f supabase/tests/profile_accounts.sql
+```
+
+Client tests cover local caching, retry after a failed account write,
+cross-device adoption, and unchanged profile after a business restore. They do
+not prove deployed RLS.

@@ -34,6 +34,11 @@ import 'src/national_focus/national_focus_ai_access.dart';
 import 'src/national_focus/national_focus_ai_analysis_page.dart';
 import 'src/national_focus/national_focus_tree_page.dart';
 import 'src/notifications/focus_notification_service.dart';
+import 'src/profile/avatar_picker.dart';
+import 'src/profile/profile_card.dart';
+import 'src/profile/profile_overview.dart';
+import 'src/profile/profile_remote.dart';
+import 'src/profile/profile_repository.dart';
 import 'src/notifications/focus_notification_settings_page.dart';
 import 'src/tasks/task_database.dart' show PactaDatabase;
 import 'src/tasks/task_models.dart';
@@ -54,12 +59,14 @@ Future<void> main() async {
   AuthRepository repository = const UnavailableAuthRepository();
   final database = PactaDatabase.open();
   CloudSnapshotRemote? cloudRemote;
+  ProfileRemote profileRemote = const UnavailableProfileRemote();
   NationalFocusAiGrantRepository Function(String userId)?
   nationalFocusAiGrantRepositoryFactory;
   if (url.isNotEmpty && key.isNotEmpty) {
     await Supabase.initialize(url: url, publishableKey: key);
     repository = SupabaseAuthRepository(Supabase.instance.client);
     cloudRemote = SupabaseCloudSnapshotRemote(Supabase.instance.client);
+    profileRemote = SupabaseProfileRemote(Supabase.instance.client);
     nationalFocusAiGrantRepositoryFactory = (userId) =>
         SupabaseNationalFocusAiGrantRepository(
           client: Supabase.instance.client,
@@ -129,6 +136,11 @@ Future<void> main() async {
           userId: userId,
         ),
       ),
+      profileRepositoryFactory: (userId) => LocalProfileRepository(
+        database: database,
+        userId: userId,
+        remote: profileRemote,
+      ),
       cloudSnapshotRepositoryFactory: cloudRemote == null
           ? null
           : (userId) => CloudSnapshotRepository(
@@ -172,7 +184,10 @@ class PactaApp extends StatelessWidget {
     this.cloudSnapshotRepositoryFactory,
     this.cloudCheckClock = DateTime.now,
     this.chainSignalsRepositoryFactory,
+    this.profileRepositoryFactory,
   });
+
+  final ProfileRepository Function(String userId)? profileRepositoryFactory;
 
   final CloudSnapshotRepository Function(String userId)?
   cloudSnapshotRepositoryFactory;
@@ -203,6 +218,9 @@ class PactaApp extends StatelessWidget {
         cloudCheckClockProvider.overrideWithValue(cloudCheckClock),
         chainSignalsRepositoryFactoryProvider.overrideWithValue(
           chainSignalsRepositoryFactory,
+        ),
+        profileRepositoryFactoryProvider.overrideWithValue(
+          profileRepositoryFactory,
         ),
         cloudSnapshotRepositoryFactoryProvider.overrideWithValue(
           cloudSnapshotRepositoryFactory,
@@ -240,8 +258,8 @@ class PactaApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Pacta',
         debugShowCheckedModeBanner: false,
-        theme: _pactaTheme(Brightness.light),
-        darkTheme: _pactaTheme(Brightness.dark),
+        theme: pactaTheme(Brightness.light),
+        darkTheme: pactaTheme(Brightness.dark),
         home: _UserPurgeCleanupLifecycleObserver(
           cleanupRepository: userPurgeCleanupRepository,
           child: const AuthGate(),
@@ -251,7 +269,9 @@ class PactaApp extends StatelessWidget {
   }
 }
 
-ThemeData _pactaTheme(Brightness brightness) {
+/// The app theme, shared with offline layout fixtures so evidence never
+/// invents a second visual language.
+ThemeData pactaTheme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
   final colors =
       ColorScheme.fromSeed(
@@ -385,6 +405,34 @@ final chainSignalsRepositoryProvider =
       final factory = ref.watch(chainSignalsRepositoryFactoryProvider);
       return userId == null || factory == null ? null : factory(userId);
     });
+
+final profileRepositoryFactoryProvider =
+    Provider<ProfileRepository Function(String userId)?>((ref) => null);
+
+final profileRepositoryProvider = Provider.autoDispose<ProfileRepository>((
+  ref,
+) {
+  final userId = ref.watch(authUserIdProvider);
+  final factory = ref.watch(profileRepositoryFactoryProvider);
+  if (userId == null || factory == null) {
+    return const UnavailableProfileRepository();
+  }
+  final repository = factory(userId);
+  ref.onDispose(repository.dispose);
+  return repository;
+});
+
+final avatarPickerProvider = Provider<AvatarPicker>(
+  (ref) => const SystemAvatarPicker(),
+);
+
+final profileOverviewSourceProvider =
+    Provider.autoDispose<ProfileOverviewSource>(
+      (ref) => RepositoryProfileOverviewSource(
+        nationalFocusRepository: ref.watch(nationalFocusRepositoryProvider),
+        focusRepository: ref.watch(focusRepositoryProvider),
+      ),
+    );
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return const UnavailableAuthRepository();
@@ -4374,12 +4422,11 @@ class _MyPageState extends ConsumerState<MyPage> {
       children: [
         Text('我的', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 16),
-        Card(
-          child: ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.person_outline)),
-            title: Text(repository.currentUserIdentifier ?? '当前用户'),
-            subtitle: const Text('数据仅供你使用'),
-          ),
+        MyProfileCard(
+          repository: ref.watch(profileRepositoryProvider),
+          overview: ref.watch(profileOverviewSourceProvider),
+          avatarPicker: ref.watch(avatarPickerProvider),
+          accountIdentifier: repository.currentUserIdentifier,
         ),
         const SizedBox(height: 12),
         CloudSyncCard(

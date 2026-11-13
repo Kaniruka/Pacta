@@ -330,6 +330,23 @@ class LocalUserLifecycleStates extends Table {
   Set<Column<Object>> get primaryKey => {userId};
 }
 
+/// Cached account profile: display name and a bounded avatar binary.
+///
+/// Kept outside the business snapshot so restoring one never rolls the
+/// account identity back, and so an offline device can still show it.
+class LocalProfileAccounts extends Table {
+  TextColumn get userId => text()();
+  TextColumn get displayName => text().withDefault(const Constant(''))();
+  TextColumn get avatarMimeType => text().nullable()();
+  BlobColumn get avatarBytes => blob().nullable()();
+  BoolColumn get pendingSave => boolean().withDefault(const Constant(false))();
+  TextColumn get syncError => text().nullable()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId};
+}
+
 @DriftDatabase(
   tables: [
     LocalGoals,
@@ -353,6 +370,7 @@ class LocalUserLifecycleStates extends Table {
     LocalCalendarSources,
     LocalCalendarBlocks,
     LocalUserLifecycleStates,
+    LocalProfileAccounts,
   ],
 )
 class PactaDatabase extends _$PactaDatabase {
@@ -383,6 +401,7 @@ class PactaDatabase extends _$PactaDatabase {
       UNION SELECT user_id FROM local_tasks
       UNION SELECT user_id FROM local_goals
       UNION SELECT user_id FROM local_user_lifecycle_states
+      UNION SELECT user_id FROM local_profile_accounts
     ''').get();
     return rows.map((row) => row.read<String>('user_id')).toSet();
   }
@@ -457,13 +476,16 @@ class PactaDatabase extends _$PactaDatabase {
       await (delete(
         localUserLifecycleStates,
       )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        localProfileAccounts,
+      )..where((row) => row.userId.equals(userId))).go();
     });
 
     return true;
   }
 
   @override
-  int get schemaVersion => 25;
+  int get schemaVersion => 26;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -628,6 +650,9 @@ class PactaDatabase extends _$PactaDatabase {
       if (from < 25) {
         await m.addColumn(localGoals, localGoals.description);
         await m.addColumn(localTasks, localTasks.description);
+      }
+      if (from < 26) {
+        await m.createTable(localProfileAccounts);
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);

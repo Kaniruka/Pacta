@@ -1,22 +1,36 @@
 package com.rukani.pacta
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
+import android.net.Uri
+import android.os.Build
 import android.provider.CalendarContract
+import android.provider.MediaStore
 import androidx.core.app.ActivityCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.InputStream
 import java.security.MessageDigest
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
     private val channelName = "com.pacta/calendar"
     private val sourceDeviceInfoChannelName = "com.pacta/source_device_info"
+    private val profileAvatarChannelName = "com.pacta/profile_avatar"
     private val permissionRequestCode = 4720
+    private val avatarPickRequestCode = 4721
     private val calendarExecutor = Executors.newSingleThreadExecutor()
     private var permissionResult: MethodChannel.Result? = null
+    private var avatarPickResult: MethodChannel.Result? = null
+
+    companion object {
+        // The client rejects anything above 5 MB before upload; read a byte past
+        // it so an oversized selection is reported instead of silently truncated.
+        private const val MAX_AVATAR_SELECTION_BYTES = 5 * 1024 * 1024 + 1
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -52,6 +66,83 @@ class MainActivity : FlutterActivity() {
                 result.notImplemented()
             }
         }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            profileAvatarChannelName,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "pickImage" -> pickSingleImage(result)
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    // Android 13+ uses the system photo picker and older releases use the
+    // document picker, so selecting one avatar never needs media-library access.
+    private fun pickSingleImage(result: MethodChannel.Result) {
+        if (avatarPickResult != null) {
+            result.error("avatar-pick-active", "系统图片选择正在进行。", null)
+            return
+        }
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Intent(MediaStore.ACTION_PICK_IMAGES).setType("image/*")
+        } else {
+            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "image/*"
+            }
+        }
+        if (intent.resolveActivity(packageManager) == null) {
+            result.error("avatar-pick-unavailable", "当前设备没有可用的图片选择器。", null)
+            return
+        }
+        avatarPickResult = result
+        try {
+            startActivityForResult(intent, avatarPickRequestCode)
+        } catch (error: Exception) {
+            avatarPickResult = null
+            result.error("avatar-pick-failed", "系统图片选择器无法打开。", null)
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != avatarPickRequestCode) return
+        val pending = avatarPickResult ?: return
+        avatarPickResult = null
+        if (resultCode != RESULT_OK) {
+            pending.success(null)
+            return
+        }
+        val uri: Uri? = data?.data
+        if (uri == null) {
+            pending.error("avatar-pick-empty", "没有读取到图片。", null)
+            return
+        }
+        try {
+            val bytes = contentResolver.openInputStream(uri)?.use(::readLimitedAvatar)
+            if (bytes == null || bytes.isEmpty()) {
+                pending.error("avatar-pick-empty", "没有读取到图片。", null)
+            } else {
+                pending.success(bytes)
+            }
+        } catch (error: Exception) {
+            pending.error("avatar-pick-failed", "读取图片失败，请重新选择。", null)
+        }
+    }
+
+    // Reads at most one byte past the client limit so oversized choices stay
+    // detectable without loading an arbitrary file into memory.
+    private fun readLimitedAvatar(stream: InputStream): ByteArray {
+        val buffer = java.io.ByteArrayOutputStream()
+        val chunk = ByteArray(16384)
+        while (true) {
+            val read = stream.read(chunk)
+            if (read <= 0) break
+            buffer.write(chunk, 0, read)
+            if (buffer.size() > MAX_AVATAR_SELECTION_BYTES) break
+        }
+        return buffer.toByteArray()
     }
 
     private fun permissionStatus(): String =
