@@ -1312,11 +1312,6 @@ class _NationalFocusCardLibraryPageState
             onPlace: (card) => Navigator.of(context).pop(card),
             onDelete: _deleteCard,
             onRename: _renameCard,
-            onManageStrengthening: (card) => _pushStrengtheningManager(
-              context: context,
-              repository: widget.repository,
-              cardId: card.id,
-            ),
           ),
           _DeletedNationalFocusCardList(
             repository: widget.repository,
@@ -1339,14 +1334,12 @@ class _LibraryCardList extends StatelessWidget {
     required this.onPlace,
     required this.onDelete,
     required this.onRename,
-    required this.onManageStrengthening,
   });
 
   final NationalFocusRepository repository;
   final ValueChanged<NationalFocusCard> onPlace;
   final ValueChanged<NationalFocusCard> onDelete;
   final ValueChanged<NationalFocusCard> onRename;
-  final ValueChanged<NationalFocusCard> onManageStrengthening;
 
   @override
   Widget build(BuildContext context) => StreamBuilder<List<NationalFocusCard>>(
@@ -1413,9 +1406,6 @@ class _LibraryCardList extends StatelessWidget {
               onDelete: cards[index].hasPendingReview
                   ? null
                   : () => onDelete(cards[index]),
-              onManageStrengthening: cards[index].hasPendingReview
-                  ? null
-                  : () => onManageStrengthening(cards[index]),
             ),
           ),
         ),
@@ -1770,7 +1760,6 @@ class _LibraryCard extends StatelessWidget {
     required this.onPlace,
     required this.onDelete,
     required this.onRename,
-    required this.onManageStrengthening,
   });
 
   final NationalFocusCard card;
@@ -1779,7 +1768,6 @@ class _LibraryCard extends StatelessWidget {
   final VoidCallback? onRename;
   final VoidCallback? onEdit;
   final VoidCallback onDetails;
-  final VoidCallback? onManageStrengthening;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -1851,13 +1839,6 @@ class _LibraryCard extends StatelessWidget {
                 onPressed: onDelete,
                 icon: const Icon(Icons.delete_outline),
                 label: const Text('删除'),
-              ),
-              OutlinedButton.icon(
-                onPressed: onManageStrengthening,
-                icon: const Icon(Icons.tune),
-                label: Text(
-                  '强化等级 ${card.strengtheningLevels.length}/$maxNationalFocusStrengtheningLevels',
-                ),
               ),
               FilledButton.tonalIcon(
                 onPressed: onPlace,

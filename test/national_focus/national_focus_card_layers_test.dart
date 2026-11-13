@@ -339,6 +339,75 @@ void main() {
     });
   }
 
+  testWidgets('卡片库不再直接提供强化管理，改从编辑卡片进入', (tester) async {
+    final card = await repository.createCard(
+      const NationalFocusCardDraft(name: '库卡', action: '库规则'),
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: NationalFocusCardLibraryPage(repository: repository)),
+    );
+    await pumpUi(tester);
+
+    expect(find.text(card.name), findsOneWidget);
+    // The direct library entry for strengthening management is gone.
+    expect(find.textContaining('强化等级 0/5'), findsNothing);
+    expect(find.text('管理强化要求'), findsNothing);
+    expect(find.byTooltip('卡片操作'), findsOneWidget);
+    await tester.tap(find.byTooltip('卡片操作'));
+    await tester.pumpAndSettle();
+    expect(find.text('管理强化要求'), findsNothing);
+    await tester.tap(find.text('编辑卡片'));
+    await tester.pumpAndSettle();
+    expect(find.text('管理强化要求'), findsOneWidget);
+    await tester.tap(find.text('管理强化要求'));
+    await tester.pumpAndSettle();
+    expect(find.text('国策强化要求'), findsOneWidget);
+    expect((await repository.getCard(card.id)).id, card.id);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('强化管理可直接编辑非当前等级且不改变当前要求与版本', (tester) async {
+    final card = await createTreeCard(action: '基础规则');
+    await seedLevels(card, ['强化规则 1', '强化规则 2']);
+    await repository.selectStrengtheningLevel(cardId: card.id, levelNumber: 1);
+    final before = await repository.getCard(card.id);
+    final versionsBefore = before.requirementVersions.length;
+    await pumpManager(tester, card);
+
+    final secondRow = find.byKey(
+      const ValueKey('national-focus-strengthening-level-2'),
+    );
+    expect(
+      find.descendant(of: secondRow, matching: find.text('选择')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.descendant(of: secondRow, matching: find.byTooltip('编辑强化等级 2')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('强化后的国策规则'), findsOneWidget);
+    expect(find.text('强化规则 2'), findsOneWidget);
+    await tester.enterText(find.byType(TextFormField), '改写后的二级规则');
+    await tester.tap(find.text('保存'));
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 30)),
+    );
+    await tester.pumpAndSettle();
+
+    final after = await repository.getCard(card.id);
+    expect(after.strengtheningLevels[1].action, '改写后的二级规则');
+    expect(after.activeStrengtheningLevel, 1);
+    expect(after.effectiveAction, '强化规则 1');
+    expect(after.requirementVersions, hasLength(versionsBefore));
+    expect(find.text('当前使用 · 强化等级 1'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
   testWidgets('详情在没有例外记录时不显示例外与判例分组', (tester) async {
     final card = await createTreeCard();
     await pumpTree(tester);

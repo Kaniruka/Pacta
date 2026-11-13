@@ -8,21 +8,34 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:pacta/main.dart';
+import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
-import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
 import 'package:pacta/src/tasks/task_database.dart';
+import 'package:pacta/src/tasks/task_repository.dart';
 
-/// Re-runnable screenshot fixture for the lightweight card layering (#91):
-/// node sheet, detail, card editor and strengthening management.
+import '../test/support/fake_auth_repository.dart';
+
+/// Re-runnable screenshot fixture for the lightweight card layering (#91).
 ///
-/// Windows: flutter test integration_test/national_focus_card_layers_device_test.dart -d windows
-/// Android: flutter test integration_test/national_focus_card_layers_device_test.dart -d DEVICE_ID
+/// Runs the real [PactaApp] with its real theme, fake authentication and real
+/// local repositories, then walks the card layers in the National Focus
+/// destination: node sheet, detail, card editor and strengthening management.
 ///
-/// Optional dart-defines: NF_CARD_LAYERS_CAPTURE_DIR, NF_CARD_LAYERS_THEME
-/// (light|dark|system), NF_CARD_LAYERS_WIDTH (logical pixels, >= 320).
+/// Windows (RepaintBoundary into NF_CARD_LAYERS_CAPTURE_DIR):
+///   flutter test integration_test/national_focus_card_layers_device_test.dart -d windows
+///
+/// Android (surface screenshot exported by the shared UI evidence driver):
+///   flutter drive --driver=test_driver/ui_layout_acceptance_test.dart
+///     --target=integration_test/national_focus_card_layers_device_test.dart -d DEVICE_ID
+///   with UI_EVIDENCE_SUBDIR=national-focus-card-layers and, for a strict rerun,
+///   UI_EVIDENCE_FAIL_ON_EXIST=1.
+///
+/// Optional dart-defines for both platforms: NF_CARD_LAYERS_THEME
+/// (light|dark|system) and NF_CARD_LAYERS_WIDTH (logical pixels, >= 320).
 const _user = 'national-focus-card-layers-device';
-const _captureDir = String.fromEnvironment(
+const _desktopCaptureDir = String.fromEnvironment(
   'NF_CARD_LAYERS_CAPTURE_DIR',
   defaultValue: 'build/ui-layout-evidence/national-focus-card-layers',
 );
@@ -33,42 +46,68 @@ const _theme = String.fromEnvironment(
 const _width = String.fromEnvironment('NF_CARD_LAYERS_WIDTH');
 
 void main() {
-  IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('国策卡轻量分层真实设备截图', (tester) async {
     final database = PactaDatabase(NativeDatabase.memory());
     var now = DateTime.utc(2026, 11, 13, 9);
-    final repository = LocalNationalFocusRepository(
+    final tree = LocalNationalFocusRepository(
       database: database,
       userId: _user,
       cloudSyncEnabled: false,
       now: () => now,
     );
+    final tasks = LocalTaskRepository(
+      database: database,
+      userId: _user,
+      remote: InMemoryTaskRemote(),
+    );
+    final focus = LocalFocusRepository(
+      database: database,
+      userId: _user,
+      remote: InMemoryFocusRemote(),
+    );
     final boundaryKey = GlobalKey();
     final capturedNames = <String>{};
+    var androidSurfaceReady = false;
 
     Future<void> shot(String state) async {
       final name = 'national-focus-card-layers-$state';
       if (!capturedNames.add(name)) fail('截图名重复：$name');
-      final object = boundaryKey.currentContext?.findRenderObject();
-      if (object is! RenderRepaintBoundary) {
-        fail('截图「$name」未找到 RepaintBoundary');
-      }
-      final image = await object.toImage(
-        pixelRatio: tester.view.devicePixelRatio,
-      );
-      try {
-        final data = await image.toByteData(format: ui.ImageByteFormat.png);
-        if (data == null) fail('截图「$name」PNG 编码失败');
-        final directory = Directory(_captureDir);
-        await directory.create(recursive: true);
-        final file = File(
-          '${directory.path}${Platform.pathSeparator}$name.png',
+      if (Platform.isAndroid) {
+        if (!androidSurfaceReady) {
+          await binding.convertFlutterSurfaceToImage();
+          await tester.pump();
+          androidSurfaceReady = true;
+        }
+        await binding.takeScreenshot(name);
+      } else if (Platform.isWindows) {
+        final object = boundaryKey.currentContext?.findRenderObject();
+        if (object is! RenderRepaintBoundary) {
+          fail('截图「$name」未找到 RepaintBoundary');
+        }
+        final image = await object.toImage(
+          pixelRatio: tester.view.devicePixelRatio,
         );
-        if (await file.exists()) fail('拒绝覆盖截图文件：${file.absolute.path}');
-        await file.writeAsBytes(data.buffer.asUint8List(), flush: true);
-      } finally {
-        image.dispose();
+        try {
+          final data = await image.toByteData(format: ui.ImageByteFormat.png);
+          if (data == null) fail('截图「$name」PNG 编码失败');
+          final directory = Directory(_desktopCaptureDir);
+          await directory.create(recursive: true);
+          final file = File(
+            '${directory.path}${Platform.pathSeparator}$name.png',
+          );
+          if (await file.exists()) {
+            fail('拒绝覆盖截图文件：${file.absolute.path}');
+          }
+          await file.writeAsBytes(data.buffer.asUint8List(), flush: true);
+        } finally {
+          image.dispose();
+        }
+      } else {
+        fail(
+          '此 fixture 只支持 Android 与 Windows；当前平台为 ${Platform.operatingSystem}',
+        );
       }
       print(
         '[national-focus-card-layers] platform=${Platform.operatingSystem} '
@@ -91,7 +130,7 @@ void main() {
       String? exceptionNotes,
       List<String> levels = const [],
     }) async {
-      final created = await repository.createCard(
+      final created = await tree.createCard(
         NationalFocusCardDraft(
           name: name,
           action: action,
@@ -99,16 +138,16 @@ void main() {
         ),
       );
       now = now.add(const Duration(seconds: 1));
-      await repository.placeCard(cardId: created.id, parentId: null);
-      await repository.lightCard(created.id);
+      await tree.placeCard(cardId: created.id, parentId: null);
+      await tree.lightCard(created.id);
       for (final level in levels) {
-        await repository.saveStrengtheningLevel(
+        await tree.saveStrengtheningLevel(
           cardId: created.id,
           draft: NationalFocusStrengtheningLevelDraft(action: level),
         );
         now = now.add(const Duration(seconds: 1));
       }
-      return repository.getCard(created.id);
+      return tree.getCard(created.id);
     }
 
     Future<void> openNode(NationalFocusCard card) async {
@@ -131,6 +170,7 @@ void main() {
     Future<void> back() async {
       await tester.pageBack();
       await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: '返回上一页不应抛异常');
     }
 
     try {
@@ -164,7 +204,7 @@ void main() {
           '坐到书桌前，写下今天最重要的第一步，读一遍计划并标注预计用时。',
         ],
       );
-      await repository.selectStrengtheningLevel(
+      await tree.selectStrengtheningLevel(
         cardId: strengthened.id,
         levelNumber: 1,
       );
@@ -174,18 +214,24 @@ void main() {
         levels: const ['一级复盘', '二级复盘', '三级复盘', '四级复盘', '五级复盘'],
       );
 
-      final brightness = _theme == 'dark'
-          ? Brightness.dark
-          : _theme == 'light'
-          ? Brightness.light
-          : tester.platformDispatcher.platformBrightness;
+      final app = PactaApp(
+        authRepository: FakeAuthRepository()..signedInUser = _user,
+        taskRepositoryFactory: (_) => tasks,
+        focusRepositoryFactory: (_) => focus,
+        nationalFocusRepositoryFactory: (_) => tree,
+      );
       await tester.pumpWidget(
-        RepaintBoundary(
-          key: boundaryKey,
-          child: MaterialApp(
-            theme: ThemeData(brightness: brightness),
-            home: Scaffold(body: NationalFocusTreePage(repository: repository)),
+        Platform.isWindows
+            ? RepaintBoundary(key: boundaryKey, child: app)
+            : app,
+      );
+      await pumpUi();
+      await tester.tap(
+        find.descendant(
+          of: find.byWidgetPredicate(
+            (widget) => widget is NavigationBar || widget is NavigationRail,
           ),
+          matching: find.text('国策树'),
         ),
       );
       await pumpUi();
@@ -201,6 +247,11 @@ void main() {
       await shot('05-card-editor');
       await back();
       await back();
+      expect(
+        find.byKey(ValueKey('national-focus-node-${morning.id}')),
+        findsOneWidget,
+        reason: '从编辑页返回后应回到国策树',
+      );
 
       await openNode(strengthened);
       await tapText('查看详情');
@@ -211,30 +262,48 @@ void main() {
       final secondLevel = find.byKey(
         const ValueKey('national-focus-strengthening-level-2'),
       );
+      // Editing an inactive level must not change the requirement in force.
       await tester.tap(
-        find.descendant(of: secondLevel, matching: find.text('选择')),
+        find.descendant(of: secondLevel, matching: find.byTooltip('编辑强化等级 2')),
       );
       await tester.pumpAndSettle();
-      await shot('08-strengthening-manager-level-2');
-      await tester.tap(find.byTooltip('编辑强化等级 2'));
-      await tester.pumpAndSettle();
       await tapText('对照基础规则');
-      await shot('09-strengthening-level-editor');
+      await shot('08-strengthening-level-editor');
       await back();
+      expect(find.text('当前使用 · 强化等级 1'), findsOneWidget);
       await back();
+      expect(find.text('编辑国策卡'), findsOneWidget);
       await back();
+      expect(find.text('国策卡详情'), findsOneWidget);
+      await back();
+      expect(
+        find.byKey(ValueKey('national-focus-node-${strengthened.id}')),
+        findsOneWidget,
+        reason: '强化管理往返后应回到国策树',
+      );
 
       await openNode(atCap);
       await tapText('查看详情');
       await tapText('编辑卡片');
       await tapText('管理强化要求');
-      await shot('10-strengthening-cap');
+      await shot('09-strengthening-cap');
       expect(find.text('已达 5 级上限'), findsOneWidget);
+      await back();
+      await back();
+      await back();
+      expect(
+        find.byKey(ValueKey('national-focus-node-${atCap.id}')),
+        findsOneWidget,
+        reason: '五级上限页返回后应回到国策树',
+      );
+      expect(tester.takeException(), isNull);
     } finally {
       tester.platformDispatcher.clearPlatformBrightnessTestValue();
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 1));
-      await repository.dispose();
+      await focus.dispose();
+      await tasks.dispose();
+      await tree.dispose();
       await database.close();
     }
   });

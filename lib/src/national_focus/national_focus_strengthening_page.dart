@@ -162,6 +162,14 @@ class _NationalFocusStrengtheningPageState
                   ),
                 ],
               ),
+              if (atCapacity)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    '已达 $maxNationalFocusStrengtheningLevels 级上限',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
               const SizedBox(height: 4),
               _AvailableRequirementRow(
                 key: const ValueKey('national-focus-strengthening-level-base'),
@@ -205,13 +213,6 @@ class _NationalFocusStrengtheningPageState
                   label: const Text('新建强化要求'),
                 ),
               ),
-              if (atCapacity) ...[
-                const SizedBox(height: 6),
-                Text(
-                  '已达 $maxNationalFocusStrengtheningLevels 级上限',
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
             ],
           ),
         ),
@@ -329,11 +330,21 @@ class _AvailableRequirementRow extends StatelessWidget {
                 onPressed: busy ? null : onEdit,
                 icon: const Icon(Icons.edit_outlined),
               ),
-          ] else
+          ] else ...[
             TextButton(
               onPressed: busy ? null : onSelect,
               child: const Text('选择'),
             ),
+            // Editing a level and putting it in force stay separate actions:
+            // an inactive level can be edited without changing which
+            // requirement is currently active.
+            if (onEdit != null)
+              IconButton(
+                tooltip: editTooltip,
+                onPressed: busy ? null : onEdit,
+                icon: const Icon(Icons.edit_outlined),
+              ),
+          ],
         ],
       ),
     );

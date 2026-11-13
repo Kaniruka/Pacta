@@ -75,8 +75,6 @@ void main() {
     expect(find.text('例外与判例'), findsNothing);
     expect(find.text('出差时顺延'), findsNothing);
 
-    await tester.tap(find.text('选择'));
-    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('编辑强化等级 1'));
     await tester.pumpAndSettle();
     expect(find.byType(TextFormField), findsOneWidget);
@@ -93,7 +91,8 @@ void main() {
     expect(updated.strengtheningLevels, hasLength(1));
     expect(updated.strengtheningLevels.single.action, '阅读 20 页');
     expect(updated.strengtheningLevels.single.triggerCondition, '旧强化触发');
-    expect(find.text('阅读 20 页'), findsWidgets);
+    expect(updated.activeStrengtheningLevel, isNull);
+    expect(find.text('阅读 20 页'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
@@ -121,13 +120,7 @@ void main() {
     expect(before.requirementVersions, hasLength(1));
     await pumpPage(tester, card);
 
-    await tester.tap(find.text('选择'));
-    await tester.pumpAndSettle();
-    // Adopting the level records its own requirement version; editing must not
-    // add another one when the rule stays unchanged.
-    final versionsAfterSelect = (await repository.getCard(card.id))
-        .requirementVersions
-        .length;
+    // An inactive level is editable without being put in force.
     await tester.tap(find.byTooltip('编辑强化等级 1'));
     await tester.pumpAndSettle();
     expect(find.textContaining('留空则沿用基础要求'), findsOneWidget);
@@ -142,7 +135,8 @@ void main() {
     final after = await repository.getCard(card.id);
     expect(after.strengtheningLevels.single.action, isNull);
     expect(after.strengtheningLevels.single.triggerCondition, '仅旧触发');
-    expect(after.requirementVersions, hasLength(versionsAfterSelect));
+    expect(after.requirementVersions, hasLength(1));
+    expect(after.activeStrengtheningLevel, isNull);
     expect(after.effectiveAction, '阅读 5 页');
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
