@@ -1,9 +1,12 @@
 package com.rukani.pacta
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
+import android.net.Uri
 import android.provider.CalendarContract
+import android.provider.Settings
 import androidx.core.app.ActivityCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -14,6 +17,7 @@ import java.util.concurrent.Executors
 class MainActivity : FlutterActivity() {
     private val channelName = "com.pacta/calendar"
     private val sourceDeviceInfoChannelName = "com.pacta/source_device_info"
+    private val devicePermissionsChannelName = "com.pacta/device_permissions"
     private val permissionRequestCode = 4720
     private val calendarExecutor = Executors.newSingleThreadExecutor()
     private var permissionResult: MethodChannel.Result? = null
@@ -50,6 +54,59 @@ class MainActivity : FlutterActivity() {
                 )
             } else {
                 result.notImplemented()
+            }
+        }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            devicePermissionsChannelName,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "openNotificationSettings" -> {
+                    openNotificationSettings()
+                    result.success(null)
+                }
+                "openAppSettings" -> {
+                    openAppSettings()
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    /// Android may stop presenting a permission dialog after repeated denials,
+    /// so the app's own system screens stay reachable.
+    private fun openNotificationSettings() {
+        val candidates = listOf(
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName),
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:$packageName"),
+            ),
+        )
+        openFirstAvailable(candidates)
+    }
+
+    private fun openAppSettings() {
+        openFirstAvailable(
+            listOf(
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:$packageName"),
+                ),
+            ),
+        )
+    }
+
+    private fun openFirstAvailable(intents: List<Intent>) {
+        for (intent in intents) {
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                startActivity(intent)
+                return
+            } catch (error: Exception) {
+                // Try the next system screen; a missing one must not crash.
             }
         }
     }

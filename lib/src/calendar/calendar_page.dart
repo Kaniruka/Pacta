@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../notifications/device_permission_gateway.dart';
 import 'calendar_models.dart';
 import 'calendar_repository.dart';
 
@@ -122,10 +123,14 @@ class CalendarSourcesPage extends StatefulWidget {
     super.key,
     required this.repository,
     required this.isAndroid,
+    this.permissionGateway,
   });
 
   final CalendarRepository repository;
   final bool isAndroid;
+
+  /// Optional so tests can observe the system settings entry.
+  final DevicePermissionGateway? permissionGateway;
 
   @override
   State<CalendarSourcesPage> createState() => _CalendarSourcesPageState();
@@ -137,10 +142,21 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
   bool _working = false;
   String? _message;
 
+  DevicePermissionGateway get _permissions =>
+      widget.permissionGateway ?? createDevicePermissionGateway();
+
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  /// Android stops presenting the dialog after repeated denials, so the app
+  /// settings screen stays available as the way back to calendar access.
+  Future<void> _openSystemSettings() async {
+    await _permissions.openAppSettings();
+    if (!mounted) return;
+    await _load();
   }
 
   Future<void> _load() async {
@@ -536,14 +552,38 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
             icon: const Icon(Icons.delete_outline),
             label: const Text('确认撤权并移除所有来源'),
           ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            key: const Key('calendar-open-system-settings'),
+            onPressed: _working ? null : _openSystemSettings,
+            icon: const Icon(Icons.settings_outlined),
+            label: const Text('去系统设置开启日历权限'),
+          ),
         ],
       );
     }
-    return const Card(
-      child: ListTile(
-        leading: Icon(Icons.info_outline),
-        title: Text('日历权限尚未开启'),
-        subtitle: Text('允许后可选择要读取的日历。拒绝权限不影响其他功能。'),
+    return Card(
+      child: Column(
+        children: [
+          const ListTile(
+            leading: Icon(Icons.info_outline),
+            title: Text('日历权限尚未开启'),
+            subtitle: Text('允许后可选择要读取的日历。拒绝权限不影响其他功能。'),
+          ),
+          if (widget.isAndroid)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  key: const Key('calendar-open-system-settings'),
+                  onPressed: _working ? null : _openSystemSettings,
+                  icon: const Icon(Icons.settings_outlined),
+                  label: const Text('去系统设置开启日历权限'),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

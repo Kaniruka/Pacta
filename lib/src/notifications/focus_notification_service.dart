@@ -10,6 +10,9 @@ import 'package:timezone/data/latest_all.dart' as timezone_data;
 import 'package:timezone/timezone.dart' as timezone;
 
 import '../focus/focus_models.dart';
+import 'daily_open_reminder_plan.dart';
+import 'daily_open_reminder_state.dart';
+import 'device_permission_gateway.dart';
 import 'focus_device_preferences.dart';
 import 'focus_notification_plan.dart';
 import 'national_focus_reminder_plan.dart';
@@ -19,45 +22,61 @@ class FocusNotificationService {
   FocusNotificationService({
     this.preferencesStore,
     this.nationalFocusReminderStateStore,
+    this.dailyOpenReminderStateStore,
     FlutterLocalNotificationsPlugin? androidNotifications,
     MethodChannel? windowsChannel,
     DateTime Function()? now,
+    this.localTimeZone,
+    this.permissionGateway,
+    Timer Function(Duration delay, void Function() callback)? reminderTimers,
   }) : _androidNotifications =
            androidNotifications ?? FlutterLocalNotificationsPlugin(),
        _windowsChannel =
            windowsChannel ?? const MethodChannel('com.pacta/focus_status'),
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       _reminderTimers = reminderTimers ?? Timer.new;
 
   static const _statusNotificationId = 2200;
   static const _appointmentStatusNotificationId = 2201;
   static const _appointmentTransitionNotificationId = 2202;
   static const _sessionEndNotificationId = 2203;
   static const _nationalFocusReminderNotificationId = 2204;
+  static const _dailyOpenReminderNotificationId = 2205;
   static const _statusChannelId = 'pacta_focus_status';
   static const _eventChannelId = 'pacta_focus_events';
   static const _nationalFocusReminderChannelId =
       'pacta_national_focus_reminders';
+  static const _dailyOpenReminderChannelId = 'pacta_daily_open_reminders';
   static const _ownedNotificationIds = {
     _statusNotificationId,
     _appointmentStatusNotificationId,
     _appointmentTransitionNotificationId,
     _sessionEndNotificationId,
     _nationalFocusReminderNotificationId,
+    _dailyOpenReminderNotificationId,
   };
 
   final FocusDevicePreferencesStore? preferencesStore;
   final NationalFocusReminderStateStore? nationalFocusReminderStateStore;
+  final DailyOpenReminderStateStore? dailyOpenReminderStateStore;
   final FlutterLocalNotificationsPlugin _androidNotifications;
   final MethodChannel _windowsChannel;
   final DateTime Function() _now;
+  final Future<String> Function()? localTimeZone;
+  final DevicePermissionGateway? permissionGateway;
+  final Timer Function(Duration delay, void Function() callback)
+  _reminderTimers;
   final _openFlowRequests = StreamController<String>.broadcast();
 
   FocusDevicePreferencesStore? _resolvedPreferencesStore;
   NationalFocusReminderStateStore? _resolvedNationalFocusReminderStateStore;
+  DailyOpenReminderStateStore? _resolvedDailyOpenReminderStateStore;
   FocusNotificationPlan? _currentPlan;
   Timer? _windowsTicker;
   Timer? _windowsNationalFocusReminderTimer;
+  Timer? _dailyOpenReminderTimer;
   Future<void> _nationalFocusReminderWork = Future<void>.value();
+  Future<void> _dailyOpenReminderWork = Future<void>.value();
   bool? _hasPendingNationalFocusConfirmations;
   bool _initialized = false;
   bool _timeZonesInitialized = false;
@@ -73,7 +92,11 @@ class FocusNotificationService {
   Future<void> initialize() async {
     if (_initialized) return;
     _initialized = true;
-    if (Platform.isWindows) return;
+    if (Platform.isWindows) {
+      // The Windows tray sends the payload back when its reminder is clicked.
+      _windowsChannel.setMethodCallHandler(_handleWindowsCall);
+      return;
+    }
     if (!Platform.isAndroid) return;
 
     timezone_data.initializeTimeZones();
@@ -97,6 +120,15 @@ class FocusNotificationService {
     if (launchDetails?.didNotificationLaunchApp == true && response != null) {
       handleNotificationResponse(response);
     }
+  }
+
+  Future<dynamic> _handleWindowsCall(MethodCall call) async {
+    if (call.method != 'notificationClicked') return null;
+    final payload = call.arguments;
+    if (payload is! String || payload.isEmpty) return null;
+    _pendingOpenRequest = payload;
+    _openFlowRequests.add(payload);
+    return null;
   }
 
   Future<FocusDevicePreferences> getPreferences() async =>
@@ -151,6 +183,16 @@ class FocusNotificationService {
         >();
     return await android?.requestExactAlarmsPermission() ?? false;
   }
+
+  /// Opens the system screen that owns this app's notification permission.
+  Future<void> openNotificationSettings() =>
+      _permissions.openNotificationSettings();
+
+  /// Opens this app's system settings page, where calendar access lives.
+  Future<void> openAppSettings() => _permissions.openAppSettings();
+
+  DevicePermissionGateway get _permissions =>
+      permissionGateway ?? createDevicePermissionGateway();
 
   String? takePendingOpenRequest() {
     final request = _pendingOpenRequest;
@@ -291,6 +333,8 @@ class FocusNotificationService {
     _hasPendingNationalFocusConfirmations = false;
     _windowsTicker?.cancel();
     _windowsNationalFocusReminderTimer?.cancel();
+    _dailyOpenReminderTimer?.cancel();
+    _dailyOpenReminderTimer = null;
     if (Platform.isAndroid) {
       await _cancelPendingAndroidNotifications(_ownedNotificationIds);
       await _androidNotifications.cancel(id: _statusNotificationId);
@@ -299,11 +343,14 @@ class FocusNotificationService {
       await _windowsChannel.invokeMethod<void>('clearStatus');
     }
     await (await _reminderStateStore).clearScheduled();
+    await (await _dailyReminderStateStore).clearScheduled();
   }
 
   Future<void> dispose() async {
     _windowsTicker?.cancel();
     _windowsNationalFocusReminderTimer?.cancel();
+    _dailyOpenReminderTimer?.cancel();
+    if (Platform.isWindows) _windowsChannel.setMethodCallHandler(null);
     await _openFlowRequests.close();
   }
 
@@ -311,6 +358,14 @@ class FocusNotificationService {
     final supplied = preferencesStore;
     if (supplied != null) return supplied;
     return _resolvedPreferencesStore ??= FocusDevicePreferencesStore(
+      await SharedPreferences.getInstance(),
+    );
+  }
+
+  Future<DailyOpenReminderStateStore> get _dailyReminderStateStore async {
+    final supplied = dailyOpenReminderStateStore;
+    if (supplied != null) return supplied;
+    return _resolvedDailyOpenReminderStateStore ??= DailyOpenReminderStateStore(
       await SharedPreferences.getInstance(),
     );
   }
@@ -330,6 +385,211 @@ class FocusNotificationService {
       await _applyAndroidPlan(preferences);
     }
     await _queueNationalFocusReminderReconciliation();
+    await _queueDailyOpenReminderReconciliation();
+  }
+
+  /// Reconciles the device-local daily open-Pacta reminder with its settings.
+  ///
+  /// Safe to call on every app start or resume: an unchanged plan keeps the one
+  /// pending reminder instead of creating another.
+  Future<void> syncDailyOpenReminder() =>
+      _queueDailyOpenReminderReconciliation();
+
+  /// Drains the reminder work queued by reconciliation and by delivery.
+  @visibleForTesting
+  Future<void> get pendingDailyReminderWork async {
+    Future<void> current;
+    do {
+      current = _dailyOpenReminderWork;
+      await current;
+    } while (!identical(current, _dailyOpenReminderWork));
+  }
+
+  Future<void> _queueDailyOpenReminderReconciliation() {
+    final operation = _dailyOpenReminderWork.then(
+      (_) => _reconcileDailyOpenReminder(),
+    );
+    _dailyOpenReminderWork = operation.catchError((Object _) {});
+    return operation;
+  }
+
+  Future<void> _reconcileDailyOpenReminder() async {
+    final preferences = await (await _settingsStore).load();
+    final state = await _dailyReminderStateStore;
+    if (!preferences.dailyOpenReminderEnabled ||
+        (!Platform.isAndroid && !Platform.isWindows)) {
+      await _cancelDailyOpenReminder(state);
+      return;
+    }
+    if (Platform.isAndroid && !await notificationsAllowed()) {
+      await _cancelDailyOpenReminder(state);
+      return;
+    }
+
+    final now = _now();
+    final plan = DailyOpenReminderPlan.next(
+      now: now,
+      minuteOfDay: preferences.dailyOpenReminderMinutesAfterMidnight,
+    );
+    final timeZoneId = await _currentTimeZoneId();
+    if (Platform.isWindows) {
+      await _applyWindowsDailyOpenReminder(plan, timeZoneId, state, now);
+      return;
+    }
+    await _applyAndroidDailyOpenReminder(plan, timeZoneId, state, now);
+  }
+
+  Future<void> _cancelDailyOpenReminder(
+    DailyOpenReminderStateStore state,
+  ) async {
+    _dailyOpenReminderTimer?.cancel();
+    _dailyOpenReminderTimer = null;
+    if (Platform.isAndroid) {
+      await _androidNotifications.cancel(id: _dailyOpenReminderNotificationId);
+    }
+    await state.clearScheduled();
+  }
+
+  Future<void> _applyWindowsDailyOpenReminder(
+    DailyOpenReminderPlan plan,
+    String timeZoneId,
+    DailyOpenReminderStateStore state,
+    DateTime now,
+  ) async {
+    final scheduled = state.loadScheduled();
+    final unchanged =
+        scheduled != null &&
+        scheduled.dayKey == plan.dayKey &&
+        scheduled.scheduledAt.isAtSameMomentAs(plan.scheduledAt) &&
+        scheduled.timeZoneId == timeZoneId;
+    if (unchanged && _dailyOpenReminderTimer?.isActive == true) return;
+
+    if (!unchanged) {
+      _dailyOpenReminderTimer?.cancel();
+      await state.saveScheduled(
+        DailyOpenReminderSchedule(
+          dayKey: plan.dayKey,
+          scheduledAt: plan.scheduledAt,
+          timeZoneId: timeZoneId,
+        ),
+      );
+    }
+    // A restarted app keeps the stored plan but still needs its own timer.
+    final delay = plan.scheduledAt.difference(now);
+    final dayKey = plan.dayKey;
+    _dailyOpenReminderTimer = _reminderTimers(
+      delay.isNegative ? Duration.zero : delay,
+      () => _queueDailyOpenReminderDelivery(dayKey),
+    );
+  }
+
+  Future<void> _applyAndroidDailyOpenReminder(
+    DailyOpenReminderPlan plan,
+    String timeZoneId,
+    DailyOpenReminderStateStore state,
+    DateTime now,
+  ) async {
+    final scheduled = state.loadScheduled();
+    final pending = await _androidNotifications.pendingNotificationRequests();
+    final hasPendingReminder = pending.any(
+      (request) => request.id == _dailyOpenReminderNotificationId,
+    );
+    final unchanged =
+        hasPendingReminder &&
+        scheduled != null &&
+        scheduled.dayKey == plan.dayKey &&
+        scheduled.scheduledAt.isAtSameMomentAs(plan.scheduledAt) &&
+        scheduled.timeZoneId == timeZoneId;
+    if (unchanged) return;
+
+    // Reusing this id replaces the pending alarm, which keeps time changes and
+    // restarts from stacking several daily reminders.
+    final exactAllowed = await exactAlarmsAllowed();
+    await _androidNotifications.zonedSchedule(
+      id: _dailyOpenReminderNotificationId,
+      title: '打开 Pacta',
+      body: '查看今天的看板。',
+      scheduledDate: timezone.TZDateTime.from(
+        plan.scheduledAt,
+        _locationForTimeZone(timeZoneId),
+      ),
+      notificationDetails: _dailyOpenReminderDetails(),
+      androidScheduleMode: exactAllowed
+          ? AndroidScheduleMode.exactAllowWhileIdle
+          : AndroidScheduleMode.inexactAllowWhileIdle,
+      payload: 'daily-open-reminder:${plan.dayKey}',
+      // The daily component repeats on the device wall clock, so a single
+      // pending alarm never accumulates one notification per missed day.
+      matchDateTimeComponents: DateTimeComponents.time,
+    );
+    await state.saveScheduled(
+      DailyOpenReminderSchedule(
+        dayKey: plan.dayKey,
+        scheduledAt: plan.scheduledAt,
+        timeZoneId: timeZoneId,
+      ),
+    );
+  }
+
+  void _queueDailyOpenReminderDelivery(String dayKey) {
+    final operation = _dailyOpenReminderWork.then(
+      (_) => _deliverDailyOpenReminder(dayKey),
+    );
+    _dailyOpenReminderWork = operation.catchError((Object _) {});
+  }
+
+  Future<void> _deliverDailyOpenReminder(String dayKey) async {
+    final state = await _dailyReminderStateStore;
+    if (Platform.isAndroid) {
+      await state.markSent(dayKey);
+      return;
+    }
+    try {
+      await _showWindowsEvent(
+        title: '打开 Pacta',
+        body: '查看今天的看板。',
+        payload: 'daily-open-reminder:$dayKey',
+      );
+      await state.markSent(dayKey);
+    } catch (_) {
+      // A tray delivery failure must not leave the reminder stuck on one day.
+    }
+    // Queued instead of awaited so delivery never waits on its own work chain.
+    unawaited(_queueDailyOpenReminderReconciliation());
+  }
+
+  Future<String> _currentTimeZoneId() async {
+    try {
+      final identifier = await localTimeZone?.call();
+      if (identifier != null && identifier.isNotEmpty) return identifier;
+      return (await FlutterTimezone.getLocalTimezone()).identifier;
+    } catch (_) {
+      // An unreadable zone still lets the local clock schedule the reminder;
+      // the offset keeps a zone change detectable.
+      final offset = _now().timeZoneOffset;
+      final sign = offset.isNegative ? '-' : '+';
+      final hours = offset.inHours.abs().toString().padLeft(2, '0');
+      final minutes = (offset.inMinutes.abs() % 60).toString().padLeft(2, '0');
+      return 'UTC$sign$hours:$minutes';
+    }
+  }
+
+  timezone.Location _locationForTimeZone(String timeZoneId) {
+    if (!_timeZonesInitialized) {
+      timezone_data.initializeTimeZones();
+      _timeZonesInitialized = true;
+    }
+    try {
+      return timezone.getLocation(timeZoneId);
+    } catch (_) {
+      // An unlisted identifier such as the emulator's "GMT" keeps the device
+      // location that initialize() resolved; UTC is the last resort.
+      try {
+        return timezone.local;
+      } catch (_) {
+        return timezone.getLocation('Etc/UTC');
+      }
+    }
   }
 
   Future<void> _queueNationalFocusReminderReconciliation() {
@@ -623,6 +883,7 @@ class FocusNotificationService {
     await _cancelStalePendingAndroidNotifications({
       ...expectedPendingIds,
       _nationalFocusReminderNotificationId,
+      _dailyOpenReminderNotificationId,
     });
 
     if (!showStatus || plan == null) {
@@ -796,9 +1057,11 @@ class FocusNotificationService {
   Future<void> _showWindowsEvent({
     required String title,
     required String body,
+    String? payload,
   }) => _windowsChannel.invokeMethod<void>('showNotification', {
     'title': title,
     'body': body,
+    'payload': ?payload,
   });
 
   Future<void> _showAndroidStatus({
@@ -831,6 +1094,18 @@ class FocusNotificationService {
       category: AndroidNotificationCategory.reminder,
       autoCancel: true,
       onlyAlertOnce: true,
+    ),
+  );
+
+  NotificationDetails _dailyOpenReminderDetails() => NotificationDetails(
+    android: AndroidNotificationDetails(
+      _dailyOpenReminderChannelId,
+      '每日打开提醒',
+      channelDescription: '每天在本机当地时间提醒打开 Pacta 看板。',
+      importance: Importance.defaultImportance,
+      priority: Priority.defaultPriority,
+      category: AndroidNotificationCategory.reminder,
+      autoCancel: true,
     ),
   );
 
@@ -998,6 +1273,12 @@ class DisabledFocusNotificationService extends FocusNotificationService {
 
   @override
   Future<bool> requestExactAlarmPermission() async => false;
+
+  @override
+  Future<void> openNotificationSettings() async {}
+
+  @override
+  Future<void> openAppSettings() async {}
 
   @override
   String? takePendingOpenRequest() => null;

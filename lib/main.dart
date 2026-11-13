@@ -750,6 +750,9 @@ class _AppShellState extends ConsumerState<AppShell>
         );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_refreshLocalState(checkCloud: true));
+      // The daily reminder belongs to this device, so it is reconciled on
+      // every start instead of relying on a business data change.
+      unawaited(_focusNotificationService.syncDailyOpenReminder());
       final request = _focusNotificationService.takePendingOpenRequest();
       if (request != null) unawaited(_openFocusFlow(request));
     });
@@ -785,6 +788,9 @@ class _AppShellState extends ConsumerState<AppShell>
       // Local recovery can be retried without uploading or discarding records.
     }
     await _syncFocusStatus();
+    // A resume can cross midnight or a device time zone change; the reminder is
+    // replanned from the current local wall clock without replaying old days.
+    unawaited(_focusNotificationService.syncDailyOpenReminder());
   }
 
   Future<void> _syncFocusStatus() async {
@@ -823,6 +829,10 @@ class _AppShellState extends ConsumerState<AppShell>
 
   Future<void> _openFocusFlow(String payload) async {
     if (!mounted) return;
+    if (payload.startsWith('daily-open-reminder:')) {
+      setState(() => _index = 0);
+      return;
+    }
     if (payload.startsWith('national-focus-reminder:')) {
       setState(() => _index = 1);
       return;
@@ -4430,9 +4440,9 @@ class _MyPageState extends ConsumerState<MyPage> {
         const SizedBox(height: 12),
         Card(
           child: ListTile(
-            leading: const Icon(Icons.settings_outlined),
-            title: const Text('设置'),
-            subtitle: const Text('专注通知与本设备后台状态'),
+            leading: const Icon(Icons.notifications_active_outlined),
+            title: const Text('提醒与通知'),
+            subtitle: const Text('专注、国策与每日打开提醒；仅本机生效'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute<void>(
