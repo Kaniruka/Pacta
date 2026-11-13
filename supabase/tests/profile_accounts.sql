@@ -1,8 +1,8 @@
 -- Rollback-only profile RLS, validation, and lifecycle checks for Issue #94.
 -- Run against an isolated Supabase project after applying
 -- 202611130002_profile_account.sql. Requires one administrator and one
--- non-administrator signed-in user. Nothing here touches real user data:
--- every change is rolled back.
+-- non-administrator signed-in user. Every change, including the temporary
+-- grant below, is rolled back; non-probe identities are never touched.
 begin;
 
 do $setup$
@@ -56,16 +56,19 @@ $empty_read$;
 -- A bounded PNG avatar and a trimmed display name round-trip through base64.
 do $save_round_trip$
 declare
-  avatar_base64 text := encode(
-    decode(
-      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==',
-      'base64'
-    ),
-    'base64'
-  );
   saved jsonb;
 begin
-  saved := public.save_profile_account('  小林  ', avatar_base64, false);
+  saved := public.save_profile_account(
+    '  小林  ',
+    encode(
+      decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==',
+        'base64'
+      ),
+      'base64'
+    ),
+    false
+  );
   if saved ->> 'displayName' <> '小林' then
     raise exception 'display_name_was_not_trimmed';
   end if;
@@ -75,11 +78,7 @@ begin
   if saved ->> 'avatarBase64' is null then
     raise exception 'avatar_binary_was_not_stored';
   end if;
-  if exists (
-    select 1 from public.profile_accounts
-    where user_id = current_setting('profile_test.owner_id')::uuid
-      and octet_length(avatar_bytes) > 262144
-  ) then
+  if octet_length(decode(saved ->> 'avatarBase64', 'base64')) > 262144 then
     raise exception 'avatar_exceeded_size_limit';
   end if;
 end
@@ -114,7 +113,9 @@ $clear_avatar$;
 do $reject_invalid_avatars$
 begin
   begin
-    perform public.save_profile_account('x', encode('not an image'::bytea, 'base64'), false);
+    perform public.save_profile_account(
+      'x', encode('not an image'::bytea, 'base64'), false
+    );
     raise exception 'non_image_avatar_was_accepted';
   exception
     when sqlstate '22023' then null;
@@ -150,7 +151,7 @@ begin
 end
 $no_direct_table_access$;
 
--- Another signed-in user cannot read the owner's profile through the RPC.
+-- Another signed-in user cannot read or overwrite the owner's profile.
 do $other_claim$
 begin
   perform set_config(
@@ -162,40 +163,111 @@ end
 $other_claim$;
 
 do $cross_user_isolation$
+declare
+  saved jsonb;
 begin
   if public.read_profile_account() is not null then
     raise exception 'cross_user_profile_read_leak';
   end if;
-  perform public.save_profile_account('其他用户', null, false);
-  if not exists (
-    select 1 from public.profile_accounts
-    where user_id = current_setting('profile_test.other_id')::uuid
-  ) then
+  saved := public.save_profile_account('其他用户', null, false);
+  if saved ->> 'displayName' <> '其他用户' then
     raise exception 'other_user_profile_was_not_scoped';
   end if;
 end
 $cross_user_isolation$;
 
--- Deleting the Auth identity removes the profile row and its avatar binary.
-reset role;
-do $identity_cascade$
-declare
-  probe_id uuid := gen_random_uuid();
-  purge_requested timestamptz := now();
+-- The owner's stored profile survives another user's write.
+do $owner_claim_again$
 begin
-  insert into public.user_purge_receipts (user_id, status, requested_at)
-  values (probe_id, 'pending', purge_requested);
-  insert into public.profile_accounts (
-    user_id, display_name, avatar_mime_type, avatar_bytes, updated_at
-  ) values (
-    probe_id, '待清除', 'image/png',
-    decode('iVBORw0KGgo=', 'base64'), now()
+  perform set_config(
+    'request.jwt.claim.sub',
+    current_setting('profile_test.owner_id'),
+    true
   );
-  delete from auth.users where id = probe_id;
-  if exists (select 1 from public.profile_accounts where user_id = probe_id) then
-    raise exception 'profile_survived_auth_identity_delete';
+end
+$owner_claim_again$;
+
+do $owner_profile_intact$
+begin
+  if public.read_profile_account() ->> 'displayName' <> '新名字' then
+    raise exception 'owner_profile_was_overwritten_by_other_user';
   end if;
-  delete from public.user_purge_receipts where user_id = probe_id;
+end
+$owner_profile_intact$;
+
+-- Owner-only RLS policies hold if a direct read grant is ever added.
+reset role;
+grant select on table public.profile_accounts to authenticated;
+set local role authenticated;
+
+do $owner_claim_for_rls$
+begin
+  perform set_config(
+    'request.jwt.claim.sub',
+    current_setting('profile_test.owner_id'),
+    true
+  );
+end
+$owner_claim_for_rls$;
+
+do $owner_visibility$
+begin
+  if not exists (
+    select 1 from public.profile_accounts
+    where user_id = current_setting('profile_test.owner_id')::uuid
+  ) then
+    raise exception 'owner_row_was_hidden_by_rls';
+  end if;
+  if exists (
+    select 1 from public.profile_accounts
+    where user_id <> current_setting('profile_test.owner_id')::uuid
+  ) then
+    raise exception 'rls_exposed_another_users_profile';
+  end if;
+end
+$owner_visibility$;
+
+do $other_claim_for_rls$
+begin
+  perform set_config(
+    'request.jwt.claim.sub',
+    current_setting('profile_test.other_id'),
+    true
+  );
+end
+$other_claim_for_rls$;
+
+do $other_visibility$
+begin
+  if exists (
+    select 1 from public.profile_accounts
+    where user_id = current_setting('profile_test.owner_id')::uuid
+  ) then
+    raise exception 'rls_exposed_owner_profile_to_other_user';
+  end if;
+end
+$other_visibility$;
+
+reset role;
+revoke select on table public.profile_accounts from authenticated;
+
+-- Lifecycle removal is delegated to the Auth identity: the profile row and its
+-- avatar binary must cascade when that identity is deleted. This checks the
+-- wiring only; no probe identity or runtime test identity is deleted here.
+do $identity_cascade$
+begin
+  if not exists (
+    select 1
+    from pg_constraint as constraint_row
+    join pg_class as table_row on table_row.oid = constraint_row.conrelid
+    join pg_namespace as schema_row on schema_row.oid = table_row.relnamespace
+    where schema_row.nspname = 'public'
+      and table_row.relname = 'profile_accounts'
+      and constraint_row.contype = 'f'
+      and constraint_row.confdeltype = 'c'
+  ) then
+    raise exception 'profile_accounts_does_not_cascade_from_auth_identity';
+  end if;
 end
 $identity_cascade$;
 
