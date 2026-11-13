@@ -30,6 +30,8 @@ Windows 图片首轮 `avatar-native-windows-20261113-resume` 选图与图片处�
 
 本轮 `reminder-native-windows-20261113-resume` 排程到本机 22:15，应用已最小化。到点后系统 `SHQueryUserNotificationState` 返回 2（BUSY），未观察到可点击通知。fixture 因真实点击超时失败，打印 `ISSUE95_PREFERENCES_RESTORED`。没有注入回调冒充点击，没有改系统通知/隐私设置。已请求用户桌面空闲时再补测。
 
+22:53 用户要求继续后再测，目录 `reminder-native-windows-20261113-225334`。开跑前系统返回 5（ACCEPTS），22:54:18 进入真实点击等待，目标为 22:56。主 Agent 最小化测试窗口后，到点再查已变成 2（BUSY）；把已有普通资源管理器窗口置前仍返回 2，未观察到通知。22:58:19 fixture 超时失败（run.rc=1），确认 `ISSUE95_PREFERENCES_RESTORED`，测试进程已退出。此轮未改代码或系统设置，不能计作原生点击通过。后续需要桌面在排程、最小化及到点期间持续可接收通知；仅开跑时一次 ACCEPTS 不足以证明环境就绪。
+
 ## 最终视觉验收
 
 同一 `sync_profile_overview_device_test.dart` 覆盖名片、同步操作、上传与下载确认、历史、恢复确认及取消后的数据保持。命令使用 `.scratch/issue90/run_ui.py <device> integration_test/sync_profile_overview_device_test.dart <label>`；以下运行均记录 `exitCode=0`、`sourceUnchanged=true`：
