@@ -89,3 +89,26 @@ Android 命令（由主 Agent 在模拟器执行）：`flutter drive --driver=te
 | 隔离项目探针 | PASS，事务回滚，证据 `.scratch/issue90/profile-probe-20261113-183619.json` |
 
 合并状态：integration tip `edde186` 已包含在分支中（上一轮合入的 `1937dbd`），本轮无新上游提交。
+## 真实服务 fixture（仅准备，未运行）
+
+新增 `integration_test/profile_real_service_test.dart`，由主 Agent 在 SQL 最终验证并部署到隔离项目后于两端执行。**本轮未运行，不记为通过。**
+
+- 运行时协议沿用 #71/#92：`ISSUE71_RUNTIME_CONTROL` + `ISSUE90_RUNTIME_PORT`（默认 30390），从 loopback `/session?user=device|other` 取临时会话；客户端只持有运行时下发的 URL/publishable key/refresh token，不编译 `.env`、不含管理员密钥。
+- Android phase：用真实 `save_profile_account` 保存合成 1x1 PNG 头像与昵称，随后用新的 remote 从云端读回，断言昵称、mime 与头像字节完全一致（base64 往返）。
+- Windows phase：使用**独立内存缓存**（本机无资料），`syncProfile` 从云端采用 Android 保存的昵称与头像；随后改昵称并 `clearAvatar`，再从云端读回确认昵称更新、头像为空。重复运行 Windows 时会读到上一次 Windows 结果，测试按注释接受该幂等分支。
+- 跨用户：以 `other` 身份调用 `read_profile_account` 不得读到 owner 昵称，直接 `select public.profile_accounts` 因无表权限被 `PostgrestException` 拒绝。
+- 业务快照隔离：同一临时库内用真实 `CloudSnapshotRepository` 上传（带 `requestId`）后新增本机业务行再 `downloadCloud` 恢复，断言本机资料缓存与云端资料均未被快照恢复改写。
+- 收尾：恢复该用户既有同步结果偏好键，关闭临时内存库与两个客户端；不触碰共享云、不删除隔离项目的临时身份。
+
+建议执行命令（主 Agent 用现有 runner 传入 control 与端口；示例仅示意环境变量名）：
+
+```
+flutter test -d <android-device> integration_test/profile_real_service_test.dart \
+  --dart-define=ISSUE71_RUNTIME_CONTROL=<runtime-control> \
+  --dart-define=ISSUE90_RUNTIME_PORT=30390
+flutter test -d windows integration_test/profile_real_service_test.dart \
+  --dart-define=ISSUE71_RUNTIME_CONTROL=<runtime-control> \
+  --dart-define=ISSUE90_RUNTIME_PORT=30390
+```
+
+运行顺序：先 Android 建立资料，再 Windows 采用与修改。
