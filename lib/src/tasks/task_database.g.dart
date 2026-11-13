@@ -13621,30 +13621,28 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   ];
 }
 
-typedef $$LocalGoalsTableCreateCompanionBuilder =
-    LocalGoalsCompanion Function({
-      required String userId,
-      required String id,
-      required String title,
-      Value<String> description,
-      required String classification,
-      required DateTime createdAt,
-      required DateTime updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
-typedef $$LocalGoalsTableUpdateCompanionBuilder =
-    LocalGoalsCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> title,
-      Value<String> description,
-      Value<String> classification,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
+typedef $$LocalGoalsTableCreateCompanionBuilder = LocalGoalsCompanion Function({
+  required String userId,
+  required String id,
+  required String title,
+  Value<String> description,
+  required String classification,
+  required DateTime createdAt,
+  required DateTime updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
+typedef $$LocalGoalsTableUpdateCompanionBuilder = LocalGoalsCompanion Function({
+  Value<String> userId,
+  Value<String> id,
+  Value<String> title,
+  Value<String> description,
+  Value<String> classification,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
 
 class $$LocalGoalsTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalGoalsTable> {
@@ -13879,40 +13877,38 @@ typedef $$LocalGoalsTableProcessedTableManager =
       LocalGoal,
       PrefetchHooks Function()
     >;
-typedef $$LocalTasksTableCreateCompanionBuilder =
-    LocalTasksCompanion Function({
-      required String userId,
-      required String id,
-      required String goalId,
-      required String title,
-      Value<String> description,
-      required String classification,
-      Value<int?> estimatedMinutes,
-      Value<DateTime?> deadline,
-      Value<bool> isComplete,
-      Value<int> focusProgressSeconds,
-      required DateTime createdAt,
-      required DateTime updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
-typedef $$LocalTasksTableUpdateCompanionBuilder =
-    LocalTasksCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> goalId,
-      Value<String> title,
-      Value<String> description,
-      Value<String> classification,
-      Value<int?> estimatedMinutes,
-      Value<DateTime?> deadline,
-      Value<bool> isComplete,
-      Value<int> focusProgressSeconds,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
+typedef $$LocalTasksTableCreateCompanionBuilder = LocalTasksCompanion Function({
+  required String userId,
+  required String id,
+  required String goalId,
+  required String title,
+  Value<String> description,
+  required String classification,
+  Value<int?> estimatedMinutes,
+  Value<DateTime?> deadline,
+  Value<bool> isComplete,
+  Value<int> focusProgressSeconds,
+  required DateTime createdAt,
+  required DateTime updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
+typedef $$LocalTasksTableUpdateCompanionBuilder = LocalTasksCompanion Function({
+  Value<String> userId,
+  Value<String> id,
+  Value<String> goalId,
+  Value<String> title,
+  Value<String> description,
+  Value<String> classification,
+  Value<int?> estimatedMinutes,
+  Value<DateTime?> deadline,
+  Value<bool> isComplete,
+  Value<int> focusProgressSeconds,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
 
 class $$LocalTasksTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalTasksTable> {
@@ -16654,30 +16650,28 @@ typedef $$FocusSessionsTableProcessedTableManager =
       FocusSession,
       PrefetchHooks Function()
     >;
-typedef $$FocusNodesTableCreateCompanionBuilder =
-    FocusNodesCompanion Function({
-      required String userId,
-      required String id,
-      required String sessionId,
-      required String taskId,
-      required String mode,
-      required DateTime createdAt,
-      required int effectiveSeconds,
-      Value<String?> note,
-      Value<int> rowid,
-    });
-typedef $$FocusNodesTableUpdateCompanionBuilder =
-    FocusNodesCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> sessionId,
-      Value<String> taskId,
-      Value<String> mode,
-      Value<DateTime> createdAt,
-      Value<int> effectiveSeconds,
-      Value<String?> note,
-      Value<int> rowid,
-    });
+typedef $$FocusNodesTableCreateCompanionBuilder = FocusNodesCompanion Function({
+  required String userId,
+  required String id,
+  required String sessionId,
+  required String taskId,
+  required String mode,
+  required DateTime createdAt,
+  required int effectiveSeconds,
+  Value<String?> note,
+  Value<int> rowid,
+});
+typedef $$FocusNodesTableUpdateCompanionBuilder = FocusNodesCompanion Function({
+  Value<String> userId,
+  Value<String> id,
+  Value<String> sessionId,
+  Value<String> taskId,
+  Value<String> mode,
+  Value<DateTime> createdAt,
+  Value<int> effectiveSeconds,
+  Value<String?> note,
+  Value<int> rowid,
+});
 
 class $$FocusNodesTableFilterComposer
     extends Composer<_$PactaDatabase, $FocusNodesTable> {

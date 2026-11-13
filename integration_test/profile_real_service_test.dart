@@ -33,12 +33,73 @@ const String _windowsDisplayName = 'Windows 验收昵称';
 
 /// Synthetic 1x1 PNG; the point is a real binary round trip, not the picture.
 final Uint8List _syntheticAvatar = Uint8List.fromList(const [
-  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
-  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-  0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
-  0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
-  0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-  0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+  0x89,
+  0x50,
+  0x4E,
+  0x47,
+  0x0D,
+  0x0A,
+  0x1A,
+  0x0A,
+  0x00,
+  0x00,
+  0x00,
+  0x0D,
+  0x49,
+  0x48,
+  0x44,
+  0x52,
+  0x00,
+  0x00,
+  0x00,
+  0x01,
+  0x00,
+  0x00,
+  0x00,
+  0x01,
+  0x08,
+  0x06,
+  0x00,
+  0x00,
+  0x00,
+  0x1F,
+  0x15,
+  0xC4,
+  0x89,
+  0x00,
+  0x00,
+  0x00,
+  0x0A,
+  0x49,
+  0x44,
+  0x41,
+  0x54,
+  0x78,
+  0x9C,
+  0x63,
+  0x00,
+  0x01,
+  0x00,
+  0x00,
+  0x05,
+  0x00,
+  0x01,
+  0x0D,
+  0x0A,
+  0x2D,
+  0xB4,
+  0x00,
+  0x00,
+  0x00,
+  0x00,
+  0x49,
+  0x45,
+  0x4E,
+  0x44,
+  0xAE,
+  0x42,
+  0x60,
+  0x82,
 ]);
 
 Future<Map<String, dynamic>> _configuration(String user) async {
@@ -118,9 +179,8 @@ Future<void> _verifyBusinessSnapshotRestoreKeepsProfile({
   final after = await profile.getProfile();
   expect(after.displayName, before.displayName);
   expect(after.avatar?.bytes, before.avatar?.bytes);
-  final cloudProfile = await SupabaseProfileRemote(
-    client,
-  ).fetch(userId: userId);
+  final cloudProfile = await SupabaseProfileRemote(client)
+      .fetch(userId: userId);
   expect(cloudProfile?.displayName, before.displayName);
   expect(cloudProfile?.avatar?.bytes, before.avatar?.bytes);
   print('PROFILE_REAL business snapshot upload/restore keeps profile PASS');
@@ -148,97 +208,91 @@ Future<void> _verifyOtherUserCannotReadProfile({
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  testWidgets(
-    'real account profile save, cross-device adopt, avatar clear and '
-    'snapshot isolation',
-    (tester) async {
-      expect(_control, isNotEmpty, reason: '需要 runtime control');
-      await tester.runAsync(() async {
-        final config = await _configuration('device');
-        final otherConfig = await _configuration('other');
-        final client = await _client(config);
-        final other = await _client(otherConfig);
-        final userId = config['userId'] as String;
-        final preferences = await SharedPreferences.getInstance();
-        final resultKey = 'pacta.device.cloud_sync.result.$userId';
-        final previousResult = preferences.getString(resultKey);
-        // 临时内存数据库；本机资料缓存与业务表在同一库，便于验证快照隔离。
-        final database = PactaDatabase(NativeDatabase.memory());
-        final profile = LocalProfileRepository(
-          database: database,
-          userId: userId,
-          remote: SupabaseProfileRemote(client),
-        );
-        try {
-          if (Platform.isAndroid) {
-            final saved = await profile.saveProfile(
-              displayName: _androidDisplayName,
-              avatar: _avatar(),
-            );
-            expect(saved.syncError, isNull);
-            expect(saved.hasPendingSave, isFalse);
-
-            final remoteProfile = await SupabaseProfileRemote(
-              client,
-            ).fetch(userId: userId);
-            expect(remoteProfile?.displayName, _androidDisplayName);
-            expect(remoteProfile?.avatar?.mimeType, 'image/png');
-            expect(remoteProfile?.avatar?.bytes, _syntheticAvatar);
-            print('PROFILE_REAL android save and cloud read-back PASS');
-          } else if (Platform.isWindows) {
-            // 独立缓存：本机没有任何资料，必须从云端采用 Android 保存的结果。
-            final adopted = await profile.syncProfile();
-            final adoptedAndroidProfile =
-                adopted.displayName == _androidDisplayName;
-            expect(
-              adoptedAndroidProfile || adopted.displayName == _windowsDisplayName,
-              isTrue,
-              reason: '首次运行应读到 Android 资料；重复运行可读到上一次 Windows 结果',
-            );
-            if (adoptedAndroidProfile) {
-              expect(adopted.avatar?.bytes, _syntheticAvatar);
-              expect(adopted.avatar?.mimeType, 'image/png');
-            }
-            print('PROFILE_REAL windows adopts android profile PASS');
-
-            final renamed = await profile.saveProfile(
-              displayName: _windowsDisplayName,
-              clearAvatar: true,
-            );
-            expect(renamed.syncError, isNull);
-            expect(renamed.hasPendingSave, isFalse);
-            expect(renamed.avatar, isNull);
-
-            final remoteProfile = await SupabaseProfileRemote(
-              client,
-            ).fetch(userId: userId);
-            expect(remoteProfile?.displayName, _windowsDisplayName);
-            expect(remoteProfile?.avatar, isNull);
-            print('PROFILE_REAL windows rename and avatar clear PASS');
-          }
-
-          await _verifyOtherUserCannotReadProfile(
-            other: other,
-            ownerDisplayName: (await profile.getProfile()).displayName,
+  testWidgets('real account profile save, cross-device adopt, avatar clear and '
+      'snapshot isolation', (tester) async {
+    expect(_control, isNotEmpty, reason: '需要 runtime control');
+    await tester.runAsync(() async {
+      final config = await _configuration('device');
+      final otherConfig = await _configuration('other');
+      final client = await _client(config);
+      final other = await _client(otherConfig);
+      final userId = config['userId'] as String;
+      final preferences = await SharedPreferences.getInstance();
+      final resultKey = 'pacta.device.cloud_sync.result.$userId';
+      final previousResult = preferences.getString(resultKey);
+      // 临时内存数据库；本机资料缓存与业务表在同一库，便于验证快照隔离。
+      final database = PactaDatabase(NativeDatabase.memory());
+      final profile = LocalProfileRepository(
+        database: database,
+        userId: userId,
+        remote: SupabaseProfileRemote(client),
+      );
+      try {
+        if (Platform.isAndroid) {
+          final saved = await profile.saveProfile(
+            displayName: _androidDisplayName,
+            avatar: _avatar(),
           );
-          await _verifyBusinessSnapshotRestoreKeepsProfile(
-            client: client,
-            userId: userId,
-            database: database,
-            profile: profile,
+          expect(saved.syncError, isNull);
+          expect(saved.hasPendingSave, isFalse);
+
+          final remoteProfile = await SupabaseProfileRemote(client)
+              .fetch(userId: userId);
+          expect(remoteProfile?.displayName, _androidDisplayName);
+          expect(remoteProfile?.avatar?.mimeType, 'image/png');
+          expect(remoteProfile?.avatar?.bytes, _syntheticAvatar);
+          print('PROFILE_REAL android save and cloud read-back PASS');
+        } else if (Platform.isWindows) {
+          // 独立缓存：本机没有任何资料，必须从云端采用 Android 保存的结果。
+          final adopted = await profile.syncProfile();
+          final adoptedAndroidProfile =
+              adopted.displayName == _androidDisplayName;
+          expect(
+            adoptedAndroidProfile || adopted.displayName == _windowsDisplayName,
+            isTrue,
+            reason: '首次运行应读到 Android 资料；重复运行可读到上一次 Windows 结果',
           );
-        } finally {
-          if (previousResult == null) {
-            await preferences.remove(resultKey);
-          } else {
-            await preferences.setString(resultKey, previousResult);
+          if (adoptedAndroidProfile) {
+            expect(adopted.avatar?.bytes, _syntheticAvatar);
+            expect(adopted.avatar?.mimeType, 'image/png');
           }
-          await database.close();
-          await client.dispose();
-          await other.dispose();
+          print('PROFILE_REAL windows adopts android profile PASS');
+
+          final renamed = await profile.saveProfile(
+            displayName: _windowsDisplayName,
+            clearAvatar: true,
+          );
+          expect(renamed.syncError, isNull);
+          expect(renamed.hasPendingSave, isFalse);
+          expect(renamed.avatar, isNull);
+
+          final remoteProfile = await SupabaseProfileRemote(client)
+              .fetch(userId: userId);
+          expect(remoteProfile?.displayName, _windowsDisplayName);
+          expect(remoteProfile?.avatar, isNull);
+          print('PROFILE_REAL windows rename and avatar clear PASS');
         }
-      });
-    },
-    timeout: const Timeout(Duration(minutes: 8)),
-  );
+
+        await _verifyOtherUserCannotReadProfile(
+          other: other,
+          ownerDisplayName: (await profile.getProfile()).displayName,
+        );
+        await _verifyBusinessSnapshotRestoreKeepsProfile(
+          client: client,
+          userId: userId,
+          database: database,
+          profile: profile,
+        );
+      } finally {
+        if (previousResult == null) {
+          await preferences.remove(resultKey);
+        } else {
+          await preferences.setString(resultKey, previousResult);
+        }
+        await database.close();
+        await client.dispose();
+        await other.dispose();
+      }
+    });
+  }, timeout: const Timeout(Duration(minutes: 8)));
 }
