@@ -27,7 +27,11 @@
 2. **本机当地时间**：计划用本地 `DateTime` 墙钟；Android 用 `FlutterTimezone` 的 IANA 标识定位 `zonedSchedule` 并检测时区变化，未收录标识（如 Android 15 模拟器的 `GMT`）回退 `timezone.local`，最后才 `Etc/UTC`。旧基线截图中的「无法读取设备时区，回退 UTC」来自 `_FocusTimeZoneSettingsCard` 的 `FocusTimeZones` 白名单校验（`GMT` 不在白名单），属统计/展示时区模块，本票不改。
 3. **权限**：通知权限与精确闹钟授权分别处理；重复拒绝后系统不再弹窗，因此被拒状态常驻系统设置入口。拒绝不阻断看板、专注、国策与日历缓冲展示。
 4. **幂等与不补发**：设置变化、重启、跨日、时区变化都重算计划；已过时刻只排下一次，故关闭多日后重开不会补发多天；同一 id 的重复计划互相替换。
-5. **本机设置与用户隔离**：设置键为 `pacta.device.u.<userId>.<name>`（未登录/测试沿用旧布局），不进业务快照、不跨设备复制。`FocusNotificationService.setUserId` 在切换/退出时同步失效先前归属（代数计数使在途 reconcile 与送达直接返回）、取消定时器与 Android 待发闹钟，并清掉离开者的瞬态计划标记；其已保存的开关与时间仍按用户键保留，回到该用户后重新计划。升级前的一次性全局键只迁移给首个登录用户并随即删除，后来用户不会继承别人的提醒。
+5. **本机设置与用户隔离**：设置键为 `pacta.device.u.<userId>.<name>`（未登录/测试沿用旧布局），不进业务快照、不跨设备复制。
+   - `setUserId` 同步失效先前归属（代数计数使在途 reconcile 与送达直接返回）、取消定时器与 Android 待发闹钟、清掉离开者的瞬态计划标记；其开关与时间按用户键保留，回到该用户后重新计划。
+   - `releaseUser`（`AppShell.dispose` 的真实退出路径）等价于 `setUserId(null)`，因此登出会一并取消每日提醒与国策提醒，不只是国策。
+   - 归属切换用 `_ownerSwitch` 屏障串行化：新归属的 reconcile 先 `_awaitOwnerSettled()`，必须等旧账号的取消动作（含 Android 取消闹钟）完成才允许调度，避免「新排的提醒被旧取消删掉」。
+   - 迁移只发生一次且可重试：逐键写入后**读回校验**，只有全部成功才删除旧键并写完成标记；写入失败或读回不一致就保留旧键、不写标记，下次再试；并发调用共享同一迁移 future，两个账号不会同时认领旧值。
 6. **动态权限申请入口**：仅当用户真的使用依赖提醒的能力时才申请，且只申请一次（`notificationPermissionRequested` 持久化后不再重复弹窗，被拒后由设置页的系统设置入口接管）：
    - `lib/main.dart` 的 `_FocusSetupDialogState._startSession` / `_startAppointment`（用户开始专注或预约）；
    - `NationalFocusTreePage._confirmToday` 经 `onNotificationCapabilityUse`（用户确认国策节点）；
@@ -40,7 +44,7 @@
 | --- | --- |
 | `dart format lib/main.dart lib/src/notifications lib/src/calendar/calendar_page.dart test/notifications integration_test/issue_95_daily_reminder_device_test.dart` | 23 files formatted（13 变更） |
 | `flutter analyze` | No issues found |
-| `flutter test` | All tests passed（451，本票修复提交后） |
+| `flutter test` | All tests passed（489，本轮隔离与权限加固后） |
 | 合并本地最新 `feat/sync-profile-cards-20261113`（`edde186`）后 `flutter analyze` / `flutter test` | No issues found / All tests passed（481） |
 | `git merge feat/sync-profile-cards-20261113` 后 `flutter analyze` | No issues found |
 | `flutter test test/calendar test/notifications` | All tests passed（64） |

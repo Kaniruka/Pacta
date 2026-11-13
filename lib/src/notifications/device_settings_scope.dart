@@ -8,12 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 String deviceSettingsKey(String? userId, String name) =>
     userId == null ? 'pacta.device.$name' : 'pacta.device.u.$userId.$name';
 
-/// One-time migration of the pre-scoping device keys.
-///
-/// The first signed-in user after the upgrade adopts the settings that used to
-/// be installation-wide, then the legacy keys are removed. Later users on the
-/// same installation start from the documented defaults instead of inheriting
-/// somebody else's reminders.
+/// Settings that existed before keys were scoped and may be adopted once.
 const _legacySettingKeys = <String>[
   'pacta.device.focus_notifications_enabled',
   'pacta.device.background_running_enabled',
@@ -40,10 +35,29 @@ const _legacyStateKeys = <String>[
 
 const _migratedFlagKey = 'pacta.device.user_scoped_migrated_v1';
 
+Future<void>? _migrationInFlight;
+
+/// Migrates the installation-wide keys to [userId] exactly once.
+///
+/// Legacy keys are removed only after every adoption was written **and** read
+/// back, and the completion marker is written last. A failed write therefore
+/// leaves the legacy values intact for a later attempt instead of losing the
+/// user's settings. Concurrent callers share a single attempt, so two accounts
+/// cannot both adopt the same legacy values.
 Future<void> migrateLegacyDeviceSettings(
   SharedPreferences preferences,
   String userId,
-) async {
+) {
+  final inFlight = _migrationInFlight;
+  if (inFlight != null) return inFlight;
+  final work = _runMigration(preferences, userId);
+  _migrationInFlight = work;
+  return work.whenComplete(() {
+    if (identical(_migrationInFlight, work)) _migrationInFlight = null;
+  });
+}
+
+Future<void> _runMigration(SharedPreferences preferences, String userId) async {
   if (preferences.getBool(_migratedFlagKey) == true) return;
   for (final legacy in _legacySettingKeys) {
     final scoped = deviceSettingsKey(
@@ -51,30 +65,30 @@ Future<void> migrateLegacyDeviceSettings(
       legacy.substring('pacta.device.'.length),
     );
     final value = preferences.get(legacy);
-    if (value != null && !preferences.containsKey(scoped)) {
-      await _write(preferences, scoped, value);
-    }
+    if (value == null || preferences.containsKey(scoped)) continue;
+    if (!await _write(preferences, scoped, value)) return;
+    // A store can reject or drop a write; never delete the legacy value unless
+    // the scoped copy is actually readable again.
+    if (preferences.get(scoped) != value) return;
   }
-  for (final legacy in [..._legacySettingKeys, ..._legacyStateKeys]) {
+  for (final legacy in _legacySettingKeys) {
+    await preferences.remove(legacy);
+  }
+  for (final legacy in _legacyStateKeys) {
     await preferences.remove(legacy);
   }
   await preferences.setBool(_migratedFlagKey, true);
 }
 
-Future<void> _write(
+Future<bool> _write(
   SharedPreferences preferences,
   String key,
   Object value,
 ) async {
-  if (value is bool) {
-    await preferences.setBool(key, value);
-  } else if (value is int) {
-    await preferences.setInt(key, value);
-  } else if (value is double) {
-    await preferences.setDouble(key, value);
-  } else if (value is String) {
-    await preferences.setString(key, value);
-  } else if (value is List<String>) {
-    await preferences.setStringList(key, value);
-  }
+  if (value is bool) return preferences.setBool(key, value);
+  if (value is int) return preferences.setInt(key, value);
+  if (value is double) return preferences.setDouble(key, value);
+  if (value is String) return preferences.setString(key, value);
+  if (value is List<String>) return preferences.setStringList(key, value);
+  return false;
 }

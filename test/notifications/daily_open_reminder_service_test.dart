@@ -284,6 +284,67 @@ void main() {
     expect(fixture.stateFor('user-a').loadScheduled(), isNull);
   });
 
+  test(
+    'a switch blocks new scheduling until the old alarms are released',
+    () async {
+      final fixture = await _OwnedFixture.create(
+        now: DateTime(2026, 11, 13, 7),
+      );
+      addTearDown(fixture.dispose);
+      await fixture.service.setUserId('user-a');
+      await fixture
+          .storeFor('user-a')
+          .save(
+            const FocusDevicePreferences(
+              notificationsEnabled: true,
+              backgroundRunningEnabled: false,
+              dailyOpenReminderEnabled: true,
+              dailyOpenReminderMinutesAfterMidnight: 8 * 60,
+              dailyOpenReminderTimeChosen: true,
+            ),
+          );
+      await fixture.service.syncDailyOpenReminder();
+      expect(fixture.pendingTimers, hasLength(1));
+
+      await fixture
+          .storeFor('user-b')
+          .save(
+            const FocusDevicePreferences(
+              notificationsEnabled: true,
+              backgroundRunningEnabled: false,
+              dailyOpenReminderEnabled: true,
+              dailyOpenReminderMinutesAfterMidnight: 10 * 60,
+              dailyOpenReminderTimeChosen: true,
+            ),
+          );
+
+      final release = Completer<void>();
+      fixture.service.ownerSwitchWork = () => release.future;
+      final switching = fixture.service.setUserId('user-b');
+      final reconcile = fixture.service.syncDailyOpenReminder();
+      await _settle();
+      expect(
+        fixture.pendingTimers,
+        isEmpty,
+        reason: 'Nothing may be scheduled before the release of the old owner.',
+      );
+
+      release.complete();
+      await switching;
+      await reconcile;
+      await fixture.service.pendingDailyReminderWork;
+
+      expect(fixture.pendingTimers, hasLength(1));
+      expect(
+        fixture.pendingTimers.single.delay,
+        const Duration(hours: 3),
+        reason: "The new owner's own 10:00 reminder must survive the switch.",
+      );
+      expect(fixture.stateFor('user-a').loadScheduled(), isNull);
+      expect(fixture.stateFor('user-b').loadScheduled()?.dayKey, '2026-11-13');
+    },
+  );
+
   test('a Windows tray click forwards the reminder payload', () async {
     final fixture = await _Fixture.create(
       now: DateTime(2026, 11, 13, 7),
@@ -345,6 +406,12 @@ void main() {
 }
 
 /// A service that resolves its own per-user stores from shared preferences.
+Future<void> _settle() async {
+  for (var i = 0; i < 20; i++) {
+    await Future<void>.delayed(Duration.zero);
+  }
+}
+
 class _OwnedFixture {
   _OwnedFixture._(this.service, this.preferences, this.timers);
 

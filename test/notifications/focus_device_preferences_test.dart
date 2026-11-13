@@ -169,4 +169,43 @@ void main() {
     expect(laterUser.dailyOpenReminderEnabled, isFalse);
     expect(laterUser.dailyOpenReminderMinutesAfterMidnight, 9 * 60);
   });
+
+  test('two first logins cannot both adopt the legacy settings', () async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool('pacta.device.daily_open_reminder_enabled', true);
+    await preferences.setInt('pacta.device.daily_open_reminder_minute', 6 * 60);
+
+    final first = FocusDevicePreferencesStore(preferences, userId: 'user-a');
+    final second = FocusDevicePreferencesStore(preferences, userId: 'user-b');
+    await Future.wait([first.load(), second.load()]);
+
+    final adopted = [
+      (await first.load()).dailyOpenReminderEnabled,
+      (await second.load()).dailyOpenReminderEnabled,
+    ].where((enabled) => enabled).length;
+    expect(
+      adopted,
+      1,
+      reason: 'Exactly one account may inherit the installation settings.',
+    );
+    expect(
+      preferences.getBool('pacta.device.daily_open_reminder_enabled'),
+      isNull,
+    );
+  });
+
+  test('a second migration attempt keeps the scoped values', () async {
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setBool('pacta.device.daily_open_reminder_enabled', true);
+    final store = FocusDevicePreferencesStore(preferences, userId: 'user-a');
+    await store.load();
+    await store.save(
+      (await store.load()).copyWith(
+        dailyOpenReminderMinutesAfterMidnight: 5 * 60,
+      ),
+    );
+
+    expect((await store.load()).dailyOpenReminderEnabled, isTrue);
+    expect((await store.load()).dailyOpenReminderMinutesAfterMidnight, 5 * 60);
+  });
 }

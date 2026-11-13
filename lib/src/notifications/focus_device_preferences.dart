@@ -162,6 +162,12 @@ class FocusDevicePreferencesStore {
     );
   }
 
+  /// Records that this device already asked for the notification permission
+  /// without rewriting the rest of the user's settings.
+  Future<void> markNotificationPermissionRequested() async {
+    await _preferences.setBool(_key(_notificationPermissionRequestedKey), true);
+  }
+
   /// An unreadable stored time falls back to the documented default instead of
   /// silently moving the reminder to an unexpected hour.
   int _validMinute(int? value) {

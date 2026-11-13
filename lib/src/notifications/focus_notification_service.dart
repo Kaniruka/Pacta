@@ -80,6 +80,11 @@ class FocusNotificationService {
   String? _ownerUserId;
   int _ownerGeneration = 0;
   bool _permissionRequestInFlight = false;
+  Future<void> _ownerSwitch = Future<void>.value();
+
+  /// Replaces the slow cancellation of an owner switch in tests.
+  @visibleForTesting
+  Future<void> Function()? ownerSwitchWork;
   bool? _hasPendingNationalFocusConfirmations;
   bool _initialized = false;
   bool _timeZonesInitialized = false;
@@ -161,20 +166,31 @@ class FocusNotificationService {
 
   /// Asks for the notification permission at the first user action that needs
   /// it, and never repeats the system prompt afterwards.
+  ///
+  /// The lock is taken synchronously, the settings store is captured for this
+  /// attempt, and the outcome is only recorded for the same owner that asked.
+  /// Other device settings are never rewritten and no failure escapes into the
+  /// calling business action.
   Future<bool> ensureNotificationPermissionForUse() async {
-    if (!Platform.isAndroid || _permissionRequestInFlight) return false;
-    final preferences = await (await _settingsStore).load();
-    if (!preferences.notificationsEnabled) return false;
-    if (await notificationsAllowed()) return true;
-    if (preferences.notificationPermissionRequested) return false;
+    if (_permissionRequestInFlight) return false;
     _permissionRequestInFlight = true;
+    final generation = _ownerGeneration;
     try {
+      final store = await _settingsStore;
+      final preferences = await store.load();
+      if (!preferences.notificationsEnabled) return false;
+      if (await notificationsAllowed()) return true;
+      if (preferences.notificationPermissionRequested) return false;
+      if (_staleOwner(generation)) return false;
+
       final allowed = await requestNotificationPermission();
-      await (await _settingsStore).save(
-        preferences.copyWith(notificationPermissionRequested: true),
-      );
-      if (allowed) await _applyCurrentPlan();
+      if (_staleOwner(generation)) return allowed;
+      await store.markNotificationPermissionRequested();
+      if (allowed) unawaited(_applyCurrentPlan().catchError((Object _) {}));
       return allowed;
+    } catch (_) {
+      // A platform or store failure must not break the user's action.
+      return false;
     } finally {
       _permissionRequestInFlight = false;
     }
@@ -406,14 +422,41 @@ class FocusNotificationService {
     _windowsNationalFocusReminderTimer?.cancel();
     _dailyOpenReminderTimer?.cancel();
     _dailyOpenReminderTimer = null;
-    if (Platform.isAndroid) {
-      try {
-        await _cancelPendingAndroidNotifications(_ownedNotificationIds);
-      } catch (_) {
-        // Cancelling a previous owner's alarm is best effort.
-      }
-    }
+
+    // New work waits behind this barrier, so the previous owner's alarms are
+    // removed before the next owner may schedule anything.
+    final previousSwitch = _ownerSwitch;
+    final switchWork = _releasePreviousOwner(previousSwitch, previousUserId);
+    _ownerSwitch = switchWork.catchError((Object _) {});
+    await _ownerSwitch;
+  }
+
+  Future<void> _releasePreviousOwner(
+    Future<void> previousSwitch,
+    String? previousUserId,
+  ) async {
+    await previousSwitch;
+    await (ownerSwitchWork?.call() ?? _cancelOwnedNotifications());
     await _clearOutgoingSchedule(previousUserId);
+  }
+
+  Future<void> _cancelOwnedNotifications() async {
+    if (!Platform.isAndroid) return;
+    try {
+      await _cancelPendingAndroidNotifications(_ownedNotificationIds);
+    } catch (_) {
+      // Cancelling a previous owner's alarm is best effort.
+    }
+  }
+
+  /// Awaits any owner switch that is still releasing the previous account.
+  Future<void> _awaitOwnerSettled() async {
+    var barrier = _ownerSwitch;
+    await barrier;
+    while (!identical(barrier, _ownerSwitch)) {
+      barrier = _ownerSwitch;
+      await barrier;
+    }
   }
 
   /// Drops the transient schedule markers of the user who just left, so a
@@ -437,9 +480,13 @@ class FocusNotificationService {
   }
 
   /// Releases the shell of [userId] without touching a newer user's reminders.
+  ///
+  /// Signing out deactivates the owner entirely: the daily reminder, the
+  /// National Focus reminder and every pending alarm are cancelled, so nothing
+  /// fires for an account that is no longer signed in.
   Future<void> releaseUser(String? userId) async {
     if (_ownerUserId != userId) return;
-    await syncNationalFocusReminder(hasPendingConfirmations: false);
+    await setUserId(null);
   }
 
   Future<DailyOpenReminderStateStore> get _dailyReminderStateStore async {
@@ -498,6 +545,7 @@ class FocusNotificationService {
   }
 
   Future<void> _reconcileDailyOpenReminder() async {
+    await _awaitOwnerSettled();
     final generation = _ownerGeneration;
     final preferences = await (await _settingsStore).load();
     if (generation != _ownerGeneration) return;
@@ -713,6 +761,7 @@ class FocusNotificationService {
   }
 
   Future<void> _reconcileNationalFocusReminder() async {
+    await _awaitOwnerSettled();
     final generation = _ownerGeneration;
     final preferences = await (await _settingsStore).load();
     if (_staleOwner(generation)) return;
