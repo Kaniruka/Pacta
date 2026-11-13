@@ -100,3 +100,17 @@ flutter test test/sync/source_device_info_test.dart          -> +5  All tests pa
   未改动任何文件内容。
 - 本机恢复点每用户保留 5 份（含整份业务快照，需要上限）；规格未规定数量，此为实施默认值。
 - 历史列表来自受 RLS 保护的表直读，客户端只取元数据列；整份载荷仅在恢复指定版本时读取。
+## 合并与复核
+
+```text
+git merge --no-edit feat/sync-profile-cards-20261113   -> Merge made by the 'ort' strategy; 无冲突
+                                                         （仅 ADR 0005 补充与本票基线文档）
+flutter analyze                                        -> No issues found!
+flutter test                                           -> +426 All tests passed!
+```
+
+合并后逐一核对 ADR 0005「Optional confirmation upload and retained backups — 2026-11-13」：
+最近 15 份含最新份的原子创建与淘汰、显式历史恢复先持久保存用户隔离恢复点、保存失败不替换、
+事务恢复不打断未结束流程、恢复不上传、迁移保留现存快照、旧写接口不能绕过保留与并发校验、
+清除义务覆盖历史副本、来源单一标签且缺失元数据显式未知 —— 与本实现逐条对应。
+自动上传与合并请求队列属于 #93，本票未实施。
