@@ -118,7 +118,9 @@ void main() {
 
   test('upload sends trimmed optional metadata through the RPC', () async {
     Map<String, dynamic>? sentParameters;
+    var calls = 0;
     final client = await _authenticatedClient((request) async {
+      calls++;
       sentParameters = jsonDecode(request.body) as Map<String, dynamic>;
       return http.Response(
         jsonEncode(_snapshotRow(hardware: true)),
@@ -141,11 +143,207 @@ void main() {
       deviceModel: ' Example Model ',
     );
 
+    expect(calls, 1);
     expect(sentParameters?['p_device_manufacturer'], 'Example Corp');
     expect(sentParameters?['p_device_model'], 'Example Model');
     expect(snapshot.deviceManufacturer, 'Example Corp');
     expect(snapshot.deviceModel, 'Example Model');
   });
+
+  test(
+    'upload retries the confirmed old RPC with unchanged snapshot',
+    () async {
+      final requests = <http.Request>[];
+      final client = await _authenticatedClient((request) async {
+        requests.add(request);
+        return http.Response(
+          jsonEncode(
+            requests.length == 1
+                ? _oldRpcError()
+                : _snapshotRow(hardware: false),
+          ),
+          requests.length == 1 ? 404 : 200,
+          request: request,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      addTearDown(client.dispose);
+      final saved = await _upload(SupabaseCloudSnapshotRemote(client));
+      expect(saved.revision, 4);
+      expect(requests, hasLength(2));
+      final first = jsonDecode(requests.first.body) as Map<String, dynamic>;
+      final second = jsonDecode(requests.last.body) as Map<String, dynamic>;
+      expect(first, hasLength(9));
+      expect(second, {
+        'p_expected_revision': 3,
+        'p_payload': {'schemaVersion': 1, 'userId': 'user-a', 'tables': {}},
+        'p_device_id': 'device-a',
+        'p_device_name': 'Phone A',
+        'p_data_updated_at': '2026-10-01T00:00:00.000Z',
+        'p_row_count': 0,
+        'p_expected_legacy_token': null,
+      });
+    },
+  );
+
+  test('upload does not retry a transport failure', () async {
+    var calls = 0;
+    final client = await _authenticatedClient((request) async {
+      calls++;
+      throw http.ClientException('offline', request.url);
+    });
+    addTearDown(client.dispose);
+    await expectLater(
+      _upload(SupabaseCloudSnapshotRemote(client)),
+      throwsA(isA<http.ClientException>()),
+    );
+    expect(calls, 1);
+  });
+
+  test('old RPC retry preserves the inspected legacy token', () async {
+    const token = '0123456789abcdef0123456789abcdef';
+    final uploads = <Map<String, dynamic>>[];
+    final client = await _authenticatedClient((request) async {
+      Object body;
+      var status = 200;
+      if (request.url.path.endsWith('/cloud_business_snapshots')) {
+        body = [];
+      } else if (request.url.path.endsWith('/read_legacy_business_records')) {
+        body = {
+          'token': token,
+          'records': {
+            'tasks': [],
+            'focus_sessions': [],
+            'focus_appointments': [],
+            'focus_nodes': [],
+            'focus_chain_records': [],
+            'appointment_chain_records': [],
+            'focus_precedent_rules': [],
+            'focus_sync_sources': [],
+            'calendar_sources': [],
+            'calendar_blocks': [],
+            'goals': [
+              {
+                'id': 'goal-1',
+                'user_id': 'user-a',
+                'title': 'Legacy goal',
+                'classification': 'regular',
+                'created_at': '2026-09-01T00:00:00Z',
+                'updated_at': '2026-09-02T03:04:05Z',
+                'deleted_at': null,
+              },
+            ],
+          },
+        };
+      } else {
+        uploads.add(jsonDecode(request.body) as Map<String, dynamic>);
+        body = uploads.length == 1
+            ? _oldRpcError()
+            : _snapshotRow(hardware: false);
+        status = uploads.length == 1 ? 404 : 200;
+      }
+      return http.Response(
+        jsonEncode(body),
+        status,
+        request: request,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    addTearDown(client.dispose);
+    final remote = SupabaseCloudSnapshotRemote(client);
+    final preview = await remote.inspect(userId: 'user-a');
+    await remote.upload(
+      userId: 'user-a',
+      expectedRevision: preview!.revision,
+      payload: preview.payload!,
+      deviceId: 'device-a',
+      deviceName: 'Phone A',
+      dataUpdatedAt: preview.dataUpdatedAt,
+      rowCount: preview.rowCount,
+    );
+    expect(uploads, hasLength(2));
+    for (final sent in uploads) {
+      expect(sent['p_expected_revision'], 0);
+      expect(sent['p_expected_legacy_token'], token);
+      expect(sent['p_payload'], preview.payload);
+    }
+  });
+
+  for (final scenario in [
+    (
+      name: 'unrelated missing function',
+      code: 'PGRST202',
+      status: 404,
+      oldHint: false,
+      mapped: false,
+    ),
+    (
+      name: 'permission',
+      code: '42501',
+      status: 403,
+      oldHint: true,
+      mapped: true,
+    ),
+    (
+      name: 'authentication',
+      code: 'PGRST301',
+      status: 401,
+      oldHint: true,
+      mapped: false,
+    ),
+    (name: 'conflict', code: 'PT409', status: 409, oldHint: true, mapped: true),
+  ]) {
+    test('upload does not retry ${scenario.name}', () async {
+      var calls = 0;
+      final client = await _authenticatedClient((request) async {
+        calls++;
+        final error = _oldRpcError()..['code'] = scenario.code;
+        if (!scenario.oldHint) error['hint'] = 'No matching function';
+        return http.Response(
+          jsonEncode(error),
+          scenario.status,
+          request: request,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      addTearDown(client.dispose);
+      await expectLater(
+        _upload(SupabaseCloudSnapshotRemote(client)),
+        throwsA(
+          scenario.mapped ? isA<StateError>() : isA<PostgrestException>(),
+        ),
+      );
+      expect(calls, 1);
+    });
+  }
+
+  for (final code in ['PT409', '42501', 'PGRST202']) {
+    test(
+      'old RPC failure $code is not retried again and keeps error mapping',
+      () async {
+        var calls = 0;
+        final client = await _authenticatedClient((request) async {
+          calls++;
+          return http.Response(
+            jsonEncode(
+              calls == 1 ? _oldRpcError() : {..._oldRpcError(), 'code': code},
+            ),
+            calls == 1 ? 404 : 409,
+            request: request,
+            headers: {'content-type': 'application/json'},
+          );
+        });
+        addTearDown(client.dispose);
+        await expectLater(
+          _upload(SupabaseCloudSnapshotRemote(client)),
+          throwsA(
+            code == 'PGRST202' ? isA<PostgrestException>() : isA<StateError>(),
+          ),
+        );
+        expect(calls, 2);
+      },
+    );
+  }
 
   test(
     'current-user check still blocks access before the cloud request',
@@ -214,3 +412,22 @@ Map<String, Object?> _snapshotRow({
   if (includePayload)
     'payload': {'schemaVersion': 1, 'userId': 'user-a', 'tables': {}},
 };
+
+Map<String, Object?> _oldRpcError() => {
+  'code': 'PGRST202',
+  'message': 'Could not find the function public.save_cloud_business_snapshot(p_data_updated_at, p_device_id, p_device_manufacturer, p_device_model, p_device_name, p_expected_legacy_token, p_expected_revision, p_payload, p_row_count) in the schema cache',
+  'hint': 'Perhaps you meant to call the function public.save_cloud_business_snapshot(p_data_updated_at, p_device_id, p_device_name, p_expected_legacy_token, p_expected_revision, p_payload, p_row_count)',
+};
+
+Future<CloudSnapshotMetadata> _upload(SupabaseCloudSnapshotRemote remote) =>
+    remote.upload(
+      userId: 'user-a',
+      expectedRevision: 3,
+      payload: const {'schemaVersion': 1, 'userId': 'user-a', 'tables': {}},
+      deviceId: 'device-a',
+      deviceName: 'Phone A',
+      dataUpdatedAt: DateTime.utc(2026, 10, 1),
+      rowCount: 0,
+      deviceManufacturer: 'Example Corp',
+      deviceModel: 'Example Model',
+    );
