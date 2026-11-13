@@ -256,6 +256,7 @@ ThemeData _pactaTheme(Brightness brightness) {
     brightness: brightness,
   );
   return ThemeData(
+    fontFamily: 'MiSans',
     colorScheme: colors,
     useMaterial3: true,
     scaffoldBackgroundColor: colors.surface,
@@ -4272,6 +4273,12 @@ class _MyPageState extends ConsumerState<MyPage> {
           onPressed: () => ref.read(authRepositoryProvider).signOut(),
           icon: const Icon(Icons.logout),
           label: const Text('退出登录'),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          '本应用使用 MiSans 字体',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
     );

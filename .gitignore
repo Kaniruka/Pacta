@@ -38,6 +38,8 @@ migrate_working_dir/
 .pub-cache/
 .pub/
 /build/
+# MiSans originals are fetched from Xiaomi; do not mirror standalone fonts.
+/assets/fonts/MiSans-*.ttf
 /android/build/
 /coverage/
 node_modules/

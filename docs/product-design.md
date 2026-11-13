@@ -4,6 +4,10 @@
 
 ## 1. Product intent
 
+### Shared typography — 2026-11-13
+
+Android 与 Windows 统一内置 MiSans，中文、英文和数字继承共用 `ThemeData`。保留 Material 3 的语义字号、亮暗颜色与层级；使用官方原版 Regular / Medium / Semibold / Bold 对应 400 / 500 / 600 / 700，避免系统回退造成同段文字字形和粗细割裂。未覆盖字符仍由系统回退，不承诺所有语言及 emoji 的跨平台字形一致。应用「我的」页注明使用 MiSans；许可随资源打包。字体获取、固定校验值和许可来源见 [字体说明](../assets/fonts/README.md)，本次验证见 [字体验收](typography-20261113.md)。
+
 Pacta is a cross-platform, open-source app for improving self-regulation. It is intended for personal use with invite-only access rather than as a commercial public SaaS product or shared workspace.
 
 ### User agency and convenient support

@@ -70,7 +70,20 @@ dev_dependencies:
 # The following section is specific to Flutter packages.
 flutter:
 
+  fonts:
+    - family: MiSans
+      fonts:
+        - asset: assets/fonts/MiSans-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/MiSans-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/MiSans-Semibold.ttf
+          weight: 600
+        - asset: assets/fonts/MiSans-Bold.ttf
+          weight: 700
+
   assets:
+    - assets/fonts/MiSans-LICENSE.txt
     - assets/fixtures/national_focus_tree/reference_v13_8_18.json
 
   # The following line ensures that the Material Icons font is
