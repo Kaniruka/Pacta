@@ -730,7 +730,7 @@ void main() {
     expect(afterCheckpoint.successfulDays, 1);
     expect(afterCheckpoint.currentConsecutiveDays, 1);
     expect(afterCheckpoint.bestConsecutiveDays, 1);
-    expect(afterCheckpoint.internalizationProgress, closeTo(1.6528, 0.001));
+    expect(afterCheckpoint.internalizationProgress, closeTo(1.7395, 0.001));
 
     final repeatedRead = await repository.getCard(card.id);
     expect(repeatedRead.successfulDays, 1);
@@ -985,7 +985,7 @@ void main() {
     expect(failedCard.successfulDays, 1);
     expect(failedCard.currentConsecutiveDays, 0);
     expect(failedCard.bestConsecutiveDays, 1);
-    expect(failedCard.internalizationProgress, closeTo(1.6528, 0.001));
+    expect(failedCard.internalizationProgress, closeTo(1.7395, 0.001));
 
     var failures = await repository.getFailures();
     expect(failures, hasLength(2));

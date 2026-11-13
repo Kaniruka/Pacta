@@ -330,6 +330,57 @@ class LocalUserLifecycleStates extends Table {
   Set<Column<Object>> get primaryKey => {userId};
 }
 
+/// Cached account profile: display name and a bounded avatar binary.
+///
+/// Kept outside the business snapshot so restoring one never rolls the
+/// account identity back, and so an offline device can still show it.
+class LocalProfileAccounts extends Table {
+  TextColumn get userId => text()();
+  TextColumn get displayName => text().withDefault(const Constant(''))();
+  TextColumn get avatarMimeType => text().nullable()();
+  BlobColumn get avatarBytes => blob().nullable()();
+  BoolColumn get pendingSave => boolean().withDefault(const Constant(false))();
+  TextColumn get syncError => text().nullable()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  /// Increments on every payload change so a late network response can only
+  /// commit when no newer local edit happened meanwhile.
+  IntColumn get editSequence => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId};
+}
+
+/// 账号清除代次：账号清除后仍保留的持久标记。
+///
+/// 资料行删除之后，一个开始于清除之前的读取或上传应答仍可能晚到。它必须
+/// 在同一个事务里证明代次没有前进才允许写回，否则已清除账号的昵称与头像
+/// 会被重新插入。代次只前进不删除：清除本身不会被后续写入“忘记”。
+class LocalProfileClearMarks extends Table {
+  TextColumn get userId => text()();
+  IntColumn get generation => integer().withDefault(const Constant(0))();
+  DateTimeColumn get clearedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId};
+}
+
+/// 恢复前保存的本机业务快照。刻意不属于可上传的业务表清单：恢复准备动作
+/// 因此不会覆盖云端数据，且按用户隔离并参与账号清除。
+class LocalCloudRecoveryPoints extends Table {
+  TextColumn get id => text()();
+  TextColumn get userId => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  TextColumn get reason => text()();
+  TextColumn get sourceDeviceName => text().nullable()();
+  DateTimeColumn get dataUpdatedAt => dateTime()();
+  IntColumn get rowCount => integer()();
+  TextColumn get payload => text()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
 @DriftDatabase(
   tables: [
     LocalGoals,
@@ -353,6 +404,9 @@ class LocalUserLifecycleStates extends Table {
     LocalCalendarSources,
     LocalCalendarBlocks,
     LocalUserLifecycleStates,
+    LocalProfileAccounts,
+    LocalProfileClearMarks,
+    LocalCloudRecoveryPoints,
   ],
 )
 class PactaDatabase extends _$PactaDatabase {
@@ -383,6 +437,8 @@ class PactaDatabase extends _$PactaDatabase {
       UNION SELECT user_id FROM local_tasks
       UNION SELECT user_id FROM local_goals
       UNION SELECT user_id FROM local_user_lifecycle_states
+      UNION SELECT user_id FROM local_profile_accounts
+      UNION SELECT user_id FROM local_cloud_recovery_points
     ''').get();
     return rows.map((row) => row.read<String>('user_id')).toSet();
   }
@@ -455,15 +511,33 @@ class PactaDatabase extends _$PactaDatabase {
         localGoals,
       )..where((row) => row.userId.equals(userId))).go();
       await (delete(
+        localCloudRecoveryPoints,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
         localUserLifecycleStates,
       )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        localProfileAccounts,
+      )..where((row) => row.userId.equals(userId))).go();
+      // 与删除同一个事务：留下只前进的清除代次，让清除之前开始的在途读取
+      // 或上传应答无法再写回这些资料。
+      final previousMark = await (select(
+        localProfileClearMarks,
+      )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+      await into(localProfileClearMarks).insertOnConflictUpdate(
+        LocalProfileClearMarksCompanion.insert(
+          userId: userId,
+          generation: Value((previousMark?.generation ?? 0) + 1),
+          clearedAt: DateTime.now().toUtc(),
+        ),
+      );
     });
 
     return true;
   }
 
   @override
-  int get schemaVersion => 25;
+  int get schemaVersion => 29;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -628,6 +702,21 @@ class PactaDatabase extends _$PactaDatabase {
       if (from < 25) {
         await m.addColumn(localGoals, localGoals.description);
         await m.addColumn(localTasks, localTasks.description);
+      }
+      if (from < 26) {
+        await m.createTable(localCloudRecoveryPoints);
+      }
+      if (from < 27) {
+        await m.createTable(localProfileAccounts);
+      }
+      if (from >= 27 && from < 28) {
+        await m.addColumn(
+          localProfileAccounts,
+          localProfileAccounts.editSequence,
+        );
+      }
+      if (from < 29) {
+        await m.createTable(localProfileClearMarks);
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);

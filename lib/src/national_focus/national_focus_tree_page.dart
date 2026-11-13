@@ -20,7 +20,7 @@ void _syncNationalFocusInBackground(NationalFocusRepository repository) {
   unawaited(repository.sync().catchError((Object _) {}));
 }
 
-Future<void> _openStrengtheningManager({
+Future<void> _pushStrengtheningManager({
   required BuildContext context,
   required NationalFocusRepository repository,
   required String cardId,
@@ -40,14 +40,23 @@ class NationalFocusTreePage extends StatefulWidget {
     this.userId,
     this.viewPreferences = const NationalFocusViewPreferences(),
     this.onOpenAiAnalysis,
+    this.onTodayConfirmed,
+    this.onNotificationCapabilityUse,
     this.displayTimeZoneLoader,
     this.now,
   });
 
   final NationalFocusRepository repository;
+
+  /// 今日确认成功后回调一次。批量确认在整批（含逐项例外）结束时只回调一次；
+  /// 普通编辑、点亮、熄灭不触发。
+  final Future<void> Function()? onTodayConfirmed;
   final String? userId;
   final NationalFocusViewPreferences viewPreferences;
   final VoidCallback? onOpenAiAnalysis;
+
+  /// Called on the first user action that relies on reminder notifications.
+  final VoidCallback? onNotificationCapabilityUse;
   final Future<String?> Function()? displayTimeZoneLoader;
   final DateTime Function()? now;
 
@@ -67,6 +76,8 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   late DateTime _now;
   final Set<String> _busyCardIds = {};
   bool _confirming = false;
+  bool _todayBatchOpen = false;
+  bool _todayBatchConfirmed = false;
   Timer? _settlementTimer;
 
   @override
@@ -175,15 +186,20 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
 
   Future<void> _confirmToday() async {
     if (_confirming) return;
+    // Confirming is a real reminder-related use, so ask once if still needed.
+    widget.onNotificationCapabilityUse?.call();
     setState(() {
       _confirming = true;
       _error = null;
     });
     final windowEnd = _confirmationWindowEnd();
+    _todayBatchOpen = true;
+    _todayBatchConfirmed = false;
     try {
       final count = await widget.repository.confirmToday(
         expectedConfirmationCheckpoint: windowEnd,
       );
+      if (count > 0) _recordTodayConfirmation();
       _syncInBackground();
       if (count > 0 && mounted) {
         ScaffoldMessenger.of(context)
@@ -202,8 +218,30 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     } catch (error) {
       if (mounted) setState(() => _error = _friendlyError(error));
     } finally {
+      _todayBatchOpen = false;
+      // 部分成功（含逐项例外被关闭）也要为已成功的变更排一次上传。
+      if (_todayBatchConfirmed) {
+        _todayBatchConfirmed = false;
+        _queueTodayConfirmationUpload();
+      }
       if (mounted) setState(() => _confirming = false);
     }
+  }
+
+  /// 记录一次成功的今日确认；批量期间只记标记，结束后统一回调一次。
+  void _recordTodayConfirmation() {
+    if (_todayBatchOpen) {
+      _todayBatchConfirmed = true;
+      return;
+    }
+    _queueTodayConfirmationUpload();
+  }
+
+  void _queueTodayConfirmationUpload() {
+    final callback = widget.onTodayConfirmed;
+    if (callback == null) return;
+    // 上传由协调器排队与重试，界面不为网络等待阻塞。
+    unawaited(callback().catchError((Object _) {}));
   }
 
   /// Walks pending nodes that carry exception or precedent notes one by one.
@@ -294,6 +332,9 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
         card.id,
         expectedConfirmationCheckpoint: expectedCheckpoint,
       );
+      if (card.state == NationalFocusCardState.pendingTodayConfirmation) {
+        _recordTodayConfirmation();
+      }
       _syncInBackground();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -418,12 +459,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                             NationalFocusCardState.pendingTodayConfirmation
                         ? windowEnd
                         : null,
-                  );
-                case _NodeAction.strengthening:
-                  await _openStrengtheningManager(
-                    context: context,
-                    repository: widget.repository,
-                    cardId: card.id,
                   );
                 case _NodeAction.details:
                   await Navigator.of(context).push<void>(
@@ -1318,11 +1353,6 @@ class _NationalFocusCardLibraryPageState
             onPlace: (card) => Navigator.of(context).pop(card),
             onDelete: _deleteCard,
             onRename: _renameCard,
-            onManageStrengthening: (card) => _openStrengtheningManager(
-              context: context,
-              repository: widget.repository,
-              cardId: card.id,
-            ),
           ),
           _DeletedNationalFocusCardList(
             repository: widget.repository,
@@ -1345,14 +1375,12 @@ class _LibraryCardList extends StatelessWidget {
     required this.onPlace,
     required this.onDelete,
     required this.onRename,
-    required this.onManageStrengthening,
   });
 
   final NationalFocusRepository repository;
   final ValueChanged<NationalFocusCard> onPlace;
   final ValueChanged<NationalFocusCard> onDelete;
   final ValueChanged<NationalFocusCard> onRename;
-  final ValueChanged<NationalFocusCard> onManageStrengthening;
 
   @override
   Widget build(BuildContext context) => StreamBuilder<List<NationalFocusCard>>(
@@ -1419,9 +1447,6 @@ class _LibraryCardList extends StatelessWidget {
               onDelete: cards[index].hasPendingReview
                   ? null
                   : () => onDelete(cards[index]),
-              onManageStrengthening: cards[index].hasPendingReview
-                  ? null
-                  : () => onManageStrengthening(cards[index]),
             ),
           ),
         ),
@@ -1507,6 +1532,7 @@ class _NationalFocusCardEditorPageState
   final _name = TextEditingController();
   final _action = TextEditingController();
   final _exceptionNotes = TextEditingController();
+  late NationalFocusCard? _card = widget.card;
   bool _busy = false;
   String? _error;
 
@@ -1518,6 +1544,26 @@ class _NationalFocusCardEditorPageState
     _name.text = card.name;
     _action.text = card.action;
     _exceptionNotes.text = card.exceptionNotes ?? '';
+  }
+
+  /// The strengthening manager is a pushed route: this editor stays mounted, so
+  /// unsaved text in the controllers survives the round trip. Only the
+  /// strengthening summary needs a refresh.
+  Future<void> _openStrengtheningManager() async {
+    final card = _card;
+    if (card == null) return;
+    await _pushStrengtheningManager(
+      context: context,
+      repository: widget.repository,
+      cardId: card.id,
+    );
+    if (!mounted) return;
+    try {
+      final refreshed = await widget.repository.getCard(card.id);
+      if (mounted) setState(() => _card = refreshed);
+    } catch (_) {
+      // The summary keeps the previous values; saving still reports its own error.
+    }
   }
 
   @override
@@ -1600,20 +1646,36 @@ class _NationalFocusCardEditorPageState
                   validator: (value) => _requiredFieldError(value, '国策规则'),
                 ),
                 const SizedBox(height: 16),
-                TextFormField(
-                  controller: _exceptionNotes,
-                  minLines: 2,
-                  maxLines: 4,
-                  textInputAction: TextInputAction.done,
-                  decoration: const InputDecoration(
-                    labelText: '例外与判例（可选）',
-                    hintText: '例如：出差时顺延；当天取消安排记“不适用”',
-                    alignLabelWithHint: true,
-                  ),
+                ExpansionTile(
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: const EdgeInsets.only(bottom: 12),
+                  title: const Text('例外与判例'),
+                  subtitle: const Text('可选，按需展开'),
+                  children: [
+                    TextFormField(
+                      controller: _exceptionNotes,
+                      minLines: 2,
+                      maxLines: 4,
+                      textInputAction: TextInputAction.done,
+                      decoration: const InputDecoration(
+                        labelText: '例外与判例（可选）',
+                        hintText: '例如：出差时顺延；当天取消安排记“不适用”',
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                  ],
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 16),
                   _InlineError(_error!),
+                ],
+                if (_card != null) ...[
+                  const SizedBox(height: 8),
+                  _StrengtheningEntry(
+                    card: _card!,
+                    enabled: !_busy,
+                    onManage: _openStrengtheningManager,
+                  ),
                 ],
               ],
             ),
@@ -1646,6 +1708,59 @@ class _NationalFocusCardEditorPageState
       ),
     ),
   );
+}
+
+/// The only entrance to strengthening management: the card editor.
+class _StrengtheningEntry extends StatelessWidget {
+  const _StrengtheningEntry({
+    required this.card,
+    required this.enabled,
+    required this.onManage,
+  });
+
+  final NationalFocusCard card;
+  final bool enabled;
+  final VoidCallback onManage;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final activeLevel = card.activeStrengtheningLevel;
+    final current = activeLevel == null ? '基础要求' : '强化等级 $activeLevel';
+    final configured = card.strengtheningLevels.length;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('强化要求', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: 2),
+                  Text(
+                    '当前使用$current · 已设 $configured / '
+                    '$maxNationalFocusStrengtheningLevels 级',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: enabled ? onManage : null,
+              child: const Text('管理强化要求'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _NationalFocusReviewNotice extends StatelessWidget {
@@ -1686,7 +1801,6 @@ class _LibraryCard extends StatelessWidget {
     required this.onPlace,
     required this.onDelete,
     required this.onRename,
-    required this.onManageStrengthening,
   });
 
   final NationalFocusCard card;
@@ -1695,7 +1809,6 @@ class _LibraryCard extends StatelessWidget {
   final VoidCallback? onRename;
   final VoidCallback? onEdit;
   final VoidCallback onDetails;
-  final VoidCallback? onManageStrengthening;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -1768,13 +1881,6 @@ class _LibraryCard extends StatelessWidget {
                 icon: const Icon(Icons.delete_outline),
                 label: const Text('删除'),
               ),
-              OutlinedButton.icon(
-                onPressed: onManageStrengthening,
-                icon: const Icon(Icons.tune),
-                label: Text(
-                  '强化等级 ${card.strengtheningLevels.length}/$maxNationalFocusStrengtheningLevels',
-                ),
-              ),
               FilledButton.tonalIcon(
                 onPressed: onPlace,
                 icon: const Icon(Icons.account_tree_outlined),
@@ -1833,15 +1939,7 @@ class _DeletedLibraryCard extends StatelessWidget {
   );
 }
 
-enum _NodeAction {
-  light,
-  strengthening,
-  details,
-  addChild,
-  relocate,
-  extinguish,
-  library,
-}
+enum _NodeAction { light, details, addChild, relocate, extinguish, library }
 
 class _TreePageHeader extends StatelessWidget {
   const _TreePageHeader({
@@ -2009,14 +2107,8 @@ class _NodeActionsSheet extends StatelessWidget {
           Text(card.name, style: theme.textTheme.headlineSmall),
           if (reviewBlocked) const _NationalFocusReviewNotice(),
           const SizedBox(height: 12),
-          Text(card.effectiveAction, style: theme.textTheme.bodyMedium),
-          if (card.exceptionNotes != null) ...[
-            const SizedBox(height: 12),
-            Text('例外与判例', style: theme.textTheme.labelLarge),
-            const SizedBox(height: 4),
-            Text(card.exceptionNotes!, style: theme.textTheme.bodyMedium),
-          ],
-          const Divider(height: 20),
+          Text(card.effectiveAction, style: theme.textTheme.bodyLarge),
+          const SizedBox(height: 16),
           action(
             card.state == NationalFocusCardState.lit
                 ? _NodeAction.extinguish
@@ -2041,14 +2133,8 @@ class _NodeActionsSheet extends StatelessWidget {
               '熄灭',
               enabled: !reviewBlocked,
             ),
-          const Divider(height: 8),
+          const SizedBox(height: 4),
           action(_NodeAction.details, Icons.article_outlined, '查看详情'),
-          action(
-            _NodeAction.strengthening,
-            Icons.tune,
-            '管理强化要求',
-            enabled: !reviewBlocked,
-          ),
           action(
             _NodeAction.addChild,
             Icons.add_circle_outline,
@@ -2094,92 +2180,78 @@ class _NationalFocusCardDetailPage extends StatelessWidget {
       );
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<List<NationalFocusCard>>(
-    stream: card.isInTree
-        ? repository.watchTreeCards()
-        : repository.watchLibraryCards(),
-    builder: (context, snapshot) {
-      final card =
-          snapshot.data?.where((item) => item.id == this.card.id).firstOrNull ??
-          this.card;
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('国策卡详情'),
-          actions: [
-            PopupMenuButton<String>(
-              tooltip: '卡片操作',
-              enabled: !card.hasPendingReview,
-              onSelected: (value) {
-                if (value == 'edit') _editCard(context, card);
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'edit', child: Text('编辑卡片')),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return StreamBuilder<List<NationalFocusCard>>(
+      stream: card.isInTree
+          ? repository.watchTreeCards()
+          : repository.watchLibraryCards(),
+      builder: (context, snapshot) {
+        final card =
+            snapshot.data
+                ?.where((item) => item.id == this.card.id)
+                .firstOrNull ??
+            this.card;
+        final exceptionNotes = card.exceptionNotes?.trim() ?? '';
+        final ruleLabel = card.activeStrengtheningLevel == null
+            ? '国策规则'
+            : '当前规则 · 强化等级 ${card.activeStrengtheningLevel}';
+        return Scaffold(
+          appBar: AppBar(title: const Text('国策卡详情')),
+          body: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+            children: [
+              Text(card.state.label, style: theme.textTheme.labelMedium),
+              const SizedBox(height: 6),
+              Text(card.name, style: theme.textTheme.headlineSmall),
+              const SizedBox(height: 22),
+              _FieldText(label: ruleLabel, value: card.effectiveAction),
+              if (exceptionNotes.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                _ExceptionNotesSection(notes: exceptionNotes),
               ],
-            ),
-          ],
-        ),
-        body: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            Text(card.name, style: Theme.of(context).textTheme.headlineSmall),
-            const SizedBox(height: 8),
-            Text(
-              card.state.label,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 24),
-            _FieldText(label: '国策规则', value: card.effectiveAction),
-            if (card.exceptionNotes != null) ...[
-              const SizedBox(height: 20),
-              _FieldText(label: '例外与判例', value: card.exceptionNotes!),
-            ],
-            const SizedBox(height: 24),
-            Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '强化要求',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    Text(
-                      card.activeStrengtheningLevel == null
-                          ? '当前使用基础要求'
-                          : '当前要求 · 强化等级 ${card.activeStrengtheningLevel}',
-                    ),
-                  ],
+              const SizedBox(height: 24),
+              Text('记录', style: theme.textTheme.titleMedium),
+              const SizedBox(height: 4),
+              _NationalFocusRecordSummary(card: card),
+              if (cascadeSourceLabel != null) ...[
+                const SizedBox(height: 16),
+                _CascadeStatusNote(
+                  sourceLabel: cascadeSourceLabel!,
+                  lightBlocked: lightBlocked,
                 ),
-                TextButton.icon(
+              ],
+              const SizedBox(height: 24),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.tonalIcon(
                   onPressed: card.hasPendingReview
                       ? null
-                      : () => _openStrengtheningManager(
-                          context: context,
-                          repository: repository,
-                          cardId: card.id,
-                        ),
-                  icon: const Icon(Icons.tune),
-                  label: const Text('管理强化要求'),
+                      : () => _editCard(context, card),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('编辑卡片'),
                 ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Text('记录', style: Theme.of(context).textTheme.titleMedium),
-            _NationalFocusRecordSummary(card: card),
-            if (cascadeSourceLabel != null)
-              _CascadeStatusNote(
-                sourceLabel: cascadeSourceLabel!,
-                lightBlocked: lightBlocked,
               ),
-          ],
-        ),
-      );
-    },
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Collapsed-by-default reading layer for exception notes and precedents.
+class _ExceptionNotesSection extends StatelessWidget {
+  const _ExceptionNotesSection({required this.notes});
+
+  final String notes;
+
+  @override
+  Widget build(BuildContext context) => ExpansionTile(
+    tilePadding: EdgeInsets.zero,
+    childrenPadding: const EdgeInsets.only(bottom: 8),
+    title: const Text('例外与判例'),
+    children: [Align(alignment: Alignment.centerLeft, child: Text(notes))],
   );
 }
 

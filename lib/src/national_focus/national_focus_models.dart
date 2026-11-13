@@ -119,8 +119,11 @@ class NationalFocusCard {
       activeStrengtheningDefinition?.triggerCondition ?? triggerCondition;
   String get effectiveAction => activeStrengtheningDefinition?.action ?? action;
 
-  double get internalizationProgress =>
-      100 * (1 - math.exp(-successfulDays / 60));
+  bool get isInternalized => successfulDays >= 180;
+
+  double get internalizationProgress => isInternalized
+      ? 100
+      : 100 * (1 - math.exp(-successfulDays / 60)) / (1 - math.exp(-3));
 }
 
 class NationalFocusSyncSource {

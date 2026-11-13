@@ -102,6 +102,7 @@ class _CountingRemote extends InMemoryCloudSnapshotRemote {
     required int rowCount,
     String? deviceManufacturer,
     String? deviceModel,
+    String? requestId,
   }) {
     uploadCalls++;
     return super.upload(
@@ -114,6 +115,7 @@ class _CountingRemote extends InMemoryCloudSnapshotRemote {
       rowCount: rowCount,
       deviceManufacturer: deviceManufacturer,
       deviceModel: deviceModel,
+      requestId: requestId,
     );
   }
 }
@@ -304,7 +306,7 @@ void main() {
       // 不再先摆一个「选择同步方式」的分叉让用户自己判断方向。
       expect(find.text('选择同步方式'), findsNothing);
       // 主操作直接是云 -> 本机，且是唯一的强调按钮。
-      expect(find.widgetWithText(FilledButton, '从云端更新'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, '下载'), findsOneWidget);
       final filledUpload = find.byWidgetPredicate(
         (widget) => widget is FilledButton,
       );
@@ -319,8 +321,8 @@ void main() {
             .map((text) => text.data ?? '');
         expect(labels.join('|'), isNot(contains('上传')));
       }
-      // 后果与来源仍在同一表面可见：丢弃告知 + 云端来源。
-      expect(find.textContaining('丢弃'), findsWidgets);
+      // 面板只保留来源；覆盖后果在执行前确认内。
+      expect(find.textContaining('丢弃'), findsNothing);
       expect(find.textContaining('家里的电脑'), findsWidgets);
       // 上传保留为次要入口。
       expect(_uploadAction(), isNotNull);
@@ -542,7 +544,7 @@ void main() {
       expect(upload, isNotNull);
       expect(tester.widget<ButtonStyleButton>(upload!).onPressed, isNotNull);
 
-      await tester.tap(find.text('取消'));
+      await tester.tap(find.text('关闭'));
       await tester.pumpAndSettle();
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());

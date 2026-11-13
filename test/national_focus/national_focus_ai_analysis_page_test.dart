@@ -403,6 +403,10 @@ class _EmptyNationalFocusRepository implements NationalFocusRepository {
   @override
   Stream<List<NationalFocusCard>> watchTreeCards() => Stream.value(const []);
 
+  // My 页的名片统计读取树与国策库两侧，空仓储也要提供空流。
+  @override
+  Stream<List<NationalFocusCard>> watchLibraryCards() => Stream.value(const []);
+
   @override
   Stream<NationalFocusReviewState> watchNationalFocusReviewState() =>
       Stream.value(const NationalFocusReviewState());

@@ -143,6 +143,10 @@ void main() {
           await tester.pumpAndSettle();
           await tester.tap(find.byTooltip('查看云同步'));
           await tester.pumpAndSettle();
+          // 基线与覆盖后果只出现在所选方向的确认里。
+          await tester.ensureVisible(find.text('下载'));
+          await tester.tap(find.text('下载'));
+          await tester.pumpAndSettle();
           expect(find.text('本机有尚未同步的修改；下载将丢弃这些修改。'), findsOneWidget);
           await tester.tap(find.text('取消'));
           await tester.pumpAndSettle();
@@ -166,6 +170,9 @@ void main() {
           expect(find.text('2026-10-26 11:30:00'), findsOneWidget);
           expect(find.text('2026-10-26 10:00:00'), findsNothing);
           await tester.tap(find.byTooltip('查看云同步'));
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text('下载'));
+          await tester.tap(find.text('下载'));
           await tester.pumpAndSettle();
           expect(find.text('本机数据与上次成功同步时一致。'), findsOneWidget);
           expect(find.textContaining('本机有尚未同步的修改'), findsNothing);
@@ -394,17 +401,22 @@ void main() {
                   ? findsOneWidget
                   : findsNothing,
             );
-            expect(find.textContaining('尚无可靠的本地同步基线'), findsOneWidget);
-            expect(
-              find.text('本地记录：${localBeforeUpload.rowCount} 条'),
-              findsOneWidget,
-            );
+            // 操作面板只报来源；两端数据与首份快照的含义放在上传确认里。
             expect(find.text('云端暂无数据，可首次上传。'), findsOneWidget);
+            expect(
+              find.text('本机记录：${localBeforeUpload.rowCount} 条'),
+              findsNothing,
+            );
 
             await tester.ensureVisible(find.text('上传'));
             await tester.tap(find.text('上传'));
             await tester.pumpAndSettle();
             expect(find.text('上传并覆盖云端？'), findsOneWidget);
+            expect(
+              find.text('本机记录：${localBeforeUpload.rowCount} 条'),
+              findsOneWidget,
+            );
+            expect(find.text('本机数据将作为首份云端快照。'), findsOneWidget);
             await tester.tap(find.text('确认上传'));
             await tester.pumpAndSettle();
             expect(cloudRemote.uploadCalls, 1);
@@ -426,21 +438,19 @@ void main() {
               find.text('云端来源：Android emulator test mirror'),
               findsOneWidget,
             );
-            expect(
-              find.text(
-                platform == TargetPlatform.android ? 'google · Pixel 8' : 'ASUSTeK COMPUTER INC. · ASUS TUF Gaming A15 FA507UV_FA507UV',
-              ),
-              findsOneWidget,
-            );
-            expect(find.text('本机有尚未同步的修改；下载将丢弃这些修改。'), findsOneWidget);
+            // 来源只显示名称与平台；厂商型号不再单列。
+            expect(find.textContaining('设备标识'), findsNothing);
+            expect(find.textContaining('google · Pixel 8'), findsNothing);
+            expect(find.text('本机有尚未同步的修改；下载将丢弃这些修改。'), findsNothing);
             expect(
               (await cloudRepository.loadSyncResult())!.succeededAt,
               successfulTime,
             );
-            await tester.ensureVisible(find.text('从云端更新'));
-            await tester.tap(find.text('从云端更新'));
+            await tester.ensureVisible(find.text('下载'));
+            await tester.tap(find.text('下载'));
             await tester.pumpAndSettle();
             expect(find.text('下载并覆盖本地？'), findsOneWidget);
+            expect(find.text('本机有尚未同步的修改；下载将丢弃这些修改。'), findsOneWidget);
             final failResultSave =
                 platform == TargetPlatform.windows &&
                 brightness == Brightness.dark;
@@ -479,8 +489,8 @@ void main() {
             await cloudRemote.publishOtherDevice();
             await tester.tap(find.byTooltip('查看云同步'));
             await tester.pumpAndSettle();
-            expect(find.text('型号未知'), findsOneWidget);
-            await tester.tap(find.text('取消'));
+            expect(find.textContaining('设备标识'), findsNothing);
+            await tester.tap(find.text('关闭'));
             await tester.pumpAndSettle();
             // 待处理版本不再占用常驻摘要；摘要仍是上次成功同步时间。
             expect(find.text('2026-10-23 12:34:56'), findsOneWidget);
@@ -505,9 +515,7 @@ void main() {
             expect(find.text('本机有未结束的专注或预约，请先处理后再下载。'), findsOneWidget);
             expect(
               tester
-                  .widget<FilledButton>(
-                    find.widgetWithText(FilledButton, '从云端更新'),
-                  )
+                  .widget<FilledButton>(find.widgetWithText(FilledButton, '下载'))
                   .onPressed,
               isNull,
             );
@@ -593,6 +601,7 @@ class _TrackingCloudSnapshotRemote extends InMemoryCloudSnapshotRemote {
     required int rowCount,
     String? deviceManufacturer,
     String? deviceModel,
+    String? requestId,
   }) async {
     uploadCalls++;
     await uploadGate?.future;
@@ -606,6 +615,7 @@ class _TrackingCloudSnapshotRemote extends InMemoryCloudSnapshotRemote {
       rowCount: rowCount,
       deviceManufacturer: deviceManufacturer,
       deviceModel: deviceModel,
+      requestId: requestId,
     );
   }
 

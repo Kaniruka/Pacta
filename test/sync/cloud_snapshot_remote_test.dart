@@ -173,7 +173,8 @@ void main() {
       expect(requests, hasLength(2));
       final first = jsonDecode(requests.first.body) as Map<String, dynamic>;
       final second = jsonDecode(requests.last.body) as Map<String, dynamic>;
-      expect(first, hasLength(9));
+      // 首次带上全部可选参数（含上传请求标识），退回时只去掉该标识。
+      expect(first, hasLength(10));
       expect(second, {
         'p_expected_revision': 3,
         'p_payload': {'schemaVersion': 1, 'userId': 'user-a', 'tables': {}},
@@ -182,7 +183,41 @@ void main() {
         'p_data_updated_at': '2026-10-01T00:00:00.000Z',
         'p_row_count': 0,
         'p_expected_legacy_token': null,
+        'p_device_manufacturer': 'Example Corp',
+        'p_device_model': 'Example Model',
       });
+    },
+  );
+
+  test(
+    'idempotent upload never falls back to a signature without the request id',
+    () async {
+      var calls = 0;
+      final client = await _authenticatedClient((request) async {
+        calls++;
+        return http.Response(
+          jsonEncode(_oldRpcError()),
+          404,
+          request: request,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      addTearDown(client.dispose);
+      // 旧服务没有 p_request_id：宁可直接失败，也不能静默降级成会重复落档的上传。
+      await expectLater(
+        SupabaseCloudSnapshotRemote(client).upload(
+          userId: 'user-a',
+          expectedRevision: 3,
+          payload: const {'schemaVersion': 1, 'userId': 'user-a', 'tables': {}},
+          deviceId: 'device-a',
+          deviceName: 'Phone A',
+          dataUpdatedAt: DateTime.utc(2026, 10, 1),
+          rowCount: 0,
+          requestId: 'request-93',
+        ),
+        throwsA(isA<CloudUploadRequestIdUnsupported>()),
+      );
+      expect(calls, 1);
     },
   );
 
@@ -267,6 +302,83 @@ void main() {
       expect(sent['p_expected_legacy_token'], token);
       expect(sent['p_payload'], preview.payload);
     }
+    // 退回 9 参数签名时必须去掉上传请求标识，其余参数保持不变。
+    expect(uploads.first.containsKey('p_request_id'), isTrue);
+    expect(uploads.last.containsKey('p_request_id'), isFalse);
+    expect(uploads.last.containsKey('p_device_manufacturer'), isTrue);
+  });
+
+  test('old RPC retry drops both optional parameter groups', () async {
+    const token = '0123456789abcdef0123456789abcdef';
+    final uploads = <Map<String, dynamic>>[];
+    final client = await _authenticatedClient((request) async {
+      Object body;
+      var status = 200;
+      if (request.url.path.endsWith('/cloud_business_snapshots')) {
+        body = [];
+      } else if (request.url.path.endsWith('/read_legacy_business_records')) {
+        body = {
+          'token': token,
+          'records': {
+            'goals': [
+              {
+                'id': 'goal-1',
+                'user_id': 'user-a',
+                'title': 'Legacy goal',
+                'classification': 'regular',
+                'created_at': '2026-09-01T00:00:00Z',
+                'updated_at': '2026-09-02T03:04:05Z',
+                'deleted_at': null,
+              },
+            ],
+            'tasks': [],
+            'focus_sessions': [],
+            'focus_appointments': [],
+            'focus_nodes': [],
+            'focus_chain_records': [],
+            'appointment_chain_records': [],
+            'focus_precedent_rules': [],
+            'focus_sync_sources': [],
+            'calendar_sources': [],
+            'calendar_blocks': [],
+          },
+        };
+      } else {
+        uploads.add(jsonDecode(request.body) as Map<String, dynamic>);
+        body = uploads.length == 1
+            ? _oldestRpcError()
+            : _snapshotRow(hardware: false);
+        status = uploads.length == 1 ? 404 : 200;
+      }
+      return http.Response(
+        jsonEncode(body),
+        status,
+        request: request,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    addTearDown(client.dispose);
+    final remote = SupabaseCloudSnapshotRemote(client);
+    final preview = await remote.inspect(userId: 'user-a');
+    await remote.upload(
+      userId: 'user-a',
+      expectedRevision: preview!.revision,
+      payload: preview.payload!,
+      deviceId: 'device-a',
+      deviceName: 'Phone A',
+      dataUpdatedAt: preview.dataUpdatedAt,
+      rowCount: preview.rowCount,
+    );
+    expect(uploads, hasLength(2));
+    expect(uploads.first['p_request_id'], isNull);
+    for (final dropped in const [
+      'p_request_id',
+      'p_device_manufacturer',
+      'p_device_model',
+    ]) {
+      expect(uploads.last.containsKey(dropped), isFalse);
+    }
+    expect(uploads.last['p_device_id'], 'device-a');
   });
 
   for (final scenario in [
@@ -292,6 +404,20 @@ void main() {
       mapped: false,
     ),
     (name: 'conflict', code: 'PT409', status: 409, oldHint: true, mapped: true),
+    (
+      name: 'request id reused with different data',
+      code: 'PT422',
+      status: 422,
+      oldHint: true,
+      mapped: true,
+    ),
+    (
+      name: 'handled request backup evicted',
+      code: 'PT425',
+      status: 425,
+      oldHint: true,
+      mapped: true,
+    ),
   ]) {
     test('upload does not retry ${scenario.name}', () async {
       var calls = 0;
@@ -413,9 +539,18 @@ Map<String, Object?> _snapshotRow({
     'payload': {'schemaVersion': 1, 'userId': 'user-a', 'tables': {}},
 };
 
+/// 服务端只剩 9 参数签名（含设备元数据、无上传请求标识）时 PostgREST 的报错：
+/// message 列出客户端实际请求的 10 个参数，hint 列出已存在的 9 参数签名。
 Map<String, Object?> _oldRpcError() => {
   'code': 'PGRST202',
-  'message': 'Could not find the function public.save_cloud_business_snapshot(p_data_updated_at, p_device_id, p_device_manufacturer, p_device_model, p_device_name, p_expected_legacy_token, p_expected_revision, p_payload, p_row_count) in the schema cache',
+  'message': 'Could not find the function public.save_cloud_business_snapshot(p_data_updated_at, p_device_id, p_device_manufacturer, p_device_model, p_device_name, p_expected_legacy_token, p_expected_revision, p_payload, p_request_id, p_row_count) in the schema cache',
+  'hint': 'Perhaps you meant to call the function public.save_cloud_business_snapshot(p_data_updated_at, p_device_id, p_device_manufacturer, p_device_model, p_device_name, p_expected_legacy_token, p_expected_revision, p_payload, p_row_count)',
+};
+
+/// 服务端只剩最初的 7 参数签名时：两层可选参数都要退回。
+Map<String, Object?> _oldestRpcError() => {
+  'code': 'PGRST202',
+  'message': 'Could not find the function public.save_cloud_business_snapshot(p_data_updated_at, p_device_id, p_device_manufacturer, p_device_model, p_device_name, p_expected_legacy_token, p_expected_revision, p_payload, p_request_id, p_row_count) in the schema cache',
   'hint': 'Perhaps you meant to call the function public.save_cloud_business_snapshot(p_data_updated_at, p_device_id, p_device_name, p_expected_legacy_token, p_expected_revision, p_payload, p_row_count)',
 };
 

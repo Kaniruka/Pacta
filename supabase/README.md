@@ -150,9 +150,11 @@ Android supplies brand/model and Windows supplies BIOS manufacturer/product
 name, without serial numbers. Before this migration is applied, the new client
 can still inspect and download old snapshots using their original columns;
 uploading hardware metadata requires the new RPC contract. When PostgREST returns
-`PGRST202` explicitly identifying the old seven-parameter snapshot RPC, the client
-retries once without the two optional hardware fields, preserving the payload,
-expected revision, and legacy token. Other errors do not trigger this fallback.
+`PGRST202` and its hint explicitly names an older snapshot RPC signature, the
+client retries once with exactly that signature — dropping `p_request_id` first
+and the two optional hardware fields if that is still too new — preserving the
+payload, expected revision, and legacy token. Other errors do not trigger this
+fallback.
 This is a deployment
 instruction, not evidence that the shared project has been migrated.
 
@@ -179,3 +181,84 @@ Both snapshot migrations were applied to the configured development project
 on 2026-10-04. Live acceptance used isolated temporary identities, not normal
 users' data. Full results are in
 [the validation record](../docs/manual-cloud-sync-validation-20261004.md).
+## Retained cloud snapshot history — 2026-11-13
+
+Apply `202611130001_cloud_snapshot_history.sql` for the 15-version retained
+backup history. It adds `cloud_business_snapshot_history` (read-only to
+authenticated owners through RLS, newest row included), backfills the current
+`cloud_business_snapshots` row so no existing snapshot is lost, and replaces
+`save_cloud_business_snapshot` so every successful write also lands a history
+row and then evicts the oldest beyond 15 — all inside one transaction, after
+the new version was written.
+
+The replacement keeps the previous optional parameters defaulted, so clients
+that still call the 7- or 9-parameter contract keep working and are subject to
+the same retention and compare-and-swap guards; there is no unprotected write
+path. The new trailing `p_request_id` makes upload retries idempotent through a
+separate ledger table, `cloud_business_snapshot_upload_requests`, which stores
+only the request identity, the revision it produced and a payload fingerprint —
+no business payload — and is not subject to the 15-version limit. A retry with
+the same user and request id therefore returns that request's own retained
+version, never the current one; returning the current version would let one
+device record another device's newer data as handled. Reusing a request id for
+different data fails with `PT422`; a retry whose original version retention has
+already evicted fails with `PT425` instead of being written again as a new
+request. The client refuses to fall back to a signature without `p_request_id`
+when a request id is present — it reports that the service must be upgraded —
+and only manual uploads without a request id use the older 9- or 7-parameter
+fallback.
+
+Explicit purge now deletes the request ledger and the history table before the
+snapshot, so account clearing leaves no cloud business copy behind.
+
+Run `supabase/tests/cloud_snapshot_history.sql` in an isolated test project
+after applying this migration. It needs one administrator identity and one
+non-administrator identity and skips nothing: identity selection, seeding and
+result assertions run in the trusted session, while the authenticated role is
+used only for the RLS and compare-and-swap checks, so the script never reads
+`auth.users` as a client role. It asserts the retention limit, that a rejected
+write leaves no history row, that a retried request returns its own version after
+another device wrote a newer one, `PT422`/`PT425` handling, owner read access
+without direct writes, ledger privacy, cross-user isolation, and that the purge
+function covers history and the request ledger. The purge probe suspends and
+clears a real non-admin test identity before asserting that no cloud backup or
+ledger row survives. Client tests in `test/sync/` use in-memory remotes and a
+temporary Drift database, so they do not prove deployed RLS or a real transfer.
+Migration preparation is not evidence that any project has been migrated.
+
+
+## Account profile and avatar — 2026-11-13
+
+Apply `202611130002_profile_account.sql` for Issue #94. The account display
+name and one bounded avatar binary live in `public.profile_accounts`, never in
+`cloud_business_snapshots`, so restoring a business snapshot cannot rewind the
+profile. Clients reach it only through two owner-scoped RPCs:
+
+- `read_profile_account()` returns the caller's profile, or null when none is
+  stored.
+- `save_profile_account(display_name, avatar_base64, clear_avatar)` trims the
+  name, decodes at most 256 KB, verifies the PNG/JPEG signature, and upserts the
+  caller's own row. Passing no avatar keeps the stored binary; `clear_avatar`
+  removes it.
+
+RLS is enabled with owner-only, active-user policies, and the table grants no
+direct privileges to `anon` or `authenticated`. Avatar binaries are limited to
+256 KB and must match their declared image signature; there is no public avatar
+URL or shared bucket. The row references `auth.users(id) on delete cascade`, so
+an explicit account purge removes the profile and its avatar with the identity.
+This migration deliberately does not replace `admin_delete_user_business_data()`;
+the backup/history migration extends that function, and the FK keeps both
+migrations composable.
+
+Run the rollback-only probe against an isolated project after applying the
+migration. It needs two signed-in users, rejects non-image and oversized
+avatars, checks cross-user reads and direct table access, and verifies the
+identity cascade:
+
+```powershell
+supabase db query --linked -f supabase/tests/profile_accounts.sql
+```
+
+Client tests cover local caching, retry after a failed account write,
+cross-device adoption, and unchanged profile after a business restore. They do
+not prove deployed RLS.

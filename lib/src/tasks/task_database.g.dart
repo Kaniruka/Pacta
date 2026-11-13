@@ -12190,6 +12190,1354 @@ class LocalUserLifecycleStatesCompanion
   }
 }
 
+class $LocalProfileAccountsTable extends LocalProfileAccounts
+    with TableInfo<$LocalProfileAccountsTable, LocalProfileAccount> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalProfileAccountsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _displayNameMeta = const VerificationMeta(
+    'displayName',
+  );
+  @override
+  late final GeneratedColumn<String> displayName = GeneratedColumn<String>(
+    'display_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _avatarMimeTypeMeta = const VerificationMeta(
+    'avatarMimeType',
+  );
+  @override
+  late final GeneratedColumn<String> avatarMimeType = GeneratedColumn<String>(
+    'avatar_mime_type',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _avatarBytesMeta = const VerificationMeta(
+    'avatarBytes',
+  );
+  @override
+  late final GeneratedColumn<Uint8List> avatarBytes =
+      GeneratedColumn<Uint8List>(
+        'avatar_bytes',
+        aliasedName,
+        true,
+        type: DriftSqlType.blob,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _pendingSaveMeta = const VerificationMeta(
+    'pendingSave',
+  );
+  @override
+  late final GeneratedColumn<bool> pendingSave = GeneratedColumn<bool>(
+    'pending_save',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("pending_save" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _syncErrorMeta = const VerificationMeta(
+    'syncError',
+  );
+  @override
+  late final GeneratedColumn<String> syncError = GeneratedColumn<String>(
+    'sync_error',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _editSequenceMeta = const VerificationMeta(
+    'editSequence',
+  );
+  @override
+  late final GeneratedColumn<int> editSequence = GeneratedColumn<int>(
+    'edit_sequence',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    displayName,
+    avatarMimeType,
+    avatarBytes,
+    pendingSave,
+    syncError,
+    updatedAt,
+    editSequence,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_profile_accounts';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalProfileAccount> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('display_name')) {
+      context.handle(
+        _displayNameMeta,
+        displayName.isAcceptableOrUnknown(
+          data['display_name']!,
+          _displayNameMeta,
+        ),
+      );
+    }
+    if (data.containsKey('avatar_mime_type')) {
+      context.handle(
+        _avatarMimeTypeMeta,
+        avatarMimeType.isAcceptableOrUnknown(
+          data['avatar_mime_type']!,
+          _avatarMimeTypeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('avatar_bytes')) {
+      context.handle(
+        _avatarBytesMeta,
+        avatarBytes.isAcceptableOrUnknown(
+          data['avatar_bytes']!,
+          _avatarBytesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('pending_save')) {
+      context.handle(
+        _pendingSaveMeta,
+        pendingSave.isAcceptableOrUnknown(
+          data['pending_save']!,
+          _pendingSaveMeta,
+        ),
+      );
+    }
+    if (data.containsKey('sync_error')) {
+      context.handle(
+        _syncErrorMeta,
+        syncError.isAcceptableOrUnknown(data['sync_error']!, _syncErrorMeta),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    if (data.containsKey('edit_sequence')) {
+      context.handle(
+        _editSequenceMeta,
+        editSequence.isAcceptableOrUnknown(
+          data['edit_sequence']!,
+          _editSequenceMeta,
+        ),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId};
+  @override
+  LocalProfileAccount map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalProfileAccount(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      displayName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}display_name'],
+      )!,
+      avatarMimeType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}avatar_mime_type'],
+      ),
+      avatarBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.blob,
+        data['${effectivePrefix}avatar_bytes'],
+      ),
+      pendingSave: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}pending_save'],
+      )!,
+      syncError: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}sync_error'],
+      ),
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+      editSequence: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}edit_sequence'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalProfileAccountsTable createAlias(String alias) {
+    return $LocalProfileAccountsTable(attachedDatabase, alias);
+  }
+}
+
+class LocalProfileAccount extends DataClass
+    implements Insertable<LocalProfileAccount> {
+  final String userId;
+  final String displayName;
+  final String? avatarMimeType;
+  final Uint8List? avatarBytes;
+  final bool pendingSave;
+  final String? syncError;
+  final DateTime updatedAt;
+
+  /// Increments on every payload change so a late network response can only
+  /// commit when no newer local edit happened meanwhile.
+  final int editSequence;
+  const LocalProfileAccount({
+    required this.userId,
+    required this.displayName,
+    this.avatarMimeType,
+    this.avatarBytes,
+    required this.pendingSave,
+    this.syncError,
+    required this.updatedAt,
+    required this.editSequence,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['display_name'] = Variable<String>(displayName);
+    if (!nullToAbsent || avatarMimeType != null) {
+      map['avatar_mime_type'] = Variable<String>(avatarMimeType);
+    }
+    if (!nullToAbsent || avatarBytes != null) {
+      map['avatar_bytes'] = Variable<Uint8List>(avatarBytes);
+    }
+    map['pending_save'] = Variable<bool>(pendingSave);
+    if (!nullToAbsent || syncError != null) {
+      map['sync_error'] = Variable<String>(syncError);
+    }
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    map['edit_sequence'] = Variable<int>(editSequence);
+    return map;
+  }
+
+  LocalProfileAccountsCompanion toCompanion(bool nullToAbsent) {
+    return LocalProfileAccountsCompanion(
+      userId: Value(userId),
+      displayName: Value(displayName),
+      avatarMimeType: avatarMimeType == null && nullToAbsent
+          ? const Value.absent()
+          : Value(avatarMimeType),
+      avatarBytes: avatarBytes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(avatarBytes),
+      pendingSave: Value(pendingSave),
+      syncError: syncError == null && nullToAbsent
+          ? const Value.absent()
+          : Value(syncError),
+      updatedAt: Value(updatedAt),
+      editSequence: Value(editSequence),
+    );
+  }
+
+  factory LocalProfileAccount.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalProfileAccount(
+      userId: serializer.fromJson<String>(json['userId']),
+      displayName: serializer.fromJson<String>(json['displayName']),
+      avatarMimeType: serializer.fromJson<String?>(json['avatarMimeType']),
+      avatarBytes: serializer.fromJson<Uint8List?>(json['avatarBytes']),
+      pendingSave: serializer.fromJson<bool>(json['pendingSave']),
+      syncError: serializer.fromJson<String?>(json['syncError']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      editSequence: serializer.fromJson<int>(json['editSequence']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'displayName': serializer.toJson<String>(displayName),
+      'avatarMimeType': serializer.toJson<String?>(avatarMimeType),
+      'avatarBytes': serializer.toJson<Uint8List?>(avatarBytes),
+      'pendingSave': serializer.toJson<bool>(pendingSave),
+      'syncError': serializer.toJson<String?>(syncError),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'editSequence': serializer.toJson<int>(editSequence),
+    };
+  }
+
+  LocalProfileAccount copyWith({
+    String? userId,
+    String? displayName,
+    Value<String?> avatarMimeType = const Value.absent(),
+    Value<Uint8List?> avatarBytes = const Value.absent(),
+    bool? pendingSave,
+    Value<String?> syncError = const Value.absent(),
+    DateTime? updatedAt,
+    int? editSequence,
+  }) => LocalProfileAccount(
+    userId: userId ?? this.userId,
+    displayName: displayName ?? this.displayName,
+    avatarMimeType: avatarMimeType.present
+        ? avatarMimeType.value
+        : this.avatarMimeType,
+    avatarBytes: avatarBytes.present ? avatarBytes.value : this.avatarBytes,
+    pendingSave: pendingSave ?? this.pendingSave,
+    syncError: syncError.present ? syncError.value : this.syncError,
+    updatedAt: updatedAt ?? this.updatedAt,
+    editSequence: editSequence ?? this.editSequence,
+  );
+  LocalProfileAccount copyWithCompanion(LocalProfileAccountsCompanion data) {
+    return LocalProfileAccount(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      displayName: data.displayName.present
+          ? data.displayName.value
+          : this.displayName,
+      avatarMimeType: data.avatarMimeType.present
+          ? data.avatarMimeType.value
+          : this.avatarMimeType,
+      avatarBytes: data.avatarBytes.present
+          ? data.avatarBytes.value
+          : this.avatarBytes,
+      pendingSave: data.pendingSave.present
+          ? data.pendingSave.value
+          : this.pendingSave,
+      syncError: data.syncError.present ? data.syncError.value : this.syncError,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      editSequence: data.editSequence.present
+          ? data.editSequence.value
+          : this.editSequence,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalProfileAccount(')
+          ..write('userId: $userId, ')
+          ..write('displayName: $displayName, ')
+          ..write('avatarMimeType: $avatarMimeType, ')
+          ..write('avatarBytes: $avatarBytes, ')
+          ..write('pendingSave: $pendingSave, ')
+          ..write('syncError: $syncError, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('editSequence: $editSequence')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    userId,
+    displayName,
+    avatarMimeType,
+    $driftBlobEquality.hash(avatarBytes),
+    pendingSave,
+    syncError,
+    updatedAt,
+    editSequence,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalProfileAccount &&
+          other.userId == this.userId &&
+          other.displayName == this.displayName &&
+          other.avatarMimeType == this.avatarMimeType &&
+          $driftBlobEquality.equals(other.avatarBytes, this.avatarBytes) &&
+          other.pendingSave == this.pendingSave &&
+          other.syncError == this.syncError &&
+          other.updatedAt == this.updatedAt &&
+          other.editSequence == this.editSequence);
+}
+
+class LocalProfileAccountsCompanion
+    extends UpdateCompanion<LocalProfileAccount> {
+  final Value<String> userId;
+  final Value<String> displayName;
+  final Value<String?> avatarMimeType;
+  final Value<Uint8List?> avatarBytes;
+  final Value<bool> pendingSave;
+  final Value<String?> syncError;
+  final Value<DateTime> updatedAt;
+  final Value<int> editSequence;
+  final Value<int> rowid;
+  const LocalProfileAccountsCompanion({
+    this.userId = const Value.absent(),
+    this.displayName = const Value.absent(),
+    this.avatarMimeType = const Value.absent(),
+    this.avatarBytes = const Value.absent(),
+    this.pendingSave = const Value.absent(),
+    this.syncError = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.editSequence = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalProfileAccountsCompanion.insert({
+    required String userId,
+    this.displayName = const Value.absent(),
+    this.avatarMimeType = const Value.absent(),
+    this.avatarBytes = const Value.absent(),
+    this.pendingSave = const Value.absent(),
+    this.syncError = const Value.absent(),
+    required DateTime updatedAt,
+    this.editSequence = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       updatedAt = Value(updatedAt);
+  static Insertable<LocalProfileAccount> custom({
+    Expression<String>? userId,
+    Expression<String>? displayName,
+    Expression<String>? avatarMimeType,
+    Expression<Uint8List>? avatarBytes,
+    Expression<bool>? pendingSave,
+    Expression<String>? syncError,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? editSequence,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (displayName != null) 'display_name': displayName,
+      if (avatarMimeType != null) 'avatar_mime_type': avatarMimeType,
+      if (avatarBytes != null) 'avatar_bytes': avatarBytes,
+      if (pendingSave != null) 'pending_save': pendingSave,
+      if (syncError != null) 'sync_error': syncError,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (editSequence != null) 'edit_sequence': editSequence,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalProfileAccountsCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? displayName,
+    Value<String?>? avatarMimeType,
+    Value<Uint8List?>? avatarBytes,
+    Value<bool>? pendingSave,
+    Value<String?>? syncError,
+    Value<DateTime>? updatedAt,
+    Value<int>? editSequence,
+    Value<int>? rowid,
+  }) {
+    return LocalProfileAccountsCompanion(
+      userId: userId ?? this.userId,
+      displayName: displayName ?? this.displayName,
+      avatarMimeType: avatarMimeType ?? this.avatarMimeType,
+      avatarBytes: avatarBytes ?? this.avatarBytes,
+      pendingSave: pendingSave ?? this.pendingSave,
+      syncError: syncError ?? this.syncError,
+      updatedAt: updatedAt ?? this.updatedAt,
+      editSequence: editSequence ?? this.editSequence,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (displayName.present) {
+      map['display_name'] = Variable<String>(displayName.value);
+    }
+    if (avatarMimeType.present) {
+      map['avatar_mime_type'] = Variable<String>(avatarMimeType.value);
+    }
+    if (avatarBytes.present) {
+      map['avatar_bytes'] = Variable<Uint8List>(avatarBytes.value);
+    }
+    if (pendingSave.present) {
+      map['pending_save'] = Variable<bool>(pendingSave.value);
+    }
+    if (syncError.present) {
+      map['sync_error'] = Variable<String>(syncError.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (editSequence.present) {
+      map['edit_sequence'] = Variable<int>(editSequence.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalProfileAccountsCompanion(')
+          ..write('userId: $userId, ')
+          ..write('displayName: $displayName, ')
+          ..write('avatarMimeType: $avatarMimeType, ')
+          ..write('avatarBytes: $avatarBytes, ')
+          ..write('pendingSave: $pendingSave, ')
+          ..write('syncError: $syncError, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('editSequence: $editSequence, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $LocalProfileClearMarksTable extends LocalProfileClearMarks
+    with TableInfo<$LocalProfileClearMarksTable, LocalProfileClearMark> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalProfileClearMarksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _generationMeta = const VerificationMeta(
+    'generation',
+  );
+  @override
+  late final GeneratedColumn<int> generation = GeneratedColumn<int>(
+    'generation',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _clearedAtMeta = const VerificationMeta(
+    'clearedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> clearedAt = GeneratedColumn<DateTime>(
+    'cleared_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [userId, generation, clearedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_profile_clear_marks';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalProfileClearMark> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('generation')) {
+      context.handle(
+        _generationMeta,
+        generation.isAcceptableOrUnknown(data['generation']!, _generationMeta),
+      );
+    }
+    if (data.containsKey('cleared_at')) {
+      context.handle(
+        _clearedAtMeta,
+        clearedAt.isAcceptableOrUnknown(data['cleared_at']!, _clearedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_clearedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId};
+  @override
+  LocalProfileClearMark map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalProfileClearMark(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      generation: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}generation'],
+      )!,
+      clearedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}cleared_at'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalProfileClearMarksTable createAlias(String alias) {
+    return $LocalProfileClearMarksTable(attachedDatabase, alias);
+  }
+}
+
+class LocalProfileClearMark extends DataClass
+    implements Insertable<LocalProfileClearMark> {
+  final String userId;
+  final int generation;
+  final DateTime clearedAt;
+  const LocalProfileClearMark({
+    required this.userId,
+    required this.generation,
+    required this.clearedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['generation'] = Variable<int>(generation);
+    map['cleared_at'] = Variable<DateTime>(clearedAt);
+    return map;
+  }
+
+  LocalProfileClearMarksCompanion toCompanion(bool nullToAbsent) {
+    return LocalProfileClearMarksCompanion(
+      userId: Value(userId),
+      generation: Value(generation),
+      clearedAt: Value(clearedAt),
+    );
+  }
+
+  factory LocalProfileClearMark.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalProfileClearMark(
+      userId: serializer.fromJson<String>(json['userId']),
+      generation: serializer.fromJson<int>(json['generation']),
+      clearedAt: serializer.fromJson<DateTime>(json['clearedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'generation': serializer.toJson<int>(generation),
+      'clearedAt': serializer.toJson<DateTime>(clearedAt),
+    };
+  }
+
+  LocalProfileClearMark copyWith({
+    String? userId,
+    int? generation,
+    DateTime? clearedAt,
+  }) => LocalProfileClearMark(
+    userId: userId ?? this.userId,
+    generation: generation ?? this.generation,
+    clearedAt: clearedAt ?? this.clearedAt,
+  );
+  LocalProfileClearMark copyWithCompanion(
+    LocalProfileClearMarksCompanion data,
+  ) {
+    return LocalProfileClearMark(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      generation: data.generation.present
+          ? data.generation.value
+          : this.generation,
+      clearedAt: data.clearedAt.present ? data.clearedAt.value : this.clearedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalProfileClearMark(')
+          ..write('userId: $userId, ')
+          ..write('generation: $generation, ')
+          ..write('clearedAt: $clearedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(userId, generation, clearedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalProfileClearMark &&
+          other.userId == this.userId &&
+          other.generation == this.generation &&
+          other.clearedAt == this.clearedAt);
+}
+
+class LocalProfileClearMarksCompanion
+    extends UpdateCompanion<LocalProfileClearMark> {
+  final Value<String> userId;
+  final Value<int> generation;
+  final Value<DateTime> clearedAt;
+  final Value<int> rowid;
+  const LocalProfileClearMarksCompanion({
+    this.userId = const Value.absent(),
+    this.generation = const Value.absent(),
+    this.clearedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalProfileClearMarksCompanion.insert({
+    required String userId,
+    this.generation = const Value.absent(),
+    required DateTime clearedAt,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       clearedAt = Value(clearedAt);
+  static Insertable<LocalProfileClearMark> custom({
+    Expression<String>? userId,
+    Expression<int>? generation,
+    Expression<DateTime>? clearedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (generation != null) 'generation': generation,
+      if (clearedAt != null) 'cleared_at': clearedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalProfileClearMarksCompanion copyWith({
+    Value<String>? userId,
+    Value<int>? generation,
+    Value<DateTime>? clearedAt,
+    Value<int>? rowid,
+  }) {
+    return LocalProfileClearMarksCompanion(
+      userId: userId ?? this.userId,
+      generation: generation ?? this.generation,
+      clearedAt: clearedAt ?? this.clearedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (generation.present) {
+      map['generation'] = Variable<int>(generation.value);
+    }
+    if (clearedAt.present) {
+      map['cleared_at'] = Variable<DateTime>(clearedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalProfileClearMarksCompanion(')
+          ..write('userId: $userId, ')
+          ..write('generation: $generation, ')
+          ..write('clearedAt: $clearedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $LocalCloudRecoveryPointsTable extends LocalCloudRecoveryPoints
+    with TableInfo<$LocalCloudRecoveryPointsTable, LocalCloudRecoveryPoint> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalCloudRecoveryPointsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _reasonMeta = const VerificationMeta('reason');
+  @override
+  late final GeneratedColumn<String> reason = GeneratedColumn<String>(
+    'reason',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceDeviceNameMeta = const VerificationMeta(
+    'sourceDeviceName',
+  );
+  @override
+  late final GeneratedColumn<String> sourceDeviceName = GeneratedColumn<String>(
+    'source_device_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _dataUpdatedAtMeta = const VerificationMeta(
+    'dataUpdatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> dataUpdatedAt =
+      GeneratedColumn<DateTime>(
+        'data_updated_at',
+        aliasedName,
+        false,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _rowCountMeta = const VerificationMeta(
+    'rowCount',
+  );
+  @override
+  late final GeneratedColumn<int> rowCount = GeneratedColumn<int>(
+    'row_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _payloadMeta = const VerificationMeta(
+    'payload',
+  );
+  @override
+  late final GeneratedColumn<String> payload = GeneratedColumn<String>(
+    'payload',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    userId,
+    createdAt,
+    reason,
+    sourceDeviceName,
+    dataUpdatedAt,
+    rowCount,
+    payload,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_cloud_recovery_points';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalCloudRecoveryPoint> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('reason')) {
+      context.handle(
+        _reasonMeta,
+        reason.isAcceptableOrUnknown(data['reason']!, _reasonMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_reasonMeta);
+    }
+    if (data.containsKey('source_device_name')) {
+      context.handle(
+        _sourceDeviceNameMeta,
+        sourceDeviceName.isAcceptableOrUnknown(
+          data['source_device_name']!,
+          _sourceDeviceNameMeta,
+        ),
+      );
+    }
+    if (data.containsKey('data_updated_at')) {
+      context.handle(
+        _dataUpdatedAtMeta,
+        dataUpdatedAt.isAcceptableOrUnknown(
+          data['data_updated_at']!,
+          _dataUpdatedAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_dataUpdatedAtMeta);
+    }
+    if (data.containsKey('row_count')) {
+      context.handle(
+        _rowCountMeta,
+        rowCount.isAcceptableOrUnknown(data['row_count']!, _rowCountMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_rowCountMeta);
+    }
+    if (data.containsKey('payload')) {
+      context.handle(
+        _payloadMeta,
+        payload.isAcceptableOrUnknown(data['payload']!, _payloadMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_payloadMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  LocalCloudRecoveryPoint map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalCloudRecoveryPoint(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      reason: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reason'],
+      )!,
+      sourceDeviceName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_device_name'],
+      ),
+      dataUpdatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}data_updated_at'],
+      )!,
+      rowCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}row_count'],
+      )!,
+      payload: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}payload'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalCloudRecoveryPointsTable createAlias(String alias) {
+    return $LocalCloudRecoveryPointsTable(attachedDatabase, alias);
+  }
+}
+
+class LocalCloudRecoveryPoint extends DataClass
+    implements Insertable<LocalCloudRecoveryPoint> {
+  final String id;
+  final String userId;
+  final DateTime createdAt;
+  final String reason;
+  final String? sourceDeviceName;
+  final DateTime dataUpdatedAt;
+  final int rowCount;
+  final String payload;
+  const LocalCloudRecoveryPoint({
+    required this.id,
+    required this.userId,
+    required this.createdAt,
+    required this.reason,
+    this.sourceDeviceName,
+    required this.dataUpdatedAt,
+    required this.rowCount,
+    required this.payload,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['user_id'] = Variable<String>(userId);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['reason'] = Variable<String>(reason);
+    if (!nullToAbsent || sourceDeviceName != null) {
+      map['source_device_name'] = Variable<String>(sourceDeviceName);
+    }
+    map['data_updated_at'] = Variable<DateTime>(dataUpdatedAt);
+    map['row_count'] = Variable<int>(rowCount);
+    map['payload'] = Variable<String>(payload);
+    return map;
+  }
+
+  LocalCloudRecoveryPointsCompanion toCompanion(bool nullToAbsent) {
+    return LocalCloudRecoveryPointsCompanion(
+      id: Value(id),
+      userId: Value(userId),
+      createdAt: Value(createdAt),
+      reason: Value(reason),
+      sourceDeviceName: sourceDeviceName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceDeviceName),
+      dataUpdatedAt: Value(dataUpdatedAt),
+      rowCount: Value(rowCount),
+      payload: Value(payload),
+    );
+  }
+
+  factory LocalCloudRecoveryPoint.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalCloudRecoveryPoint(
+      id: serializer.fromJson<String>(json['id']),
+      userId: serializer.fromJson<String>(json['userId']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      reason: serializer.fromJson<String>(json['reason']),
+      sourceDeviceName: serializer.fromJson<String?>(json['sourceDeviceName']),
+      dataUpdatedAt: serializer.fromJson<DateTime>(json['dataUpdatedAt']),
+      rowCount: serializer.fromJson<int>(json['rowCount']),
+      payload: serializer.fromJson<String>(json['payload']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'userId': serializer.toJson<String>(userId),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'reason': serializer.toJson<String>(reason),
+      'sourceDeviceName': serializer.toJson<String?>(sourceDeviceName),
+      'dataUpdatedAt': serializer.toJson<DateTime>(dataUpdatedAt),
+      'rowCount': serializer.toJson<int>(rowCount),
+      'payload': serializer.toJson<String>(payload),
+    };
+  }
+
+  LocalCloudRecoveryPoint copyWith({
+    String? id,
+    String? userId,
+    DateTime? createdAt,
+    String? reason,
+    Value<String?> sourceDeviceName = const Value.absent(),
+    DateTime? dataUpdatedAt,
+    int? rowCount,
+    String? payload,
+  }) => LocalCloudRecoveryPoint(
+    id: id ?? this.id,
+    userId: userId ?? this.userId,
+    createdAt: createdAt ?? this.createdAt,
+    reason: reason ?? this.reason,
+    sourceDeviceName: sourceDeviceName.present
+        ? sourceDeviceName.value
+        : this.sourceDeviceName,
+    dataUpdatedAt: dataUpdatedAt ?? this.dataUpdatedAt,
+    rowCount: rowCount ?? this.rowCount,
+    payload: payload ?? this.payload,
+  );
+  LocalCloudRecoveryPoint copyWithCompanion(
+    LocalCloudRecoveryPointsCompanion data,
+  ) {
+    return LocalCloudRecoveryPoint(
+      id: data.id.present ? data.id.value : this.id,
+      userId: data.userId.present ? data.userId.value : this.userId,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      reason: data.reason.present ? data.reason.value : this.reason,
+      sourceDeviceName: data.sourceDeviceName.present
+          ? data.sourceDeviceName.value
+          : this.sourceDeviceName,
+      dataUpdatedAt: data.dataUpdatedAt.present
+          ? data.dataUpdatedAt.value
+          : this.dataUpdatedAt,
+      rowCount: data.rowCount.present ? data.rowCount.value : this.rowCount,
+      payload: data.payload.present ? data.payload.value : this.payload,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalCloudRecoveryPoint(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('reason: $reason, ')
+          ..write('sourceDeviceName: $sourceDeviceName, ')
+          ..write('dataUpdatedAt: $dataUpdatedAt, ')
+          ..write('rowCount: $rowCount, ')
+          ..write('payload: $payload')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    userId,
+    createdAt,
+    reason,
+    sourceDeviceName,
+    dataUpdatedAt,
+    rowCount,
+    payload,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalCloudRecoveryPoint &&
+          other.id == this.id &&
+          other.userId == this.userId &&
+          other.createdAt == this.createdAt &&
+          other.reason == this.reason &&
+          other.sourceDeviceName == this.sourceDeviceName &&
+          other.dataUpdatedAt == this.dataUpdatedAt &&
+          other.rowCount == this.rowCount &&
+          other.payload == this.payload);
+}
+
+class LocalCloudRecoveryPointsCompanion
+    extends UpdateCompanion<LocalCloudRecoveryPoint> {
+  final Value<String> id;
+  final Value<String> userId;
+  final Value<DateTime> createdAt;
+  final Value<String> reason;
+  final Value<String?> sourceDeviceName;
+  final Value<DateTime> dataUpdatedAt;
+  final Value<int> rowCount;
+  final Value<String> payload;
+  final Value<int> rowid;
+  const LocalCloudRecoveryPointsCompanion({
+    this.id = const Value.absent(),
+    this.userId = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.reason = const Value.absent(),
+    this.sourceDeviceName = const Value.absent(),
+    this.dataUpdatedAt = const Value.absent(),
+    this.rowCount = const Value.absent(),
+    this.payload = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalCloudRecoveryPointsCompanion.insert({
+    required String id,
+    required String userId,
+    required DateTime createdAt,
+    required String reason,
+    this.sourceDeviceName = const Value.absent(),
+    required DateTime dataUpdatedAt,
+    required int rowCount,
+    required String payload,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       userId = Value(userId),
+       createdAt = Value(createdAt),
+       reason = Value(reason),
+       dataUpdatedAt = Value(dataUpdatedAt),
+       rowCount = Value(rowCount),
+       payload = Value(payload);
+  static Insertable<LocalCloudRecoveryPoint> custom({
+    Expression<String>? id,
+    Expression<String>? userId,
+    Expression<DateTime>? createdAt,
+    Expression<String>? reason,
+    Expression<String>? sourceDeviceName,
+    Expression<DateTime>? dataUpdatedAt,
+    Expression<int>? rowCount,
+    Expression<String>? payload,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (userId != null) 'user_id': userId,
+      if (createdAt != null) 'created_at': createdAt,
+      if (reason != null) 'reason': reason,
+      if (sourceDeviceName != null) 'source_device_name': sourceDeviceName,
+      if (dataUpdatedAt != null) 'data_updated_at': dataUpdatedAt,
+      if (rowCount != null) 'row_count': rowCount,
+      if (payload != null) 'payload': payload,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalCloudRecoveryPointsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? userId,
+    Value<DateTime>? createdAt,
+    Value<String>? reason,
+    Value<String?>? sourceDeviceName,
+    Value<DateTime>? dataUpdatedAt,
+    Value<int>? rowCount,
+    Value<String>? payload,
+    Value<int>? rowid,
+  }) {
+    return LocalCloudRecoveryPointsCompanion(
+      id: id ?? this.id,
+      userId: userId ?? this.userId,
+      createdAt: createdAt ?? this.createdAt,
+      reason: reason ?? this.reason,
+      sourceDeviceName: sourceDeviceName ?? this.sourceDeviceName,
+      dataUpdatedAt: dataUpdatedAt ?? this.dataUpdatedAt,
+      rowCount: rowCount ?? this.rowCount,
+      payload: payload ?? this.payload,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (reason.present) {
+      map['reason'] = Variable<String>(reason.value);
+    }
+    if (sourceDeviceName.present) {
+      map['source_device_name'] = Variable<String>(sourceDeviceName.value);
+    }
+    if (dataUpdatedAt.present) {
+      map['data_updated_at'] = Variable<DateTime>(dataUpdatedAt.value);
+    }
+    if (rowCount.present) {
+      map['row_count'] = Variable<int>(rowCount.value);
+    }
+    if (payload.present) {
+      map['payload'] = Variable<String>(payload.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalCloudRecoveryPointsCompanion(')
+          ..write('id: $id, ')
+          ..write('userId: $userId, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('reason: $reason, ')
+          ..write('sourceDeviceName: $sourceDeviceName, ')
+          ..write('dataUpdatedAt: $dataUpdatedAt, ')
+          ..write('rowCount: $rowCount, ')
+          ..write('payload: $payload, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$PactaDatabase extends GeneratedDatabase {
   _$PactaDatabase(QueryExecutor e) : super(e);
   $PactaDatabaseManager get managers => $PactaDatabaseManager(this);
@@ -12235,6 +13583,12 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
       $LocalCalendarBlocksTable(this);
   late final $LocalUserLifecycleStatesTable localUserLifecycleStates =
       $LocalUserLifecycleStatesTable(this);
+  late final $LocalProfileAccountsTable localProfileAccounts =
+      $LocalProfileAccountsTable(this);
+  late final $LocalProfileClearMarksTable localProfileClearMarks =
+      $LocalProfileClearMarksTable(this);
+  late final $LocalCloudRecoveryPointsTable localCloudRecoveryPoints =
+      $LocalCloudRecoveryPointsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -12261,6 +13615,9 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
     localCalendarSources,
     localCalendarBlocks,
     localUserLifecycleStates,
+    localProfileAccounts,
+    localProfileClearMarks,
+    localCloudRecoveryPoints,
   ];
 }
 
@@ -18399,6 +19756,752 @@ typedef $$LocalUserLifecycleStatesTableProcessedTableManager =
       LocalUserLifecycleState,
       PrefetchHooks Function()
     >;
+typedef $$LocalProfileAccountsTableCreateCompanionBuilder =
+    LocalProfileAccountsCompanion Function({
+      required String userId,
+      Value<String> displayName,
+      Value<String?> avatarMimeType,
+      Value<Uint8List?> avatarBytes,
+      Value<bool> pendingSave,
+      Value<String?> syncError,
+      required DateTime updatedAt,
+      Value<int> editSequence,
+      Value<int> rowid,
+    });
+typedef $$LocalProfileAccountsTableUpdateCompanionBuilder =
+    LocalProfileAccountsCompanion Function({
+      Value<String> userId,
+      Value<String> displayName,
+      Value<String?> avatarMimeType,
+      Value<Uint8List?> avatarBytes,
+      Value<bool> pendingSave,
+      Value<String?> syncError,
+      Value<DateTime> updatedAt,
+      Value<int> editSequence,
+      Value<int> rowid,
+    });
+
+class $$LocalProfileAccountsTableFilterComposer
+    extends Composer<_$PactaDatabase, $LocalProfileAccountsTable> {
+  $$LocalProfileAccountsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get avatarMimeType => $composableBuilder(
+    column: $table.avatarMimeType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<Uint8List> get avatarBytes => $composableBuilder(
+    column: $table.avatarBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get pendingSave => $composableBuilder(
+    column: $table.pendingSave,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get syncError => $composableBuilder(
+    column: $table.syncError,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get editSequence => $composableBuilder(
+    column: $table.editSequence,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalProfileAccountsTableOrderingComposer
+    extends Composer<_$PactaDatabase, $LocalProfileAccountsTable> {
+  $$LocalProfileAccountsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get avatarMimeType => $composableBuilder(
+    column: $table.avatarMimeType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<Uint8List> get avatarBytes => $composableBuilder(
+    column: $table.avatarBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get pendingSave => $composableBuilder(
+    column: $table.pendingSave,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get syncError => $composableBuilder(
+    column: $table.syncError,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get editSequence => $composableBuilder(
+    column: $table.editSequence,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalProfileAccountsTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $LocalProfileAccountsTable> {
+  $$LocalProfileAccountsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get avatarMimeType => $composableBuilder(
+    column: $table.avatarMimeType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<Uint8List> get avatarBytes => $composableBuilder(
+    column: $table.avatarBytes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get pendingSave => $composableBuilder(
+    column: $table.pendingSave,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get syncError =>
+      $composableBuilder(column: $table.syncError, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get editSequence => $composableBuilder(
+    column: $table.editSequence,
+    builder: (column) => column,
+  );
+}
+
+class $$LocalProfileAccountsTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $LocalProfileAccountsTable,
+          LocalProfileAccount,
+          $$LocalProfileAccountsTableFilterComposer,
+          $$LocalProfileAccountsTableOrderingComposer,
+          $$LocalProfileAccountsTableAnnotationComposer,
+          $$LocalProfileAccountsTableCreateCompanionBuilder,
+          $$LocalProfileAccountsTableUpdateCompanionBuilder,
+          (
+            LocalProfileAccount,
+            BaseReferences<
+              _$PactaDatabase,
+              $LocalProfileAccountsTable,
+              LocalProfileAccount
+            >,
+          ),
+          LocalProfileAccount,
+          PrefetchHooks Function()
+        > {
+  $$LocalProfileAccountsTableTableManager(
+    _$PactaDatabase db,
+    $LocalProfileAccountsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalProfileAccountsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalProfileAccountsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$LocalProfileAccountsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> displayName = const Value.absent(),
+                Value<String?> avatarMimeType = const Value.absent(),
+                Value<Uint8List?> avatarBytes = const Value.absent(),
+                Value<bool> pendingSave = const Value.absent(),
+                Value<String?> syncError = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> editSequence = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalProfileAccountsCompanion(
+                userId: userId,
+                displayName: displayName,
+                avatarMimeType: avatarMimeType,
+                avatarBytes: avatarBytes,
+                pendingSave: pendingSave,
+                syncError: syncError,
+                updatedAt: updatedAt,
+                editSequence: editSequence,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                Value<String> displayName = const Value.absent(),
+                Value<String?> avatarMimeType = const Value.absent(),
+                Value<Uint8List?> avatarBytes = const Value.absent(),
+                Value<bool> pendingSave = const Value.absent(),
+                Value<String?> syncError = const Value.absent(),
+                required DateTime updatedAt,
+                Value<int> editSequence = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalProfileAccountsCompanion.insert(
+                userId: userId,
+                displayName: displayName,
+                avatarMimeType: avatarMimeType,
+                avatarBytes: avatarBytes,
+                pendingSave: pendingSave,
+                syncError: syncError,
+                updatedAt: updatedAt,
+                editSequence: editSequence,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalProfileAccountsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $LocalProfileAccountsTable,
+      LocalProfileAccount,
+      $$LocalProfileAccountsTableFilterComposer,
+      $$LocalProfileAccountsTableOrderingComposer,
+      $$LocalProfileAccountsTableAnnotationComposer,
+      $$LocalProfileAccountsTableCreateCompanionBuilder,
+      $$LocalProfileAccountsTableUpdateCompanionBuilder,
+      (
+        LocalProfileAccount,
+        BaseReferences<
+          _$PactaDatabase,
+          $LocalProfileAccountsTable,
+          LocalProfileAccount
+        >,
+      ),
+      LocalProfileAccount,
+      PrefetchHooks Function()
+    >;
+typedef $$LocalProfileClearMarksTableCreateCompanionBuilder =
+    LocalProfileClearMarksCompanion Function({
+      required String userId,
+      Value<int> generation,
+      required DateTime clearedAt,
+      Value<int> rowid,
+    });
+typedef $$LocalProfileClearMarksTableUpdateCompanionBuilder =
+    LocalProfileClearMarksCompanion Function({
+      Value<String> userId,
+      Value<int> generation,
+      Value<DateTime> clearedAt,
+      Value<int> rowid,
+    });
+
+class $$LocalProfileClearMarksTableFilterComposer
+    extends Composer<_$PactaDatabase, $LocalProfileClearMarksTable> {
+  $$LocalProfileClearMarksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get generation => $composableBuilder(
+    column: $table.generation,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalProfileClearMarksTableOrderingComposer
+    extends Composer<_$PactaDatabase, $LocalProfileClearMarksTable> {
+  $$LocalProfileClearMarksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get generation => $composableBuilder(
+    column: $table.generation,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalProfileClearMarksTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $LocalProfileClearMarksTable> {
+  $$LocalProfileClearMarksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<int> get generation => $composableBuilder(
+    column: $table.generation,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get clearedAt =>
+      $composableBuilder(column: $table.clearedAt, builder: (column) => column);
+}
+
+class $$LocalProfileClearMarksTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $LocalProfileClearMarksTable,
+          LocalProfileClearMark,
+          $$LocalProfileClearMarksTableFilterComposer,
+          $$LocalProfileClearMarksTableOrderingComposer,
+          $$LocalProfileClearMarksTableAnnotationComposer,
+          $$LocalProfileClearMarksTableCreateCompanionBuilder,
+          $$LocalProfileClearMarksTableUpdateCompanionBuilder,
+          (
+            LocalProfileClearMark,
+            BaseReferences<
+              _$PactaDatabase,
+              $LocalProfileClearMarksTable,
+              LocalProfileClearMark
+            >,
+          ),
+          LocalProfileClearMark,
+          PrefetchHooks Function()
+        > {
+  $$LocalProfileClearMarksTableTableManager(
+    _$PactaDatabase db,
+    $LocalProfileClearMarksTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalProfileClearMarksTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$LocalProfileClearMarksTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$LocalProfileClearMarksTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<int> generation = const Value.absent(),
+                Value<DateTime> clearedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalProfileClearMarksCompanion(
+                userId: userId,
+                generation: generation,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                Value<int> generation = const Value.absent(),
+                required DateTime clearedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => LocalProfileClearMarksCompanion.insert(
+                userId: userId,
+                generation: generation,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalProfileClearMarksTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $LocalProfileClearMarksTable,
+      LocalProfileClearMark,
+      $$LocalProfileClearMarksTableFilterComposer,
+      $$LocalProfileClearMarksTableOrderingComposer,
+      $$LocalProfileClearMarksTableAnnotationComposer,
+      $$LocalProfileClearMarksTableCreateCompanionBuilder,
+      $$LocalProfileClearMarksTableUpdateCompanionBuilder,
+      (
+        LocalProfileClearMark,
+        BaseReferences<
+          _$PactaDatabase,
+          $LocalProfileClearMarksTable,
+          LocalProfileClearMark
+        >,
+      ),
+      LocalProfileClearMark,
+      PrefetchHooks Function()
+    >;
+typedef $$LocalCloudRecoveryPointsTableCreateCompanionBuilder =
+    LocalCloudRecoveryPointsCompanion Function({
+      required String id,
+      required String userId,
+      required DateTime createdAt,
+      required String reason,
+      Value<String?> sourceDeviceName,
+      required DateTime dataUpdatedAt,
+      required int rowCount,
+      required String payload,
+      Value<int> rowid,
+    });
+typedef $$LocalCloudRecoveryPointsTableUpdateCompanionBuilder =
+    LocalCloudRecoveryPointsCompanion Function({
+      Value<String> id,
+      Value<String> userId,
+      Value<DateTime> createdAt,
+      Value<String> reason,
+      Value<String?> sourceDeviceName,
+      Value<DateTime> dataUpdatedAt,
+      Value<int> rowCount,
+      Value<String> payload,
+      Value<int> rowid,
+    });
+
+class $$LocalCloudRecoveryPointsTableFilterComposer
+    extends Composer<_$PactaDatabase, $LocalCloudRecoveryPointsTable> {
+  $$LocalCloudRecoveryPointsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceDeviceName => $composableBuilder(
+    column: $table.sourceDeviceName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get dataUpdatedAt => $composableBuilder(
+    column: $table.dataUpdatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get rowCount => $composableBuilder(
+    column: $table.rowCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalCloudRecoveryPointsTableOrderingComposer
+    extends Composer<_$PactaDatabase, $LocalCloudRecoveryPointsTable> {
+  $$LocalCloudRecoveryPointsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get reason => $composableBuilder(
+    column: $table.reason,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceDeviceName => $composableBuilder(
+    column: $table.sourceDeviceName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get dataUpdatedAt => $composableBuilder(
+    column: $table.dataUpdatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get rowCount => $composableBuilder(
+    column: $table.rowCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get payload => $composableBuilder(
+    column: $table.payload,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalCloudRecoveryPointsTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $LocalCloudRecoveryPointsTable> {
+  $$LocalCloudRecoveryPointsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<String> get reason =>
+      $composableBuilder(column: $table.reason, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceDeviceName => $composableBuilder(
+    column: $table.sourceDeviceName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get dataUpdatedAt => $composableBuilder(
+    column: $table.dataUpdatedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get rowCount =>
+      $composableBuilder(column: $table.rowCount, builder: (column) => column);
+
+  GeneratedColumn<String> get payload =>
+      $composableBuilder(column: $table.payload, builder: (column) => column);
+}
+
+class $$LocalCloudRecoveryPointsTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $LocalCloudRecoveryPointsTable,
+          LocalCloudRecoveryPoint,
+          $$LocalCloudRecoveryPointsTableFilterComposer,
+          $$LocalCloudRecoveryPointsTableOrderingComposer,
+          $$LocalCloudRecoveryPointsTableAnnotationComposer,
+          $$LocalCloudRecoveryPointsTableCreateCompanionBuilder,
+          $$LocalCloudRecoveryPointsTableUpdateCompanionBuilder,
+          (
+            LocalCloudRecoveryPoint,
+            BaseReferences<
+              _$PactaDatabase,
+              $LocalCloudRecoveryPointsTable,
+              LocalCloudRecoveryPoint
+            >,
+          ),
+          LocalCloudRecoveryPoint,
+          PrefetchHooks Function()
+        > {
+  $$LocalCloudRecoveryPointsTableTableManager(
+    _$PactaDatabase db,
+    $LocalCloudRecoveryPointsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalCloudRecoveryPointsTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$LocalCloudRecoveryPointsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$LocalCloudRecoveryPointsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> userId = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<String> reason = const Value.absent(),
+                Value<String?> sourceDeviceName = const Value.absent(),
+                Value<DateTime> dataUpdatedAt = const Value.absent(),
+                Value<int> rowCount = const Value.absent(),
+                Value<String> payload = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalCloudRecoveryPointsCompanion(
+                id: id,
+                userId: userId,
+                createdAt: createdAt,
+                reason: reason,
+                sourceDeviceName: sourceDeviceName,
+                dataUpdatedAt: dataUpdatedAt,
+                rowCount: rowCount,
+                payload: payload,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String userId,
+                required DateTime createdAt,
+                required String reason,
+                Value<String?> sourceDeviceName = const Value.absent(),
+                required DateTime dataUpdatedAt,
+                required int rowCount,
+                required String payload,
+                Value<int> rowid = const Value.absent(),
+              }) => LocalCloudRecoveryPointsCompanion.insert(
+                id: id,
+                userId: userId,
+                createdAt: createdAt,
+                reason: reason,
+                sourceDeviceName: sourceDeviceName,
+                dataUpdatedAt: dataUpdatedAt,
+                rowCount: rowCount,
+                payload: payload,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalCloudRecoveryPointsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $LocalCloudRecoveryPointsTable,
+      LocalCloudRecoveryPoint,
+      $$LocalCloudRecoveryPointsTableFilterComposer,
+      $$LocalCloudRecoveryPointsTableOrderingComposer,
+      $$LocalCloudRecoveryPointsTableAnnotationComposer,
+      $$LocalCloudRecoveryPointsTableCreateCompanionBuilder,
+      $$LocalCloudRecoveryPointsTableUpdateCompanionBuilder,
+      (
+        LocalCloudRecoveryPoint,
+        BaseReferences<
+          _$PactaDatabase,
+          $LocalCloudRecoveryPointsTable,
+          LocalCloudRecoveryPoint
+        >,
+      ),
+      LocalCloudRecoveryPoint,
+      PrefetchHooks Function()
+    >;
 
 class $PactaDatabaseManager {
   final _$PactaDatabase _db;
@@ -18469,5 +20572,17 @@ class $PactaDatabaseManager {
       $$LocalUserLifecycleStatesTableTableManager(
         _db,
         _db.localUserLifecycleStates,
+      );
+  $$LocalProfileAccountsTableTableManager get localProfileAccounts =>
+      $$LocalProfileAccountsTableTableManager(_db, _db.localProfileAccounts);
+  $$LocalProfileClearMarksTableTableManager get localProfileClearMarks =>
+      $$LocalProfileClearMarksTableTableManager(
+        _db,
+        _db.localProfileClearMarks,
+      );
+  $$LocalCloudRecoveryPointsTableTableManager get localCloudRecoveryPoints =>
+      $$LocalCloudRecoveryPointsTableTableManager(
+        _db,
+        _db.localCloudRecoveryPoints,
       );
 }

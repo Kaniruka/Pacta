@@ -29,12 +29,32 @@ A complete copy of one User's app-owned business records, with its originating d
 _Avoid_: Merged history, synchronization queue
 
 **Local Data Snapshot (本地数据快照)**:
-The complete business records currently held for one User on one device. Device-specific settings, authentication, and administrator-controlled user status are outside this snapshot.
+The complete business records currently held for one User on one device. Account Profile, device-specific settings, authentication, and administrator-controlled user status are outside this snapshot.
 _Avoid_: Device settings backup
 
 **Manual Cloud Sync (手动云同步)**:
-The user's explicit choice to replace their Cloud Data Snapshot with their Local Data Snapshot, or replace their Local Data Snapshot with their Cloud Data Snapshot. Choosing one whole snapshot discards the other snapshot's unique business records rather than reconciling individual records.
+The user's explicit choice to replace their Cloud Data Snapshot with their Local Data Snapshot, or replace their Local Data Snapshot with their Cloud Data Snapshot. It replaces the working records without reconciling individual records; separately retained backups can still be recovered.
 _Avoid_: Automatic merge, automatic cloud sync, record-by-record reconciliation
+
+**Cloud Backup (云端备份)**:
+A retained version of a User's Cloud Data Snapshot that can be explicitly restored to that User's device.
+_Avoid_: Per-record merge, Local Recovery Point
+
+**Local Recovery Point (本机恢复点)**:
+A preserved Local Data Snapshot from before a restore, allowing the User to recover the device's previous business records independently of cloud backup availability.
+_Avoid_: Cloud Backup, device settings backup
+
+**Daily Confirmation Upload (今日确认后自动上传)**:
+An optional whole-snapshot upload following successful Daily Confirmation, subject to the User's current device preference and cloud-version safety checks. It does not authorize automatic download or merging.
+_Avoid_: Background record merging, automatic cloud download
+
+**Account Profile (账号资料)**:
+A User's display nickname and avatar, shared across their devices and separate from business records. Restoring business data does not rewind the profile or change login identity.
+_Avoid_: User identity, business snapshot
+
+**Daily Open Reminder (每日打开提醒)**:
+A User's optional device-local reminder to open Pacta at a chosen local time, independent of pending National Focus confirmations.
+_Avoid_: Daily Confirmation, email reminder
 
 **Focus Session Reconciliation (专注记录核对)**:
 The former review of conflicting multi-device Focus Session records. Historical review results may remain in snapshots; current Manual Cloud Sync chooses a whole snapshot instead of creating new cross-device review cases.
@@ -119,6 +139,10 @@ _Avoid_: Focus Node, Task, badge
 **Internalization Progress (内化进度)**:
 A persistent card-level display proxy for familiarity based on cumulative successful National Focus Days, separate from current/historical consecutive records and Strengthening Levels; it is not a measurement of real-world habit formation. It survives failure and is not manually editable; successful days are counted at National Focus Checkpoints rather than per lighting action.
 _Avoid_: Current streak, Task progress, completion percentage, measured habit-formation percentage
+
+**Internalized Card (已内化国策卡)**:
+A National Focus Card with at least 180 cumulative successful National Focus Days, as finally confirmed on 2026-11-13. Its Internalization Progress reaches and remains at 100%; rounded display values do not determine eligibility. This is a product classification, not a measurement of real-world habit formation, and does not automatically change Strengthening Levels.
+_Avoid_: Rounded-display eligibility, automatic strengthening upgrade
 
 **National Focus Strengthening Level (国策强化等级)**:
 A user-defined stricter set of requirements for a National Focus Card, expressed as a single 国策规则 override; for example, raising "read 5 pages" to "read 10 pages". A card retains its base rule and supports up to five user-created strengthening levels, each requiring its own override; the base is not counted toward this limit. Legacy trigger-condition overrides already stored remain as history and are not offered as a new input. Levels are defined independently of Internalization Progress and are not automatically earned upgrades.

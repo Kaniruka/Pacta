@@ -1,5 +1,7 @@
 import 'package:drift/drift.dart';
 
+import '../sync/cloud_auto_upload_preference.dart';
+import '../sync/cloud_auto_upload_queue.dart';
 import '../tasks/task_database.dart';
 import 'auth_repository.dart';
 import 'user_lifecycle_models.dart';
@@ -136,10 +138,17 @@ class UserPurgeCleanupRepository {
   UserPurgeCleanupRepository({
     required this.authRepository,
     required this.database,
+    this.queueStore = const SharedPreferencesCloudAutoUploadQueueStore(),
+    this.autoUploadPreference = const CloudAutoUploadPreference(),
   });
 
   final AuthRepository authRepository;
   final PactaDatabase database;
+
+  /// 自动上传队列里暂存着整份业务快照；账号清除必须一起删掉，
+  /// 否则已清除用户的业务数据还会留在本机偏好里。
+  final CloudAutoUploadQueueStore queueStore;
+  final CloudAutoUploadPreference autoUploadPreference;
   Future<int>? _inFlight;
 
   Future<int> purgeLocallyConfirmedUsers() async {
@@ -155,18 +164,32 @@ class UserPurgeCleanupRepository {
     }
   }
 
+  /// 只有 receipt 确认已清除时才动手；先删本机自动上传状态（含冻结载荷），
+  /// 再删业务表。任一步失败都会抛出，receipt 仍在，下次运行继续重试；
+  /// 全程只处理 [oldUserId]，不跨用户清理。
   Future<bool> purgeUserIfConfirmed(String oldUserId) async {
     if (oldUserId.isEmpty) return false;
     final receipt = await authRepository.lookupPurgeReceipt(oldUserId);
     if (receipt == null || !receipt.confirmsPurgedUser(oldUserId)) return false;
-    return database.purgeUserDataForReceipt(
+    final queueBefore = await queueStore.load(oldUserId);
+    await queueStore.clear(oldUserId);
+    await autoUploadPreference.clear(oldUserId);
+    final purgedRows = await database.purgeUserDataForReceipt(
       userId: oldUserId,
       receipt: receipt,
     );
+    return purgedRows ||
+        queueBefore.hasWork ||
+        queueBefore.blockedReason != null;
   }
 
   Future<int> _purgeLocallyConfirmedUsers() async {
-    final userIds = await database.localUserIdsWithData();
+    // 业务表可能已被清除，但队列里还留着该用户的冻结载荷；
+    // 只按数据库枚举会漏掉这种只剩队列的旧 UUID。
+    final userIds = {
+      ...await database.localUserIdsWithData(),
+      ...await queueStore.userIds(),
+    };
     var purgedCount = 0;
     for (final userId in userIds) {
       if (await purgeUserIfConfirmed(userId)) purgedCount++;

@@ -34,10 +34,18 @@ import 'src/national_focus/national_focus_ai_access.dart';
 import 'src/national_focus/national_focus_ai_analysis_page.dart';
 import 'src/national_focus/national_focus_tree_page.dart';
 import 'src/notifications/focus_notification_service.dart';
+import 'src/profile/avatar_picker.dart';
+import 'src/profile/profile_card.dart';
+import 'src/profile/profile_overview.dart';
+import 'src/profile/profile_remote.dart';
+import 'src/profile/profile_repository.dart';
 import 'src/notifications/focus_notification_settings_page.dart';
 import 'src/tasks/task_database.dart' show PactaDatabase;
 import 'src/tasks/task_models.dart';
 import 'src/tasks/task_repository.dart';
+import 'src/sync/cloud_auto_upload.dart';
+import 'src/sync/cloud_auto_upload_preference.dart';
+import 'src/sync/cloud_auto_upload_queue.dart';
 import 'src/sync/cloud_snapshot_repository.dart';
 import 'src/sync/source_device_info.dart';
 import 'src/sync/cloud_sync_card.dart';
@@ -54,12 +62,14 @@ Future<void> main() async {
   AuthRepository repository = const UnavailableAuthRepository();
   final database = PactaDatabase.open();
   CloudSnapshotRemote? cloudRemote;
+  ProfileRemote profileRemote = const UnavailableProfileRemote();
   NationalFocusAiGrantRepository Function(String userId)?
   nationalFocusAiGrantRepositoryFactory;
   if (url.isNotEmpty && key.isNotEmpty) {
     await Supabase.initialize(url: url, publishableKey: key);
     repository = SupabaseAuthRepository(Supabase.instance.client);
     cloudRemote = SupabaseCloudSnapshotRemote(Supabase.instance.client);
+    profileRemote = SupabaseProfileRemote(Supabase.instance.client);
     nationalFocusAiGrantRepositoryFactory = (userId) =>
         SupabaseNationalFocusAiGrantRepository(
           client: Supabase.instance.client,
@@ -129,13 +139,18 @@ Future<void> main() async {
           userId: userId,
         ),
       ),
+      profileRepositoryFactory: (userId) => LocalProfileRepository(
+        database: database,
+        userId: userId,
+        remote: profileRemote,
+      ),
       cloudSnapshotRepositoryFactory: cloudRemote == null
           ? null
           : (userId) => CloudSnapshotRepository(
               database: database,
               remote: cloudRemote!,
               userId: userId,
-              deviceName: sourceDevice.deviceName,
+              deviceName: sourceDevice.sourceLabel,
               deviceManufacturer: sourceDevice.manufacturer,
               deviceModel: sourceDevice.model,
             ),
@@ -172,7 +187,10 @@ class PactaApp extends StatelessWidget {
     this.cloudSnapshotRepositoryFactory,
     this.cloudCheckClock = DateTime.now,
     this.chainSignalsRepositoryFactory,
+    this.profileRepositoryFactory,
   });
+
+  final ProfileRepository Function(String userId)? profileRepositoryFactory;
 
   final CloudSnapshotRepository Function(String userId)?
   cloudSnapshotRepositoryFactory;
@@ -203,6 +221,9 @@ class PactaApp extends StatelessWidget {
         cloudCheckClockProvider.overrideWithValue(cloudCheckClock),
         chainSignalsRepositoryFactoryProvider.overrideWithValue(
           chainSignalsRepositoryFactory,
+        ),
+        profileRepositoryFactoryProvider.overrideWithValue(
+          profileRepositoryFactory,
         ),
         cloudSnapshotRepositoryFactoryProvider.overrideWithValue(
           cloudSnapshotRepositoryFactory,
@@ -240,8 +261,8 @@ class PactaApp extends StatelessWidget {
       child: MaterialApp(
         title: 'Pacta',
         debugShowCheckedModeBanner: false,
-        theme: _pactaTheme(Brightness.light),
-        darkTheme: _pactaTheme(Brightness.dark),
+        theme: pactaTheme(Brightness.light),
+        darkTheme: pactaTheme(Brightness.dark),
         home: _UserPurgeCleanupLifecycleObserver(
           cleanupRepository: userPurgeCleanupRepository,
           child: const AuthGate(),
@@ -251,7 +272,9 @@ class PactaApp extends StatelessWidget {
   }
 }
 
-ThemeData _pactaTheme(Brightness brightness) {
+/// The app theme, shared with offline layout fixtures so evidence never
+/// invents a second visual language.
+ThemeData pactaTheme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
   final colors =
       ColorScheme.fromSeed(
@@ -377,6 +400,46 @@ final cloudVersionCheckProvider = Provider.autoDispose<CloudVersionCheck?>((
   return check;
 });
 
+final cloudAutoUploadPreferenceProvider = Provider<CloudAutoUploadPreference>(
+  (ref) => const CloudAutoUploadPreference(),
+);
+final cloudAutoUploadQueueStoreProvider = Provider<CloudAutoUploadQueueStore>(
+  (ref) => const SharedPreferencesCloudAutoUploadQueueStore(),
+);
+
+/// 今日确认后的自动上传协调器。它与版本检查共用同一仓储、访问判定与时钟，
+/// 因此自动上传和手动同步看到的是同一份云端状态。
+final cloudAutoUploadCoordinatorProvider =
+    Provider.autoDispose<CloudAutoUploadCoordinator?>((ref) {
+      final repository = ref.watch(cloudSnapshotRepositoryProvider);
+      if (repository == null) return null;
+      final lifecycle = ref.watch(userLifecycleStatusRepositoryProvider);
+      final auth = ref.watch(authRepositoryProvider);
+      final userId = repository.userId;
+      final coordinator = CloudAutoUploadCoordinator(
+        userId: userId,
+        repository: repository,
+        preference: ref.watch(cloudAutoUploadPreferenceProvider),
+        queueStore: ref.watch(cloudAutoUploadQueueStoreProvider),
+        versionCheck: ref.watch(cloudVersionCheckProvider),
+        now: ref.watch(cloudCheckClockProvider),
+        canAccess: () async {
+          if (auth.currentUserId != userId) return false;
+          final status = await lifecycle.refresh();
+          return auth.currentUserId == userId && !status.isSuspended;
+        },
+        isAccessible: () async {
+          if (auth.currentUserId != userId) return false;
+          final status = await lifecycle.readCachedStatus();
+          return auth.currentUserId == userId &&
+              status != null &&
+              !status.isSuspended;
+        },
+      );
+      ref.onDispose(coordinator.dispose);
+      return coordinator;
+    });
+
 final chainSignalsRepositoryFactoryProvider =
     Provider<ChainSignalsRepository Function(String userId)?>((ref) => null);
 final chainSignalsRepositoryProvider =
@@ -385,6 +448,34 @@ final chainSignalsRepositoryProvider =
       final factory = ref.watch(chainSignalsRepositoryFactoryProvider);
       return userId == null || factory == null ? null : factory(userId);
     });
+
+final profileRepositoryFactoryProvider =
+    Provider<ProfileRepository Function(String userId)?>((ref) => null);
+
+final profileRepositoryProvider = Provider.autoDispose<ProfileRepository>((
+  ref,
+) {
+  final userId = ref.watch(authUserIdProvider);
+  final factory = ref.watch(profileRepositoryFactoryProvider);
+  if (userId == null || factory == null) {
+    return const UnavailableProfileRepository();
+  }
+  final repository = factory(userId);
+  ref.onDispose(repository.dispose);
+  return repository;
+});
+
+final avatarPickerProvider = Provider<AvatarPicker>(
+  (ref) => const SystemAvatarPicker(),
+);
+
+final profileOverviewSourceProvider =
+    Provider.autoDispose<ProfileOverviewSource>(
+      (ref) => RepositoryProfileOverviewSource(
+        nationalFocusRepository: ref.watch(nationalFocusRepositoryProvider),
+        focusRepository: ref.watch(focusRepositoryProvider),
+      ),
+    );
 
 final authRepositoryProvider = Provider<AuthRepository>((ref) {
   return const UnavailableAuthRepository();
@@ -706,6 +797,7 @@ class _AppShellState extends ConsumerState<AppShell>
     with WidgetsBindingObserver {
   int _index = 0;
   late final FocusNotificationService _focusNotificationService;
+  late final String? _reminderOwnerUserId;
   late final StreamSubscription<List<ConnectivityResult>>
   _connectivitySubscription;
   late final StreamSubscription<String> _notificationOpenSubscription;
@@ -724,6 +816,11 @@ class _AppShellState extends ConsumerState<AppShell>
   void initState() {
     super.initState();
     _focusNotificationService = ref.read(focusNotificationServiceProvider);
+    // Reminder settings belong to this installation's current user, so the
+    // owner is bound before any reconciliation runs. The identifier is kept in
+    // a field because dispose() must not read providers.
+    _reminderOwnerUserId = ref.read(authRepositoryProvider).currentUserId;
+    unawaited(_focusNotificationService.setUserId(_reminderOwnerUserId));
     _nationalFocusCheckpointScheduler = NationalFocusCheckpointScheduler(
       settleDueCheckpoints: () =>
           ref.read(nationalFocusRepositoryProvider).settleDueCheckpoints(),
@@ -750,6 +847,9 @@ class _AppShellState extends ConsumerState<AppShell>
         );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_refreshLocalState(checkCloud: true));
+      // The daily reminder belongs to this device, so it is reconciled on
+      // every start instead of relying on a business data change.
+      unawaited(_focusNotificationService.syncDailyOpenReminder());
       final request = _focusNotificationService.takePendingOpenRequest();
       if (request != null) unawaited(_openFocusFlow(request));
     });
@@ -777,6 +877,11 @@ class _AppShellState extends ConsumerState<AppShell>
         ref.read(cloudVersionCheckProvider)?.check() ?? Future<void>.value(),
       );
     }
+    // 登录、联网或生命周期恢复后重试待上传请求；访问判定在协调器内完成。
+    unawaited(
+      ref.read(cloudAutoUploadCoordinatorProvider)?.trigger() ??
+          Future<void>.value(),
+    );
     // Lifecycle and local notification refresh never transfer business records.
     try {
       await ref.read(focusRepositoryProvider).settleDueSessions();
@@ -785,6 +890,9 @@ class _AppShellState extends ConsumerState<AppShell>
       // Local recovery can be retried without uploading or discarding records.
     }
     await _syncFocusStatus();
+    // A resume can cross midnight or a device time zone change; the reminder is
+    // replanned from the current local wall clock without replaying old days.
+    unawaited(_focusNotificationService.syncDailyOpenReminder());
   }
 
   Future<void> _syncFocusStatus() async {
@@ -823,6 +931,10 @@ class _AppShellState extends ConsumerState<AppShell>
 
   Future<void> _openFocusFlow(String payload) async {
     if (!mounted) return;
+    if (payload.startsWith('daily-open-reminder:')) {
+      setState(() => _index = 0);
+      return;
+    }
     if (payload.startsWith('national-focus-reminder:')) {
       setState(() => _index = 1);
       return;
@@ -892,11 +1004,7 @@ class _AppShellState extends ConsumerState<AppShell>
     _notificationOpenSubscription.cancel();
     _nationalFocusReminderSubscription.cancel();
     _nationalFocusCheckpointScheduler.dispose();
-    unawaited(
-      _focusNotificationService.syncNationalFocusReminder(
-        hasPendingConfirmations: false,
-      ),
-    );
+    unawaited(_focusNotificationService.releaseUser(_reminderOwnerUserId));
     super.dispose();
   }
 
@@ -912,7 +1020,14 @@ class _AppShellState extends ConsumerState<AppShell>
     ref.listen(focusRepositoryProvider, (previous, next) {
       unawaited(_syncFocusStatus());
     });
+    ref.listen(authUserIdProvider, (previous, next) {
+      if (previous != null && previous != next) {
+        // 切换账号作废旧用户的待上传请求，避免随后按错误身份继续。
+        unawaited(ref.read(cloudAutoUploadQueueStoreProvider).clear(previous));
+      }
+    });
     ref.watch(cloudVersionCheckProvider);
+    final autoUpload = ref.watch(cloudAutoUploadCoordinatorProvider);
     final nationalFocusRepository = ref.watch(nationalFocusRepositoryProvider);
     final focusRepository = ref.watch(focusRepositoryProvider);
     final lifecycleStatusRepository = ref.watch(
@@ -925,6 +1040,10 @@ class _AppShellState extends ConsumerState<AppShell>
         userId: ref.watch(authRepositoryProvider).currentUserId,
         repository: nationalFocusRepository,
         onOpenAiAnalysis: _openNationalFocusAiAnalysis,
+        onTodayConfirmed: autoUpload?.enqueue,
+        onNotificationCapabilityUse: () => unawaited(
+          _focusNotificationService.ensureNotificationPermissionForUse(),
+        ),
         displayTimeZoneLoader: () async {
           final deviceZone = await FlutterTimezone.getLocalTimezone();
           final dashboard = await focusRepository.getDashboardMetrics(
@@ -3386,6 +3505,13 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
       _busy = true;
       _error = null;
     });
+    // The first focus flow is a real user action that relies on the reminder
+    // notification, so this is where the permission is requested once.
+    unawaited(
+      ref
+          .read(focusNotificationServiceProvider)
+          .ensureNotificationPermissionForUse(),
+    );
     try {
       final session = await ref
           .read(focusRepositoryProvider)
@@ -3416,6 +3542,11 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
       _busy = true;
       _error = null;
     });
+    unawaited(
+      ref
+          .read(focusNotificationServiceProvider)
+          .ensureNotificationPermissionForUse(),
+    );
     try {
       final appointment = await ref
           .read(focusRepositoryProvider)
@@ -4374,17 +4505,17 @@ class _MyPageState extends ConsumerState<MyPage> {
       children: [
         Text('我的', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 16),
-        Card(
-          child: ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.person_outline)),
-            title: Text(repository.currentUserIdentifier ?? '当前用户'),
-            subtitle: const Text('数据仅供你使用'),
-          ),
+        MyProfileCard(
+          repository: ref.watch(profileRepositoryProvider),
+          overview: ref.watch(profileOverviewSourceProvider),
+          avatarPicker: ref.watch(avatarPickerProvider),
+          accountIdentifier: repository.currentUserIdentifier,
         ),
         const SizedBox(height: 12),
         CloudSyncCard(
           repository: ref.watch(cloudSnapshotRepositoryProvider),
           versionCheck: ref.watch(cloudVersionCheckProvider),
+          autoUpload: ref.watch(cloudAutoUploadCoordinatorProvider),
           focusRepository: ref.watch(focusRepositoryProvider),
           onDownloaded: () async {
             ref.invalidate(taskRepositoryProvider);
@@ -4430,9 +4561,9 @@ class _MyPageState extends ConsumerState<MyPage> {
         const SizedBox(height: 12),
         Card(
           child: ListTile(
-            leading: const Icon(Icons.settings_outlined),
-            title: const Text('设置'),
-            subtitle: const Text('专注通知与本设备后台状态'),
+            leading: const Icon(Icons.notifications_active_outlined),
+            title: const Text('提醒与通知'),
+            subtitle: const Text('专注、国策与每日打开提醒；仅本机生效'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute<void>(
@@ -4978,6 +5109,7 @@ void _openAiManualSync(BuildContext context, WidgetRef ref) {
               CloudSyncCard(
                 repository: ref.read(cloudSnapshotRepositoryProvider),
                 versionCheck: ref.read(cloudVersionCheckProvider),
+                autoUpload: ref.read(cloudAutoUploadCoordinatorProvider),
                 onDownloaded: () async {
                   ref.invalidate(taskRepositoryProvider);
                   ref.invalidate(focusRepositoryProvider);

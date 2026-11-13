@@ -341,6 +341,7 @@ def main(argv=None):
     command = [
         *flutter_cmd,
         'drive',
+        '--keep-app-running',
         '--driver=test_driver/ui_layout_acceptance_test.dart',
         ('--target=integration_test/board_design_device_test.dart' if args.target == 'board'
          else '--target=integration_test/focus_chain_design_device_test.dart'),
