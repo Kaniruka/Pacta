@@ -106,9 +106,13 @@ flutter test test/sync/source_device_info_test.dart          -> +5  All tests pa
 | --- | --- |
 | 幂等分支返回当前快照，会把其他设备的新版本记成本机已处理 | 新增不含业务载荷的请求台账，命中时按台账 revision 从历史映射返回该请求**原版本**；同 request id 换内容报 `PT422`，原版本已淘汰报 `PT425`，都不会写入 |
 | 恢复点读回只判非空 | 校验 `userId`、`id` 与载荷指纹都等于替换前的本机状态，任一不符即取消恢复 |
-| 取消钩子只在事务外检查 | `_replaceLocalTables` 接收 `isCancelled`，在事务内、异步预检之后、删除之前再检查一次 |
+| 取消钩子只在事务外检查 | `_replaceLocalTables` 接收 `isCancelled`，在事务内设置三个检查点：异步预检后、读取本机日历映射后（首个 DELETE 前）、全部写入后（提交前）；任一命中都回滚整个替换 |
 | 带 requestId 时静默降级旧签名会丢失去重 | requestId 非空禁止回退到无 `p_request_id` 的签名，直接报需升级服务；手动上传（null）保留兼容 |
 | `_fingerprint` 对畸形载荷会抛类型错误 | 改为全函数：畸形载荷跳过归一化，供恢复点读回校验使用 |
+
+取消检查点用 `CloudRestoreStage`（`beforeReplacement` / `afterCalendarLookup` / `afterReplacement`）
+异步观察者验证，不再依赖调用计数：分别在三个边界模拟账号切换，断言本机数据未被替换，
+并验证「写入完成后取消」会整体回滚（恢复目标已写入仍恢复为替换前记录）。
 
 新增测试：原版本重试、request id 换内容被拒、淘汰后重试不写入、恢复点读回不一致不替换、
 事务内取消仍不替换、requestId 非空不回退旧签名、`PT422`/`PT425` 错误映射。
@@ -118,6 +122,11 @@ SQL 增加版本 19/20 之后重试必须返回 19、`PT422`、`PT425` 及台账
 在真实项目上以 `42501 permission denied` 失败。已改为身份选择、种子数据与结果断言都在 `reset role`
 的可信会话里完成，`authenticated` 只用于 RLS 与 CAS 检查，`service_role` 只用于执行清除 RPC；
 并移除「无空闲非管理员身份就跳过」的分支——缺少管理员或非管理员身份时直接报错，不再静默跳过 purge。
+第四轮（真实 probe 再次 42501）：请求台账的事件计数断言当时仍在 authenticated 段，已移到 `reset role`
+之后；`reset role` 也提前到全部可信断言之前。现约定：`authenticated` 段只访问授权表
+（`cloud_business_snapshots`、`cloud_business_snapshot_history`）与授权 RPC，`auth.users`、`app_admins`、
+请求台账、purge receipt、停用记录一律只在可信段读写；台账在 authenticated 段只保留一条「必须不可读」的
+隐私反证。
 主 Agent 提供 admin + 非 admin 两个身份后该段会真实执行。
 
 ## 已知限制与其他说明

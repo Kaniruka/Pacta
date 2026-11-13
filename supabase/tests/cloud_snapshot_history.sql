@@ -129,7 +129,6 @@ declare
   saved public.cloud_business_snapshots;
   retried public.cloud_business_snapshots;
   kept integer;
-  ledger integer;
 begin
   saved := public.save_cloud_business_snapshot(
     17,
@@ -161,13 +160,7 @@ begin
   if kept <> 1 then
     raise exception 'upload_request_retry_duplicated_history';
   end if;
-  select count(*) into ledger
-  from public.cloud_business_snapshot_upload_requests
-  where user_id = current_setting('history_test.owner_id')::uuid
-    and request_id = 'request-92';
-  if ledger <> 1 then
-    raise exception 'upload_request_ledger_row_missing';
-  end if;
+  -- 请求台账是内部表，authenticated 无读权限；它的断言放在后面的可信阶段。
   perform set_config('history_test.request_one_revision', saved.revision::text, true);
 end
 $request_idempotency$;
@@ -342,6 +335,8 @@ begin
   exception
     when insufficient_privilege then null;
   end;
+  -- 这是隐私反证：内部台账必须对 authenticated 不可读。正向的台账断言
+  -- 一律在 reset role 之后的可信阶段执行，不要在这里补读。
   begin
     perform 1 from public.cloud_business_snapshot_upload_requests
     where user_id = current_setting('history_test.owner_id')::uuid;
@@ -373,9 +368,45 @@ begin
 end
 $cross_user_isolation$;
 
--- Lifecycle clearing must cover retained history and the request ledger.-- 生命周期清除：身份选择与前置条件准备都在可信会话里完成，绝不在
--- authenticated 角色下读 auth.users；随后只以 service_role 执行清除 RPC。
 reset role;
+
+-- 内部表的断言必须在可信会话里做：台账没有、也不应该有 authenticated 读权限。
+do $request_ledger_trusted_checks$
+declare
+  owner_id uuid := current_setting('history_test.owner_id')::uuid;
+  ledger_rows integer;
+  first_revision bigint;
+  fingerprint text;
+  expected_fingerprint text;
+begin
+  select count(*), min(revision) into ledger_rows, first_revision
+  from public.cloud_business_snapshot_upload_requests
+  where user_id = owner_id;
+  if ledger_rows <> 2 then
+    raise exception 'upload_request_ledger_expected_2_rows_kept_%', ledger_rows;
+  end if;
+  if first_revision <> current_setting('history_test.request_one_revision')::bigint then
+    raise exception 'upload_request_ledger_recorded_wrong_first_revision';
+  end if;
+  select request.payload_fingerprint into fingerprint
+  from public.cloud_business_snapshot_upload_requests as request
+  where request.user_id = owner_id
+    and request.request_id = 'request-92';
+  expected_fingerprint := md5(
+    jsonb_build_object(
+      'schemaVersion', 1,
+      'userId', owner_id,
+      'tables', '{}'::jsonb
+    )::text
+  );
+  if fingerprint is distinct from expected_fingerprint then
+    raise exception 'upload_request_ledger_fingerprint_mismatch';
+  end if;
+end
+$request_ledger_trusted_checks$;
+
+-- 生命周期清除：身份选择与前置条件准备都在可信会话里完成，绝不在
+-- authenticated 角色下读 auth.users；随后只以 service_role 执行清除 RPC。
 
 do $purge_function_definition$
 declare
