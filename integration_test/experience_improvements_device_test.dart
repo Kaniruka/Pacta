@@ -37,12 +37,6 @@ Finder _taskTile(String title) =>
 Finder _estimateField() =>
     find.ancestor(of: find.text('预计时长（可选）'), matching: find.byType(TextField));
 
-List<String?> _popupLabels(WidgetTester tester) =>
-    find.byType(PopupMenuItem<String>).evaluate().map((element) {
-      final child = (element.widget as PopupMenuItem<String>).child;
-      return child is Text ? child.data : null;
-    }).toList();
-
 void _expectNoException(WidgetTester tester, String action) {
   expect(tester.takeException(), isNull, reason: '操作「$action」不应抛异常');
 }
@@ -324,42 +318,39 @@ void main() {
       await _tapAndSettle(tester, find.byTooltip('卡片操作'), '打开卡片操作菜单');
       await _tapAndSettle(tester, find.text('查看详情'), '打开国策卡详情');
       expect(find.text('国策卡详情'), findsOneWidget);
-      expect(find.textContaining('当前要求 · 强化等级 1'), findsOneWidget);
+      expect(find.textContaining('当前规则 · 强化等级 1'), findsOneWidget);
+      // Strengthening management is only reachable from the card editor.
+      expect(find.text('管理强化要求'), findsNothing);
+      await _tapAndSettle(tester, find.text('编辑卡片'), '打开国策卡编辑');
+      expect(find.text('卡片名称'), findsOneWidget);
 
       final manageStrengthening = find.text('管理强化要求');
       await _ensureVisible(tester, manageStrengthening, '显示强化管理入口');
       await _tapAndSettle(tester, manageStrengthening, '打开强化要求管理');
       expect(find.text('国策强化要求'), findsOneWidget);
-      expect(find.text('当前采用 · 强化等级 1'), findsOneWidget);
-      final resetRequirement = find.text('切换到基础要求');
+      expect(find.text('当前使用 · 强化等级 1'), findsOneWidget);
+      final resetRequirement = find.descendant(
+        of: find.byKey(
+          const ValueKey('national-focus-strengthening-level-base'),
+        ),
+        matching: find.text('选择'),
+      );
       await _ensureVisible(tester, resetRequirement, '显示基础要求切换操作');
       await _tapAndSettle(tester, resetRequirement, '切换到基础要求');
-      await _ensureVisible(
-        tester,
-        find.text('当前采用 · 基础要求'),
-        '滚回当前要求摘要',
-        scrollDelta: -200,
-      );
-      expect(find.text('当前采用 · 基础要求'), findsOneWidget);
+      expect(find.text('当前使用 · 基础要求'), findsOneWidget);
       await shot(tester, 'national-strengthening-basic-selected');
 
       await tester.pageBack();
       await tester.pumpAndSettle();
-      _expectNoException(tester, '返回国策卡详情');
-      expect(find.text('国策卡详情'), findsOneWidget);
-      expect(find.text('当前使用基础要求'), findsOneWidget);
-      expect(find.textContaining('当前要求 · 强化等级 1'), findsNothing);
-      await shot(tester, 'national-card-detail-refreshed');
-
-      await _tapAndSettle(tester, find.byTooltip('卡片操作'), '打开国策卡详情菜单');
-      expect(_popupLabels(tester), ['编辑卡片']);
-      expect(find.text('修改名称'), findsNothing);
-      await _tapAndSettle(tester, find.text('编辑卡片'), '打开国策卡编辑');
-      expect(find.text('卡片名称'), findsOneWidget);
+      _expectNoException(tester, '返回国策卡编辑');
+      expect(find.text('编辑国策卡'), findsOneWidget);
       await tester.pageBack();
       await tester.pumpAndSettle();
       _expectNoException(tester, '返回国策卡详情');
       expect(find.text('国策卡详情'), findsOneWidget);
+      expect(find.text('国策规则'), findsOneWidget);
+      expect(find.textContaining('当前规则 · 强化等级 1'), findsNothing);
+      await shot(tester, 'national-card-detail-refreshed');
     } finally {
       tester.platformDispatcher.clearPlatformBrightnessTestValue();
       await _unmountAndSettle(tester);
