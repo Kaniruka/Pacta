@@ -70,3 +70,22 @@ Android 命令（由主 Agent 在模拟器执行）：`flutter drive --driver=te
 - 真实云：资料跨设备一致、头像上传/清除、失败重试的端到端证据；本票只完成隔离项目的事务回滚探针。
 - 独立复跑：主 Agent 应按本文件命令重跑 analyze/test、两端 fixture 与云探针后再判定验收。
 - 未推送、未部署、未关闭 Issue。
+## 审查修复（2026-11-13 第二轮）
+
+主 Agent 审查 `1937dbd` 提出四项修复，均已按 TDD 补测后修复。
+
+1. **读取失败不再制造本机版本**：`syncProfile` 读取失败只记录错误状态（无缓存行时仅在内存返回，不写库；有行时只更新 `syncError`，不改 `updatedAt`/负载）。没有 `pendingSave` 意图时不再因时间戳比较上传，云端既有资料重试后被采用且不上传。回归：`首次读取失败不写本机版本…`、`读取失败不推进已有缓存的版本时间`。
+2. **串行网络操作 + 本地编辑指纹条件提交**：新增 `local_profile_accounts.edit_sequence`（schema **28**，27→28 增加列）作为本地编辑版本；仓储内所有保存/同步经同一操作队列串行，网络结果（采用、上传成功、上传失败、读取失败）仅在 `edit_sequence` 未变时提交，晚到的旧响应被丢弃而不会覆盖较新编辑；远端不可用时的真实编辑保持 `pendingSave`，云端可用后由同步上传。回归：`后台读取等待时用户保存会排队…`、`另一入口的新编辑不被晚到的较新云端资料覆盖`、`晚到的上传失败不覆盖另一入口的新编辑`、`离线编辑在云端可用后由同步上传…`。
+3. **`combineLatest2` 错误终止**：错误到来时先转发错误，再取消两路订阅并关闭输出（原实现先置 `closed` 导致 `finish` 立即返回、另一路泄漏且不关闭）。回归：`一路报错时取消两路订阅并关闭输出`（断言两路 `hasListener` 为 false 且输出 `onDone`）。
+4. **keep-avatar 原子语义**：`save_profile_account` 不再先读旧头像；不带头像参数时由单条 `insert … on conflict do update` 的 `case when keep_avatar then profile_accounts.avatar_* else excluded…` 保留现有二进制，并发清空/换头像不会被昵称更新复活。RLS 与 owner 作用域不变。探针新增 `keep_after_clear` 断言（清除后仅改名不得恢复旧头像）。
+
+### 修复后复验
+
+| 命令 | 结果 |
+| --- | --- |
+| `flutter analyze` | No issues found |
+| `flutter test test/profile` | 40 项通过 |
+| `dart run build_runner build` | 重新生成含 `edit_sequence` 的 g.dart（schema 28） |
+| 隔离项目探针 | PASS，事务回滚，证据 `.scratch/issue90/profile-probe-20261113-183619.json` |
+
+合并状态：integration tip `edde186` 已包含在分支中（上一轮合入的 `1937dbd`），本轮无新上游提交。

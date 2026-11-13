@@ -109,6 +109,21 @@ begin
 end
 $clear_avatar$;
 
+-- A display-name-only save after a clear must not resurrect the old binary.
+-- The keep semantics come from one atomic upsert, so a concurrent clear or
+-- avatar change cannot be undone by a nickname update.
+do $keep_after_clear$
+declare
+  saved jsonb;
+begin
+  saved := public.save_profile_account('清除后改名', null, false);
+  if saved ->> 'avatarBase64' is not null
+    or saved ->> 'avatarMimeType' is not null then
+    raise exception 'kept_avatar_resurrected_after_clear';
+  end if;
+end
+$keep_after_clear$;
+
 -- Non-image and oversized binaries are rejected before any write.
 do $reject_invalid_avatars$
 begin
@@ -189,7 +204,7 @@ $owner_claim_again$;
 
 do $owner_profile_intact$
 begin
-  if public.read_profile_account() ->> 'displayName' <> '新名字' then
+  if public.read_profile_account() ->> 'displayName' <> '清除后改名' then
     raise exception 'owner_profile_was_overwritten_by_other_user';
   end if;
 end

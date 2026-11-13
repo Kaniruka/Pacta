@@ -132,6 +132,9 @@ as $$
 declare
   owner_id uuid := auth.uid();
   name_value text := btrim(coalesce(p_display_name, ''));
+  keep_avatar boolean :=
+    not coalesce(p_clear_avatar, false)
+    and (p_avatar_base64 is null or btrim(p_avatar_base64) = '');
   stored public.profile_accounts;
   avatar_value bytea;
   mime_value text;
@@ -146,10 +149,16 @@ begin
     raise exception 'display name is too long' using errcode = '22001';
   end if;
 
-  if coalesce(p_clear_avatar, false) then
+  if keep_avatar then
+    -- The stored binary is kept by the atomic upsert below, never by a prior
+    -- read: a concurrent clear or avatar change cannot be resurrected by a
+    -- display-name-only save.
     avatar_value := null;
     mime_value := null;
-  elsif p_avatar_base64 is not null and btrim(p_avatar_base64) <> '' then
+  elsif coalesce(p_clear_avatar, false) then
+    avatar_value := null;
+    mime_value := null;
+  else
     begin
       avatar_value := decode(p_avatar_base64, 'base64');
     exception
@@ -164,23 +173,27 @@ begin
       raise exception 'avatar must be a PNG or JPEG image'
         using errcode = '22023';
     end if;
-  else
-    -- No avatar argument keeps the stored binary instead of clearing it.
-    select avatar_bytes, avatar_mime_type
-    into avatar_value, mime_value
-    from public.profile_accounts
-    where user_id = owner_id;
   end if;
 
   insert into public.profile_accounts (
     user_id, display_name, avatar_mime_type, avatar_bytes, updated_at
   ) values (
-    owner_id, name_value, mime_value, avatar_value, now()
+    owner_id,
+    name_value,
+    case when keep_avatar then null else mime_value end,
+    case when keep_avatar then null else avatar_value end,
+    now()
   )
   on conflict (user_id) do update
     set display_name = excluded.display_name,
-        avatar_mime_type = excluded.avatar_mime_type,
-        avatar_bytes = excluded.avatar_bytes,
+        avatar_mime_type = case
+          when keep_avatar then profile_accounts.avatar_mime_type
+          else excluded.avatar_mime_type
+        end,
+        avatar_bytes = case
+          when keep_avatar then profile_accounts.avatar_bytes
+          else excluded.avatar_bytes
+        end,
         updated_at = excluded.updated_at
   returning * into stored;
 

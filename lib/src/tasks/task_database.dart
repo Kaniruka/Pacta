@@ -343,6 +343,10 @@ class LocalProfileAccounts extends Table {
   TextColumn get syncError => text().nullable()();
   DateTimeColumn get updatedAt => dateTime()();
 
+  /// Increments on every payload change so a late network response can only
+  /// commit when no newer local edit happened meanwhile.
+  IntColumn get editSequence => integer().withDefault(const Constant(0))();
+
   @override
   Set<Column<Object>> get primaryKey => {userId};
 }
@@ -506,7 +510,7 @@ class PactaDatabase extends _$PactaDatabase {
   }
 
   @override
-  int get schemaVersion => 27;
+  int get schemaVersion => 28;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -677,6 +681,12 @@ class PactaDatabase extends _$PactaDatabase {
       }
       if (from < 27) {
         await m.createTable(localProfileAccounts);
+      }
+      if (from >= 27 && from < 28) {
+        await m.addColumn(
+          localProfileAccounts,
+          localProfileAccounts.editSequence,
+        );
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);

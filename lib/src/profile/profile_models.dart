@@ -13,6 +13,7 @@ class ProfileAccount {
     this.updatedAt,
     this.hasPendingSave = false,
     this.syncError,
+    this.editSequence = 0,
   });
 
   final String userId;
@@ -26,6 +27,10 @@ class ProfileAccount {
   /// The last account write or read failure, cleared by a successful retry.
   final String? syncError;
 
+  /// Local payload revision. A network result may only be committed while this
+  /// value is unchanged, so a late response never overwrites a newer edit.
+  final int editSequence;
+
   bool get hasDisplayName => displayName.isNotEmpty;
 
   String get effectiveDisplayName => hasDisplayName ? displayName : '当前用户';
@@ -38,6 +43,7 @@ class ProfileAccount {
     bool? hasPendingSave,
     String? syncError,
     bool clearSyncError = false,
+    int? editSequence,
   }) => ProfileAccount(
     userId: userId,
     displayName: displayName ?? this.displayName,
@@ -45,5 +51,6 @@ class ProfileAccount {
     updatedAt: updatedAt ?? this.updatedAt,
     hasPendingSave: hasPendingSave ?? this.hasPendingSave,
     syncError: clearSyncError ? null : (syncError ?? this.syncError),
+    editSequence: editSequence ?? this.editSequence,
   );
 }

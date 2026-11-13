@@ -40,8 +40,9 @@ class RepositoryProfileOverviewSource implements ProfileOverviewSource {
 
 /// Emits once both sources produced a value and after every later update.
 ///
-/// The result closes when either input closes, and forwards the first error of
-/// either input so the caller can show a failed state instead of stale zeroes.
+/// The output closes when either input closes, and the first error of either
+/// input is forwarded before both subscriptions are cancelled and the output
+/// completed, so a failed pair never keeps an input listener alive.
 Stream<R> combineLatest2<A, B, R>(
   Stream<A> first,
   Stream<B> second,
@@ -54,19 +55,31 @@ Stream<R> combineLatest2<A, B, R>(
   B? latestSecond;
   var hasFirst = false;
   var hasSecond = false;
-  var closed = false;
+  var done = false;
+
+  Future<void> terminate({bool closeOutput = true}) async {
+    if (done) return;
+    done = true;
+    final pendingFirst = firstSubscription;
+    final pendingSecond = secondSubscription;
+    firstSubscription = null;
+    secondSubscription = null;
+    await pendingFirst?.cancel();
+    await pendingSecond?.cancel();
+    if (closeOutput && !controller.isClosed) {
+      await controller.close();
+    }
+  }
 
   void emit() {
-    if (!hasFirst || !hasSecond || closed) return;
+    if (!hasFirst || !hasSecond || done) return;
     controller.add(combine(latestFirst as A, latestSecond as B));
   }
 
-  Future<void> finish() async {
-    if (closed) return;
-    closed = true;
-    await firstSubscription?.cancel();
-    await secondSubscription?.cancel();
-    await controller.close();
+  Future<void> fail(Object error, StackTrace stackTrace) async {
+    if (done) return;
+    controller.addError(error, stackTrace);
+    await terminate();
   }
 
   controller = StreamController<R>(
@@ -77,13 +90,8 @@ Stream<R> combineLatest2<A, B, R>(
           hasFirst = true;
           emit();
         },
-        onError: (Object error, StackTrace stackTrace) {
-          if (closed) return;
-          closed = true;
-          controller.addError(error, stackTrace);
-          finish();
-        },
-        onDone: finish,
+        onError: fail,
+        onDone: terminate,
       );
       secondSubscription = second.listen(
         (value) {
@@ -91,20 +99,11 @@ Stream<R> combineLatest2<A, B, R>(
           hasSecond = true;
           emit();
         },
-        onError: (Object error, StackTrace stackTrace) {
-          if (closed) return;
-          closed = true;
-          controller.addError(error, stackTrace);
-          finish();
-        },
-        onDone: finish,
+        onError: fail,
+        onDone: terminate,
       );
     },
-    onCancel: () async {
-      closed = true;
-      await firstSubscription?.cancel();
-      await secondSubscription?.cancel();
-    },
+    onCancel: () => terminate(closeOutput: false),
   );
   return controller.stream;
 }

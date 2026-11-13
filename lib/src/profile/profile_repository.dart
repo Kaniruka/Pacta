@@ -25,7 +25,8 @@ abstract interface class ProfileRepository {
   });
 
   /// Uploads a pending local edit, or adopts a newer profile from another
-  /// device. Never touches the business snapshot.
+  /// device. Never uploads without a pending local edit and never touches the
+  /// business snapshot.
   Future<ProfileAccount> syncProfile();
 
   Future<void> dispose();
@@ -69,6 +70,16 @@ class LocalProfileRepository implements ProfileRepository {
   final ProfileRemote remote;
   final DateTime Function() _now;
 
+  /// Serialises local edits and account-store calls for this repository, so a
+  /// background read cannot interleave with an upload or a user edit.
+  Future<void> _operationQueue = Future<void>.value();
+
+  Future<T> _serialized<T>(Future<T> Function() action) {
+    final result = _operationQueue.then((_) => action());
+    _operationQueue = result.then((_) {}, onError: (Object _) {});
+    return result;
+  }
+
   @override
   Stream<ProfileAccount> watchProfile() {
     final query = database.select(database.localProfileAccounts)
@@ -89,7 +100,7 @@ class LocalProfileRepository implements ProfileRepository {
     required String displayName,
     ProfileAvatar? avatar,
     bool clearAvatar = false,
-  }) async {
+  }) => _serialized(() async {
     final name = validateDisplayName(displayName);
     final current = await getProfile();
     final nextAvatar = clearAvatar ? null : (avatar ?? current.avatar);
@@ -97,15 +108,16 @@ class LocalProfileRepository implements ProfileRepository {
       displayName: name,
       avatar: nextAvatar,
       updatedAt: _now().toUtc(),
-      pendingSave: remote.isAvailable,
+      pendingSave: true,
       syncError: null,
+      editSequence: current.editSequence + 1,
     );
     if (!remote.isAvailable) return getProfile();
     return _upload();
-  }
+  });
 
   @override
-  Future<ProfileAccount> syncProfile() async {
+  Future<ProfileAccount> syncProfile() => _serialized(() async {
     final local = await getProfile();
     if (local.hasPendingSave) {
       if (!remote.isAvailable) return local;
@@ -117,38 +129,38 @@ class LocalProfileRepository implements ProfileRepository {
     try {
       remoteProfile = await remote.fetch(userId: userId);
     } catch (error) {
-      await _recordError(
-        local,
-        _failureText(error),
-        pending: local.hasPendingSave,
-      );
-      return getProfile();
+      // A failed read only records the failure. It must not create or advance a
+      // local version, otherwise a later read could make the empty cache look
+      // newer than the stored profile and upload over it.
+      return _recordFailure(local, _failureText(error));
     }
 
     if (remoteProfile == null) {
-      if (!local.hasDisplayName && local.avatar == null) return local;
-      return _upload();
+      if (local.syncError == null) return local;
+      await _clearFailureIfUnchanged(local.editSequence);
+      return getProfile();
     }
+
     final localUpdatedAt = local.updatedAt;
     if (localUpdatedAt == null ||
         remoteProfile.updatedAt.isAfter(localUpdatedAt)) {
-      await _writeLocal(
+      // Adopting another device's profile is a local state change, so it also
+      // advances the edit sequence and invalidates in-flight commits.
+      await _writeLocalIfSequenceUnchanged(
+        expectedSequence: local.editSequence,
         displayName: remoteProfile.displayName,
         avatar: remoteProfile.avatar,
         updatedAt: remoteProfile.updatedAt,
         pendingSave: false,
         syncError: null,
       );
-      return getProfile();
     }
-    if (localUpdatedAt.isAfter(remoteProfile.updatedAt)) {
-      return _upload();
-    }
-    return local;
-  }
+    return getProfile();
+  });
 
   Future<ProfileAccount> _upload() async {
     final local = await getProfile();
+    final sequence = local.editSequence;
     try {
       final saved = await remote.save(
         userId: userId,
@@ -156,7 +168,8 @@ class LocalProfileRepository implements ProfileRepository {
         avatar: local.avatar,
         updatedAt: local.updatedAt ?? _now().toUtc(),
       );
-      await _writeLocal(
+      await _writeLocalIfSequenceUnchanged(
+        expectedSequence: sequence,
         displayName: saved.displayName,
         avatar: saved.avatar,
         updatedAt: saved.updatedAt,
@@ -164,25 +177,102 @@ class LocalProfileRepository implements ProfileRepository {
         syncError: null,
       );
     } catch (error) {
-      // A failed upload stays pending so the retry uploads the local edit
-      // instead of silently losing it.
-      await _recordError(local, _failureText(error), pending: true);
+      // Keep the pending intent; only a matching sequence may carry the error.
+      await _updateStateIfUnchanged(
+        expectedSequence: sequence,
+        syncError: _failureText(error),
+        pendingSave: true,
+      );
     }
     return getProfile();
   }
 
-  Future<void> _recordError(
+  Future<ProfileAccount> _recordFailure(
     ProfileAccount local,
-    String message, {
-    required bool pending,
-  }) async {
-    await _writeLocal(
-      displayName: local.displayName,
-      avatar: local.avatar,
-      updatedAt: local.updatedAt ?? _now().toUtc(),
-      pendingSave: pending,
+    String message,
+  ) async {
+    if (local.updatedAt == null) {
+      // No cached version yet: report the failure without inventing a row.
+      return local.copyWith(syncError: message);
+    }
+    await _updateStateIfUnchanged(
+      expectedSequence: local.editSequence,
       syncError: message,
+      pendingSave: local.hasPendingSave,
     );
+    return getProfile();
+  }
+
+  Future<void> _clearFailureIfUnchanged(int expectedSequence) =>
+      _updateStateIfUnchanged(
+        expectedSequence: expectedSequence,
+        syncError: null,
+        pendingSave: false,
+      );
+
+  Future<bool> _updateStateIfUnchanged({
+    required int expectedSequence,
+    required String? syncError,
+    required bool pendingSave,
+  }) async {
+    final updated =
+        await (database.update(database.localProfileAccounts)..where(
+              (row) =>
+                  row.userId.equals(userId) &
+                  row.editSequence.equals(expectedSequence),
+            ))
+            .write(
+              LocalProfileAccountsCompanion(
+                syncError: drift.Value(syncError),
+                pendingSave: drift.Value(pendingSave),
+              ),
+            );
+    return updated > 0;
+  }
+
+  Future<bool> _writeLocalIfSequenceUnchanged({
+    required int expectedSequence,
+    required String displayName,
+    required ProfileAvatar? avatar,
+    required DateTime updatedAt,
+    required bool pendingSave,
+    required String? syncError,
+  }) async {
+    final existing = await (database.select(
+      database.localProfileAccounts,
+    )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+    if (existing == null) {
+      // Adopting the first profile for this account: nothing local can be
+      // newer than the sequence this call started from.
+      if (expectedSequence != 0) return false;
+      await _writeLocal(
+        displayName: displayName,
+        avatar: avatar,
+        updatedAt: updatedAt,
+        pendingSave: pendingSave,
+        syncError: syncError,
+        editSequence: 1,
+      );
+      return true;
+    }
+    final updated =
+        await (database.update(database.localProfileAccounts)..where(
+              (row) =>
+                  row.userId.equals(userId) &
+                  row.editSequence.equals(expectedSequence),
+            ))
+            .write(
+              LocalProfileAccountsCompanion(
+                displayName: drift.Value(displayName),
+                avatarMimeType: drift.Value(avatar?.mimeType),
+                avatarBytes: drift.Value(avatar?.bytes),
+                updatedAt: drift.Value(updatedAt),
+                pendingSave: drift.Value(pendingSave),
+                syncError: drift.Value(syncError),
+                editSequence: drift.Value(expectedSequence + 1),
+              ),
+            );
+    return updated > 0;
   }
 
   String _failureText(Object error) {
@@ -197,6 +287,7 @@ class LocalProfileRepository implements ProfileRepository {
     required DateTime updatedAt,
     required bool pendingSave,
     required String? syncError,
+    required int editSequence,
   }) => database
       .into(database.localProfileAccounts)
       .insertOnConflictUpdate(
@@ -208,6 +299,7 @@ class LocalProfileRepository implements ProfileRepository {
           avatarBytes: drift.Value(avatar?.bytes),
           pendingSave: drift.Value(pendingSave),
           syncError: drift.Value(syncError),
+          editSequence: drift.Value(editSequence),
         ),
       );
 
@@ -226,6 +318,7 @@ class LocalProfileRepository implements ProfileRepository {
       updatedAt: row.updatedAt,
       hasPendingSave: row.pendingSave,
       syncError: row.syncError,
+      editSequence: row.editSequence,
     );
   }
 

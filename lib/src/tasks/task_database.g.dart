@@ -12277,6 +12277,18 @@ class $LocalProfileAccountsTable extends LocalProfileAccounts
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _editSequenceMeta = const VerificationMeta(
+    'editSequence',
+  );
+  @override
+  late final GeneratedColumn<int> editSequence = GeneratedColumn<int>(
+    'edit_sequence',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     userId,
@@ -12286,6 +12298,7 @@ class $LocalProfileAccountsTable extends LocalProfileAccounts
     pendingSave,
     syncError,
     updatedAt,
+    editSequence,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -12357,6 +12370,15 @@ class $LocalProfileAccountsTable extends LocalProfileAccounts
     } else if (isInserting) {
       context.missing(_updatedAtMeta);
     }
+    if (data.containsKey('edit_sequence')) {
+      context.handle(
+        _editSequenceMeta,
+        editSequence.isAcceptableOrUnknown(
+          data['edit_sequence']!,
+          _editSequenceMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -12394,6 +12416,10 @@ class $LocalProfileAccountsTable extends LocalProfileAccounts
         DriftSqlType.dateTime,
         data['${effectivePrefix}updated_at'],
       )!,
+      editSequence: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}edit_sequence'],
+      )!,
     );
   }
 
@@ -12412,6 +12438,10 @@ class LocalProfileAccount extends DataClass
   final bool pendingSave;
   final String? syncError;
   final DateTime updatedAt;
+
+  /// Increments on every payload change so a late network response can only
+  /// commit when no newer local edit happened meanwhile.
+  final int editSequence;
   const LocalProfileAccount({
     required this.userId,
     required this.displayName,
@@ -12420,6 +12450,7 @@ class LocalProfileAccount extends DataClass
     required this.pendingSave,
     this.syncError,
     required this.updatedAt,
+    required this.editSequence,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -12437,6 +12468,7 @@ class LocalProfileAccount extends DataClass
       map['sync_error'] = Variable<String>(syncError);
     }
     map['updated_at'] = Variable<DateTime>(updatedAt);
+    map['edit_sequence'] = Variable<int>(editSequence);
     return map;
   }
 
@@ -12455,6 +12487,7 @@ class LocalProfileAccount extends DataClass
           ? const Value.absent()
           : Value(syncError),
       updatedAt: Value(updatedAt),
+      editSequence: Value(editSequence),
     );
   }
 
@@ -12471,6 +12504,7 @@ class LocalProfileAccount extends DataClass
       pendingSave: serializer.fromJson<bool>(json['pendingSave']),
       syncError: serializer.fromJson<String?>(json['syncError']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+      editSequence: serializer.fromJson<int>(json['editSequence']),
     );
   }
   @override
@@ -12484,6 +12518,7 @@ class LocalProfileAccount extends DataClass
       'pendingSave': serializer.toJson<bool>(pendingSave),
       'syncError': serializer.toJson<String?>(syncError),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
+      'editSequence': serializer.toJson<int>(editSequence),
     };
   }
 
@@ -12495,6 +12530,7 @@ class LocalProfileAccount extends DataClass
     bool? pendingSave,
     Value<String?> syncError = const Value.absent(),
     DateTime? updatedAt,
+    int? editSequence,
   }) => LocalProfileAccount(
     userId: userId ?? this.userId,
     displayName: displayName ?? this.displayName,
@@ -12505,6 +12541,7 @@ class LocalProfileAccount extends DataClass
     pendingSave: pendingSave ?? this.pendingSave,
     syncError: syncError.present ? syncError.value : this.syncError,
     updatedAt: updatedAt ?? this.updatedAt,
+    editSequence: editSequence ?? this.editSequence,
   );
   LocalProfileAccount copyWithCompanion(LocalProfileAccountsCompanion data) {
     return LocalProfileAccount(
@@ -12523,6 +12560,9 @@ class LocalProfileAccount extends DataClass
           : this.pendingSave,
       syncError: data.syncError.present ? data.syncError.value : this.syncError,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+      editSequence: data.editSequence.present
+          ? data.editSequence.value
+          : this.editSequence,
     );
   }
 
@@ -12535,7 +12575,8 @@ class LocalProfileAccount extends DataClass
           ..write('avatarBytes: $avatarBytes, ')
           ..write('pendingSave: $pendingSave, ')
           ..write('syncError: $syncError, ')
-          ..write('updatedAt: $updatedAt')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('editSequence: $editSequence')
           ..write(')'))
         .toString();
   }
@@ -12549,6 +12590,7 @@ class LocalProfileAccount extends DataClass
     pendingSave,
     syncError,
     updatedAt,
+    editSequence,
   );
   @override
   bool operator ==(Object other) =>
@@ -12560,7 +12602,8 @@ class LocalProfileAccount extends DataClass
           $driftBlobEquality.equals(other.avatarBytes, this.avatarBytes) &&
           other.pendingSave == this.pendingSave &&
           other.syncError == this.syncError &&
-          other.updatedAt == this.updatedAt);
+          other.updatedAt == this.updatedAt &&
+          other.editSequence == this.editSequence);
 }
 
 class LocalProfileAccountsCompanion
@@ -12572,6 +12615,7 @@ class LocalProfileAccountsCompanion
   final Value<bool> pendingSave;
   final Value<String?> syncError;
   final Value<DateTime> updatedAt;
+  final Value<int> editSequence;
   final Value<int> rowid;
   const LocalProfileAccountsCompanion({
     this.userId = const Value.absent(),
@@ -12581,6 +12625,7 @@ class LocalProfileAccountsCompanion
     this.pendingSave = const Value.absent(),
     this.syncError = const Value.absent(),
     this.updatedAt = const Value.absent(),
+    this.editSequence = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   LocalProfileAccountsCompanion.insert({
@@ -12591,6 +12636,7 @@ class LocalProfileAccountsCompanion
     this.pendingSave = const Value.absent(),
     this.syncError = const Value.absent(),
     required DateTime updatedAt,
+    this.editSequence = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
        updatedAt = Value(updatedAt);
@@ -12602,6 +12648,7 @@ class LocalProfileAccountsCompanion
     Expression<bool>? pendingSave,
     Expression<String>? syncError,
     Expression<DateTime>? updatedAt,
+    Expression<int>? editSequence,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -12612,6 +12659,7 @@ class LocalProfileAccountsCompanion
       if (pendingSave != null) 'pending_save': pendingSave,
       if (syncError != null) 'sync_error': syncError,
       if (updatedAt != null) 'updated_at': updatedAt,
+      if (editSequence != null) 'edit_sequence': editSequence,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -12624,6 +12672,7 @@ class LocalProfileAccountsCompanion
     Value<bool>? pendingSave,
     Value<String?>? syncError,
     Value<DateTime>? updatedAt,
+    Value<int>? editSequence,
     Value<int>? rowid,
   }) {
     return LocalProfileAccountsCompanion(
@@ -12634,6 +12683,7 @@ class LocalProfileAccountsCompanion
       pendingSave: pendingSave ?? this.pendingSave,
       syncError: syncError ?? this.syncError,
       updatedAt: updatedAt ?? this.updatedAt,
+      editSequence: editSequence ?? this.editSequence,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -12662,6 +12712,9 @@ class LocalProfileAccountsCompanion
     if (updatedAt.present) {
       map['updated_at'] = Variable<DateTime>(updatedAt.value);
     }
+    if (editSequence.present) {
+      map['edit_sequence'] = Variable<int>(editSequence.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -12678,6 +12731,7 @@ class LocalProfileAccountsCompanion
           ..write('pendingSave: $pendingSave, ')
           ..write('syncError: $syncError, ')
           ..write('updatedAt: $updatedAt, ')
+          ..write('editSequence: $editSequence, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -19443,6 +19497,7 @@ typedef $$LocalProfileAccountsTableCreateCompanionBuilder =
       Value<bool> pendingSave,
       Value<String?> syncError,
       required DateTime updatedAt,
+      Value<int> editSequence,
       Value<int> rowid,
     });
 typedef $$LocalProfileAccountsTableUpdateCompanionBuilder =
@@ -19454,6 +19509,7 @@ typedef $$LocalProfileAccountsTableUpdateCompanionBuilder =
       Value<bool> pendingSave,
       Value<String?> syncError,
       Value<DateTime> updatedAt,
+      Value<int> editSequence,
       Value<int> rowid,
     });
 
@@ -19498,6 +19554,11 @@ class $$LocalProfileAccountsTableFilterComposer
 
   ColumnFilters<DateTime> get updatedAt => $composableBuilder(
     column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get editSequence => $composableBuilder(
+    column: $table.editSequence,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -19545,6 +19606,11 @@ class $$LocalProfileAccountsTableOrderingComposer
     column: $table.updatedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get editSequence => $composableBuilder(
+    column: $table.editSequence,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$LocalProfileAccountsTableAnnotationComposer
@@ -19584,6 +19650,11 @@ class $$LocalProfileAccountsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get updatedAt =>
       $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get editSequence => $composableBuilder(
+    column: $table.editSequence,
+    builder: (column) => column,
+  );
 }
 
 class $$LocalProfileAccountsTableTableManager
@@ -19636,6 +19707,7 @@ class $$LocalProfileAccountsTableTableManager
                 Value<bool> pendingSave = const Value.absent(),
                 Value<String?> syncError = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> editSequence = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalProfileAccountsCompanion(
                 userId: userId,
@@ -19645,6 +19717,7 @@ class $$LocalProfileAccountsTableTableManager
                 pendingSave: pendingSave,
                 syncError: syncError,
                 updatedAt: updatedAt,
+                editSequence: editSequence,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -19656,6 +19729,7 @@ class $$LocalProfileAccountsTableTableManager
                 Value<bool> pendingSave = const Value.absent(),
                 Value<String?> syncError = const Value.absent(),
                 required DateTime updatedAt,
+                Value<int> editSequence = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalProfileAccountsCompanion.insert(
                 userId: userId,
@@ -19665,6 +19739,7 @@ class $$LocalProfileAccountsTableTableManager
                 pendingSave: pendingSave,
                 syncError: syncError,
                 updatedAt: updatedAt,
+                editSequence: editSequence,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

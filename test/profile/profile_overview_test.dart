@@ -73,6 +73,37 @@ void main() {
     await library.close();
   });
 
+  test('一路报错时取消两路订阅并关闭输出', () async {
+    final first = StreamController<int>();
+    final second = StreamController<int>();
+    final output = combineLatest2(
+      first.stream,
+      second.stream,
+      (int a, int b) => a + b,
+    );
+    final errors = <Object>[];
+    var completed = false;
+    final subscription = output.listen(
+      (_) {},
+      onError: errors.add,
+      onDone: () => completed = true,
+    );
+
+    first.add(1);
+    second.add(2);
+    await Future<void>.delayed(Duration.zero);
+    first.addError(StateError('broken'));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(errors, hasLength(1));
+    expect(completed, isTrue, reason: '错误后输出必须结束');
+    expect(first.hasListener, isFalse, reason: '出错一路应释放订阅');
+    expect(second.hasListener, isFalse, reason: '另一路也应释放订阅');
+    await subscription.cancel();
+    await first.close();
+    await second.close();
+  });
+
   test('明细页分别取点亮、已内化与已完成记录', () {
     final cards = [
       _card('点亮', isInTree: true, state: NationalFocusCardState.lit),
