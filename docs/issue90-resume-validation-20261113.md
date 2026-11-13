@@ -32,6 +32,10 @@ Windows 图片首轮 `avatar-native-windows-20261113-resume` 选图与图片处�
 
 22:53 用户要求继续后再测，目录 `reminder-native-windows-20261113-225334`。开跑前系统返回 5（ACCEPTS），22:54:18 进入真实点击等待，目标为 22:56。主 Agent 最小化测试窗口后，到点再查已变成 2（BUSY）；把已有普通资源管理器窗口置前仍返回 2，未观察到通知。22:58:19 fixture 超时失败（run.rc=1），确认 `ISSUE95_PREFERENCES_RESTORED`，测试进程已退出。此轮未改代码或系统设置，不能计作原生点击通过。后续需要桌面在排程、最小化及到点期间持续可接收通知；仅开跑时一次 ACCEPTS 不足以证明环境就绪。
 
+23:00 再次接续，改用 `.scratch/issue90/run_windows_reminder.py` 每秒记录通知环境，目录 `reminder-native-windows-20261113-230051`。`notification-state.jsonl` 证明开跑、构建、Pacta 前台截图观察期间均为 5；23:01:54 工具点击最小化后立即变为 2，并持续到 23:03 提醒到点及测试结束。将普通资源管理器置前、重置 JavaScript 自动化会话均未使状态恢复。23:05:44 fixture 因没有真实点击失败（run.rc=1），偏好已恢复，测试进程退出。
+
+这次明确了状态改变的时点，但尚不足以证明自动化输入层就是原因。[微软定义](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ne-shellapi-query_user_notification_state)中 BUSY 表示全屏应用或演示设置状态，不能仅从该返回值断言具体应用。下一轮改由用户手动最小化测试窗口、点击原生通知，Agent 只读监测，以排除自动化输入的影响；已向用户发出协助请求，未再次启动依赖人工操作的运行。业务代码、Windows 通知设置和共享云均未改；PR 仍 draft。
+
 ## 最终视觉验收
 
 同一 `sync_profile_overview_device_test.dart` 覆盖名片、同步操作、上传与下载确认、历史、恢复确认及取消后的数据保持。命令使用 `.scratch/issue90/run_ui.py <device> integration_test/sync_profile_overview_device_test.dart <label>`；以下运行均记录 `exitCode=0`、`sourceUnchanged=true`：
