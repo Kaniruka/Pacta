@@ -72,6 +72,29 @@ Windows 输出目录由 `--dart-define=NF_CARD_LAYERS_CAPTURE_DIR=...` 指定，
 
 - Windows：`build/ui-layout-evidence/national-focus-card-layers/national-focus-card-layers-01..09-*.png`（1582×853，真实 Pacta 主题 + MiSans，dark 系统外观）。本轮在该 worktree 实跑 fixture 通过，已人工打开核对弹层、详情折叠、管理页与五级上限。
 
+## 收尾：窄宽响应式与版本记录位置
+
+依据主 Agent 的 Android 320 逻辑像素截图复审（`build/ui-layout-evidence/issue90/20261113-181605-cards-android-dark-native320-final/national-focus-card-layers-07-strengthening-manager.png`、`...-09-strengthening-cap.png`），管理页有两处窄屏问题：等级、规则、状态与编辑挤在一行，导致规则被压成约 6 行细柱；折叠的生效版本记录排在可用要求之前，时间戳多行占据主操作空间。本轮只改 `NationalFocusStrengtheningPage` 的排布，不改行为与其余页面。
+
+- **每项按宽度分层**（`_AvailableRequirementRow`，断点 440 dp 行宽）：窄于断点时首行为等级、状态（正在使用）或选择、编辑，规则正文另起一行独占整行；宽于断点保持原来的紧凑横排。字号仍为 `bodyMedium`（14），规则不加 `maxLines`/省略，选择与编辑语义不变（非当前等级仍可独立编辑）。
+- **命中区**：编辑用 `IconButton` 固定 48×48 约束，选择用 `TextButton` 最小高度 48。
+- **版本记录**：`生效版本记录 · N` 折叠块移到可用要求列表与“新建强化要求”之后，标题、当前版本摘要、展开后的版本明细全部保留。
+- 顶部“当前使用”面板保持原样突出；未新增卡片、说明或设置。
+
+实测几何（widget 级，真实主题默认字号）：320 宽时该行 280×110，规则 256 宽 2 行（旧布局约 100 宽 6 行）；900 宽时规则 578 宽 1 行，行高 68，仍为等级与规则同一行。
+
+新增用例（`test/national_focus/national_focus_card_layers_test.dart`，先红后绿）：窄屏首行只放等级与操作、规则独占整行且编辑命中区 48；宽屏保持同一行横排；版本记录位于列表与新建操作之后且展开仍显示版本明细；窄屏长规则完整换行、字号不变。
+
+| 命令 | 结果 |
+| --- | --- |
+| `dart format lib/src/national_focus/national_focus_strengthening_page.dart test/national_focus/national_focus_card_layers_test.dart` | Formatted 2 files |
+| `flutter analyze` | No issues found! |
+| `flutter test test/national_focus/national_focus_card_layers_test.dart` | 16 tests passed |
+| `flutter test test/national_focus/` | 121 tests passed |
+| `flutter test test/ui_secondary_layout_test.dart test/ui/experience_repro_test.dart test/ui_layout_test.dart` | 15 tests passed |
+
+Android 复拍由主 Agent 用共享设备执行（本票未占用设备），未做 push/deploy，未关闭 Issue。
+
 ## 未完成的验收
 
 - Android：fixture 已改用 `convertFlutterSurfaceToImage`/`takeScreenshot` + 共享 driver，但本轮未占用设备，未产生 Android 截图。

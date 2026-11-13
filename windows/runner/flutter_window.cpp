@@ -157,8 +157,13 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
   if (message == kTrayCallbackMessage) {
-    if (lparam == WM_LBUTTONUP || lparam == WM_LBUTTONDBLCLK ||
-        lparam == NIN_SELECT) {
+    if (lparam == NIN_BALLOONUSERCLICK) {
+      // A clicked reminder opens Pacta and forwards the payload so the app can
+      // show the screen the reminder belongs to.
+      RestoreWindow();
+      NotifyReminderOpened();
+    } else if (lparam == WM_LBUTTONUP || lparam == WM_LBUTTONDBLCLK ||
+               lparam == NIN_SELECT) {
       RestoreWindow();
     } else if (lparam == WM_RBUTTONUP || lparam == WM_CONTEXTMENU) {
       ShowTrayMenu();
@@ -255,6 +260,7 @@ void FlutterWindow::HandleFocusStatusCall(
   if (call.method_name() == "showNotification") {
     const std::wstring title = ReadWideString(arguments, "title");
     const std::wstring body = ReadWideString(arguments, "body");
+    last_notification_payload_ = ReadWideString(arguments, "payload");
     EnsureTrayIcon();
     tray_icon_data_.uFlags = NIF_INFO;
     wcsncpy_s(tray_icon_data_.szInfoTitle, title.c_str(), _TRUNCATE);
@@ -284,6 +290,20 @@ void FlutterWindow::HandleFocusStatusCall(
   }
 
   result->NotImplemented();
+}
+
+void FlutterWindow::NotifyReminderOpened() {
+  if (!flutter_controller_) return;
+  if (last_notification_payload_.empty()) return;
+  const std::string payload = WideToUtf8(last_notification_payload_);
+  const auto& codec = flutter::StandardMethodCodec::GetInstance();
+  auto encoded = codec.EncodeMethodCall(
+      flutter::MethodCall<flutter::EncodableValue>(
+          "notificationClicked",
+          std::make_unique<flutter::EncodableValue>(payload)));
+  if (!encoded) return;
+  flutter_controller_->engine()->messenger()->Send(
+      "com.pacta/focus_status", encoded->data(), encoded->size());
 }
 
 bool FlutterWindow::EnsureTrayIcon() {
