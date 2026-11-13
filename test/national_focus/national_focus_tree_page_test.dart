@@ -142,9 +142,7 @@ void main() {
     final card = await repository.createCard(
       const NationalFocusCardDraft(
         name: '完整规则卡',
-        triggerCondition: '触发说明',
-        action: '行动说明',
-        scope: '范围说明',
+        action: '规则说明',
         exceptionNotes: '可暂停一次',
       ),
     );
@@ -160,16 +158,18 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('国策卡详情'), findsOneWidget);
     expect(find.byType(BottomSheet), findsNothing);
-    expect(find.text('触发说明'), findsOneWidget);
-    expect(find.text('行动说明'), findsOneWidget);
-    expect(find.text('范围说明'), findsOneWidget);
+    expect(find.text('触发条件'), findsNothing);
+    expect(find.text('适用范围'), findsNothing);
+    expect(find.text('国策规则'), findsOneWidget);
+    expect(find.text('规则说明'), findsOneWidget);
+    expect(find.text('例外与判例'), findsOneWidget);
     expect(find.text('可暂停一次'), findsOneWidget);
     expect(find.text('强化要求'), findsOneWidget);
     expect(find.text('记录'), findsOneWidget);
     expect(find.textContaining('历史最高'), findsOneWidget);
     expect(find.textContaining('成功日'), findsNWidgets(2));
     expect(find.textContaining('内化进度'), findsOneWidget);
-    expect(find.text('管理强化要求'), findsNothing);
+    expect(find.text('管理强化要求'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(
@@ -674,9 +674,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('卡片操作'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('修改名称'));
+    expect(find.text('修改名称'), findsNothing);
+    await tester.tap(find.text('编辑卡片'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField), '新的父名称');
+    await tester.enterText(find.byType(TextFormField).first, '新的父名称');
     await tester.tap(find.text('保存'));
     await pumpNationalFocusUi(tester);
     expect((await repository.getCard(parent.id)).name, '新的父名称');
@@ -699,8 +700,7 @@ void main() {
     await tester.tap(find.text('新建国策卡'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).at(0), name);
-    await tester.enterText(find.byType(TextFormField).at(1), '条件成立后');
-    await tester.enterText(find.byType(TextFormField).at(2), '执行行动');
+    await tester.enterText(find.byType(TextFormField).at(1), '执行行动');
     await tester.tap(find.text('保存到卡片库'));
     await pumpNationalFocusUi(tester);
   }

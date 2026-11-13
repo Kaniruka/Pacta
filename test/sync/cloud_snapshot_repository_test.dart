@@ -268,16 +268,14 @@ void main() {
       await signals.save(
         const ChainSignalTexts(
           appointmentTriggerSignal: '戴耳机',
-          eliteFocusMarker: '坐下',
+          focusMarker: '坐下',
         ),
       );
       final otherSignals = ChainSignalsRepository(
         database: database,
         userId: 'user-b',
       );
-      await otherSignals.save(
-        const ChainSignalTexts(eliteFocusMarker: '他人的标志'),
-      );
+      await otherSignals.save(const ChainSignalTexts(focusMarker: '他人的标志'));
       final captured = await repository.captureLocalState();
       await repository.uploadLocal(
         expectedRevision: 0,
@@ -292,7 +290,7 @@ void main() {
         expectedFingerprint: local.fingerprint,
       );
       expect((await signals.get()).appointmentTriggerSignal, '戴耳机');
-      expect((await signals.get()).eliteFocusMarker, '坐下');
+      expect((await signals.get()).focusMarker, '坐下');
       final legacy = Map<String, dynamic>.from(captured.payload);
       legacy['tables'] = Map<String, dynamic>.from(legacy['tables'] as Map)
         ..remove('chain_signals');
@@ -311,7 +309,7 @@ void main() {
         expectedFingerprint: local.fingerprint,
       );
       expect((await signals.get()).appointmentTriggerSignal, isEmpty);
-      expect((await otherSignals.get()).eliteFocusMarker, '他人的标志');
+      expect((await otherSignals.get()).focusMarker, '他人的标志');
     },
   );
 

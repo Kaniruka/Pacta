@@ -37,9 +37,16 @@ abstract interface class NationalFocusRepository {
   Future<void> moveCardToLibrary(String cardId);
   Future<NationalFocusCardDeletion> deleteCard(String cardId);
   Future<void> restoreDeletedCard(String cardId);
-  Future<void> lightCard(String cardId);
-  Future<void> extinguishCard({required String cardId, String? failureReason});
-  Future<int> confirmToday();
+  Future<void> lightCard(
+    String cardId, {
+    DateTime? expectedConfirmationCheckpoint,
+  });
+  Future<void> extinguishCard({
+    required String cardId,
+    String? failureReason,
+    DateTime? expectedConfirmationCheckpoint,
+  });
+  Future<int> confirmToday({DateTime? expectedConfirmationCheckpoint});
   Future<void> settleDueCheckpoints();
   Future<List<NationalFocusFailure>> getFailures({String? cardId});
   Future<void> updateFailureExplanation({
@@ -234,7 +241,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     final id = _uuid.v4();
     final name = _requiredText(draft.name, '名称');
     final triggerCondition = draft.triggerCondition.trim();
-    final action = _requiredText(draft.action, '行动');
+    final action = _requiredText(draft.action, '国策规则');
     final scope = _optionalText(draft.scope);
     final exceptionNotes = _optionalText(draft.exceptionNotes);
     final initialVersion = NationalFocusRequirementVersion(
@@ -309,7 +316,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     final normalized = NationalFocusCardDraft(
       name: _requiredText(draft.name, '名称'),
       triggerCondition: draft.triggerCondition.trim(),
-      action: _requiredText(draft.action, '行动'),
+      action: _requiredText(draft.action, '国策规则'),
       scope: _optionalText(draft.scope),
       exceptionNotes: _optionalText(draft.exceptionNotes),
     );
@@ -943,7 +950,10 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   }
 
   @override
-  Future<void> lightCard(String cardId) async {
+  Future<void> lightCard(
+    String cardId, {
+    DateTime? expectedConfirmationCheckpoint,
+  }) async {
     await settleDueCheckpoints();
     await lifecycleAccess.requireActive();
     await database.transaction(() async {
@@ -954,6 +964,18 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       }
       if (!card.isInTree) {
         throw StateError('卡片需要先放入国策树才能点亮。');
+      }
+      if (expectedConfirmationCheckpoint != null) {
+        // A batch confirmation captured its checkpoint window. Settlement above
+        // may already have failed the node or started a new day, so the stale
+        // window must never relight it.
+        final windowEnd = nextNationalFocusCheckpoint(_trustedNow());
+        if (!windowEnd.isAtSameMomentAs(expectedConfirmationCheckpoint)) {
+          throw StateError('确认窗口已跨过检查点；请刷新后重试。');
+        }
+        if (card.state == NationalFocusCardState.extinguished.storageValue) {
+          throw StateError('这个节点已按检查点结算，不能再按旧确认点亮。');
+        }
       }
       final cards = await (database.select(
         database.localNationalFocusCards,
@@ -1001,6 +1023,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   Future<void> extinguishCard({
     required String cardId,
     String? failureReason,
+    DateTime? expectedConfirmationCheckpoint,
   }) async {
     await settleDueCheckpoints();
     await lifecycleAccess.requireActive();
@@ -1012,6 +1035,12 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       }
       if (!card.isInTree) {
         throw StateError('卡片不在国策树中。');
+      }
+      if (expectedConfirmationCheckpoint != null) {
+        final windowEnd = nextNationalFocusCheckpoint(_trustedNow());
+        if (!windowEnd.isAtSameMomentAs(expectedConfirmationCheckpoint)) {
+          throw StateError('熄灭窗口已跨过检查点；请刷新后重试。');
+        }
       }
       if (card.state == NationalFocusCardState.extinguished.storageValue) {
         return;
@@ -1064,11 +1093,17 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   }
 
   @override
-  Future<int> confirmToday() async {
+  Future<int> confirmToday({DateTime? expectedConfirmationCheckpoint}) async {
     await settleDueCheckpoints();
     await lifecycleAccess.requireActive();
     final confirmedCardIds = <String>[];
     final confirmedCount = await database.transaction(() async {
+      if (expectedConfirmationCheckpoint != null) {
+        final windowEnd = nextNationalFocusCheckpoint(_trustedNow());
+        if (!windowEnd.isAtSameMomentAs(expectedConfirmationCheckpoint)) {
+          return 0;
+        }
+      }
       final pendingCards =
           await (database.select(database.localNationalFocusCards)
                 ..where((card) => card.userId.equals(userId))
@@ -1093,6 +1128,9 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       var count = 0;
       for (final card in pendingCards) {
         if (_hasExtinguishedAncestor(card, cardsById)) continue;
+        // Cards with exception or precedent notes are confirmed one by one so
+        // the batch action cannot bypass their user-authored judgment.
+        if (card.exceptionNotes?.trim().isNotEmpty ?? false) continue;
         await _updateCard(
           card,
           LocalNationalFocusCardsCompanion(
@@ -3237,16 +3275,21 @@ class UnavailableNationalFocusRepository implements NationalFocusRepository {
   Future<void> restoreDeletedCard(String cardId) => _unavailable();
 
   @override
-  Future<void> lightCard(String cardId) => _unavailable();
+  Future<void> lightCard(
+    String cardId, {
+    DateTime? expectedConfirmationCheckpoint,
+  }) => _unavailable();
 
   @override
   Future<void> extinguishCard({
     required String cardId,
     String? failureReason,
+    DateTime? expectedConfirmationCheckpoint,
   }) => _unavailable();
 
   @override
-  Future<int> confirmToday() => _unavailable();
+  Future<int> confirmToday({DateTime? expectedConfirmationCheckpoint}) =>
+      _unavailable();
 
   @override
   Future<void> settleDueCheckpoints() async {}

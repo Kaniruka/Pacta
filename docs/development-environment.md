@@ -108,7 +108,7 @@ cmd.exe /c flutter build apk --debug
 '/mnt/c/Users/Stray/AppData/Local/Android/sdk/platform-tools/adb.exe' -s emulator-5554 install -r 'F:\workspace\release\flutter\pacta\build\app\outputs\flutter-apk\app-debug.apk'
 ```
 
-将示例序列号 `emulator-5554` 替换为实际设备；第二台 AVD 是 `PactaT24Secondary`，多设备时逐台指定。应用标识 `com.pacta.pacta`。云功能只传公开客户端配置；测试账号和服务端密钥留在受保护环境。
+将示例序列号 `emulator-5554` 替换为实际设备；第二台 AVD 是 `PactaT24Secondary`，多设备时逐台指定。应用标识 `com.rukani.pacta`。云功能只传公开客户端配置；测试账号和服务端密钥留在受保护环境。
 
 Windows 桌面工具链已由 doctor 检出。仓库根目录可运行 `cmd.exe /c flutter run -d windows`；Release 构建及启动命令如下：
 

@@ -72,8 +72,7 @@ void main() {
       await signals.save(
         const ChainSignalTexts(
           appointmentTriggerSignal: '把手机放到书架上然后倒一杯温水，整理桌面并确认接下来只处理当前任务',
-          regularFocusMarker: '翻开笔记写下当前任务的第一个具体步骤，再把计时器放在眼前开始行动',
-          eliteFocusMarker: '关掉所有通知并把任务目标读一遍，确认执行期间只专心完成这项任务',
+          focusMarker: '关掉所有通知并把任务目标读一遍，确认执行期间只专心完成这项任务',
         ),
       );
       await tester.pumpWidget(

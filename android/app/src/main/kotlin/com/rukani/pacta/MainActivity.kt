@@ -1,4 +1,4 @@
-package com.pacta.pacta
+package com.rukani.pacta
 
 import android.Manifest
 import android.content.pm.PackageManager

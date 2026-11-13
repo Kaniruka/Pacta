@@ -59,7 +59,7 @@ void main() {
           (await ChainSignalsRepository(
             database: database,
             userId: 'a',
-          ).get()).regularFocusMarker,
+          ).get()).focusMarker,
           isEmpty,
         );
         expect(
@@ -82,12 +82,12 @@ void main() {
         userId: 'a',
         lifecycleAccess: _SuspendedAccess(),
       );
-      expect((await repository.get()).eliteFocusMarker, isEmpty);
+      expect((await repository.get()).focusMarker, isEmpty);
       await expectLater(
-        repository.save(const ChainSignalTexts(eliteFocusMarker: '坐下')),
+        repository.save(const ChainSignalTexts(focusMarker: '坐下')),
         throwsA(isA<UserOperationsSuspendedException>()),
       );
-      expect((await repository.get()).eliteFocusMarker, isEmpty);
+      expect((await repository.get()).focusMarker, isEmpty);
     } finally {
       await database.close();
     }
@@ -106,12 +106,11 @@ void main() {
         await own.save(
           const ChainSignalTexts(
             appointmentTriggerSignal: ' 戴耳机 ',
-            eliteFocusMarker: '坐下',
-            regularFocusMarker: '打开书',
+            focusMarker: '坐下',
           ),
         );
-        expect((await other.get()).eliteFocusMarker, isEmpty);
-        await other.save(const ChainSignalTexts(eliteFocusMarker: '关门'));
+        expect((await other.get()).focusMarker, isEmpty);
+        await other.save(const ChainSignalTexts(focusMarker: '关门'));
         await database.close();
         database = PactaDatabase(NativeDatabase(file));
         final restored = await ChainSignalsRepository(
@@ -119,13 +118,12 @@ void main() {
           userId: 'a',
         ).get();
         expect(restored.appointmentTriggerSignal, '戴耳机');
-        expect(restored.eliteFocusMarker, '坐下');
-        expect(restored.regularFocusMarker, '打开书');
+        expect(restored.focusMarker, '坐下');
         expect(
           (await ChainSignalsRepository(
             database: database,
             userId: 'b',
-          ).get()).eliteFocusMarker,
+          ).get()).focusMarker,
           '关门',
         );
       } finally {
@@ -134,6 +132,33 @@ void main() {
       }
     },
   );
+
+  test('one shared marker is stored in both marker fields and leaves records alone', () async {
+    final database = PactaDatabase(NativeDatabase.memory());
+    try {
+      final repository = ChainSignalsRepository(
+        database: database,
+        userId: 'a',
+      );
+      await database.customStatement(
+        "INSERT INTO focus_chain_records VALUES ('a', 'regular', 3, 4, 1)",
+      );
+
+      await repository.save(const ChainSignalTexts(focusMarker: ' 坐下 '));
+
+      final row = await database.select(database.chainSignals).getSingle();
+      expect(row.eliteFocusMarker, '坐下');
+      expect(row.regularFocusMarker, '坐下');
+      expect((await repository.get()).focusMarker, '坐下');
+      final record = await database
+          .select(database.focusChainRecords)
+          .getSingle();
+      expect(record.currentConsecutive, 3);
+      expect(record.bestConsecutive, 4);
+    } finally {
+      await database.close();
+    }
+  });
 }
 
 class _SuspendedAccess implements UserLifecycleAccess {

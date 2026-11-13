@@ -4,18 +4,30 @@ import 'chain_signals_repository.dart';
 import 'focus_models.dart';
 import 'focus_statistics.dart';
 
+/// The two commitment actions the overview can edit.
+///
+/// The Focus Marker is shared by both Focus Chains, so it has one entry point;
+/// the Appointment Chain keeps its own Trigger Signal.
 enum _SignalTarget {
-  appointment('预约链 · 触发信号'),
-  elite('精锐链 · 专注标志'),
-  regular('普通链 · 专注标志');
+  marker(label: '专注标志', dialogTitle: '专注标志（精锐链与普通链共用）', tooltip: '编辑专注标志'),
+  appointment(label: '触发信号', dialogTitle: '预约链触发信号', tooltip: '编辑预约链触发信号');
 
-  const _SignalTarget(this.label);
+  const _SignalTarget({
+    required this.label,
+    required this.dialogTitle,
+    required this.tooltip,
+  });
+
   final String label;
+  final String dialogTitle;
+  final String tooltip;
+
   String text(ChainSignalTexts texts) => switch (this) {
+    marker => texts.focusMarker,
     appointment => texts.appointmentTriggerSignal,
-    elite => texts.eliteFocusMarker,
-    regular => texts.regularFocusMarker,
   };
+
+  Key get editKey => ValueKey('focus-signal-edit-$name');
 }
 
 /// Keeps each commitment action next to the chain it belongs to.
@@ -66,11 +78,6 @@ class FocusChainOverview extends StatelessWidget {
         current: record?.currentConsecutive ?? 0,
         best: record?.bestConsecutive ?? 0,
         pendingReview: record?.hasPendingReview ?? false,
-        target: mode == FocusChainMode.elite
-            ? _SignalTarget.elite
-            : _SignalTarget.regular,
-        texts: texts,
-        repository: repository,
         statistics: statistics[mode],
       );
     }
@@ -100,13 +107,15 @@ class FocusChainOverview extends StatelessWidget {
           },
         ),
         const SizedBox(height: 12),
+        _SharedMarkerCard(texts: texts, repository: repository),
+        const SizedBox(height: 12),
         _ChainSummaryCard(
           title: '预约链',
           icon: Icons.schedule_outlined,
           current: appointmentRecord?.currentConsecutive ?? 0,
           best: appointmentRecord?.bestConsecutive ?? 0,
           pendingReview: appointmentRecord?.hasPendingReview ?? false,
-          target: _SignalTarget.appointment,
+          signal: _SignalTarget.appointment,
           texts: texts,
           repository: repository,
         ),
@@ -122,9 +131,9 @@ class _ChainSummaryCard extends StatelessWidget {
     required this.current,
     required this.best,
     required this.pendingReview,
-    required this.target,
-    required this.texts,
-    required this.repository,
+    this.signal,
+    this.texts = const ChainSignalTexts(),
+    this.repository,
     this.statistics,
   });
 
@@ -133,7 +142,9 @@ class _ChainSummaryCard extends StatelessWidget {
   final int current;
   final int best;
   final bool pendingReview;
-  final _SignalTarget target;
+
+  /// The commitment action owned by this chain, if it owns one.
+  final _SignalTarget? signal;
   final ChainSignalTexts texts;
   final ChainSignalsRepository? repository;
   final FocusSessionStatistics? statistics;
@@ -142,9 +153,7 @@ class _ChainSummaryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final appointment = target == _SignalTarget.appointment;
-    final actionLabel = appointment ? '触发信号' : '专注标志';
-    final action = target.text(texts);
+    final appointment = signal == _SignalTarget.appointment;
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
@@ -249,46 +258,124 @@ class _ChainSummaryCard extends StatelessWidget {
                 },
               ),
             ],
-            const SizedBox(height: 16),
+            if (signal case final target?) ...[
+              const SizedBox(height: 16),
+              Divider(height: 1, color: colors.outlineVariant),
+              const SizedBox(height: 8),
+              _SignalAction(
+                target: target,
+                texts: texts,
+                repository: repository,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// The single Focus Marker entry, shared by the Elite and Regular chains.
+class _SharedMarkerCard extends StatelessWidget {
+  const _SharedMarkerCard({required this.texts, required this.repository});
+
+  final ChainSignalTexts texts;
+  final ChainSignalsRepository? repository;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: colors.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.flag_outlined, color: colors.primary, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text('专注标志', style: theme.textTheme.titleMedium),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '精锐链与普通链共用这一动作，两条链的连续记录仍各自独立。',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
             Divider(height: 1, color: colors.outlineVariant),
             const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        actionLabel,
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        action.isEmpty ? '尚未设置' : action,
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ],
-                  ),
-                ),
-                if (repository != null)
-                  IconButton(
-                    key: ValueKey('focus-signal-edit-${target.name}'),
-                    tooltip: '编辑$title$actionLabel',
-                    constraints: const BoxConstraints(
-                      minWidth: 48,
-                      minHeight: 48,
-                    ),
-                    onPressed: () => _editSignal(context, repository!, target),
-                    icon: const Icon(Icons.edit_outlined, size: 20),
-                  ),
-              ],
+            _SignalAction(
+              target: _SignalTarget.marker,
+              texts: texts,
+              repository: repository,
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _SignalAction extends StatelessWidget {
+  const _SignalAction({
+    required this.target,
+    required this.texts,
+    required this.repository,
+  });
+
+  final _SignalTarget target;
+  final ChainSignalTexts texts;
+  final ChainSignalsRepository? repository;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final action = target.text(texts);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                target.label,
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                action.isEmpty ? '尚未设置' : action,
+                style: theme.textTheme.bodyMedium,
+              ),
+            ],
+          ),
+        ),
+        if (repository != null)
+          IconButton(
+            key: target.editKey,
+            tooltip: target.tooltip,
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            onPressed: () => _editSignal(context, repository!, target),
+            icon: const Icon(Icons.edit_outlined, size: 20),
+          ),
+      ],
     );
   }
 }
@@ -346,6 +433,9 @@ class ChainSignalInstructions extends StatelessWidget {
     required this.mode,
   });
   final ChainSignalsRepository repository;
+
+  /// The chain whose flow shows the instruction; the Focus Marker itself is
+  /// shared by both chains.
   final FocusChainMode mode;
 
   @override
@@ -362,7 +452,7 @@ class ChainSignalInstructions extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            '${mode.label}专注标志：${texts.focusMarker(mode).isEmpty ? '尚未设置' : texts.focusMarker(mode)}',
+            '${mode.label}专注标志：${texts.focusMarker.isEmpty ? '尚未设置' : texts.focusMarker}',
           ),
         ],
       );
@@ -401,19 +491,16 @@ class _SignalEditorState extends State<_SignalEditor> {
       _error = null;
     });
     try {
-      // Read the latest other fields so editing one action preserves concurrent edits.
+      // Read the latest other field so editing one action preserves concurrent edits.
       final current = await widget.repository.get();
       await widget.repository.save(
         ChainSignalTexts(
           appointmentTriggerSignal: widget.target == _SignalTarget.appointment
               ? _controller.text
               : current.appointmentTriggerSignal,
-          eliteFocusMarker: widget.target == _SignalTarget.elite
+          focusMarker: widget.target == _SignalTarget.marker
               ? _controller.text
-              : current.eliteFocusMarker,
-          regularFocusMarker: widget.target == _SignalTarget.regular
-              ? _controller.text
-              : current.regularFocusMarker,
+              : current.focusMarker,
         ),
       );
       if (mounted) Navigator.pop(context);
@@ -429,7 +516,7 @@ class _SignalEditorState extends State<_SignalEditor> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.target.label),
+    title: Text(widget.target.dialogTitle),
     content: SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,

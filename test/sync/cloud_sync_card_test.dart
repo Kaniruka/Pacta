@@ -15,7 +15,7 @@ void main() {
     // Each simulated device has its own independent in-memory executor.
     driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   });
-  testWidgets('首次上传需要方向选择和覆盖确认，取消不写云端', (tester) async {
+  testWidgets('首次上传仍需显式覆盖确认，取消不写云端', (tester) async {
     final database = PactaDatabase(NativeDatabase.memory());
     final remote = InMemoryCloudSnapshotRemote();
     final repository = CloudSnapshotRepository(
@@ -35,14 +35,17 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.byTooltip('查看云端并选择方向'));
+    await tester.tap(find.byTooltip('查看云同步'));
     await tester.pumpAndSettle();
     expect(find.text('云端暂无数据，可首次上传。'), findsOneWidget);
+    // 云端没有内容时没有可更新的方向，首次上传即该表面的主操作。
+    expect(find.text('从云端更新'), findsNothing);
+    expect(find.text('本机数据将作为首份云端快照。'), findsOneWidget);
     expect(
       tester
-          .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '下载'))
+          .widget<FilledButton>(find.widgetWithText(FilledButton, '上传'))
           .onPressed,
-      isNull,
+      isNotNull,
     );
     await tester.ensureVisible(find.text('上传'));
     await tester.tap(find.text('上传'));
@@ -109,13 +112,13 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.byTooltip('查看云端并选择方向'));
+    await tester.tap(find.byTooltip('查看云同步'));
     await tester.pumpAndSettle();
     expect(find.text('云端来源：家里的电脑'), findsOneWidget);
     expect(find.text('型号未知'), findsOneWidget);
     expect(find.text('本地数据时间较新，请选择要保留的数据。'), findsOneWidget);
-    await tester.ensureVisible(find.text('下载'));
-    await tester.tap(find.text('下载'));
+    await tester.ensureVisible(find.text('从云端更新'));
+    await tester.tap(find.text('从云端更新'));
     await tester.pumpAndSettle();
     expect(find.text('下载并覆盖本地？'), findsOneWidget);
     await tester.tap(find.text('确认下载'));
@@ -167,13 +170,13 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    await tester.ensureVisible(find.byTooltip('查看云端并选择方向'));
-    await tester.tap(find.byTooltip('查看云端并选择方向'));
+    await tester.ensureVisible(find.byTooltip('查看云同步'));
+    await tester.tap(find.byTooltip('查看云同步'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    expect(find.text('下载'), findsOneWidget);
-    await tester.ensureVisible(find.text('下载'));
-    await tester.tap(find.text('下载'));
+    expect(find.text('从云端更新'), findsOneWidget);
+    await tester.ensureVisible(find.text('从云端更新'));
+    await tester.tap(find.text('从云端更新'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text('下载并覆盖本地？'), findsOneWidget);
