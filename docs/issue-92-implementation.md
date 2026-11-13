@@ -130,6 +130,15 @@ SQL 增加版本 19/20 之后重试必须返回 19、`PT422`、`PT425` 及台账
 `PT409` 而测不到 `PT425`。结构自检：16 个 DO 块 dollar-quote 全部配对，单引号配平。
 主 Agent 提供 admin + 非 admin 两个身份后该段会真实执行。
 
+第五轮（受限回滚式真实验证）：按主 Agent 授权运行
+`F:/Workspace/Release/Flutter/Pacta/.scratch/issue90/probe_history.py --source <本 worktree>`，
+目标固定为隔离项目 `Pacta issue90 disposable validation`，仅使用本票两份 SQL，结束时回滚。
+结果：`PASS history retention/idempotency/RLS/purge SQL probe; rolled back`；
+证据 `.scratch/issue90/history-probe-20261113-175209.json` 记录 `passed: true`、`applied: false`，
+并与本分支文件 SHA-256 一致（迁移 `93b181d7…`，探针 `1ccf7d97…`）。
+本轮据此修掉两个真实缺陷：plpgsql 不能对函数返回值直接取字段（`).revision`），变量名 `revision`
+与列名冲突需改名为 `evicted_revision` 并限定列。全程未读 `.env`、未改脚本、未传 `--apply`、未改远端。
+
 ## 已知限制与其他说明
 
 - 本 worktree 检出时工作区为 CRLF 而仓库 blob 为 LF，`git status` 曾把整棵树报为改动；

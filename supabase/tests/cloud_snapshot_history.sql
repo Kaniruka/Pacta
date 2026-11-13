@@ -169,9 +169,11 @@ $request_idempotency$;
 do $retry_returns_original_version$
 declare
   owner_revision bigint;
+  owner_saved public.cloud_business_snapshots;
   retried public.cloud_business_snapshots;
 begin
-  owner_revision := public.save_cloud_business_snapshot(
+  -- plpgsql 不能对函数返回值直接取字段，先赋给合成类型变量。
+  owner_saved := public.save_cloud_business_snapshot(
     18,
     jsonb_build_object(
       'schemaVersion', 1,
@@ -180,7 +182,8 @@ begin
     ),
     'device-a', 'Pixel 7（Android）', now(), 0,
     null, null, null, 'request-92-second'
-  ).revision;
+  );
+  owner_revision := owner_saved.revision;
   perform set_config(
     'history_test.request_two_revision', owner_revision::text, true
   );
@@ -240,7 +243,8 @@ $request_reuse_with_different_payload$;
 -- Once retention evicted the request's version, a retry must not write again.
 do $evicted_request_is_not_rewritten$
 declare
-  revision bigint := current_setting(
+  -- 变量名必须避开列名 revision，否则 PL/pgSQL 会报 column reference is ambiguous。
+  evicted_revision bigint := current_setting(
     'history_test.request_two_revision'
   )::bigint;
   current bigint;
@@ -270,9 +274,9 @@ begin
   from public.cloud_business_snapshot_history
   where user_id = current_setting('history_test.owner_id')::uuid;
   if exists (
-    select 1 from public.cloud_business_snapshot_history
-    where user_id = current_setting('history_test.owner_id')::uuid
-      and revision = revision
+    select 1 from public.cloud_business_snapshot_history as history
+    where history.user_id = current_setting('history_test.owner_id')::uuid
+      and history.revision = evicted_revision
   ) then
     raise exception 'test_setup_failed_to_evict_the_request_version';
   end if;
