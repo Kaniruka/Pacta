@@ -1,7 +1,10 @@
 # Issue #91 实施记录：国策卡轻量分层
 
 分支：`impl/pacta91-card-layers`（worktree `C:/Users/Stray/.codex/worktrees/pacta-card-layers/Pacta`）
-基线：`c76a59f`（`feat/sync-profile-cards-20261113`，与 `origin/feat/sync-profile-cards-20261113` 一致）
+基线：`c76a59f`（`feat/sync-profile-cards-20261113`，与本地 `origin/feat/sync-profile-cards-20261113` 一致）
+提交：`385dc56` feat(national-focus): layer card sheet, detail, editor and strengthening (#91)
+
+合并记录：本仓库与本地远端引用都不存在 `integration` 分支；`origin/feat/sync-profile-cards-20261113` 仍指向基线 `c76a59f`（`git rev-list --count c76a59f..origin/feat/...` = 0）。`git fetch origin` 因网络重置失败（`Recv failure: Connection was reset`），因此没有可合入的集成 tip，合并为空操作。
 依据：`docs/spec-sync-profile-cards-20261113.md`、`docs/tickets-sync-profile-cards-20261113/01.md`、原型 `docs/prototypes/pacta-card-prototype-20261113.html` 的 `data-design=a`（轻量分层）。
 
 ## 实施结果
