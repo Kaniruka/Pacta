@@ -224,6 +224,17 @@ void main() {
           isTrue,
           reason: 'No native tap was observed.',
         );
+        _record('ISSUE95_NATIVE_TAP_RECEIVED');
+        // Native activation can arrive after the notification callback. Wait
+        // for the real lifecycle event; never synthesize a resumed state.
+        final resumeDeadline = DateTime.now().add(const Duration(seconds: 5));
+        while (!lifecycle.resumedAfterBackground &&
+            DateTime.now().isBefore(resumeDeadline)) {
+          await tester.pump();
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 50)),
+          );
+        }
         _record(
           'ISSUE95_HOLD_ENDED '
           'backgrounded=${lifecycle.backgrounded} '
@@ -328,12 +339,21 @@ class _LifecycleProbe extends WidgetsBindingObserver {
 
   void arm() {
     _armed = true;
-    backgrounded = false;
+    // A person may minimize while the fixture is still navigating. Preserve
+    // the current platform state instead of requiring another hide event.
+    final current = WidgetsBinding.instance.lifecycleState;
+    backgrounded =
+        current == AppLifecycleState.paused ||
+        current == AppLifecycleState.hidden;
     resumedAfterBackground = false;
+    _record(
+      'ISSUE95_LIFECYCLE_ARM current=$current backgrounded=$backgrounded',
+    );
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _record('ISSUE95_LIFECYCLE state=$state armed=$_armed');
     if (!_armed) return;
     states.add(state);
     if (state == AppLifecycleState.paused ||
