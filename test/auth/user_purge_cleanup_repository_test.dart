@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
@@ -106,6 +107,37 @@ void main() {
       auth.purgeReceiptLookupIds,
       containsAll(['purged-only-queue', 'queue-without-receipt']),
     );
+  });
+
+  test('清除后留下只前进的资料清除代次，且不会被重复清扫', () async {
+    await _seedGoal(database, 'old-user-id');
+    await database
+        .into(database.localProfileAccounts)
+        .insertOnConflictUpdate(
+          LocalProfileAccountsCompanion.insert(
+            userId: 'old-user-id',
+            updatedAt: DateTime.utc(2026, 11, 13),
+            displayName: const Value('已清除昵称'),
+          ),
+        );
+    auth.lookupPurgeReceipts['old-user-id'] = _receipt('old-user-id');
+
+    expect(await cleanup.purgeLocallyConfirmedUsers(), 1);
+    expect(
+      await (database.select(database.localProfileAccounts)).get(),
+      isEmpty,
+    );
+    var mark = await (database.select(
+      database.localProfileClearMarks,
+    )..where((row) => row.userId.equals('old-user-id'))).getSingle();
+    expect(mark.generation, 1, reason: '清除代次必须前进');
+
+    // 代次本身不是用户数据：第二次清扫不会把这具清除标记当成待清除内容。
+    expect(await cleanup.purgeLocallyConfirmedUsers(), 0);
+    mark = await (database.select(
+      database.localProfileClearMarks,
+    )..where((row) => row.userId.equals('old-user-id'))).getSingle();
+    expect(mark.generation, 1);
   });
 
   test('清除队列失败时抛错保留 receipt，下次运行继续重试', () async {

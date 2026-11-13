@@ -21,6 +21,9 @@ class _FakeProfileRepository implements ProfileRepository {
       StreamController<ProfileAccount>.broadcast(sync: true);
   ProfileAccount _account;
   String? saveErrorMessage;
+
+  /// 首次读取失败：仓储只在内存里报告错误，不写本机版本。
+  String? syncErrorMessage;
   int saveCalls = 0;
   int syncCalls = 0;
   ProfileAvatar? lastSavedAvatar;
@@ -60,6 +63,10 @@ class _FakeProfileRepository implements ProfileRepository {
   @override
   Future<ProfileAccount> syncProfile() async {
     syncCalls++;
+    if (syncErrorMessage != null) {
+      // 与真实仓储一致：没有缓存行时只返回内存错误，不产生本机资料版本。
+      return _account.copyWith(syncError: syncErrorMessage);
+    }
     if (saveErrorMessage == null) {
       _account = _account.copyWith(hasPendingSave: false, clearSyncError: true);
       _updates.add(_account);
@@ -276,6 +283,63 @@ void main() {
     expect(find.text('已内化 2'), findsOneWidget);
     expect(find.text('完成 1 次'), findsOneWidget);
     expect(find.text('累计 15 分钟'), findsOneWidget);
+  });
+
+  testWidgets('首次资料读取失败在名片显示原因并可重试，且不编造本机资料', (tester) async {
+    final repository = _FakeProfileRepository();
+    repository.syncErrorMessage = '保存失败：云端暂不可用';
+    final overview = _FakeOverviewSource();
+    await pumpCard(tester, repository: repository, overview: overview);
+    await overview.emit();
+    await tester.pump();
+
+    // 缓存里没有资料行，错误只存在于首次同步的返回值里；名片必须自己显示它。
+    expect(find.text('保存失败：云端暂不可用'), findsOneWidget);
+    expect(find.text('当前用户'), findsOneWidget);
+    expect(repository.saveCalls, 0, reason: '读取失败不得写本机资料版本');
+
+    repository.syncErrorMessage = null;
+    await tester.tap(find.text('重试'));
+    await tester.pump();
+
+    expect(find.text('保存失败：云端暂不可用'), findsNothing);
+    expect(repository.syncCalls, 2);
+  });
+
+  testWidgets('统计尚未读到记录时显示加载状态而不是零', (tester) async {
+    final repository = _FakeProfileRepository();
+    final overview = _FakeOverviewSource();
+    await pumpCard(tester, repository: repository, overview: overview);
+
+    expect(find.text('点亮 0'), findsNothing);
+    expect(find.text('已内化 0'), findsNothing);
+    expect(find.text('完成 0 次'), findsNothing);
+    expect(find.text('累计 0 分钟'), findsNothing);
+    expect(find.text('正在读取…'), findsNWidgets(2));
+  });
+
+  testWidgets('统计读取失败显示失败与重试，不把不可读记录当成零', (tester) async {
+    final repository = _FakeProfileRepository();
+    final overview = _FakeOverviewSource();
+    await pumpCard(tester, repository: repository, overview: overview);
+    await overview.emit(
+      cards: [_card('晨光', isInTree: true, state: NationalFocusCardState.lit)],
+      sessions: [_completedSession(900)],
+    );
+    await tester.pump();
+
+    overview.cards.addError(StateError('国策记录暂时不可读'));
+    await tester.pump();
+
+    expect(find.text('点亮 0'), findsNothing);
+    expect(find.text('统计暂时无法读取'), findsOneWidget);
+    expect(find.text('完成 1 次'), findsOneWidget, reason: '另一组可读时照常显示');
+
+    await tester.tap(find.text('重试'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('统计暂时无法读取'), findsNothing);
+    expect(find.text('点亮 1'), findsOneWidget);
   });
 
   testWidgets('点击国策统计组进入可读的详细记录', (tester) async {

@@ -12738,6 +12738,277 @@ class LocalProfileAccountsCompanion
   }
 }
 
+class $LocalProfileClearMarksTable extends LocalProfileClearMarks
+    with TableInfo<$LocalProfileClearMarksTable, LocalProfileClearMark> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalProfileClearMarksTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _generationMeta = const VerificationMeta(
+    'generation',
+  );
+  @override
+  late final GeneratedColumn<int> generation = GeneratedColumn<int>(
+    'generation',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _clearedAtMeta = const VerificationMeta(
+    'clearedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> clearedAt = GeneratedColumn<DateTime>(
+    'cleared_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [userId, generation, clearedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_profile_clear_marks';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalProfileClearMark> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('generation')) {
+      context.handle(
+        _generationMeta,
+        generation.isAcceptableOrUnknown(data['generation']!, _generationMeta),
+      );
+    }
+    if (data.containsKey('cleared_at')) {
+      context.handle(
+        _clearedAtMeta,
+        clearedAt.isAcceptableOrUnknown(data['cleared_at']!, _clearedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_clearedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId};
+  @override
+  LocalProfileClearMark map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalProfileClearMark(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      generation: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}generation'],
+      )!,
+      clearedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}cleared_at'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalProfileClearMarksTable createAlias(String alias) {
+    return $LocalProfileClearMarksTable(attachedDatabase, alias);
+  }
+}
+
+class LocalProfileClearMark extends DataClass
+    implements Insertable<LocalProfileClearMark> {
+  final String userId;
+  final int generation;
+  final DateTime clearedAt;
+  const LocalProfileClearMark({
+    required this.userId,
+    required this.generation,
+    required this.clearedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['generation'] = Variable<int>(generation);
+    map['cleared_at'] = Variable<DateTime>(clearedAt);
+    return map;
+  }
+
+  LocalProfileClearMarksCompanion toCompanion(bool nullToAbsent) {
+    return LocalProfileClearMarksCompanion(
+      userId: Value(userId),
+      generation: Value(generation),
+      clearedAt: Value(clearedAt),
+    );
+  }
+
+  factory LocalProfileClearMark.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalProfileClearMark(
+      userId: serializer.fromJson<String>(json['userId']),
+      generation: serializer.fromJson<int>(json['generation']),
+      clearedAt: serializer.fromJson<DateTime>(json['clearedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'generation': serializer.toJson<int>(generation),
+      'clearedAt': serializer.toJson<DateTime>(clearedAt),
+    };
+  }
+
+  LocalProfileClearMark copyWith({
+    String? userId,
+    int? generation,
+    DateTime? clearedAt,
+  }) => LocalProfileClearMark(
+    userId: userId ?? this.userId,
+    generation: generation ?? this.generation,
+    clearedAt: clearedAt ?? this.clearedAt,
+  );
+  LocalProfileClearMark copyWithCompanion(
+    LocalProfileClearMarksCompanion data,
+  ) {
+    return LocalProfileClearMark(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      generation: data.generation.present
+          ? data.generation.value
+          : this.generation,
+      clearedAt: data.clearedAt.present ? data.clearedAt.value : this.clearedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalProfileClearMark(')
+          ..write('userId: $userId, ')
+          ..write('generation: $generation, ')
+          ..write('clearedAt: $clearedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(userId, generation, clearedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalProfileClearMark &&
+          other.userId == this.userId &&
+          other.generation == this.generation &&
+          other.clearedAt == this.clearedAt);
+}
+
+class LocalProfileClearMarksCompanion
+    extends UpdateCompanion<LocalProfileClearMark> {
+  final Value<String> userId;
+  final Value<int> generation;
+  final Value<DateTime> clearedAt;
+  final Value<int> rowid;
+  const LocalProfileClearMarksCompanion({
+    this.userId = const Value.absent(),
+    this.generation = const Value.absent(),
+    this.clearedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalProfileClearMarksCompanion.insert({
+    required String userId,
+    this.generation = const Value.absent(),
+    required DateTime clearedAt,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       clearedAt = Value(clearedAt);
+  static Insertable<LocalProfileClearMark> custom({
+    Expression<String>? userId,
+    Expression<int>? generation,
+    Expression<DateTime>? clearedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (generation != null) 'generation': generation,
+      if (clearedAt != null) 'cleared_at': clearedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalProfileClearMarksCompanion copyWith({
+    Value<String>? userId,
+    Value<int>? generation,
+    Value<DateTime>? clearedAt,
+    Value<int>? rowid,
+  }) {
+    return LocalProfileClearMarksCompanion(
+      userId: userId ?? this.userId,
+      generation: generation ?? this.generation,
+      clearedAt: clearedAt ?? this.clearedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (generation.present) {
+      map['generation'] = Variable<int>(generation.value);
+    }
+    if (clearedAt.present) {
+      map['cleared_at'] = Variable<DateTime>(clearedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalProfileClearMarksCompanion(')
+          ..write('userId: $userId, ')
+          ..write('generation: $generation, ')
+          ..write('clearedAt: $clearedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $LocalCloudRecoveryPointsTable extends LocalCloudRecoveryPoints
     with TableInfo<$LocalCloudRecoveryPointsTable, LocalCloudRecoveryPoint> {
   @override
@@ -13314,6 +13585,8 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
       $LocalUserLifecycleStatesTable(this);
   late final $LocalProfileAccountsTable localProfileAccounts =
       $LocalProfileAccountsTable(this);
+  late final $LocalProfileClearMarksTable localProfileClearMarks =
+      $LocalProfileClearMarksTable(this);
   late final $LocalCloudRecoveryPointsTable localCloudRecoveryPoints =
       $LocalCloudRecoveryPointsTable(this);
   @override
@@ -13343,6 +13616,7 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
     localCalendarBlocks,
     localUserLifecycleStates,
     localProfileAccounts,
+    localProfileClearMarks,
     localCloudRecoveryPoints,
   ];
 }
@@ -19771,6 +20045,189 @@ typedef $$LocalProfileAccountsTableProcessedTableManager =
       LocalProfileAccount,
       PrefetchHooks Function()
     >;
+typedef $$LocalProfileClearMarksTableCreateCompanionBuilder =
+    LocalProfileClearMarksCompanion Function({
+      required String userId,
+      Value<int> generation,
+      required DateTime clearedAt,
+      Value<int> rowid,
+    });
+typedef $$LocalProfileClearMarksTableUpdateCompanionBuilder =
+    LocalProfileClearMarksCompanion Function({
+      Value<String> userId,
+      Value<int> generation,
+      Value<DateTime> clearedAt,
+      Value<int> rowid,
+    });
+
+class $$LocalProfileClearMarksTableFilterComposer
+    extends Composer<_$PactaDatabase, $LocalProfileClearMarksTable> {
+  $$LocalProfileClearMarksTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get generation => $composableBuilder(
+    column: $table.generation,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalProfileClearMarksTableOrderingComposer
+    extends Composer<_$PactaDatabase, $LocalProfileClearMarksTable> {
+  $$LocalProfileClearMarksTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get generation => $composableBuilder(
+    column: $table.generation,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get clearedAt => $composableBuilder(
+    column: $table.clearedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalProfileClearMarksTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $LocalProfileClearMarksTable> {
+  $$LocalProfileClearMarksTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<int> get generation => $composableBuilder(
+    column: $table.generation,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get clearedAt =>
+      $composableBuilder(column: $table.clearedAt, builder: (column) => column);
+}
+
+class $$LocalProfileClearMarksTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $LocalProfileClearMarksTable,
+          LocalProfileClearMark,
+          $$LocalProfileClearMarksTableFilterComposer,
+          $$LocalProfileClearMarksTableOrderingComposer,
+          $$LocalProfileClearMarksTableAnnotationComposer,
+          $$LocalProfileClearMarksTableCreateCompanionBuilder,
+          $$LocalProfileClearMarksTableUpdateCompanionBuilder,
+          (
+            LocalProfileClearMark,
+            BaseReferences<
+              _$PactaDatabase,
+              $LocalProfileClearMarksTable,
+              LocalProfileClearMark
+            >,
+          ),
+          LocalProfileClearMark,
+          PrefetchHooks Function()
+        > {
+  $$LocalProfileClearMarksTableTableManager(
+    _$PactaDatabase db,
+    $LocalProfileClearMarksTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalProfileClearMarksTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$LocalProfileClearMarksTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$LocalProfileClearMarksTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<int> generation = const Value.absent(),
+                Value<DateTime> clearedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalProfileClearMarksCompanion(
+                userId: userId,
+                generation: generation,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                Value<int> generation = const Value.absent(),
+                required DateTime clearedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => LocalProfileClearMarksCompanion.insert(
+                userId: userId,
+                generation: generation,
+                clearedAt: clearedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalProfileClearMarksTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $LocalProfileClearMarksTable,
+      LocalProfileClearMark,
+      $$LocalProfileClearMarksTableFilterComposer,
+      $$LocalProfileClearMarksTableOrderingComposer,
+      $$LocalProfileClearMarksTableAnnotationComposer,
+      $$LocalProfileClearMarksTableCreateCompanionBuilder,
+      $$LocalProfileClearMarksTableUpdateCompanionBuilder,
+      (
+        LocalProfileClearMark,
+        BaseReferences<
+          _$PactaDatabase,
+          $LocalProfileClearMarksTable,
+          LocalProfileClearMark
+        >,
+      ),
+      LocalProfileClearMark,
+      PrefetchHooks Function()
+    >;
 typedef $$LocalCloudRecoveryPointsTableCreateCompanionBuilder =
     LocalCloudRecoveryPointsCompanion Function({
       required String id,
@@ -20124,6 +20581,11 @@ class $PactaDatabaseManager {
       );
   $$LocalProfileAccountsTableTableManager get localProfileAccounts =>
       $$LocalProfileAccountsTableTableManager(_db, _db.localProfileAccounts);
+  $$LocalProfileClearMarksTableTableManager get localProfileClearMarks =>
+      $$LocalProfileClearMarksTableTableManager(
+        _db,
+        _db.localProfileClearMarks,
+      );
   $$LocalCloudRecoveryPointsTableTableManager get localCloudRecoveryPoints =>
       $$LocalCloudRecoveryPointsTableTableManager(
         _db,

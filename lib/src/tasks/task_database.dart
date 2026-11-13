@@ -351,6 +351,20 @@ class LocalProfileAccounts extends Table {
   Set<Column<Object>> get primaryKey => {userId};
 }
 
+/// 账号清除代次：账号清除后仍保留的持久标记。
+///
+/// 资料行删除之后，一个开始于清除之前的读取或上传应答仍可能晚到。它必须
+/// 在同一个事务里证明代次没有前进才允许写回，否则已清除账号的昵称与头像
+/// 会被重新插入。代次只前进不删除：清除本身不会被后续写入“忘记”。
+class LocalProfileClearMarks extends Table {
+  TextColumn get userId => text()();
+  IntColumn get generation => integer().withDefault(const Constant(0))();
+  DateTimeColumn get clearedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId};
+}
+
 /// 恢复前保存的本机业务快照。刻意不属于可上传的业务表清单：恢复准备动作
 /// 因此不会覆盖云端数据，且按用户隔离并参与账号清除。
 class LocalCloudRecoveryPoints extends Table {
@@ -391,6 +405,7 @@ class LocalCloudRecoveryPoints extends Table {
     LocalCalendarBlocks,
     LocalUserLifecycleStates,
     LocalProfileAccounts,
+    LocalProfileClearMarks,
     LocalCloudRecoveryPoints,
   ],
 )
@@ -504,13 +519,25 @@ class PactaDatabase extends _$PactaDatabase {
       await (delete(
         localProfileAccounts,
       )..where((row) => row.userId.equals(userId))).go();
+      // 与删除同一个事务：留下只前进的清除代次，让清除之前开始的在途读取
+      // 或上传应答无法再写回这些资料。
+      final previousMark = await (select(
+        localProfileClearMarks,
+      )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+      await into(localProfileClearMarks).insertOnConflictUpdate(
+        LocalProfileClearMarksCompanion.insert(
+          userId: userId,
+          generation: Value((previousMark?.generation ?? 0) + 1),
+          clearedAt: DateTime.now().toUtc(),
+        ),
+      );
     });
 
     return true;
   }
 
   @override
-  int get schemaVersion => 28;
+  int get schemaVersion => 29;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -687,6 +714,9 @@ class PactaDatabase extends _$PactaDatabase {
           localProfileAccounts,
           localProfileAccounts.editSequence,
         );
+      }
+      if (from < 29) {
+        await m.createTable(localProfileClearMarks);
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);

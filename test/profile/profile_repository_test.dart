@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pacta/src/auth/user_lifecycle_models.dart';
 import 'package:pacta/src/profile/avatar_image.dart';
 import 'package:pacta/src/profile/profile_remote.dart';
 import 'package:pacta/src/profile/profile_repository.dart';
@@ -79,6 +80,20 @@ void main() {
     remote: withRemote ?? remote,
     now: () => clock,
   );
+
+  Future<void> purgeUser(String userId) => database.purgeUserDataForReceipt(
+    userId: userId,
+    receipt: UserPurgeReceipt(
+      userId: userId,
+      status: UserPurgeStatus.completed,
+      purgedAt: clock,
+    ),
+  );
+
+  Future<List<LocalProfileAccount>> profileRows(String userId) =>
+      (database.select(
+        database.localProfileAccounts,
+      )..where((row) => row.userId.equals(userId))).get();
 
   test('空资料返回占位昵称而不是编造账号名', () async {
     final repository = buildRepository();
@@ -270,6 +285,83 @@ void main() {
     expect(after.displayName, '本机待上传', reason: '较新的待上传编辑优先保留');
     expect(after.hasPendingSave, isTrue);
     expect(after.avatar, isNull);
+  });
+
+  test('账号清除后晚到的首次读取不得复活昵称与头像', () async {
+    final repository = buildRepository();
+    final gate = Completer<RemoteProfile?>();
+    remote.fetchGate = gate;
+
+    final syncing = repository.syncProfile();
+    await Future<void>.delayed(Duration.zero);
+    expect(remote.fetchCalls, 1);
+
+    // 读取已在途中时账号被清除：本机资料行删除，清除代次前进。
+    await purgeUser('user-a');
+
+    gate.complete(
+      RemoteProfile(
+        displayName: '已清除用户',
+        avatar: _avatar(),
+        updatedAt: clock.add(const Duration(minutes: 1)),
+      ),
+    );
+    await syncing;
+
+    expect(await profileRows('user-a'), isEmpty, reason: '晚到读取不得重新插入资料行');
+    final after = await repository.getProfile();
+    expect(after.hasDisplayName, isFalse);
+    expect(after.avatar, isNull);
+  });
+
+  test('账号清除后晚到的上传成功应答不再写回资料', () async {
+    remote.available = false;
+    final repository = buildRepository();
+    await repository.saveProfile(displayName: '待上传昵称');
+    expect((await repository.getProfile()).hasPendingSave, isTrue);
+
+    remote.available = true;
+    final gate = Completer<void>();
+    remote.saveGate = gate;
+    final syncing = repository.syncProfile();
+    await Future<void>.delayed(Duration.zero);
+    expect(remote.saveCalls, 1);
+
+    await purgeUser('user-a');
+    gate.complete();
+    await syncing;
+
+    expect(await profileRows('user-a'), isEmpty, reason: '清除后应答不得写回昵称');
+  });
+
+  test('dispose 之后晚到的读取结果不再写入', () async {
+    final repository = buildRepository();
+    final gate = Completer<RemoteProfile?>();
+    remote.fetchGate = gate;
+
+    final syncing = repository.syncProfile();
+    await Future<void>.delayed(Duration.zero);
+    await repository.dispose();
+
+    gate.complete(
+      RemoteProfile(displayName: '已失效', avatar: null, updatedAt: clock),
+    );
+    await syncing;
+
+    expect(await profileRows('user-a'), isEmpty);
+  });
+
+  test('清除代次只拦在途请求，清除之后的新保存仍可写入', () async {
+    final repository = buildRepository();
+    await repository.saveProfile(displayName: '小林');
+    await purgeUser('user-a');
+    expect(await profileRows('user-a'), isEmpty);
+
+    final reopened = buildRepository();
+    await reopened.saveProfile(displayName: '重新登录');
+    final saved = await reopened.getProfile();
+    expect(saved.displayName, '重新登录');
+    expect(saved.hasPendingSave, isFalse);
   });
 
   test('晚到的上传失败不覆盖另一入口的新编辑', () async {

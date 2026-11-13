@@ -146,6 +146,29 @@ void main() {
     );
   });
 
+  test('截断的 PNG 签名前缀被正常拒绝而不是越界读取', () {
+    // 前 8 个字节里的任意前缀都可能来自被截断的文件；只有完整签名才算 PNG。
+    for (var length = 1; length < 8; length++) {
+      final truncated = Uint8List.fromList(_onePixelPng.sublist(0, length));
+      expect(
+        detectAvatarFormat(truncated),
+        isNull,
+        reason: '长度 $length 的截断 PNG 前缀不能被识别为 PNG',
+      );
+      expect(
+        () => validateAvatarSelection(truncated),
+        throwsA(
+          isA<AvatarValidationException>().having(
+            (error) => error.message,
+            'message',
+            contains('PNG'),
+          ),
+        ),
+        reason: '长度 $length 的截断 PNG 前缀必须给出可读拒绝原因，不能抛 RangeError',
+      );
+    }
+  });
+
   test('归一化后保存为受限大小的 PNG 头像', () async {
     final avatar = await prepareAvatarForUpload(_onePixelPng);
     expect(avatar.mimeType, 'image/png');

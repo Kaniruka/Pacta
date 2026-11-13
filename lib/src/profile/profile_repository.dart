@@ -74,6 +74,30 @@ class LocalProfileRepository implements ProfileRepository {
   /// background read cannot interleave with an upload or a user edit.
   Future<void> _operationQueue = Future<void>.value();
 
+  bool _disposed = false;
+
+  /// The account-clear generation this repository last observed. Every write
+  /// re-reads it inside the write transaction, so an account purge that lands
+  /// while a read or upload is in flight cannot be undone by the late result.
+  Future<int> _readClearGeneration() async {
+    final row = await (database.select(
+      database.localProfileClearMarks,
+    )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+    return row?.generation ?? 0;
+  }
+
+  /// Runs [write] in one transaction that first proves the account was not
+  /// cleared and that this repository is still live. A rejected write returns
+  /// false and leaves the account data untouched.
+  Future<bool> _guardedWrite({
+    required int clearGeneration,
+    required Future<bool> Function() write,
+  }) => database.transaction(() async {
+    if (_disposed) return false;
+    if (await _readClearGeneration() != clearGeneration) return false;
+    return write();
+  });
+
   Future<T> _serialized<T>(Future<T> Function() action) {
     final result = _operationQueue.then((_) => action());
     _operationQueue = result.then((_) {}, onError: (Object _) {});
@@ -101,27 +125,37 @@ class LocalProfileRepository implements ProfileRepository {
     ProfileAvatar? avatar,
     bool clearAvatar = false,
   }) => _serialized(() async {
+    final clearGeneration = await _readClearGeneration();
     final name = validateDisplayName(displayName);
     final current = await getProfile();
     final nextAvatar = clearAvatar ? null : (avatar ?? current.avatar);
-    await _writeLocal(
-      displayName: name,
-      avatar: nextAvatar,
-      updatedAt: _now().toUtc(),
-      pendingSave: true,
-      syncError: null,
-      editSequence: current.editSequence + 1,
+    final written = await _guardedWrite(
+      clearGeneration: clearGeneration,
+      write: () async {
+        await _writeLocal(
+          displayName: name,
+          avatar: nextAvatar,
+          updatedAt: _now().toUtc(),
+          pendingSave: true,
+          syncError: null,
+          editSequence: current.editSequence + 1,
+        );
+        return true;
+      },
     );
+    // 账号已清除或本仓储已 dispose：这次编辑不再落到本机，也不再上传。
+    if (!written) return getProfile();
     if (!remote.isAvailable) return getProfile();
-    return _upload();
+    return _upload(clearGeneration);
   });
 
   @override
   Future<ProfileAccount> syncProfile() => _serialized(() async {
+    final clearGeneration = await _readClearGeneration();
     final local = await getProfile();
     if (local.hasPendingSave) {
       if (!remote.isAvailable) return local;
-      return _upload();
+      return _upload(clearGeneration);
     }
     if (!remote.isAvailable) return local;
 
@@ -132,12 +166,12 @@ class LocalProfileRepository implements ProfileRepository {
       // A failed read only records the failure. It must not create or advance a
       // local version, otherwise a later read could make the empty cache look
       // newer than the stored profile and upload over it.
-      return _recordFailure(local, _failureText(error));
+      return _recordFailure(local, _failureText(error), clearGeneration);
     }
 
     if (remoteProfile == null) {
       if (local.syncError == null) return local;
-      await _clearFailureIfUnchanged(local.editSequence);
+      await _clearFailureIfUnchanged(local.editSequence, clearGeneration);
       return getProfile();
     }
 
@@ -148,6 +182,7 @@ class LocalProfileRepository implements ProfileRepository {
       // advances the edit sequence and invalidates in-flight commits.
       await _writeLocalIfSequenceUnchanged(
         expectedSequence: local.editSequence,
+        clearGeneration: clearGeneration,
         displayName: remoteProfile.displayName,
         avatar: remoteProfile.avatar,
         updatedAt: remoteProfile.updatedAt,
@@ -158,7 +193,7 @@ class LocalProfileRepository implements ProfileRepository {
     return getProfile();
   });
 
-  Future<ProfileAccount> _upload() async {
+  Future<ProfileAccount> _upload(int clearGeneration) async {
     final local = await getProfile();
     final sequence = local.editSequence;
     try {
@@ -170,6 +205,7 @@ class LocalProfileRepository implements ProfileRepository {
       );
       await _writeLocalIfSequenceUnchanged(
         expectedSequence: sequence,
+        clearGeneration: clearGeneration,
         displayName: saved.displayName,
         avatar: saved.avatar,
         updatedAt: saved.updatedAt,
@@ -180,6 +216,7 @@ class LocalProfileRepository implements ProfileRepository {
       // Keep the pending intent; only a matching sequence may carry the error.
       await _updateStateIfUnchanged(
         expectedSequence: sequence,
+        clearGeneration: clearGeneration,
         syncError: _failureText(error),
         pendingSave: true,
       );
@@ -190,6 +227,7 @@ class LocalProfileRepository implements ProfileRepository {
   Future<ProfileAccount> _recordFailure(
     ProfileAccount local,
     String message,
+    int clearGeneration,
   ) async {
     if (local.updatedAt == null) {
       // No cached version yet: report the failure without inventing a row.
@@ -197,83 +235,95 @@ class LocalProfileRepository implements ProfileRepository {
     }
     await _updateStateIfUnchanged(
       expectedSequence: local.editSequence,
+      clearGeneration: clearGeneration,
       syncError: message,
       pendingSave: local.hasPendingSave,
     );
     return getProfile();
   }
 
-  Future<void> _clearFailureIfUnchanged(int expectedSequence) =>
-      _updateStateIfUnchanged(
-        expectedSequence: expectedSequence,
-        syncError: null,
-        pendingSave: false,
-      );
+  Future<void> _clearFailureIfUnchanged(
+    int expectedSequence,
+    int clearGeneration,
+  ) => _updateStateIfUnchanged(
+    expectedSequence: expectedSequence,
+    clearGeneration: clearGeneration,
+    syncError: null,
+    pendingSave: false,
+  );
 
   Future<bool> _updateStateIfUnchanged({
     required int expectedSequence,
+    required int clearGeneration,
     required String? syncError,
     required bool pendingSave,
-  }) async {
-    final updated =
-        await (database.update(database.localProfileAccounts)..where(
-              (row) =>
-                  row.userId.equals(userId) &
-                  row.editSequence.equals(expectedSequence),
-            ))
-            .write(
-              LocalProfileAccountsCompanion(
-                syncError: drift.Value(syncError),
-                pendingSave: drift.Value(pendingSave),
-              ),
-            );
-    return updated > 0;
-  }
+  }) => _guardedWrite(
+    clearGeneration: clearGeneration,
+    write: () async {
+      final updated =
+          await (database.update(database.localProfileAccounts)..where(
+                (row) =>
+                    row.userId.equals(userId) &
+                    row.editSequence.equals(expectedSequence),
+              ))
+              .write(
+                LocalProfileAccountsCompanion(
+                  syncError: drift.Value(syncError),
+                  pendingSave: drift.Value(pendingSave),
+                ),
+              );
+      return updated > 0;
+    },
+  );
 
   Future<bool> _writeLocalIfSequenceUnchanged({
     required int expectedSequence,
+    required int clearGeneration,
     required String displayName,
     required ProfileAvatar? avatar,
     required DateTime updatedAt,
     required bool pendingSave,
     required String? syncError,
-  }) async {
-    final existing = await (database.select(
-      database.localProfileAccounts,
-    )..where((row) => row.userId.equals(userId))).getSingleOrNull();
-    if (existing == null) {
-      // Adopting the first profile for this account: nothing local can be
-      // newer than the sequence this call started from.
-      if (expectedSequence != 0) return false;
-      await _writeLocal(
-        displayName: displayName,
-        avatar: avatar,
-        updatedAt: updatedAt,
-        pendingSave: pendingSave,
-        syncError: syncError,
-        editSequence: 1,
-      );
-      return true;
-    }
-    final updated =
-        await (database.update(database.localProfileAccounts)..where(
-              (row) =>
-                  row.userId.equals(userId) &
-                  row.editSequence.equals(expectedSequence),
-            ))
-            .write(
-              LocalProfileAccountsCompanion(
-                displayName: drift.Value(displayName),
-                avatarMimeType: drift.Value(avatar?.mimeType),
-                avatarBytes: drift.Value(avatar?.bytes),
-                updatedAt: drift.Value(updatedAt),
-                pendingSave: drift.Value(pendingSave),
-                syncError: drift.Value(syncError),
-                editSequence: drift.Value(expectedSequence + 1),
-              ),
-            );
-    return updated > 0;
-  }
+  }) => _guardedWrite(
+    clearGeneration: clearGeneration,
+    write: () async {
+      final existing = await (database.select(
+        database.localProfileAccounts,
+      )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+      if (existing == null) {
+        // Adopting the first profile for this account: nothing local can be
+        // newer than the sequence this call started from.
+        if (expectedSequence != 0) return false;
+        await _writeLocal(
+          displayName: displayName,
+          avatar: avatar,
+          updatedAt: updatedAt,
+          pendingSave: pendingSave,
+          syncError: syncError,
+          editSequence: 1,
+        );
+        return true;
+      }
+      final updated =
+          await (database.update(database.localProfileAccounts)..where(
+                (row) =>
+                    row.userId.equals(userId) &
+                    row.editSequence.equals(expectedSequence),
+              ))
+              .write(
+                LocalProfileAccountsCompanion(
+                  displayName: drift.Value(displayName),
+                  avatarMimeType: drift.Value(avatar?.mimeType),
+                  avatarBytes: drift.Value(avatar?.bytes),
+                  updatedAt: drift.Value(updatedAt),
+                  pendingSave: drift.Value(pendingSave),
+                  syncError: drift.Value(syncError),
+                  editSequence: drift.Value(expectedSequence + 1),
+                ),
+              );
+      return updated > 0;
+    },
+  );
 
   String _failureText(Object error) {
     final message = error is StateError ? error.message : error.toString();
@@ -322,6 +372,9 @@ class LocalProfileRepository implements ProfileRepository {
     );
   }
 
+  /// 失效在途操作：dispose 之后到达的读取或上传应答不再写回本机资料。
   @override
-  Future<void> dispose() async {}
+  Future<void> dispose() async {
+    _disposed = true;
+  }
 }

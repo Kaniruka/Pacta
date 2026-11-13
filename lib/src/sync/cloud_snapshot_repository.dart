@@ -26,13 +26,20 @@ class CloudUploadRequestEvicted extends StateError {
 /// 服务端不支持上传请求去重（旧 RPC 没有 p_request_id）。这是能力缺失，
 /// 不是网络故障：自动上传必须停止并提示升级服务，不能反复静默重试。
 class CloudUploadRequestIdUnsupported extends StateError {
-  CloudUploadRequestIdUnsupported()
-    : super('云端服务尚未支持上传请求去重，请升级服务后再重试自动上传。');
+  CloudUploadRequestIdUnsupported() : super('云端服务尚未支持上传请求去重，请升级服务后再重试自动上传。');
 }
 
 /// 并发版本校验失败（PT409）：云端已被推进，本次请求没有写入。
 class CloudUploadRevisionChanged extends StateError {
   CloudUploadRevisionChanged() : super('云端数据在确认期间发生变化，请重新查看并选择覆盖方向。');
+}
+
+/// 上传在真正发出前被取消（关闭开关、切换账号、恢复备份）。
+///
+/// 与“请求已发出但应答丢失”不同：这次请求没有到达服务端，因此不产生新的
+/// 请求身份，也不写成功基线。
+class CloudUploadCancelled implements Exception {
+  const CloudUploadCancelled();
 }
 
 /// A whole-account business-data snapshot. Device identity, local preferences,
@@ -688,6 +695,7 @@ class CloudSnapshotRepository {
     this.syncResultStore = const CloudSyncResultStore(),
     CloudRecoveryPointStore? recoveryPointStore,
     this.onRestoreStage,
+    this.deviceIdLoader,
     this.now = DateTime.now,
   }) : deviceManufacturer = _normalizeDeviceMetadata(deviceManufacturer),
        deviceModel = _normalizeDeviceMetadata(deviceModel),
@@ -712,6 +720,10 @@ class CloudSnapshotRepository {
 
   /// 恢复替换事务内的边界观察者；组合层或测试可在此检查账号是否已切换。
   final Future<void> Function(CloudRestoreStage stage)? onRestoreStage;
+
+  /// 设备标识来源。默认读取本机设备表；组合层或测试可注入，从而在“读取设备
+  /// 标识”这一步控制完成时机（这一步也是上传前的异步准备之一）。
+  final Future<String> Function()? deviceIdLoader;
 
   final DateTime Function() now;
 
@@ -828,11 +840,16 @@ class CloudSnapshotRepository {
     if (state.fingerprint != expectedFingerprint) {
       throw StateError('本机数据在确认期间发生变化，请重新检查后再同步。');
     }
+    // 设备标识读取本身也要等一次异步；取消（关闭开关、切换账号、恢复备份）
+    // 可能正好发生在这段等待里。发送前必须再查一次，否则会带着取消前的
+    // 旧快照继续覆盖云端。
+    final deviceId = await _resolveDeviceId();
+    _throwIfUploadCancelled(isCancelled);
     final cloud = await remote.upload(
       userId: userId,
       expectedRevision: expectedRevision,
       payload: state.payload,
-      deviceId: await _getDeviceId(),
+      deviceId: deviceId,
       deviceName: deviceName,
       dataUpdatedAt: state.dataUpdatedAt,
       rowCount: state.rowCount,
@@ -991,6 +1008,10 @@ class CloudSnapshotRepository {
 
   void _throwIfCancelled(bool Function()? isCancelled) {
     if (isCancelled?.call() == true) throw const CloudRestoreCancelled();
+  }
+
+  void _throwIfUploadCancelled(bool Function()? isCancelled) {
+    if (isCancelled?.call() == true) throw const CloudUploadCancelled();
   }
 
   Future<void> _notifyRestoreStage(CloudRestoreStage stage) async {
@@ -1358,6 +1379,11 @@ class CloudSnapshotRepository {
         )
         .get();
     return sessions.isNotEmpty;
+  }
+
+  Future<String> _resolveDeviceId() async {
+    if (deviceIdLoader case final loader?) return loader();
+    return _getDeviceId();
   }
 
   Future<String> _getDeviceId() async {

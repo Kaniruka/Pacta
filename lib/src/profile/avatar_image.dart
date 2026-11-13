@@ -50,22 +50,28 @@ class AvatarValidationException implements Exception {
 /// Returns null when the bytes are empty or carry no supported signature, so
 /// callers can reject the selection before any account write.
 AvatarImageFormat? detectAvatarFormat(Uint8List bytes) {
-  if (bytes.length < 3) return null;
-  if (bytes[0] == 0x89 &&
-      bytes[1] == 0x50 &&
-      bytes[2] == 0x4E &&
-      bytes[3] == 0x47 &&
-      bytes[4] == 0x0D &&
-      bytes[5] == 0x0A &&
-      bytes[6] == 0x1A &&
-      bytes[7] == 0x0A) {
-    return AvatarImageFormat.png;
-  }
-  if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) {
+  // 完整 PNG 签名是 8 字节，JPEG 只要 3 字节前缀。截断的文件必须按“未知格式”
+  // 拒绝，不能先按前缀分支去读越界下标。
+  if (_hasPngSignature(bytes)) return AvatarImageFormat.png;
+  if (bytes.length >= 3 &&
+      bytes[0] == 0xFF &&
+      bytes[1] == 0xD8 &&
+      bytes[2] == 0xFF) {
     return AvatarImageFormat.jpeg;
   }
   return null;
 }
+
+bool _hasPngSignature(Uint8List bytes) =>
+    bytes.length >= 8 &&
+    bytes[0] == 0x89 &&
+    bytes[1] == 0x50 &&
+    bytes[2] == 0x4E &&
+    bytes[3] == 0x47 &&
+    bytes[4] == 0x0D &&
+    bytes[5] == 0x0A &&
+    bytes[6] == 0x1A &&
+    bytes[7] == 0x0A;
 
 AvatarImageFormat validateAvatarSelection(Uint8List bytes) {
   if (bytes.isEmpty) {
