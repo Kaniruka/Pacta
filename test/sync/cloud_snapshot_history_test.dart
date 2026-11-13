@@ -311,6 +311,196 @@ void main() {
     expect(await _goalTitles(database), ['First', 'Second']);
     expect(await repository.listLocalRecoveryPoints(), hasLength(1));
   });
+  test('上传请求重试返回该请求的原版本，而不是最新版本', () async {
+    final deviceA = repositoryFor();
+    final deviceB = PactaDatabase(NativeDatabase.memory());
+    addTearDown(deviceB.close);
+    final repositoryB = CloudSnapshotRepository(
+      database: deviceB,
+      remote: remote,
+      userId: 'user-a',
+      deviceId: 'device-b',
+      deviceName: 'DESKTOP-ABC（Windows）',
+      now: () => DateTime.utc(2026, 11, 13, 10),
+    );
+    await _addGoal(database, id: 'goal-a', title: 'From A');
+    final stateA = await deviceA.captureLocalState();
+    final first = await deviceA.uploadLocal(
+      expectedRevision: 0,
+      expectedFingerprint: stateA.fingerprint,
+      requestId: 'request-a',
+    );
+    expect(first.revision, 1);
+
+    // 另一台设备随后写入更新的一版。
+    await deviceB
+        .into(deviceB.localGoals)
+        .insertOnConflictUpdate(
+          LocalGoalsCompanion.insert(
+            userId: 'user-a',
+            id: 'goal-b',
+            title: 'From B',
+            classification: 'regular',
+            createdAt: DateTime.utc(2026, 11, 13),
+            updatedAt: DateTime.utc(2026, 11, 13),
+          ),
+        );
+    final stateB = await repositoryB.captureLocalState();
+    final second = await repositoryB.uploadLocal(
+      expectedRevision: 1,
+      expectedFingerprint: stateB.fingerprint,
+    );
+    expect(second.revision, 2);
+
+    // A 重试同一请求：必须拿回自己写入的 revision 1，而不是 revision 2。
+    final retried = await deviceA.uploadLocal(
+      expectedRevision: 0,
+      expectedFingerprint: stateA.fingerprint,
+      requestId: 'request-a',
+    );
+    expect(retried.revision, 1);
+    expect(retried.deviceName, 'Pixel 7（Android）');
+    expect((await deviceA.loadSyncResult())!.cloudRevision, 1);
+    expect(await deviceA.listCloudHistory(), hasLength(2));
+  });
+
+  test('同一上传请求标识用于不同数据时被拒绝', () async {
+    final repository = repositoryFor();
+    await _addGoal(database, id: 'goal-a', title: 'First');
+    final first = await repository.captureLocalState();
+    await repository.uploadLocal(
+      expectedRevision: 0,
+      expectedFingerprint: first.fingerprint,
+      requestId: 'request-a',
+    );
+    await _addGoal(database, id: 'goal-b', title: 'Second');
+    final changed = await repository.captureLocalState();
+
+    await expectLater(
+      repository.uploadLocal(
+        expectedRevision: 0,
+        expectedFingerprint: changed.fingerprint,
+        requestId: 'request-a',
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(await repository.listCloudHistory(), hasLength(1));
+  });
+
+  test('历史淘汰后重试同一上传请求不再写入新版本', () async {
+    final repository = repositoryFor();
+    await _addGoal(database, id: 'goal-a', title: 'Only');
+    final state = await repository.captureLocalState();
+    await repository.uploadLocal(
+      expectedRevision: 0,
+      expectedFingerprint: state.fingerprint,
+      requestId: 'request-old',
+    );
+    for (var revision = 1; revision < 16; revision++) {
+      final current = await repository.captureLocalState();
+      await repository.uploadLocal(
+        expectedRevision: revision,
+        expectedFingerprint: current.fingerprint,
+      );
+    }
+    final before = await repository.listCloudHistory();
+    expect(before, hasLength(15));
+    expect(before.any((entry) => entry.revision == 1), isFalse);
+
+    await expectLater(
+      repository.uploadLocal(
+        expectedRevision: 0,
+        expectedFingerprint: state.fingerprint,
+        requestId: 'request-old',
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(await repository.listCloudHistory(), hasLength(15));
+    expect((await remote.inspect(userId: 'user-a'))?.revision, 16);
+  });
+
+  test('恢复点读回内容与本机状态不一致时不替换', () async {
+    final store = _TamperedRecoveryPointStore(recoveryPoints);
+    final repository = repositoryFor(store: store);
+    await _addGoal(database, id: 'goal-1', title: 'First');
+    var state = await repository.captureLocalState();
+    await repository.uploadLocal(
+      expectedRevision: 0,
+      expectedFingerprint: state.fingerprint,
+    );
+    await _addGoal(database, id: 'goal-2', title: 'Second');
+    state = await repository.captureLocalState();
+    await repository.uploadLocal(
+      expectedRevision: 1,
+      expectedFingerprint: state.fingerprint,
+    );
+
+    await expectLater(
+      repository.restoreCloudVersion(
+        revision: 1,
+        expectedFingerprint: state.fingerprint,
+      ),
+      throwsA(isA<StateError>()),
+    );
+    expect(await _goalTitles(database), ['First', 'Second']);
+  });
+
+  test('取消只发生在事务内检查时仍不替换本机数据', () async {
+    final repository = repositoryFor();
+    await _addGoal(database, id: 'goal-1', title: 'First');
+    var state = await repository.captureLocalState();
+    await repository.uploadLocal(
+      expectedRevision: 0,
+      expectedFingerprint: state.fingerprint,
+    );
+    await _addGoal(database, id: 'goal-2', title: 'Second');
+    state = await repository.captureLocalState();
+    var checks = 0;
+
+    await expectLater(
+      repository.restoreCloudVersion(
+        revision: 1,
+        expectedFingerprint: state.fingerprint,
+        // 前两次检查（入口、恢复点读回后）通过，第三次在替换事务内命中。
+        isCancelled: () => ++checks > 2,
+      ),
+      throwsA(isA<CloudRestoreCancelled>()),
+    );
+
+    expect(await _goalTitles(database), ['First', 'Second']);
+    expect(checks, 3);
+    expect(await repository.listLocalRecoveryPoints(), hasLength(1));
+  });
+}
+
+class _TamperedRecoveryPointStore implements CloudRecoveryPointStore {
+  _TamperedRecoveryPointStore(this.inner);
+
+  final CloudRecoveryPointStore inner;
+
+  @override
+  Future<void> save(CloudRecoveryPoint point) => inner.save(point);
+
+  @override
+  Future<List<CloudRecoveryPointSummary>> list(String userId) =>
+      inner.list(userId);
+
+  @override
+  Future<CloudRecoveryPoint?> load(String userId, String pointId) async {
+    final point = await inner.load(userId, pointId);
+    if (point == null) return null;
+    // 模拟落盘内容损坏：读回的身份正确但载荷与替换前本机状态不一致。
+    return CloudRecoveryPoint(
+      id: point.id,
+      userId: point.userId,
+      createdAt: point.createdAt,
+      reason: point.reason,
+      dataUpdatedAt: point.dataUpdatedAt,
+      rowCount: point.rowCount,
+      payload: const {'schemaVersion': 1, 'userId': 'user-a', 'tables': {}},
+      sourceDeviceName: point.sourceDeviceName,
+    );
+  }
 }
 
 class _FailingRecoveryPointStore implements CloudRecoveryPointStore {

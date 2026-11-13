@@ -29,7 +29,6 @@ create table if not exists public.cloud_business_snapshot_history (
   )
 );
 
--- 同一用户同一 upload request id 只落一份历史版本，使上传重试幂等。
 create unique index if not exists cloud_business_snapshot_history_request_key
   on public.cloud_business_snapshot_history (user_id, request_id)
   where request_id is not null;
@@ -57,6 +56,26 @@ select
   snapshot.data_updated_at, snapshot.uploaded_at, snapshot.row_count
 from public.cloud_business_snapshots as snapshot
 on conflict (user_id, revision) do nothing;
+
+-- 上传请求台账：只记录请求身份与它产生的版本，不含业务载荷。
+-- 它不受 15 份保留上限影响，因此重试不会在历史淘汰后重复落档。
+create table if not exists public.cloud_business_snapshot_upload_requests (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  request_id text not null
+    check (btrim(request_id) <> '' and length(request_id) <= 200),
+  revision bigint not null check (revision > 0),
+  payload_fingerprint text not null
+    check (payload_fingerprint ~ '^[0-9a-f]{32}$'),
+  created_at timestamptz not null default now(),
+  primary key (user_id, request_id)
+);
+
+alter table public.cloud_business_snapshot_upload_requests enable row level security;
+revoke all on table public.cloud_business_snapshot_upload_requests
+  from public, anon, authenticated;
+
+comment on table public.cloud_business_snapshot_upload_requests is
+  'Upload request ledger per user: request identity to produced revision, no business payload.';
 
 -- 旧客户端仍以 7 个或 9 个命名参数调用同一函数；新增参数使用默认值，
 -- 因此历史落档与淘汰对所有旧调用同样生效，不存在绕过路径。
@@ -88,7 +107,8 @@ declare
   current_legacy_records jsonb;
   current_legacy_token text;
   legacy_row_count bigint;
-  handled_revision bigint;
+  handled_request public.cloud_business_snapshot_upload_requests;
+  payload_fingerprint text := md5(p_payload::text);
 begin
   if owner_id is null then
     raise exception 'authenticated user required' using errcode = '42501';
@@ -118,20 +138,32 @@ begin
   -- is no row available for SELECT FOR UPDATE to lock yet.
   perform pg_advisory_xact_lock(hashtextextended(owner_id::text, 0));
 
-  -- 同一 request id 的重试直接返回已写入结果，既不新增历史版本，也不因
-  -- 期望版本已过期而失败。
+  -- 同一 request id 的重试返回该请求原本写入的版本，绝不返回当前版本：
+  -- 否则调用方会把别的设备的数据标记成本机已处理。
   if p_request_id is not null then
-    select history.revision into handled_revision
-    from public.cloud_business_snapshot_history as history
-    where history.user_id = owner_id
-      and history.request_id = p_request_id;
-    if handled_revision is not null then
-      select * into saved
-      from public.cloud_business_snapshots as snapshot
-      where snapshot.user_id = owner_id;
+    select * into handled_request
+    from public.cloud_business_snapshot_upload_requests as request
+    where request.user_id = owner_id
+      and request.request_id = p_request_id;
+    if found then
+      if handled_request.payload_fingerprint <> payload_fingerprint then
+        raise exception 'upload request id was reused with different data'
+          using errcode = 'PT422';
+      end if;
+      select
+        history.user_id, history.revision, history.payload, history.device_id,
+        history.device_name, history.data_updated_at, history.uploaded_at,
+        history.row_count, history.device_manufacturer, history.device_model
+      into saved
+      from public.cloud_business_snapshot_history as history
+      where history.user_id = owner_id
+        and history.revision = handled_request.revision;
       if found then
         return saved;
       end if;
+      -- 原版本已被保留上限淘汰：台账仍证明该请求已处理，但不能当作新请求重写。
+      raise exception 'upload request was already handled but its backup is no longer retained'
+        using errcode = 'PT425';
     end if;
   end if;
 
@@ -195,6 +227,14 @@ begin
     saved.data_updated_at, saved.uploaded_at, saved.row_count, p_request_id
   );
 
+  if p_request_id is not null then
+    insert into public.cloud_business_snapshot_upload_requests (
+      user_id, request_id, revision, payload_fingerprint
+    ) values (
+      owner_id, p_request_id, saved.revision, payload_fingerprint
+    );
+  end if;
+
   -- 新版本已写入后才淘汰超出的最旧版本。
   delete from public.cloud_business_snapshot_history as stale
   where stale.user_id = owner_id
@@ -220,7 +260,7 @@ grant execute on function public.save_cloud_business_snapshot(
 comment on table public.cloud_business_snapshot_history is
   'Retained cloud snapshot versions per user: the latest 15 successful writes, newest revision included.';
 
--- 生命周期清除必须同时删除历史备份：账号清除后不留云端业务数据副本。
+-- 生命周期清除必须同时删除历史备份与请求台账：账号清除后不留云端业务数据副本。
 create or replace function public.admin_delete_user_business_data(p_user_id uuid)
 returns void
 language plpgsql
@@ -244,6 +284,7 @@ begin
     raise exception 'auth identity is missing before cloud data purge';
   end if;
 
+  delete from public.cloud_business_snapshot_upload_requests where user_id = p_user_id;
   delete from public.cloud_business_snapshot_history where user_id = p_user_id;
   delete from public.cloud_business_snapshots where user_id = p_user_id;
   delete from public.calendar_blocks where user_id = p_user_id;

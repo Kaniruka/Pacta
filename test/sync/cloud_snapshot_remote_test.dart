@@ -189,6 +189,38 @@ void main() {
     },
   );
 
+  test(
+    'idempotent upload never falls back to a signature without the request id',
+    () async {
+      var calls = 0;
+      final client = await _authenticatedClient((request) async {
+        calls++;
+        return http.Response(
+          jsonEncode(_oldRpcError()),
+          404,
+          request: request,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+      addTearDown(client.dispose);
+      // 旧服务没有 p_request_id：宁可直接失败，也不能静默降级成会重复落档的上传。
+      await expectLater(
+        SupabaseCloudSnapshotRemote(client).upload(
+          userId: 'user-a',
+          expectedRevision: 3,
+          payload: const {'schemaVersion': 1, 'userId': 'user-a', 'tables': {}},
+          deviceId: 'device-a',
+          deviceName: 'Phone A',
+          dataUpdatedAt: DateTime.utc(2026, 10, 1),
+          rowCount: 0,
+          requestId: 'request-93',
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(calls, 1);
+    },
+  );
+
   test('upload does not retry a transport failure', () async {
     var calls = 0;
     final client = await _authenticatedClient((request) async {
@@ -336,10 +368,9 @@ void main() {
       deviceName: 'Phone A',
       dataUpdatedAt: preview.dataUpdatedAt,
       rowCount: preview.rowCount,
-      requestId: 'request-92',
     );
     expect(uploads, hasLength(2));
-    expect(uploads.first['p_request_id'], 'request-92');
+    expect(uploads.first['p_request_id'], isNull);
     for (final dropped in const [
       'p_request_id',
       'p_device_manufacturer',
@@ -373,6 +404,20 @@ void main() {
       mapped: false,
     ),
     (name: 'conflict', code: 'PT409', status: 409, oldHint: true, mapped: true),
+    (
+      name: 'request id reused with different data',
+      code: 'PT422',
+      status: 422,
+      oldHint: true,
+      mapped: true,
+    ),
+    (
+      name: 'handled request backup evicted',
+      code: 'PT425',
+      status: 425,
+      oldHint: true,
+      mapped: true,
+    ),
   ]) {
     test('upload does not retry ${scenario.name}', () async {
       var calls = 0;

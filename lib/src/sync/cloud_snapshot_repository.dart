@@ -261,6 +261,11 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
       } on PostgrestException catch (error) {
         final fallback = _olderSnapshotSignature(error, parameters);
         if (fallback == null) rethrow;
+        // 幂等上传依赖 p_request_id：旧服务没有该参数时不能静默降级成
+        // 会重复落档的上传，必须让调用方先升级服务端。
+        if (requestId != null && !fallback.containsKey('p_request_id')) {
+          throw StateError('云端服务尚未支持上传请求去重，请升级服务后再重试自动上传。');
+        }
         // PGRST202 means no function ran. Retry only the confirmed older
         // signature, preserving the same payload and concurrency guards.
         _assertCurrentUser(userId);
@@ -272,6 +277,12 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
     } on PostgrestException catch (error) {
       if (error.code == 'PT409') {
         throw StateError('云端数据在确认期间发生变化，请重新查看并选择覆盖方向。');
+      }
+      if (error.code == 'PT422') {
+        throw StateError('该上传请求已用于不同的数据内容，请重新检查后再上传。');
+      }
+      if (error.code == 'PT425') {
+        throw StateError('该上传请求已处理，但对应备份已不在最近 15 份内；请重新查看云端数据。');
       }
       if (error.code == '42501') {
         throw StateError('当前用户无法同步，请检查登录或停用状态。');
@@ -442,7 +453,11 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
   final Map<String, CloudSnapshotMetadata> _legacySnapshots = {};
   final Map<String, String> _observedLegacyTokens = {};
   final Map<String, List<CloudSnapshotMetadata>> _history = {};
-  final Map<String, Map<String, int>> _requestRevisions = {};
+
+  /// 请求台账：request id → (version, payload 指纹)。与真实服务一样不含业务载荷，
+  /// 也不随 15 份历史淘汰，因此重试不会重复落档。
+  final Map<String, Map<String, ({int revision, String fingerprint})>>
+  _requestLedger = {};
   bool available = true;
   bool suspended = false;
 
@@ -504,14 +519,20 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
     String? requestId,
   }) async {
     _checkAccess();
+    final requestFingerprint = jsonEncode(payload);
     if (requestId != null) {
-      final handled = _requestRevisions[userId]?[requestId];
+      final handled = _requestLedger[userId]?[requestId];
       if (handled != null) {
-        final existing = _snapshots[userId];
-        if (existing == null) {
-          throw StateError('Cloud snapshot is missing for a handled request.');
+        if (handled.fingerprint != requestFingerprint) {
+          throw StateError('该上传请求已用于不同的数据内容，请重新检查后再上传。');
         }
-        return existing;
+        // 只返回该请求原本写入的版本：返回当前版本会把其他设备的数据
+        // 标记成本机已处理。
+        for (final entry
+            in _history[userId] ?? const <CloudSnapshotMetadata>[]) {
+          if (entry.revision == handled.revision) return entry;
+        }
+        throw StateError('该上传请求已处理，但对应备份已不在最近 15 份内；请重新查看云端数据。');
       }
     }
     final legacy = _legacySnapshots[userId];
@@ -554,8 +575,10 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
       history.removeRange(cloudSnapshotHistoryLimit, history.length);
     }
     if (requestId != null) {
-      _requestRevisions.putIfAbsent(userId, () => {})[requestId] =
-          snapshot.revision;
+      _requestLedger.putIfAbsent(userId, () => {})[requestId] = (
+        revision: snapshot.revision,
+        fingerprint: requestFingerprint,
+      );
     }
     _legacySnapshots.remove(userId);
     _observedLegacyTokens.remove(userId);
@@ -858,14 +881,20 @@ class CloudSnapshotRepository {
       sourceDeviceName: deviceName,
     );
     await recoveryPointStore.save(point);
+    // 读回必须证明落盘的就是本次恢复点：同一用户、同一标识，且内容指纹与
+    // 替换前的本机状态一致；任何不一致都说明保存不可信，不能继续替换。
     final persisted = await recoveryPointStore.load(userId, point.id);
-    if (persisted == null) {
-      throw StateError('本机恢复点未保存，已取消恢复。');
+    if (persisted == null ||
+        persisted.userId != userId ||
+        persisted.id != point.id ||
+        _fingerprint(persisted.payload) != localBefore.fingerprint) {
+      throw StateError('本机恢复点未正确保存，已取消恢复。');
     }
     _throwIfCancelled(isCancelled);
     await _replaceLocalTables(
       validatedRows: validatedRows,
       expectedFingerprint: expectedFingerprint,
+      isCancelled: isCancelled,
     );
   }
 
@@ -881,10 +910,14 @@ class CloudSnapshotRepository {
   Future<String> _replaceLocalTables({
     required Map<String, List<Map<String, Object?>>> validatedRows,
     required String expectedFingerprint,
+    bool Function()? isCancelled,
   }) async {
     late String restoredFingerprint;
     await database.transaction(() async {
       final localAtCommit = await _captureLocalState();
+      // 事务内、删除前最后一次取消检查：预检与删除之间用户可能已经切换
+      // 账号或发起取消，此时必须整体放弃替换。
+      _throwIfCancelled(isCancelled);
       if (localAtCommit.hasUnfinishedFlow) {
         throw StateError('预约或专注尚未结束，暂不能覆盖本机数据。');
       }
@@ -1295,17 +1328,27 @@ class CloudSnapshotRepository {
     // the same two device checkpoint fields as focus cloud serialization from
     // the preview change detector. Pauses, interval bounds and outcomes remain.
     final normalized = jsonDecode(jsonEncode(payload)) as Map<String, dynamic>;
-    final tables = normalized['tables'] as Map<String, dynamic>;
-    for (final row in tables['focus_sessions'] as List<dynamic>) {
-      final encoded = row['effective_intervals'] as String?;
-      if (encoded == null) continue;
-      final intervals = jsonDecode(encoded) as List<dynamic>;
-      for (final interval in intervals) {
-        (interval as Map<String, dynamic>)
-          ..remove('monotonic_checkpoint_microseconds')
-          ..remove('last_observed_wall_time');
+    // 指纹也用于校验恢复点读回内容，因此对畸形载荷必须保持全函数：缺表或缺
+    // 字段时只跳过归一化，不抛类型错误。
+    final tables = normalized['tables'];
+    final sessions = tables is Map<String, dynamic>
+        ? tables['focus_sessions']
+        : null;
+    if (sessions is List) {
+      for (final row in sessions) {
+        if (row is! Map<String, dynamic>) continue;
+        final encoded = row['effective_intervals'];
+        if (encoded is! String) continue;
+        final decoded = jsonDecode(encoded);
+        if (decoded is! List) continue;
+        for (final interval in decoded) {
+          if (interval is! Map<String, dynamic>) continue;
+          interval
+            ..remove('monotonic_checkpoint_microseconds')
+            ..remove('last_observed_wall_time');
+        }
+        row['effective_intervals'] = jsonEncode(decoded);
       }
-      row['effective_intervals'] = jsonEncode(intervals);
     }
     final value = jsonEncode(normalized);
     // FNV-1a is only a local change detector, never an integrity boundary.

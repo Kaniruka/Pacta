@@ -194,20 +194,29 @@ the new version was written.
 The replacement keeps the previous optional parameters defaulted, so clients
 that still call the 7- or 9-parameter contract keep working and are subject to
 the same retention and compare-and-swap guards; there is no unprotected write
-path. The new trailing `p_request_id` makes upload retries idempotent: the same
-user and request id return the already-handled revision instead of creating a
-second history entry. Idempotency is recorded on retained history rows, so a
-retry that arrives after that row was evicted is treated as a new request.
-Client fallback drops `p_request_id` first and the hardware fields second when
-PostgREST reports the older signature.
+path. The new trailing `p_request_id` makes upload retries idempotent through a
+separate ledger table, `cloud_business_snapshot_upload_requests`, which stores
+only the request identity, the revision it produced and a payload fingerprint —
+no business payload — and is not subject to the 15-version limit. A retry with
+the same user and request id therefore returns that request's own retained
+version, never the current one; returning the current version would let one
+device record another device's newer data as handled. Reusing a request id for
+different data fails with `PT422`; a retry whose original version retention has
+already evicted fails with `PT425` instead of being written again as a new
+request. The client refuses to fall back to a signature without `p_request_id`
+when a request id is present — it reports that the service must be upgraded —
+and only manual uploads without a request id use the older 9- or 7-parameter
+fallback.
 
-Explicit purge now deletes the history table before the snapshot, so account
-clearing leaves no cloud business copy behind.
+Explicit purge now deletes the request ledger and the history table before the
+snapshot, so account clearing leaves no cloud business copy behind.
 
 Run `supabase/tests/cloud_snapshot_history.sql` in an isolated test project
 after applying this migration. It asserts the retention limit, that a rejected
-write leaves no history row, request-id idempotency, owner read access without
-direct writes, cross-user isolation, and that the purge function covers history;
+write leaves no history row, that a retried request returns its own version after
+another device wrote a newer one, `PT422`/`PT425` handling, owner read access
+without direct writes, ledger privacy, cross-user isolation, and that the purge
+function covers history and the request ledger;
 the dynamic purge probe is skipped with a notice when no spare non-admin
 identity exists. Client tests in `test/sync/` use in-memory remotes and a
 temporary Drift database, so they do not prove deployed RLS or a real transfer.

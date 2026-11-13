@@ -40,12 +40,19 @@
 
 1. **上传请求幂等**：`CloudSnapshotRepository.uploadLocal(expectedRevision:, expectedFingerprint:, requestId:)`
    → `CloudSnapshotRemote.upload(..., requestId:)` → RPC 参数 `p_request_id`。
-   - 服务端在用户事务锁内先查 `cloud_business_snapshot_history (user_id, request_id)`；命中则直接返回
-     已写入的当前快照，不新增版本、不因期望版本过期而报 `PT409`。
-   - 唯一索引 `cloud_business_snapshot_history_request_key` 保证同请求只落一份历史。
-   - 局限：幂等记录存放在历史行上，历史按 15 份淘汰；同一 request id 若在对应历史行被淘汰后才重试，
-     会被当作新请求。#93 若需要更长窗口，应新增独立请求台账表，而不是放宽本票的保留上限。
-   - `requestId` 为 null 时不做幂等，等同当前一次性上传；重试由调用方决定。
+   - 服务端在用户事务锁内先查请求台账 `cloud_business_snapshot_upload_requests (user_id, request_id)`；
+     台账只记录请求身份、它产生的 revision 与 payload 指纹，**不含业务载荷**，并且不受 15 份保留上限
+     影响，因此历史淘汰后重试也不会重复落档。
+   - 命中台账时按台账 revision 从历史表映射返回**该请求原本写入的版本**（含原设备与原始上传时间）。
+     绝不返回当前快照：否则请求 A 成功后被另一台设备写入新版本，A 的重试会把别人的数据记成本机
+     已处理版本。
+   - 同一 request id 换了内容 → `PT422`（客户端提示「该上传请求已用于不同的数据内容」），不写入。
+   - 台账命中原版本已被淘汰 → `PT425`（提示「已处理，但对应备份已不在最近 15 份内」），不写入，
+     也不会当作新请求。
+   - `requestId` 非空时客户端**禁止**回退到没有 `p_request_id` 的旧签名：PostgREST 报 `PGRST202` 且
+     提示的旧签名缺该参数时，直接抛 `StateError('云端服务尚未支持上传请求去重…')`，一次请求都不写。
+     `requestId` 为 null 的手动上传继续保留 9 参数 / 7 参数逐级回退兼容。
+   - 因此 #93 只在服务端确认支持幂等（本迁移已应用）时才重试；否则必须先升级服务端。
 2. **成功已处理版本基线**：`CloudSyncResult.cloudRevision` / `legacyToken`（`loadSyncResult()`），
    仅在真正成功写入或成功应用云端数据后更新；检查、忽略、失败、取消都不更新。
    恢复旧版本时写入被恢复的 revision，因此最新版仍显示为待处理。
@@ -92,6 +99,20 @@ flutter test test/sync/source_device_info_test.dart          -> +5  All tests pa
   `binding.takeScreenshot` + host driver 回传。
 - 真实服务端到端：跨设备上传/列表/恢复与「恢复不覆盖云端」的真实行为。单元测试使用内存 remote 与
   临时 Drift 库，不能替代真实云或设备证据。
+
+## 审查修复（2026-11-13 第二轮）
+
+| 问题 | 修复 |
+| --- | --- |
+| 幂等分支返回当前快照，会把其他设备的新版本记成本机已处理 | 新增不含业务载荷的请求台账，命中时按台账 revision 从历史映射返回该请求**原版本**；同 request id 换内容报 `PT422`，原版本已淘汰报 `PT425`，都不会写入 |
+| 恢复点读回只判非空 | 校验 `userId`、`id` 与载荷指纹都等于替换前的本机状态，任一不符即取消恢复 |
+| 取消钩子只在事务外检查 | `_replaceLocalTables` 接收 `isCancelled`，在事务内、异步预检之后、删除之前再检查一次 |
+| 带 requestId 时静默降级旧签名会丢失去重 | requestId 非空禁止回退到无 `p_request_id` 的签名，直接报需升级服务；手动上传（null）保留兼容 |
+| `_fingerprint` 对畸形载荷会抛类型错误 | 改为全函数：畸形载荷跳过归一化，供恢复点读回校验使用 |
+
+新增测试：原版本重试、request id 换内容被拒、淘汰后重试不写入、恢复点读回不一致不替换、
+事务内取消仍不替换、requestId 非空不回退旧签名、`PT422`/`PT425` 错误映射。
+SQL 增加版本 19/20 之后重试必须返回 19、`PT422`、`PT425` 及台账清除断言。
 
 ## 已知限制与其他说明
 
