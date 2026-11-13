@@ -162,14 +162,20 @@ void main() {
     expect(find.text('适用范围'), findsNothing);
     expect(find.text('国策规则'), findsOneWidget);
     expect(find.text('规则说明'), findsOneWidget);
+    // Exceptions are a reading layer opened on demand.
     expect(find.text('例外与判例'), findsOneWidget);
+    expect(find.text('可暂停一次'), findsNothing);
+    await tester.tap(find.text('例外与判例'));
+    await tester.pumpAndSettle();
     expect(find.text('可暂停一次'), findsOneWidget);
-    expect(find.text('强化要求'), findsOneWidget);
+    // Strengthening management is only reachable from the card editor.
+    expect(find.text('强化要求'), findsNothing);
     expect(find.text('记录'), findsOneWidget);
     expect(find.textContaining('历史最高'), findsOneWidget);
     expect(find.textContaining('成功日'), findsNWidgets(2));
     expect(find.textContaining('内化进度'), findsOneWidget);
-    expect(find.text('管理强化要求'), findsOneWidget);
+    expect(find.text('管理强化要求'), findsNothing);
+    expect(find.text('编辑卡片'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(
@@ -672,8 +678,6 @@ void main() {
     expect(find.text('修改名称'), findsNothing);
     await tapAction(tester, '查看详情');
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('卡片操作'));
-    await tester.pumpAndSettle();
     expect(find.text('修改名称'), findsNothing);
     await tester.tap(find.text('编辑卡片'));
     await tester.pumpAndSettle();
@@ -850,7 +854,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('强化要求管理仍由节点面板进入', (tester) async {
+  testWidgets('强化要求管理由编辑卡片进入', (tester) async {
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
@@ -866,10 +870,13 @@ void main() {
     );
     await pumpNationalFocusUi(tester);
     await openNode(tester, card);
+    expect(find.text('管理强化要求'), findsNothing);
+    await tapAction(tester, '查看详情');
+    await tapAction(tester, '编辑卡片');
     await tapAction(tester, '管理强化要求');
     await pumpNationalFocusUi(tester);
     expect(find.text('国策强化要求'), findsOneWidget);
-    expect(find.text('基础要求'), findsOneWidget);
+    expect(find.text('基础'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });

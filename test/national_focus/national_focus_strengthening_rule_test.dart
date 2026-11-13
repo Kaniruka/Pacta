@@ -69,10 +69,11 @@ void main() {
 
     expect(find.text('触发条件'), findsNothing);
     expect(find.text('旧基础触发'), findsNothing);
-    expect(find.text('国策规则'), findsWidgets);
     expect(find.text('阅读 5 页'), findsWidgets);
-    expect(find.text('例外与判例'), findsWidgets);
-    expect(find.text('出差时顺延'), findsWidgets);
+    // The management page keeps one current requirement plus a compact list;
+    // exception notes stay in the reading layers.
+    expect(find.text('例外与判例'), findsNothing);
+    expect(find.text('出差时顺延'), findsNothing);
 
     await tester.tap(find.byTooltip('编辑强化等级 1'));
     await tester.pumpAndSettle();
@@ -90,7 +91,8 @@ void main() {
     expect(updated.strengtheningLevels, hasLength(1));
     expect(updated.strengtheningLevels.single.action, '阅读 20 页');
     expect(updated.strengtheningLevels.single.triggerCondition, '旧强化触发');
-    expect(find.text('阅读 20 页'), findsWidgets);
+    expect(updated.activeStrengtheningLevel, isNull);
+    expect(find.text('阅读 20 页'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
@@ -118,9 +120,10 @@ void main() {
     expect(before.requirementVersions, hasLength(1));
     await pumpPage(tester, card);
 
+    // An inactive level is editable without being put in force.
     await tester.tap(find.byTooltip('编辑强化等级 1'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('留空会沿用基础要求'), findsOneWidget);
+    expect(find.textContaining('留空则沿用基础要求'), findsOneWidget);
     await tester.tap(find.text('保存'));
     await tester.pump();
     await tester.runAsync(
@@ -133,6 +136,7 @@ void main() {
     expect(after.strengtheningLevels.single.action, isNull);
     expect(after.strengtheningLevels.single.triggerCondition, '仅旧触发');
     expect(after.requirementVersions, hasLength(1));
+    expect(after.activeStrengtheningLevel, isNull);
     expect(after.effectiveAction, '阅读 5 页');
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
@@ -151,7 +155,7 @@ void main() {
     );
     await pumpPage(tester, card);
 
-    await tester.tap(find.text('新建强化等级'));
+    await tester.tap(find.text('新建强化要求'));
     await tester.pumpAndSettle();
     expect(find.byType(TextFormField), findsOneWidget);
     await tester.tap(find.text('保存'));
