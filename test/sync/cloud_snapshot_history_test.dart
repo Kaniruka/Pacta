@@ -16,6 +16,7 @@ void main() {
     String userId = 'user-a',
     String deviceName = 'Pixel 7（Android）',
     CloudRecoveryPointStore? store,
+    Future<void> Function(CloudRestoreStage stage)? onRestoreStage,
   }) => CloudSnapshotRepository(
     database: database,
     remote: remote,
@@ -23,6 +24,7 @@ void main() {
     deviceId: 'device-a',
     deviceName: deviceName,
     recoveryPointStore: store ?? recoveryPoints,
+    onRestoreStage: onRestoreStage,
     now: () => DateTime.utc(2026, 11, 13, 9),
   );
 
@@ -286,8 +288,17 @@ void main() {
     expect((await remote.inspect(userId: 'user-a'))?.revision, 1);
   });
 
-  test('取消发生在恢复点保存之后时仍不替换本机数据', () async {
-    final repository = repositoryFor();
+  test('恢复点保存之后、替换首检时取消仍不替换（异步时机，不靠调用计数）', () async {
+    var cancelled = false;
+    final repository = repositoryFor(
+      onRestoreStage: (stage) async {
+        if (stage == CloudRestoreStage.beforeReplacement) {
+          // 事务已开始、异步预检已完成：模拟此刻账号切换。
+          await Future<void>.delayed(Duration.zero);
+          cancelled = true;
+        }
+      },
+    );
     await _addGoal(database, id: 'goal-1', title: 'First');
     var state = await repository.captureLocalState();
     await repository.uploadLocal(
@@ -296,14 +307,12 @@ void main() {
     );
     await _addGoal(database, id: 'goal-2', title: 'Second');
     state = await repository.captureLocalState();
-    final fingerprint = state.fingerprint;
-    var checks = 0;
 
     await expectLater(
       repository.restoreCloudVersion(
         revision: 1,
-        expectedFingerprint: fingerprint,
-        isCancelled: () => ++checks > 2,
+        expectedFingerprint: state.fingerprint,
+        isCancelled: () => cancelled,
       ),
       throwsA(isA<CloudRestoreCancelled>()),
     );
@@ -445,8 +454,16 @@ void main() {
     expect(await _goalTitles(database), ['First', 'Second']);
   });
 
-  test('取消只发生在事务内检查时仍不替换本机数据', () async {
-    final repository = repositoryFor();
+  test('读取本机日历映射之后、首个删除之前取消仍不替换本机数据', () async {
+    var cancelled = false;
+    final repository = repositoryFor(
+      onRestoreStage: (stage) async {
+        if (stage == CloudRestoreStage.afterCalendarLookup) {
+          await Future<void>.delayed(Duration.zero);
+          cancelled = true;
+        }
+      },
+    );
     await _addGoal(database, id: 'goal-1', title: 'First');
     var state = await repository.captureLocalState();
     await repository.uploadLocal(
@@ -455,21 +472,52 @@ void main() {
     );
     await _addGoal(database, id: 'goal-2', title: 'Second');
     state = await repository.captureLocalState();
-    var checks = 0;
 
     await expectLater(
       repository.restoreCloudVersion(
         revision: 1,
         expectedFingerprint: state.fingerprint,
-        // 前两次检查（入口、恢复点读回后）通过，第三次在替换事务内命中。
-        isCancelled: () => ++checks > 2,
+        isCancelled: () => cancelled,
       ),
       throwsA(isA<CloudRestoreCancelled>()),
     );
 
     expect(await _goalTitles(database), ['First', 'Second']);
-    expect(checks, 3);
     expect(await repository.listLocalRecoveryPoints(), hasLength(1));
+  });
+
+  test('替换写入完成后、提交前取消会整体回滚', () async {
+    var cancelled = false;
+    final repository = repositoryFor(
+      onRestoreStage: (stage) async {
+        if (stage == CloudRestoreStage.afterReplacement) {
+          await Future<void>.delayed(Duration.zero);
+          cancelled = true;
+        }
+      },
+    );
+    await _addGoal(database, id: 'goal-1', title: 'First');
+    var state = await repository.captureLocalState();
+    await repository.uploadLocal(
+      expectedRevision: 0,
+      expectedFingerprint: state.fingerprint,
+    );
+    await _addGoal(database, id: 'goal-2', title: 'Second');
+    state = await repository.captureLocalState();
+
+    await expectLater(
+      repository.restoreCloudVersion(
+        revision: 1,
+        expectedFingerprint: state.fingerprint,
+        isCancelled: () => cancelled,
+      ),
+      throwsA(isA<CloudRestoreCancelled>()),
+    );
+
+    // 此时恢复目标（只有 First）已写入，取消必须回滚成替换前的两份记录，
+    // 且不记录新的成功版本基线（仍是上次上传的 revision 1）。
+    expect(await _goalTitles(database), ['First', 'Second']);
+    expect((await repository.loadSyncResult())?.cloudRevision, 1);
   });
 }
 

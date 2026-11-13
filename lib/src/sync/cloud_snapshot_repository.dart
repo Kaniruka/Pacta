@@ -622,6 +622,20 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
       -(int.parse(token.substring(0, 15), radix: 16) + 1);
 }
 
+/// 恢复替换事务内的边界，用于在确切时机观察状态变化（例如账号切换）。
+///
+/// 只在事务内触发，且不改变默认行为：未注入观察者时这些边界只是取消检查点。
+enum CloudRestoreStage {
+  /// 事务已开始、异步预检完成，尚未读取本机日历映射。
+  beforeReplacement,
+
+  /// 已读取本机日历映射，尚未删除任何业务行。
+  afterCalendarLookup,
+
+  /// 所有业务行已写入，尚未提交。
+  afterReplacement,
+}
+
 class CloudSnapshotLocalState {
   const CloudSnapshotLocalState({
     required this.fingerprint,
@@ -656,6 +670,7 @@ class CloudSnapshotRepository {
     String? deviceModel,
     this.syncResultStore = const CloudSyncResultStore(),
     CloudRecoveryPointStore? recoveryPointStore,
+    this.onRestoreStage,
     this.now = DateTime.now,
   }) : deviceManufacturer = _normalizeDeviceMetadata(deviceManufacturer),
        deviceModel = _normalizeDeviceMetadata(deviceModel),
@@ -677,6 +692,10 @@ class CloudSnapshotRepository {
   final String? deviceModel;
   final CloudSyncResultStore syncResultStore;
   final CloudRecoveryPointStore recoveryPointStore;
+
+  /// 恢复替换事务内的边界观察者；组合层或测试可在此检查账号是否已切换。
+  final Future<void> Function(CloudRestoreStage stage)? onRestoreStage;
+
   final DateTime Function() now;
 
   Future<CloudSyncResult?> loadSyncResult() => syncResultStore.load(userId);
@@ -902,6 +921,11 @@ class CloudSnapshotRepository {
     if (isCancelled?.call() == true) throw const CloudRestoreCancelled();
   }
 
+  Future<void> _notifyRestoreStage(CloudRestoreStage stage) async {
+    final observer = onRestoreStage;
+    if (observer != null) await observer(stage);
+  }
+
   Future<String> _currentFingerprint() async =>
       (await captureLocalState()).fingerprint;
 
@@ -915,8 +939,9 @@ class CloudSnapshotRepository {
     late String restoredFingerprint;
     await database.transaction(() async {
       final localAtCommit = await _captureLocalState();
-      // 事务内、删除前最后一次取消检查：预检与删除之间用户可能已经切换
-      // 账号或发起取消，此时必须整体放弃替换。
+      await _notifyRestoreStage(CloudRestoreStage.beforeReplacement);
+      // 事务内、删除前检查：预检与删除之间用户可能已经切换账号或发起取消，
+      // 此时必须整体放弃替换。
       _throwIfCancelled(isCancelled);
       if (localAtCommit.hasUnfinishedFlow) {
         throw StateError('预约或专注尚未结束，暂不能覆盖本机数据。');
@@ -925,6 +950,9 @@ class CloudSnapshotRepository {
         throw StateError('本机数据在确认期间发生变化，请重新检查后再同步。');
       }
       final calendarDeviceData = await _localCalendarDeviceData();
+      await _notifyRestoreStage(CloudRestoreStage.afterCalendarLookup);
+      // 读取本机日历映射又是一次异步等待，删除前必须再检查一次。
+      _throwIfCancelled(isCancelled);
       for (final table in _businessTables.reversed) {
         await database.customStatement(
           'DELETE FROM "${_quoteIdentifier(table)}" WHERE user_id = ?',
@@ -950,6 +978,10 @@ class CloudSnapshotRepository {
           );
         }
       }
+      await _notifyRestoreStage(CloudRestoreStage.afterReplacement);
+      // 事务末尾：替换过程中的账号切换或取消必须让整个事务回滚，
+      // 不能留下半份或错属主的数据。
+      _throwIfCancelled(isCancelled);
       restoredFingerprint = (await _captureLocalState()).fingerprint;
     });
     database.notifyUpdates({
