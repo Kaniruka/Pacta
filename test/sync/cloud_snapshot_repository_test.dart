@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pacta/src/focus/chain_signals_repository.dart';
@@ -545,6 +547,45 @@ void main() {
     } finally {
       await focus.dispose();
     }
+  });
+
+  test('设备标识读取期间取消后不再发出上传请求，也不写基线', () async {
+    var cancelled = false;
+    final deviceIdGate = Completer<String>();
+    var deviceIdReads = 0;
+    final gatedRepository = CloudSnapshotRepository(
+      database: database,
+      remote: remote,
+      userId: 'user-a',
+      deviceName: 'Phone A',
+      deviceIdLoader: () {
+        deviceIdReads++;
+        return deviceIdGate.future;
+      },
+    );
+    final before = await gatedRepository.captureLocalState();
+
+    final uploading = gatedRepository.uploadLocal(
+      expectedRevision: 0,
+      expectedFingerprint: before.fingerprint,
+      requestId: 'request-cancel',
+      captured: before,
+      isCancelled: () => cancelled,
+    );
+    // 上传参数求值期间就取消：关闭开关、切换账号或恢复备份都走这条路径。
+    await Future<void>.delayed(Duration.zero);
+    expect(deviceIdReads, 1);
+    cancelled = true;
+    deviceIdGate.complete('device-a');
+
+    await expectLater(uploading, throwsA(isA<CloudUploadCancelled>()));
+    expect(
+      await remote.inspect(userId: 'user-a'),
+      isNull,
+      reason: '取消之后不得再发送旧快照',
+    );
+    expect(await gatedRepository.loadSyncResult(), isNull, reason: '取消后无成功基线');
+    expect(await remote.history(userId: 'user-a'), isEmpty);
   });
 
   test('rejects overwrite if local data changes after confirmation', () async {

@@ -74,6 +74,32 @@ class LocalProfileRepository implements ProfileRepository {
   /// background read cannot interleave with an upload or a user edit.
   Future<void> _operationQueue = Future<void>.value();
 
+  bool _disposed = false;
+
+  /// A confirmed purge keeps its mark forever, and a fresh registration gets a
+  /// new auth UUID (see supabase/README.md "Explicit cloud purge"). Any profile
+  /// write for a marked UUID can therefore only be a stale operation — an
+  /// in-flight read answer, an upload answer, or an edit still queued behind a
+  /// blocked operation — so the mark is a permanent write ban, not a counter
+  /// that a later operation may read as "already current".
+  Future<bool> _isPurgedAccount() async {
+    final row = await (database.select(
+      database.localProfileClearMarks,
+    )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+    return row != null;
+  }
+
+  /// Runs [write] in one transaction that first proves the account was not
+  /// cleared and that this repository is still live, so a late answer or a
+  /// queued operation cannot write after the purge. A rejected write returns
+  /// false and leaves the account data untouched.
+  Future<bool> _guardedWrite({required Future<bool> Function() write}) =>
+      database.transaction(() async {
+        if (_disposed) return false;
+        if (await _isPurgedAccount()) return false;
+        return write();
+      });
+
   Future<T> _serialized<T>(Future<T> Function() action) {
     final result = _operationQueue.then((_) => action());
     _operationQueue = result.then((_) {}, onError: (Object _) {});
@@ -104,14 +130,21 @@ class LocalProfileRepository implements ProfileRepository {
     final name = validateDisplayName(displayName);
     final current = await getProfile();
     final nextAvatar = clearAvatar ? null : (avatar ?? current.avatar);
-    await _writeLocal(
-      displayName: name,
-      avatar: nextAvatar,
-      updatedAt: _now().toUtc(),
-      pendingSave: true,
-      syncError: null,
-      editSequence: current.editSequence + 1,
+    final written = await _guardedWrite(
+      write: () async {
+        await _writeLocal(
+          displayName: name,
+          avatar: nextAvatar,
+          updatedAt: _now().toUtc(),
+          pendingSave: true,
+          syncError: null,
+          editSequence: current.editSequence + 1,
+        );
+        return true;
+      },
     );
+    // 账号已清除或本仓储已 dispose：这次编辑不再落到本机，也不再上传。
+    if (!written) return getProfile();
     if (!remote.isAvailable) return getProfile();
     return _upload();
   });
@@ -214,21 +247,23 @@ class LocalProfileRepository implements ProfileRepository {
     required int expectedSequence,
     required String? syncError,
     required bool pendingSave,
-  }) async {
-    final updated =
-        await (database.update(database.localProfileAccounts)..where(
-              (row) =>
-                  row.userId.equals(userId) &
-                  row.editSequence.equals(expectedSequence),
-            ))
-            .write(
-              LocalProfileAccountsCompanion(
-                syncError: drift.Value(syncError),
-                pendingSave: drift.Value(pendingSave),
-              ),
-            );
-    return updated > 0;
-  }
+  }) => _guardedWrite(
+    write: () async {
+      final updated =
+          await (database.update(database.localProfileAccounts)..where(
+                (row) =>
+                    row.userId.equals(userId) &
+                    row.editSequence.equals(expectedSequence),
+              ))
+              .write(
+                LocalProfileAccountsCompanion(
+                  syncError: drift.Value(syncError),
+                  pendingSave: drift.Value(pendingSave),
+                ),
+              );
+      return updated > 0;
+    },
+  );
 
   Future<bool> _writeLocalIfSequenceUnchanged({
     required int expectedSequence,
@@ -237,43 +272,45 @@ class LocalProfileRepository implements ProfileRepository {
     required DateTime updatedAt,
     required bool pendingSave,
     required String? syncError,
-  }) async {
-    final existing = await (database.select(
-      database.localProfileAccounts,
-    )..where((row) => row.userId.equals(userId))).getSingleOrNull();
-    if (existing == null) {
-      // Adopting the first profile for this account: nothing local can be
-      // newer than the sequence this call started from.
-      if (expectedSequence != 0) return false;
-      await _writeLocal(
-        displayName: displayName,
-        avatar: avatar,
-        updatedAt: updatedAt,
-        pendingSave: pendingSave,
-        syncError: syncError,
-        editSequence: 1,
-      );
-      return true;
-    }
-    final updated =
-        await (database.update(database.localProfileAccounts)..where(
-              (row) =>
-                  row.userId.equals(userId) &
-                  row.editSequence.equals(expectedSequence),
-            ))
-            .write(
-              LocalProfileAccountsCompanion(
-                displayName: drift.Value(displayName),
-                avatarMimeType: drift.Value(avatar?.mimeType),
-                avatarBytes: drift.Value(avatar?.bytes),
-                updatedAt: drift.Value(updatedAt),
-                pendingSave: drift.Value(pendingSave),
-                syncError: drift.Value(syncError),
-                editSequence: drift.Value(expectedSequence + 1),
-              ),
-            );
-    return updated > 0;
-  }
+  }) => _guardedWrite(
+    write: () async {
+      final existing = await (database.select(
+        database.localProfileAccounts,
+      )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+      if (existing == null) {
+        // Adopting the first profile for this account: nothing local can be
+        // newer than the sequence this call started from.
+        if (expectedSequence != 0) return false;
+        await _writeLocal(
+          displayName: displayName,
+          avatar: avatar,
+          updatedAt: updatedAt,
+          pendingSave: pendingSave,
+          syncError: syncError,
+          editSequence: 1,
+        );
+        return true;
+      }
+      final updated =
+          await (database.update(database.localProfileAccounts)..where(
+                (row) =>
+                    row.userId.equals(userId) &
+                    row.editSequence.equals(expectedSequence),
+              ))
+              .write(
+                LocalProfileAccountsCompanion(
+                  displayName: drift.Value(displayName),
+                  avatarMimeType: drift.Value(avatar?.mimeType),
+                  avatarBytes: drift.Value(avatar?.bytes),
+                  updatedAt: drift.Value(updatedAt),
+                  pendingSave: drift.Value(pendingSave),
+                  syncError: drift.Value(syncError),
+                  editSequence: drift.Value(expectedSequence + 1),
+                ),
+              );
+      return updated > 0;
+    },
+  );
 
   String _failureText(Object error) {
     final message = error is StateError ? error.message : error.toString();
@@ -322,6 +359,9 @@ class LocalProfileRepository implements ProfileRepository {
     );
   }
 
+  /// 失效在途操作：dispose 之后到达的读取或上传应答不再写回本机资料。
   @override
-  Future<void> dispose() async {}
+  Future<void> dispose() async {
+    _disposed = true;
+  }
 }

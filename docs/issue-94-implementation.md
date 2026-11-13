@@ -143,3 +143,20 @@ TDD（先红后绿，`test/profile/profile_remote_test.dart`）：
   - Dart 通道分处 `avatar_picker.dart` 与 `device_permission_gateway.dart`，`main.dart` 自动合并后照片选择与提醒的接线均保留。
 - 数据库仍为 schema **28**：`local_cloud_recovery_points`（#92 恢复点）与 `local_profile_accounts`（含 `edit_sequence`）并存，`from < 26`、`from < 27`、`27→28` 三段迁移均保留；重跑 `dart run build_runner build` 后 `task_database.g.dart` 无差异。
 - 验证：`flutter analyze` 无问题；`flutter test` 536 项通过；`flutter build windows --release`、`flutter build apk --debug` 通过。未推送、未部署、未关闭 Issue。
+
+## 最终评审修复（S1／S2／P2 与截断 PNG 前缀）
+
+- **S1 首次读取失败可见**：名片自己持有首次 `syncProfile` 的返回值与错误，空缓存时显示原因和“重试”；
+  有缓存行时仍以数据库记录为准。同步直接抛异常（错误甚至没能写库）时，只要缓存行仍停在**请求开始前固定**
+  的那一状态，瞬态原因照常显示；缓存行前进到另一状态（含请求期间另一入口保存成功）或重试成功即清除。
+  名片不写资料行，失败不制造本机版本。
+- **S2 统计不把加载与失败当 0**：两组统计各自订阅、各自区分加载／失败／真实数据；失败给组内“重试”，
+  只重建读取。
+- **P2 清除标记**：新增 Drift 表 `local_profile_clear_marks`（schema 29，清除时同一事务内记录并累计代次）；
+  `LocalProfileRepository` 在事务内按「该 UUID 存在清除标记即拒绝写入」处理全部写路径（本地保存、采用远端、
+  上传成功／失败、读取失败状态），因此排队中的旧编辑与晚到应答都无法复活资料，`dispose()` 另行失效在途写入。
+  清除标记是旧 UUID 的永久写入禁令（`supabase/README.md`：重新注册得到新 UUID）；该表不进业务快照、
+  不参与重复清扫，云服务 RLS 未改。
+- **附加**：`detectAvatarFormat` 的 PNG 分支要求完整 8 字节签名，3–7 字节截断前缀改为
+  `AvatarValidationException` 而非 `RangeError`；允许格式范围不变。
+- 证据与逐条命令见[双轴评审记录](review-sync-profile-cards-20261113.md)。

@@ -314,6 +314,38 @@ void main() {
     expect(remote.uploadCalls, 1);
   });
 
+  test('设备标识读取期间关闭开关，不再发出这次上传', () async {
+    final deviceIdGate = Completer<String>();
+    final deviceIdRequested = Completer<void>();
+    final gated = CloudSnapshotRepository(
+      database: database,
+      remote: remote,
+      userId: _userId,
+      deviceName: 'Device A（Windows）',
+      deviceIdLoader: () {
+        if (!deviceIdRequested.isCompleted) deviceIdRequested.complete();
+        return deviceIdGate.future;
+      },
+    );
+    final coordinator = coordinatorFor(target: gated);
+    await coordinator.setEnabled(true);
+
+    final confirming = coordinator.enqueue();
+    await deviceIdRequested.future;
+    // 关闭开关会取消在途请求；取消发生在“读取设备标识”的等待里。
+    await coordinator.setEnabled(false);
+    deviceIdGate.complete('device-a');
+    await confirming;
+
+    expect(remote.uploadCalls, 0, reason: '取消之后不得再发送旧快照');
+    expect(await remote.history(userId: _userId), isEmpty);
+    expect((await store.load(_userId)).hasWork, isFalse);
+
+    await coordinator.setEnabled(true);
+    await coordinator.enqueue();
+    expect(remote.uploadCalls, 1);
+  });
+
   test('停用或不可访问时不上传，恢复后可重试最新本机快照', () async {
     var accessible = false;
     final coordinator = coordinatorFor(accessible: () => accessible);
