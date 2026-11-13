@@ -40,12 +40,17 @@ class NationalFocusTreePage extends StatefulWidget {
     this.userId,
     this.viewPreferences = const NationalFocusViewPreferences(),
     this.onOpenAiAnalysis,
+    this.onTodayConfirmed,
     this.onNotificationCapabilityUse,
     this.displayTimeZoneLoader,
     this.now,
   });
 
   final NationalFocusRepository repository;
+
+  /// 今日确认成功后回调一次。批量确认在整批（含逐项例外）结束时只回调一次；
+  /// 普通编辑、点亮、熄灭不触发。
+  final Future<void> Function()? onTodayConfirmed;
   final String? userId;
   final NationalFocusViewPreferences viewPreferences;
   final VoidCallback? onOpenAiAnalysis;
@@ -71,6 +76,8 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   late DateTime _now;
   final Set<String> _busyCardIds = {};
   bool _confirming = false;
+  bool _todayBatchOpen = false;
+  bool _todayBatchConfirmed = false;
   Timer? _settlementTimer;
 
   @override
@@ -186,10 +193,13 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
       _error = null;
     });
     final windowEnd = _confirmationWindowEnd();
+    _todayBatchOpen = true;
+    _todayBatchConfirmed = false;
     try {
       final count = await widget.repository.confirmToday(
         expectedConfirmationCheckpoint: windowEnd,
       );
+      if (count > 0) _recordTodayConfirmation();
       _syncInBackground();
       if (count > 0 && mounted) {
         ScaffoldMessenger.of(context)
@@ -208,8 +218,30 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     } catch (error) {
       if (mounted) setState(() => _error = _friendlyError(error));
     } finally {
+      _todayBatchOpen = false;
+      // 部分成功（含逐项例外被关闭）也要为已成功的变更排一次上传。
+      if (_todayBatchConfirmed) {
+        _todayBatchConfirmed = false;
+        _queueTodayConfirmationUpload();
+      }
       if (mounted) setState(() => _confirming = false);
     }
+  }
+
+  /// 记录一次成功的今日确认；批量期间只记标记，结束后统一回调一次。
+  void _recordTodayConfirmation() {
+    if (_todayBatchOpen) {
+      _todayBatchConfirmed = true;
+      return;
+    }
+    _queueTodayConfirmationUpload();
+  }
+
+  void _queueTodayConfirmationUpload() {
+    final callback = widget.onTodayConfirmed;
+    if (callback == null) return;
+    // 上传由协调器排队与重试，界面不为网络等待阻塞。
+    unawaited(callback().catchError((Object _) {}));
   }
 
   /// Walks pending nodes that carry exception or precedent notes one by one.
@@ -300,6 +332,9 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
         card.id,
         expectedConfirmationCheckpoint: expectedCheckpoint,
       );
+      if (card.state == NationalFocusCardState.pendingTodayConfirmation) {
+        _recordTodayConfirmation();
+      }
       _syncInBackground();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

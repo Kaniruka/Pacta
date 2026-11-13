@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../focus/focus_repository.dart';
 
+import 'cloud_auto_upload.dart';
 import 'cloud_snapshot_history_page.dart';
 import 'cloud_snapshot_repository.dart';
 import 'cloud_sync_result.dart';
@@ -16,15 +17,79 @@ class CloudSyncCard extends StatefulWidget {
     required this.onDownloaded,
     this.versionCheck,
     this.focusRepository,
+    this.autoUpload,
   });
 
   final CloudVersionCheck? versionCheck;
   final FocusRepository? focusRepository;
+
+  /// 今日确认后的自动上传协调器；为空表示当前未配置云端连接。
+  final CloudAutoUploadCoordinator? autoUpload;
   final CloudSnapshotRepository? repository;
   final Future<void> Function() onDownloaded;
 
   @override
   State<CloudSyncCard> createState() => _CloudSyncCardState();
+}
+
+/// 操作层的自动上传开关：本机当前用户偏好，默认关闭。
+class _AutoUploadSwitch extends StatefulWidget {
+  const _AutoUploadSwitch({required this.coordinator});
+
+  final CloudAutoUploadCoordinator coordinator;
+
+  @override
+  State<_AutoUploadSwitch> createState() => _AutoUploadSwitchState();
+}
+
+class _AutoUploadSwitchState extends State<_AutoUploadSwitch> {
+  bool? _enabled;
+  bool _working = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      await widget.coordinator.load();
+    } catch (_) {
+      // 读取失败保持未知，交给用户重开面板。
+    }
+    if (!mounted) return;
+    setState(() => _enabled = widget.coordinator.enabled);
+  }
+
+  Future<void> _toggle(bool value) async {
+    if (_working) return;
+    setState(() {
+      _working = true;
+      _enabled = value;
+    });
+    try {
+      await widget.coordinator.setEnabled(value);
+    } catch (_) {
+      if (mounted) setState(() => _enabled = widget.coordinator.enabled);
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      title: const Text('今日确认后自动上传'),
+      subtitle: const Text(
+        '本机设置，默认关闭。单个或批量今日确认成功后上传一次；'
+        '普通编辑不会上传，关闭即取消待上传请求。',
+      ),
+      value: _enabled ?? false,
+      onChanged: _working ? null : _toggle,
+    );
+  }
 }
 
 class _CloudSyncCardState extends State<CloudSyncCard> {
@@ -105,12 +170,28 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
   CloudSyncResult? _result;
   int _resultRequest = 0;
 
+  String? _reportedAutoUploadStop;
+
   @override
   void initState() {
     super.initState();
     widget.versionCheck?.addListener(_versionChanged);
+    widget.autoUpload?.addListener(_autoUploadChanged);
     _loadResult();
     _watchFocus();
+  }
+
+  /// 自动上传被云端版本或请求冲突挡住时提示一次，避免静默不传。
+  void _autoUploadChanged() {
+    if (!mounted) return;
+    final reason = widget.autoUpload?.blockedReason;
+    if (reason == null) {
+      _reportedAutoUploadStop = null;
+    } else if (reason != _reportedAutoUploadStop) {
+      _reportedAutoUploadStop = reason;
+      _announce('自动上传已停止：$reason');
+    }
+    setState(() {});
   }
 
   @override
@@ -119,6 +200,11 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
     if (oldWidget.versionCheck != widget.versionCheck) {
       oldWidget.versionCheck?.removeListener(_versionChanged);
       widget.versionCheck?.addListener(_versionChanged);
+    }
+    if (oldWidget.autoUpload != widget.autoUpload) {
+      oldWidget.autoUpload?.removeListener(_autoUploadChanged);
+      widget.autoUpload?.addListener(_autoUploadChanged);
+      _reportedAutoUploadStop = widget.autoUpload?.blockedReason;
     }
     if (oldWidget.focusRepository != widget.focusRepository) _watchFocus();
     if (oldWidget.repository != widget.repository) {
@@ -159,6 +245,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
       }
     });
     widget.versionCheck?.removeListener(_versionChanged);
+    widget.autoUpload?.removeListener(_autoUploadChanged);
     _focusSubscription?.cancel();
     super.dispose();
   }
@@ -246,6 +333,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
         builder: (_) => CloudSnapshotHistoryPage(
           repository: repository,
           onRestored: widget.onDownloaded,
+          onCancelPendingUpload: widget.autoUpload?.cancelPending,
         ),
       ),
     );
@@ -304,6 +392,19 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
                 ],
                 const SizedBox(height: 12),
                 const Text('设备设置和登录状态不变。'),
+                if (widget.autoUpload?.blockedReason case final reason?) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '自动上传已停止：$reason',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
+                if (widget.autoUpload case final coordinator?) ...[
+                  const SizedBox(height: 8),
+                  _AutoUploadSwitch(coordinator: coordinator),
+                ],
                 const SizedBox(height: 8),
                 Text(
                   _result?.localFingerprint?.startsWith('v2:') != true
@@ -430,7 +531,11 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
           expectedRevision: cloud?.revision ?? 0,
           expectedFingerprint: local.fingerprint,
         );
+        // 本次上传已覆盖排队意图；残留请求不再需要执行。
+        await widget.autoUpload?.cancelPending();
       } else {
+        // 下载前先取消旧请求：恢复内容不得随后被自动上传。
+        await widget.autoUpload?.cancelPending();
         await repository.downloadCloud(
           expectedRevision: cloud!.revision,
           expectedFingerprint: local.fingerprint,

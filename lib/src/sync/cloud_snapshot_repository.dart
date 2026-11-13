@@ -12,6 +12,29 @@ import 'cloud_recovery_point.dart';
 import 'cloud_snapshot_history.dart';
 import 'cloud_sync_result.dart';
 
+/// 同一上传请求被用于不同内容（服务端 PT422）。自动上传必须停止并检查，
+/// 不能把它改写成新请求。
+class CloudUploadRequestConflict extends StateError {
+  CloudUploadRequestConflict() : super('该上传请求已用于不同的数据内容，请重新检查后再上传。');
+}
+
+/// 请求已被服务端处理，但它产生的备份不在最近 15 份内（PT425）。
+class CloudUploadRequestEvicted extends StateError {
+  CloudUploadRequestEvicted() : super('该上传请求已处理，但对应备份已不在最近 15 份内；请重新查看云端数据。');
+}
+
+/// 服务端不支持上传请求去重（旧 RPC 没有 p_request_id）。这是能力缺失，
+/// 不是网络故障：自动上传必须停止并提示升级服务，不能反复静默重试。
+class CloudUploadRequestIdUnsupported extends StateError {
+  CloudUploadRequestIdUnsupported()
+    : super('云端服务尚未支持上传请求去重，请升级服务后再重试自动上传。');
+}
+
+/// 并发版本校验失败（PT409）：云端已被推进，本次请求没有写入。
+class CloudUploadRevisionChanged extends StateError {
+  CloudUploadRevisionChanged() : super('云端数据在确认期间发生变化，请重新查看并选择覆盖方向。');
+}
+
 /// A whole-account business-data snapshot. Device identity, local preferences,
 /// lifecycle state, and the legacy per-entity upload queue are intentionally
 /// kept outside this payload.
@@ -264,7 +287,7 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
         // 幂等上传依赖 p_request_id：旧服务没有该参数时不能静默降级成
         // 会重复落档的上传，必须让调用方先升级服务端。
         if (requestId != null && !fallback.containsKey('p_request_id')) {
-          throw StateError('云端服务尚未支持上传请求去重，请升级服务后再重试自动上传。');
+          throw CloudUploadRequestIdUnsupported();
         }
         // PGRST202 means no function ran. Retry only the confirmed older
         // signature, preserving the same payload and concurrency guards.
@@ -275,15 +298,9 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
         );
       }
     } on PostgrestException catch (error) {
-      if (error.code == 'PT409') {
-        throw StateError('云端数据在确认期间发生变化，请重新查看并选择覆盖方向。');
-      }
-      if (error.code == 'PT422') {
-        throw StateError('该上传请求已用于不同的数据内容，请重新检查后再上传。');
-      }
-      if (error.code == 'PT425') {
-        throw StateError('该上传请求已处理，但对应备份已不在最近 15 份内；请重新查看云端数据。');
-      }
+      if (error.code == 'PT409') throw CloudUploadRevisionChanged();
+      if (error.code == 'PT422') throw CloudUploadRequestConflict();
+      if (error.code == 'PT425') throw CloudUploadRequestEvicted();
       if (error.code == '42501') {
         throw StateError('当前用户无法同步，请检查登录或停用状态。');
       }
@@ -524,7 +541,7 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
       final handled = _requestLedger[userId]?[requestId];
       if (handled != null) {
         if (handled.fingerprint != requestFingerprint) {
-          throw StateError('该上传请求已用于不同的数据内容，请重新检查后再上传。');
+          throw CloudUploadRequestConflict();
         }
         // 只返回该请求原本写入的版本：返回当前版本会把其他设备的数据
         // 标记成本机已处理。
@@ -532,7 +549,7 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
             in _history[userId] ?? const <CloudSnapshotMetadata>[]) {
           if (entry.revision == handled.revision) return entry;
         }
-        throw StateError('该上传请求已处理，但对应备份已不在最近 15 份内；请重新查看云端数据。');
+        throw CloudUploadRequestEvicted();
       }
     }
     final legacy = _legacySnapshots[userId];
@@ -555,7 +572,7 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
     final currentRevision = _snapshots[userId]?.revision ?? 0;
     final targetRevision = expectedRevision < 0 ? 0 : expectedRevision;
     if (currentRevision != targetRevision) {
-      throw StateError('Cloud snapshot changed; inspect it again before sync.');
+      throw CloudUploadRevisionChanged();
     }
     final snapshot = CloudSnapshotMetadata(
       revision: currentRevision + 1,
@@ -700,7 +717,35 @@ class CloudSnapshotRepository {
 
   Future<CloudSyncResult?> loadSyncResult() => syncResultStore.load(userId);
 
+  /// 基线写入串行化：恢复、手动同步与自动上传的应答彼此有序；取消后的
+  /// 晚到应答即使在恢复之后到达，也不会覆盖恢复写入的基线。
+  ///
+  /// 用惰性链而不是预先创建的 Future.value()：它可能在本组件构造的 Zone 里
+  /// 完成，之后的 then 回调就跑在测试的 fake-async 之外。
+  Future<void>? _baselineChain;
+
+  Future<T> _serializeBaseline<T>(Future<T> Function() action) {
+    final previous = _baselineChain;
+    final run = previous == null ? action() : previous.then((_) => action());
+    _baselineChain = run.then((_) {}, onError: (Object _) {});
+    return run;
+  }
+
+  Future<void> _commitSyncResult(
+    CloudSnapshotMetadata cloud,
+    String fingerprint,
+  ) => _serializeBaseline(() => _writeSyncResult(cloud, fingerprint));
+
+  /// 清除基线同样串行化，避免与在途应答交错。
+  Future<void> _clearSyncResult() =>
+      _serializeBaseline(() => syncResultStore.clear(userId));
+
   Future<void> _saveSyncResult(
+    CloudSnapshotMetadata cloud,
+    String fingerprint,
+  ) => _commitSyncResult(cloud, fingerprint);
+
+  Future<void> _writeSyncResult(
     CloudSnapshotMetadata cloud,
     String fingerprint,
   ) async {
@@ -768,12 +813,18 @@ class CloudSnapshotRepository {
 
   /// [requestId] 让同一次上传请求可以安全重试：服务端对同一用户同一
   /// requestId 只写入一份历史备份。未提供时至多上传一次，不重试。
+  ///
+  /// [captured] 是发起该请求时捕获并持久化的快照。响应丢失后重试必须重发
+  /// 完全相同的载荷，否则服务端会把它当作“同一请求换了内容”（PT422）。
+  /// 传入快照仍要满足 [expectedFingerprint]，不跳过任何校验。
   Future<CloudSnapshotMetadata> uploadLocal({
     required int expectedRevision,
     required String expectedFingerprint,
     String? requestId,
+    CloudSnapshotLocalState? captured,
+    bool Function()? isCancelled,
   }) async {
-    final state = await captureLocalState();
+    final state = captured ?? await captureLocalState();
     if (state.fingerprint != expectedFingerprint) {
       throw StateError('本机数据在确认期间发生变化，请重新检查后再同步。');
     }
@@ -789,9 +840,25 @@ class CloudSnapshotRepository {
       deviceModel: deviceModel,
       requestId: requestId,
     );
-    await _saveSyncResult(cloud, state.fingerprint);
+    // 取消（恢复、关闭开关、切换账号）之后到达的应答不得写基线：
+    // 否则恢复后的“已处理版本”会被改回这次上传的 revision。
+    await _commitSyncResultGuarded(cloud, state.fingerprint, isCancelled);
     return cloud;
   }
+
+  Future<void> _commitSyncResultGuarded(
+    CloudSnapshotMetadata cloud,
+    String fingerprint,
+    bool Function()? isCancelled,
+  ) => _serializeBaseline(() async {
+    if (isCancelled?.call() == true) return;
+    await _writeSyncResult(cloud, fingerprint);
+  });
+
+  /// 载荷的变更指纹，与 [CloudSnapshotLocalState.fingerprint] 同口径。
+  /// 用于校验持久化请求中的冻结载荷没有与指纹脱节。
+  String fingerprintOfPayload(Map<String, dynamic> payload) =>
+      _fingerprint(payload);
 
   Future<void> downloadCloud({
     required int expectedRevision,
@@ -857,6 +924,10 @@ class CloudSnapshotRepository {
   }
 
   /// 从本机恢复点找回数据；同样先保存当前状态，避免找回本身不可撤销。
+  ///
+  /// 找回的是更早的本机内容，原来的“已处理云版本 + 指纹”基线不再能证明
+  /// 当前本机数据与云端一致，因此在替换前清除；否则下一次今日确认会把旧
+  /// 内容当成“与云端一致”的改动自动覆盖最新云版本。清除失败则不替换。
   Future<void> restoreLocalRecoveryPoint({
     required String pointId,
     required String expectedFingerprint,
@@ -867,6 +938,7 @@ class CloudSnapshotRepository {
     if (point == null) throw StateError('本机恢复点不存在，可能已被清理。');
     final validatedRows = await _validatePayload(point.payload);
     _throwIfCancelled(isCancelled);
+    await _clearSyncResult();
     await _replaceWithRecoveryPoint(
       validatedRows: validatedRows,
       expectedFingerprint: expectedFingerprint,
