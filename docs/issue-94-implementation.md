@@ -121,14 +121,16 @@ flutter test -d windows integration_test/profile_real_service_test.dart \
 
 修复（`lib/src/profile/profile_remote.dart`）：
 
-- 解码前只剔除 base64 允许的 ASCII 空白（HT 0x09、LF 0x0A、VT 0x0B、FF 0x0C、CR 0x0D、SP 0x20），其余字符原样交给 `base64Decode`；非法字符仍抛 `FormatException`，不静默丢弃。
+- 解码前只剔除**换行**（CR 0x0D、LF 0x0A，PostgreSQL 只插入 LF，CRLF 变体一并兼容），其余字符原样交给 `base64Decode`；空格、TAB、VT、FF 及其它非法字符仍抛 `FormatException`，不静默接受。
 - 无空白时跳过重写，保持原有开销；编码方向（`save` 的 `base64Encode`）不变，未改动已部署隔离项目的 SQL。
 
 TDD（先红后绿，`test/profile/profile_remote_test.dart`）：
 
-- `PostgreSQL 76 列换行的头像 base64 仍能往返解码`：67 字节有效 1x1 PNG（`\x89PNG...IEND`）编码为 92 字符、按 76 列插入 LF，断言字节与 mime 完全往返；红态报 `Invalid character (at character 77)`。
-- `头像 base64 允许的 ASCII 空白都被忽略`：同一载荷穿插空格、TAB、CRLF、VT、FF 后仍解码出原字节。
-- `头像 base64 含非法字符时继续拒绝`：合法 payload 追加 `!!` 后仍抛 `FormatException`。
+- `PostgreSQL 76 列换行的真实 PNG 字节仍能往返解码`：真实 1x1 PNG 编码超过 76 字符，按 76 列逐行（含末行）附加 LF，断言字节与 mime 完全往返；红态报 `Invalid character (at character 77)`。
+- `CRLF 换行的 base64 变体同样可解码`：同一载荷替换为 CRLF 后仍解码出原字节。
+- `只忽略换行，空格与其它空白仍按非法输入拒绝`：空格、TAB、VT、FF 变体全部抛 `FormatException`。
+- `头像 base64 含非法字符时继续拒绝`：合法 payload 追加 `!!` 或出现 padding 之后的多余数据时仍抛 `FormatException`。
+- PostgreSQL 末行同样以 LF 结尾（`wrapped.endsWith('\n')`）已被断言，覆盖"末行附加换行"这一真实形态。
 
 验证：`flutter analyze` 无问题；`flutter test test/profile` 43 项通过。未改 SQL 与真实服务 fixture（仍为准备未执行）。
 

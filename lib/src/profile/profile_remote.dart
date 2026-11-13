@@ -131,18 +131,16 @@ RemoteProfile? remoteProfileFromJson(Object? response) {
   );
 }
 
-/// ASCII whitespace that base64 payloads are allowed to carry.
-const _base64Whitespace = <int>{0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x20};
-
+/// Line breaks a base64 payload may legitimately carry.
+///
 /// PostgreSQL's `encode(bytea, 'base64')` wraps its output every 76
-/// characters with a line feed, and `base64Decode` rejects whitespace that
-/// follows the padding. Only those whitespace bytes are dropped; every other
-/// character still has to be valid base64 or decoding throws [FormatException].
+/// characters with a line feed and ends the value with one, while
+/// `base64Decode` rejects those bytes. Only CR and LF are dropped; spaces,
+/// tabs and every other character stay illegal, so a malformed payload still
+/// throws [FormatException] instead of decoding into garbage.
 Uint8List _decodeBase64Avatar(String value) {
-  final normalized = value.codeUnits.any(_base64Whitespace.contains)
-      ? String.fromCharCodes(
-          value.codeUnits.where((unit) => !_base64Whitespace.contains(unit)),
-        )
+  final normalized = value.contains('\n') || value.contains('\r')
+      ? value.replaceAll('\r', '').replaceAll('\n', '')
       : value;
   return base64Decode(normalized);
 }
