@@ -135,7 +135,7 @@ Future<void> main() async {
               database: database,
               remote: cloudRemote!,
               userId: userId,
-              deviceName: sourceDevice.deviceName,
+              deviceName: sourceDevice.sourceLabel,
               deviceManufacturer: sourceDevice.manufacturer,
               deviceModel: sourceDevice.model,
             ),

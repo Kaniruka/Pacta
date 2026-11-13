@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../focus/focus_repository.dart';
 
+import 'cloud_snapshot_history_page.dart';
 import 'cloud_snapshot_repository.dart';
 import 'cloud_sync_result.dart';
 import 'cloud_version_check.dart';
@@ -236,14 +237,20 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
     );
   }
 
-  String _deviceHardware(CloudSnapshotMetadata cloud) {
-    final manufacturer = cloud.deviceManufacturer?.trim();
-    final model = cloud.deviceModel?.trim();
-    final parts = <String>[
-      if (manufacturer != null && manufacturer.isNotEmpty) manufacturer,
-      if (model != null && model.isNotEmpty) model else '型号未知',
-    ];
-    return parts.join(' · ');
+  /// 历史备份入口：列表、指定版本恢复与本机恢复点都在这里。
+  Future<void> _openHistory() async {
+    final repository = widget.repository;
+    if (repository == null) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => CloudSnapshotHistoryPage(
+          repository: repository,
+          onRestored: widget.onDownloaded,
+        ),
+      ),
+    );
+    if (!mounted || widget.repository != repository) return;
+    await _loadResult();
   }
 
   Future<void> _inspect({bool automatic = false}) async {
@@ -284,14 +291,12 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
                 if (cloud == null)
                   const Text('云端暂无数据，可首次上传。')
                 else ...[
+                  // 来源只显示型号或设备名及平台；不单列设备标识与厂商。
                   Text('云端来源：${cloud.deviceName}'),
-                  Text(_deviceHardware(cloud)),
                   if (cloud.isLegacy)
                     const Text('发现旧版云端记录，将转换为整份数据；原设备和上传时间未记录。')
-                  else ...[
-                    Text('设备标识：${cloud.deviceId}'),
+                  else
                     Text('上传时间：${_time(cloud.uploadedAt)}'),
-                  ],
                   Text('云端数据更新：${_time(cloud.dataUpdatedAt)}'),
                   Text('云端记录：${cloud.rowCount} 条'),
                   const SizedBox(height: 8),
@@ -352,6 +357,14 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
             ),
           ),
           actions: [
+            if (widget.repository != null)
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  unawaited(_openHistory());
+                },
+                child: const Text('历史备份'),
+              ),
             if (cloud != null && widget.versionCheck != null)
               TextButton(
                 onPressed: () async {

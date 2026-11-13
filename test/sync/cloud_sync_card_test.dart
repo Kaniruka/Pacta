@@ -115,7 +115,9 @@ void main() {
     await tester.tap(find.byTooltip('查看云同步'));
     await tester.pumpAndSettle();
     expect(find.text('云端来源：家里的电脑'), findsOneWidget);
-    expect(find.text('型号未知'), findsOneWidget);
+    // 来源只显示名称与平台，不再单列设备标识或厂商型号。
+    expect(find.textContaining('设备标识'), findsNothing);
+    expect(find.textContaining('型号未知'), findsNothing);
     expect(find.text('本地数据时间较新，请选择要保留的数据。'), findsOneWidget);
     await tester.ensureVisible(find.text('从云端更新'));
     await tester.tap(find.text('从云端更新'));

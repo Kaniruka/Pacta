@@ -330,6 +330,22 @@ class LocalUserLifecycleStates extends Table {
   Set<Column<Object>> get primaryKey => {userId};
 }
 
+/// 恢复前保存的本机业务快照。刻意不属于可上传的业务表清单：恢复准备动作
+/// 因此不会覆盖云端数据，且按用户隔离并参与账号清除。
+class LocalCloudRecoveryPoints extends Table {
+  TextColumn get id => text()();
+  TextColumn get userId => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  TextColumn get reason => text()();
+  TextColumn get sourceDeviceName => text().nullable()();
+  DateTimeColumn get dataUpdatedAt => dateTime()();
+  IntColumn get rowCount => integer()();
+  TextColumn get payload => text()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
 @DriftDatabase(
   tables: [
     LocalGoals,
@@ -353,6 +369,7 @@ class LocalUserLifecycleStates extends Table {
     LocalCalendarSources,
     LocalCalendarBlocks,
     LocalUserLifecycleStates,
+    LocalCloudRecoveryPoints,
   ],
 )
 class PactaDatabase extends _$PactaDatabase {
@@ -383,6 +400,7 @@ class PactaDatabase extends _$PactaDatabase {
       UNION SELECT user_id FROM local_tasks
       UNION SELECT user_id FROM local_goals
       UNION SELECT user_id FROM local_user_lifecycle_states
+      UNION SELECT user_id FROM local_cloud_recovery_points
     ''').get();
     return rows.map((row) => row.read<String>('user_id')).toSet();
   }
@@ -455,6 +473,9 @@ class PactaDatabase extends _$PactaDatabase {
         localGoals,
       )..where((row) => row.userId.equals(userId))).go();
       await (delete(
+        localCloudRecoveryPoints,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
         localUserLifecycleStates,
       )..where((row) => row.userId.equals(userId))).go();
     });
@@ -463,7 +484,7 @@ class PactaDatabase extends _$PactaDatabase {
   }
 
   @override
-  int get schemaVersion => 25;
+  int get schemaVersion => 26;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -628,6 +649,9 @@ class PactaDatabase extends _$PactaDatabase {
       if (from < 25) {
         await m.addColumn(localGoals, localGoals.description);
         await m.addColumn(localTasks, localTasks.description);
+      }
+      if (from < 26) {
+        await m.createTable(localCloudRecoveryPoints);
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);

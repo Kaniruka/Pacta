@@ -18,6 +18,7 @@ import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/notifications/focus_notification_service.dart';
+import 'package:pacta/src/sync/cloud_snapshot_history.dart';
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_models.dart';
@@ -559,6 +560,17 @@ class _FileControlledCloudRemote implements CloudSnapshotRemote {
   final _ControlState control;
   int get inspectCount => control.inspectCount;
 
+  @override
+  Future<List<CloudSnapshotHistoryEntry>> history({
+    required String userId,
+  }) async => const [];
+
+  @override
+  Future<CloudSnapshotMetadata> downloadRevision({
+    required String userId,
+    required int revision,
+  }) async => _metadata(revision);
+
   CloudSnapshotMetadata _metadata(int revision) => CloudSnapshotMetadata(
     revision: revision,
     deviceId: 'issue72-remote',
@@ -586,6 +598,7 @@ class _FileControlledCloudRemote implements CloudSnapshotRemote {
     required int rowCount,
     String? deviceManufacturer,
     String? deviceModel,
+    String? requestId,
   }) async {
     control.businessTransfers++;
     control.remoteRevision = expectedRevision + 1;

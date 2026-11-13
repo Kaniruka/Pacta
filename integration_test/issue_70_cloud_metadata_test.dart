@@ -201,7 +201,7 @@ void main() {
         await fixture.mount(tester);
         await _openSync(tester);
         expect(find.text('云端来源：旧版云数据（来源设备未记录）'), findsOneWidget);
-        expect(find.text('型号未知'), findsOneWidget);
+        expect(find.textContaining('设备标识'), findsNothing);
         expect(find.text('发现旧版云端记录，将转换为整份数据；原设备和上传时间未记录。'), findsOneWidget);
         expect(find.text('下载'), findsOneWidget);
         await fixture.capture(tester, 'issue70-windows-legacy-preview');
@@ -269,7 +269,7 @@ Future<_DeviceFixture> _startFixture(
     remote: SupabaseCloudSnapshotRemote(client),
     userId: userId,
     deviceId: Platform.isAndroid ? 'issue70-android' : 'issue70-windows',
-    deviceName: sourceInfo.deviceName,
+    deviceName: sourceInfo.sourceLabel,
     deviceManufacturer: sourceInfo.manufacturer,
     deviceModel: sourceInfo.model,
     now: () => clock,
@@ -336,20 +336,18 @@ void _expectRemoteMetadata(
   CloudSnapshotMetadata cloud,
   SourceDeviceInfo source,
 ) {
-  expect(cloud.deviceName, source.deviceName);
+  expect(cloud.deviceName, source.sourceLabel);
   expect(cloud.deviceManufacturer, source.manufacturer);
   expect(cloud.deviceModel, source.model);
 }
 
+/// 来源只显示型号或设备名及平台；不单列设备标识与厂商。
 void _expectVisibleMetadata(WidgetTester tester, CloudSnapshotMetadata cloud) {
   expect(find.text('云端来源：${cloud.deviceName}'), findsOneWidget);
-  expect(
-    find.textContaining(_normalize(cloud.deviceModel) ?? '型号未知'),
-    findsOneWidget,
-  );
+  expect(find.textContaining('设备标识'), findsNothing);
   final manufacturer = _normalize(cloud.deviceManufacturer);
   if (manufacturer != null) {
-    expect(find.textContaining(manufacturer), findsOneWidget);
+    expect(find.textContaining(manufacturer), findsNothing);
   }
 }
 

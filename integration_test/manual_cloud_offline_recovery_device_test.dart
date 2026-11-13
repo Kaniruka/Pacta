@@ -502,6 +502,7 @@ class _CountingCloudSnapshotRemote extends InMemoryCloudSnapshotRemote {
     required int rowCount,
     String? deviceManufacturer,
     String? deviceModel,
+    String? requestId,
   }) {
     calls.total++;
     return super.upload(
@@ -514,6 +515,7 @@ class _CountingCloudSnapshotRemote extends InMemoryCloudSnapshotRemote {
       rowCount: rowCount,
       deviceManufacturer: deviceManufacturer,
       deviceModel: deviceModel,
+      requestId: requestId,
     );
   }
 
