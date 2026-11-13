@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:pacta/main.dart';
+import 'package:pacta/src/auth/user_lifecycle.dart';
 import 'package:pacta/src/calendar/calendar_provider.dart';
 import 'package:pacta/src/calendar/calendar_repository.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
@@ -25,6 +26,7 @@ void main() {
     'My offers explicit cloud upload and download through the real app shell',
     (tester) async {
       final database = PactaDatabase(NativeDatabase.memory());
+      final auth = FakeAuthRepository()..signedInUser = _userId;
       final cloudRemote = _TrackingCloudSnapshotRemote();
       final cloudRepository = CloudSnapshotRepository(
         database: database,
@@ -64,7 +66,14 @@ void main() {
       try {
         await tester.pumpWidget(
           PactaApp(
-            authRepository: FakeAuthRepository()..signedInUser = _userId,
+            authRepository: auth,
+            userLifecycleRepositoryFactory: (userId) => UserLifecycleRepository(
+              authRepository: auth,
+              localAccess: LocalUserLifecycleAccess(
+                database: database,
+                userId: userId,
+              ),
+            ),
             taskRepositoryFactory: (userId) => LocalTaskRepository(
               database: database,
               userId: userId,
@@ -99,17 +108,19 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.byType(AppShell), findsOneWidget);
-        expect(cloudRemote.inspectCalls, 0);
+        final initialChecks = cloudRemote.inspectCalls;
+        expect(cloudRemote.uploadCalls, 0);
+        expect(cloudRemote.downloadCalls, 0);
         final localBeforeUpload = await cloudRepository.captureLocalState();
         expect(localBeforeUpload.rowCount, greaterThanOrEqualTo(2));
 
         await tester.tap(find.text('我的'));
         await tester.pumpAndSettle();
-        await tester.ensureVisible(find.byTooltip('查看云端并选择方向'));
+        await tester.ensureVisible(find.byTooltip('查看云同步'));
         await tester.pumpAndSettle();
-        await tester.tap(find.byTooltip('查看云端并选择方向'));
+        await tester.tap(find.byTooltip('查看云同步'));
         await tester.pumpAndSettle();
-        expect(cloudRemote.inspectCalls, 1);
+        expect(cloudRemote.inspectCalls, initialChecks + 1);
         expect(
           find.text('本地记录：${localBeforeUpload.rowCount} 条'),
           findsOneWidget,
@@ -129,10 +140,10 @@ void main() {
         )..where((row) => row.userId.equals(_userId))).write(
           const LocalGoalsCompanion(title: Value('Local-only edit to replace')),
         );
-        await tester.tap(find.byTooltip('查看云端并选择方向'));
+        await tester.tap(find.byTooltip('查看云同步'));
         await tester.pumpAndSettle();
         expect(find.text('云端来源：Android emulator test mirror'), findsOneWidget);
-        await tester.tap(find.text('下载'));
+        await tester.tap(find.text('从云端更新'));
         await tester.pumpAndSettle();
         expect(find.text('下载并覆盖本地？'), findsOneWidget);
         await tester.tap(find.text('确认下载'));

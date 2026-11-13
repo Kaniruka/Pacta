@@ -10,13 +10,14 @@ Pacta 是基于 Flutter 的自我调节应用，用任务、专注链和国策�
 4. 安装依赖并运行应用：
 
    ```powershell
+   python scripts/fetch_misans.py
    flutter pub get
    flutter devices
    flutter run -d windows --dart-define-from-file=.env
    # 或将 windows 换成 flutter devices 显示的 Android 设备 ID
    ```
 
-   修改 `.env` 后重新运行应用，使新的编译期配置生效。未配置 URL 或 key 时，应用无法连接云端登录与同步。
+   首次构建需安装 Python 3 并运行上述脚本，从小米官方下载、校验内置 MiSans 字体；已有正确文件时无需联网。字体许可与说明见 [MiSans](assets/fonts/README.md)。修改 `.env` 后重新运行应用，使新的编译期配置生效。未配置 URL 或 key 时，应用无法连接云端登录与同步。
 
 5. 提交代码前运行 `flutter analyze` 和 `flutter test`。涉及平台权限、日历或通知的改动，还应在相应设备上验证。
 
@@ -75,6 +76,7 @@ Pacta 是基于 Flutter 的自我调节应用，用任务、专注链和国策�
 构建时仍需传入所部署项目的客户端配置：
 
 ```powershell
+python scripts/fetch_misans.py
 flutter build apk --dart-define-from-file=.env
 flutter build windows --dart-define-from-file=.env
 ```

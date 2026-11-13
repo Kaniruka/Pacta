@@ -72,12 +72,13 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(remote.inspections, 1);
-      expect(find.text('选择同步方式'), findsOneWidget);
+      expect(find.text('云端与本机'), findsOneWidget);
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
-      expect(find.text('云端有待处理更新'), findsOneWidget);
+      // 待处理版本不再占用常驻摘要；这里本机还没有成功同步记录。
+      expect(find.text('尚未同步'), findsOneWidget);
       expect(find.byType(AlertDialog), findsNothing);
       now = now.add(const Duration(minutes: 4, seconds: 59));
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
@@ -130,18 +131,18 @@ void main() {
       }
 
       await open();
-      expect(find.text('选择同步方式'), findsOneWidget);
+      expect(find.text('云端与本机'), findsOneWidget);
       await tester.tap(find.text('忽略'));
       await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
       await open();
-      expect(find.text('选择同步方式'), findsNothing);
+      expect(find.text('云端与本机'), findsNothing);
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('查看云端并选择方向'));
+      await tester.tap(find.byTooltip('查看云同步'));
       await tester.pumpAndSettle();
-      expect(find.text('选择同步方式'), findsOneWidget);
+      expect(find.text('云端与本机'), findsOneWidget);
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       remote.revision = 3;
@@ -149,14 +150,14 @@ void main() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
-      expect(find.text('选择同步方式'), findsOneWidget);
+      expect(find.text('云端与本机'), findsOneWidget);
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       now = now.add(const Duration(minutes: 5));
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
-      expect(find.text('选择同步方式'), findsOneWidget);
+      expect(find.text('云端与本机'), findsOneWidget);
       expect(remote.transfers, 0);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
@@ -222,21 +223,29 @@ void main() {
           _app(database, auth, repository, focusRepository: focus),
         );
         await tester.pumpAndSettle();
-        expect(find.text('选择同步方式'), findsNothing);
+        expect(find.text('云端与本机'), findsNothing);
         expect(find.text('云端有待处理更新，流程结束后可选择同步。'), findsOneWidget);
         await tester.tap(find.text('我的'));
         await tester.pumpAndSettle();
-        await tester.tap(find.byTooltip('查看云端并选择方向'));
+        await tester.tap(find.byTooltip('查看云同步'));
         await tester.pumpAndSettle();
         expect(
           tester
-              .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '下载'))
+              .widget<FilledButton>(find.widgetWithText(FilledButton, '从云端更新'))
               .onPressed,
           isNull,
         );
+        // 活动流程期间上传仍可用，但已降为次要入口。
         expect(
           tester
-              .widget<FilledButton>(find.widgetWithText(FilledButton, '上传'))
+              .widget<ButtonStyleButton>(
+                find.ancestor(
+                  of: find.text('上传'),
+                  matching: find.byWidgetPredicate(
+                    (widget) => widget is ButtonStyleButton,
+                  ),
+                ),
+              )
               .onPressed,
           isNotNull,
         );
@@ -256,7 +265,7 @@ void main() {
           );
         }
         await tester.pumpAndSettle();
-        expect(find.text('选择同步方式'), findsOneWidget);
+        expect(find.text('云端与本机'), findsOneWidget);
         expect(find.text('云端来源：Latest device'), findsOneWidget);
         expect(remote.transfers, 0);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -312,10 +321,10 @@ void main() {
         _app(database, auth, repository, focusRepository: focus),
       );
       await tester.pumpAndSettle();
-      expect(find.text('选择同步方式'), findsNothing);
+      expect(find.text('云端与本机'), findsNothing);
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('查看云端并选择方向'));
+      await tester.tap(find.byTooltip('查看云同步'));
       await tester.pumpAndSettle();
       expect(find.text('云端来源：Other device'), findsOneWidget);
       remote.revision = 3;
@@ -328,11 +337,11 @@ void main() {
       expect(find.text('云端来源：Latest device'), findsNothing);
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
-      expect(find.text('选择同步方式'), findsOneWidget);
+      expect(find.text('云端与本机'), findsOneWidget);
       expect(find.text('云端来源：Latest device'), findsOneWidget);
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
-      expect(find.text('选择同步方式'), findsNothing);
+      expect(find.text('云端与本机'), findsNothing);
       expect(remote.transfers, 0);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
@@ -422,11 +431,11 @@ void main() {
       notifications.armed = true;
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
-      expect(find.text('选择同步方式'), findsOneWidget);
+      expect(find.text('云端与本机'), findsOneWidget);
       expect(find.text('云端来源：Latest device'), findsOneWidget);
       notifications.release.complete();
       await tester.pumpAndSettle();
-      expect(find.text('选择同步方式'), findsOneWidget);
+      expect(find.text('云端与本机'), findsOneWidget);
       expect(find.text('云端来源：Latest device'), findsOneWidget);
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
@@ -490,7 +499,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('我的'));
         await tester.pumpAndSettle();
-        await tester.tap(find.byTooltip('查看云端并选择方向'));
+        await tester.tap(find.byTooltip('查看云同步'));
         await tester.pumpAndSettle();
         final before = await repository.captureLocalState();
         await tester.ensureVisible(find.text(action));
@@ -517,7 +526,7 @@ void main() {
           failureReason: 'End test',
         );
         await tester.pumpAndSettle();
-        expect(find.text('选择同步方式'), findsNothing);
+        expect(find.text('云端与本机'), findsNothing);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
         await database.close();
@@ -549,10 +558,10 @@ void main() {
       remote.revision = 3;
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('查看云端并选择方向'));
+      await tester.tap(find.byTooltip('查看云同步'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('下载'));
-      await tester.tap(find.text('下载'));
+      await tester.ensureVisible(find.text('从云端更新'));
+      await tester.tap(find.text('从云端更新'));
       await tester.pumpAndSettle();
       expect(find.textContaining('本机独有的记录将被丢弃'), findsOneWidget);
       await tester.tap(find.text('确认下载'));
@@ -561,14 +570,14 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
       await open();
-      expect(find.text('选择同步方式'), findsNothing);
+      expect(find.text('云端与本机'), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
       // Re-present the ignored version at the external boundary. Its reminder
       // preference must survive even though download replaced all business rows.
       remote.revision = 2;
       await open();
-      expect(find.text('选择同步方式'), findsNothing);
+      expect(find.text('云端与本机'), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
       await database.close();
@@ -599,7 +608,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('查看云端并选择方向'));
+      await tester.tap(find.byTooltip('查看云同步'));
       await tester.pumpAndSettle();
       expect(find.textContaining('尚无可靠的本地同步基线'), findsOneWidget);
       expect(find.text('本机有尚未同步的修改；下载将丢弃这些修改。'), findsNothing);
@@ -626,14 +635,16 @@ void main() {
       expect(find.byType(AlertDialog), findsNothing);
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
-      expect(find.text('云端检查失败，点击重试'), findsOneWidget);
+      // 失败反馈不再占用常驻摘要；卡片保留重试图标与提示。
+      expect(find.byIcon(Icons.refresh), findsOneWidget);
+      expect(find.byTooltip('重试云端检查'), findsOneWidget);
       remote.fail = false;
-      await tester.tap(find.text('云端检查失败，点击重试'));
+      await tester.tap(find.byIcon(Icons.refresh));
       await tester.pumpAndSettle();
-      expect(find.text('选择同步方式'), findsOneWidget);
+      expect(find.text('云端与本机'), findsOneWidget);
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
-      expect(find.text('云端有待处理更新'), findsOneWidget);
+      expect(find.text('尚未同步'), findsOneWidget);
       expect(remote.transfers, 0);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
@@ -662,10 +673,10 @@ void main() {
       checkedAt: DateTime.utc(2026),
     );
     remote.fail = false;
-    await tester.tap(find.text('云端检查失败，点击重试'));
+    await tester.tap(find.byIcon(Icons.refresh));
     await tester.pumpAndSettle();
     expect(remote.inspections, 1);
-    expect(find.text('云端有待处理更新'), findsNothing);
+    expect(find.byType(AlertDialog), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
     await database.close();
@@ -699,7 +710,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('我的'));
         await tester.pumpAndSettle();
-        expect(find.text('云端有待处理更新'), findsNothing);
+        expect(find.byType(AlertDialog), findsNothing);
         remote.revision = 3;
         remote.token = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
         now = now.add(const Duration(minutes: 5));
@@ -708,10 +719,15 @@ void main() {
           AppLifecycleState.resumed,
         );
         await tester.pumpAndSettle();
-        expect(find.text('选择同步方式'), findsOneWidget);
+        expect(find.text('云端与本机'), findsOneWidget);
         await tester.tap(find.text('取消'));
         await tester.pumpAndSettle();
-        expect(find.text('云端有待处理更新'), findsOneWidget);
+        // 待处理版本改为在弹层内呈现：再次打开即可看到新的云端版本。
+        await tester.tap(find.byTooltip('查看云同步'));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('云端来源：'), findsOneWidget);
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
         expect(remote.transfers, 0);
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
@@ -734,21 +750,21 @@ void main() {
       );
       await tester.pumpWidget(_app(database, auth, repository));
       await tester.pumpAndSettle();
-      expect(find.text('选择同步方式'), findsOneWidget);
+      expect(find.text('云端与本机'), findsOneWidget);
       remote.empty = true;
       auth.signedInUser = 'other-reader';
       auth.changes.add('same-email@example.test');
       await tester.pumpAndSettle();
-      expect(find.text('选择同步方式'), findsNothing);
+      expect(find.text('云端与本机'), findsNothing);
       remote.empty = false;
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('查看云端并选择方向'));
+      await tester.tap(find.byTooltip('查看云同步'));
       await tester.pumpAndSettle();
-      expect(find.text('选择同步方式'), findsOneWidget);
+      expect(find.text('云端与本机'), findsOneWidget);
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox.shrink());
@@ -782,7 +798,7 @@ void main() {
       remote.gate!.complete();
       await tester.pumpAndSettle();
       expect(remote.users, ['reader', 'other-reader']);
-      expect(find.text('云端有待处理更新'), findsNothing);
+      expect(find.byType(AlertDialog), findsNothing);
       expect(find.text('尚未同步'), findsOneWidget);
       expect(remote.transfers, 0);
       await tester.pumpWidget(const SizedBox.shrink());
@@ -810,9 +826,9 @@ void main() {
       expect(remote.inspections, 0);
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
-      expect(find.text('云端检查失败，点击重试'), findsOneWidget);
+      expect(find.byIcon(Icons.refresh), findsOneWidget);
       auth.lifecycleStatusError = null;
-      await tester.tap(find.text('云端检查失败，点击重试'));
+      await tester.tap(find.byIcon(Icons.refresh));
       await tester.pumpAndSettle();
       expect(remote.inspections, 1);
       expect(find.text('尚未同步'), findsOneWidget);
@@ -849,7 +865,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('查看云端并选择方向'));
+      await tester.tap(find.byTooltip('查看云同步'));
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('上传'));
       await tester.tap(find.text('上传'));
@@ -859,7 +875,7 @@ void main() {
       expect((await repository.loadSyncResult())!.cloudRevision, 2);
       remote.gate.complete();
       await tester.pumpAndSettle();
-      expect(find.text('云端有待处理更新'), findsNothing);
+      expect(find.byType(AlertDialog), findsNothing);
       expect(find.text('正在检查云端…'), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();

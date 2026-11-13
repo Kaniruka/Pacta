@@ -105,10 +105,10 @@ void main() {
       await tester.tap(find.text('新建强化等级'));
       await tester.pumpAndSettle();
       expect(find.text('保存'), findsOneWidget);
-      await _reveal(tester, find.byKey(const ValueKey('strengthened-trigger')));
+      await _reveal(tester, find.byKey(const ValueKey('strengthened-rule')));
       await tester.enterText(
-        find.byKey(const ValueKey('strengthened-trigger')),
-        '早餐以后',
+        find.byKey(const ValueKey('strengthened-rule')),
+        '早餐后阅读十分钟',
       );
       tester.view.viewInsets = const FakeViewPadding(bottom: 240);
       await tester.pumpAndSettle();

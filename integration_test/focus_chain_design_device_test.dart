@@ -135,8 +135,7 @@ void main() {
         appointmentTriggerSignal: longScenario
             ? '合上手机，倒一杯水，把桌面清空后坐下'
             : '合上手机，倒一杯水',
-        eliteFocusMarker: longScenario ? '戴上耳机，坐到书桌前，关掉所有通知' : '戴上耳机，坐到书桌前',
-        regularFocusMarker: longScenario ? _longAction : '打开笔记本，写下第一步',
+        focusMarker: longScenario ? _longAction : '戴上耳机，坐到书桌前',
       ),
     );
     final goal = await tasks.createGoal(
@@ -260,32 +259,32 @@ void main() {
         if (_snapshotOnly) {
           return;
         }
-        final regularEdit = find.byKey(
-          const ValueKey('focus-signal-edit-regular'),
+        final markerEdit = find.byKey(
+          const ValueKey('focus-signal-edit-marker'),
         );
         await tester.scrollUntilVisible(
-          regularEdit,
+          markerEdit,
           300,
           scrollable: find.byType(Scrollable).first,
         );
         await tester.pumpAndSettle();
         await shot('records-scroll');
-        await tester.tap(regularEdit);
+        await tester.tap(markerEdit);
         await tester.pumpAndSettle();
         await shot('edit-dialog');
         await tester.enterText(find.byType(TextField).first, '取消不应保存');
         await tester.tap(find.text('取消'));
         await tester.pumpAndSettle();
         final afterCancel = await signals.get();
-        expect(afterCancel.regularFocusMarker, isNot('取消不应保存'));
+        expect(afterCancel.focusMarker, isNot('取消不应保存'));
         await shot('edit-cancel');
-        await tester.tap(regularEdit);
+        await tester.tap(markerEdit);
         await tester.pumpAndSettle();
-        final saved = longScenario ? _longAction : '打开笔记本，开始第一步';
+        final saved = longScenario ? _longAction : '戴上耳机，坐到书桌前并开始';
         await tester.enterText(find.byType(TextField).first, saved);
         await tester.tap(find.text('保存'));
         await tester.pumpAndSettle();
-        expect((await signals.get()).regularFocusMarker, saved);
+        expect((await signals.get()).focusMarker, saved);
         await shot('edit-save');
         await tester.scrollUntilVisible(
           find.text('选择任务'),
@@ -341,7 +340,7 @@ void main() {
       if (_snapshotOnly) {
         return;
       }
-      final editor = find.byKey(const ValueKey('focus-signal-edit-regular'));
+      final editor = find.byKey(const ValueKey('focus-signal-edit-marker'));
       await tester.ensureVisible(editor);
       await tester.pumpAndSettle();
       if (Platform.isAndroid) {
@@ -352,10 +351,10 @@ void main() {
       if (Platform.isAndroid) {
         await binding.takeScreenshot('focus-chain-edit');
       }
-      await tester.enterText(find.byType(TextField).first, '打开笔记本，开始第一步');
+      await tester.enterText(find.byType(TextField).first, '戴上耳机，坐到书桌前并开始');
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
-      expect((await signals.get()).regularFocusMarker, '打开笔记本，开始第一步');
+      expect((await signals.get()).focusMarker, '戴上耳机，坐到书桌前并开始');
       expect(tester.takeException(), isNull);
       tester.platformDispatcher.textScaleFactorTestValue = 2;
       tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;

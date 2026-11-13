@@ -189,6 +189,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('可选模式任务'));
     await tester.pumpAndSettle();
+    // 双分类任务沿用上次模式；筛选不再替代本次明确的模式选择。
+    await tester.tap(find.byType(DropdownButtonFormField<FocusChainMode>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('精锐链').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('开始准备（15分钟）'));
     await tester.pumpAndSettle();
     final appointment = (await h.focus.getActiveAppointment())!;

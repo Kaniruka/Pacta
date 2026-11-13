@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:timezone/timezone.dart' as timezone;
 
 import '../focus/focus_time_zones.dart';
+import '../theme/pacta_status_colors.dart';
 import 'national_focus_checkpoints.dart';
 import 'national_focus_models.dart';
 import 'national_focus_reconciliation_page.dart';
@@ -178,17 +179,25 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
       _confirming = true;
       _error = null;
     });
+    final windowEnd = _confirmationWindowEnd();
     try {
-      final count = await widget.repository.confirmToday();
+      final count = await widget.repository.confirmToday(
+        expectedConfirmationCheckpoint: windowEnd,
+      );
       _syncInBackground();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              count == 0 ? '当前没有待确认节点。' : '已确认 $count 个国策节点今日继续有效。',
-            ),
-          ),
-        );
+      if (count > 0 && mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('已确认 $count 个国策节点今日继续有效。')));
+      }
+      final handledWithException = await _confirmExceptionPendingCards(
+        windowEnd,
+      );
+      if (!mounted) return;
+      final remaining = await _loadedExceptionPendingCards();
+      if (!mounted) return;
+      if (count == 0 && handledWithException == 0 && remaining.isEmpty) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('当前没有待确认节点。')));
       }
     } catch (error) {
       if (mounted) setState(() => _error = _friendlyError(error));
@@ -197,11 +206,94 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     }
   }
 
-  Future<void> _lightCard(NationalFocusCard card) async {
+  /// Walks pending nodes that carry exception or precedent notes one by one.
+  /// Closing the panel leaves the remaining nodes pending.
+  Future<int> _confirmExceptionPendingCards(DateTime windowEnd) async {
+    var handled = 0;
+    while (mounted && _isSameConfirmationWindow(windowEnd)) {
+      final pending = await _loadedExceptionPendingCards();
+      if (!mounted) break;
+      if (pending.isEmpty) break;
+      if (!_isSameConfirmationWindow(windowEnd)) break;
+      final card = pending.first;
+      final action = await showDialog<_ExceptionConfirmationAction>(
+        context: context,
+        builder: (_) =>
+            _ExceptionConfirmationDialog(card: card, remaining: pending.length),
+      );
+      if (!mounted ||
+          action == null ||
+          action == _ExceptionConfirmationAction.close) {
+        break;
+      }
+      final stateBefore = card.state;
+      if (action == _ExceptionConfirmationAction.confirm) {
+        await _lightCard(card, expectedCheckpoint: windowEnd);
+      } else {
+        if (!_isSameConfirmationWindow(windowEnd)) break;
+        await _extinguishCard(card, expectedCheckpoint: windowEnd);
+      }
+      if (!mounted) break;
+      final refreshed = await widget.repository.getTreeCards();
+      final updated = refreshed.where((item) => item.id == card.id).firstOrNull;
+      if (updated == null || updated.state == stateBefore) break;
+      handled++;
+      _syncInBackground();
+    }
+    return handled;
+  }
+
+  DateTime _confirmationWindowEnd() => nextNationalFocusCheckpoint(
+    (widget.now?.call() ?? DateTime.now()).toUtc(),
+  );
+
+  bool _isSameConfirmationWindow(DateTime windowEnd) =>
+      _confirmationWindowEnd().isAtSameMomentAs(windowEnd);
+
+  Future<List<NationalFocusCard>> _loadedExceptionPendingCards() async {
+    final cards = await widget.repository.getTreeCards();
+    final byId = {for (final card in cards) card.id: card};
+    final pending =
+        [
+          for (final card in cards)
+            if (card.state == NationalFocusCardState.pendingTodayConfirmation &&
+                !card.hasPendingReview &&
+                (card.exceptionNotes?.trim().isNotEmpty ?? false) &&
+                !_hasExtinguishedAncestor(card, byId))
+              card,
+        ]..sort((first, second) {
+          final byCreated = first.createdAt.compareTo(second.createdAt);
+          return byCreated != 0 ? byCreated : first.id.compareTo(second.id);
+        });
+    return pending;
+  }
+
+  bool _hasExtinguishedAncestor(
+    NationalFocusCard card,
+    Map<String, NationalFocusCard> cardsById,
+  ) {
+    var ancestorId = card.parentId;
+    final visited = <String>{card.id};
+    while (ancestorId != null && visited.add(ancestorId)) {
+      final ancestor = cardsById[ancestorId];
+      if (ancestor == null) return false;
+      if (ancestor.state == NationalFocusCardState.extinguished) return true;
+      ancestorId = ancestor.parentId;
+    }
+    return false;
+  }
+
+  Future<void> _lightCard(
+    NationalFocusCard card, {
+    DateTime? expectedCheckpoint,
+  }) async {
     if (!_busyCardIds.add(card.id)) return;
     setState(() => _error = null);
     try {
-      await widget.repository.lightCard(card.id);
+      await widget.repository.lightCard(
+        card.id,
+        expectedConfirmationCheckpoint: expectedCheckpoint,
+      );
       _syncInBackground();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -222,7 +314,10 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     }
   }
 
-  Future<void> _extinguishCard(NationalFocusCard card) async {
+  Future<void> _extinguishCard(
+    NationalFocusCard card, {
+    DateTime? expectedCheckpoint,
+  }) async {
     late final List<NationalFocusCard> treeCards;
     try {
       treeCards = await widget.repository.getTreeCards();
@@ -245,13 +340,28 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
         descendantCount: _descendantsOf(card.id, childrenByParent).length,
       ),
     );
-    if (reason == null || !mounted || !_busyCardIds.add(card.id)) return;
+    if (reason == null || !mounted) return;
+    if (expectedCheckpoint != null &&
+        !_isSameConfirmationWindow(expectedCheckpoint)) {
+      // The reason dialog stayed open across the checkpoint. Settle and leave
+      // the old batch rather than extinguishing new-day state.
+      try {
+        await widget.repository.settleDueCheckpoints();
+      } catch (_) {
+        // The next read still reflects the latest readable tree.
+      }
+      _syncInBackground();
+      if (mounted) setState(() {});
+      return;
+    }
+    if (!_busyCardIds.add(card.id)) return;
 
     setState(() => _error = null);
     try {
       await widget.repository.extinguishCard(
         cardId: card.id,
         failureReason: reason,
+        expectedConfirmationCheckpoint: expectedCheckpoint,
       );
       _syncInBackground();
       if (mounted) {
@@ -282,6 +392,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     required bool lightBlocked,
     required String? cascadeSourceLabel,
   }) async {
+    final windowEnd = _confirmationWindowEnd();
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -300,7 +411,14 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
               if (!mounted) return;
               switch (action) {
                 case _NodeAction.light:
-                  await _lightCard(card);
+                  await _lightCard(
+                    card,
+                    expectedCheckpoint:
+                        card.state ==
+                            NationalFocusCardState.pendingTodayConfirmation
+                        ? windowEnd
+                        : null,
+                  );
                 case _NodeAction.strengthening:
                   await _openStrengtheningManager(
                     context: context,
@@ -323,7 +441,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                 case _NodeAction.relocate:
                   _beginPlacement(card);
                 case _NodeAction.extinguish:
-                  await _extinguishCard(card);
+                  await _extinguishCard(card, expectedCheckpoint: windowEnd);
                 case _NodeAction.library:
                   await _moveBranchToLibrary(card);
               }
@@ -1387,9 +1505,7 @@ class _NationalFocusCardEditorPageState
     extends State<NationalFocusCardEditorPage> {
   final _formKey = GlobalKey<FormState>();
   final _name = TextEditingController();
-  final _trigger = TextEditingController();
   final _action = TextEditingController();
-  final _scope = TextEditingController();
   final _exceptionNotes = TextEditingController();
   bool _busy = false;
   String? _error;
@@ -1400,18 +1516,14 @@ class _NationalFocusCardEditorPageState
     final card = widget.card;
     if (card == null) return;
     _name.text = card.name;
-    _trigger.text = card.triggerCondition;
     _action.text = card.action;
-    _scope.text = card.scope ?? '';
     _exceptionNotes.text = card.exceptionNotes ?? '';
   }
 
   @override
   void dispose() {
     _name.dispose();
-    _trigger.dispose();
     _action.dispose();
-    _scope.dispose();
     _exceptionNotes.dispose();
     super.dispose();
   }
@@ -1426,9 +1538,9 @@ class _NationalFocusCardEditorPageState
     try {
       final draft = NationalFocusCardDraft(
         name: _name.text,
-        triggerCondition: _trigger.text,
+        triggerCondition: '',
         action: _action.text,
-        scope: _scope.text,
+        scope: null,
         exceptionNotes: _exceptionNotes.text,
       );
       final existing = widget.card;
@@ -1476,50 +1588,26 @@ class _NationalFocusCardEditorPageState
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
-                  controller: _trigger,
-                  minLines: 2,
-                  maxLines: 4,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
-                    labelText: '触发条件（可选）',
-                    hintText: '例如：坐到书桌前后',
-                    alignLabelWithHint: true,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
                   controller: _action,
-                  minLines: 2,
-                  maxLines: 4,
+                  minLines: 3,
+                  maxLines: 6,
                   textInputAction: TextInputAction.next,
                   decoration: const InputDecoration(
-                    labelText: '行动',
-                    hintText: '例如：先完成计划中的第一项',
+                    labelText: '国策规则',
+                    hintText: '写清在什么情况下做什么，例如：坐到书桌前后，先完成计划中的第一项',
                     alignLabelWithHint: true,
                   ),
-                  validator: (value) => _requiredFieldError(value, '行动'),
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _scope,
-                  minLines: 1,
-                  maxLines: 3,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
-                    labelText: '适用范围（可选）',
-                    hintText: '例如：仅工作日',
-                    alignLabelWithHint: true,
-                  ),
+                  validator: (value) => _requiredFieldError(value, '国策规则'),
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
                   controller: _exceptionNotes,
-                  minLines: 1,
-                  maxLines: 3,
+                  minLines: 2,
+                  maxLines: 4,
                   textInputAction: TextInputAction.done,
                   decoration: const InputDecoration(
-                    labelText: '例外说明（可选）',
-                    hintText: '例如：出差时顺延',
+                    labelText: '例外与判例（可选）',
+                    hintText: '例如：出差时顺延；当天取消安排记“不适用”',
                     alignLabelWithHint: true,
                   ),
                 ),
@@ -1658,16 +1746,10 @@ class _LibraryCard extends StatelessWidget {
               ),
             ],
           ),
-          _FieldText(label: '触发条件', value: card.effectiveTriggerCondition),
-          const SizedBox(height: 12),
-          _FieldText(label: '行动', value: card.effectiveAction),
-          if (card.scope != null) ...[
-            const SizedBox(height: 12),
-            _FieldText(label: '适用范围', value: card.scope!),
-          ],
+          _FieldText(label: '国策规则', value: card.effectiveAction),
           if (card.exceptionNotes != null) ...[
             const SizedBox(height: 12),
-            _FieldText(label: '例外说明', value: card.exceptionNotes!),
+            _FieldText(label: '例外与判例', value: card.exceptionNotes!),
           ],
           if (card.hasPendingReview) ...[
             const SizedBox(height: 12),
@@ -1720,9 +1802,11 @@ class _DeletedLibraryCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(card.name, style: Theme.of(context).textTheme.titleMedium),
-          _FieldText(label: '触发条件', value: card.effectiveTriggerCondition),
-          const SizedBox(height: 12),
-          _FieldText(label: '行动', value: card.effectiveAction),
+          _FieldText(label: '国策规则', value: card.effectiveAction),
+          if (card.exceptionNotes != null) ...[
+            const SizedBox(height: 12),
+            _FieldText(label: '例外与判例', value: card.exceptionNotes!),
+          ],
           const SizedBox(height: 12),
           _NationalFocusRecordSummary(card: card),
           if (card.hasPendingReview) ...[
@@ -1895,15 +1979,25 @@ class _NodeActionsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final reviewBlocked = card.hasPendingReview;
+    final String? blockedReason = reviewBlocked
+        ? '请先完成核对后再操作。'
+        : lightBlocked && card.state != NationalFocusCardState.lit
+        ? (cascadeSourceLabel == null
+              ? '请先点亮父节点。'
+              : '因「$cascadeSourceLabel」连带熄灭；父节点恢复后仍需单独点亮。')
+        : null;
     Widget action(
       _NodeAction kind,
       IconData icon,
       String title, {
+      String? subtitle,
       bool enabled = true,
     }) => ListTile(
       leading: Icon(icon),
       title: Text(title),
+      subtitle: subtitle == null ? null : Text(subtitle),
       enabled: enabled,
       onTap: enabled ? () => onAction(kind) : null,
     );
@@ -1912,16 +2006,17 @@ class _NodeActionsSheet extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(card.name, style: Theme.of(context).textTheme.headlineSmall),
+          Text(card.name, style: theme.textTheme.headlineSmall),
           if (reviewBlocked) const _NationalFocusReviewNotice(),
           const SizedBox(height: 12),
-          Text(
-            card.effectiveAction,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const Divider(height: 16),
-
+          Text(card.effectiveAction, style: theme.textTheme.bodyMedium),
+          if (card.exceptionNotes != null) ...[
+            const SizedBox(height: 12),
+            Text('例外与判例', style: theme.textTheme.labelLarge),
+            const SizedBox(height: 4),
+            Text(card.exceptionNotes!, style: theme.textTheme.bodyMedium),
+          ],
+          const Divider(height: 20),
           action(
             card.state == NationalFocusCardState.lit
                 ? _NodeAction.extinguish
@@ -1934,15 +2029,19 @@ class _NodeActionsSheet extends StatelessWidget {
               NationalFocusCardState.pendingTodayConfirmation => '确认',
               NationalFocusCardState.extinguished => '点亮',
             },
+            subtitle: blockedReason,
             enabled:
                 !reviewBlocked &&
                 (card.state == NationalFocusCardState.lit || !lightBlocked),
           ),
-          if (reviewBlocked) const Text('请先完成核对后再操作。'),
-          if (!reviewBlocked &&
-              lightBlocked &&
-              card.state != NationalFocusCardState.lit)
-            const Text('请先点亮父节点。'),
+          if (card.state == NationalFocusCardState.pendingTodayConfirmation)
+            action(
+              _NodeAction.extinguish,
+              Icons.lightbulb_outline,
+              '熄灭',
+              enabled: !reviewBlocked,
+            ),
+          const Divider(height: 8),
           action(_NodeAction.details, Icons.article_outlined, '查看详情'),
           action(
             _NodeAction.strengthening,
@@ -1962,13 +2061,6 @@ class _NodeActionsSheet extends StatelessWidget {
             '调整树中位置',
             enabled: !reviewBlocked,
           ),
-          if (card.state == NationalFocusCardState.pendingTodayConfirmation)
-            action(
-              _NodeAction.extinguish,
-              Icons.lightbulb_outline,
-              '熄灭',
-              enabled: !reviewBlocked,
-            ),
           action(
             _NodeAction.library,
             Icons.library_add_outlined,
@@ -1992,6 +2084,15 @@ class _NationalFocusCardDetailPage extends StatelessWidget {
   final NationalFocusCard card;
   final bool lightBlocked;
   final String? cascadeSourceLabel;
+
+  Future<void> _editCard(BuildContext context, NationalFocusCard card) =>
+      Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              NationalFocusCardEditorPage(repository: repository, card: card),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) => StreamBuilder<List<NationalFocusCard>>(
     stream: card.isInTree
@@ -2007,31 +2108,12 @@ class _NationalFocusCardDetailPage extends StatelessWidget {
           actions: [
             PopupMenuButton<String>(
               tooltip: '卡片操作',
-              onSelected: (value) async {
-                if (value == 'edit') {
-                  await Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => NationalFocusCardEditorPage(
-                        repository: repository,
-                        card: card,
-                      ),
-                    ),
-                  );
-                } else {
-                  await _renameNationalFocusCard(context, repository, card);
-                }
+              enabled: !card.hasPendingReview,
+              onSelected: (value) {
+                if (value == 'edit') _editCard(context, card);
               },
-              itemBuilder: (_) => [
-                PopupMenuItem(
-                  value: 'edit',
-                  enabled: !card.hasPendingReview,
-                  child: const Text('编辑卡片'),
-                ),
-                PopupMenuItem(
-                  value: 'rename',
-                  enabled: !card.hasPendingReview,
-                  child: const Text('修改名称'),
-                ),
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'edit', child: Text('编辑卡片')),
               ],
             ),
           ],
@@ -2046,23 +2128,45 @@ class _NationalFocusCardDetailPage extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 24),
-            _FieldText(label: '触发条件', value: card.effectiveTriggerCondition),
-            const SizedBox(height: 20),
-            _FieldText(label: '行动', value: card.effectiveAction),
-            if (card.scope != null) ...[
-              const SizedBox(height: 20),
-              _FieldText(label: '适用范围', value: card.scope!),
-            ],
+            _FieldText(label: '国策规则', value: card.effectiveAction),
             if (card.exceptionNotes != null) ...[
               const SizedBox(height: 20),
-              _FieldText(label: '例外说明', value: card.exceptionNotes!),
+              _FieldText(label: '例外与判例', value: card.exceptionNotes!),
             ],
             const SizedBox(height: 24),
-            Text('强化要求', style: Theme.of(context).textTheme.titleMedium),
-            Text(
-              card.activeStrengtheningLevel == null
-                  ? '当前使用基础要求'
-                  : '当前要求 · 强化等级 ${card.activeStrengtheningLevel}',
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '强化要求',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    Text(
+                      card.activeStrengtheningLevel == null
+                          ? '当前使用基础要求'
+                          : '当前要求 · 强化等级 ${card.activeStrengtheningLevel}',
+                    ),
+                  ],
+                ),
+                TextButton.icon(
+                  onPressed: card.hasPendingReview
+                      ? null
+                      : () => _openStrengtheningManager(
+                          context: context,
+                          repository: repository,
+                          cardId: card.id,
+                        ),
+                  icon: const Icon(Icons.tune),
+                  label: const Text('管理强化要求'),
+                ),
+              ],
             ),
             const SizedBox(height: 24),
             Text('记录', style: Theme.of(context).textTheme.titleMedium),
@@ -2114,7 +2218,9 @@ class _NationalFocusTreeNode extends StatelessWidget {
     final iconBackground = card.hasPendingReview
         ? colors.errorContainer
         : switch (card.state) {
-            NationalFocusCardState.lit => colors.primaryContainer,
+            NationalFocusCardState.lit => PactaStatusColors.of(
+              context,
+            ).successContainer,
             NationalFocusCardState.pendingTodayConfirmation =>
               colors.tertiaryContainer,
             NationalFocusCardState.extinguished =>
@@ -2136,7 +2242,21 @@ class _NationalFocusTreeNode extends StatelessWidget {
                 color: iconBackground,
                 border: Border.all(color: colors.outlineVariant),
               ),
-              child: Icon(statusIcon, size: 24, color: colors.onSurface),
+              child: Icon(
+                statusIcon,
+                size: 24,
+                color: card.hasPendingReview
+                    ? colors.onErrorContainer
+                    : switch (card.state) {
+                        NationalFocusCardState.lit => PactaStatusColors.of(
+                          context,
+                        ).onSuccessContainer,
+                        NationalFocusCardState.pendingTodayConfirmation =>
+                          colors.onTertiaryContainer,
+                        NationalFocusCardState.extinguished =>
+                          colors.onSurfaceVariant,
+                      },
+              ),
             ),
             const SizedBox(height: 3),
             Text(
@@ -2233,6 +2353,67 @@ class _NationalFocusRecordSummary extends StatelessWidget {
   }
 }
 
+enum _ExceptionConfirmationAction { confirm, extinguish, close }
+
+class _ExceptionConfirmationDialog extends StatelessWidget {
+  const _ExceptionConfirmationDialog({
+    required this.card,
+    required this.remaining,
+  });
+
+  final NationalFocusCard card;
+  final int remaining;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      scrollable: true,
+      title: Text(card.name),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('确认今日继续有效？', style: theme.textTheme.bodyLarge),
+          const SizedBox(height: 4),
+          Text(
+            remaining > 1 ? '还有 $remaining 个例外节点待逐项确认' : '这是最后一个例外节点',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 12),
+          Text('国策规则', style: theme.textTheme.labelLarge),
+          const SizedBox(height: 4),
+          Text(card.effectiveAction),
+          if (card.exceptionNotes != null) ...[
+            const SizedBox(height: 12),
+            Text('例外与判例', style: theme.textTheme.labelLarge),
+            const SizedBox(height: 4),
+            Text(card.exceptionNotes!),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () =>
+              Navigator.of(context)
+                  .pop(_ExceptionConfirmationAction.extinguish),
+          child: const Text('熄灭'),
+        ),
+        TextButton(
+          onPressed: () =>
+              Navigator.of(context).pop(_ExceptionConfirmationAction.close),
+          child: const Text('关闭'),
+        ),
+        FilledButton(
+          onPressed: () =>
+              Navigator.of(context).pop(_ExceptionConfirmationAction.confirm),
+          child: const Text('确认'),
+        ),
+      ],
+    );
+  }
+}
+
 class _ExtinguishReasonDialog extends StatefulWidget {
   const _ExtinguishReasonDialog({
     required this.card,
@@ -2259,6 +2440,12 @@ class _ExtinguishReasonDialogState extends State<_ExtinguishReasonDialog> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('「${widget.card.name}」会在下一检查点结算；此前重新点亮可保留当前连续记录。'),
+        if (widget.card.exceptionNotes != null) ...[
+          const SizedBox(height: 12),
+          Text('例外与判例', style: Theme.of(context).textTheme.labelLarge),
+          const SizedBox(height: 4),
+          Text(widget.card.exceptionNotes!),
+        ],
         if (widget.descendantCount > 0) ...[
           const SizedBox(height: 8),
           Text('此操作也会熄灭 ${widget.descendantCount} 个后代。父节点恢复后，后代仍需逐个点亮。'),

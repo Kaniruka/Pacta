@@ -149,7 +149,11 @@ unknown; the client keeps their original device name and upload timestamp.
 Android supplies brand/model and Windows supplies BIOS manufacturer/product
 name, without serial numbers. Before this migration is applied, the new client
 can still inspect and download old snapshots using their original columns;
-uploading hardware metadata requires the new RPC contract. This is a deployment
+uploading hardware metadata requires the new RPC contract. When PostgREST returns
+`PGRST202` explicitly identifying the old seven-parameter snapshot RPC, the client
+retries once without the two optional hardware fields, preserving the payload,
+expected revision, and legacy token. Other errors do not trigger this fallback.
+This is a deployment
 instruction, not evidence that the shared project has been migrated.
 
 Run `supabase/tests/cloud_business_snapshots.sql` in an isolated test

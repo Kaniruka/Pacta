@@ -2,21 +2,21 @@ import 'package:drift/drift.dart';
 
 import '../auth/user_lifecycle.dart';
 import '../tasks/task_database.dart' as db;
-import 'focus_models.dart';
 
 class ChainSignalTexts {
   const ChainSignalTexts({
     this.appointmentTriggerSignal = '',
-    this.eliteFocusMarker = '',
-    this.regularFocusMarker = '',
+    this.focusMarker = '',
   });
 
+  /// The commitment action for the single Appointment Chain.
   final String appointmentTriggerSignal;
-  final String eliteFocusMarker;
-  final String regularFocusMarker;
 
-  String focusMarker(FocusChainMode mode) =>
-      mode == FocusChainMode.elite ? eliteFocusMarker : regularFocusMarker;
+  /// The single Focus Marker shared by the Elite and Regular Focus Chains.
+  ///
+  /// The chains keep independent consecutive records; only the commitment
+  /// action is shared, so one edited value applies to both launch summaries.
+  final String focusMarker;
 }
 
 /// User-owned commitment actions, included in whole-data cloud snapshots.
@@ -39,12 +39,13 @@ class ChainSignalsRepository {
       database.select(database.chainSignals)
         ..where((row) => row.userId.equals(userId));
 
+  /// The shared Focus Marker is stored in both marker columns, so either one
+  /// carries the current value; the elite column is the canonical read.
   ChainSignalTexts _texts(db.ChainSignal? row) => row == null
       ? const ChainSignalTexts()
       : ChainSignalTexts(
           appointmentTriggerSignal: row.appointmentTriggerSignal,
-          eliteFocusMarker: row.eliteFocusMarker,
-          regularFocusMarker: row.regularFocusMarker,
+          focusMarker: row.eliteFocusMarker,
         );
 
   Future<ChainSignalTexts> get() async =>
@@ -54,6 +55,7 @@ class ChainSignalsRepository {
 
   Future<void> save(ChainSignalTexts texts) async {
     await lifecycleAccess.requireActive();
+    final marker = texts.focusMarker.trim();
     await database
         .into(database.chainSignals)
         .insertOnConflictUpdate(
@@ -62,8 +64,9 @@ class ChainSignalsRepository {
             appointmentTriggerSignal: Value(
               texts.appointmentTriggerSignal.trim(),
             ),
-            eliteFocusMarker: Value(texts.eliteFocusMarker.trim()),
-            regularFocusMarker: Value(texts.regularFocusMarker.trim()),
+            // Both existing marker fields hold the same shared Focus Marker.
+            eliteFocusMarker: Value(marker),
+            regularFocusMarker: Value(marker),
             updatedAt: _now(),
           ),
         );

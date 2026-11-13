@@ -8,7 +8,7 @@ import 'package:pacta/src/tasks/task_database.dart';
 
 void main() {
   for (final inTree in [false, true]) {
-    testWidgets('${inTree ? "树节点" : "卡片库"}详情可编辑完整卡片并清空触发条件', (tester) async {
+    testWidgets('${inTree ? "树节点" : "卡片库"}详情编辑三字段并以国策规则保存', (tester) async {
       final database = PactaDatabase(NativeDatabase.memory());
       final repository = LocalNationalFocusRepository(
         database: database,
@@ -51,26 +51,30 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('查看详情'));
       await tester.pumpAndSettle();
+      // Current card information uses the three-field vocabulary and no
+      // longer surfaces the legacy trigger condition or scope.
+      expect(find.text('触发条件'), findsNothing);
+      expect(find.text('适用范围'), findsNothing);
+      expect(find.text('行动'), findsNothing);
+      expect(find.text('国策规则'), findsOneWidget);
+      expect(find.text('读十页'), findsOneWidget);
       await tester.tap(find.byTooltip('卡片操作'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('编辑卡片'));
       await tester.pumpAndSettle();
       final fields = find.byType(TextFormField);
-      expect(fields, findsNWidgets(5));
+      expect(fields, findsNWidgets(3));
       await tester.enterText(fields.at(0), '每日阅读');
-      await tester.enterText(fields.at(1), '');
-      await tester.enterText(fields.at(2), '读二十页');
-      await tester.ensureVisible(fields.at(3));
-      await tester.enterText(fields.at(3), '工作日');
-      await tester.ensureVisible(fields.at(4));
-      await tester.enterText(fields.at(4), '出差除外');
+      await tester.enterText(fields.at(1), '读二十页');
+      await tester.ensureVisible(fields.at(2));
+      await tester.enterText(fields.at(2), '出差除外');
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
       final updated = await repository.getCard(card.id);
       expect(updated.name, '每日阅读');
       expect(updated.triggerCondition, isEmpty);
       expect(updated.action, '读二十页');
-      expect(updated.scope, '工作日');
+      expect(updated.scope, isNull);
       expect(updated.exceptionNotes, '出差除外');
       expect(updated.isInTree, inTree);
       expect(
@@ -81,14 +85,18 @@ void main() {
       );
       expect(updated.requirementVersions.first.effectiveAction, '读十页');
       expect(updated.requirementVersions.last.effectiveAction, '读二十页');
-      expect(find.text('未设置'), findsOneWidget);
+      expect(updated.requirementVersions.last.scope, isNull);
+      expect(updated.requirementVersions.last.exceptionNotes, '出差除外');
       expect(find.text('每日阅读'), findsOneWidget);
+      expect(find.text('例外与判例'), findsOneWidget);
+      expect(find.text('出差除外'), findsOneWidget);
+      expect(find.text('触发条件'), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
     });
   }
-  testWidgets('新建国策卡允许不填写触发条件', (tester) async {
+  testWidgets('新建国策卡只填写名称、国策规则与例外', (tester) async {
     final database = PactaDatabase(NativeDatabase.memory());
     final repository = LocalNationalFocusRepository(
       database: database,
@@ -97,6 +105,7 @@ void main() {
     );
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
       await repository.dispose();
       await database.close();
     });
@@ -106,14 +115,19 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('新建国策卡'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(0), '阅读');
-    await tester.enterText(find.byType(TextFormField).at(2), '读十页');
+    final fields = find.byType(TextFormField);
+    expect(fields, findsNWidgets(3));
+    await tester.enterText(fields.at(0), '阅读');
+    await tester.enterText(fields.at(1), '读十页');
+    await tester.ensureVisible(fields.at(2));
+    await tester.enterText(fields.at(2), '出差除外');
     await tester.tap(find.text('保存到卡片库'));
     await tester.pumpAndSettle();
-    expect(
-      (await repository.getLibraryCards()).single.triggerCondition,
-      isEmpty,
-    );
+    final created = (await repository.getLibraryCards()).single;
+    expect(created.triggerCondition, isEmpty);
+    expect(created.scope, isNull);
+    expect(created.action, '读十页');
+    expect(created.exceptionNotes, '出差除外');
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));

@@ -175,22 +175,37 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
       expectedLegacyToken = null;
       remoteRevision = expectedRevision;
     }
-    final Object? result;
+    final parameters = <String, dynamic>{
+      'p_expected_revision': remoteRevision,
+      'p_payload': payload,
+      'p_device_id': deviceId,
+      'p_device_name': deviceName,
+      'p_data_updated_at': dataUpdatedAt.toUtc().toIso8601String(),
+      'p_row_count': rowCount,
+      'p_expected_legacy_token': expectedLegacyToken,
+      'p_device_manufacturer': _normalizeDeviceMetadata(deviceManufacturer),
+      'p_device_model': _normalizeDeviceMetadata(deviceModel),
+    };
+    Object? result;
     try {
-      result = await client.rpc(
-        'save_cloud_business_snapshot',
-        params: {
-          'p_expected_revision': remoteRevision,
-          'p_payload': payload,
-          'p_device_id': deviceId,
-          'p_device_name': deviceName,
-          'p_data_updated_at': dataUpdatedAt.toUtc().toIso8601String(),
-          'p_row_count': rowCount,
-          'p_expected_legacy_token': expectedLegacyToken,
-          'p_device_manufacturer': _normalizeDeviceMetadata(deviceManufacturer),
-          'p_device_model': _normalizeDeviceMetadata(deviceModel),
-        },
-      );
+      try {
+        result = await client.rpc(
+          'save_cloud_business_snapshot',
+          params: parameters,
+        );
+      } on PostgrestException catch (error) {
+        if (!_isOldSnapshotRpc(error, parameters.keys.toSet())) rethrow;
+        // PGRST202 means no function ran. Retry only the confirmed old
+        // signature, preserving the same payload and concurrency guards.
+        _assertCurrentUser(userId);
+        final oldParameters = Map<String, dynamic>.from(parameters)
+          ..remove('p_device_manufacturer')
+          ..remove('p_device_model');
+        result = await client.rpc(
+          'save_cloud_business_snapshot',
+          params: oldParameters,
+        );
+      }
     } on PostgrestException catch (error) {
       if (error.code == 'PT409') {
         throw StateError('云端数据在确认期间发生变化，请重新查看并选择覆盖方向。');
@@ -211,6 +226,26 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
     final saved = _metadataFromJson(row);
     _legacyTokensByUser.remove(userId);
     return saved;
+  }
+
+  bool _isOldSnapshotRpc(PostgrestException error, Set<String> parameters) {
+    if (error.code != 'PGRST202') return false;
+    Set<String>? signature(String text) {
+      final match = RegExp(r'public\.save_cloud_business_snapshot\(([^()]*)\)')
+          .firstMatch(text);
+      return match?.group(1)?.split(',').map((value) => value.trim()).toSet();
+    }
+
+    bool matches(Set<String>? actual, Set<String> expected) =>
+        actual != null &&
+        actual.length == expected.length &&
+        actual.containsAll(expected);
+    final oldParameters = {...parameters}
+      ..remove('p_device_manufacturer')
+      ..remove('p_device_model');
+    return error.message.contains('Could not find the function') &&
+        matches(signature(error.message), parameters) &&
+        matches(signature(error.hint ?? ''), oldParameters);
   }
 
   Future<CloudSnapshotMetadata?> _readLegacySnapshot(String userId) async {

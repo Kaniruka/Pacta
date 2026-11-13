@@ -1,5 +1,7 @@
+import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pacta/src/national_focus/national_focus_checkpoints.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
@@ -33,6 +35,9 @@ void main() {
         scope: '仅工作日',
         exceptionNotes: '出差时顺延',
       );
+
+  NationalFocusCardDraft plainDraft(String name, String action) =>
+      NationalFocusCardDraft(name: name, action: action);
 
   test('创建卡片先进入卡片库，放置后重建仓储仍保留位置和熄灭状态', () async {
     final card = await repository.createCard(draft('开始工作前', '整理桌面'));
@@ -759,9 +764,9 @@ void main() {
   });
 
   test('一键确认只处理待今日确认节点并保持已经点亮与真正熄灭节点原样', () async {
-    final first = await repository.createCard(draft('起床后', '整理床铺'));
-    final second = await repository.createCard(draft('到工位后', '写下第一步'));
-    final extinguished = await repository.createCard(draft('晚饭后', '收拾厨房'));
+    final first = await repository.createCard(plainDraft('起床后', '整理床铺'));
+    final second = await repository.createCard(plainDraft('到工位后', '写下第一步'));
+    final extinguished = await repository.createCard(plainDraft('晚饭后', '收拾厨房'));
     for (final card in [first, second, extinguished]) {
       await repository.placeCard(cardId: card.id, parentId: null);
     }
@@ -797,8 +802,164 @@ void main() {
     expect(await repository.getFailures(), isEmpty);
   });
 
+  test('一键确认跳过有例外与判例的待确认节点，空白例外仍批量确认', () async {
+    final withNotes = await repository.createCard(
+      const NationalFocusCardDraft(
+        name: '有例外',
+        action: '阅读十分钟',
+        exceptionNotes: '出差时顺延',
+      ),
+    );
+    final plain = await repository.createCard(plainDraft('无例外', '打开计划'));
+    final blankNotes = await repository.createCard(plainDraft('空白例外', '整理桌面'));
+    await (database.update(database.localNationalFocusCards)..where(
+          (row) => row.userId.equals('user-a') & row.id.equals(blankNotes.id),
+        ))
+        .write(
+          const LocalNationalFocusCardsCompanion(exceptionNotes: Value('   ')),
+        );
+    for (final card in [withNotes, plain, blankNotes]) {
+      await repository.placeCard(cardId: card.id, parentId: null);
+      await repository.lightCard(card.id);
+    }
+
+    now = DateTime.utc(2026, 9, 25, 20);
+    for (final card in [withNotes, plain, blankNotes]) {
+      expect(
+        (await repository.getCard(card.id)).state,
+        NationalFocusCardState.pendingTodayConfirmation,
+      );
+    }
+
+    expect(await repository.confirmToday(), 2);
+    expect(
+      (await repository.getCard(withNotes.id)).state,
+      NationalFocusCardState.pendingTodayConfirmation,
+    );
+    expect(
+      (await repository.getCard(plain.id)).state,
+      NationalFocusCardState.lit,
+    );
+    expect(
+      (await repository.getCard(blankNotes.id)).state,
+      NationalFocusCardState.lit,
+    );
+    expect(await repository.confirmToday(), 0);
+
+    await repository.lightCard(withNotes.id);
+    expect(
+      (await repository.getCard(withNotes.id)).state,
+      NationalFocusCardState.lit,
+    );
+  });
+
+  test('跨检查点后旧确认窗口不会重新点亮已结算或新一天的节点', () async {
+    final stale = await repository.createCard(plainDraft('旧窗口卡', '打开计划'));
+    final sameWindow = await repository.createCard(plainDraft('同窗口卡', '整理桌面'));
+    for (final card in [stale, sameWindow]) {
+      await repository.placeCard(cardId: card.id, parentId: null);
+      await repository.lightCard(card.id);
+    }
+    now = DateTime.utc(2026, 9, 25, 20);
+    await repository.settleDueCheckpoints();
+    final windowEnd = nextNationalFocusCheckpoint(now);
+    expect(windowEnd, DateTime.utc(2026, 9, 26, 20));
+
+    await repository.lightCard(
+      sameWindow.id,
+      expectedConfirmationCheckpoint: windowEnd,
+    );
+    await repository.lightCard(
+      sameWindow.id,
+      expectedConfirmationCheckpoint: windowEnd,
+    );
+    expect(
+      (await repository.getCard(sameWindow.id)).state,
+      NationalFocusCardState.lit,
+    );
+
+    now = DateTime.utc(2026, 9, 26, 20);
+    await expectLater(
+      repository.lightCard(stale.id, expectedConfirmationCheckpoint: windowEnd),
+      throwsStateError,
+    );
+    final failed = await repository.getCard(stale.id);
+    expect(failed.state, NationalFocusCardState.extinguished);
+    expect(failed.successfulDays, 1);
+    expect(await repository.getFailures(cardId: stale.id), hasLength(1));
+
+    final newDayPending = await repository.getCard(sameWindow.id);
+    expect(
+      newDayPending.state,
+      NationalFocusCardState.pendingTodayConfirmation,
+    );
+    await expectLater(
+      repository.lightCard(
+        sameWindow.id,
+        expectedConfirmationCheckpoint: windowEnd,
+      ),
+      throwsStateError,
+    );
+    expect(
+      (await repository.getCard(sameWindow.id)).state,
+      NationalFocusCardState.pendingTodayConfirmation,
+    );
+
+    expect(
+      await repository.confirmToday(expectedConfirmationCheckpoint: windowEnd),
+      0,
+    );
+    expect(
+      (await repository.getCard(sameWindow.id)).state,
+      NationalFocusCardState.pendingTodayConfirmation,
+    );
+
+    await repository.lightCard(stale.id);
+    expect(
+      (await repository.getCard(stale.id)).state,
+      NationalFocusCardState.lit,
+    );
+  });
+
+  test('跨检查点后旧熄灭窗口不会提交到新一天状态', () async {
+    final timely = await repository.createCard(plainDraft('及时熄灭卡', '打开计划'));
+    final stale = await repository.createCard(plainDraft('跨日熄灭卡', '整理桌面'));
+    for (final card in [timely, stale]) {
+      await repository.placeCard(cardId: card.id, parentId: null);
+      await repository.lightCard(card.id);
+    }
+    now = DateTime.utc(2026, 9, 25, 20);
+    await repository.settleDueCheckpoints();
+    final windowEnd = nextNationalFocusCheckpoint(now);
+
+    await repository.extinguishCard(
+      cardId: timely.id,
+      expectedConfirmationCheckpoint: windowEnd,
+    );
+    expect(
+      (await repository.getCard(timely.id)).state,
+      NationalFocusCardState.extinguished,
+    );
+    expect(await repository.getFailures(), isEmpty);
+
+    now = DateTime.utc(2026, 9, 26, 20);
+    await expectLater(
+      repository.extinguishCard(
+        cardId: stale.id,
+        failureReason: '旧窗口原因',
+        expectedConfirmationCheckpoint: windowEnd,
+      ),
+      throwsStateError,
+    );
+    final settled = await repository.getCard(stale.id);
+    expect(settled.state, NationalFocusCardState.extinguished);
+    final failures = await repository.getFailures(cardId: stale.id);
+    expect(failures, hasLength(1));
+    expect(failures.single.cause, NationalFocusFailureCause.missedConfirmation);
+  });
+
   test('漏确认仅失败未确认节点并保留完整快照与共享补充说明', () async {
-    final confirmed = await repository.createCard(draft('开始工作前', '打开计划'));
+    final confirmed = await repository.createCard(plainDraft('开始工作前', '打开计划'));
     final missedOne = await repository.createCard(draft('午饭后', '读十分钟'));
     final missedTwo = await repository.createCard(draft('下班前', '整理桌面'));
     final cards = [confirmed, missedOne, missedTwo];

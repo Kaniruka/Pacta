@@ -6,6 +6,8 @@
 
 技术栈依据 ADR 0001 和 0003：Flutter/Dart、Material 3、Riverpod、Drift/SQLite、Supabase Auth/PostgreSQL/RLS。Riverpod、Drift 和 Supabase Flutter SDK 已在 `pubspec.yaml` 中声明；设备日历需要平台权限，当前也没有云日历 API Key 的需求。
 
+首次构建前运行 `python scripts/fetch_misans.py`，从小米官方下载并校验应用内置字体；已有正确文件时无需联网。字体原件不纳入 Git，资源与许可说明见 [MiSans](../assets/fonts/README.md)。
+
 ## 开发数据状态（2026-10-06时点）
 
 此前维护的测试身份和业务数据已按用户授权进行一次性重置，云端从13个Auth用户减至1个管理员，除管理员绑定外的15张public数据表均清空；Windows旧Pacta数据库和会话/偏好缓存也已删除。保留项目结构、RLS、管理函数和管理员凭据。此状态是本次验收时点的记录，不要求新成员再次执行清理，也不替代产品的30天停用清理流程。详见 [重置证据](development-reset-20261005.md)。
@@ -106,7 +108,7 @@ cmd.exe /c flutter build apk --debug
 '/mnt/c/Users/Stray/AppData/Local/Android/sdk/platform-tools/adb.exe' -s emulator-5554 install -r 'F:\workspace\release\flutter\pacta\build\app\outputs\flutter-apk\app-debug.apk'
 ```
 
-将示例序列号 `emulator-5554` 替换为实际设备；第二台 AVD 是 `PactaT24Secondary`，多设备时逐台指定。应用标识 `com.pacta.pacta`。云功能只传公开客户端配置；测试账号和服务端密钥留在受保护环境。
+将示例序列号 `emulator-5554` 替换为实际设备；第二台 AVD 是 `PactaT24Secondary`，多设备时逐台指定。应用标识 `com.rukani.pacta`。云功能只传公开客户端配置；测试账号和服务端密钥留在受保护环境。
 
 Windows 桌面工具链已由 doctor 检出。仓库根目录可运行 `cmd.exe /c flutter run -d windows`；Release 构建及启动命令如下：
 

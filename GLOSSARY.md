@@ -81,7 +81,7 @@ The user-defined commitment action for the single Appointment Chain, initiating 
 _Avoid_: 启动信号, push notification
 
 **Focus Marker (专注标志)**:
-The user-defined commitment action for immediate entry into a Focus Chain, configured independently for Elite and Regular. Appointment handoff starts focus without requiring another marker action.
+The user-defined commitment action for immediate entry into focus, shared by Elite and Regular while their chain records remain independent. Appointment handoff starts focus without requiring another marker action.
 _Avoid_: 启动信号, biometric signal
 
 **Chain Focus Duration (链专注时长)**:
@@ -105,8 +105,8 @@ A user-maintained progression tree of National Focus Cards, independent of Goals
 _Avoid_: Skill tree, goal hierarchy
 
 **National Focus Card (国策卡)**:
-A user-authored rule with a required Name and Action, optional Trigger Condition, Scope and Exception Notes, and persistent Internalization Progress, whose real-world validity the user evaluates manually. Its name labels the card independently of its rule content and Strengthening Levels, and different cards may share the same name.
-_Avoid_: Executable rule, automatic evaluator
+A user-authored rule with a required Name and 国策规则 (the card's single rule text), optional 例外与判例 (exception and precedent notes), and persistent Internalization Progress, whose real-world validity the user evaluates manually. The earlier separate Trigger Condition and Scope fields are no longer authored or shown in current card information; stored history may still contain them. Its name labels the card independently of its rule content and Strengthening Levels, and different cards may share the same name.
+_Avoid_: Executable rule, automatic evaluator, Trigger Condition field, Scope field
 
 **National Focus Card Library (国策卡片库)**:
 The user's collection of independent cards not currently placed in the tree, including restored soft-deleted cards. Cards moved here from a subtree no longer retain their parent-child relationships and are placed back individually.
@@ -121,11 +121,11 @@ A persistent card-level display proxy for familiarity based on cumulative succes
 _Avoid_: Current streak, Task progress, completion percentage, measured habit-formation percentage
 
 **National Focus Strengthening Level (国策强化等级)**:
-A user-defined stricter set of requirements for a National Focus Card, expressed through concrete Trigger Condition and/or Action content; for example, changing a trigger from before 02:00 to before 01:00. A card retains its base requirements and supports up to five user-created strengthening levels, each with its own concrete requirements; the base is not counted toward this limit. Levels are defined independently of Internalization Progress and are not automatically earned upgrades.
+A user-defined stricter set of requirements for a National Focus Card, expressed as a single 国策规则 override; for example, raising "read 5 pages" to "read 10 pages". A card retains its base rule and supports up to five user-created strengthening levels, each requiring its own override; the base is not counted toward this limit. Legacy trigger-condition overrides already stored remain as history and are not offered as a new input. Levels are defined independently of Internalization Progress and are not automatically earned upgrades.
 _Avoid_: Internalization Progress, automatic upgrade, numeric-only bonus
 
 **National Focus Requirement Version (国策要求版本)**:
-An immutable snapshot of a National Focus Card's effective Trigger Condition, Action, Scope, and Exception Notes, tied to the period when that combination governed the card. Selecting another Strengthening Level or editing the active level starts a new version without changing prior versions or National Focus records.
+An immutable snapshot of a National Focus Card's effective 国策规则 and 例外与判例, tied to the period when that combination governed the card; historical snapshots may also retain the former Trigger Condition and Scope values as recorded. Selecting another Strengthening Level or editing the active level starts a new version without changing prior versions or National Focus records.
 _Avoid_: Card revision, automatic evaluation
 
 **National Focus Daily Confirmation (国策每日确认)**:

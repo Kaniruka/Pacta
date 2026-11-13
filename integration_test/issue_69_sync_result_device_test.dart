@@ -153,7 +153,7 @@ void main() {
         await _capture(tester, 'ui79-$_run-choice');
         await tester.binding.handlePopRoute();
         await tester.pumpAndSettle();
-        expect(find.text('选择同步方式'), findsNothing);
+        expect(find.text('云端与本机'), findsNothing);
         await _open(tester);
         await tester.tap(find.text('取消'));
         await tester.pumpAndSettle();
@@ -170,11 +170,11 @@ void main() {
         );
         await tester.pumpAndSettle();
         await _open(tester);
-        await tester.ensureVisible(find.text('下载'));
+        await tester.ensureVisible(find.text('从云端更新'));
         await tester.pumpAndSettle();
         expect(
           tester
-              .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '下载'))
+              .widget<FilledButton>(find.widgetWithText(FilledButton, '从云端更新'))
               .onPressed,
           isNull,
         );
@@ -189,7 +189,7 @@ void main() {
         // Native platform return/cancel must leave the destination untouched.
         await tester.binding.handlePopRoute();
         await tester.pumpAndSettle();
-        expect(find.text('选择同步方式'), findsNothing);
+        expect(find.text('云端与本机'), findsNothing);
         expect(await remote.inspect(userId: _user), isNull);
         await _open(tester);
         await tester.ensureVisible(find.text('上传'));
@@ -305,7 +305,7 @@ Future<void> _openAiSyncEntry(WidgetTester tester) async {
 }
 
 Future<void> _uploadThroughAiEntry(WidgetTester tester) async {
-  await tester.tap(find.byTooltip('查看云端并选择方向'));
+  await tester.tap(find.byTooltip('查看云同步'));
   await tester.pumpAndSettle();
   await tester.ensureVisible(find.text('上传'));
   await tester.tap(find.text('上传'));
@@ -321,7 +321,7 @@ Future<void> _returnTwice(WidgetTester tester) async {
   await tester.pageBack();
   await tester.pumpAndSettle();
   await tester.scrollUntilVisible(
-    find.byTooltip('查看云端并选择方向'),
+    find.byTooltip('查看云同步'),
     -300,
     scrollable: find.byType(Scrollable).first,
   );
@@ -329,7 +329,7 @@ Future<void> _returnTwice(WidgetTester tester) async {
 }
 
 Future<void> _open(WidgetTester tester) async {
-  final entry = find.byTooltip('查看云端并选择方向');
+  final entry = find.byTooltip('查看云同步');
   await tester.scrollUntilVisible(
     entry,
     -300,
@@ -338,7 +338,7 @@ Future<void> _open(WidgetTester tester) async {
   await tester.pumpAndSettle();
   await tester.tap(entry);
   await tester.pumpAndSettle();
-  expect(find.text('选择同步方式'), findsOneWidget);
+  expect(find.text('云端与本机'), findsOneWidget);
 }
 
 Future<void> _capture(WidgetTester tester, String phase) async {

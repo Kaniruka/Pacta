@@ -7,6 +7,11 @@ import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_statistics.dart';
 import 'package:pacta/src/tasks/task_database.dart' show PactaDatabase;
 
+/// The Focus Marker is shared by the Elite and Regular Focus Chains, so the
+/// overview exposes exactly one entry point for it.
+const markerEditKey = ValueKey('focus-signal-edit-marker');
+const appointmentEditKey = ValueKey('focus-signal-edit-appointment');
+
 void main() {
   late PactaDatabase database;
   late ChainSignalsRepository repository;
@@ -20,46 +25,112 @@ void main() {
     await database.close();
   });
 
-  testWidgets('overview groups each action with its records and durations', (
+  testWidgets('overview keeps one marker entry and independent chain records', (
     tester,
   ) async {
     await _pumpOverview(tester, repository);
     expect(find.text('精锐链'), findsOneWidget);
     expect(find.text('普通链'), findsOneWidget);
     expect(find.text('预约链'), findsOneWidget);
+    expect(find.byKey(markerEditKey), findsOneWidget);
+    expect(find.byKey(const ValueKey('focus-signal-edit-elite')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('focus-signal-edit-regular')),
+      findsNothing,
+    );
+    expect(find.byKey(appointmentEditKey), findsOneWidget);
+    expect(find.byType(IconButton), findsNWidgets(2));
     expect(find.text('最佳 12 次'), findsOneWidget);
     expect(find.text('1 小时 30 分钟 1 秒'), findsOneWidget);
     expect(find.text('平均每次'), findsNWidgets(2));
     await _disposeWidget(tester);
   });
 
-  for (final target in ['elite', 'regular', 'appointment']) {
-    testWidgets('overview edits $target independently', (tester) async {
-      await repository.save(
-        const ChainSignalTexts(
-          appointmentTriggerSignal: '预约动作',
-          eliteFocusMarker: '精锐动作',
-          regularFocusMarker: '普通动作',
+  testWidgets('one marker edit gives both chains the same launch summary', (
+    tester,
+  ) async {
+    await _pumpOverview(tester, repository, showInstructions: true);
+    expect(find.text('精锐链专注标志：尚未设置'), findsOneWidget);
+    expect(find.text('普通链专注标志：尚未设置'), findsOneWidget);
+
+    await _editAndSave(tester, markerEditKey, '戴上指定耳机');
+
+    expect(find.text('戴上指定耳机'), findsOneWidget);
+    expect(find.text('精锐链专注标志：戴上指定耳机'), findsOneWidget);
+    expect(find.text('普通链专注标志：戴上指定耳机'), findsOneWidget);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('appointment trigger signal stays independent of the marker', (
+    tester,
+  ) async {
+    await _pumpOverview(tester, repository, showInstructions: true);
+    await _editAndSave(tester, markerEditKey, '共用动作');
+
+    await _editAndSave(tester, appointmentEditKey, '预约动作');
+
+    expect(find.text('预约触发信号：预约动作'), findsNWidgets(2));
+    expect(find.text('精锐链专注标志：共用动作'), findsOneWidget);
+    expect(find.text('普通链专注标志：共用动作'), findsOneWidget);
+
+    await _openEditor(tester, appointmentEditKey);
+    await tester.enterText(find.byType(TextField), '不应保存的改动');
+    await tester.tap(find.widgetWithText(TextButton, '取消'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('预约触发信号：预约动作'), findsNWidgets(2));
+    expect(find.text('不应保存的改动'), findsNothing);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('marker edits leave each chain record independent', (
+    tester,
+  ) async {
+    await _pumpOverview(
+      tester,
+      repository,
+      records: [
+        FocusChainRecord(
+          mode: FocusChainMode.elite,
+          currentConsecutive: 7,
+          bestConsecutive: 12,
+          updatedAt: DateTime(2026),
         ),
-      );
-      await _pumpOverview(tester, repository);
-      final edit = find.byKey(ValueKey('focus-signal-edit-$target'));
-      await tester.ensureVisible(edit);
-      await tester.tap(edit);
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), '新动作');
-      await tester.tap(find.widgetWithText(FilledButton, '保存'));
-      await tester.pumpAndSettle();
-      final texts = await repository.get();
-      expect(
-        texts.appointmentTriggerSignal,
-        target == 'appointment' ? '新动作' : '预约动作',
-      );
-      expect(texts.eliteFocusMarker, target == 'elite' ? '新动作' : '精锐动作');
-      expect(texts.regularFocusMarker, target == 'regular' ? '新动作' : '普通动作');
-      await _disposeWidget(tester);
-    });
-  }
+        FocusChainRecord(
+          mode: FocusChainMode.regular,
+          currentConsecutive: 3,
+          bestConsecutive: 5,
+          hasPendingReview: true,
+          updatedAt: DateTime(2026),
+        ),
+      ],
+      statistics: const {
+        FocusChainMode.elite: FocusSessionStatistics(
+          totalDurationSeconds: 3600,
+          acceptedSessionCount: 2,
+        ),
+        FocusChainMode.regular: FocusSessionStatistics(
+          totalDurationSeconds: 125,
+          acceptedSessionCount: 2,
+        ),
+      },
+    );
+    expect(find.text('最佳 12 次'), findsOneWidget);
+    expect(find.text('最佳 5 次'), findsOneWidget);
+    expect(find.text('记录待核对'), findsOneWidget);
+
+    await _editAndSave(tester, markerEditKey, '坐到书桌前');
+
+    expect(find.text('坐到书桌前'), findsOneWidget);
+    expect(find.text('最佳 12 次'), findsOneWidget);
+    expect(find.text('最佳 5 次'), findsOneWidget);
+    expect(find.text('记录待核对'), findsOneWidget);
+    expect(find.text('1 小时'), findsOneWidget);
+    expect(find.text('30 分钟'), findsOneWidget);
+    expect(find.text('2 分钟 5 秒'), findsOneWidget);
+    expect(find.text('1 分钟 3 秒'), findsOneWidget);
+    await _disposeWidget(tester);
+  });
 
   for (final brightness in Brightness.values) {
     for (final width in [320.0, 600.0, 960.0]) {
@@ -67,28 +138,23 @@ void main() {
         'normal text keeps long actions and durations at $width in $brightness',
         (tester) async {
           const action = '坐到书桌前，整理所有准备材料，戴上耳机并写下本次专注要完成的第一步';
-          await repository.save(
-            const ChainSignalTexts(eliteFocusMarker: action),
-          );
+          await repository.save(const ChainSignalTexts(focusMarker: action));
           await _pumpOverview(
             tester,
             repository,
             width: width,
             brightness: brightness,
-            totalSeconds: 360000001,
+            eliteTotalSeconds: 360000001,
           );
           expect(find.text(action), findsOneWidget);
           expect(find.text('100000 小时 1 秒'), findsOneWidget);
           expect(find.text('最佳 12 次'), findsOneWidget);
-          final edit = find.byKey(const ValueKey('focus-signal-edit-elite'));
-          await tester.ensureVisible(edit);
-          await tester.tap(edit);
-          await tester.pumpAndSettle();
+          await _openEditor(tester, markerEditKey);
           expect(find.widgetWithText(TextField, action), findsOneWidget);
           await tester.enterText(find.byType(TextField), '取消的修改');
           await tester.tap(find.widgetWithText(TextButton, '取消'));
           await tester.pumpAndSettle();
-          expect((await repository.get()).eliteFocusMarker, action);
+          expect(find.text(action), findsOneWidget);
           expect(tester.takeException(), isNull);
           await _disposeWidget(tester);
         },
@@ -101,8 +167,7 @@ void main() {
       await repository.save(
         const ChainSignalTexts(
           appointmentTriggerSignal: '开始前戴上耳机并整理桌面直到一切准备妥当',
-          eliteFocusMarker: '坐到指定位置并打开当前任务阅读所有准备材料',
-          regularFocusMarker: '拿起阅读材料并从上次位置继续认真完成任务',
+          focusMarker: '坐到指定位置并打开当前任务阅读所有准备材料',
         ),
       );
       await _pumpOverview(
@@ -113,7 +178,7 @@ void main() {
         brightness: brightness,
       );
       expect(tester.takeException(), isNull);
-      expect(find.text('拿起阅读材料并从上次位置继续认真完成任务'), findsOneWidget);
+      expect(find.text('坐到指定位置并打开当前任务阅读所有准备材料'), findsOneWidget);
       await _disposeWidget(tester);
     });
   }
@@ -122,7 +187,7 @@ void main() {
     tester,
   ) async {
     await _pumpOverview(tester, null);
-    expect(find.text('尚未设置'), findsNWidgets(3));
+    expect(find.text('尚未设置'), findsNWidgets(2));
     expect(find.byType(IconButton), findsNothing);
     await _disposeWidget(tester);
   });
@@ -138,154 +203,15 @@ void main() {
       expect(find.text('累计专注'), findsNWidgets(2));
       expect(find.text('平均每次'), findsNWidgets(2));
       expect(find.text('0 秒'), findsNWidgets(4));
-      expect(find.text('尚未设置'), findsNWidgets(3));
+      expect(find.text('尚未设置'), findsNWidgets(2));
       await _disposeWidget(tester);
     },
   );
 
-  testWidgets('editor saves the selected signal and preserves the others', (
+  testWidgets('instructions show the shared marker in both chain flows', (
     tester,
   ) async {
-    await repository.save(
-      const ChainSignalTexts(
-        appointmentTriggerSignal: '原触发信号',
-        eliteFocusMarker: '精锐标志',
-        regularFocusMarker: '普通标志',
-      ),
-    );
-    await _pumpCard(tester, repository);
-
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('focus-signal-edit-appointment')),
-    );
-    await tester.tap(
-      find.byKey(const ValueKey('focus-signal-edit-appointment')),
-    );
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '戴上指定耳机');
-    await tester.tap(find.widgetWithText(FilledButton, '保存'));
-    await tester.pumpAndSettle();
-
-    final saved = await repository.get();
-    expect(saved.appointmentTriggerSignal, '戴上指定耳机');
-    expect(saved.eliteFocusMarker, '精锐标志');
-    expect(saved.regularFocusMarker, '普通标志');
-    expect(find.text('戴上指定耳机'), findsOneWidget);
-    await _disposeWidget(tester);
-  });
-
-  testWidgets('cancel closes the editor without saving its changes', (
-    tester,
-  ) async {
-    await repository.save(
-      const ChainSignalTexts(appointmentTriggerSignal: '原触发信号'),
-    );
-    await _pumpCard(tester, repository);
-
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('focus-signal-edit-appointment')),
-    );
-    await tester.tap(
-      find.byKey(const ValueKey('focus-signal-edit-appointment')),
-    );
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '不应保存的改动');
-    await tester.tap(find.widgetWithText(TextButton, '取消'));
-    await tester.pumpAndSettle();
-
-    expect((await repository.get()).appointmentTriggerSignal, '原触发信号');
-    expect(find.text('不应保存的改动'), findsNothing);
-    expect(find.text('预约链'), findsOneWidget);
-    await _disposeWidget(tester);
-  });
-
-  testWidgets('saving an empty value clears only the selected signal', (
-    tester,
-  ) async {
-    await repository.save(
-      const ChainSignalTexts(
-        appointmentTriggerSignal: '要清除的信号',
-        eliteFocusMarker: '精锐标志',
-        regularFocusMarker: '普通标志',
-      ),
-    );
-    await _pumpCard(tester, repository);
-
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('focus-signal-edit-appointment')),
-    );
-    await tester.tap(
-      find.byKey(const ValueKey('focus-signal-edit-appointment')),
-    );
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '');
-    await tester.tap(find.widgetWithText(FilledButton, '保存'));
-    await tester.pumpAndSettle();
-
-    final saved = await repository.get();
-    expect(saved.appointmentTriggerSignal, isEmpty);
-    expect(saved.eliteFocusMarker, '精锐标志');
-    expect(saved.regularFocusMarker, '普通标志');
-    expect(find.text('尚未设置'), findsOneWidget);
-    await _disposeWidget(tester);
-  });
-
-  testWidgets('card lays out at 320 logical pixels with text scaled to 2×', (
-    tester,
-  ) async {
-    await repository.save(
-      const ChainSignalTexts(
-        appointmentTriggerSignal: '开始前戴上耳机并整理桌面',
-        eliteFocusMarker: '坐到指定位置并打开当前任务',
-        regularFocusMarker: '拿起阅读材料并从上次位置继续',
-      ),
-    );
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: SingleChildScrollView(
-            child: Builder(
-              builder: (context) => MediaQuery(
-                data: MediaQuery.of(context).copyWith(
-                  size: const Size(320, 800),
-                  textScaler: const TextScaler.linear(2),
-                ),
-                child: Align(
-                  alignment: Alignment.topLeft,
-                  child: SizedBox(
-                    width: 320,
-                    child: FocusChainOverview(
-                      repository: repository,
-                      records: const [],
-                      statistics: const {},
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('预约链'), findsOneWidget);
-    expect(find.text('拿起阅读材料并从上次位置继续'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-    await _disposeWidget(tester);
-  });
-
-  testWidgets('instructions show the marker for the currently selected mode', (
-    tester,
-  ) async {
-    await repository.save(
-      const ChainSignalTexts(
-        appointmentTriggerSignal: '到达预约地点',
-        eliteFocusMarker: '打开深度任务',
-        regularFocusMarker: '翻开阅读材料',
-      ),
-    );
+    await repository.save(const ChainSignalTexts(focusMarker: '打开深度任务'));
     var selectedMode = FocusChainMode.elite;
 
     await tester.pumpWidget(
@@ -306,7 +232,11 @@ void main() {
                 ),
                 ChainSignalInstructions(
                   repository: repository,
-                  mode: selectedMode,
+                  mode: FocusChainMode.elite,
+                ),
+                ChainSignalInstructions(
+                  repository: repository,
+                  mode: FocusChainMode.regular,
                 ),
               ],
             ),
@@ -316,20 +246,24 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('预约触发信号：到达预约地点'), findsOneWidget);
     expect(find.text('精锐链专注标志：打开深度任务'), findsOneWidget);
-    expect(find.text('普通链专注标志：翻开阅读材料'), findsNothing);
-
-    await tester.tap(find.byType(DropdownButton<FocusChainMode>));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(FocusChainMode.regular.label).last);
-    await tester.pumpAndSettle();
-
-    expect(find.text('预约触发信号：到达预约地点'), findsOneWidget);
-    expect(find.text('普通链专注标志：翻开阅读材料'), findsOneWidget);
-    expect(find.text('精锐链专注标志：打开深度任务'), findsNothing);
+    expect(find.text('普通链专注标志：打开深度任务'), findsOneWidget);
     await _disposeWidget(tester);
   });
+}
+
+Future<void> _openEditor(WidgetTester tester, Key key) async {
+  final edit = find.byKey(key);
+  await tester.ensureVisible(edit);
+  await tester.tap(edit);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _editAndSave(WidgetTester tester, Key key, String text) async {
+  await _openEditor(tester, key);
+  await tester.enterText(find.byType(TextField), text);
+  await tester.tap(find.widgetWithText(FilledButton, '保存'));
+  await tester.pumpAndSettle();
 }
 
 Future<void> _pumpCard(
@@ -363,12 +297,33 @@ Future<void> _pumpOverview(
   double width = 700,
   double scale = 1,
   Brightness brightness = Brightness.light,
-  int totalSeconds = 5401,
+  int eliteTotalSeconds = 5401,
+  List<FocusChainRecord>? records,
+  Map<FocusChainMode, FocusSessionStatistics>? statistics,
+  bool showInstructions = false,
 }) async {
   tester.view.devicePixelRatio = 1;
-  tester.view.physicalSize = Size(width, 800);
+  tester.view.physicalSize = Size(width, 2400);
   addTearDown(tester.view.resetDevicePixelRatio);
   addTearDown(tester.view.resetPhysicalSize);
+  final overviewRecords =
+      records ??
+      [
+        FocusChainRecord(
+          mode: FocusChainMode.elite,
+          currentConsecutive: 7,
+          bestConsecutive: 12,
+          updatedAt: DateTime(2026),
+        ),
+      ];
+  final overviewStatistics =
+      statistics ??
+      {
+        FocusChainMode.elite: FocusSessionStatistics(
+          totalDurationSeconds: eliteTotalSeconds,
+          acceptedSessionCount: 3,
+        ),
+      };
   await tester.pumpWidget(
     MaterialApp(
       theme: ThemeData(
@@ -387,22 +342,23 @@ Future<void> _pumpOverview(
                 alignment: Alignment.topLeft,
                 child: SizedBox(
                   width: width,
-                  child: FocusChainOverview(
-                    repository: repository,
-                    records: [
-                      FocusChainRecord(
-                        mode: FocusChainMode.elite,
-                        currentConsecutive: 7,
-                        bestConsecutive: 12,
-                        updatedAt: DateTime(2026),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      FocusChainOverview(
+                        repository: repository,
+                        records: overviewRecords,
+                        statistics: overviewStatistics,
                       ),
+                      if (showInstructions && repository != null) ...[
+                        const SizedBox(height: 12),
+                        for (final mode in FocusChainMode.values)
+                          ChainSignalInstructions(
+                            repository: repository,
+                            mode: mode,
+                          ),
+                      ],
                     ],
-                    statistics: {
-                      FocusChainMode.elite: FocusSessionStatistics(
-                        totalDurationSeconds: totalSeconds,
-                        acceptedSessionCount: 3,
-                      ),
-                    },
                   ),
                 ),
               ),

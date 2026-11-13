@@ -42,6 +42,7 @@ import 'src/sync/cloud_snapshot_repository.dart';
 import 'src/sync/source_device_info.dart';
 import 'src/sync/cloud_sync_card.dart';
 import 'src/sync/cloud_version_check.dart';
+import 'src/theme/pacta_status_colors.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -251,21 +252,71 @@ class PactaApp extends StatelessWidget {
 }
 
 ThemeData _pactaTheme(Brightness brightness) {
-  final colors = ColorScheme.fromSeed(
-    seedColor: const Color(0xff385a52),
-    brightness: brightness,
-  );
+  final dark = brightness == Brightness.dark;
+  final colors =
+      ColorScheme.fromSeed(
+        seedColor: const Color(0xff0b57d0),
+        brightness: brightness,
+      ).copyWith(
+        primary: Color(dark ? 0xffa8c7fa : 0xff0b57d0),
+        onPrimary: Color(dark ? 0xff062e6f : 0xffffffff),
+        primaryContainer: Color(dark ? 0xff0842a0 : 0xffd3e3fd),
+        onPrimaryContainer: Color(dark ? 0xffd3e3fd : 0xff041e49),
+        secondary: Color(dark ? 0xffb4c8e8 : 0xff355e92),
+        onSecondary: Color(dark ? 0xff1a3353 : 0xffffffff),
+        secondaryContainer: Color(dark ? 0xff2d4667 : 0xffe1ecff),
+        onSecondaryContainer: Color(dark ? 0xffd6e5ff : 0xff1a3353),
+        tertiary: Color(dark ? 0xfff5c451 : 0xff7f5700),
+        onTertiary: Color(dark ? 0xff402d00 : 0xffffffff),
+        tertiaryContainer: Color(dark ? 0xff5b4300 : 0xfffff1c2),
+        onTertiaryContainer: Color(dark ? 0xffffe8aa : 0xff3f2a00),
+        surface: Color(dark ? 0xff111318 : 0xfff8fafd),
+        onSurface: Color(dark ? 0xffe3e3e3 : 0xff1f1f1f),
+        onSurfaceVariant: Color(dark ? 0xffc4c7c5 : 0xff444746),
+        surfaceContainerLowest: Color(dark ? 0xff0d0f14 : 0xffffffff),
+        surfaceContainerLow: Color(dark ? 0xff1b1d23 : 0xfff0f4f9),
+        surfaceContainer: Color(dark ? 0xff23262d : 0xffe9eef6),
+        surfaceContainerHigh: Color(dark ? 0xff2b2e36 : 0xffe3eaf5),
+        surfaceContainerHighest: Color(dark ? 0xff34373f : 0xffdee5f0),
+        outline: Color(dark ? 0xff8e918f : 0xff747775),
+        outlineVariant: Color(dark ? 0xff444746 : 0xffc4c7c5),
+      );
   return ThemeData(
+    fontFamily: 'MiSans',
     colorScheme: colors,
     useMaterial3: true,
+    extensions: [dark ? PactaStatusColors.dark : PactaStatusColors.light],
     scaffoldBackgroundColor: colors.surface,
     appBarTheme: const AppBarTheme(centerTitle: false),
-    cardTheme: const CardThemeData(
+    cardTheme: CardThemeData(
       elevation: 0,
-      margin: EdgeInsets.symmetric(vertical: 4),
+      color: colors.surfaceContainerLowest,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      margin: const EdgeInsets.symmetric(vertical: 4),
     ),
-    inputDecorationTheme: const InputDecorationTheme(
-      border: OutlineInputBorder(),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: colors.surfaceContainerLow,
+      indicatorColor: colors.primaryContainer,
+      elevation: 0,
+    ),
+    navigationRailTheme: NavigationRailThemeData(
+      backgroundColor: colors.surfaceContainerLow,
+      indicatorColor: colors.primaryContainer,
+    ),
+    bottomSheetTheme: BottomSheetThemeData(
+      backgroundColor: colors.surfaceContainerLowest,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: colors.surfaceContainerLowest,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
     ),
   );
 }
@@ -1557,6 +1608,7 @@ class _GoalCardState extends State<_GoalCard> {
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(minHeight: 48),
                           child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Expanded(
                                 child: Column(
@@ -1594,10 +1646,16 @@ class _GoalCardState extends State<_GoalCard> {
                                 ),
                               ),
                               ExcludeSemantics(
-                                child: Icon(
-                                  _tasksExpanded
-                                      ? Icons.expand_less
-                                      : Icons.expand_more,
+                                child: SizedBox(
+                                  width: 48,
+                                  height: 48,
+                                  child: Center(
+                                    child: Icon(
+                                      _tasksExpanded
+                                          ? Icons.expand_less
+                                          : Icons.expand_more,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ],
@@ -1689,8 +1747,14 @@ class _TaskTile extends ConsumerWidget {
     final deadline = task.deadline == null
         ? null
         : '截止 ${_formatDateTime(task.deadline!.toLocal())}';
+    final hasMeta =
+        task.estimatedMinutes != null ||
+        task.focusProgressSeconds > 0 ||
+        hasPendingReview ||
+        deadline != null;
+    final hasDescription = task.description.isNotEmpty;
     return ListTile(
-      isThreeLine: true,
+      isThreeLine: hasMeta && hasDescription,
       contentPadding: EdgeInsets.zero,
       leading: Checkbox(
         value: task.isComplete,
@@ -1708,31 +1772,36 @@ class _TaskTile extends ConsumerWidget {
             ? const TextStyle(decoration: TextDecoration.lineThrough)
             : null,
       ),
-      subtitle: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 2,
-            children: [
-              if (task.estimatedMinutes != null)
-                Text('${task.estimatedMinutes} 分钟'),
-              if (task.focusProgressSeconds > 0)
-                Text('已专注 ${_formatDuration(task.focusProgressSeconds)}'),
-              if (hasPendingReview) const Text('待核对（争议部分暂不计入专注统计）'),
-              if (deadline != null) Text(deadline),
-            ],
-          ),
-          if (task.description.isNotEmpty)
-            Text(
-              task.description,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
+      subtitle: !hasMeta && !hasDescription
+          ? null
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (hasMeta)
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 2,
+                    children: [
+                      if (task.estimatedMinutes != null)
+                        Text('${task.estimatedMinutes} 分钟'),
+                      if (task.focusProgressSeconds > 0)
+                        Text(
+                          '已专注 ${_formatDuration(task.focusProgressSeconds)}',
+                        ),
+                      if (hasPendingReview) const Text('待核对（争议部分暂不计入专注统计）'),
+                      if (deadline != null) Text(deadline),
+                    ],
+                  ),
+                if (hasDescription)
+                  Text(
+                    task.description,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+              ],
             ),
-        ],
-      ),
       trailing: IconButton(
         tooltip: '开始专注',
         onPressed: () async {
@@ -1775,7 +1844,10 @@ class _TaskTile extends ConsumerWidget {
           if (!context.mounted) return;
           final result = await showDialog<Object>(
             context: context,
-            builder: (_) => FocusSetupDialog(task: task, initialMode: mode),
+            builder: (_) => FocusSetupDialog(
+              task: task,
+              initialMode: _initialFocusModeFor(task.classification, mode),
+            ),
           );
           if (result is FocusSession && context.mounted) {
             var taskTitle = task.title;
@@ -1961,8 +2033,10 @@ class _TaskDialog extends StatefulWidget {
 class _TaskDialogState extends State<_TaskDialog> {
   late final TextEditingController _title;
   late final TextEditingController _description;
-  late final TextEditingController _estimatedMinutes;
+  late final TextEditingController _estimatedValue;
   late TaskClassification _classification;
+  _EstimateUnit _estimateUnit = _EstimateUnit.minutes;
+  String? _estimateError;
   DateTime? _deadline;
 
   @override
@@ -1970,7 +2044,7 @@ class _TaskDialogState extends State<_TaskDialog> {
     super.initState();
     _title = TextEditingController(text: widget.initial?.title);
     _description = TextEditingController(text: widget.initial?.description);
-    _estimatedMinutes = TextEditingController(
+    _estimatedValue = TextEditingController(
       text: widget.initial?.estimatedMinutes?.toString(),
     );
     _classification =
@@ -1984,7 +2058,7 @@ class _TaskDialogState extends State<_TaskDialog> {
   void dispose() {
     _title.dispose();
     _description.dispose();
-    _estimatedMinutes.dispose();
+    _estimatedValue.dispose();
     super.dispose();
   }
 
@@ -2011,6 +2085,81 @@ class _TaskDialogState extends State<_TaskDialog> {
         time.minute,
       ),
     );
+  }
+
+  /// 仅防 int 存储溢出（2^53-1，double 可精确表示的最大整数）。
+  static const _maxStoredMinutes = 9007199254740991;
+
+  /// 浮点误差级容差：只用于消掉 1/60*60 这类噪声，不改变用户输入。
+  static const _minuteEpsilon = 1e-7;
+
+  /// 原始输入折算成的分钟数；空串、非法输入或非有限值返回 null。
+  double? _estimatedMinutesValue() {
+    final text = _estimatedValue.text.trim();
+    if (text.isEmpty) return null;
+    final value = double.tryParse(text);
+    if (value == null || !value.isFinite || value <= 0) return null;
+    final minutes = value * _estimateUnit.minutesPerUnit;
+    if (!minutes.isFinite || minutes <= 0) return null;
+    return minutes;
+  }
+
+  void _switchEstimateUnit(_EstimateUnit unit) {
+    if (unit == _estimateUnit) return;
+    final minutes = _estimatedMinutesValue();
+    setState(() {
+      if (minutes != null) {
+        final converted = minutes / unit.minutesPerUnit;
+        // 只抹掉浮点噪声（如 1/60*60 = 0.9999999999999999），不截断精度。
+        final rounded = converted.roundToDouble();
+        final shown = (converted - rounded).abs() <= _minuteEpsilon
+            ? rounded
+            : converted;
+        final text = shown.toString();
+        _estimatedValue.text = text.endsWith('.0')
+            ? text.substring(0, text.length - 2)
+            : text;
+      }
+      _estimateUnit = unit;
+      _estimateError = null;
+    });
+  }
+
+  /// 空输入表示不设置；统一折算成分钟保存，内部字段仍是分钟。
+  int? _parseEstimatedMinutes() {
+    final minutes = _estimatedMinutesValue();
+    if (minutes == null) return null;
+    final rounded = minutes.round();
+    if (rounded < 1 || (minutes - rounded).abs() > _minuteEpsilon) return null;
+    return rounded;
+  }
+
+  bool _validateEstimatedValue() {
+    final text = _estimatedValue.text.trim();
+    if (text.isEmpty) {
+      setState(() => _estimateError = null);
+      return true;
+    }
+    final minutes = _estimatedMinutesValue();
+    if (minutes == null) {
+      setState(() => _estimateError = '请输入大于 0 的数字，留空表示不设置');
+      return false;
+    }
+    if (minutes > _maxStoredMinutes) {
+      setState(() => _estimateError = '数值超出可存储范围，请使用更小的值');
+      return false;
+    }
+    final rounded = minutes.round();
+    if (rounded < 1) {
+      setState(() => _estimateError = '按分钟至少 1 分钟');
+      return false;
+    }
+    if ((minutes - rounded).abs() > _minuteEpsilon) {
+      setState(() => _estimateError = '按分钟需为整数，例如 1.5 小时');
+      return false;
+    }
+    setState(() => _estimateError = null);
+    return true;
   }
 
   @override
@@ -2044,9 +2193,37 @@ class _TaskDialogState extends State<_TaskDialog> {
           ),
           const SizedBox(height: 12),
           TextField(
-            controller: _estimatedMinutes,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: '预计时长（分钟，可选）'),
+            controller: _estimatedValue,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              labelText: '预计时长（可选）',
+              errorText: _estimateError,
+              errorMaxLines: 2,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: SizedBox(
+              width: 132,
+              child: DropdownButtonFormField<String>(
+                initialValue: _estimateUnit.name,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: '单位'),
+                items: [
+                  for (final unit in _EstimateUnit.values)
+                    DropdownMenuItem(value: unit.name, child: Text(unit.label)),
+                ],
+                onChanged: (value) {
+                  if (value == null) return;
+                  _switchEstimateUnit(
+                    _EstimateUnit.values.firstWhere(
+                      (unit) => unit.name == value,
+                    ),
+                  );
+                },
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           Row(
@@ -2080,20 +2257,33 @@ class _TaskDialogState extends State<_TaskDialog> {
         child: const Text('取消'),
       ),
       FilledButton(
-        onPressed: () => Navigator.pop(
-          context,
-          TaskDraft(
-            title: _title.text,
-            description: _description.text,
-            classification: _classification,
-            estimatedMinutes: int.tryParse(_estimatedMinutes.text.trim()),
-            deadline: _deadline,
-          ),
-        ),
+        onPressed: () {
+          if (!_validateEstimatedValue()) return;
+          Navigator.pop(
+            context,
+            TaskDraft(
+              title: _title.text,
+              description: _description.text,
+              classification: _classification,
+              estimatedMinutes: _parseEstimatedMinutes(),
+              deadline: _deadline,
+            ),
+          );
+        },
         child: const Text('保存'),
       ),
     ],
   );
+}
+
+enum _EstimateUnit {
+  minutes('分钟', 1),
+  hours('小时', 60);
+
+  const _EstimateUnit(this.label, this.minutesPerUnit);
+
+  final String label;
+  final int minutesPerUnit;
 }
 
 String _formatDateTime(DateTime value) {
@@ -2659,12 +2849,6 @@ class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
     };
   }
 
-  FocusChainMode get _selectedMode => switch (_filter) {
-    TaskClassification.elite => FocusChainMode.elite,
-    TaskClassification.regular => FocusChainMode.regular,
-    _ => widget.initialMode,
-  };
-
   Future<void> _showSetup(Task task) async {
     if (_openingSetup) return;
     _openingSetup = true;
@@ -2680,8 +2864,13 @@ class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
           activeAppointment ??
           await showDialog<Object>(
             context: context,
-            builder: (_) =>
-                FocusSetupDialog(task: task, initialMode: _selectedMode),
+            builder: (_) => FocusSetupDialog(
+              task: task,
+              initialMode: _initialFocusModeFor(
+                task.classification,
+                widget.initialMode,
+              ),
+            ),
           );
       if (mounted && result != null) Navigator.of(context).pop(result);
     } catch (error) {
@@ -2691,6 +2880,15 @@ class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
     }
   }
 }
+
+FocusChainMode _initialFocusModeFor(
+  TaskClassification classification,
+  FocusChainMode fallbackMode,
+) => switch (classification) {
+  TaskClassification.elite => FocusChainMode.elite,
+  TaskClassification.regular => FocusChainMode.regular,
+  TaskClassification.both => fallbackMode,
+};
 
 String? _findTaskTitle(List<Goal> goals, String taskId) {
   for (final goal in goals) {
@@ -4272,6 +4470,12 @@ class _MyPageState extends ConsumerState<MyPage> {
           onPressed: () => ref.read(authRepositoryProvider).signOut(),
           icon: const Icon(Icons.logout),
           label: const Text('退出登录'),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          '本应用使用 MiSans 字体',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
     );

@@ -128,17 +128,13 @@ class _NationalFocusStrengtheningPageState
             children: [
               _RequirementSummary(
                 title: '基础要求',
-                triggerCondition: card.triggerCondition,
                 action: card.action,
-                scope: card.scope,
                 exceptionNotes: card.exceptionNotes,
               ),
               const SizedBox(height: 12),
               _RequirementSummary(
                 title: currentTitle,
-                triggerCondition: card.effectiveTriggerCondition,
                 action: card.effectiveAction,
-                scope: card.scope,
                 exceptionNotes: card.exceptionNotes,
                 emphasized: true,
               ),
@@ -187,7 +183,7 @@ class _NationalFocusStrengtheningPageState
                 const Card(
                   child: Padding(
                     padding: EdgeInsets.all(16),
-                    child: Text('暂无强化等级。可强化触发条件、行动，或同时强化两者。'),
+                    child: Text('暂无强化等级。可为这张卡设置更严格的国策规则。'),
                   ),
                 ),
               for (final level in card.strengtheningLevels)
@@ -267,13 +263,7 @@ class _StrengtheningLevelCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             _ComparedRequirement(
-              label: '触发条件',
-              baseValue: card.triggerCondition,
-              overrideValue: level.triggerCondition,
-            ),
-            const SizedBox(height: 10),
-            _ComparedRequirement(
-              label: '行动',
+              label: '国策规则',
               baseValue: card.action,
               overrideValue: level.action,
             ),
@@ -308,21 +298,20 @@ class _StrengtheningLevelEditorPage extends StatefulWidget {
 class _StrengtheningLevelEditorPageState
     extends State<_StrengtheningLevelEditorPage> {
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _trigger;
   late final TextEditingController _action;
+  late final String? _legacyTriggerCondition;
+
+  bool get _isEditingExistingLevel => widget.level != null;
 
   @override
   void initState() {
     super.initState();
-    _trigger = TextEditingController(
-      text: widget.level?.triggerCondition ?? '',
-    );
+    _legacyTriggerCondition = widget.level?.triggerCondition;
     _action = TextEditingController(text: widget.level?.action ?? '');
   }
 
   @override
   void dispose() {
-    _trigger.dispose();
     _action.dispose();
     super.dispose();
   }
@@ -332,7 +321,9 @@ class _StrengtheningLevelEditorPageState
     if (!_formKey.currentState!.validate()) return;
     Navigator.of(context).pop(
       NationalFocusStrengtheningLevelDraft(
-        triggerCondition: _trigger.text,
+        // Legacy trigger overrides stay stored; they are no longer a new
+        // input field and are passed through unchanged when editing.
+        triggerCondition: _legacyTriggerCondition,
         action: _action.text,
       ),
     );
@@ -367,30 +358,24 @@ class _StrengtheningLevelEditorPageState
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
               children: [
                 Text(
-                  '同时显示基础和本级要求，便于比较。空字段沿用基础要求；至少填写触发条件或行动。',
+                  _isEditingExistingLevel
+                      ? '同时显示基础和本级国策规则，便于比较。留空会沿用基础要求。'
+                      : '同时显示基础和本级国策规则，便于比较。填写强化后的国策规则。',
                   style: Theme.of(context).textTheme.bodyLarge,
                 ),
                 const SizedBox(height: 20),
                 _RequirementComparisonEditor(
-                  title: '触发条件',
-                  baseValue: widget.card.triggerCondition,
-                  controller: _trigger,
-                  fieldKey: const ValueKey('strengthened-trigger'),
-                  fieldLabel: '强化后的触发条件',
-                ),
-                const SizedBox(height: 16),
-                _RequirementComparisonEditor(
-                  title: '行动',
+                  title: '国策规则',
                   baseValue: widget.card.action,
                   controller: _action,
-                  fieldKey: const ValueKey('strengthened-action'),
-                  fieldLabel: '强化后的行动',
+                  fieldKey: const ValueKey('strengthened-rule'),
+                  fieldLabel: '强化后的国策规则',
                 ),
                 FormField<bool>(
                   validator: (_) =>
-                      _trigger.text.trim().isEmpty &&
-                          _action.text.trim().isEmpty
-                      ? '至少填写触发条件或行动。'
+                      _action.text.trim().isEmpty &&
+                          (_legacyTriggerCondition ?? '').trim().isEmpty
+                      ? '填写强化后的国策规则。'
                       : null,
                   builder: (state) => state.hasError
                       ? Padding(
@@ -538,17 +523,13 @@ class _ComparedRequirement extends StatelessWidget {
 class _RequirementSummary extends StatelessWidget {
   const _RequirementSummary({
     required this.title,
-    required this.triggerCondition,
     required this.action,
-    required this.scope,
     required this.exceptionNotes,
     this.emphasized = false,
   });
 
   final String title;
-  final String triggerCondition;
   final String action;
-  final String? scope;
   final String? exceptionNotes;
   final bool emphasized;
 
@@ -564,19 +545,10 @@ class _RequirementSummary extends StatelessWidget {
           children: [
             Text(title, style: theme.textTheme.titleMedium),
             const SizedBox(height: 12),
-            _RequirementValueCard(
-              title: '触发条件',
-              value: triggerCondition.trim().isEmpty ? '未设置' : triggerCondition,
-            ),
-            const SizedBox(height: 8),
-            _RequirementValueCard(title: '行动', value: action),
-            if (scope != null) ...[
-              const SizedBox(height: 8),
-              _RequirementValueCard(title: '适用范围', value: scope!),
-            ],
+            _RequirementValueCard(title: '国策规则', value: action),
             if (exceptionNotes != null) ...[
               const SizedBox(height: 8),
-              _RequirementValueCard(title: '例外说明', value: exceptionNotes!),
+              _RequirementValueCard(title: '例外与判例', value: exceptionNotes!),
             ],
           ],
         ),
@@ -624,16 +596,22 @@ class _RequirementVersionTile extends StatelessWidget {
         ? '当前仍生效'
         : _formatMoment(version.effectiveUntil!);
     final end = version.effectiveUntil == null ? endText : '至 $endText';
-    final trigger = version.effectiveTriggerCondition.trim().isEmpty
-        ? '未设置'
-        : version.effectiveTriggerCondition;
-    final action = version.effectiveAction;
+    final legacyTrigger = version.effectiveTriggerCondition.trim();
+    final exceptionNotes = version.exceptionNotes?.trim();
     final start = _formatMoment(version.effectiveFrom);
     final versionNumber = version.versionNumber;
+    final rule = version.effectiveAction;
+    final details = [
+      '国策规则：$rule',
+      if (exceptionNotes != null && exceptionNotes.isNotEmpty)
+        '例外与判例：$exceptionNotes',
+      if (legacyTrigger.isNotEmpty) '旧触发条件：$legacyTrigger',
+      '$start — $end',
+    ].join('\n');
     return ListTile(
       contentPadding: EdgeInsets.zero,
       title: Text('版本 $versionNumber · $label'),
-      subtitle: Text('触发条件：$trigger\n行动：$action\n$start — $end'),
+      subtitle: Text(details),
       isThreeLine: true,
     );
   }

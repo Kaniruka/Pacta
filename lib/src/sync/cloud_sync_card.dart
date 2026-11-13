@@ -103,7 +103,6 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
   String? _message;
   CloudSyncResult? _result;
   int _resultRequest = 0;
-  CloudSnapshotMetadata? _inspectedCloud;
 
   @override
   void initState() {
@@ -133,7 +132,6 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
       _deferred = false;
       _working = false;
       _result = null;
-      _inspectedCloud = null;
       _message = null;
       _loadResult();
     }
@@ -142,8 +140,8 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
   void _versionChanged() {
     if (mounted) {
       if (widget.versionCheck?.hasPendingVersion != true) _deferred = false;
-      if (widget.versionCheck?.metadata == null) _inspectedCloud = null;
       setState(() {});
+      _syncFailureFeedback();
       unawaited(_loadResult());
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_maybeAutomatic());
@@ -271,11 +269,10 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
         _deferred = local.hasUnfinishedFlow;
         return;
       }
-      setState(() => _inspectedCloud = cloud);
       final direction = await _showModal(
         AlertDialog(
           constraints: const BoxConstraints(maxWidth: 560),
-          title: const Text('选择同步方式'),
+          title: const Text('云端与本机'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -315,29 +312,42 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
                   const Text('本机有未结束的专注或预约，请先处理后再下载。'),
                 ],
                 const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Expanded(child: Text('覆盖本机，丢弃本机独有记录。')),
-                    const SizedBox(width: 12),
-                    OutlinedButton(
-                      onPressed: cloud == null || local.hasUnfinishedFlow
-                          ? null
-                          : () => Navigator.pop(context, false),
-                      child: const Text('下载'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Expanded(child: Text('覆盖云端，丢弃云端独有记录。')),
-                    const SizedBox(width: 12),
-                    FilledButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('上传'),
-                    ),
-                  ],
-                ),
+                if (cloud == null)
+                  Row(
+                    children: [
+                      const Expanded(child: Text('本机数据将作为首份云端快照。')),
+                      const SizedBox(width: 12),
+                      FilledButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('上传'),
+                      ),
+                    ],
+                  )
+                else ...[
+                  Row(
+                    children: [
+                      const Expanded(child: Text('覆盖本机，丢弃本机独有记录。')),
+                      const SizedBox(width: 12),
+                      FilledButton(
+                        onPressed: local.hasUnfinishedFlow
+                            ? null
+                            : () => Navigator.pop(context, false),
+                        child: const Text('从云端更新'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Expanded(child: Text('覆盖云端，丢弃云端独有记录。')),
+                      const SizedBox(width: 12),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('上传'),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -355,7 +365,6 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
                     if (mounted &&
                         widget.repository == repository &&
                         context.mounted) {
-                      setState(() => _inspectedCloud = null);
                       Navigator.pop(context);
                     }
                   } catch (_) {
@@ -418,7 +427,6 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
       widget.versionCheck?.handled();
       await _loadResult();
       if (!mounted || widget.repository != repository) return;
-      setState(() => _inspectedCloud = null);
       if (messenger.mounted) {
         messenger.hideCurrentSnackBar();
         messenger.showSnackBar(
@@ -441,7 +449,6 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
       await _loadResult();
       if (!mounted || widget.repository != repository) return;
       setState(() {
-        _inspectedCloud = null;
         _message = message;
       });
       if (messenger.mounted) {
@@ -463,6 +470,8 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
     } finally {
       if (mounted && widget.repository == repository) {
         setState(() => _working = false);
+        final message = _message;
+        if (message != null) _announce(message);
         WidgetsBinding.instance.addPostFrameCallback((_) {
           unawaited(_maybeAutomatic());
         });
@@ -482,31 +491,41 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
       ? '本地数据时间较新，请选择要保留的数据。'
       : '更新时间相同，内容仍可能不同，请选择要保留的数据。';
 
-  String get _statusLabel => widget.repository == null
-      ? '当前未配置云端连接。'
-      : _working
-      ? '处理中…'
-      : _message != null
-      ? _message!
-      : widget.versionCheck?.checking == true
-      ? '正在检查云端…'
-      : widget.versionCheck?.failed == true
-      ? '云端检查失败，点击重试'
-      : widget.versionCheck?.hasPendingVersion == true
-      ? '云端有待处理更新'
-      : ((_inspectedCloud != null &&
-            (_result?.cloudRevision != _inspectedCloud!.revision ||
-                _result?.legacyToken != _inspectedCloud!.legacyToken)))
-      ? '云端有待处理更新'
-      : _result == null
-      ? '尚未同步'
-      : _time(_result!.succeededAt);
+  /// 常驻摘要只报最近一次成功同步时间；方向、检查中与失败反馈改为弹层
+  /// 内容或非阻断 SnackBar，不再占用常驻摘要。
+  String get _summary {
+    if (widget.repository == null) return '当前未配置云端连接。';
+    final result = _result;
+    return result == null ? '尚未同步' : _time(result.succeededAt);
+  }
+
+  bool _reportedFailure = false;
+
+  void _announce(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    if (messenger == null) return;
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// 云端检查失败只在状态变化时提示一次，避免每次重建重复弹消息。
+  void _syncFailureFeedback() {
+    final failed = widget.versionCheck?.failed == true;
+    if (!failed) {
+      _reportedFailure = false;
+      return;
+    }
+    if (_reportedFailure) return;
+    _reportedFailure = true;
+    _announce('云端检查失败，稍后可重试。');
+  }
 
   @override
   Widget build(BuildContext context) => Card(
     clipBehavior: Clip.antiAlias,
     child: Tooltip(
-      message: widget.versionCheck?.failed == true ? '重试云端检查' : '查看云端并选择方向',
+      message: widget.versionCheck?.failed == true ? '重试云端检查' : '查看云同步',
       child: InkWell(
         onTap: widget.repository == null || _working
             ? null
@@ -519,7 +538,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
             builder: (context, constraints) {
               final compact = constraints.maxWidth < 400;
               final status = Text(
-                _statusLabel,
+                _summary,
                 style: Theme.of(context).textTheme.bodySmall,
                 textAlign: compact ? TextAlign.start : TextAlign.end,
               );

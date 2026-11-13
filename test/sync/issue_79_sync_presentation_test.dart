@@ -136,10 +136,10 @@ void main() {
             reason: 'The current status must remain one readable line at normal text size.',
           );
         }
-        await tester.tap(find.byTooltip('查看云端并选择方向'));
+        await tester.tap(find.byTooltip('查看云同步'));
         await tester.pumpAndSettle();
         await _capture(tester, 'choice-320');
-        expect(find.text('选择同步方式'), findsOneWidget);
+        expect(find.text('云端与本机'), findsOneWidget);
         if (!_baseline) {
           expect(find.text('覆盖云端，丢弃云端独有记录。'), findsOneWidget);
           expect(find.text('覆盖本机，丢弃本机独有记录。'), findsOneWidget);
