@@ -8,6 +8,8 @@ import 'package:uuid/uuid.dart';
 import '../tasks/task_database.dart';
 import '../tasks/task_models.dart';
 import 'legacy_cloud_snapshot.dart';
+import 'cloud_recovery_point.dart';
+import 'cloud_snapshot_history.dart';
 import 'cloud_sync_result.dart';
 
 /// A whole-account business-data snapshot. Device identity, local preferences,
@@ -44,6 +46,8 @@ class CloudSnapshotMetadata {
 abstract interface class CloudSnapshotRemote {
   Future<CloudSnapshotMetadata?> inspect({required String userId});
 
+  /// [requestId] 是上传请求的身份：服务端对同一用户同一 requestId 只写入
+  /// 一次历史版本，重试返回已写入的结果而不产生新版本。
   Future<CloudSnapshotMetadata> upload({
     required String userId,
     required int expectedRevision,
@@ -54,9 +58,19 @@ abstract interface class CloudSnapshotRemote {
     required int rowCount,
     String? deviceManufacturer,
     String? deviceModel,
+    String? requestId,
   });
 
   Future<CloudSnapshotMetadata> download({required String userId});
+
+  /// 已成功写入的云端备份，最新在前，最多 [cloudSnapshotHistoryLimit] 份。
+  Future<List<CloudSnapshotHistoryEntry>> history({required String userId});
+
+  /// 读取指定版本整份载荷；不存在的版本必须以 StateError 失败。
+  Future<CloudSnapshotMetadata> downloadRevision({
+    required String userId,
+    required int revision,
+  });
 }
 
 class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
@@ -148,6 +162,55 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
   }
 
   @override
+  Future<List<CloudSnapshotHistoryEntry>> history({
+    required String userId,
+  }) async {
+    _assertCurrentUser(userId);
+    final rows = await client
+        .from('cloud_business_snapshot_history')
+        .select(
+          'revision,device_name,data_updated_at,uploaded_at,row_count,'
+          'device_manufacturer,device_model',
+        )
+        .eq('user_id', userId)
+        .order('revision', ascending: false)
+        .limit(cloudSnapshotHistoryLimit);
+    return [
+      for (final row in rows)
+        CloudSnapshotHistoryEntry(
+          revision: row['revision'] as int,
+          deviceName: row['device_name'] as String,
+          rowCount: row['row_count'] as int,
+          dataUpdatedAt: DateTime.parse(row['data_updated_at'] as String)
+              .toUtc(),
+          uploadedAt: DateTime.parse(row['uploaded_at'] as String).toUtc(),
+          deviceManufacturer: _normalizeDeviceMetadata(
+            row['device_manufacturer'] as String?,
+          ),
+          deviceModel: _normalizeDeviceMetadata(row['device_model'] as String?),
+        ),
+    ];
+  }
+
+  @override
+  Future<CloudSnapshotMetadata> downloadRevision({
+    required String userId,
+    required int revision,
+  }) async {
+    _assertCurrentUser(userId);
+    final row = await client
+        .from('cloud_business_snapshot_history')
+        .select()
+        .eq('user_id', userId)
+        .eq('revision', revision)
+        .maybeSingle();
+    if (row == null) {
+      throw StateError('该云端备份已不在最近 $cloudSnapshotHistoryLimit 份之内。');
+    }
+    return _metadataFromJson(row);
+  }
+
+  @override
   Future<CloudSnapshotMetadata> upload({
     required String userId,
     required int expectedRevision,
@@ -158,6 +221,7 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
     required int rowCount,
     String? deviceManufacturer,
     String? deviceModel,
+    String? requestId,
   }) async {
     _assertCurrentUser(userId);
     final String? expectedLegacyToken;
@@ -185,6 +249,7 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
       'p_expected_legacy_token': expectedLegacyToken,
       'p_device_manufacturer': _normalizeDeviceMetadata(deviceManufacturer),
       'p_device_model': _normalizeDeviceMetadata(deviceModel),
+      'p_request_id': _normalizeDeviceMetadata(requestId),
     };
     Object? result;
     try {
@@ -194,16 +259,14 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
           params: parameters,
         );
       } on PostgrestException catch (error) {
-        if (!_isOldSnapshotRpc(error, parameters.keys.toSet())) rethrow;
-        // PGRST202 means no function ran. Retry only the confirmed old
+        final fallback = _olderSnapshotSignature(error, parameters);
+        if (fallback == null) rethrow;
+        // PGRST202 means no function ran. Retry only the confirmed older
         // signature, preserving the same payload and concurrency guards.
         _assertCurrentUser(userId);
-        final oldParameters = Map<String, dynamic>.from(parameters)
-          ..remove('p_device_manufacturer')
-          ..remove('p_device_model');
         result = await client.rpc(
           'save_cloud_business_snapshot',
-          params: oldParameters,
+          params: fallback,
         );
       }
     } on PostgrestException catch (error) {
@@ -228,25 +291,47 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
     return saved;
   }
 
-  bool _isOldSnapshotRpc(PostgrestException error, Set<String> parameters) {
-    if (error.code != 'PGRST202') return false;
-    Set<String>? signature(String text) {
-      final match = RegExp(r'public\.save_cloud_business_snapshot\(([^()]*)\)')
-          .firstMatch(text);
-      return match?.group(1)?.split(',').map((value) => value.trim()).toSet();
+  /// 旧项目可能缺少后加的可选参数（设备元数据、上传请求标识）。
+  /// 只有在服务端明确列出更旧的同名函数签名时，才用该签名重试一次；
+  /// 其他缺失函数或权限错误按原错误处理，避免重试掩盖真实故障。
+  Map<String, dynamic>? _olderSnapshotSignature(
+    PostgrestException error,
+    Map<String, dynamic> attempted,
+  ) {
+    if (error.code != 'PGRST202') return null;
+    if (!error.message.contains('Could not find the function')) return null;
+    final attemptedSignature = _rpcSignature(error.message);
+    if (attemptedSignature == null ||
+        !_sameSignature(attemptedSignature, attempted.keys.toSet())) {
+      return null;
     }
-
-    bool matches(Set<String>? actual, Set<String> expected) =>
-        actual != null &&
-        actual.length == expected.length &&
-        actual.containsAll(expected);
-    final oldParameters = {...parameters}
-      ..remove('p_device_manufacturer')
-      ..remove('p_device_model');
-    return error.message.contains('Could not find the function') &&
-        matches(signature(error.message), parameters) &&
-        matches(signature(error.hint ?? ''), oldParameters);
+    final existing = _rpcSignature(error.hint ?? '');
+    if (existing == null) return null;
+    for (final dropped in const [
+      {'p_request_id'},
+      {'p_request_id', 'p_device_manufacturer', 'p_device_model'},
+    ]) {
+      final candidate = Map<String, dynamic>.from(attempted);
+      for (final key in dropped) {
+        candidate.remove(key);
+      }
+      if (candidate.length == attempted.length) continue;
+      if (_sameSignature(existing, candidate.keys.toSet())) return candidate;
+    }
+    return null;
   }
+
+  Set<String>? _rpcSignature(String text) {
+    final match = RegExp(r'public\.save_cloud_business_snapshot\(([^()]*)\)')
+        .firstMatch(text);
+    if (match == null) return null;
+    final group = match.group(1)!.trim();
+    if (group.isEmpty) return <String>{};
+    return group.split(',').map((value) => value.trim()).toSet();
+  }
+
+  bool _sameSignature(Set<String> left, Set<String> right) =>
+      left.length == right.length && left.containsAll(right);
 
   Future<CloudSnapshotMetadata?> _readLegacySnapshot(String userId) async {
     _assertCurrentUser(userId);
@@ -336,6 +421,18 @@ class UnavailableCloudSnapshotRemote implements CloudSnapshotRemote {
     required int rowCount,
     String? deviceManufacturer,
     String? deviceModel,
+    String? requestId,
+  }) async => throw _error();
+
+  @override
+  Future<List<CloudSnapshotHistoryEntry>> history({
+    required String userId,
+  }) async => throw _error();
+
+  @override
+  Future<CloudSnapshotMetadata> downloadRevision({
+    required String userId,
+    required int revision,
   }) async => throw _error();
 }
 
@@ -344,6 +441,8 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
   final Map<String, CloudSnapshotMetadata> _snapshots = {};
   final Map<String, CloudSnapshotMetadata> _legacySnapshots = {};
   final Map<String, String> _observedLegacyTokens = {};
+  final Map<String, List<CloudSnapshotMetadata>> _history = {};
+  final Map<String, Map<String, int>> _requestRevisions = {};
   bool available = true;
   bool suspended = false;
 
@@ -402,8 +501,19 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
     required int rowCount,
     String? deviceManufacturer,
     String? deviceModel,
+    String? requestId,
   }) async {
     _checkAccess();
+    if (requestId != null) {
+      final handled = _requestRevisions[userId]?[requestId];
+      if (handled != null) {
+        final existing = _snapshots[userId];
+        if (existing == null) {
+          throw StateError('Cloud snapshot is missing for a handled request.');
+        }
+        return existing;
+      }
+    }
     final legacy = _legacySnapshots[userId];
     if (legacy != null && legacy.legacyToken != null) {
       if (_legacyRevision(legacy.legacyToken!) != legacy.revision) {
@@ -438,9 +548,51 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
       deviceModel: _normalizeDeviceMetadata(deviceModel),
     );
     _snapshots[userId] = snapshot;
+    final history = _history.putIfAbsent(userId, () => []);
+    history.insert(0, snapshot);
+    if (history.length > cloudSnapshotHistoryLimit) {
+      history.removeRange(cloudSnapshotHistoryLimit, history.length);
+    }
+    if (requestId != null) {
+      _requestRevisions.putIfAbsent(userId, () => {})[requestId] =
+          snapshot.revision;
+    }
     _legacySnapshots.remove(userId);
     _observedLegacyTokens.remove(userId);
     return snapshot;
+  }
+
+  @override
+  Future<List<CloudSnapshotHistoryEntry>> history({
+    required String userId,
+  }) async {
+    _checkAccess();
+    return [
+      for (final snapshot
+          in _history[userId] ?? const <CloudSnapshotMetadata>[])
+        CloudSnapshotHistoryEntry(
+          revision: snapshot.revision,
+          deviceName: snapshot.deviceName,
+          rowCount: snapshot.rowCount,
+          dataUpdatedAt: snapshot.dataUpdatedAt,
+          uploadedAt: snapshot.uploadedAt,
+          deviceManufacturer: snapshot.deviceManufacturer,
+          deviceModel: snapshot.deviceModel,
+        ),
+    ];
+  }
+
+  @override
+  Future<CloudSnapshotMetadata> downloadRevision({
+    required String userId,
+    required int revision,
+  }) async {
+    _checkAccess();
+    for (final snapshot
+        in _history[userId] ?? const <CloudSnapshotMetadata>[]) {
+      if (snapshot.revision == revision) return snapshot;
+    }
+    throw StateError('该云端备份已不在最近 $cloudSnapshotHistoryLimit 份之内。');
   }
 
   int _legacyRevision(String token) =>
@@ -480,9 +632,12 @@ class CloudSnapshotRepository {
     String? deviceManufacturer,
     String? deviceModel,
     this.syncResultStore = const CloudSyncResultStore(),
+    CloudRecoveryPointStore? recoveryPointStore,
     this.now = DateTime.now,
   }) : deviceManufacturer = _normalizeDeviceMetadata(deviceManufacturer),
-       deviceModel = _normalizeDeviceMetadata(deviceModel) {
+       deviceModel = _normalizeDeviceMetadata(deviceModel),
+       recoveryPointStore =
+           recoveryPointStore ?? DriftCloudRecoveryPointStore(database) {
     if (userId.isEmpty ||
         (deviceId != null && deviceId!.isEmpty) ||
         deviceName.trim().isEmpty) {
@@ -498,6 +653,7 @@ class CloudSnapshotRepository {
   final String? deviceManufacturer;
   final String? deviceModel;
   final CloudSyncResultStore syncResultStore;
+  final CloudRecoveryPointStore recoveryPointStore;
   final DateTime Function() now;
 
   Future<CloudSyncResult?> loadSyncResult() => syncResultStore.load(userId);
@@ -568,9 +724,12 @@ class CloudSnapshotRepository {
     );
   }
 
+  /// [requestId] 让同一次上传请求可以安全重试：服务端对同一用户同一
+  /// requestId 只写入一份历史备份。未提供时至多上传一次，不重试。
   Future<CloudSnapshotMetadata> uploadLocal({
     required int expectedRevision,
     required String expectedFingerprint,
+    String? requestId,
   }) async {
     final state = await captureLocalState();
     if (state.fingerprint != expectedFingerprint) {
@@ -586,6 +745,7 @@ class CloudSnapshotRepository {
       rowCount: state.rowCount,
       deviceManufacturer: deviceManufacturer,
       deviceModel: deviceModel,
+      requestId: requestId,
     );
     await _saveSyncResult(cloud, state.fingerprint);
     return cloud;
@@ -614,8 +774,114 @@ class CloudSnapshotRepository {
       throw StateError('云端快照已变化，请重新检查后再同步。');
     }
 
-    // Repeat both safety checks immediately before the transaction. Nothing is
-    // deleted until the entire schema and every row has passed validation.
+    final restoredFingerprint = await _replaceLocalTables(
+      validatedRows: validatedRows,
+      expectedFingerprint: expectedFingerprint,
+    );
+    await _saveSyncResult(cloud, restoredFingerprint);
+  }
+
+  /// 已成功写入的云端备份，最新在前。
+  Future<List<CloudSnapshotHistoryEntry>> listCloudHistory() =>
+      remote.history(userId: userId);
+
+  /// 本机恢复点，最新在前；与云端备份分开保存。
+  Future<List<CloudRecoveryPointSummary>> listLocalRecoveryPoints() =>
+      recoveryPointStore.list(userId);
+
+  /// 恢复指定云端备份到本机：先持久保存本机恢复点，再整体替换。
+  /// 全程不上传，因此不会自动覆盖云端。
+  Future<void> restoreCloudVersion({
+    required int revision,
+    required String expectedFingerprint,
+    bool Function()? isCancelled,
+  }) async {
+    _throwIfCancelled(isCancelled);
+    final cloud = await remote.downloadRevision(
+      userId: userId,
+      revision: revision,
+    );
+    final payload = cloud.payload;
+    if (payload == null) throw StateError('该云端备份缺少内容，无法恢复。');
+    final validatedRows = await _validatePayload(payload);
+    _throwIfCancelled(isCancelled);
+    await _replaceWithRecoveryPoint(
+      validatedRows: validatedRows,
+      expectedFingerprint: expectedFingerprint,
+      reason: CloudRecoveryReason.beforeCloudRestore,
+      isCancelled: isCancelled,
+    );
+    await _saveSyncResult(cloud, await _currentFingerprint());
+  }
+
+  /// 从本机恢复点找回数据；同样先保存当前状态，避免找回本身不可撤销。
+  Future<void> restoreLocalRecoveryPoint({
+    required String pointId,
+    required String expectedFingerprint,
+    bool Function()? isCancelled,
+  }) async {
+    _throwIfCancelled(isCancelled);
+    final point = await recoveryPointStore.load(userId, pointId);
+    if (point == null) throw StateError('本机恢复点不存在，可能已被清理。');
+    final validatedRows = await _validatePayload(point.payload);
+    _throwIfCancelled(isCancelled);
+    await _replaceWithRecoveryPoint(
+      validatedRows: validatedRows,
+      expectedFingerprint: expectedFingerprint,
+      reason: CloudRecoveryReason.beforeRecoveryRestore,
+      isCancelled: isCancelled,
+    );
+  }
+
+  /// 恢复点必须先真正落盘并可读回，才允许替换本机数据。
+  Future<void> _replaceWithRecoveryPoint({
+    required Map<String, List<Map<String, Object?>>> validatedRows,
+    required String expectedFingerprint,
+    required CloudRecoveryReason reason,
+    bool Function()? isCancelled,
+  }) async {
+    final localBefore = await captureLocalState();
+    if (localBefore.hasUnfinishedFlow) {
+      throw StateError('预约或专注尚未结束，暂不能覆盖本机数据。');
+    }
+    if (localBefore.fingerprint != expectedFingerprint) {
+      throw StateError('本机数据在确认期间发生变化，请重新检查后再同步。');
+    }
+    final point = CloudRecoveryPoint(
+      id: const Uuid().v4(),
+      userId: userId,
+      createdAt: now().toUtc(),
+      reason: reason,
+      dataUpdatedAt: localBefore.dataUpdatedAt,
+      rowCount: localBefore.rowCount,
+      payload: localBefore.payload,
+      sourceDeviceName: deviceName,
+    );
+    await recoveryPointStore.save(point);
+    final persisted = await recoveryPointStore.load(userId, point.id);
+    if (persisted == null) {
+      throw StateError('本机恢复点未保存，已取消恢复。');
+    }
+    _throwIfCancelled(isCancelled);
+    await _replaceLocalTables(
+      validatedRows: validatedRows,
+      expectedFingerprint: expectedFingerprint,
+    );
+  }
+
+  void _throwIfCancelled(bool Function()? isCancelled) {
+    if (isCancelled?.call() == true) throw const CloudRestoreCancelled();
+  }
+
+  Future<String> _currentFingerprint() async =>
+      (await captureLocalState()).fingerprint;
+
+  /// Repeat both safety checks immediately before the transaction. Nothing is
+  /// deleted until the entire schema and every row has passed validation.
+  Future<String> _replaceLocalTables({
+    required Map<String, List<Map<String, Object?>>> validatedRows,
+    required String expectedFingerprint,
+  }) async {
     late String restoredFingerprint;
     await database.transaction(() async {
       final localAtCommit = await _captureLocalState();
@@ -658,7 +924,7 @@ class CloudSnapshotRepository {
         if (_businessTables.contains(table.actualTableName))
           drift.TableUpdate.onTable(table),
     });
-    await _saveSyncResult(cloud, restoredFingerprint);
+    return restoredFingerprint;
   }
 
   Future<Map<String, LocalCalendarSource>> _localCalendarDeviceData() async {

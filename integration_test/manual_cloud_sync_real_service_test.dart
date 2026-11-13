@@ -685,6 +685,7 @@ class _ObservedCloudRemote extends SupabaseCloudSnapshotRemote {
     required int rowCount,
     String? deviceManufacturer,
     String? deviceModel,
+    String? requestId,
   }) {
     uploads++;
     return super.upload(
@@ -697,6 +698,7 @@ class _ObservedCloudRemote extends SupabaseCloudSnapshotRemote {
       rowCount: rowCount,
       deviceManufacturer: deviceManufacturer,
       deviceModel: deviceModel,
+      requestId: requestId,
     );
   }
 }

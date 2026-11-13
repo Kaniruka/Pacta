@@ -150,9 +150,11 @@ Android supplies brand/model and Windows supplies BIOS manufacturer/product
 name, without serial numbers. Before this migration is applied, the new client
 can still inspect and download old snapshots using their original columns;
 uploading hardware metadata requires the new RPC contract. When PostgREST returns
-`PGRST202` explicitly identifying the old seven-parameter snapshot RPC, the client
-retries once without the two optional hardware fields, preserving the payload,
-expected revision, and legacy token. Other errors do not trigger this fallback.
+`PGRST202` and its hint explicitly names an older snapshot RPC signature, the
+client retries once with exactly that signature — dropping `p_request_id` first
+and the two optional hardware fields if that is still too new — preserving the
+payload, expected revision, and legacy token. Other errors do not trigger this
+fallback.
 This is a deployment
 instruction, not evidence that the shared project has been migrated.
 
@@ -179,3 +181,34 @@ Both snapshot migrations were applied to the configured development project
 on 2026-10-04. Live acceptance used isolated temporary identities, not normal
 users' data. Full results are in
 [the validation record](../docs/manual-cloud-sync-validation-20261004.md).
+## Retained cloud snapshot history — 2026-11-13
+
+Apply `202611130001_cloud_snapshot_history.sql` for the 15-version retained
+backup history. It adds `cloud_business_snapshot_history` (read-only to
+authenticated owners through RLS, newest row included), backfills the current
+`cloud_business_snapshots` row so no existing snapshot is lost, and replaces
+`save_cloud_business_snapshot` so every successful write also lands a history
+row and then evicts the oldest beyond 15 — all inside one transaction, after
+the new version was written.
+
+The replacement keeps the previous optional parameters defaulted, so clients
+that still call the 7- or 9-parameter contract keep working and are subject to
+the same retention and compare-and-swap guards; there is no unprotected write
+path. The new trailing `p_request_id` makes upload retries idempotent: the same
+user and request id return the already-handled revision instead of creating a
+second history entry. Idempotency is recorded on retained history rows, so a
+retry that arrives after that row was evicted is treated as a new request.
+Client fallback drops `p_request_id` first and the hardware fields second when
+PostgREST reports the older signature.
+
+Explicit purge now deletes the history table before the snapshot, so account
+clearing leaves no cloud business copy behind.
+
+Run `supabase/tests/cloud_snapshot_history.sql` in an isolated test project
+after applying this migration. It asserts the retention limit, that a rejected
+write leaves no history row, request-id idempotency, owner read access without
+direct writes, cross-user isolation, and that the purge function covers history;
+the dynamic purge probe is skipped with a notice when no spare non-admin
+identity exists. Client tests in `test/sync/` use in-memory remotes and a
+temporary Drift database, so they do not prove deployed RLS or a real transfer.
+Migration preparation is not evidence that any project has been migrated.
