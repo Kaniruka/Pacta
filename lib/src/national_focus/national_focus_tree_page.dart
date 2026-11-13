@@ -40,6 +40,7 @@ class NationalFocusTreePage extends StatefulWidget {
     this.userId,
     this.viewPreferences = const NationalFocusViewPreferences(),
     this.onOpenAiAnalysis,
+    this.onNotificationCapabilityUse,
     this.displayTimeZoneLoader,
     this.now,
   });
@@ -48,6 +49,9 @@ class NationalFocusTreePage extends StatefulWidget {
   final String? userId;
   final NationalFocusViewPreferences viewPreferences;
   final VoidCallback? onOpenAiAnalysis;
+
+  /// Called on the first user action that relies on reminder notifications.
+  final VoidCallback? onNotificationCapabilityUse;
   final Future<String?> Function()? displayTimeZoneLoader;
   final DateTime Function()? now;
 
@@ -175,6 +179,8 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
 
   Future<void> _confirmToday() async {
     if (_confirming) return;
+    // Confirming is a real reminder-related use, so ask once if still needed.
+    widget.onNotificationCapabilityUse?.call();
     setState(() {
       _confirming = true;
       _error = null;

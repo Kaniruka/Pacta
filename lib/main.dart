@@ -754,6 +754,7 @@ class _AppShellState extends ConsumerState<AppShell>
     with WidgetsBindingObserver {
   int _index = 0;
   late final FocusNotificationService _focusNotificationService;
+  late final String? _reminderOwnerUserId;
   late final StreamSubscription<List<ConnectivityResult>>
   _connectivitySubscription;
   late final StreamSubscription<String> _notificationOpenSubscription;
@@ -772,6 +773,11 @@ class _AppShellState extends ConsumerState<AppShell>
   void initState() {
     super.initState();
     _focusNotificationService = ref.read(focusNotificationServiceProvider);
+    // Reminder settings belong to this installation's current user, so the
+    // owner is bound before any reconciliation runs. The identifier is kept in
+    // a field because dispose() must not read providers.
+    _reminderOwnerUserId = ref.read(authRepositoryProvider).currentUserId;
+    unawaited(_focusNotificationService.setUserId(_reminderOwnerUserId));
     _nationalFocusCheckpointScheduler = NationalFocusCheckpointScheduler(
       settleDueCheckpoints: () =>
           ref.read(nationalFocusRepositoryProvider).settleDueCheckpoints(),
@@ -798,6 +804,9 @@ class _AppShellState extends ConsumerState<AppShell>
         );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       unawaited(_refreshLocalState(checkCloud: true));
+      // The daily reminder belongs to this device, so it is reconciled on
+      // every start instead of relying on a business data change.
+      unawaited(_focusNotificationService.syncDailyOpenReminder());
       final request = _focusNotificationService.takePendingOpenRequest();
       if (request != null) unawaited(_openFocusFlow(request));
     });
@@ -833,6 +842,9 @@ class _AppShellState extends ConsumerState<AppShell>
       // Local recovery can be retried without uploading or discarding records.
     }
     await _syncFocusStatus();
+    // A resume can cross midnight or a device time zone change; the reminder is
+    // replanned from the current local wall clock without replaying old days.
+    unawaited(_focusNotificationService.syncDailyOpenReminder());
   }
 
   Future<void> _syncFocusStatus() async {
@@ -871,6 +883,10 @@ class _AppShellState extends ConsumerState<AppShell>
 
   Future<void> _openFocusFlow(String payload) async {
     if (!mounted) return;
+    if (payload.startsWith('daily-open-reminder:')) {
+      setState(() => _index = 0);
+      return;
+    }
     if (payload.startsWith('national-focus-reminder:')) {
       setState(() => _index = 1);
       return;
@@ -940,11 +956,7 @@ class _AppShellState extends ConsumerState<AppShell>
     _notificationOpenSubscription.cancel();
     _nationalFocusReminderSubscription.cancel();
     _nationalFocusCheckpointScheduler.dispose();
-    unawaited(
-      _focusNotificationService.syncNationalFocusReminder(
-        hasPendingConfirmations: false,
-      ),
-    );
+    unawaited(_focusNotificationService.releaseUser(_reminderOwnerUserId));
     super.dispose();
   }
 
@@ -973,6 +985,9 @@ class _AppShellState extends ConsumerState<AppShell>
         userId: ref.watch(authRepositoryProvider).currentUserId,
         repository: nationalFocusRepository,
         onOpenAiAnalysis: _openNationalFocusAiAnalysis,
+        onNotificationCapabilityUse: () => unawaited(
+          _focusNotificationService.ensureNotificationPermissionForUse(),
+        ),
         displayTimeZoneLoader: () async {
           final deviceZone = await FlutterTimezone.getLocalTimezone();
           final dashboard = await focusRepository.getDashboardMetrics(
@@ -3434,6 +3449,13 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
       _busy = true;
       _error = null;
     });
+    // The first focus flow is a real user action that relies on the reminder
+    // notification, so this is where the permission is requested once.
+    unawaited(
+      ref
+          .read(focusNotificationServiceProvider)
+          .ensureNotificationPermissionForUse(),
+    );
     try {
       final session = await ref
           .read(focusRepositoryProvider)
@@ -3464,6 +3486,11 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
       _busy = true;
       _error = null;
     });
+    unawaited(
+      ref
+          .read(focusNotificationServiceProvider)
+          .ensureNotificationPermissionForUse(),
+    );
     try {
       final appointment = await ref
           .read(focusRepositoryProvider)
@@ -4477,9 +4504,9 @@ class _MyPageState extends ConsumerState<MyPage> {
         const SizedBox(height: 12),
         Card(
           child: ListTile(
-            leading: const Icon(Icons.settings_outlined),
-            title: const Text('设置'),
-            subtitle: const Text('专注通知与本设备后台状态'),
+            leading: const Icon(Icons.notifications_active_outlined),
+            title: const Text('提醒与通知'),
+            subtitle: const Text('专注、国策与每日打开提醒；仅本机生效'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.of(context).push<void>(
               MaterialPageRoute<void>(

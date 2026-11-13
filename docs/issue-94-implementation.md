@@ -131,3 +131,13 @@ TDD（先红后绿，`test/profile/profile_remote_test.dart`）：
 - `头像 base64 含非法字符时继续拒绝`：合法 payload 追加 `!!` 后仍抛 `FormatException`。
 
 验证：`flutter analyze` 无问题；`flutter test test/profile` 43 项通过。未改 SQL 与真实服务 fixture（仍为准备未执行）。
+
+### 第二次合并 integration tip（3886c7e，含 #95）
+
+- `feat/sync-profile-cards-20261113` 最新 tip `3886c7e`（含 #95 每日提醒）已合入。冲突文件：`android/app/src/main/kotlin/com/rukani/pacta/MainActivity.kt`、`windows/runner/flutter_window.cpp`、`windows/runner/flutter_window.h`；`lib/main.dart` 自动合并。
+- 原生按「两套通道并存」手工拼接，未整文件选 ours/theirs：
+  - Kotlin：同时保留 `com.pacta/profile_avatar`（`pickImage`/`pickSingleImage`/`onActivityResult`/`readLimitedAvatar`）与 `com.pacta/device_permissions`（`openNotificationSettings`/`openAppSettings`），两套 `MethodChannel` 各自注册，import 合并 `Build`、`MediaStore` 与 `Settings`。
+  - Windows：`HandleProfileAvatarCall` 与 `NotifyReminderOpened` 两个成员/实现并存，`profile_avatar_channel_` 的注册与 `OnDestroy` 的 `reset()` 保留，头文件只保留一份 include guard 尾部。
+  - Dart 通道分处 `avatar_picker.dart` 与 `device_permission_gateway.dart`，`main.dart` 自动合并后照片选择与提醒的接线均保留。
+- 数据库仍为 schema **28**：`local_cloud_recovery_points`（#92 恢复点）与 `local_profile_accounts`（含 `edit_sequence`）并存，`from < 26`、`from < 27`、`27→28` 三段迁移均保留；重跑 `dart run build_runner build` 后 `task_database.g.dart` 无差异。
+- 验证：`flutter analyze` 无问题；`flutter test` 536 项通过；`flutter build windows --release`、`flutter build apk --debug` 通过。未推送、未部署、未关闭 Issue。
