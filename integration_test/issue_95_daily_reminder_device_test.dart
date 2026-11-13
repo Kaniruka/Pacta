@@ -1,6 +1,6 @@
 // ignore_for_file: avoid_print
 
-import 'dart:io' show Platform;
+import 'dart:io' show File, FileMode, Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -38,6 +38,14 @@ import '../test/support/fake_auth_repository.dart';
 /// native click.
 const _fixtureUser = 'issue95-native-fixture';
 const _holdSeconds = int.fromEnvironment('ISSUE95_HOLD_SECONDS');
+const _leadMinutes = int.fromEnvironment(
+  'ISSUE95_LEAD_MINUTES',
+  defaultValue: 4,
+);
+const _evidenceFile = String.fromEnvironment('ISSUE95_EVIDENCE_FILE');
+const _requestPermission = bool.fromEnvironment('ISSUE95_REQUEST_PERMISSION');
+const _permissionOnly = bool.fromEnvironment('ISSUE95_PERMISSION_ONLY');
+const _expectDenied = bool.fromEnvironment('ISSUE95_EXPECT_DENIED');
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -46,10 +54,13 @@ void main() {
     'the daily reminder plans on the device clock and opens the board',
     (tester) async {
       final zone = await _deviceZoneId();
-      print(
+      _record(
         'ISSUE95_DEVICE_ZONE zone=$zone platform=${Platform.operatingSystem}',
       );
 
+      // Keep fixture preferences outside the application's normal prefix, so
+      // another running desktop instance cannot have its choices overwritten.
+      SharedPreferences.setPrefix('pacta_issue95_acceptance.');
       final preferences = await SharedPreferences.getInstance();
       final snapshot = _PreferencesSnapshot.capture(preferences);
       final store = FocusDevicePreferencesStore(
@@ -74,16 +85,17 @@ void main() {
           await service.syncDailyOpenReminder();
           await service.clear();
         } catch (error) {
-          print('ISSUE95_CLEANUP_ERROR $error');
+          _record('ISSUE95_CLEANUP_ERROR $error');
         }
         await service.dispose();
         await snapshot.restore(preferences);
-        print('ISSUE95_PREFERENCES_RESTORED');
+        _record('ISSUE95_PREFERENCES_RESTORED');
       });
 
       // A time four minutes ahead keeps the arrival inside a short run.
       final now = DateTime.now();
-      final targetMinutes = (now.minute + 4) % 60;
+      expect(_leadMinutes, inInclusiveRange(1, 10));
+      final targetMinutes = (now.minute + _leadMinutes) % 60;
       final targetHour = targetMinutes < now.minute
           ? (now.hour + 1) % 24
           : now.hour;
@@ -100,12 +112,36 @@ void main() {
 
       await service.initialize();
       await service.setUserId(_fixtureUser);
-      final allowed = await service.notificationsAllowed();
+      var allowed = await service.notificationsAllowed();
+      if (Platform.isAndroid && _requestPermission && !allowed) {
+        _record(
+          'ISSUE95_PERMISSION_PROMPT respond in the Android system dialog',
+        );
+        allowed = await service.ensureNotificationPermissionForUse();
+        _record('ISSUE95_PERMISSION_RESULT allowed=$allowed');
+      }
       final exactAlarms = await service.exactAlarmsAllowed();
-      print(
+      _record(
         'ISSUE95_PERMISSIONS notifications=$allowed exactAlarms=$exactAlarms '
         'platform=${Platform.operatingSystem}',
       );
+
+      if (_permissionOnly) {
+        expect(allowed, !_expectDenied);
+        await tester.pumpWidget(
+          PactaApp(
+            authRepository: FakeAuthRepository()..signedInUser = _fixtureUser,
+            focusNotificationService: service,
+          ),
+        );
+        await _pumpFrames(tester);
+        expect(find.byType(AppShell), findsOneWidget);
+        expect(await service.ensureNotificationPermissionForUse(), allowed);
+        await _openMyPage(tester);
+        expect(find.text('提醒与通知'), findsOneWidget);
+        _record('ISSUE95_PERMISSION_CORE_ACCESSIBLE repeated_prompt=false');
+        return;
+      }
 
       await service.syncDailyOpenReminder();
       final scheduled = state.loadScheduled();
@@ -114,7 +150,7 @@ void main() {
         now: DateTime.now(),
         minuteOfDay: minuteOfDay,
       );
-      print(
+      _record(
         'ISSUE95_PLAN day=${scheduled!.dayKey} '
         'scheduledAt=${scheduled.scheduledAt.toLocal().toIso8601String()} '
         'timeZone=${scheduled.timeZoneId} '
@@ -130,7 +166,7 @@ void main() {
       if (Platform.isAndroid) {
         final plugin = FlutterLocalNotificationsPlugin();
         final pending = await plugin.pendingNotificationRequests();
-        print(
+        _record(
           'ISSUE95_ANDROID_PENDING ids='
           '${pending.map((request) => request.id).join(',')}',
         );
@@ -154,14 +190,14 @@ void main() {
       await tester.tap(find.text('提醒与通知'));
       await _pumpFrames(tester);
       expect(find.text('每天打开 Pacta'), findsOneWidget);
-      print('ISSUE95_SETTINGS_OPENED');
+      _record('ISSUE95_SETTINGS_OPENED');
 
       await tester.pageBack();
       await _pumpFrames(tester);
 
       if (_holdSeconds > 0) {
         lifecycle.arm();
-        print(
+        _record(
           'ISSUE95_HOLD_STARTED seconds=$_holdSeconds '
           'expectedAt=${plan.scheduledAt.toLocal().toIso8601String()} '
           'action=tap the system notification when it appears',
@@ -169,7 +205,7 @@ void main() {
         await tester.runAsync(
           () => Future<void>.delayed(Duration(seconds: _holdSeconds)),
         );
-        print(
+        _record(
           'ISSUE95_HOLD_ENDED '
           'backgrounded=${lifecycle.backgrounded} '
           'resumedAfterBackground=${lifecycle.resumedAfterBackground} '
@@ -192,7 +228,7 @@ void main() {
       );
       await _pumpFrames(tester);
       final destination = _selectedDestination(tester);
-      print(
+      _record(
         'ISSUE95_ROUTE_INJECTED index=$destination '
         'note=payload injection proves routing only, not a native tap',
       );
@@ -202,11 +238,11 @@ void main() {
         (await store.load()).copyWith(dailyOpenReminderEnabled: false),
       );
       await service.syncDailyOpenReminder();
-      print(
+      _record(
         'ISSUE95_DISABLED_CLEARED cleared=${state.loadScheduled() == null}',
       );
       expect(state.loadScheduled(), isNull);
-      print('ISSUE95_NATIVE_PASS platform=${Platform.operatingSystem}');
+      _record('ISSUE95_NATIVE_PASS platform=${Platform.operatingSystem}');
     },
     timeout: const Timeout(Duration(minutes: 8)),
     skip: !(Platform.isAndroid || Platform.isWindows),
@@ -234,6 +270,14 @@ Future<void> _openMyPage(WidgetTester tester) async {
   );
   await tester.tap(
     find.descendant(of: navigation, matching: find.text('我的')).last,
+  );
+  await _pumpFrames(tester);
+  await tester.scrollUntilVisible(
+    find.text('提醒与通知'),
+    250,
+    scrollable: find
+        .descendant(of: find.byType(MyPage), matching: find.byType(Scrollable))
+        .first,
   );
   await _pumpFrames(tester);
 }
@@ -306,4 +350,16 @@ class _PreferencesSnapshot {
       }
     }
   }
+}
+
+void _record(String message) {
+  print(message);
+  if (_evidenceFile.isEmpty) return;
+  final file = File(_evidenceFile);
+  file.parent.createSync(recursive: true);
+  file.writeAsStringSync(
+    '${DateTime.now().toIso8601String()} $message\n',
+    mode: FileMode.append,
+    flush: true,
+  );
 }
