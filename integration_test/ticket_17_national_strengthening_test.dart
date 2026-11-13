@@ -46,17 +46,24 @@ void main() {
     try {
       await _openApp(tester, auth, createRepository);
       await _openStrengtheningManager(tester);
-      await tester.tap(find.text('新建强化等级'));
+      await tester.tap(find.text('新建强化要求'));
       await tester.pumpAndSettle();
       await tester.enterText(
-        find.byKey(const ValueKey('strengthened-action')),
+        find.byKey(const ValueKey('strengthened-rule')),
         '每天阅读 10 页',
       );
-      await tester.tap(find.text('保存强化等级'));
+      await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
 
-      await _reveal(tester, find.text('采用强化等级 1'));
-      await tester.tap(find.text('采用强化等级 1'));
+      final firstLevelRow = find.byKey(
+        const ValueKey('national-focus-strengthening-level-1'),
+      );
+      final selectFirstLevel = find.descendant(
+        of: firstLevelRow,
+        matching: find.text('选择'),
+      );
+      await _reveal(tester, selectFirstLevel);
+      await tester.tap(selectFirstLevel);
       await tester.pumpAndSettle();
       var savedCard = await repository.getCard(card.id);
       expect(savedCard.activeStrengtheningLevel, 1);
@@ -69,10 +76,10 @@ void main() {
       await tester.tap(find.byTooltip('编辑强化等级 1'));
       await tester.pumpAndSettle();
       await tester.enterText(
-        find.byKey(const ValueKey('strengthened-action')),
+        find.byKey(const ValueKey('strengthened-rule')),
         '每天阅读 12 页',
       );
-      await tester.tap(find.text('保存强化等级'));
+      await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
 
       savedCard = await repository.getCard(card.id);
@@ -107,7 +114,7 @@ void main() {
       await _openApp(tester, auth, createRepository);
       await _openStrengtheningManager(tester);
       expect(find.text('每天阅读 12 页'), findsNWidgets(2));
-      expect(find.text('当前采用 · 强化等级 1'), findsOneWidget);
+      expect(find.text('当前使用 · 强化等级 1'), findsOneWidget);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
       for (final openRepository in repositories) {
@@ -142,6 +149,11 @@ Future<void> _openApp(
 }
 
 Future<void> _openStrengtheningManager(WidgetTester tester) async {
+  // Strengthening management lives behind the card editor.
+  final editButton = find.text('编辑卡片');
+  await _reveal(tester, editButton);
+  await tester.tap(editButton);
+  await tester.pumpAndSettle();
   final manageButton = find.text('管理强化要求');
   await _reveal(tester, manageButton);
   await tester.tap(manageButton);
