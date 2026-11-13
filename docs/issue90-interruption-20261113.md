@@ -1,5 +1,22 @@
 # 本轮中止点（2026-11-13）
 
+## 最新停点（第二次 Computer Use 停止信号）
+
+用户确认桌面空闲后，首次恢复GUI调用再次收到工具的物理Escape停止信号；本轮不再发GUI输入。以下状态替代本文后面的旧停点状态，旧记录保留作追溯。
+
+- 主分支HEAD `02a08ee`，五票代码、全部独立评审修复及schema29已合入。主Agent实际执行 `flutter analyze` 无问题、全量 `flutter test` 600通过；runner安全回归29通过。证据 `.scratch/issue90/final-analyze.log`、`final-tests.log`、`runner-green.log`。
+- 独立Standards/Spec复核均确认原问题已解决；最终资料错误归属修复65500f2、旧UUID永久禁写71f5df9均已合入。不得重做已完成内化公式。
+- 真实资料两端通过：`build/ui-layout-evidence/issue90/profile-real-{android,windows}-resume`。真实自动上传两端通过：`auto-real-{android,windows}-resume`，覆盖丢应答保留身份、重试去重、新意图与其他设备版本阻断。
+- Android原生通知真实点击通过：`build/ui-layout-evidence/issue90/reminder-native-click-20261113-210638`。控制脚本先观察系统2205通知，再按实际UI层级定位标题并点击；fixture在任何注入之前断言看板index0和前后台恢复，退出码0。系统未授精确闹钟权限，实际提醒晚于目标分钟。通知截图已判读；after-native-tap.png是通知栏过渡帧，不作为看板截图。
+- Android原生照片选择通过：`avatar-native-android`，实际系统单图选择器选合成PNG并prepareAvatarForUpload成功。日历允许/拒绝/系统设置入口通过：`calendar-{granted,denied}-native`；不读取日历内容，READ_CALENDAR已撤销并清除本轮用户标志，恢复初始拒绝状态。
+- Windows代码/构建/真实云与页面运行已有证据，但真实通知点击及原生文件选择完成结果仍未验证。曾读到SHQueryUserNotificationState=2（BUSY）；用户确认空闲后已读到5（ACCEPTS），随后GUI工具被Escape停止。不得以Dart回调注入冒充原生点击。
+- 主检出截图fixture `sync_profile_overview_device_test.dart` 已修正来源seed及实际viewport，但最新运行尚未重测；旧两端截图因错误seed断言失败，未算通过。旧图显示同步面板仍密，用户已确认的简洁分层尚有最后UI收尾。
+- **剩余UI分支**：`C:/Users/Stray/.codex/worktrees/pacta-snapshot-history/Pacta`，`fix/pacta90-sync-disclosure`，HEAD02a08ee，未提交修改 `test/sync/cloud_sync_card_test.dart`（red阶段）。worker `pacta90_sync_disclosure` / session-a3296a14-19a3-4e1d-a637-768cda09fa88 已关闭。工单：标题数据同步，简洁操作面板只留来源/上传/下载/开关/历史；元数据和覆盖后果移到方向明确的执行前确认；取消确认不得传输或取消既有自动队列。保留CAS/指纹/旧数据/活动流程保护与忽略语义，补UI测试和实际截图。
+- 当前所有本轮DSH workers均已关闭。loopback服务PTY96147已请求Ctrl-C退出，须再次确认清理完成；隔离云项目仍保留，不改共享项目。
+- 后续：完成同步分层UI→主Agent复核/相关及全量检查→最终亮暗窄宽图→补Windows两项原生交互→更新PR96为ready（只有验收完成后）→清理managed worktree与临时项目。PR仍draft，未合并master、未部署共享云。
+
+---
+
 用户通过物理 Escape 停止 Computer Use；停止继续GUI操作，收拢本轮验收进程。整体实施尚未完成，不得将PR #96标记ready或宣称验收通过。
 
 ## 主检出
