@@ -426,12 +426,9 @@ void main() {
               find.text('云端来源：Android emulator test mirror'),
               findsOneWidget,
             );
-            expect(
-              find.text(
-                platform == TargetPlatform.android ? 'google · Pixel 8' : 'ASUSTeK COMPUTER INC. · ASUS TUF Gaming A15 FA507UV_FA507UV',
-              ),
-              findsOneWidget,
-            );
+            // 来源只显示名称与平台；厂商型号不再单列。
+            expect(find.textContaining('设备标识'), findsNothing);
+            expect(find.textContaining('google · Pixel 8'), findsNothing);
             expect(find.text('本机有尚未同步的修改；下载将丢弃这些修改。'), findsOneWidget);
             expect(
               (await cloudRepository.loadSyncResult())!.succeededAt,
@@ -479,7 +476,7 @@ void main() {
             await cloudRemote.publishOtherDevice();
             await tester.tap(find.byTooltip('查看云同步'));
             await tester.pumpAndSettle();
-            expect(find.text('型号未知'), findsOneWidget);
+            expect(find.textContaining('设备标识'), findsNothing);
             await tester.tap(find.text('取消'));
             await tester.pumpAndSettle();
             // 待处理版本不再占用常驻摘要；摘要仍是上次成功同步时间。
@@ -593,6 +590,7 @@ class _TrackingCloudSnapshotRemote extends InMemoryCloudSnapshotRemote {
     required int rowCount,
     String? deviceManufacturer,
     String? deviceModel,
+    String? requestId,
   }) async {
     uploadCalls++;
     await uploadGate?.future;
@@ -606,6 +604,7 @@ class _TrackingCloudSnapshotRemote extends InMemoryCloudSnapshotRemote {
       rowCount: rowCount,
       deviceManufacturer: deviceManufacturer,
       deviceModel: deviceModel,
+      requestId: requestId,
     );
   }
 

@@ -12,9 +12,11 @@ void main() {
   ) async {
     final info = await SourceDeviceInfo.load();
 
-    final expectedDeviceName =
-        '${Platform.localHostname} (${Platform.isAndroid ? 'Android' : 'Windows'})';
-    expect(info.deviceName, expectedDeviceName);
+    // 来源标签：Android 用型号，Windows 用设备名，均附平台括注。
+    final expectedSourceLabel = Platform.isAndroid
+        ? '${info.model ?? '未知型号'}（Android）'
+        : '${Platform.localHostname}（Windows）';
+    expect(info.sourceLabel, expectedSourceLabel);
     expect(info.manufacturer, anyOf(isNull, isNotEmpty));
     expect(info.model, anyOf(isNull, isNotEmpty));
     // Keep this output limited to the requested identifying fields. No device
@@ -22,7 +24,7 @@ void main() {
     // ignore: avoid_print
     print(
       'Issue70 device metadata: '
-      'name=${info.deviceName}, '
+      'source=${info.sourceLabel}, '
       'manufacturer=${info.manufacturer ?? 'unknown'}, '
       'model=${info.model ?? 'unknown'}',
     );

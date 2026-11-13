@@ -17,6 +17,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/auth/user_lifecycle.dart';
 import 'package:pacta/src/auth/user_lifecycle_models.dart';
+import 'package:pacta/src/sync/cloud_snapshot_history.dart';
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart' hide FocusSession;
 
@@ -935,6 +936,7 @@ class _Remote implements CloudSnapshotRemote {
     required int rowCount,
     String? deviceManufacturer,
     String? deviceModel,
+    String? requestId,
   }) async {
     transfers++;
     if (!allowUpload) throw StateError('Unexpected upload');
@@ -942,6 +944,17 @@ class _Remote implements CloudSnapshotRemote {
     this.payload = payload;
     return (await inspect(userId: userId))!;
   }
+
+  @override
+  Future<List<CloudSnapshotHistoryEntry>> history({
+    required String userId,
+  }) async => const [];
+
+  @override
+  Future<CloudSnapshotMetadata> downloadRevision({
+    required String userId,
+    required int revision,
+  }) async => (await inspect(userId: userId))!;
 }
 
 PactaApp _app(
