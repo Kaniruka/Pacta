@@ -112,3 +112,5 @@ flutter test -d windows integration_test/profile_real_service_test.dart \
 ```
 
 运行顺序：先 Android 建立资料，再 Windows 采用与修改。
+
+注意：为验证"业务快照上传/恢复不改资料"，fixture 会以 `device` 身份上传一次业务快照（revision 前进 1，历史保留 15 份），因此建议在 #92 的 snapshot history fixture 之后运行，或为该轮使用新的隔离会话；共享项目不得运行本 fixture。
