@@ -140,16 +140,6 @@ class _NationalFocusStrengtheningPageState
                 const SizedBox(height: 12),
                 _InlineError(message: _error!),
               ],
-              const SizedBox(height: 4),
-              ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                title: Text('生效版本记录 · $versionCount'),
-                subtitle: Text(_currentIntervalLabel(card.requirementVersions)),
-                children: [
-                  for (final version in card.requirementVersions.reversed)
-                    _RequirementVersionTile(version: version),
-                ],
-              ),
               const SizedBox(height: 16),
               Row(
                 children: [
@@ -213,6 +203,19 @@ class _NationalFocusStrengtheningPageState
                   label: const Text('新建强化要求'),
                 ),
               ),
+              // Version history is low-frequency reference material: it stays
+              // collapsed below the list and the new-level action so the
+              // current requirement keeps the space above the fold.
+              const SizedBox(height: 8),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: Text('生效版本记录 · $versionCount'),
+                subtitle: Text(_currentIntervalLabel(card.requirementVersions)),
+                children: [
+                  for (final version in card.requirementVersions.reversed)
+                    _RequirementVersionTile(version: version),
+                ],
+              ),
             ],
           ),
         ),
@@ -262,8 +265,13 @@ class _CurrentRequirementPanel extends StatelessWidget {
   }
 }
 
-/// One compact row in the available requirements list. The active row is the
-/// only one carrying the in-use marker and the edit affordance.
+/// One row in the available requirements list. The active row is the only one
+/// carrying the in-use marker; every level keeps its own edit affordance.
+///
+/// On narrow widths the level, its state and the edit affordance share the
+/// first line while the rule takes the full width underneath, so a long
+/// requirement is never squeezed into a narrow column beside the controls.
+/// Wider widths keep the compact single line.
 class _AvailableRequirementRow extends StatelessWidget {
   const _AvailableRequirementRow({
     super.key,
@@ -284,11 +292,31 @@ class _AvailableRequirementRow extends StatelessWidget {
   final VoidCallback? onEdit;
   final String? editTooltip;
 
+  /// Row width below which the rule moves to its own line. At 320 dp the list
+  /// content is about 280 dp wide, which leaves the rule too little room next
+  /// to the level label and the two controls.
+  static const double _stackedBreakpoint = 440;
+
+  static const double _labelWidth = 52;
+
+  /// Minimum touch target for Android (48 logical pixels).
+  static const double _hitTarget = 48;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final foreground = active ? colors.onSecondaryContainer : colors.onSurface;
+    final label = Text(
+      numberLabel,
+      style: theme.textTheme.labelLarge?.copyWith(
+        color: active ? foreground : colors.primary,
+      ),
+    );
+    final ruleText = Text(
+      rule,
+      style: theme.textTheme.bodyMedium?.copyWith(color: foreground),
+    );
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       decoration: active
@@ -298,56 +326,72 @@ class _AvailableRequirementRow extends StatelessWidget {
             )
           : null,
       padding: EdgeInsets.symmetric(horizontal: active ? 12 : 0, vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          SizedBox(
-            width: 52,
-            child: Text(
-              numberLabel,
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: active ? foreground : colors.primary,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              rule,
-              style: theme.textTheme.bodyMedium?.copyWith(color: foreground),
-            ),
-          ),
-          if (active) ...[
-            const SizedBox(width: 8),
-            Text(
-              '正在使用',
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: colors.primary,
-              ),
-            ),
-            if (onEdit != null)
-              IconButton(
-                tooltip: editTooltip,
-                onPressed: busy ? null : onEdit,
-                icon: const Icon(Icons.edit_outlined),
-              ),
-          ] else ...[
-            TextButton(
-              onPressed: busy ? null : onSelect,
-              child: const Text('选择'),
-            ),
-            // Editing a level and putting it in force stay separate actions:
-            // an inactive level can be edited without changing which
-            // requirement is currently active.
-            if (onEdit != null)
-              IconButton(
-                tooltip: editTooltip,
-                onPressed: busy ? null : onEdit,
-                icon: const Icon(Icons.edit_outlined),
-              ),
-          ],
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final controls = _controls(context);
+          if (constraints.maxWidth < _stackedBreakpoint) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: label),
+                    ...controls,
+                  ],
+                ),
+                const SizedBox(height: 2),
+                ruleText,
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(width: _labelWidth, child: label),
+              Expanded(child: ruleText),
+              ...controls,
+            ],
+          );
+        },
       ),
     );
+  }
+
+  /// State and selection stay separate from editing: an inactive level can be
+  /// edited without changing which requirement is currently in force.
+  List<Widget> _controls(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final edit = onEdit == null
+        ? null
+        : IconButton(
+            tooltip: editTooltip,
+            onPressed: busy ? null : onEdit,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(
+              width: _hitTarget,
+              height: _hitTarget,
+            ),
+            icon: const Icon(Icons.edit_outlined),
+          );
+    if (active) {
+      return [
+        const SizedBox(width: 8),
+        Text(
+          '正在使用',
+          style: theme.textTheme.labelMedium?.copyWith(color: colors.primary),
+        ),
+        ?edit,
+      ];
+    }
+    return [
+      TextButton(
+        style: TextButton.styleFrom(minimumSize: const Size(64, _hitTarget)),
+        onPressed: busy ? null : onSelect,
+        child: const Text('选择'),
+      ),
+      ?edit,
+    ];
   }
 }
 

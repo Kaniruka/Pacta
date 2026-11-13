@@ -1,5 +1,8 @@
+import 'dart:math';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
@@ -157,8 +160,12 @@ void main() {
     }
   }
 
-  Future<void> pumpManager(WidgetTester tester, NationalFocusCard card) async {
-    tester.view.physicalSize = const Size(900, 1800);
+  Future<void> pumpManager(
+    WidgetTester tester,
+    NationalFocusCard card, {
+    Size size = const Size(900, 1800),
+  }) async {
+    tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -403,6 +410,137 @@ void main() {
     expect(after.effectiveAction, '强化规则 1');
     expect(after.requirementVersions, hasLength(versionsBefore));
     expect(find.text('当前使用 · 强化等级 1'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('窄屏强化管理把等级与操作留在首行，规则正文独占整行', (tester) async {
+    final card = await createTreeCard(action: '基础规则');
+    await seedLevels(card, ['强化规则 1', '强化规则 2']);
+    await repository.selectStrengtheningLevel(cardId: card.id, levelNumber: 1);
+    await pumpManager(tester, card, size: const Size(320, 1200));
+
+    final activeRow = find.byKey(
+      const ValueKey('national-focus-strengthening-level-1'),
+    );
+    final label = find.descendant(of: activeRow, matching: find.text('1 级'));
+    final status = find.descendant(of: activeRow, matching: find.text('正在使用'));
+    final edit = find.descendant(
+      of: activeRow,
+      matching: find.byTooltip('编辑强化等级 1'),
+    );
+    final rule = find.descendant(of: activeRow, matching: find.text('强化规则 1'));
+
+    final firstLineBottom = [
+      label,
+      status,
+      edit,
+    ].map((finder) => tester.getRect(finder).bottom).reduce(max);
+    expect(tester.getRect(rule).top, greaterThanOrEqualTo(firstLineBottom - 1));
+    expect(tester.getRect(rule).width, greaterThan(240));
+    final editButton = find.descendant(
+      of: activeRow,
+      matching: find.byType(IconButton),
+    );
+    expect(tester.getSize(editButton).width, greaterThanOrEqualTo(48));
+    expect(tester.getSize(editButton).height, greaterThanOrEqualTo(48));
+
+    final otherRow = find.byKey(
+      const ValueKey('national-focus-strengthening-level-2'),
+    );
+    final otherSelect = find.descendant(
+      of: otherRow,
+      matching: find.byType(TextButton),
+    );
+    final otherRule = find.descendant(
+      of: otherRow,
+      matching: find.text('强化规则 2'),
+    );
+    expect(
+      tester.getRect(otherRule).top,
+      greaterThanOrEqualTo(tester.getRect(otherSelect).bottom - 1),
+    );
+    expect(tester.getRect(otherRule).width, greaterThan(200));
+    expect(tester.getSize(otherSelect).height, greaterThanOrEqualTo(48));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('宽屏强化管理保留等级与规则同一行的紧凑横排', (tester) async {
+    final card = await createTreeCard(action: '基础规则');
+    await seedLevels(card, ['强化规则 1']);
+    await pumpManager(tester, card);
+
+    final row = find.byKey(
+      const ValueKey('national-focus-strengthening-level-1'),
+    );
+    final label = find.descendant(of: row, matching: find.text('1 级'));
+    final rule = find.descendant(of: row, matching: find.text('强化规则 1'));
+    final labelRect = tester.getRect(label);
+    final ruleRect = tester.getRect(rule);
+    expect((ruleRect.top - labelRect.top).abs(), lessThan(8));
+    expect(ruleRect.left, greaterThanOrEqualTo(labelRect.right));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('生效版本记录排在要求列表与新建操作之后并保留历史', (tester) async {
+    final card = await createTreeCard(action: '基础规则');
+    await seedLevels(card, ['强化规则 1', '强化规则 2']);
+    await repository.selectStrengtheningLevel(cardId: card.id, levelNumber: 2);
+    await pumpManager(tester, card);
+
+    final history = find.ancestor(
+      of: find.textContaining('生效版本记录'),
+      matching: find.byType(ExpansionTile),
+    );
+    final lastRow = find.byKey(
+      const ValueKey('national-focus-strengthening-level-2'),
+    );
+    final newButton = find.widgetWithText(FilledButton, '新建强化要求');
+    expect(
+      tester.getRect(history).top,
+      greaterThan(tester.getRect(lastRow).bottom),
+    );
+    expect(
+      tester.getRect(history).top,
+      greaterThan(tester.getRect(newButton).bottom),
+    );
+
+    await tester.tap(find.textContaining('生效版本记录'));
+    await tester.pumpAndSettle();
+    expect(find.text('版本 1 · 基础要求'), findsOneWidget);
+    expect(find.text('版本 2 · 强化等级 2'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('窄屏长规则完整换行且不缩小字号', (tester) async {
+    const longRule = '坐下后先把今天最重要的三件事写进纸质本子，再逐条核对昨天的落实情况，最后决定今天是否调整顺序。';
+    final card = await createTreeCard(action: '基础规则');
+    await seedLevels(card, [longRule]);
+    await repository.selectStrengtheningLevel(cardId: card.id, levelNumber: 1);
+    await pumpManager(tester, card, size: const Size(320, 1200));
+
+    final row = find.byKey(
+      const ValueKey('national-focus-strengthening-level-1'),
+    );
+    final rule = find.descendant(of: row, matching: find.text(longRule));
+    expect(rule, findsOneWidget);
+    expect(
+      tester.renderObject<RenderParagraph>(rule).didExceedMaxLines,
+      isFalse,
+    );
+    final expected = Theme.of(tester.element(rule))
+        .textTheme
+        .bodyMedium!
+        .fontSize;
+    expect(tester.widget<Text>(rule).style?.fontSize, expected);
+    expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
