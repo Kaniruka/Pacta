@@ -199,9 +199,11 @@ void main() {
       if (_holdSeconds > 0) {
         lifecycle.arm();
         final nativeTap = Completer<void>();
+        var receivedNativeTap = false;
         final tapSubscription = service.openFlowRequests.listen((payload) {
           if (payload == 'daily-open-reminder:${scheduled.dayKey}' &&
               !nativeTap.isCompleted) {
+            receivedNativeTap = true;
             nativeTap.complete();
           }
         });
@@ -217,6 +219,11 @@ void main() {
         } finally {
           await tapSubscription.cancel();
         }
+        expect(
+          receivedNativeTap,
+          isTrue,
+          reason: 'No native tap was observed.',
+        );
         _record(
           'ISSUE95_HOLD_ENDED '
           'backgrounded=${lifecycle.backgrounded} '
