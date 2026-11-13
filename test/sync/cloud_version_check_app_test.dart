@@ -74,7 +74,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(remote.inspections, 1);
       expect(find.text('云端与本机'), findsOneWidget);
-      await tester.tap(find.text('取消'));
+      await tester.tap(find.text('关闭'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('我的'));
       await tester.pumpAndSettle();
@@ -144,7 +144,7 @@ void main() {
       await tester.tap(find.byTooltip('查看云同步'));
       await tester.pumpAndSettle();
       expect(find.text('云端与本机'), findsOneWidget);
-      await tester.tap(find.text('取消'));
+      await tester.tap(find.text('关闭'));
       await tester.pumpAndSettle();
       remote.revision = 3;
       now = now.add(const Duration(minutes: 5));
@@ -152,7 +152,7 @@ void main() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
       expect(find.text('云端与本机'), findsOneWidget);
-      await tester.tap(find.text('取消'));
+      await tester.tap(find.text('关闭'));
       await tester.pumpAndSettle();
       now = now.add(const Duration(minutes: 5));
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
@@ -232,7 +232,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(
           tester
-              .widget<FilledButton>(find.widgetWithText(FilledButton, '从云端更新'))
+              .widget<FilledButton>(find.widgetWithText(FilledButton, '下载'))
               .onPressed,
           isNull,
         );
@@ -250,7 +250,7 @@ void main() {
               .onPressed,
           isNotNull,
         );
-        await tester.tap(find.text('取消'));
+        await tester.tap(find.text('关闭'));
         await tester.pumpAndSettle();
         remote.revision = 3;
         remote.deviceName = 'Latest device';
@@ -336,11 +336,11 @@ void main() {
       // The user's open preview stays stable until it is closed.
       expect(find.text('云端来源：Other device'), findsOneWidget);
       expect(find.text('云端来源：Latest device'), findsNothing);
-      await tester.tap(find.text('取消'));
+      await tester.tap(find.text('关闭'));
       await tester.pumpAndSettle();
       expect(find.text('云端与本机'), findsOneWidget);
       expect(find.text('云端来源：Latest device'), findsOneWidget);
-      await tester.tap(find.text('取消'));
+      await tester.tap(find.text('关闭'));
       await tester.pumpAndSettle();
       expect(find.text('云端与本机'), findsNothing);
       expect(remote.transfers, 0);
@@ -438,7 +438,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('云端与本机'), findsOneWidget);
       expect(find.text('云端来源：Latest device'), findsOneWidget);
-      await tester.tap(find.text('取消'));
+      await tester.tap(find.text('关闭'));
       await tester.pumpAndSettle();
       expect(find.text('预约准备'), findsNothing);
       expect(find.text('选择任务'), findsOneWidget);
@@ -561,8 +561,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('查看云同步'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('从云端更新'));
-      await tester.tap(find.text('从云端更新'));
+      await tester.ensureVisible(find.text('下载'));
+      await tester.tap(find.text('下载'));
       await tester.pumpAndSettle();
       expect(find.textContaining('本机独有的记录将被丢弃'), findsOneWidget);
       await tester.tap(find.text('确认下载'));
@@ -611,8 +611,14 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('查看云同步'));
       await tester.pumpAndSettle();
+      // 基线判断只属于下载确认：不知道基线时明说，而不是假称本机没有修改。
+      await tester.ensureVisible(find.text('下载'));
+      await tester.tap(find.text('下载'));
+      await tester.pumpAndSettle();
       expect(find.textContaining('尚无可靠的本地同步基线'), findsOneWidget);
       expect(find.text('本机有尚未同步的修改；下载将丢弃这些修改。'), findsNothing);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
       await database.close();
@@ -643,7 +649,7 @@ void main() {
       await tester.tap(find.byIcon(Icons.refresh));
       await tester.pumpAndSettle();
       expect(find.text('云端与本机'), findsOneWidget);
-      await tester.tap(find.text('取消'));
+      await tester.tap(find.text('关闭'));
       await tester.pumpAndSettle();
       expect(find.text('尚未同步'), findsOneWidget);
       expect(remote.transfers, 0);
@@ -721,13 +727,13 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.text('云端与本机'), findsOneWidget);
-        await tester.tap(find.text('取消'));
+        await tester.tap(find.text('关闭'));
         await tester.pumpAndSettle();
         // 待处理版本改为在弹层内呈现：再次打开即可看到新的云端版本。
         await tester.tap(find.byTooltip('查看云同步'));
         await tester.pumpAndSettle();
         expect(find.textContaining('云端来源：'), findsOneWidget);
-        await tester.tap(find.text('取消'));
+        await tester.tap(find.text('关闭'));
         await tester.pumpAndSettle();
         expect(remote.transfers, 0);
         await tester.pumpWidget(const SizedBox.shrink());
@@ -766,7 +772,7 @@ void main() {
       await tester.tap(find.byTooltip('查看云同步'));
       await tester.pumpAndSettle();
       expect(find.text('云端与本机'), findsOneWidget);
-      await tester.tap(find.text('取消'));
+      await tester.tap(find.text('关闭'));
       await tester.pumpAndSettle();
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();

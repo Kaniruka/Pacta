@@ -150,19 +150,44 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.text('小林'), findsOneWidget);
-        expect(find.text('手动云同步'), findsOneWidget);
+        expect(find.text('数据同步'), findsOneWidget);
         expect(find.text('国策'), findsOneWidget);
         expect(find.text('专注'), findsOneWidget);
         expect(tester.takeException(), isNull);
         await _capture(tester, binding, 'my-overview');
 
-        await tester.ensureVisible(find.text('手动云同步'));
-        await tester.tap(find.text('手动云同步'));
+        await tester.ensureVisible(find.text('数据同步'));
+        await tester.tap(find.text('数据同步'));
         await tester.pumpAndSettle();
         expect(find.text('今日确认后自动上传'), findsOneWidget);
         await tester.ensureVisible(find.text('今日确认后自动上传'));
         expect(tester.takeException(), isNull);
         await _capture(tester, binding, 'sync-operations');
+
+        expect(find.text('云端来源：2206123SC（Android）'), findsOneWidget);
+        expect(find.textContaining('本机记录：'), findsNothing);
+        expect(find.textContaining('云端记录：'), findsNothing);
+        for (final upload in [false, true]) {
+          await tester.ensureVisible(find.text(upload ? '上传' : '下载'));
+          await tester.tap(find.text(upload ? '上传' : '下载'));
+          await tester.pumpAndSettle();
+          expect(find.text(upload ? '上传并覆盖云端？' : '下载并覆盖本地？'), findsOneWidget);
+          expect(find.textContaining('本机记录：'), findsOneWidget);
+          expect(find.textContaining('云端记录：'), findsOneWidget);
+          expect(find.text('来源：2206123SC（Android）'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+          await _capture(
+            tester,
+            binding,
+            upload ? 'upload-confirmation' : 'download-confirmation',
+          );
+          await tester.tap(find.text('取消'));
+          await tester.pumpAndSettle();
+          expect((await cloudRemote.inspect(userId: _userId))!.revision, 1);
+          expect((await taskRepository.getGoals()).length, 2);
+          await tester.tap(find.text('数据同步'));
+          await tester.pumpAndSettle();
+        }
 
         await tester.ensureVisible(find.text('历史备份'));
         await tester.tap(find.text('历史备份'));
@@ -191,7 +216,7 @@ void main() {
         await _capture(tester, binding, 'history-after-cancel');
         await tester.pageBack();
         await tester.pumpAndSettle();
-        expect(find.text('手动云同步'), findsOneWidget);
+        expect(find.text('数据同步'), findsOneWidget);
         expect(tester.takeException(), isNull);
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());

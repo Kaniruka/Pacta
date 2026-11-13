@@ -141,19 +141,12 @@ void main() {
         await _capture(tester, 'choice-320');
         expect(find.text('云端与本机'), findsOneWidget);
         if (!_baseline) {
-          expect(find.text('覆盖云端，丢弃云端独有记录。'), findsOneWidget);
-          expect(find.text('覆盖本机，丢弃本机独有记录。'), findsOneWidget);
-          await tester.ensureVisible(find.text('上传'));
-          await tester.pumpAndSettle();
-          expect(
-            (tester.getCenter(find.text('上传')).dy -
-                    tester.getCenter(find.text('覆盖云端，丢弃云端独有记录。')).dy)
-                .abs(),
-            lessThan(60),
-          );
+          expect(find.textContaining('丢弃'), findsNothing);
+          expect(find.widgetWithText(FilledButton, '下载'), findsOneWidget);
+          expect(find.widgetWithText(OutlinedButton, '上传'), findsOneWidget);
           await _capture(tester, 'directions-320');
         }
-        await tester.tap(find.text('取消'));
+        await tester.tap(find.text('关闭'));
         await tester.pumpAndSettle();
         expect(find.text('2026-11-12 10:30:00'), findsOneWidget);
         expect(tester.takeException(), isNull);

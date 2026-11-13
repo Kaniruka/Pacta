@@ -203,7 +203,7 @@ void main() {
       await tester.tap(find.byType(SwitchListTile));
       await settleUi(tester);
       expect(await const CloudAutoUploadPreference().load(_userId), isTrue);
-      await tester.tap(find.text('取消'));
+      await tester.tap(find.text('关闭'));
       await settleUi(tester);
 
       await tester.tap(find.text('国策树'));
@@ -261,7 +261,7 @@ void main() {
       await settleUi(tester);
       // 冷启动的版本检查会先询问用户；忽略提示不构成覆盖授权。
       if (find.text('云端与本机').evaluate().isNotEmpty) {
-        await tester.tap(find.text('取消'));
+        await tester.tap(find.text('关闭'));
         await settleUi(tester);
       }
       await tester.tap(find.text('我的'));
@@ -270,7 +270,7 @@ void main() {
       await settleUi(tester);
       await tester.tap(find.byType(SwitchListTile));
       await settleUi(tester);
-      await tester.tap(find.text('取消'));
+      await tester.tap(find.text('关闭'));
       await settleUi(tester);
 
       await tester.tap(find.text('国策树'));
@@ -317,7 +317,7 @@ void main() {
       await settleUi(tester);
       await tester.tap(find.byType(SwitchListTile));
       await settleUi(tester);
-      await tester.tap(find.text('取消'));
+      await tester.tap(find.text('关闭'));
       await settleUi(tester);
 
       await tester.tap(find.text('国策树'));
@@ -372,7 +372,7 @@ void main() {
       await settleUi(tester);
       await tester.tap(find.byType(SwitchListTile));
       await settleUi(tester);
-      await tester.tap(find.text('取消'));
+      await tester.tap(find.text('关闭'));
       await settleUi(tester);
 
       await tester.tap(find.text('国策树'));

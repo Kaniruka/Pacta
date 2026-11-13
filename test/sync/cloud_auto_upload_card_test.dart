@@ -129,8 +129,8 @@ void main() {
     );
 
     await pumpCard(tester);
-    await tester.ensureVisible(find.text('从云端更新'));
-    await tester.tap(find.text('从云端更新'));
+    await tester.ensureVisible(find.text('下载'));
+    await tester.tap(find.text('下载'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('确认下载'));
     await settleAsync(tester);
