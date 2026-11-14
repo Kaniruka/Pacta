@@ -503,6 +503,14 @@ void main() {
     });
     await tester.pumpAndSettle();
 
+    expect(find.text('使用此头像'), findsOneWidget);
+    await tester.ensureVisible(find.text('使用此头像'));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.text('使用此头像'));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '小林');
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();

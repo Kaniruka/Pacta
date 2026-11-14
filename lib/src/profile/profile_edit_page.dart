@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
 import 'avatar_image.dart';
+import 'avatar_crop_page.dart';
 import 'avatar_picker.dart';
 import 'profile_repository.dart';
 
@@ -24,11 +25,13 @@ class ProfileEditPage extends StatefulWidget {
 class _ProfileEditPageState extends State<ProfileEditPage> {
   final TextEditingController _nameController = TextEditingController();
   Uint8List? _pickedAvatar;
+  Uint8List? _cropSource;
   Uint8List? _storedAvatar;
   bool _clearAvatar = false;
   bool _busy = false;
   bool _picking = false;
   bool _syncFailed = false;
+  bool _nameEdited = false;
   String? _error;
 
   @override
@@ -47,7 +50,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     final profile = await widget.repository.getProfile();
     if (!mounted) return;
     setState(() {
-      _nameController.text = profile.displayName;
+      if (!_nameEdited) _nameController.text = profile.displayName;
       _storedAvatar = profile.avatar?.bytes;
     });
   }
@@ -62,19 +65,52 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     });
     try {
       final bytes = await widget.avatarPicker.pickSingleImage();
-      if (bytes == null) return;
-      final avatar = await prepareAvatarForUpload(bytes);
-      if (!mounted) return;
-      setState(() {
-        _pickedAvatar = avatar.bytes;
-        _clearAvatar = false;
-      });
+      if (bytes == null || !mounted) return;
+      await _cropAvatar(bytes);
     } on AvatarValidationException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } on AvatarPickException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } on Object catch (error) {
       if (mounted) setState(() => _error = '这张图片无法读取：$error');
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
+  }
+
+  Future<void> _cropAvatar(Uint8List bytes) async {
+    final image = await decodeAvatarForCrop(bytes);
+    MaterialPageRoute<Uint8List>? route;
+    try {
+      if (!mounted) return;
+      route = MaterialPageRoute<Uint8List>(
+        builder: (_) => AvatarCropPage(image: image),
+      );
+      final cropped = await Navigator.of(context).push<Uint8List>(route);
+      if (!mounted || cropped == null) return;
+      setState(() {
+        _pickedAvatar = cropped;
+        _cropSource = bytes;
+        _clearAvatar = false;
+      });
+    } finally {
+      if (route == null) {
+        image.dispose();
+      } else {
+        route.completed.then((_) => image.dispose());
+      }
+    }
+  }
+
+  Future<void> _recropAvatar() async {
+    setState(() {
+      _picking = true;
+      _error = null;
+    });
+    try {
+      await _cropAvatar(_cropSource ?? _visibleAvatar!);
+    } catch (_) {
+      if (mounted) setState(() => _error = '这张图片无法读取，请重新选择。');
     } finally {
       if (mounted) setState(() => _picking = false);
     }
@@ -171,10 +207,16 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                   ),
                   if (_visibleAvatar != null)
                     TextButton(
-                      onPressed: _busy
+                      onPressed: _busy || _picking ? null : _recropAvatar,
+                      child: const Text('重新裁剪'),
+                    ),
+                  if (_visibleAvatar != null)
+                    TextButton(
+                      onPressed: _busy || _picking
                           ? null
                           : () => setState(() {
                               _pickedAvatar = null;
+                              _cropSource = null;
                               _clearAvatar = true;
                             }),
                       child: const Text('移除头像'),
@@ -191,6 +233,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
               const SizedBox(height: 20),
               TextField(
                 controller: _nameController,
+                onChanged: (_) => _nameEdited = true,
                 enabled: !_busy,
                 maxLength: maxDisplayNameLength,
                 decoration: const InputDecoration(
@@ -218,7 +261,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
               ],
               const SizedBox(height: 16),
               FilledButton(
-                onPressed: _busy ? null : _save,
+                onPressed: _busy || _picking ? null : _save,
                 child: Text(_busy ? '正在保存…' : '保存'),
               ),
               if (_busy) ...[
