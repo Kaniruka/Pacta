@@ -13,6 +13,7 @@ import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_reconciliation_page.dart';
+import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
 import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
@@ -447,6 +448,53 @@ void main() {
       await tester.tap(find.text('查看完整来源操作').first);
       await tester.pumpAndSettle();
       await shot('11b-review-source-expanded');
+
+      final blockedCard = NationalFocusCard(
+        id: 'layout-blocked-card',
+        name: '待核对的晨光校准',
+        action: '预定闹钟响起时打开床边灯。',
+        triggerCondition: '',
+        isInTree: true,
+        state: NationalFocusCardState.pendingTodayConfirmation,
+        hasPendingReview: true,
+        createdAt: now,
+        updatedAt: now,
+      );
+      final blockedApp = MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: pactaTheme(brightness),
+        home: Scaffold(
+          body: NationalFocusTreePage(
+            repository: _LayoutBlockedRepository(blockedCard),
+          ),
+        ),
+      );
+      await tester.pumpWidget(
+        Platform.isWindows
+            ? RepaintBoundary(key: boundaryKey, child: blockedApp)
+            : blockedApp,
+      );
+      await pumpUi();
+      await openNode(blockedCard);
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.byKey(const ValueKey('national-focus-primary-state-action')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(
+                const ValueKey('national-focus-secondary-state-action'),
+              ),
+            )
+            .onPressed,
+        isNull,
+      );
+      await shot('12-review-blocked-actions-row');
       expect(tester.takeException(), isNull);
     } finally {
       tester.platformDispatcher.clearPlatformBrightnessTestValue();
@@ -508,4 +556,16 @@ class _LayoutReviewRepository extends UnavailableNationalFocusRepository {
       ),
     );
   }
+}
+
+/// Existing page-test seam for read-only presentation of a review-blocked card.
+class _LayoutBlockedRepository extends UnavailableNationalFocusRepository {
+  _LayoutBlockedRepository(this.card);
+  final NationalFocusCard card;
+  @override
+  Stream<List<NationalFocusCard>> watchTreeCards() => Stream.value([card]);
+  @override
+  Future<List<NationalFocusCard>> getTreeCards() async => [card];
+  @override
+  Future<NationalFocusCard> getCard(String cardId) async => card;
 }
