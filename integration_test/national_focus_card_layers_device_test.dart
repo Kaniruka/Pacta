@@ -129,9 +129,15 @@ void main() {
           (state == '05c-card-editor-exceptions-focused' ||
               state == '05c2-card-editor-exceptions-collapsed')) {
         print('[native-capture-ready] state=$state');
-        await tester.runAsync(
-          () => Future<void>.delayed(Duration(milliseconds: _nativeHoldMs)),
+        final holdUntil = DateTime.now().add(
+          Duration(milliseconds: _nativeHoldMs),
         );
+        while (DateTime.now().isBefore(holdUntil)) {
+          await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 50)),
+          );
+          await tester.pump();
+        }
       }
       expect(tester.takeException(), isNull, reason: '截图 $name 不应抛异常');
     }
@@ -142,6 +148,34 @@ void main() {
         () => Future<void>.delayed(const Duration(milliseconds: 20)),
       );
       await tester.pumpAndSettle();
+    }
+
+    Future<void> settleNativeKeyboard({required bool visible}) async {
+      if (!Platform.isAndroid) return;
+      final deadline = DateTime.now().add(const Duration(seconds: 8));
+      while ((tester.view.viewInsets.bottom > 0) != visible &&
+          DateTime.now().isBefore(deadline)) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump();
+      }
+      expect(
+        tester.view.viewInsets.bottom > 0,
+        visible,
+        reason: 'Wait for actual Android IME metrics before capturing the focused/collapsed state.',
+      );
+      // Let EditableText's caret scrolling settle after the native resize.
+      for (var frame = 0; frame < 6; frame++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+      print(
+        '[native-ime-metrics] visible=$visible bottom=${tester.view.viewInsets.bottom}',
+      );
     }
 
     Future<NationalFocusCard> createTreeCard({
@@ -304,6 +338,7 @@ void main() {
       await shot('05b-card-editor-exceptions-expanded');
       await tester.tap(notesField);
       await tester.pumpAndSettle();
+      await settleNativeKeyboard(visible: true);
       final notesFocus = tester
           .widget<EditableText>(
             find.descendant(
@@ -316,6 +351,7 @@ void main() {
       await shot('05c-card-editor-exceptions-focused');
       await tapText('例外与判例');
       expect(notesFocus.hasFocus, isFalse);
+      await settleNativeKeyboard(visible: false);
       await shot('05c2-card-editor-exceptions-collapsed');
       await tapText('例外与判例');
       expect(

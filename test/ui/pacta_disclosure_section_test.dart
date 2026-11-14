@@ -4,6 +4,60 @@ import 'package:pacta/src/ui/pacta_disclosure_section.dart';
 
 void main() {
   testWidgets(
+    'IME next skips collapsed inputs and reopening retains the draft',
+    (tester) async {
+      final outside = FocusNode();
+      final inside = FocusNode();
+      final controller = TextEditingController();
+      addTearDown(outside.dispose);
+      addTearDown(inside.dispose);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Column(
+              children: [
+                TextField(
+                  key: const ValueKey('previous-input'),
+                  focusNode: outside,
+                  textInputAction: TextInputAction.next,
+                ),
+                PactaDisclosureSection(
+                  title: const Text('可选内容'),
+                  children: [
+                    TextField(
+                      key: const ValueKey('hidden-input'),
+                      controller: controller,
+                      focusNode: inside,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('可选内容'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('hidden-input')),
+        '保留的草稿',
+      );
+      await tester.tap(find.text('可选内容'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('previous-input')));
+      await tester.testTextInput.receiveAction(TextInputAction.next);
+      await tester.pump();
+      expect(inside.hasFocus, isFalse);
+      await tester.tap(find.text('可选内容'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('hidden-input')));
+      expect(inside.hasFocus, isTrue);
+      expect(find.text('保留的草稿'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
     'collapsing a focused form closes its input connection and preserves draft',
     (tester) async {
       final focus = FocusNode();
