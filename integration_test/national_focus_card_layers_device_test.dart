@@ -49,6 +49,7 @@ const _theme = String.fromEnvironment(
 );
 const _width = String.fromEnvironment('NF_CARD_LAYERS_WIDTH');
 const _nativeHoldMs = int.fromEnvironment('NF_CARD_LAYERS_NATIVE_HOLD_MS');
+const _mouseReview = bool.fromEnvironment('NF_CARD_LAYERS_MOUSE_REVIEW');
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -208,7 +209,12 @@ void main() {
       final node = find.byKey(ValueKey('national-focus-node-${card.id}'));
       expect(node, findsOneWidget, reason: '国策节点「${card.name}」应在树中');
       await tester.ensureVisible(node);
-      await tester.tap(node);
+      await tester.tap(
+        node,
+        kind: _mouseReview
+            ? ui.PointerDeviceKind.mouse
+            : ui.PointerDeviceKind.touch,
+      );
       await tester.pumpAndSettle();
     }
 
@@ -216,7 +222,12 @@ void main() {
       final target = find.text(label);
       await tester.ensureVisible(target);
       await tester.pumpAndSettle();
-      await tester.tap(target);
+      await tester.tap(
+        target,
+        kind: _mouseReview
+            ? ui.PointerDeviceKind.mouse
+            : ui.PointerDeviceKind.touch,
+      );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: '操作「$label」不应抛异常');
     }
@@ -323,6 +334,20 @@ void main() {
         closeTo(tester.getCenter(extinguish).dy, 1),
       );
       await shot('02b-pending-actions-row');
+      if (Platform.isWindows && _mouseReview) {
+        final mouse = TestGesture(
+          dispatcher: tester.sendEventToBinding,
+          kind: ui.PointerDeviceKind.mouse,
+          device: 9901,
+          pointer: 9901,
+        );
+        await mouse.addPointer(location: Offset.zero);
+        await mouse.moveTo(tester.getCenter(confirm));
+        await tester.pumpAndSettle();
+        await shot('02d-windows-confirm-hover');
+        await mouse.removePointer();
+        await tester.pumpAndSettle();
+      }
       await tapText('查看详情');
       await shot('03-detail-collapsed');
       await tapText('例外与判例');
