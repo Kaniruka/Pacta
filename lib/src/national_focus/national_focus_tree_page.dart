@@ -9,6 +9,7 @@ import 'package:timezone/timezone.dart' as timezone;
 
 import '../focus/focus_time_zones.dart';
 import '../theme/pacta_status_colors.dart';
+import '../ui/pacta_disclosure_section.dart';
 import 'national_focus_checkpoints.dart';
 import 'national_focus_models.dart';
 import 'national_focus_reconciliation_page.dart';
@@ -1646,19 +1647,19 @@ class _NationalFocusCardEditorPageState
                   validator: (value) => _requiredFieldError(value, '国策规则'),
                 ),
                 const SizedBox(height: 16),
-                ExpansionTile(
+                PactaDisclosureSection(
                   tilePadding: EdgeInsets.zero,
                   childrenPadding: const EdgeInsets.only(bottom: 12),
                   title: const Text('例外与判例'),
                   subtitle: const Text('可选，按需展开'),
                   children: [
                     TextFormField(
+                      key: const ValueKey('national-focus-exception-notes'),
                       controller: _exceptionNotes,
                       minLines: 2,
                       maxLines: 4,
                       textInputAction: TextInputAction.done,
                       decoration: const InputDecoration(
-                        labelText: '例外与判例（可选）',
                         hintText: '例如：出差时顺延；当天取消安排记“不适用”',
                         alignLabelWithHint: true,
                       ),
@@ -2109,30 +2110,59 @@ class _NodeActionsSheet extends StatelessWidget {
           const SizedBox(height: 12),
           Text(card.effectiveAction, style: theme.textTheme.bodyLarge),
           const SizedBox(height: 16),
-          action(
-            card.state == NationalFocusCardState.lit
-                ? _NodeAction.extinguish
-                : _NodeAction.light,
-            card.state == NationalFocusCardState.lit
-                ? Icons.lightbulb_outline
-                : Icons.lightbulb,
-            switch (card.state) {
-              NationalFocusCardState.lit => '熄灭',
-              NationalFocusCardState.pendingTodayConfirmation => '确认',
-              NationalFocusCardState.extinguished => '点亮',
-            },
-            subtitle: blockedReason,
-            enabled:
-                !reviewBlocked &&
-                (card.state == NationalFocusCardState.lit || !lightBlocked),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  key: const ValueKey('national-focus-primary-state-action'),
+                  style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+                  onPressed:
+                      !reviewBlocked &&
+                          (card.state == NationalFocusCardState.lit ||
+                              !lightBlocked)
+                      ? () => onAction(
+                          card.state == NationalFocusCardState.lit
+                              ? _NodeAction.extinguish
+                              : _NodeAction.light,
+                        )
+                      : null,
+                  icon: Icon(
+                    card.state == NationalFocusCardState.lit
+                        ? Icons.lightbulb_outline
+                        : Icons.lightbulb,
+                  ),
+                  label: Text(switch (card.state) {
+                    NationalFocusCardState.lit => '熄灭',
+                    NationalFocusCardState.pendingTodayConfirmation => '确认',
+                    NationalFocusCardState.extinguished => '点亮',
+                  }),
+                ),
+              ),
+              if (card.state ==
+                  NationalFocusCardState.pendingTodayConfirmation) ...[
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    key: const ValueKey(
+                      'national-focus-secondary-state-action',
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(0, 48),
+                    ),
+                    onPressed: reviewBlocked
+                        ? null
+                        : () => onAction(_NodeAction.extinguish),
+                    icon: const Icon(Icons.lightbulb_outline),
+                    label: const Text('熄灭'),
+                  ),
+                ),
+              ],
+            ],
           ),
-          if (card.state == NationalFocusCardState.pendingTodayConfirmation)
-            action(
-              _NodeAction.extinguish,
-              Icons.lightbulb_outline,
-              '熄灭',
-              enabled: !reviewBlocked,
-            ),
+          if (blockedReason != null) ...[
+            const SizedBox(height: 8),
+            Text(blockedReason, style: theme.textTheme.bodyMedium),
+          ],
           const SizedBox(height: 4),
           action(_NodeAction.details, Icons.article_outlined, '查看详情'),
           action(
@@ -2211,7 +2241,7 @@ class _NationalFocusCardDetailPage extends StatelessWidget {
                 _ExceptionNotesSection(notes: exceptionNotes),
               ],
               const SizedBox(height: 24),
-              Text('记录', style: theme.textTheme.titleMedium),
+              Text('记录', style: theme.textTheme.titleSmall),
               const SizedBox(height: 4),
               _NationalFocusRecordSummary(card: card),
               if (cascadeSourceLabel != null) ...[
@@ -2247,11 +2277,16 @@ class _ExceptionNotesSection extends StatelessWidget {
   final String notes;
 
   @override
-  Widget build(BuildContext context) => ExpansionTile(
+  Widget build(BuildContext context) => PactaDisclosureSection(
     tilePadding: EdgeInsets.zero,
     childrenPadding: const EdgeInsets.only(bottom: 8),
     title: const Text('例外与判例'),
-    children: [Align(alignment: Alignment.centerLeft, child: Text(notes))],
+    children: [
+      Align(
+        alignment: Alignment.centerLeft,
+        child: Text(notes, style: Theme.of(context).textTheme.bodyLarge),
+      ),
+    ],
   );
 }
 
@@ -2744,7 +2779,8 @@ class _FailureBatchCard extends StatelessWidget {
     return Card(
       child: Column(
         children: [
-          ExpansionTile(
+          PactaDisclosureSection(
+            tilePadding: const EdgeInsets.symmetric(horizontal: 16),
             title: Text(
               '$checkpointLabel · ${failures.length} 个节点'
               '${failures.any((failure) => failure.isPendingReview) ? ' · 待核对' : ''}',
@@ -2942,7 +2978,7 @@ class _FieldText extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(label, style: Theme.of(context).textTheme.labelMedium),
+      Text(label, style: Theme.of(context).textTheme.titleSmall),
       const SizedBox(height: 4),
       SelectableText(
         value.isEmpty ? '未设置' : value,

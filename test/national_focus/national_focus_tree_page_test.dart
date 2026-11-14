@@ -58,6 +58,69 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  for (final width in [320.0, 800.0]) {
+    for (final brightness in Brightness.values) {
+      testWidgets('已填例外展开安全绘制并保留草稿 $width $brightness', (tester) async {
+        tester.view.physicalSize = Size(width, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final card = await repository.createCard(
+          const NationalFocusCardDraft(
+            name: '例外卡',
+            action: '规则',
+            exceptionNotes: '保留草稿',
+          ),
+        );
+        final theme = ThemeData(brightness: brightness, useMaterial3: true);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: theme,
+            home: NationalFocusCardEditorPage(
+              repository: repository,
+              card: card,
+            ),
+          ),
+        );
+        await pumpNationalFocusUi(tester);
+        final heading = find.text('例外与判例');
+        await tester.ensureVisible(heading);
+        final headingContext = tester.element(heading);
+        expect(
+          DefaultTextStyle.of(headingContext).style.fontSize,
+          Theme.of(tester.element(heading)).textTheme.titleSmall!.fontSize,
+        );
+        await tester.tap(heading);
+        await tester.pump(const Duration(milliseconds: 80));
+        expect(tester.takeException(), isNull);
+        await tester.pumpAndSettle();
+        final tile = tester.widget<ExpansionTile>(find.byType(ExpansionTile));
+        expect(tile.shape, const Border());
+        expect(tile.collapsedShape, const Border());
+        final field = find.widgetWithText(TextFormField, '保留草稿');
+        final content = find.byKey(const ValueKey('pacta-disclosure-content'));
+        expect(
+          tester.getRect(field).top - tester.getRect(content).top,
+          greaterThanOrEqualTo(8),
+        );
+        await tester.enterText(field, '新草稿');
+        await tester.tap(heading);
+        await tester.pump(const Duration(milliseconds: 80));
+        expect(tester.takeException(), isNull);
+        await tester.pumpAndSettle();
+        await tester.tap(heading);
+        await tester.pumpAndSettle();
+        expect(find.widgetWithText(TextFormField, '新草稿'), findsOneWidget);
+        expect(
+          DefaultTextStyle.of(tester.element(heading)).style.fontSize,
+          Theme.of(tester.element(heading)).textTheme.titleSmall!.fontSize,
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 1));
+      });
+    }
+  }
+
   testWidgets('视图入口为文字下拉菜单', (tester) async {
     await createPlacedCard();
     await tester.pumpWidget(
@@ -77,38 +140,63 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('三态操作首项固定，面板无状态标签改名与技术路径', (tester) async {
-    final card = await createPlacedCard();
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: NationalFocusTreePage(repository: repository, now: () => now),
-        ),
-      ),
-    );
-    await pumpNationalFocusUi(tester);
-    Future<void> expectFirst(String title) async {
-      await openNode(tester, card);
-      final first = tester.widget<ListTile>(find.byType(ListTile).first);
-      expect((first.title! as Text).data, title);
-      expect(find.byType(Chip), findsNothing);
-      expect(find.text('修改名称'), findsNothing);
-      expect(find.text('节点 1'), findsNothing);
-      await tester.tapAt(const Offset(5, 5));
-      await tester.pumpAndSettle();
-    }
+  for (final width in [320.0, 800.0]) {
+    for (final brightness in Brightness.values) {
+      testWidgets('三态操作首项固定 $width $brightness', (tester) async {
+        tester.view.physicalSize = Size(width, 900);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final card = await createPlacedCard();
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(brightness: brightness),
+            home: Scaffold(
+              body: NationalFocusTreePage(
+                repository: repository,
+                now: () => now,
+              ),
+            ),
+          ),
+        );
+        await pumpNationalFocusUi(tester);
+        Future<void> expectFirst(String title) async {
+          await openNode(tester, card);
+          final first = find.widgetWithText(FilledButton, title);
+          expect(first, findsOneWidget);
+          if (title == '确认') {
+            final second = find.widgetWithText(OutlinedButton, '熄灭');
+            expect(second, findsOneWidget);
+            expect(tester.getRect(first).top, tester.getRect(second).top);
+            expect(tester.getSize(first).width, tester.getSize(second).width);
+          } else {
+            expect(
+              find.byKey(
+                const ValueKey('national-focus-secondary-state-action'),
+              ),
+              findsNothing,
+            );
+          }
+          expect(find.byType(Chip), findsNothing);
+          expect(find.text('修改名称'), findsNothing);
+          expect(find.text('节点 1'), findsNothing);
+          await tester.tapAt(const Offset(5, 5));
+          await tester.pumpAndSettle();
+        }
 
-    await expectFirst('点亮');
-    await repository.lightCard(card.id);
-    await pumpNationalFocusUi(tester);
-    await expectFirst('熄灭');
-    now = DateTime.utc(2026, 9, 25, 20);
-    await repository.settleDueCheckpoints();
-    await pumpNationalFocusUi(tester);
-    await expectFirst('确认');
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(seconds: 1));
-  });
+        await expectFirst('点亮');
+        await repository.lightCard(card.id);
+        await pumpNationalFocusUi(tester);
+        await expectFirst('熄灭');
+        now = DateTime.utc(2026, 9, 25, 20);
+        await repository.settleDueCheckpoints();
+        await pumpNationalFocusUi(tester);
+        await expectFirst('确认');
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 1));
+      });
+    }
+  }
 
   testWidgets('卡片库更多菜单改名保持规则与树外状态', (tester) async {
     final card = await repository.createCard(
@@ -643,8 +731,10 @@ void main() {
       NationalFocusCardState.extinguished,
     );
     await openNode(tester, child);
-    final light = tester.widget<ListTile>(find.widgetWithText(ListTile, '点亮'));
-    expect(light.enabled, isFalse);
+    final light = tester.widget<FilledButton>(
+      find.widgetWithText(FilledButton, '点亮'),
+    );
+    expect(light.onPressed, isNull);
     await tester.tap(find.text('查看详情'));
     await tester.pumpAndSettle();
     expect(find.textContaining('因「${parent.name}」连带熄灭'), findsOneWidget);

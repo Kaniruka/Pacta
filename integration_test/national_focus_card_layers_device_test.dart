@@ -12,8 +12,11 @@ import 'package:pacta/main.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
+import 'package:pacta/src/national_focus/national_focus_reconciliation_page.dart';
+import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../test/support/fake_auth_repository.dart';
 
@@ -44,11 +47,13 @@ const _theme = String.fromEnvironment(
   defaultValue: 'system',
 );
 const _width = String.fromEnvironment('NF_CARD_LAYERS_WIDTH');
+const _nativeHoldMs = int.fromEnvironment('NF_CARD_LAYERS_NATIVE_HOLD_MS');
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('国策卡轻量分层真实设备截图', (tester) async {
+    SharedPreferences.setMockInitialValues({});
     final database = PactaDatabase(NativeDatabase.memory());
     var now = DateTime.utc(2026, 11, 13, 9);
     final tree = LocalNationalFocusRepository(
@@ -72,6 +77,11 @@ void main() {
     var androidSurfaceReady = false;
 
     Future<void> shot(String state) async {
+      await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      await tester.pump();
       final name = 'national-focus-card-layers-$state';
       if (!capturedNames.add(name)) fail('截图名重复：$name');
       if (Platform.isAndroid) {
@@ -113,6 +123,15 @@ void main() {
         '[national-focus-card-layers] platform=${Platform.operatingSystem} '
         'shot=$name',
       );
+      if (Platform.isAndroid &&
+          _nativeHoldMs > 0 &&
+          (state == '05c-card-editor-exceptions-focused' ||
+              state == '05c2-card-editor-exceptions-collapsed')) {
+        print('[native-capture-ready] state=$state');
+        await tester.runAsync(
+          () => Future<void>.delayed(Duration(milliseconds: _nativeHoldMs)),
+        );
+      }
       expect(tester.takeException(), isNull, reason: '截图 $name 不应抛异常');
     }
 
@@ -196,7 +215,7 @@ void main() {
 
       final morning = await createTreeCard(
         name: '晨光校准',
-        action: '闹钟第一次响起时，打开床边灯，或拉开伸手可及的床帘；选最省力的一种即可。',
+        action: '预定起床闹钟第一次响起时，打开床边灯，或拉开伸手可及的床帘；选最省力的一种即可。',
         exceptionNotes: '当天决定取消起床安排、继续休息，记“不适用”；正常触发却没有开灯或拉帘，记未完成。',
       );
       final strengthened = await createTreeCard(
@@ -219,6 +238,7 @@ void main() {
 
       final app = PactaApp(
         authRepository: FakeAuthRepository()..signedInUser = _user,
+        focusNotificationService: DisabledFocusNotificationService(),
         taskRepositoryFactory: (_) => tasks,
         focusRepositoryFactory: (_) => focus,
         nationalFocusRepositoryFactory: (_) => tree,
@@ -242,12 +262,66 @@ void main() {
 
       await openNode(morning);
       await shot('02-node-sheet');
+      final sheet = find.byType(BottomSheet);
+      expect(
+        find.descendant(of: sheet, matching: find.text('确认')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: sheet, matching: find.text('熄灭')),
+        findsOneWidget,
+      );
+      await tester.tapAt(const Offset(8, 8));
+      await tester.pumpAndSettle();
+      now = now.add(const Duration(days: 1));
+      await tree.settleDueCheckpoints();
+      await pumpUi();
+      expect(
+        (await tree.getCard(morning.id)).state,
+        NationalFocusCardState.pendingTodayConfirmation,
+      );
+      await openNode(morning);
+      final confirm = find.descendant(of: sheet, matching: find.text('确认'));
+      final extinguish = find.descendant(of: sheet, matching: find.text('熄灭'));
+      expect(
+        tester.getCenter(confirm).dy,
+        closeTo(tester.getCenter(extinguish).dy, 1),
+      );
+      await shot('02b-pending-actions-row');
       await tapText('查看详情');
       await shot('03-detail-collapsed');
       await tapText('例外与判例');
       await shot('04-detail-exceptions');
       await tapText('编辑卡片');
       await shot('05-card-editor');
+      await tapText('例外与判例');
+      final notesField = find.byKey(
+        const ValueKey('national-focus-exception-notes'),
+      );
+      await tester.ensureVisible(notesField);
+      await tester.pumpAndSettle();
+      await shot('05b-card-editor-exceptions-expanded');
+      await tester.tap(notesField);
+      await tester.pumpAndSettle();
+      final notesFocus = tester
+          .widget<EditableText>(
+            find.descendant(
+              of: notesField,
+              matching: find.byType(EditableText),
+            ),
+          )
+          .focusNode;
+      expect(notesFocus.hasFocus, isTrue);
+      await shot('05c-card-editor-exceptions-focused');
+      await tapText('例外与判例');
+      expect(notesFocus.hasFocus, isFalse);
+      await shot('05c2-card-editor-exceptions-collapsed');
+      await tapText('例外与判例');
+      expect(
+        tester.widget<TextFormField>(notesField).controller!.text,
+        morning.exceptionNotes,
+      );
+      await shot('05d-card-editor-exceptions-reopened');
       await back();
       await back();
       expect(
@@ -256,12 +330,42 @@ void main() {
         reason: '从编辑页返回后应回到国策树',
       );
 
+      await tree.extinguishCard(
+        cardId: morning.id,
+        failureReason: '界面验收样例：今天未执行。',
+      );
+      await pumpUi();
+      await openNode(morning);
+      expect(
+        find.descendant(of: sheet, matching: find.text('点亮')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: sheet, matching: find.text('确认')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: sheet, matching: find.text('熄灭')),
+        findsNothing,
+      );
+      await shot('02c-extinguished-single-action');
+      await tester.tapAt(const Offset(8, 8));
+      await tester.pumpAndSettle();
+
       await openNode(strengthened);
       await tapText('查看详情');
       await shot('06-detail-strengthened');
       await tapText('编辑卡片');
       await tapText('管理强化要求');
       await shot('07-strengthening-manager');
+      await tester.scrollUntilVisible(
+        find.textContaining('生效版本记录 ·'),
+        150,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await tester.tap(find.textContaining('生效版本记录 ·'));
+      await tester.pumpAndSettle();
+      await shot('07b-strengthening-history-expanded');
       final secondLevel = find.byKey(
         const ValueKey('national-focus-strengthening-level-2'),
       );
@@ -309,6 +413,40 @@ void main() {
         findsOneWidget,
         reason: '五级上限页返回后应回到国策树',
       );
+      now = now.add(const Duration(days: 1));
+      await tree.settleDueCheckpoints();
+      expect(await tree.getFailures(), isNotEmpty);
+      await pumpUi();
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      await tapText('检查点与失败记录');
+      await tapText('查看失败记录');
+      await shot('10-failure-history-collapsed');
+      await tester.tap(find.textContaining(' 个节点').first);
+      await tester.pumpAndSettle();
+      await shot('10b-failure-history-expanded');
+
+      final brightness = Theme.of(tester.element(find.byType(Scaffold).last))
+          .brightness;
+      final reviewApp = MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: pactaTheme(brightness),
+        home: NationalFocusReconciliationPage(
+          repository: _LayoutReviewRepository(),
+        ),
+      );
+      await tester.pumpWidget(
+        Platform.isWindows
+            ? RepaintBoundary(key: boundaryKey, child: reviewApp)
+            : reviewApp,
+      );
+      await pumpUi();
+      await tester.ensureVisible(find.text('查看完整来源操作').first);
+      await tester.pumpAndSettle();
+      await shot('11-review-source-collapsed');
+      await tester.tap(find.text('查看完整来源操作').first);
+      await tester.pumpAndSettle();
+      await shot('11b-review-source-expanded');
       expect(tester.takeException(), isNull);
     } finally {
       tester.platformDispatcher.clearPlatformBrightnessTestValue();
@@ -320,4 +458,54 @@ void main() {
       await database.close();
     }
   });
+}
+
+/// Read-only layout sample, using the existing reconciliation page test seam.
+/// No branch is adopted and no real account or cloud operation is invoked.
+class _LayoutReviewRepository extends UnavailableNationalFocusRepository {
+  @override
+  Stream<NationalFocusReviewState> watchNationalFocusReviewState() {
+    final effect = NationalFocusReconciliationCardEffect(
+      cardId: 'sample-card',
+      triggerCondition: '晨光校准',
+      previousState: 'lit',
+      newState: 'extinguished',
+      previousParentId: null,
+      newParentId: null,
+      previousIsInTree: true,
+      newIsInTree: true,
+      previousSuccessfulDays: 10,
+      newSuccessfulDays: 10,
+      previousCurrentConsecutiveDays: 10,
+      newCurrentConsecutiveDays: 0,
+    );
+    return Stream.value(
+      NationalFocusReviewState(
+        reconciliationCases: [
+          NationalFocusReconciliationCase(
+            id: 'layout-review',
+            createdAt: DateTime.utc(2026, 11, 14),
+            cardIds: const ['sample-card'],
+            cardNames: const {'sample-card': '晨光校准'},
+            options: [
+              for (final source in ['手机', '电脑'])
+                NationalFocusReconciliationOption(
+                  sourceId: 'layout-$source',
+                  effects: [effect],
+                  operations: [
+                    NationalFocusReconciliationOperation(
+                      sourceId: 'layout-$source',
+                      deviceId: source,
+                      operation: 'extinguish_card',
+                      occurredAt: DateTime.utc(2026, 11, 14),
+                      effects: [effect],
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }

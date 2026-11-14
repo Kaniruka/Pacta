@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../ui/pacta_disclosure_section.dart';
 import 'national_focus_models.dart';
 import 'national_focus_repository.dart';
 
@@ -207,7 +208,7 @@ class _NationalFocusStrengtheningPageState
               // collapsed below the list and the new-level action so the
               // current requirement keeps the space above the fold.
               const SizedBox(height: 8),
-              ExpansionTile(
+              PactaDisclosureSection(
                 tilePadding: EdgeInsets.zero,
                 title: Text('生效版本记录 · $versionCount'),
                 subtitle: Text(_currentIntervalLabel(card.requirementVersions)),
@@ -489,7 +490,7 @@ class _StrengtheningLevelEditorPageState
                   ),
                 ),
                 const SizedBox(height: 8),
-                ExpansionTile(
+                PactaDisclosureSection(
                   tilePadding: EdgeInsets.zero,
                   childrenPadding: const EdgeInsets.only(bottom: 12),
                   title: const Text('对照基础规则'),

@@ -52,6 +52,7 @@ python3 "$PWD/.agents/skills/ui-ux-pro-max/scripts/search.py" "error recovery ac
 | 我的同步卡片与弹层 | [CloudSyncCard](../../lib/src/sync/cloud_sync_card.dart)复用共享检查和结果状态，跨入口刷新由 App 组合负责；操作面板含“今日确认后自动上传”开关与停止原因，历史页的云端备份和本机恢复点各自加载与重试；检查 `MyPage` 与 `_openAiManualSync` 两处接入参数及下载后刷新，保持受影响入口一致 | [卡片](../../test/sync/cloud_sync_card_test.dart)、[App 级同步](../../test/sync/manual_cloud_sync_app_test.dart)、[自动上传卡片](../../test/sync/cloud_auto_upload_card_test.dart) |
 | 我的名片、资料编辑与统计明细 | [lib/src/profile/](../../lib/src/profile/) 的 `MyProfileCard`、`ProfileEditPage` 与两个统计明细页；资料缓存和账号写入走 `LocalProfileRepository`，业务快照不包含资料，名片统计只读保留记录；首次资料读取失败与统计的加载／失败在名片内分别呈现并各自重试（重试只重建读取，不写资料或业务数据），账号清除后的晚到应答不得写回资料（清除代次） | [名片与编辑](../../test/profile/profile_card_test.dart)、[资料与清除](../../test/profile/profile_repository_test.dart)、[统计边界](../../test/profile/profile_statistics_test.dart)、[快照与清除隔离](../../test/profile/profile_snapshot_isolation_test.dart) |
 | 共用主题 | [lib/main.dart](../../lib/main.dart) 的 `pactaTheme`；先取语义主题与现有相邻组件，再决定是否需要公共扩展 | [布局](../../test/ui_layout_test.dart)、[二级页面布局](../../test/ui_secondary_layout_test.dart) |
+| 折叠分组 | [PactaDisclosureSection](../../lib/src/ui/pacta_disclosure_section.dart) 统一标题语义字号、边框与展开内容间距；含输入框时检查浮动标签完整可见 | [共享组件使用检查](../../test/ui/disclosure_usage_test.dart)；国策行为回归见 `test/national_focus/national_focus_card_layers_test.dart` |
 
 ## UI 要求
 
@@ -65,6 +66,7 @@ python3 "$PWD/.agents/skills/ui-ux-pro-max/scripts/search.py" "error recovery ac
 ## 验收
 
 - 设计与代码分轴：设计评审对照本页 UI 要求；实现对照规范/Issue 时按「流程与技能」的 code-review 行固定比较基点，分别给出 Standards 与 Spec 结论，各留独立证据。评审发现逐项处理，记录未解决项及依据，修复后用受影响状态的新图复查，不以旧图或差分比率代替。
+- 状态清单：从受影响控件的实际分支列出截图状态，逐项标记已打开判读或未覆盖。折叠控件须包含展开与收起；含输入框须包含浮动标签状态；同组动作须比较正常与禁用/待核对状态的排列。只断言控件存在、无 overflow 或截图成功，不能证明字号、默认边框、标签裁切和动作层级通过。结论只覆盖已判读状态；未覆盖项保留为验收缺口。#91 漏检与修订依据见[复盘](../ui-retro-20261114.md)。
 - 测试只为改动行为补充，覆盖受影响入口/操作/状态、窄宽屏、正常字号可读性、亮暗主题及鼠标／触摸操作；涉及身份/授权/同步/数据库时执行根 AGENTS.md 的服务验证要求。
 - 截图按[开发环境](../development-environment.md#工具与平台)的命令取得：一次运行一个独立目录，同名不覆盖，stdout/stderr 与退出码随图保存；前后对照须同 fixture、视口、字号、主题，旧图只作历史，不作最终通过依据。
 - 状态/布局用 widget 测试；按任务在 Android 模拟器和 Windows 构建、安装或运行，原生权限/通知/日历及真实桌面行为须对应平台证据。未打开/运行不算目视验收；交付列明改动、实测状态/设备及限制。
