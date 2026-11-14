@@ -403,6 +403,12 @@ void main() {
       await tester.tap(find.textContaining('生效版本记录 ·'));
       await tester.pumpAndSettle();
       await shot('07b-strengthening-history-expanded');
+      final versionTitle = find.textContaining(RegExp(r'^版本 \d+ ·')).first;
+      await tester.ensureVisible(
+        find.ancestor(of: versionTitle, matching: find.byType(ListTile)).first,
+      );
+      await tester.pumpAndSettle();
+      await shot('07c-strengthening-history-content');
       final secondLevel = find.byKey(
         const ValueKey('national-focus-strengthening-level-2'),
       );
@@ -415,7 +421,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(editSecondLevel);
       await tester.pumpAndSettle();
+      await shot('08a-strengthening-base-collapsed');
       await tapText('对照基础规则');
+      await tester.ensureVisible(find.text(strengthened.action));
+      await tester.pumpAndSettle();
       await shot('08-strengthening-level-editor');
       await back();
       await tester.scrollUntilVisible(
@@ -454,6 +463,8 @@ void main() {
       await tree.settleDueCheckpoints();
       expect(await tree.getFailures(), isNotEmpty);
       await pumpUi();
+      await tester.ensureVisible(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('更多'));
       await tester.pumpAndSettle();
       await tapText('检查点与失败记录');
