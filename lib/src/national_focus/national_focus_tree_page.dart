@@ -1685,24 +1685,30 @@ class _NationalFocusCardEditorPageState
       ),
     ),
     bottomNavigationBar: SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+      child: Center(
+        heightFactor: 1,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760),
-          child: FilledButton.icon(
-            onPressed: _busy ? null : _save,
-            icon: _busy
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.save_outlined),
-            label: Text(
-              _busy
-                  ? '保存中'
-                  : widget.card == null
-                  ? '保存到卡片库'
-                  : '保存',
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _busy ? null : _save,
+                icon: _busy
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_outlined),
+                label: Text(
+                  _busy
+                      ? '保存中'
+                      : widget.card == null
+                      ? '保存到卡片库'
+                      : '保存',
+                ),
+              ),
             ),
           ),
         ),
@@ -2795,8 +2801,8 @@ class _FailureBatchCard extends StatelessWidget {
                   leading: const Icon(Icons.account_tree_outlined),
                   title: Text(_snapshotName(failure)),
                   subtitle: Text(
-                    '${failure.cause.label} · '
-                    '${failure.failureReason ?? '原因未填写'}'
+                    '${failure.cause.label}'
+                    '${failure.failureReason == failure.cause.label ? '' : ' · ${failure.failureReason ?? '原因未填写'}'}'
                     '${failure.isPendingReview ? ' · 待核对' : ''}',
                   ),
                 ),

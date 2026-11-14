@@ -58,6 +58,32 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('失败原因与分类相同时只展示一次且保留原记录', (tester) async {
+    final card = await createPlacedCard();
+    await repository.lightCard(card.id);
+    now = DateTime.utc(2026, 9, 25, 20);
+    await repository.settleDueCheckpoints();
+    now = DateTime.utc(2026, 9, 26, 20);
+    await repository.settleDueCheckpoints();
+    expect((await repository.getFailures()).single.failureReason, '未完成今日确认');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NationalFocusFailureHistoryPage(
+          repository: repository,
+          displayTimeZoneId: 'UTC',
+        ),
+      ),
+    );
+    await pumpNationalFocusUi(tester);
+    await tester.tap(find.textContaining('1 个节点'));
+    await tester.pumpAndSettle();
+    expect(find.text('未完成今日确认 · 未完成今日确认'), findsNothing);
+    expect(find.text('未完成今日确认'), findsWidgets);
+    expect((await repository.getFailures()).single.failureReason, '未完成今日确认');
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
   for (final width in [320.0, 800.0]) {
     for (final brightness in Brightness.values) {
       testWidgets('已填例外展开安全绘制并保留草稿 $width $brightness', (tester) async {
@@ -83,6 +109,16 @@ void main() {
           ),
         );
         await pumpNationalFocusUi(tester);
+        final nameField = find.widgetWithText(TextFormField, '卡片名称');
+        final saveButton = find.widgetWithText(FilledButton, '保存');
+        expect(
+          tester.getRect(saveButton).left,
+          closeTo(tester.getRect(nameField).left, 1),
+        );
+        expect(
+          tester.getRect(saveButton).right,
+          closeTo(tester.getRect(nameField).right, 1),
+        );
         final heading = find.text('例外与判例');
         await tester.ensureVisible(heading);
         final headingContext = tester.element(heading);
