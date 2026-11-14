@@ -180,7 +180,7 @@ serialization failure and retries the transaction. See the
 Both snapshot migrations were applied to the configured development project
 on 2026-10-04. Live acceptance used isolated temporary identities, not normal
 users' data. Full results are in
-[the validation record](../docs/manual-cloud-sync-validation-20261004.md).
+the validation record in the local-only docs tree (`docs/manual-cloud-sync-validation-20261004.md`).
 ## Retained cloud snapshot history — 2026-11-13
 
 Apply `202611130001_cloud_snapshot_history.sql` for the 15-version retained

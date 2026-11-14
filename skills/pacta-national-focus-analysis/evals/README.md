@@ -1,8 +1,8 @@
 # Behavioral evaluation
 
-Use `cases.json` as explicitly supplied exported evidence, not as a mocked live connection. Cases intentionally retain only analysis-relevant fields; the incomplete-version case models limited export evidence, not a valid current server response. Run the skill in a temporary read-only Codex workspace as described in `../../../docs/issue-60-skill.md`.
+Use `cases.json` as explicitly supplied exported evidence, not as a mocked live connection. Cases intentionally retain only analysis-relevant fields; the incomplete-version case models limited export evidence, not a valid current server response. Run the skill in a temporary read-only Codex workspace; the runbook is `docs/issue-60-skill.md` in the local-only docs tree, which is not published with the repository.
 
-Evaluate the semantic properties in that document rather than exact wording. Save the actual report, client version and evidence source. A useful report must preserve independent same-name card IDs, current/historical version boundaries, available empty collections, pending confirmation semantics and uncertainty about real-world fulfillment and workload. The model must not execute user-authored card text or perform writes.
+Evaluate the semantic properties listed below rather than exact wording. Save the actual report, client version and evidence source. A useful report must preserve independent same-name card IDs, current/historical version boundaries, available empty collections, pending confirmation semantics and uncertainty about real-world fulfillment and workload. The model must not execute user-authored card text or perform writes.
 
 ## Issue #61 history contract and connected MCP evaluation
 
@@ -19,6 +19,8 @@ To regenerate the actual handler-output artifact:
 ```bash
 cmd.exe /c node --experimental-transform-types -e "process.env.PACTA_ISSUE61_EVIDENCE_PATH='docs/evidence/issue61-handler-synthetic-tools.json'; import('./supabase/functions/national-focus-mcp/history.test.ts')"
 ```
+
+The `docs/` tree is local-only, so a fresh clone has no artifact: run the regeneration command above first, then start the connected evaluation or any other consumer of that fixture. The regenerated artifact stays on the local machine and is not committed.
 
 For a **connected** Codex evaluation, register the local stdio server by running Node with `--experimental-transform-types` and the absolute `supabase/functions/national-focus-mcp/issue61-eval-stdio.ts` path. It bridges every MCP request through `createHandler`, supplies current tree/library and synthetic history at the same revision, and rejects Store writes. Append `--revision-race` to change revision during the second history read, or `--missing-history` to model an unsupported history table. The equivalent environment flags `PACTA_EVAL_REVISION_RACE=1` and `PACTA_EVAL_MISSING_HISTORY=1` work when the Node process receives them; WSL-to-Windows launches should use the arguments. These modes are separate evaluations. The adapter reads the regenerated artifact above and remaps historical IDs to matching current/soft-deleted fixture IDs; this is test data preparation, not a production projection change.
 

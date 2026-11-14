@@ -57,6 +57,19 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Local agent instructions and skills
-/.agents/
-/.agent/
+# Local-only AI development docs and agent entry points.
+# These stay on the developer machine and are never published: the docs tree,
+# shared agent guides, glossary, mission brief and local agent configuration.
+# Nested AGENTS.md/CLAUDE.md and their variants are matched without a root anchor.
+/docs/
+AGENTS.md
+AGENTS.override.md
+CLAUDE.md
+CLAUDE.local.md
+/GLOSSARY.md
+/MISSION.md
+.agents/
+.agent/
+.codex/
+.claude/
+.cursor/

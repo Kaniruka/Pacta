@@ -18,6 +18,10 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0, Node 24
         with:
           python-version: '3.x'
+      # Local-only AI artifacts must never reach the index; see scripts/check_repository_hygiene.py.
+      - run: python scripts/check_repository_hygiene.py
+      # Python tooling tests need no Flutter toolchain, device or network.
+      - run: python -m unittest discover -s scripts -p "test_*.py"
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.2'
