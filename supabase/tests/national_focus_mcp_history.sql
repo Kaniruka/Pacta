@@ -169,7 +169,7 @@ reset role;
 set local role authenticated;
 select set_config('request.jwt.claim.sub',current_setting('nf_content.owner_id'),true);
 select public.save_cloud_business_snapshot(1,
-  jsonb_build_object('schemaVersion',1,'userId',current_setting('nf_content.owner_id'),'tables',jsonb_build_object(
+  jsonb_build_object('schemaVersion',2,'userId',current_setting('nf_content.owner_id'),'tables',jsonb_build_object(
     'local_national_focus_cards',jsonb_build_array(jsonb_build_object('user_id',current_setting('nf_content.owner_id'),'id','replacement-card','name','Replacement card')),
     'local_national_focus_strengthening_levels','[]'::jsonb,'local_national_focus_requirement_versions','[]'::jsonb,
     'local_national_focus_maintenance','[]'::jsonb,'local_national_focus_failures','[]'::jsonb,'focus_sync_sources','[]'::jsonb

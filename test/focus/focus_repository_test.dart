@@ -804,6 +804,191 @@ void main() {
     expect(await focusRepository.getActiveAppointment(), isNotNull);
   });
 
+  for (final preparationMinutes in [5, 10, 15, 37]) {
+    test('预约准备时长为 $preparationMinutes 分钟时按本场时长自动交接且只结算一次', () async {
+      final task = await createTask('本场准备 $preparationMinutes 分钟');
+      final preparation = Duration(minutes: preparationMinutes);
+      final appointment = await focusRepository.startAppointment(
+        taskId: task.id,
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 30),
+        preparation: preparation,
+      );
+
+      expect(appointment.preparationSeconds, preparation.inSeconds);
+      expect(appointment.endsAt.difference(appointment.startedAt), preparation);
+
+      now = appointment.endsAt;
+      await focusRepository.settleDueAppointments();
+      final handedOff = await focusRepository.getActiveSession();
+      expect(handedOff, isNotNull);
+      expect(handedOff!.id, appointment.id);
+      expect(handedOff.startedAt.isAtSameMomentAs(appointment.endsAt), isTrue);
+      expect(
+        handedOff.endsAt.isAtSameMomentAs(
+          appointment.endsAt.add(const Duration(minutes: 30)),
+        ),
+        isTrue,
+      );
+
+      final succeeded = await focusRepository.getAppointment(appointment.id);
+      expect(succeeded?.status, AppointmentPreparationStatus.succeeded);
+      expect(
+        (await focusRepository.getAppointmentChainRecord()).currentConsecutive,
+        1,
+      );
+
+      await focusRepository.settleDueAppointments();
+      expect(
+        (await focusRepository.getAppointment(appointment.id))?.status,
+        AppointmentPreparationStatus.succeeded,
+      );
+      expect(
+        (await focusRepository.getAppointmentChainRecord()).currentConsecutive,
+        1,
+      );
+      expect(await focusRepository.getSessions(), hasLength(1));
+    });
+  }
+
+  test('非法准备时长在仓储边界被拒绝且从不截断', () async {
+    final task = await createTask('非法准备时长');
+    for (final preparation in const [
+      Duration.zero,
+      Duration(seconds: 59),
+      Duration(seconds: 90),
+      Duration(minutes: -1),
+      Duration(minutes: 1, milliseconds: 500),
+      Duration(minutes: 10, microseconds: 1),
+      Duration(minutes: 61),
+      Duration(hours: 5),
+    ]) {
+      await expectLater(
+        focusRepository.startAppointment(
+          taskId: task.id,
+          mode: FocusChainMode.regular,
+          duration: const Duration(minutes: 25),
+          preparation: preparation,
+        ),
+        throwsArgumentError,
+        reason: '$preparation 必须被拒绝而不是截断',
+      );
+    }
+    expect(await focusRepository.getAppointments(), isEmpty);
+    expect(await focusRepository.getSessions(), isEmpty);
+
+    for (final minutes in const [1, 60]) {
+      final appointment = await focusRepository.startAppointment(
+        taskId: task.id,
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 25),
+        preparation: Duration(minutes: minutes),
+      );
+      expect(appointment.preparationSeconds, minutes * 60);
+      expect(
+        appointment.endsAt.difference(appointment.startedAt),
+        Duration(minutes: minutes),
+      );
+      await focusRepository.cancelAppointment(
+        appointmentId: appointment.id,
+        failureReason: '边界校验结束',
+      );
+    }
+  });
+
+  test('准备期间修改任务与专注时长不重置本场准备时长和结束时刻', () async {
+    final originalTask = await createTask('准备中原任务');
+    final updatedTask = await createTask('准备中改任务');
+    final appointment = await focusRepository.startAppointment(
+      taskId: originalTask.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 30),
+      preparation: const Duration(minutes: 10),
+    );
+    final preparationEndsAt = appointment.endsAt;
+
+    now = now.add(const Duration(minutes: 4));
+    final changed = await focusRepository.updateAppointment(
+      appointmentId: appointment.id,
+      taskId: updatedTask.id,
+      mode: FocusChainMode.elite,
+      duration: const Duration(minutes: 45),
+    );
+
+    expect(changed.endsAt.isAtSameMomentAs(preparationEndsAt), isTrue);
+    expect(changed.preparationSeconds, 10 * 60);
+    expect(changed.effectivePreparationSeconds, 10 * 60);
+    expect(changed.durationSeconds, 45 * 60);
+    expect(changed.taskId, updatedTask.id);
+
+    now = preparationEndsAt;
+    await focusRepository.settleDueAppointments();
+    final handedOff = (await focusRepository.getSessions()).single;
+    expect(handedOff.startedAt.isAtSameMomentAs(preparationEndsAt), isTrue);
+    expect(handedOff.durationSeconds, 45 * 60);
+    expect(
+      (await focusRepository.getAppointmentChainRecord()).currentConsecutive,
+      1,
+    );
+  });
+
+  test('自定义准备时长下提前进入只结算一次且重启后不重复结算', () async {
+    final task = await createTask('提前进入自定义准备');
+    final appointment = await focusRepository.startAppointment(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+      preparation: const Duration(minutes: 37),
+    );
+
+    now = now.add(const Duration(minutes: 6));
+    final session = await focusRepository.enterAppointmentEarly(appointment.id);
+    expect(session.startedAt.isAtSameMomentAs(now), isTrue);
+    expect(
+      session.endsAt.isAtSameMomentAs(now.add(const Duration(minutes: 25))),
+      isTrue,
+    );
+    expect(
+      (await focusRepository.getAppointment(appointment.id))?.status,
+      AppointmentPreparationStatus.succeeded,
+    );
+    expect(
+      (await focusRepository.getAppointmentChainRecord()).currentConsecutive,
+      1,
+    );
+
+    await focusRepository.dispose();
+    now = now.add(const Duration(minutes: 25));
+    focusRepository = LocalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      remote: focusRemote,
+      now: () => now,
+    );
+    await focusRepository.settleDueAppointments();
+    await focusRepository.settleDueSessions();
+
+    expect(
+      (await focusRepository.getAppointment(appointment.id))?.status,
+      AppointmentPreparationStatus.succeeded,
+    );
+    expect(
+      (await focusRepository.getAppointment(appointment.id))
+          ?.preparationSeconds,
+      37 * 60,
+    );
+    expect(
+      (await focusRepository.getAppointmentChainRecord()).currentConsecutive,
+      1,
+    );
+    expect(await focusRepository.getSessions(), hasLength(1));
+    final repeated = await focusRepository.enterAppointmentEarly(
+      appointment.id,
+    );
+    expect(repeated.id, session.id);
+    expect(await focusRepository.getSessions(), hasLength(1));
+  });
+
   test('T10 两端接续同一预约、暂停和专注并重复同步不重复结算', () async {
     final task = await createTask('跨设备预约');
     final appointment = await focusRepository.startAppointment(
