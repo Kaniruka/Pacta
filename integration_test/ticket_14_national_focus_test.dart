@@ -124,13 +124,20 @@ void main() {
       final failure = (await setupRepository.getFailures()).single;
       expect(failure.cause, NationalFocusFailureCause.missedConfirmation);
       expect(failure.treeSnapshot, hasLength(2));
-      await tester.tap(find.text('查看失败记录'));
+      await tester.ensureVisible(find.byTooltip('更多'));
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('失败记录'));
       await tester.pumpAndSettle();
       expect(find.text('国策失败记录'), findsOneWidget);
       expect(find.textContaining('· 1 个节点'), findsOneWidget);
       await tester.tap(find.textContaining('· 1 个节点'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('查看当时树'));
+      await tester.pumpAndSettle();
       expect(find.text('检查点时的完整树快照'), findsOneWidget);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
       if (Platform.isWindows) {
         await setupRepository.updateFailureExplanation(
           batchId: failure.batchId,

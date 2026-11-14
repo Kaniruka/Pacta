@@ -89,13 +89,27 @@ void main() {
       now = DateTime.utc(2026, 9, 25, 20);
       await repository.settleDueCheckpoints();
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('查看失败记录'));
-      await tester.tap(find.text('查看失败记录'));
+      await tester.ensureVisible(find.byTooltip('更多'));
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('失败记录'));
       await tester.pumpAndSettle();
       await tester.tap(find.textContaining('· 1 个节点'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('查看当时树'));
+      await tester.pumpAndSettle();
 
+      await tester.tap(
+        find.byKey(ValueKey('national-focus-history-node-${parent.id}')),
+      );
+      await tester.pumpAndSettle();
       expect(find.textContaining('独立失败来源'), findsOneWidget);
+      Navigator.of(tester.element(find.text('独立失败来源。'))).pop();
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(ValueKey('national-focus-history-node-${child.id}')),
+      );
+      await tester.pumpAndSettle();
       expect(find.textContaining('因「开始工作前」连带熄灭'), findsOneWidget);
       final failures = await repository.getFailures();
       expect(failures, hasLength(1));
