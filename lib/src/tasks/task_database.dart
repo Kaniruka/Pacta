@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
 import '../auth/user_lifecycle_models.dart';
+import '../schedules/schedule_migration.dart';
 
 part 'task_database.g.dart';
 
@@ -317,6 +318,57 @@ class LocalCalendarBlocks extends Table {
   Set<Column<Object>> get primaryKey => {userId, sourceId, occurrenceId};
 }
 
+/// Pacta 自有日程。与导入副本（local_calendar_blocks）分开：日程归应用拥有，
+/// 系统日历来源只作为来源标记保留，用于后续导入去重。
+class LocalSchedules extends Table {
+  TextColumn get userId => text()();
+  TextColumn get id => text()();
+  TextColumn get title => text()();
+  TextColumn get notes => text().withDefault(const Constant(''))();
+  DateTimeColumn get startsAt => dateTime()();
+  DateTimeColumn get endsAt => dateTime()();
+  BoolColumn get allDay => boolean().withDefault(const Constant(false))();
+  TextColumn get allDayStartDate => text().nullable()();
+  TextColumn get allDayEndDateExclusive => text().nullable()();
+  BoolColumn get isCompleted => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get completedAt => dateTime().nullable()();
+  TextColumn get taskId => text().nullable()();
+
+  /// 可选提醒偏移（开始前多少分钟）；投递不在本表，未设置即不提醒。
+  IntColumn get reminderMinutesBefore => integer().nullable()();
+  TextColumn get origin => text().withDefault(const Constant('owned'))();
+  TextColumn get sourceIds => text().withDefault(const Constant('[]'))();
+  TextColumn get sourceNames => text().withDefault(const Constant('[]'))();
+  TextColumn get sourceEventId => text().nullable()();
+  TextColumn get occurrenceId => text().nullable()();
+  TextColumn get eventIdentity => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId, id};
+}
+
+/// 旧日历块一次性提升为自有日程的台账：是否已提升、提升数量与可回滚副本。
+///
+/// 不进入整份业务快照：这是本机的迁移证据，不是用户业务数据。
+class LocalScheduleMigrations extends Table {
+  TextColumn get userId => text()();
+  TextColumn get migrationId => text()();
+  TextColumn get status => text()();
+  IntColumn get sourceBlockCount => integer()();
+  IntColumn get promotedCount => integer()();
+  TextColumn get promotedScheduleIds =>
+      text().withDefault(const Constant('[]'))();
+  TextColumn get backupPayload => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get completedAt => dateTime()();
+  DateTimeColumn get rolledBackAt => dateTime().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId};
+}
+
 class LocalUserLifecycleStates extends Table {
   TextColumn get userId => text()();
   BoolColumn get isSuspended => boolean().withDefault(const Constant(false))();
@@ -403,6 +455,8 @@ class LocalCloudRecoveryPoints extends Table {
     FocusSyncSources,
     LocalCalendarSources,
     LocalCalendarBlocks,
+    LocalSchedules,
+    LocalScheduleMigrations,
     LocalUserLifecycleStates,
     LocalProfileAccounts,
     LocalProfileClearMarks,
@@ -418,6 +472,8 @@ class PactaDatabase extends _$PactaDatabase {
     final rows = await customSelect('''
       SELECT user_id FROM local_calendar_blocks
       UNION SELECT user_id FROM local_calendar_sources
+      UNION SELECT user_id FROM local_schedules
+      UNION SELECT user_id FROM local_schedule_migrations
       UNION SELECT user_id FROM task_sync_entries
       UNION SELECT user_id FROM focus_sync_sources
       UNION SELECT user_id FROM focus_nodes
@@ -455,6 +511,13 @@ class PactaDatabase extends _$PactaDatabase {
       )..where((row) => row.userId.equals(userId))).go();
       await (delete(
         localCalendarSources,
+      )..where((row) => row.userId.equals(userId))).go();
+      // 日程与其迁移回滚副本同属该账号的业务数据，清除后不得残留。
+      await (delete(
+        localSchedules,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        localScheduleMigrations,
       )..where((row) => row.userId.equals(userId))).go();
       await (delete(
         taskSyncEntries,
@@ -537,7 +600,7 @@ class PactaDatabase extends _$PactaDatabase {
   }
 
   @override
-  int get schemaVersion => 29;
+  int get schemaVersion => 30;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -717,6 +780,16 @@ class PactaDatabase extends _$PactaDatabase {
       }
       if (from < 29) {
         await m.createTable(localProfileClearMarks);
+      }
+      if (from < 30) {
+        await m.createTable(localSchedules);
+        await m.createTable(localScheduleMigrations);
+        // 旧日历块一次性提升为自有日程副本；失败则整个升级事务回滚，
+        // 不会留下半份日程或半份回滚副本。
+        await promoteLegacyCalendarBlocksInTransaction(
+          this,
+          migratedAt: DateTime.now().toUtc(),
+        );
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);

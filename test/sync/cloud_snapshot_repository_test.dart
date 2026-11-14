@@ -293,9 +293,13 @@ void main() {
       );
       expect((await signals.get()).appointmentTriggerSignal, '戴耳机');
       expect((await signals.get()).focusMarker, '坐下');
-      final legacy = Map<String, dynamic>.from(captured.payload);
+      // A version 1 payload predates both the signal table and the owned
+      // schedule table; mark it as such instead of hand-editing a current one.
+      final legacy = Map<String, dynamic>.from(captured.payload)
+        ..['schemaVersion'] = 1;
       legacy['tables'] = Map<String, dynamic>.from(legacy['tables'] as Map)
-        ..remove('chain_signals');
+        ..remove('chain_signals')
+        ..remove('local_schedules');
       await remote.upload(
         userId: 'user-a',
         expectedRevision: 1,
@@ -897,9 +901,12 @@ void main() {
               ..['title'] = table == 'local_goals' ? '云端旧目标' : '云端旧任务',
         ];
       }
+      // Version 1 payloads predate the owned schedule table, so the legacy
+      // read is marked as such instead of editing a current payload in place.
       final oldPayload = <String, dynamic>{
         ...oldCloudState.payload,
-        'tables': tables,
+        'schemaVersion': 1,
+        'tables': tables..remove('local_schedules'),
       };
       await remote.upload(
         userId: 'user-a',
