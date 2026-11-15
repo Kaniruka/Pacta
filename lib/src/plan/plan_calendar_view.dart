@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:timezone/timezone.dart' as timezone;
 
 import '../calendar/calendar_repository.dart';
@@ -56,9 +57,26 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
   /// 通知目标定位请求的代次：只接受最新一次请求的结果。
   int _targetRequest = 0;
 
-  /// 当前月窗口的订阅。每帧重建都新建流会让数据库观察反复取消/重连，既
-  /// 浪费连接，也可能在取消与重订阅之间丢掉首帧数据；这里按时窗缓存。
-  _ScheduleStreamCache? _streamCache;
+  /// 当前订阅的数据源身份：换仓储（账号所有者）或换月窗口都会换一份。
+  ///
+  /// 换源时必须**立即丢弃**上一源已渲染的数据：新流要到下一次数据库读取
+  /// 才会 emit，这段时间继续显示旧 rows 就是把别的账号/别的月份的安排
+  /// 当成当前内容。
+  _ScheduleSource? _scheduleSource;
+
+  /// 当前源的行；只在代次匹配时写入。
+  List<Schedule> _schedules = const <Schedule>[];
+
+  /// 读取失败。与"正常空内容"分开：失败不会被渲染成 0 项安排。
+  Object? _schedulesError;
+
+  /// 新源订阅后、首个事件到达前为 true。
+  bool _loadingSchedules = true;
+
+  /// 订阅代次：旧源/旧订阅的迟到事件一律丢弃。
+  int _sourceGeneration = 0;
+
+  StreamSubscription<List<Schedule>>? _scheduleSubscription;
 
   timezone.Location get _location =>
       FocusTimeZones.location(widget.displayTimeZoneId);
@@ -168,102 +186,207 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
   DateTime _utcStart(DateTime date) => _zoned(date).toUtc();
 
   @override
+  void dispose() {
+    _scheduleSubscription?.cancel();
+    _scheduleSubscription = null;
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final monthStart = _visibleMonth;
-    final nextMonth = DateTime(monthStart.year, monthStart.month + 1);
-    // 前后各留一天，覆盖时区偏移与全天日程的 UTC 午夜边界。
-    final from = _utcStart(monthStart).subtract(const Duration(days: 1));
-    final to = _utcStart(nextMonth).add(const Duration(days: 2));
-    return StreamBuilder<List<Schedule>>(
-      stream: _streamFor(monthStart, from, to),
-      builder: (context, snapshot) {
-        final schedules = snapshot.data ?? const <Schedule>[];
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildHeader(context, schedules),
-            const SizedBox(height: 8),
-            _buildMonthGrid(context, schedules),
-            const SizedBox(height: 16),
-            _buildDaySection(context, schedules),
-          ],
-        );
-      },
+    // 订阅身份只从渲染输入推导：仓储、显示时区、月窗口任何一处变了，这里
+    // 都会先清掉旧数据再订阅新流，不依赖每个改月入口各自记得刷新。
+    _ensureScheduleStream(_sourceFor(_visibleMonth));
+    final schedules = _schedules;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildHeader(context),
+        const SizedBox(height: 8),
+        _buildMonthGrid(context, schedules),
+        const SizedBox(height: 16),
+        _buildDaySection(context, schedules),
+      ],
     );
   }
 
-  /// 同一个仓储、同一个时窗复用同一条流；换仓储或换月份才重建。
-  Stream<List<Schedule>> _streamFor(
-    DateTime month,
-    DateTime from,
-    DateTime to,
-  ) {
-    final cached = _streamCache;
-    if (cached != null &&
-        identical(cached.repository, widget.repository) &&
-        cached.month == month &&
-        cached.from == from &&
-        cached.to == to) {
-      return cached.stream;
-    }
-    final stream = widget.repository.watchSchedules(from: from, to: to);
-    _streamCache = _ScheduleStreamCache(
+  _ScheduleSource _sourceFor(DateTime month) {
+    final nextMonth = DateTime(month.year, month.month + 1);
+    return _ScheduleSource(
       repository: widget.repository,
       month: month,
-      from: from,
-      to: to,
-      stream: stream,
+      // 前后各留一天，覆盖时区偏移与全天日程的 UTC 午夜边界。
+      from: _utcStart(month).subtract(const Duration(days: 1)),
+      to: _utcStart(nextMonth).add(const Duration(days: 2)),
     );
-    return stream;
   }
 
-  Widget _buildHeader(BuildContext context, List<Schedule> schedules) {
-    return Row(
-      children: [
-        IconButton(
-          tooltip: '上个月',
-          onPressed: () => setState(() {
-            _visibleMonth = DateTime(
-              _visibleMonth.year,
-              _visibleMonth.month - 1,
-            );
-            _selectedDay = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
-            _clearHighlightedSchedule();
-          }),
-          icon: const Icon(Icons.chevron_left),
-        ),
-        Expanded(
-          child: Text(
-            '${_visibleMonth.year}年${_visibleMonth.month}月',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ),
-        IconButton(
-          tooltip: '下个月',
-          onPressed: () => setState(() {
-            _visibleMonth = DateTime(
-              _visibleMonth.year,
-              _visibleMonth.month + 1,
-            );
-            _selectedDay = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
-            _clearHighlightedSchedule();
-          }),
-          icon: const Icon(Icons.chevron_right),
-        ),
-        if (widget.calendarRepository != null)
-          IconButton(
+  /// 同一个仓储、同一个月窗口沿用一份订阅；否则换源。
+  void _ensureScheduleStream(_ScheduleSource source) {
+    final current = _scheduleSource;
+    if (current != null && current.matches(source)) return;
+    _scheduleSource = source;
+    // 旧 rows 属于上一 owner/窗口：新流首个事件到达前不得继续显示。
+    _schedules = const <Schedule>[];
+    _schedulesError = null;
+    _loadingSchedules = true;
+    _subscribe(source);
+  }
+
+  void _subscribe(_ScheduleSource source) {
+    final previous = _scheduleSubscription;
+    _sourceGeneration += 1;
+    final generation = _sourceGeneration;
+    try {
+      _scheduleSubscription = source.repository
+          .watchSchedules(from: source.from, to: source.to)
+          .listen(
+            (rows) => _applySchedules(generation, rows),
+            onError: (Object error, StackTrace stackTrace) =>
+                _applySchedulesError(generation, error),
+            onDone: () => _applySchedulesDone(generation),
+          );
+    } catch (error) {
+      // 已释放或不可用的仓储会在调用时就抛：同样要给可见失败，而不是空安排。
+      _scheduleSubscription = null;
+      _applySchedulesError(generation, error);
+    }
+    unawaited(previous?.cancel());
+  }
+
+  /// 只接受当前代次的结果：换源后的迟到事件不得回显。
+  void _applySchedules(int generation, List<Schedule> rows) =>
+      _mutateSchedules(generation, () {
+        _schedules = rows;
+        _schedulesError = null;
+        _loadingSchedules = false;
+      });
+
+  void _applySchedulesError(int generation, Object error) =>
+      _mutateSchedules(generation, () {
+        // 失败不是空内容：清掉上一源的行，把错误留给可见的重试入口。
+        _schedules = const <Schedule>[];
+        _schedulesError = error;
+        _loadingSchedules = false;
+      });
+
+  void _applySchedulesDone(int generation) => _mutateSchedules(generation, () {
+    _loadingSchedules = false;
+  });
+
+  void _mutateSchedules(int generation, VoidCallback change) {
+    if (!mounted || generation != _sourceGeneration) return;
+    // 同步流可能在 build 期间回灌：推到本帧之后再 setState。
+    final binding = WidgetsBinding.instance;
+    if (binding.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+      binding.addPostFrameCallback((_) {
+        if (!mounted || generation != _sourceGeneration) return;
+        setState(change);
+      });
+      return;
+    }
+    setState(change);
+  }
+
+  /// 只读重试：重新订阅当前源，不改动任何安排。
+  void _retrySchedules() {
+    final source = _scheduleSource;
+    if (source == null) return;
+    setState(() {
+      _schedules = const <Schedule>[];
+      _schedulesError = null;
+      _loadingSchedules = true;
+    });
+    _subscribe(source);
+  }
+
+  static const double _narrowHeaderWidth = 480;
+
+  Widget _buildHeader(BuildContext context) {
+    final monthLabel = Text(
+      '${_visibleMonth.year}年${_visibleMonth.month}月',
+      key: const ValueKey('plan-month-label'),
+      style: Theme.of(context).textTheme.titleMedium,
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.ellipsis,
+    );
+    final previous = IconButton(
+      tooltip: '上个月',
+      onPressed: () => setState(() {
+        _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month - 1);
+        _selectedDay = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
+        _clearHighlightedSchedule();
+      }),
+      icon: const Icon(Icons.chevron_left),
+    );
+    final next = IconButton(
+      tooltip: '下个月',
+      onPressed: () => setState(() {
+        _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month + 1);
+        _selectedDay = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
+        _clearHighlightedSchedule();
+      }),
+      icon: const Icon(Icons.chevron_right),
+    );
+    final import = widget.calendarRepository == null
+        ? null
+        : IconButton(
             key: const ValueKey('plan-import-open'),
             tooltip: '从系统日历导入',
             onPressed: _importFromCalendar,
             icon: const Icon(Icons.download_outlined),
-          ),
-        const SizedBox(width: 8),
-        FilledButton.icon(
-          onPressed: _createSchedule,
-          icon: const Icon(Icons.add),
-          label: const Text('新建安排'),
-        ),
-      ],
+          );
+    final create = FilledButton.icon(
+      onPressed: _createSchedule,
+      icon: const Icon(Icons.add),
+      label: const Text('新建安排'),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 窄屏把导航和操作分成两行：年月要整段单行可读。挤在同一行会被折成
+        // 「2026年11」+「月」，看起来像两个不相干的标签。
+        if (constraints.maxWidth < _narrowHeaderWidth) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  previous,
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: monthLabel,
+                      ),
+                    ),
+                  ),
+                  next,
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  if (import != null) import else const SizedBox(width: 8),
+                  const Spacer(),
+                  create,
+                ],
+              ),
+            ],
+          );
+        }
+        return Row(
+          children: [
+            previous,
+            Expanded(child: monthLabel),
+            next,
+            ?import,
+            const SizedBox(width: 8),
+            create,
+          ],
+        );
+      },
     );
   }
 
@@ -334,6 +457,11 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
       selected: selected,
       label: '${day.month}月${day.day}日',
       child: InkWell(
+        key: ValueKey(
+          'plan-day-${day.year.toString().padLeft(4, '0')}-'
+          '${day.month.toString().padLeft(2, '0')}-'
+          '${day.day.toString().padLeft(2, '0')}',
+        ),
         borderRadius: BorderRadius.circular(12),
         onTap: () => setState(() {
           _selectedDay = day;
@@ -380,6 +508,16 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
       _selectedDay,
       widget.displayTimeZoneId,
     );
+    final dayLabel = '${_selectedDay.month}月${_selectedDay.day}日';
+    // 失败/加载都不冒充"0 项安排"：那不是空内容，是还没读到或读不到。
+    final String summary;
+    if (_schedulesError != null) {
+      summary = '$dayLabel · 读取失败';
+    } else if (_loadingSchedules) {
+      summary = '$dayLabel · 正在读取';
+    } else {
+      summary = '$dayLabel · ${daySchedules.length} 项安排';
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -387,8 +525,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
           children: [
             Expanded(
               child: Text(
-                '${_selectedDay.month}月${_selectedDay.day}日 · '
-                '${daySchedules.length} 项安排',
+                summary,
                 style: Theme.of(context).textTheme.titleSmall,
               ),
             ),
@@ -399,7 +536,11 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
             ),
           ],
         ),
-        if (daySchedules.isEmpty)
+        if (_schedulesError != null)
+          _buildSchedulesError(context)
+        else if (_loadingSchedules)
+          _buildSchedulesLoading(context)
+        else if (daySchedules.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: Text(
@@ -423,6 +564,74 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
               onDelete: () => _confirmDelete(schedule),
             ),
       ],
+    );
+  }
+
+  /// 读取失败：说明没有删除数据，重试只重新读取。
+  Widget _buildSchedulesError(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      key: const ValueKey('plan-schedules-error'),
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.error_outline, color: scheme.onErrorContainer),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '暂时不能读取安排。',
+                  style: Theme.of(context).textTheme.titleSmall
+                      ?.copyWith(color: scheme.onErrorContainer),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '安排本身没有被删除；重试只重新读取，不会改动任何安排。',
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: scheme.onErrorContainer),
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FilledButton.tonalIcon(
+              key: const ValueKey('plan-schedules-retry'),
+              onPressed: _retrySchedules,
+              icon: const Icon(Icons.refresh),
+              label: const Text('重试'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 新源首个事件到达前：明确在读取，不显示上一源的行。
+  Widget _buildSchedulesLoading(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const LinearProgressIndicator(minHeight: 2),
+          const SizedBox(height: 12),
+          Text(
+            '正在读取安排…',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -780,21 +989,25 @@ class _ScheduleTile extends StatelessWidget {
   }
 }
 
-/// 月窗口与仓储的组合，用来判断能否复用已有的订阅。
-class _ScheduleStreamCache {
-  const _ScheduleStreamCache({
+/// 订阅身份：同一个仓储、同一个月窗口才复用同一条订阅。
+class _ScheduleSource {
+  const _ScheduleSource({
     required this.repository,
     required this.month,
     required this.from,
     required this.to,
-    required this.stream,
   });
 
   final ScheduleRepository repository;
   final DateTime month;
   final DateTime from;
   final DateTime to;
-  final Stream<List<Schedule>> stream;
+
+  bool matches(_ScheduleSource other) =>
+      identical(repository, other.repository) &&
+      month == other.month &&
+      from == other.from &&
+      to == other.to;
 }
 
 /// 编辑器结果：草稿 + 可选提醒 + 重复设置（提醒只存配置，投递由 06 负责）。
