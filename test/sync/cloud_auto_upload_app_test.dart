@@ -215,7 +215,7 @@ void main() {
       expect((await store.load(_userId)).hasWork, isFalse);
 
       // 普通业务编辑不单独触发上传。
-      await tester.tap(find.text('看板'));
+      await tester.tap(find.text('计划'));
       await settleUi(tester);
       await tester.tap(find.text('新建目标'));
       await settleUi(tester);

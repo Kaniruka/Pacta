@@ -266,7 +266,7 @@ void main() {
     await tester.tap(
       find.descendant(
         of: find.byType(NavigationBar),
-        matching: find.text('看板'),
+        matching: find.text('计划'),
       ),
     );
     await tester.pumpAndSettle();

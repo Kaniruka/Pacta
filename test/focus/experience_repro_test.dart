@@ -25,11 +25,11 @@ void main() {
     h = _Harness();
   });
 
-  testWidgets('看板单精锐任务默认精锐链', (tester) async {
+  testWidgets('计划单精锐任务默认精锐链', (tester) async {
     try {
       await h.seedTask('精锐任务', TaskClassification.elite);
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await tester.tap(find.byTooltip('开始专注'));
       await _boundedSettle(tester);
@@ -40,7 +40,7 @@ void main() {
           matching: find.text('精锐链'),
         ),
         findsOneWidget,
-        reason: '新默认规则：单一精锐任务的看板入口应预选精锐链',
+        reason: '新默认规则：单一精锐任务的计划入口应预选精锐链',
       );
     } finally {
       await h.teardown(tester);
@@ -71,11 +71,11 @@ void main() {
     }
   });
 
-  testWidgets('看板预约准备自动交接保持所选模式', (tester) async {
+  testWidgets('计划预约准备自动交接保持所选模式', (tester) async {
     try {
       await h.seedTask('精锐任务', TaskClassification.elite);
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await tester.tap(find.byTooltip('开始专注'));
       await _boundedSettle(tester);
@@ -92,18 +92,18 @@ void main() {
       expect(
         session.mode,
         FocusChainMode.elite,
-        reason: '看板预约（预约模式=$appointmentMode）交接后应以同一模式进入专注',
+        reason: '计划预约（预约模式=$appointmentMode）交接后应以同一模式进入专注',
       );
     } finally {
       await h.teardown(tester);
     }
   });
 
-  testWidgets('回归 看板直接完成：看板时长与专注链累计同时增加', (tester) async {
+  testWidgets('回归 计划直接完成：看板时长与专注链累计同时增加', (tester) async {
     try {
       await h.seedTask('精锐任务', TaskClassification.elite);
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await h.startEliteFromBoard(tester);
       final started = (await h.focus.getActiveSession())!;
@@ -144,7 +144,7 @@ void main() {
     try {
       await h.seedTask('精锐任务', TaskClassification.elite);
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await tester.tap(find.byTooltip('开始专注'));
       await _boundedSettle(tester);
@@ -189,7 +189,7 @@ void main() {
     try {
       await h.seedTask('精锐任务', TaskClassification.elite);
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await h.startEliteFromBoard(tester);
       final started = (await h.focus.getActiveSession())!;
@@ -233,7 +233,7 @@ void main() {
       await h.seedTask('精锐任务', TaskClassification.elite);
       await h.focus.createPrecedentRule(text: '需要喝水时允许短暂离开');
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await h.startEliteFromBoard(tester);
       final started = (await h.focus.getActiveSession())!;
@@ -302,7 +302,7 @@ void main() {
       );
 
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await h.startEliteFromBoard(tester);
       h.advance(const Duration(minutes: 25));
@@ -336,11 +336,11 @@ void main() {
     }
   });
 
-  testWidgets('对照组 看板单普通任务默认普通链', (tester) async {
+  testWidgets('对照组 计划单普通任务默认普通链', (tester) async {
     try {
       await h.seedTask('普通任务', TaskClassification.regular);
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await tester.tap(find.byTooltip('开始专注'));
       await _boundedSettle(tester);
@@ -357,11 +357,11 @@ void main() {
     }
   });
 
-  testWidgets('对照组 看板双分类任务沿用上次成功模式', (tester) async {
+  testWidgets('对照组 计划双分类任务沿用上次成功模式', (tester) async {
     try {
       await h.seedTask('双模式任务', TaskClassification.both);
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await tester.tap(find.byTooltip('开始专注'));
       await _boundedSettle(tester);
@@ -495,7 +495,7 @@ class _Harness {
     await _boundedSettle(tester);
   }
 
-  /// 看板入口：开始专注 → 显式选择精锐链 → 开始倒计时。
+  /// 计划入口：开始专注 → 显式选择精锐链 → 开始倒计时。
   Future<void> startEliteFromBoard(WidgetTester tester) async {
     await tester.tap(find.byTooltip('开始专注'));
     await _boundedSettle(tester);

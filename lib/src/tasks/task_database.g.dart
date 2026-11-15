@@ -92,6 +92,32 @@ class $LocalGoalsTable extends LocalGoals
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _isPinnedMeta = const VerificationMeta(
+    'isPinned',
+  );
+  @override
+  late final GeneratedColumn<bool> isPinned = GeneratedColumn<bool>(
+    'is_pinned',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_pinned" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     userId,
@@ -102,6 +128,8 @@ class $LocalGoalsTable extends LocalGoals
     createdAt,
     updatedAt,
     deletedAt,
+    isPinned,
+    sortOrder,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -178,6 +206,18 @@ class $LocalGoalsTable extends LocalGoals
         deletedAt.isAcceptableOrUnknown(data['deleted_at']!, _deletedAtMeta),
       );
     }
+    if (data.containsKey('is_pinned')) {
+      context.handle(
+        _isPinnedMeta,
+        isPinned.isAcceptableOrUnknown(data['is_pinned']!, _isPinnedMeta),
+      );
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    }
     return context;
   }
 
@@ -219,6 +259,14 @@ class $LocalGoalsTable extends LocalGoals
         DriftSqlType.dateTime,
         data['${effectivePrefix}deleted_at'],
       ),
+      isPinned: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_pinned'],
+      )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      ),
     );
   }
 
@@ -237,6 +285,10 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
+
+  /// 35：账号级置顶标记与手动排序位（仅业务快照携带，旧逐实体同步不写）。
+  final bool isPinned;
+  final int? sortOrder;
   const LocalGoal({
     required this.userId,
     required this.id,
@@ -246,6 +298,8 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
+    required this.isPinned,
+    this.sortOrder,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -259,6 +313,10 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
     map['updated_at'] = Variable<DateTime>(updatedAt);
     if (!nullToAbsent || deletedAt != null) {
       map['deleted_at'] = Variable<DateTime>(deletedAt);
+    }
+    map['is_pinned'] = Variable<bool>(isPinned);
+    if (!nullToAbsent || sortOrder != null) {
+      map['sort_order'] = Variable<int>(sortOrder);
     }
     return map;
   }
@@ -275,6 +333,10 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
       deletedAt: deletedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(deletedAt),
+      isPinned: Value(isPinned),
+      sortOrder: sortOrder == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sortOrder),
     );
   }
 
@@ -292,6 +354,8 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
+      isPinned: serializer.fromJson<bool>(json['isPinned']),
+      sortOrder: serializer.fromJson<int?>(json['sortOrder']),
     );
   }
   @override
@@ -306,6 +370,8 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
+      'isPinned': serializer.toJson<bool>(isPinned),
+      'sortOrder': serializer.toJson<int?>(sortOrder),
     };
   }
 
@@ -318,6 +384,8 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
     DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
+    bool? isPinned,
+    Value<int?> sortOrder = const Value.absent(),
   }) => LocalGoal(
     userId: userId ?? this.userId,
     id: id ?? this.id,
@@ -327,6 +395,8 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
+    isPinned: isPinned ?? this.isPinned,
+    sortOrder: sortOrder.present ? sortOrder.value : this.sortOrder,
   );
   LocalGoal copyWithCompanion(LocalGoalsCompanion data) {
     return LocalGoal(
@@ -342,6 +412,8 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
+      isPinned: data.isPinned.present ? data.isPinned.value : this.isPinned,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
     );
   }
 
@@ -355,7 +427,9 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
           ..write('classification: $classification, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('deletedAt: $deletedAt')
+          ..write('deletedAt: $deletedAt, ')
+          ..write('isPinned: $isPinned, ')
+          ..write('sortOrder: $sortOrder')
           ..write(')'))
         .toString();
   }
@@ -370,6 +444,8 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
     createdAt,
     updatedAt,
     deletedAt,
+    isPinned,
+    sortOrder,
   );
   @override
   bool operator ==(Object other) =>
@@ -382,7 +458,9 @@ class LocalGoal extends DataClass implements Insertable<LocalGoal> {
           other.classification == this.classification &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
-          other.deletedAt == this.deletedAt);
+          other.deletedAt == this.deletedAt &&
+          other.isPinned == this.isPinned &&
+          other.sortOrder == this.sortOrder);
 }
 
 class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
@@ -394,6 +472,8 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<DateTime?> deletedAt;
+  final Value<bool> isPinned;
+  final Value<int?> sortOrder;
   final Value<int> rowid;
   const LocalGoalsCompanion({
     this.userId = const Value.absent(),
@@ -404,6 +484,8 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
+    this.isPinned = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   LocalGoalsCompanion.insert({
@@ -415,6 +497,8 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
     required DateTime createdAt,
     required DateTime updatedAt,
     this.deletedAt = const Value.absent(),
+    this.isPinned = const Value.absent(),
+    this.sortOrder = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
        id = Value(id),
@@ -431,6 +515,8 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<DateTime>? deletedAt,
+    Expression<bool>? isPinned,
+    Expression<int>? sortOrder,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -442,6 +528,8 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
+      if (isPinned != null) 'is_pinned': isPinned,
+      if (sortOrder != null) 'sort_order': sortOrder,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -455,6 +543,8 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<DateTime?>? deletedAt,
+    Value<bool>? isPinned,
+    Value<int?>? sortOrder,
     Value<int>? rowid,
   }) {
     return LocalGoalsCompanion(
@@ -466,6 +556,8 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
+      isPinned: isPinned ?? this.isPinned,
+      sortOrder: sortOrder ?? this.sortOrder,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -497,6 +589,12 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
     if (deletedAt.present) {
       map['deleted_at'] = Variable<DateTime>(deletedAt.value);
     }
+    if (isPinned.present) {
+      map['is_pinned'] = Variable<bool>(isPinned.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -514,6 +612,8 @@ class LocalGoalsCompanion extends UpdateCompanion<LocalGoal> {
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
+          ..write('isPinned: $isPinned, ')
+          ..write('sortOrder: $sortOrder, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -15542,6 +15642,8 @@ typedef $$LocalGoalsTableCreateCompanionBuilder =
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<DateTime?> deletedAt,
+      Value<bool> isPinned,
+      Value<int?> sortOrder,
       Value<int> rowid,
     });
 typedef $$LocalGoalsTableUpdateCompanionBuilder =
@@ -15554,6 +15656,8 @@ typedef $$LocalGoalsTableUpdateCompanionBuilder =
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<DateTime?> deletedAt,
+      Value<bool> isPinned,
+      Value<int?> sortOrder,
       Value<int> rowid,
     });
 
@@ -15603,6 +15707,16 @@ class $$LocalGoalsTableFilterComposer
 
   ColumnFilters<DateTime> get deletedAt => $composableBuilder(
     column: $table.deletedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isPinned => $composableBuilder(
+    column: $table.isPinned,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -15655,6 +15769,16 @@ class $$LocalGoalsTableOrderingComposer
     column: $table.deletedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get isPinned => $composableBuilder(
+    column: $table.isPinned,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$LocalGoalsTableAnnotationComposer
@@ -15693,6 +15817,12 @@ class $$LocalGoalsTableAnnotationComposer
 
   GeneratedColumn<DateTime> get deletedAt =>
       $composableBuilder(column: $table.deletedAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get isPinned =>
+      $composableBuilder(column: $table.isPinned, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
 }
 
 class $$LocalGoalsTableTableManager
@@ -15734,6 +15864,8 @@ class $$LocalGoalsTableTableManager
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
+                Value<bool> isPinned = const Value.absent(),
+                Value<int?> sortOrder = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalGoalsCompanion(
                 userId: userId,
@@ -15744,6 +15876,8 @@ class $$LocalGoalsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                isPinned: isPinned,
+                sortOrder: sortOrder,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -15756,6 +15890,8 @@ class $$LocalGoalsTableTableManager
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<DateTime?> deletedAt = const Value.absent(),
+                Value<bool> isPinned = const Value.absent(),
+                Value<int?> sortOrder = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalGoalsCompanion.insert(
                 userId: userId,
@@ -15766,6 +15902,8 @@ class $$LocalGoalsTableTableManager
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
+                isPinned: isPinned,
+                sortOrder: sortOrder,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

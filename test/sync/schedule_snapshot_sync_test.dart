@@ -46,7 +46,7 @@ void main() {
           deviceName: 'Phone A',
         );
         final captured = await snapshotA.captureLocalState();
-        expect(captured.payload['schemaVersion'], 2);
+        expect(captured.payload['schemaVersion'], cloudSnapshotSchemaVersion);
         final saved = await snapshotA.uploadLocal(
           expectedRevision: 0,
           expectedFingerprint: captured.fingerprint,

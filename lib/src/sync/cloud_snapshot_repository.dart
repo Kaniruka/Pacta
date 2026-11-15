@@ -21,7 +21,7 @@ import 'cloud_sync_result.dart';
 /// 版本；读取时仍接受版本 1，并按已文档化的默认值补齐后来新增的列（时间戳
 /// 一律沿用已存值，不重算进行中的预约）。服务端写入口只接受完整的当前版本：
 /// 旧客户端或残缺 v2 上传会丢掉另一方数据，必须被整体拒绝而不是静默合并。
-const int cloudSnapshotSchemaVersion = 2;
+const int cloudSnapshotSchemaVersion = 3;
 
 /// 同一上传请求被用于不同内容（服务端 PT422）。自动上传必须停止并检查，
 /// 不能把它改写成新请求。
@@ -806,8 +806,14 @@ class CloudSnapshotRepository {
   /// explicit, validated conversion: documented missing columns are filled from
   /// the stored values and its calendar blocks are promoted into owned schedule
   /// copies before anything local is touched. Current writes always use
-  /// [cloudSnapshotSchemaVersion], which must carry both domains.
+  /// [cloudSnapshotSchemaVersion].
   static const _legacySnapshotSchemaVersion = 1;
+
+  /// Complete core version 2 (owned schedules + preparation seconds).
+  ///
+  /// Still accepted on read through the explicit goal-pin conversion below.
+  /// Any half-missing version 2 payload is rejected atomically instead.
+  static const _coreSnapshotSchemaVersion = 2;
 
   /// Keep this table list explicit. It excludes per-device preferences,
   /// lifecycle state, device identity, and the legacy upload queue.
@@ -1168,7 +1174,8 @@ class CloudSnapshotRepository {
   ) async {
     final schemaVersion = payload['schemaVersion'];
     final isLegacy = schemaVersion == _legacySnapshotSchemaVersion;
-    if (schemaVersion != cloudSnapshotSchemaVersion && !isLegacy) {
+    final isCore = schemaVersion == _coreSnapshotSchemaVersion;
+    if (schemaVersion != cloudSnapshotSchemaVersion && !isLegacy && !isCore) {
       throw StateError('云端快照版本不受支持：$schemaVersion。');
     }
     if (payload['userId'] != userId) {
@@ -1190,16 +1197,18 @@ class CloudSnapshotRepository {
     // 载荷：整体拒绝（在任何本地行被读写之前），绝不静默丢弃另一方数据。
     if (!isLegacy) {
       if (rawTables['local_schedules'] is! List) {
-        throw StateError('版本 2 快照缺少日程表，已整体拒绝；请先升级本机再上传。');
+        throw StateError('版本 2 及以后快照缺少日程表，已整体拒绝；请先升级本机再上传。');
       }
       final appointmentRows = rawTables['focus_appointments'];
       if (appointmentRows is List) {
         for (final row in appointmentRows) {
           if (row is Map && !row.containsKey('preparation_seconds')) {
-            throw StateError('版本 2 快照缺少预约准备时长，已整体拒绝；请先升级本机再上传。');
+            throw StateError('版本 2 及以后快照缺少预约准备时长，已整体拒绝；请先升级本机再上传。');
           }
         }
       }
+      // 完整核心 2 若已经带上后来的列（例如目标置顶），这些列属于已知列：
+      // 迁移只补齐缺失的默认值，已存值原样保留，不整体拒绝（见集成契约）。
     }
     final expectedTables = isLegacy
         ? [
@@ -1235,9 +1244,14 @@ class CloudSnapshotRepository {
         if (item is! Map<String, dynamic>) {
           throw StateError('Invalid columns or user ownership in $table.');
         }
-        final sourceRow = isLegacy
-            ? _withLegacyColumnDefaults(table, item, expectedColumns)
-            : item;
+        final sourceRow = schemaVersion == cloudSnapshotSchemaVersion
+            ? item
+            : _withVersionColumnDefaults(
+                table,
+                item,
+                expectedColumns,
+                version: schemaVersion as int,
+              );
         if (sourceRow.keys.length != expectedColumns.length ||
             !expectedColumns.every(sourceRow.containsKey) ||
             sourceRow['user_id'] != userId) {
@@ -1276,20 +1290,32 @@ class CloudSnapshotRepository {
     return result;
   }
 
-  /// 版本 1 的载荷缺少后来新增的列；只补这里列出的默认值，
+  /// 旧版本的载荷缺少后来新增的列；只补这里列出的默认值，
   /// 其余缺列、未知列、类型错误与用户归属仍按严格校验拒绝。
+  ///
+  /// 版本 1：日程表整体缺席（由旧日历副本提升），另缺描述与预约准备时长。
+  /// 版本 2：完整核心 2，只缺目标置顶标记与排序位。
   static const _legacySnapshotColumnDefaults = <String, Map<String, Object?>>{
-    'local_goals': {'description': ''},
+    'local_goals': {'description': '', 'is_pinned': 0, 'sort_order': null},
     'local_tasks': {'description': ''},
     'focus_appointments': {'preparation_seconds': null},
   };
 
-  Map<String, dynamic> _withLegacyColumnDefaults(
+  /// 完整核心 2 只缺本票新增的置顶列；默认“未置顶、无排序位”，
+  /// 既有目标的顺序仍由仓储的既有规则决定。
+  static const _coreSnapshotColumnDefaults = <String, Map<String, Object?>>{
+    'local_goals': {'is_pinned': 0, 'sort_order': null},
+  };
+
+  Map<String, dynamic> _withVersionColumnDefaults(
     String table,
     Map<String, dynamic> row,
-    Set<String> expectedColumns,
-  ) {
-    final defaults = _legacySnapshotColumnDefaults[table];
+    Set<String> expectedColumns, {
+    required int version,
+  }) {
+    final defaults = version == _legacySnapshotSchemaVersion
+        ? _legacySnapshotColumnDefaults[table]
+        : _coreSnapshotColumnDefaults[table];
     if (defaults == null) return row;
     final additions = <String, dynamic>{
       for (final entry in defaults.entries)

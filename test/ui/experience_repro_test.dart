@@ -84,6 +84,15 @@ Future<void> _unmountAndSettle(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 1));
 }
 
+/// 目标/任务的完整管理在计划页；看板只保留摘要。
+Future<void> _openPlanTab(WidgetTester tester) async {
+  final navigation = find.byType(NavigationBar).evaluate().isNotEmpty
+      ? find.byType(NavigationBar)
+      : find.byType(NavigationRail);
+  await tester.tap(find.descendant(of: navigation, matching: find.text('计划')));
+  await tester.pumpAndSettle();
+}
+
 Future<void> _openNationalFocusTab(WidgetTester tester) async {
   final navigation = find.byType(NavigationBar).evaluate().isNotEmpty
       ? find.byType(NavigationBar)
@@ -128,6 +137,7 @@ void main() {
         ),
       );
       await _pumpApp(tester, harness);
+      await _openPlanTab(tester);
 
       for (final title in ['整理本周材料', '无描述目标']) {
         final card = _goalCard(title);
@@ -142,12 +152,16 @@ void main() {
         final deleteBox = tester.getRect(
           find.descendant(of: card, matching: find.byTooltip('删除目标')),
         );
+        // 目标卡里还可能有任务行的删除按钮，这里只量目标自己的操作字形。
         final editGlyph = tester.getRect(
-          find.descendant(of: card, matching: find.byIcon(Icons.edit_outlined)),
+          find.descendant(
+            of: find.descendant(of: card, matching: find.byTooltip('编辑目标')),
+            matching: find.byIcon(Icons.edit_outlined),
+          ),
         );
         final deleteGlyph = tester.getRect(
           find.descendant(
-            of: card,
+            of: find.descendant(of: card, matching: find.byTooltip('删除目标')),
             matching: find.byIcon(Icons.delete_outline),
           ),
         );
@@ -214,6 +228,7 @@ void main() {
         ),
       );
       await _pumpApp(tester, harness);
+      await _openPlanTab(tester);
 
       final emptyTile = _taskTile('整理素材');
       final filledTile = _taskTile('写提纲');
@@ -264,6 +279,7 @@ void main() {
         ),
       );
       await _pumpApp(tester, harness);
+      await _openPlanTab(tester);
 
       Future<void> openEditor() async {
         await tester.tap(find.text('整理素材'));
@@ -383,6 +399,7 @@ void main() {
         ),
       );
       await _pumpApp(tester, harness, size: const Size(320, 800));
+      await _openPlanTab(tester);
       await tester.ensureVisible(find.text('整理素材'));
       await tester.tap(find.text('整理素材'));
       await tester.pumpAndSettle();

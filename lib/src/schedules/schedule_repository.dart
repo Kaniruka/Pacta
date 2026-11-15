@@ -520,3 +520,67 @@ class LocalScheduleRepository implements ScheduleRepository {
   @override
   Future<void> dispose() async => _changes.close();
 }
+
+/// 未登录或快照未启用时使用的空实现：页面保持可见，但没有任何写入路径。
+class UnavailableScheduleRepository implements ScheduleRepository {
+  const UnavailableScheduleRepository();
+
+  @override
+  Future<Schedule> createSchedule(ScheduleDraft draft) => _unavailable();
+
+  @override
+  Future<Schedule> updateSchedule(String scheduleId, ScheduleDraft draft) =>
+      _unavailable();
+
+  @override
+  Future<Schedule> rescheduleSchedule(
+    String scheduleId,
+    ScheduleWindow window,
+  ) => _unavailable();
+
+  @override
+  Future<void> deleteSchedule(String scheduleId) => _unavailable();
+
+  @override
+  Future<Schedule> setScheduleCompletion(
+    String scheduleId, {
+    required bool isCompleted,
+  }) => _unavailable();
+
+  @override
+  Future<Schedule> setScheduleReminder(
+    String scheduleId, {
+    int? minutesBefore,
+  }) => _unavailable();
+
+  @override
+  Future<List<Schedule>> getSchedules({DateTime? from, DateTime? to}) async =>
+      const [];
+
+  @override
+  Stream<List<Schedule>> watchSchedules({DateTime? from, DateTime? to}) =>
+      Stream.value(const []);
+
+  @override
+  Future<SchedulePromotionResult> promoteLegacyCalendarBlocks() =>
+      _unavailable();
+
+  @override
+  Future<ScheduleMigrationStatus> getLegacyMigrationStatus() async =>
+      ScheduleMigrationStatus(
+        hasCompletedMigration: true,
+        isRolledBack: false,
+        canRollback: false,
+        promotedCount: 0,
+        sourceBlockCount: 0,
+      );
+
+  @override
+  Future<ScheduleRollbackResult> rollbackLegacyCalendarBlockPromotion() =>
+      _unavailable();
+
+  @override
+  Future<void> dispose() async {}
+
+  Future<T> _unavailable<T>() async => throw StateError('日程功能需要登录后使用。');
+}

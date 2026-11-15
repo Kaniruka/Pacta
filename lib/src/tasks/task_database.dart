@@ -16,6 +16,10 @@ class LocalGoals extends Table {
   DateTimeColumn get updatedAt => dateTime()();
   DateTimeColumn get deletedAt => dateTime().nullable()();
 
+  /// 35：账号级置顶标记与手动排序位（仅业务快照携带，旧逐实体同步不写）。
+  BoolColumn get isPinned => boolean().withDefault(const Constant(false))();
+  IntColumn get sortOrder => integer().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
 }
@@ -604,7 +608,7 @@ class PactaDatabase extends _$PactaDatabase {
   }
 
   @override
-  int get schemaVersion => 31;
+  int get schemaVersion => 35;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -798,6 +802,14 @@ class PactaDatabase extends _$PactaDatabase {
       if (from < 31) {
         await ensureMergedSchedulesSchema(this, m);
       }
+      // 35：目标置顶与手动排序位。
+      //
+      // 32–34 由并行票据预留（账号时区、重复日程、失败回顾），本票不假定
+      // 中间版本包含它们；用列存在性检查只补本票列，已存目标保持
+      // "未置顶 + 无排序位"，顺序沿用既有规则。
+      if (from < 35) {
+        await ensureGoalPinSchema(this, m);
+      }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);
       }
@@ -828,6 +840,30 @@ Future<void> ensureMergedSchedulesSchema(
     await promoteLegacyCalendarBlocksInTransaction(
       database,
       migratedAt: DateTime.now().toUtc(),
+    );
+  }
+}
+
+/// v35 结构：目标表补置顶标记与手动排序位。
+///
+/// 只在列缺失时补列，重复升级或回拨 user_version 都安全；不重建目标表，
+/// 也不改写已存标题、描述、分类或删除标记。
+Future<void> ensureGoalPinSchema(
+  PactaDatabase database,
+  Migrator migrator,
+) async {
+  final columns = await database
+      .customSelect('PRAGMA table_info(local_goals)')
+      .get();
+  if (columns.isEmpty) return;
+  final names = {for (final row in columns) row.read<String>('name')};
+  if (!names.contains('is_pinned')) {
+    await migrator.addColumn(database.localGoals, database.localGoals.isPinned);
+  }
+  if (!names.contains('sort_order')) {
+    await migrator.addColumn(
+      database.localGoals,
+      database.localGoals.sortOrder,
     );
   }
 }
