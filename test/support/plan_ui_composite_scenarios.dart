@@ -22,9 +22,9 @@ import 'test_database.dart';
 
 /// 07 计划 UI 组合场景的唯一实现。
 ///
-/// 四个场景（无系统日历 + 自有增改、账号时区与另一台设备写入的冲突、重复
-/// 范围与提醒模板、预约准备 5/10/15/自定义与一次交接）在这里写成普通函数，
-/// 由两条入口复用同一份代码：
+/// 五个场景（无系统日历 + 自有增改、经"我的 → 编辑资料"改城市时的冲突、
+/// 重复范围与提醒模板（宽/窄两种视口）、预约准备 5/10/15/自定义与一次交接）
+/// 在这里写成普通函数，由两条入口复用同一份代码：
 ///
 /// - `test/plan/windows_plan_composite_fixture_test.dart`：进程内 widget 夹具
 ///   （`flutter test`），证据标记 [PlanUiScope.widget]。
@@ -110,7 +110,7 @@ class PlanUiCompositeFixture {
   }) : directory = Directory('${runDirectory.path}/$scenario');
 
   /// 打开一个场景。运行根由**入口整轮校验一次**：native 入口在启动时要求
-  /// 绝对路径且为空，随后四个场景共用它；widget 入口每场给一个唯一临时根。
+  /// 绝对路径且为空，随后所有场景共用它；widget 入口每场给一个唯一临时根。
   ///
   /// 这里只负责本场景子目录：已存在就拒绝覆盖（manifest/PNG 都不会被旧证据
   /// 混进来），但运行根在第一个场景写完之后当然不再为空，不能当成错误。
@@ -454,6 +454,20 @@ Finder planFormField(String label) => find.byWidgetPredicate(
   (widget) => widget is TextField && widget.decoration?.labelText == label,
 );
 
+/// 打开"我的"目的地：宽屏是 NavigationRail，窄屏是 NavigationBar。
+Future<void> openMyDestination(WidgetTester tester) async {
+  final bar = find.byType(NavigationBar);
+  final host = bar.evaluate().isNotEmpty ? bar : find.byType(NavigationRail);
+  await tester.tap(find.descendant(of: host, matching: find.text('我的')));
+  await settlePlanUi(tester);
+}
+
+/// 把目标滚进可见区：页面 ListView 与对话框内部滚动视图都适用。
+Future<void> revealPlanUi(WidgetTester tester, Finder target) async {
+  await tester.ensureVisible(target);
+  await tester.pump();
+}
+
 /// 场景一：无系统日历时的导入说明 + 自有安排增改，360×800 暗色。
 Future<void> runUnsupportedCalendarScenario(
   WidgetTester tester,
@@ -544,7 +558,8 @@ Future<void> runUnsupportedCalendarScenario(
   ]);
 }
 
-/// 场景二：账号时区决定 Plan 时间；另一台设备先写入时采用最新值，1280×900 亮色。
+/// 场景二：账号时区决定 Plan 时间；通过"我的 → 编辑资料"改城市，
+/// 另一台设备先写入时采用账号最新值并如实反馈，1280×900 亮色。
 Future<void> runAccountZoneScenario(
   WidgetTester tester,
   PlanUiCompositeFixture fixture,
@@ -570,34 +585,63 @@ Future<void> runAccountZoneScenario(
   expect(find.text('18:00–19:00'), findsOneWidget);
   await fixture.capture(tester, 'account-zone-tokyo-light-wide');
 
-  fixture.remote.anotherDeviceWrote('Europe/London');
-  final saved = await fixture.profiles.saveProfile(
-    displayName: '夹具用户',
-    timeZoneId: 'America/New_York',
-  );
-  expect(saved.displayTimeZoneId, 'Europe/London');
+  // 真实入口：我的 → 编辑 → 城市选择（产品自带 ChoiceChip，不是新交互）。
+  await openMyDestination(tester);
+  await tester.tap(find.widgetWithText(TextButton, '编辑'));
   await fixture.settle(tester);
-  // 冲突时采用账号已接受的最新时区：伦敦 11 月为 UTC+0。
+  expect(find.text('编辑资料'), findsOneWidget);
+  final newYork = find.widgetWithText(ChoiceChip, '纽约');
+  await revealPlanUi(tester, newYork);
+  await tester.tap(newYork);
+  await fixture.settle(tester);
+  expect(find.text('纽约 · America/New_York'), findsOneWidget);
+  await fixture.capture(tester, 'profile-zone-picker-light-wide');
+
+  // 另一台设备先写伦敦：保存时账号存储按修订号保留伦敦，页面必须如实
+  // 说明"已采用最新值"，而不是把这次点击说成已生效。
+  fixture.remote.anotherDeviceWrote('Europe/London');
+  await tester.tap(find.widgetWithText(FilledButton, '保存'));
+  await fixture.settle(tester);
+  expect(find.text('编辑资料'), findsOneWidget, reason: '冲突不冒充保存成功并退出');
+  final conflict = find.textContaining('账号时区已被其他设备更新，已采用最新值：Europe/London。');
+  expect(conflict, findsOneWidget);
+  expect(
+    (await fixture.profiles.getProfile()).displayTimeZoneId,
+    'Europe/London',
+    reason: '账号存储采用最新接受值',
+  );
+  await revealPlanUi(tester, conflict);
+  await fixture.capture(tester, 'profile-zone-conflict-feedback-light-wide');
+
+  await tester.tap(find.byType(BackButton));
+  await fixture.settle(tester);
+  await openPlanCalendar(tester, fixture);
+  // 伦敦 11 月为 UTC+0：Plan 时间随账号值更新。
   expect(find.text('09:00–10:00'), findsOneWidget);
   expect(find.text('18:00–19:00'), findsNothing);
   await fixture.capture(tester, 'account-zone-conflict-london-light-wide');
   fixture.record(const [
     'account-zone',
+    'profile-edit-zone-picker',
     'conflict-adopts-latest',
+    'conflict-feedback-visible',
+    'plan-time-follows-account-zone',
     'light-1280x900',
   ]);
 }
 
-/// 场景三：重复创建可改范围、提醒配置在重开后保留，1280×1600 亮色。
+/// 场景三：重复创建可改范围、提醒配置在重开后保留。
+///
+/// 视口可注入：同一份实现既跑 1280×1600 亮色，也跑 360×800 暗色窄窗；
+/// 窄窗下每个字段都先真实滚动到可见再操作，覆盖长表单（两个范围 + 提醒）。
 Future<void> runRecurrenceScenario(
   WidgetTester tester,
-  PlanUiCompositeFixture fixture,
-) async {
-  await fixture.pump(
-    tester,
-    size: const Size(1280, 1600),
-    brightness: Brightness.light,
-  );
+  PlanUiCompositeFixture fixture, {
+  Size size = const Size(1280, 1600),
+  Brightness brightness = Brightness.light,
+  String label = 'light-wide',
+}) async {
+  await fixture.pump(tester, size: size, brightness: brightness);
   await fixture.schedules.createRecurringSchedule(
     draft: ScheduleDraft(
       title: '每日站会',
@@ -616,16 +660,22 @@ Future<void> runRecurrenceScenario(
   await fixture.schedules.setScheduleReminder(today.id, minutesBefore: 10);
   await fixture.settle(tester);
   await openPlanCalendar(tester, fixture);
+  final recurringTile = find.text('每日站会');
+  await revealPlanUi(tester, recurringTile);
   expect(find.text('提前 10 分钟提醒'), findsOneWidget);
-  await fixture.capture(tester, 'recurrence-reminder-light-wide');
+  await fixture.capture(tester, 'recurrence-reminder-$label');
 
   final ruleBefore = (await fixture.schedules.getRecurrenceRules()).single;
-  await tester.tap(find.text('每日站会'));
+  await tester.tap(recurringTile);
   await fixture.settle(tester);
   expect(find.text('仅本次'), findsOneWidget);
   expect(find.text('本次及以后'), findsOneWidget);
-  await fixture.capture(tester, 'recurrence-scope-dialog-light-wide');
+  await fixture.capture(tester, 'recurrence-scope-dialog-$label');
+  await revealPlanUi(tester, planFormField('名称'));
   await tester.enterText(planFormField('名称'), '每日站会（仅本次）');
+  await tester.pump();
+  expect(find.text('名称'), findsOneWidget, reason: '已填标题时浮动标签可见');
+  await revealPlanUi(tester, find.text('保存'));
   await tester.tap(find.text('保存'));
   await fixture.settle(tester);
   expect(
@@ -638,29 +688,38 @@ Future<void> runRecurrenceScenario(
   )).single;
   expect(edited.isRecurrenceException, isTrue);
   expect(edited.reminderMinutesBefore, 10, reason: '仅本次不改实例提醒');
+  expect(tester.takeException(), isNull, reason: '$label 无 overflow');
 
   // 关掉再打开：提醒配置来自持久化数据，不是页面内存。
-  await fixture.restart(
-    tester,
-    size: const Size(1280, 1600),
-    brightness: Brightness.light,
-  );
+  await fixture.restart(tester, size: size, brightness: brightness);
   await openPlanCalendar(tester, fixture);
   expect(find.text('提前 10 分钟提醒'), findsOneWidget);
 
-  await tester.tap(find.text('每日站会（仅本次）'));
+  final exceptionTile = find.text('每日站会（仅本次）');
+  await revealPlanUi(tester, exceptionTile);
+  await tester.tap(exceptionTile);
   await fixture.settle(tester);
+  await revealPlanUi(tester, find.text('本次及以后'));
+  expect(find.text('仅本次'), findsOneWidget, reason: '两个范围都可见可选');
   await tester.tap(find.text('本次及以后'));
   await fixture.settle(tester);
+  await revealPlanUi(tester, planFormField('名称'));
   await tester.enterText(planFormField('名称'), '每日站会（新规则）');
-  await tester.ensureVisible(find.byType(DropdownButtonFormField<int?>));
+  await tester.pump();
+  expect(find.text('名称'), findsOneWidget, reason: '已填标题时浮动标签可见');
+  final reminderField = find.byType(DropdownButtonFormField<int?>);
+  await revealPlanUi(tester, reminderField);
   await fixture.settle(tester);
   // 模板当前无提醒：点字段显示的“不提醒”打开菜单。
   await tester.tap(find.text('不提醒').last);
   await fixture.settle(tester);
+  // 提醒候选真实可用，不只存在于页面文案。
+  expect(find.text('提前 5 分钟').last, findsOneWidget);
+  expect(find.text('提前 15 分钟').last, findsOneWidget);
   await tester.tap(find.text('提前 15 分钟').last);
   await fixture.settle(tester);
-  await fixture.capture(tester, 'recurrence-template-reminder-light-wide');
+  await fixture.capture(tester, 'recurrence-template-reminder-$label');
+  await revealPlanUi(tester, find.text('保存'));
   await tester.tap(find.text('保存'));
   await fixture.settle(tester);
   final rules = await fixture.schedules.getRecurrenceRules();
@@ -672,15 +731,20 @@ Future<void> runRecurrenceScenario(
     15,
     reason: '本次及以后把可见提醒写进规则模板',
   );
-  fixture.record(const [
+  expect(tester.takeException(), isNull, reason: '$label 无 overflow');
+  fixture.record([
     'recurrence-scope',
     'reminder-persisted',
     'reminder-template',
-    'light-1280x1600',
+    'floating-labels',
+    label,
   ]);
 }
 
 /// 场景四：预约准备 5/10/15/自定义可用，准备结束只交接一次，1280×900 亮色。
+///
+/// 10/15 不只断言 chip 存在：真的选一次、核对写入的准备秒数，再取消清理，
+/// 最后用 5 分钟走完唯一一次交接。
 Future<void> runPreparationScenario(
   WidgetTester tester,
   PlanUiCompositeFixture fixture,
@@ -730,6 +794,32 @@ Future<void> runPreparationScenario(
   );
   await openPlanDestination(tester);
 
+  // 10/15 分钟：真的选一次并核对写入的准备秒数，逐个取消清理。
+  for (final preset in const [('10 分钟', 600), ('15 分钟', 900)]) {
+    await tester.tap(find.byTooltip('开始专注'));
+    await fixture.settle(tester);
+    await tester.tap(find.text(preset.$1));
+    await fixture.settle(tester);
+    await tester.tap(find.text('开始准备（${preset.$2 ~/ 60}分钟）'));
+    await fixture.settle(tester);
+    final appointment = (await fixture.focus.getActiveAppointment())!;
+    expect(
+      appointment.preparationSeconds,
+      preset.$2,
+      reason: '${preset.$1} 真的写入准备时长',
+    );
+    await fixture.focus.cancelAppointment(
+      appointmentId: appointment.id,
+      failureReason: '切换准备时长',
+    );
+    await fixture.restart(
+      tester,
+      size: const Size(1280, 900),
+      brightness: Brightness.light,
+    );
+    await openPlanDestination(tester);
+  }
+
   await tester.tap(find.byTooltip('开始专注'));
   await fixture.settle(tester);
   await tester.tap(find.text('5 分钟'));
@@ -750,8 +840,15 @@ Future<void> runPreparationScenario(
   expect(session!.taskId, task.id);
   await fixture.focus.settleDueAppointments();
   expect((await fixture.focus.getActiveSession())!.id, session.id);
+  expect(
+    (await fixture.focus.getActiveAppointment()),
+    isNull,
+    reason: '交接后不残留第二个活动预约',
+  );
   fixture.record(const [
     'preparation-presets',
+    'preparation-10',
+    'preparation-15',
     'preparation-custom-7',
     'single-handoff',
     'light-1280x900',

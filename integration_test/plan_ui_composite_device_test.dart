@@ -3,13 +3,14 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 
 import '../test/support/plan_ui_composite_scenarios.dart';
 
 /// 07 计划 UI 的原生入口：真实 Windows 窗口、真实 pactaTheme/MiSans、内存
-/// Drift 与内存远端。四个场景与 `test/plan/windows_plan_composite_fixture_test.dart`
+/// Drift 与内存远端。五个场景与 `test/plan/windows_plan_composite_fixture_test.dart`
 /// 共用同一份实现，但这里的证据 `scope=native`，并写入 PNG 与 manifest。
 ///
 /// root 独立运行（本会话不启动 Windows GUI/native）：
@@ -85,6 +86,21 @@ void main() {
     final fixture = open('preparation-handoff-light-wide');
     try {
       await runPreparationScenario(tester, fixture);
+    } finally {
+      await fixture.dispose(tester);
+    }
+  });
+
+  testWidgets('窄窗重复编辑：两个范围与提醒选择可用', (tester) async {
+    final fixture = open('recurrence-scopes-dark-narrow');
+    try {
+      await runRecurrenceScenario(
+        tester,
+        fixture,
+        size: const Size(360, 800),
+        brightness: Brightness.dark,
+        label: 'dark-narrow',
+      );
     } finally {
       await fixture.dispose(tester);
     }
