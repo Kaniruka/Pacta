@@ -60,7 +60,7 @@ begin
     perform public.save_cloud_business_snapshot(
       index,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
         'tables', '{}'::jsonb
       ),
@@ -104,7 +104,7 @@ begin
     perform public.save_cloud_business_snapshot(
       3,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
         'tables', '{}'::jsonb
       ),
@@ -133,7 +133,7 @@ begin
   saved := public.save_cloud_business_snapshot(
     17,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', current_setting('history_test.owner_id'),
       'tables', '{}'::jsonb
     ),
@@ -143,7 +143,7 @@ begin
   retried := public.save_cloud_business_snapshot(
     17,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', current_setting('history_test.owner_id'),
       'tables', '{}'::jsonb
     ),
@@ -176,7 +176,7 @@ begin
   owner_saved := public.save_cloud_business_snapshot(
     18,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', current_setting('history_test.owner_id'),
       'tables', '{}'::jsonb
     ),
@@ -192,7 +192,7 @@ begin
   perform public.save_cloud_business_snapshot(
     owner_revision,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', current_setting('history_test.owner_id'),
       'tables', '{}'::jsonb
     ),
@@ -202,7 +202,7 @@ begin
   retried := public.save_cloud_business_snapshot(
     18,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', current_setting('history_test.owner_id'),
       'tables', '{}'::jsonb
     ),
@@ -226,7 +226,7 @@ begin
     perform public.save_cloud_business_snapshot(
       current_setting('history_test.request_two_revision')::bigint,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
         'tables', jsonb_build_object('marker', 'different')
       ),
@@ -261,7 +261,7 @@ begin
     perform public.save_cloud_business_snapshot(
       current,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
         'tables', '{}'::jsonb
       ),
@@ -285,7 +285,7 @@ begin
     perform public.save_cloud_business_snapshot(
       current,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
         'tables', '{}'::jsonb
       ),
@@ -335,7 +335,7 @@ begin
       current_setting('history_test.owner_id')::uuid,
       9999,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
         'tables', '{}'::jsonb
       ),
@@ -404,7 +404,7 @@ begin
     and request.request_id = 'request-92';
   expected_fingerprint := md5(
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', owner_id,
       'tables', '{}'::jsonb
     )::text
@@ -469,7 +469,7 @@ begin
     target_id,
     1,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', target_id,
       'tables', '{}'::jsonb
     ),

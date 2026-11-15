@@ -190,10 +190,13 @@ abstract interface class FocusRepository {
     required FocusChainMode mode,
     required Duration duration,
   });
+
+  /// 每场预约准备时长可选；默认沿用 15 分钟，非法值一律拒绝。
   Future<AppointmentPreparation> startAppointment({
     required String taskId,
     required FocusChainMode mode,
     required Duration duration,
+    Duration preparation,
   });
   Future<AppointmentPreparation> updateAppointment({
     required String appointmentId,
@@ -290,7 +293,9 @@ class LocalFocusRepository implements FocusRepository {
   Timer? _clockWatchdog;
   Future<void>? _clockObservation;
 
-  static const appointmentPreparationDuration = Duration(minutes: 15);
+  /// 旧记录缺少显式准备时长时沿用的历史值（15 分钟）。
+  static const appointmentPreparationDuration =
+      AppointmentPreparationDuration.defaultDuration;
 
   @override
   Stream<List<FocusSession>> watchSessions() async* {
@@ -1091,8 +1096,12 @@ class LocalFocusRepository implements FocusRepository {
     required String taskId,
     required FocusChainMode mode,
     required Duration duration,
+    Duration preparation = AppointmentPreparationDuration.defaultDuration,
   }) async {
     _validateDuration(duration);
+    final preparationDuration = AppointmentPreparationDuration.validate(
+      preparation,
+    );
     final task = await _taskForStart(taskId);
     if (task.isComplete) throw StateError('已完成任务不能开始新的预约。');
 
@@ -1114,10 +1123,11 @@ class LocalFocusRepository implements FocusRepository {
       mode: mode,
       durationSeconds: duration.inSeconds,
       startedAt: startedAt,
-      endsAt: startedAt.add(appointmentPreparationDuration),
+      endsAt: startedAt.add(preparationDuration),
       status: AppointmentPreparationStatus.active,
       settledAt: null,
       updatedAt: startedAt,
+      preparationSeconds: preparationDuration.inSeconds,
     );
     await database.transaction(() async {
       await _saveAppointment(appointment, queue: false);
@@ -3026,6 +3036,7 @@ class LocalFocusRepository implements FocusRepository {
             configurationBasisSourceId: Value(
               appointment.configurationBasisSourceId,
             ),
+            preparationSeconds: Value(appointment.preparationSeconds),
           ),
         );
     if (queue) {
@@ -3722,6 +3733,7 @@ class LocalFocusRepository implements FocusRepository {
         ),
         reviewDispositionUpdatedAt: row.reviewDispositionUpdatedAt,
         configurationBasisSourceId: row.configurationBasisSourceId,
+        preparationSeconds: row.preparationSeconds,
       );
 
   FocusNode _nodeFromRow(db.FocusNode row) => FocusNode(
@@ -4230,6 +4242,9 @@ Map<String, dynamic> _focusAppointmentToJson(
       ? null
       : _utcIso8601(appointment.reviewDispositionUpdatedAt!),
   'configuration_basis_source_id': appointment.configurationBasisSourceId,
+  // 旧记录没有显式值：省略该键，使新旧客户端对同一历史状态得到相同的载荷签名。
+  if (appointment.preparationSeconds != null)
+    'preparation_seconds': appointment.preparationSeconds,
 };
 
 AppointmentPreparation _focusAppointmentFromJson(
@@ -4256,6 +4271,7 @@ AppointmentPreparation _focusAppointmentFromJson(
       ? null
       : DateTime.parse(json['review_disposition_updated_at'] as String).toUtc(),
   configurationBasisSourceId: json['configuration_basis_source_id'] as String?,
+  preparationSeconds: json['preparation_seconds'] as int?,
 );
 
 AppointmentPreparation _focusAppointmentWithRemoteReview(
@@ -4953,6 +4969,7 @@ class UnavailableFocusRepository implements FocusRepository {
     required String taskId,
     required FocusChainMode mode,
     required Duration duration,
+    Duration preparation = AppointmentPreparationDuration.defaultDuration,
   }) => _unavailable();
 
   @override
