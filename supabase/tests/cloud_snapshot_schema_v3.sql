@@ -619,7 +619,14 @@ begin
   select payload, snapshot.revision into base_payload, revision
   from public.cloud_business_snapshots as snapshot
   where user_id = auth.uid();
-  for item in select * from jsonb_to_recordset(cases) as rec(
+  -- jsonb_to_recordset 会把 JSON null 变成 SQL NULL，而 jsonb_set 收到 SQL
+  -- NULL 新值时整份载荷会变成 NULL（随后被入站校验拒绝）。先归一成 jsonb 的
+  -- null，才能真的把该键设成 null 并原样读回。
+  for item in
+    select rec.label,
+           coalesce(rec.rule, 'null'::jsonb) as rule,
+           coalesce(rec.instance, 'null'::jsonb) as instance
+    from jsonb_to_recordset(cases) as rec(
       label text, rule jsonb, instance jsonb)
   loop
     candidate := jsonb_set(
