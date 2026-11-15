@@ -1151,7 +1151,7 @@ void main() {
     final settled = (await focus.getAppointment(appointment.id))!;
 
     final local = await repository.captureLocalState();
-    expect(local.payload['schemaVersion'], 2);
+    expect(local.payload['schemaVersion'], cloudSnapshotSchemaVersion);
     final localTables = Map<String, dynamic>.from(
       local.payload['tables'] as Map,
     );
@@ -1275,7 +1275,7 @@ void main() {
     await remote.upload(
       userId: 'user-a',
       expectedRevision: 0,
-      payload: <String, dynamic>{...local.payload, 'schemaVersion': 3},
+      payload: <String, dynamic>{...local.payload, 'schemaVersion': 4},
       deviceId: 'device-b',
       deviceName: 'Tablet B',
       dataUpdatedAt: local.dataUpdatedAt,

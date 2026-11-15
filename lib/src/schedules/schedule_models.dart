@@ -101,6 +101,13 @@ class Schedule {
     this.sourceEventId,
     this.occurrenceId,
     this.eventIdentity,
+    this.recurrenceId,
+    this.recurrenceSeriesId,
+    this.recurrenceDate,
+    this.recurrenceTimeZoneId,
+    this.recurrenceStartMinutes,
+    this.isRecurrenceException = false,
+    this.isRecurrenceCancelled = false,
   });
 
   final String id;
@@ -139,10 +146,97 @@ class Schedule {
   /// schedules leave it null.
   final String? eventIdentity;
 
+  /// 当前拥有这条实例的重复规则；null 表示独立日程。
+  final String? recurrenceId;
+
+  /// 稳定系列身份。"本次及以后"截断会换规则 id，但系列身份不变，
+  /// 因此历史实例的身份不随后续修改漂移。
+  final String? recurrenceSeriesId;
+
+  /// 该实例原始的本地开始日期（规则时区 `YYYY-MM-DD`），展开与去重的依据。
+  final String? recurrenceDate;
+
+  /// 生成该实例时使用的 IANA 时区；显示时区改变不重算它。
+  final String? recurrenceTimeZoneId;
+
+  /// 生成该实例时的本地开始分钟，与日期和时区一起锁定原来的挂钟时刻。
+  final int? recurrenceStartMinutes;
+
+  /// "仅本次"改写过的实例：规则不再覆盖它的内容。
+  final bool isRecurrenceException;
+
+  /// 单实例删除的墓碑：行保留以免展开时复活，读取时过滤。
+  final bool isRecurrenceCancelled;
+
   final DateTime createdAt;
   final DateTime updatedAt;
 
   bool get hasReminder => reminderMinutesBefore != null;
+
+  bool get isRecurring => recurrenceId != null;
+
+  Schedule copyWith({
+    String? title,
+    String? notes,
+    DateTime? startsAt,
+    DateTime? endsAt,
+    bool? allDay,
+    String? allDayStartDate,
+    String? allDayEndDateExclusive,
+    bool? isCompleted,
+    DateTime? completedAt,
+    bool clearCompletedAt = false,
+    String? taskId,
+    bool clearTaskId = false,
+    int? reminderMinutesBefore,
+    bool clearReminder = false,
+    ScheduleOrigin? origin,
+    List<String>? sourceIds,
+    List<String>? sourceNames,
+    String? sourceEventId,
+    String? occurrenceId,
+    String? eventIdentity,
+    String? recurrenceId,
+    String? recurrenceSeriesId,
+    String? recurrenceDate,
+    String? recurrenceTimeZoneId,
+    int? recurrenceStartMinutes,
+    bool? isRecurrenceException,
+    bool? isRecurrenceCancelled,
+    DateTime? updatedAt,
+  }) => Schedule(
+    id: id,
+    title: title ?? this.title,
+    notes: notes ?? this.notes,
+    startsAt: startsAt ?? this.startsAt,
+    endsAt: endsAt ?? this.endsAt,
+    allDay: allDay ?? this.allDay,
+    allDayStartDate: allDayStartDate ?? this.allDayStartDate,
+    allDayEndDateExclusive:
+        allDayEndDateExclusive ?? this.allDayEndDateExclusive,
+    isCompleted: isCompleted ?? this.isCompleted,
+    completedAt: clearCompletedAt ? null : (completedAt ?? this.completedAt),
+    taskId: clearTaskId ? null : (taskId ?? this.taskId),
+    reminderMinutesBefore: clearReminder
+        ? null
+        : (reminderMinutesBefore ?? this.reminderMinutesBefore),
+    origin: origin ?? this.origin,
+    sourceIds: sourceIds ?? this.sourceIds,
+    sourceNames: sourceNames ?? this.sourceNames,
+    sourceEventId: sourceEventId ?? this.sourceEventId,
+    occurrenceId: occurrenceId ?? this.occurrenceId,
+    eventIdentity: eventIdentity ?? this.eventIdentity,
+    recurrenceId: recurrenceId ?? this.recurrenceId,
+    recurrenceSeriesId: recurrenceSeriesId ?? this.recurrenceSeriesId,
+    recurrenceDate: recurrenceDate ?? this.recurrenceDate,
+    recurrenceTimeZoneId: recurrenceTimeZoneId ?? this.recurrenceTimeZoneId,
+    recurrenceStartMinutes:
+        recurrenceStartMinutes ?? this.recurrenceStartMinutes,
+    isRecurrenceException: isRecurrenceException ?? this.isRecurrenceException,
+    isRecurrenceCancelled: isRecurrenceCancelled ?? this.isRecurrenceCancelled,
+    createdAt: createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
 
   ScheduleWindow get window => allDay
       ? ScheduleWindow._(

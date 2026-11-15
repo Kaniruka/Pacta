@@ -1,3 +1,10 @@
+-- HISTORICAL (version-2 era fixture): after 202611150003_cloud_snapshot_schema_v3
+-- a fresh version 2 write is refused with PT426, so the "complete version 2
+-- upload is accepted" assertions below describe the protocol that existed when
+-- version 2 was current. Keep this file as the version-specific record; the
+-- current write contract is probed by cloud_snapshot_schema_v3.sql and the final
+-- merger reconciles both.
+--
 -- Rollback-only probe for the merged whole-snapshot version 2 protocol.
 -- Run against an isolated Supabase project after applying
 -- 202611150001_cloud_snapshot_schema_v2.sql (and the migrations it builds on).

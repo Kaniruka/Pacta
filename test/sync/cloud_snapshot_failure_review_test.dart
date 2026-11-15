@@ -88,6 +88,27 @@ void main() {
       (((payload['tables'] as Map)['local_national_focus_failures'] as List))
           .cast<Map<String, dynamic>>();
 
+  /// 把当前快照降级成"完整的 core 2"：保留日程与准备时长，去掉重复领域。
+  ///
+  /// 这是 05 合并前真实存在过的载荷形状：核心两票的并集，没有重复规则表。
+  Map<String, dynamic> core2Payload(Map<String, dynamic> payload) {
+    final copy = payloadCopy(payload)..['schemaVersion'] = 2;
+    final tables = copy['tables'] as Map<String, dynamic>
+      ..remove('local_schedule_recurrences');
+    tables['local_schedules'] = [
+      for (final row
+          in (tables['local_schedules'] as List).cast<Map<String, dynamic>>())
+        {
+          for (final entry in row.entries)
+            if (!entry.key.startsWith('recurrence_') &&
+                entry.key != 'is_recurrence_exception' &&
+                entry.key != 'is_recurrence_cancelled')
+              entry.key: entry.value,
+        },
+    ];
+    return copy;
+  }
+
   Future<void> uploadRaw({
     required Map<String, dynamic> payload,
     required int expectedRevision,
@@ -198,7 +219,7 @@ void main() {
     expect(imported.map(facts), before.map(facts));
   });
 
-  test('v2 快照缺 reviewed_at 时整体拒绝且本机数据不变', () async {
+  test('当前版本快照缺 reviewed_at 时整体拒绝且本机数据不变', () async {
     final batchId = await createFailedBatch();
     await tree.markFailureReviewed(batchId: batchId);
     final before = await tree.getFailures();
@@ -227,5 +248,98 @@ void main() {
     expect(afterFailure, hasLength(before.length));
     expect(afterFailure.every((failure) => failure.isReviewed), isTrue);
     expect(afterFailure.map(facts), before.map(facts));
+  });
+
+  test('完整的 core 2 快照缺 reviewed_at 时按未回顾转换', () async {
+    final batchId = await createFailedBatch();
+    await tree.markFailureReviewed(batchId: batchId);
+    final before = await tree.getFailures();
+    expect(before.every((failure) => failure.isReviewed), isTrue);
+
+    final local = await repository.captureLocalState();
+    final core2 = core2Payload(local.payload);
+    for (final row in failureRowsOf(core2)) {
+      row.remove('reviewed_at');
+    }
+    await uploadRaw(
+      payload: core2,
+      expectedRevision: 0,
+      rowCount: local.rowCount,
+    );
+
+    final secondDatabase = PactaDatabase(NativeDatabase.memory());
+    addTearDown(secondDatabase.close);
+    final secondRepository = CloudSnapshotRepository(
+      database: secondDatabase,
+      remote: remote,
+      userId: userId,
+      deviceId: 'device-b',
+      deviceName: 'Phone B',
+      now: () => now,
+    );
+    final target = await secondRepository.captureLocalState();
+    await secondRepository.downloadCloud(
+      expectedRevision: 1,
+      expectedFingerprint: target.fingerprint,
+    );
+
+    final convertedTree = LocalNationalFocusRepository(
+      database: secondDatabase,
+      userId: userId,
+      cloudSyncEnabled: false,
+      now: () => now,
+    );
+    addTearDown(convertedTree.dispose);
+    final converted = await convertedTree.getFailures();
+    expect(converted, hasLength(before.length));
+    expect(converted.every((failure) => failure.reviewedAt == null), isTrue);
+    expect(converted.every((failure) => failure.isReviewed), isFalse);
+    expect(converted.map(facts), before.map(facts));
+  });
+
+  test('完整的 core 2 快照保留已写入的回顾标记', () async {
+    final batchId = await createFailedBatch();
+    await tree.markFailureReviewed(batchId: batchId);
+    final before = await tree.getFailures();
+
+    final local = await repository.captureLocalState();
+    final core2 = core2Payload(local.payload);
+    expect(
+      failureRowsOf(core2).every((row) => row['reviewed_at'] != null),
+      isTrue,
+    );
+    await uploadRaw(
+      payload: core2,
+      expectedRevision: 0,
+      rowCount: local.rowCount,
+    );
+
+    final secondDatabase = PactaDatabase(NativeDatabase.memory());
+    addTearDown(secondDatabase.close);
+    final secondRepository = CloudSnapshotRepository(
+      database: secondDatabase,
+      remote: remote,
+      userId: userId,
+      deviceId: 'device-b',
+      deviceName: 'Phone B',
+      now: () => now,
+    );
+    final target = await secondRepository.captureLocalState();
+    await secondRepository.downloadCloud(
+      expectedRevision: 1,
+      expectedFingerprint: target.fingerprint,
+    );
+
+    final convertedTree = LocalNationalFocusRepository(
+      database: secondDatabase,
+      userId: userId,
+      cloudSyncEnabled: false,
+      now: () => now,
+    );
+    addTearDown(convertedTree.dispose);
+    final converted = await convertedTree.getFailures();
+    expect(converted, hasLength(before.length));
+    expect(converted.every((failure) => failure.isReviewed), isTrue);
+    expect(converted.map(facts), before.map(facts));
   });
 }

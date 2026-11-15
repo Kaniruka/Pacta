@@ -350,6 +350,67 @@ class LocalSchedules extends Table {
   TextColumn get sourceEventId => text().nullable()();
   TextColumn get occurrenceId => text().nullable()();
   TextColumn get eventIdentity => text().nullable()();
+
+  /// 重复规则的当前归属；null 表示独立日程。
+  TextColumn get recurrenceId => text().nullable()();
+
+  /// 稳定系列身份：“本次及以后”截断后仍保留原值，实例身份不漂移。
+  TextColumn get recurrenceSeriesId => text().nullable()();
+
+  /// 该实例原始的本地开始日期（规则时区），展开与去重的稳定依据。
+  TextColumn get recurrenceDate => text().nullable()();
+
+  /// 生成该实例时使用的 IANA 时区，随实例保存以防后续重算漂移。
+  TextColumn get recurrenceTimeZoneId => text().nullable()();
+
+  /// 生成该实例时的本地开始分钟，配合时区与日期锁定原来的挂钟时刻。
+  IntColumn get recurrenceStartMinutes => integer().nullable()();
+
+  /// 已确认的“仅本次”改写：实例被单独改写过，规则不再覆盖它。
+  BoolColumn get isRecurrenceException =>
+      boolean().withDefault(const Constant(false))();
+
+  /// 单实例删除的墓碑：行保留以免再次展开时复活，读取时过滤。
+  BoolColumn get isRecurrenceCancelled =>
+      boolean().withDefault(const Constant(false))();
+
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId, id};
+}
+
+/// 重复日程规则（每天 / 每周指定星期 / 结束日期）。
+///
+/// 规则自带 IANA 时区与窗口模板：展开时按该时区的挂钟日历计算，不读取设备
+/// 或当前显示时区，因此切换显示时区不会移动已生成的实例。模板属于规则的
+/// 内部表示，用户界面只配置频率、星期与结束日期。
+class LocalScheduleRecurrences extends Table {
+  TextColumn get userId => text()();
+  TextColumn get id => text()();
+  TextColumn get frequency => text()();
+  TextColumn get weekdays => text().withDefault(const Constant('[]'))();
+  TextColumn get firstDate => text()();
+  TextColumn get endDate => text().nullable()();
+  TextColumn get timeZoneId => text()();
+  BoolColumn get allDay => boolean().withDefault(const Constant(false))();
+  IntColumn get startMinutesOfDay => integer().withDefault(const Constant(0))();
+  IntColumn get durationMinutes => integer().withDefault(const Constant(60))();
+  IntColumn get daySpan => integer().withDefault(const Constant(1))();
+
+  /// 可见日期相对原始发生日期的日历位移（天）；0 表示未改期。
+  ///
+  /// 实例的 `recurrence_date` 是原始发生身份，"本次及以后"改期只改变这里的
+  /// 位移，因此取消过的某一期不会因为挪动日期而复活或抵消别的实例。
+  IntColumn get shiftDays => integer().withDefault(const Constant(0))();
+
+  /// 规则自己的内容模板：之后按范围补齐的实例都从这里取内容，而不是从系列里
+  /// 任意一条实例推断。"仅本次"例外不改写它。
+  TextColumn get title => text().withDefault(const Constant(''))();
+  TextColumn get notes => text().withDefault(const Constant(''))();
+  TextColumn get taskId => text().nullable()();
+
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
@@ -488,6 +549,7 @@ class LocalCloudRecoveryPoints extends Table {
     LocalCalendarSources,
     LocalCalendarBlocks,
     LocalSchedules,
+    LocalScheduleRecurrences,
     LocalScheduleMigrations,
     LocalUserLifecycleStates,
     LocalProfileAccounts,
@@ -648,7 +710,7 @@ class PactaDatabase extends _$PactaDatabase {
   /// ticket, so the final integrating schema has to reconcile both bodies above
   /// 36; this step stays structurally guarded instead of encoding a number.
   @override
-  int get schemaVersion => 36;
+  int get schemaVersion => 38;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -842,6 +904,15 @@ class PactaDatabase extends _$PactaDatabase {
       if (from < 31) {
         await ensureMergedSchedulesSchema(this, m);
       }
+      // 33：重复日程（05）。按实际结构补缺，不依赖版本号区间：并行票据的
+      // 中间版本可能已带上部分重复结构，已存在的表/列永远不重建、不清空。
+      //
+      // 集成顺序：34 回顾（11）→ 35/36 账号时区（02）→ 37 规则模板/改期位移
+      // （05 r3）→ 38 为本次合并的完整对账版本（纯版本推进，无新增结构）。
+      // 从任何更旧的版本升级都要走一遍重复结构补齐。
+      if (from < 38) {
+        await ensureRecurrenceSchema(this, m);
+      }
       if (from < 35) {
         // Account-level display time zone and the one-shot upload intent.
         // Existing rows keep the zone null, which the profile repository seeds
@@ -945,6 +1016,125 @@ Future<void> ensureMergedSchedulesSchema(
       migratedAt: DateTime.now().toUtc(),
     );
   }
+}
+
+/// 重复结构：规则表（含 r3 的规则内容模板与改期位移）+ 实例上的重复列。
+///
+/// 存在性检查而不是版本号区间：中间版本可能已带部分结构，重复升级或回拨
+/// user_version 都安全，已存日程、规则与实例一律保留。
+Future<void> ensureRecurrenceSchema(
+  PactaDatabase database,
+  Migrator migrator,
+) async {
+  final tableNames = await _sqliteTableNames(database);
+  if (!tableNames.contains('local_schedule_recurrences')) {
+    await migrator.createTable(database.localScheduleRecurrences);
+  } else {
+    final ruleColumns = await database
+        .customSelect('PRAGMA table_info(local_schedule_recurrences)')
+        .get();
+    final existingRules = {
+      for (final row in ruleColumns) row.read<String>('name'),
+    };
+    Future<void> addRuleColumn(
+      String name,
+      GeneratedColumn<Object> column,
+    ) async {
+      if (existingRules.contains(name)) return;
+      await migrator.addColumn(database.localScheduleRecurrences, column);
+    }
+
+    await addRuleColumn(
+      'shift_days',
+      database.localScheduleRecurrences.shiftDays,
+    );
+    await addRuleColumn('title', database.localScheduleRecurrences.title);
+    await addRuleColumn('notes', database.localScheduleRecurrences.notes);
+    await addRuleColumn('task_id', database.localScheduleRecurrences.taskId);
+  }
+  if (!tableNames.contains('local_schedules')) return;
+  final columns = await database
+      .customSelect('PRAGMA table_info(local_schedules)')
+      .get();
+  final existing = {for (final row in columns) row.read<String>('name')};
+  Future<void> addColumn(String name, GeneratedColumn<Object> column) async {
+    if (existing.contains(name)) return;
+    await migrator.addColumn(database.localSchedules, column);
+  }
+
+  await addColumn('recurrence_id', database.localSchedules.recurrenceId);
+  await addColumn(
+    'recurrence_series_id',
+    database.localSchedules.recurrenceSeriesId,
+  );
+  await addColumn('recurrence_date', database.localSchedules.recurrenceDate);
+  await addColumn(
+    'recurrence_time_zone_id',
+    database.localSchedules.recurrenceTimeZoneId,
+  );
+  await addColumn(
+    'recurrence_start_minutes',
+    database.localSchedules.recurrenceStartMinutes,
+  );
+  await addColumn(
+    'is_recurrence_exception',
+    database.localSchedules.isRecurrenceException,
+  );
+  await addColumn(
+    'is_recurrence_cancelled',
+    database.localSchedules.isRecurrenceCancelled,
+  );
+  // 升级到 r3 之前的规则没有自己的内容模板：用该规则最早的一条非例外实例
+  // 回填，避免升级后按范围补齐出空标题实例。
+  await _backfillRuleTemplates(database);
+}
+
+Future<void> _backfillRuleTemplates(PactaDatabase database) async {
+  await database.customStatement('''
+    UPDATE local_schedule_recurrences
+    SET title = coalesce(
+          nullif(title, ''),
+          (
+            SELECT instance.title FROM local_schedules AS instance
+            WHERE instance.user_id = local_schedule_recurrences.user_id
+              AND instance.recurrence_id = local_schedule_recurrences.id
+              AND instance.is_recurrence_exception = 0
+            ORDER BY instance.starts_at
+            LIMIT 1
+          ),
+          (
+            SELECT instance.title FROM local_schedules AS instance
+            WHERE instance.user_id = local_schedule_recurrences.user_id
+              AND instance.recurrence_id = local_schedule_recurrences.id
+            ORDER BY instance.starts_at
+            LIMIT 1
+          ),
+          title
+        ),
+        notes = coalesce(
+          (
+            SELECT instance.notes FROM local_schedules AS instance
+            WHERE instance.user_id = local_schedule_recurrences.user_id
+              AND instance.recurrence_id = local_schedule_recurrences.id
+              AND instance.is_recurrence_exception = 0
+            ORDER BY instance.starts_at
+            LIMIT 1
+          ),
+          notes
+        ),
+        task_id = coalesce(
+          (
+            SELECT instance.task_id FROM local_schedules AS instance
+            WHERE instance.user_id = local_schedule_recurrences.user_id
+              AND instance.recurrence_id = local_schedule_recurrences.id
+              AND instance.is_recurrence_exception = 0
+            ORDER BY instance.starts_at
+            LIMIT 1
+          ),
+          task_id
+        )
+    WHERE title = ''
+    ''');
 }
 
 Future<Set<String>> _sqliteTableNames(PactaDatabase database) async {
