@@ -68,6 +68,25 @@ HRESULT = ctypes.c_long
 S_OK = 0
 
 
+def init_propvariant_string(value):
+    """Inline equivalent of propvarutil.h InitPropVariantFromString.
+
+    propsys!InitPropVariantFromString is not exported on this Windows build
+    (verified with ctypes getattr), so the SDK inline body is reproduced:
+    CoTaskMemAlloc a NUL-terminated UTF-16 copy and publish it as VT_LPWSTR.
+    ole32!PropVariantClear frees exactly that CoTaskMem allocation.
+    """
+    encoded = (value + '\x00').encode('utf-16-le')
+    pointer = _CO_TASK_ALLOC(len(encoded))
+    if not pointer:
+        raise MemoryError('CoTaskMemAlloc failed for the AUMID string')
+    ctypes.memmove(pointer, encoded, len(encoded))
+    variant = PROPVARIANT()
+    variant.vt = VT_LPWSTR
+    variant.pointer = pointer
+    return variant
+
+
 class GUID(ctypes.Structure):
     _fields_ = [
         ('Data1', ctypes.c_ulong),
@@ -103,6 +122,17 @@ class PROPVARIANT(ctypes.Structure):
     ]
 
 
+# OleDLL defaults every entry point to HRESULT, which truncates pointers on
+# x64. Declare the exact prototypes once instead of mutating per-call restype.
+_OLE32 = ctypes.OleDLL('ole32')
+_CO_TASK_ALLOC = ctypes.WINFUNCTYPE(ctypes.c_void_p, ctypes.c_size_t)(
+    ('CoTaskMemAlloc', _OLE32)
+)
+_PROP_VARIANT_CLEAR = ctypes.WINFUNCTYPE(HRESULT, POINTER(PROPVARIANT))(
+    ('PropVariantClear', _OLE32)
+)
+
+
 def com_method(pointer, index, *argument_types):
     table = ctypes.cast(pointer, POINTER(POINTER(c_void_p))).contents
     prototype = ctypes.WINFUNCTYPE(HRESULT, c_void_p, *argument_types)
@@ -123,8 +153,7 @@ def sha256(path):
 
 
 def create_shortcut(path, target, aumid):
-    ole32 = ctypes.OleDLL('ole32')
-    propsys = ctypes.OleDLL('propsys')
+    ole32 = _OLE32
     ole32.CoInitializeEx(None, 0x2)
     shell_link = c_void_p()
     property_store = c_void_p()
@@ -146,7 +175,7 @@ def create_shortcut(path, target, aumid):
         key = PROPERTYKEY()
         key.fmtid = GUID.parse(PKEY_APP_USER_MODEL_ID)
         key.pid = 5
-        check(propsys.InitPropVariantFromString(c_wchar_p(aumid), byref(value)), 'InitPropVariantFromString')
+        value = init_propvariant_string(aumid)
         check(
             com_method(property_store, 6, POINTER(PROPERTYKEY), POINTER(PROPVARIANT))(property_store, byref(key), byref(value)),
             'IPropertyStore.SetValue',
@@ -160,7 +189,7 @@ def create_shortcut(path, target, aumid):
         )
         check(com_method(persist_file, 6, c_wchar_p, wintypes.BOOL)(persist_file, str(path), True), 'IPersistFile.Save')
     finally:
-        ole32.PropVariantClear(byref(value))
+        _PROP_VARIANT_CLEAR(byref(value))
         for pointer in (persist_file, property_store, shell_link):
             if pointer:
                 com_method(pointer, 2)(pointer)
@@ -168,7 +197,7 @@ def create_shortcut(path, target, aumid):
 
 
 def read_shortcut(path):
-    ole32 = ctypes.OleDLL('ole32')
+    ole32 = _OLE32
     ole32.CoInitializeEx(None, 0x2)
     shell_link = c_void_p()
     property_store = c_void_p()
@@ -202,8 +231,58 @@ def read_shortcut(path):
         aumid = ctypes.wstring_at(value.pointer) if value.vt == VT_LPWSTR else None
         return {'aumid': aumid, 'target': target}
     finally:
-        ole32.PropVariantClear(byref(value))
+        _PROP_VARIANT_CLEAR(byref(value))
         for pointer in (persist, property_store, shell_link):
+            if pointer:
+                com_method(pointer, 2)(pointer)
+        ole32.CoUninitialize()
+
+
+def self_check(aumid):
+    """In-memory property round-trip; writes no file and registers nothing.
+
+    This only proves the COMDAT property plumbing (allocation, SetValue,
+    GetValue, PropVariantClear) works on this host. It is not evidence that a
+    Start Menu registration or toast delivery would succeed.
+    """
+    ole32 = _OLE32
+    ole32.CoInitializeEx(None, 0x2)
+    shell_link = c_void_p()
+    store = c_void_p()
+    variant = PROPVARIANT()
+    read = PROPVARIANT()
+    try:
+        clsid = GUID.parse(CLSID_SHELL_LINK)
+        iid = GUID.parse(IID_ISHELL_LINK_W)
+        check(ole32.CoCreateInstance(byref(clsid), None, 1, byref(iid), byref(shell_link)), 'CoCreateInstance(ShellLink)')
+        iid_props = GUID.parse(IID_IPROPERTY_STORE)
+        check(
+            com_method(shell_link, 0, POINTER(GUID), POINTER(c_void_p))(shell_link, byref(iid_props), byref(store)),
+            'QueryInterface(IPropertyStore)',
+        )
+        key = PROPERTYKEY()
+        key.fmtid = GUID.parse(PKEY_APP_USER_MODEL_ID)
+        key.pid = 5
+        variant = init_propvariant_string(aumid)
+        check(
+            com_method(store, 6, POINTER(PROPERTYKEY), POINTER(PROPVARIANT))(store, byref(key), byref(variant)),
+            'IPropertyStore.SetValue',
+        )
+        check(
+            com_method(store, 5, POINTER(PROPERTYKEY), POINTER(PROPVARIANT))(store, byref(key), byref(read)),
+            'IPropertyStore.GetValue',
+        )
+        readback = ctypes.wstring_at(read.pointer) if read.vt == VT_LPWSTR else None
+        return {
+            'ok': readback == aumid,
+            'readbackMatches': readback == aumid,
+            'wroteFiles': False,
+            'note': 'in-memory property round-trip only; not evidence of Start Menu registration or delivery',
+        }
+    finally:
+        _PROP_VARIANT_CLEAR(byref(read))
+        _PROP_VARIANT_CLEAR(byref(variant))
+        for pointer in (store, shell_link):
             if pointer:
                 com_method(pointer, 2)(pointer)
         ole32.CoUninitialize()
@@ -274,8 +353,17 @@ def register(details):
         manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False), encoding='utf-8')
         intent_path.write_text(json.dumps({**intent, 'state': 'created', 'manifestPath': str(manifest_path)}, indent=2, ensure_ascii=False), encoding='utf-8')
         return manifest
-    except Exception:
-        intent['state'] = 'failed'
+    except Exception as error:
+        # Record exactly what this attempt created so a partial failure can be
+        # cleaned (or inspected) without guessing.
+        intent.update({
+            'state': 'failed',
+            'failedAtUtc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'error': type(error).__name__,
+            'shortcutExists': path.exists(),
+            'folderExistedBefore': folder_existed,
+            'probeDirExists': PROBE_DIR.exists(),
+        })
         intent_path.write_text(json.dumps(intent, indent=2, ensure_ascii=False), encoding='utf-8')
         raise
 
@@ -302,12 +390,13 @@ def cleanup(manifest_path):
             raise SystemExit('refusing to delete a shortcut whose content changed after creation')
         verified = {'readback': current, 'identityMatch': same_identity, 'hashMatch': same_hash}
         path.unlink()
+    folder_created = manifest.get('folderCreated')
+    if folder_created is None and 'folderExistedBefore' in manifest:
+        # An intent-only record (partial failure) still knows whether this
+        # attempt created the probe folder.
+        folder_created = manifest.get('folderExistedBefore') is False
     folder_removed = False
-    if (
-        manifest.get('folderCreated') is True
-        and PROBE_DIR.exists()
-        and not any(PROBE_DIR.iterdir())
-    ):
+    if folder_created is True and PROBE_DIR.exists() and not any(PROBE_DIR.iterdir()):
         PROBE_DIR.rmdir()
         folder_removed = True
     return {
@@ -315,7 +404,7 @@ def cleanup(manifest_path):
         'existed': existed,
         'stillExists': path.exists(),
         'verified': verified,
-        'folderCreated': manifest.get('folderCreated'),
+        'folderCreated': folder_created,
         'folderRemoved': folder_removed,
     }
 
@@ -323,6 +412,7 @@ def cleanup(manifest_path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dry-run', action='store_true', help='print the plan; default action')
+    parser.add_argument('--self-check', action='store_true', help='in-memory property round-trip; writes no file')
     parser.add_argument('--register', action='store_true', help='create the single probe shortcut')
     parser.add_argument('--cleanup', action='store_true', help='delete the shortcut recorded in a manifest')
     parser.add_argument('--manifest')
@@ -337,6 +427,9 @@ def main():
         print(json.dumps(cleanup(pathlib.Path(args.manifest)), ensure_ascii=False))
         return 0
     details = plan(args.aumid, args.guid, args.target)
+    if args.self_check:
+        print(json.dumps({'action': 'self-check', 'result': self_check(details['aumid'])}, ensure_ascii=False))
+        return 0
     if not args.register:
         print(json.dumps({'action': 'dry-run', 'plan': details, 'writes': []}, ensure_ascii=False))
         return 0
