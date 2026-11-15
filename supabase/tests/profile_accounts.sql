@@ -266,6 +266,127 @@ $other_visibility$;
 reset role;
 revoke select on table public.profile_accounts from authenticated;
 
+-- Account time zone (ticket 02). The account store owns the single value:
+-- initialization may create an empty-nickname row, but a normal save may only
+-- keep an already-unset name; it can never clear a nickname or create a row.
+reset role;
+delete from public.profile_accounts
+where user_id = current_setting('profile_test.owner_id')::uuid;
+set local role authenticated;
+
+do $time_zone_claim$
+begin
+  perform set_config(
+    'request.jwt.claim.sub',
+    current_setting('profile_test.owner_id'),
+    true
+  );
+end
+$time_zone_claim$;
+
+do $time_zone_requires_row$
+begin
+  begin
+    perform public.save_profile_account(
+      '', null, false, 'Asia/Tokyo', timestamptz '2026-11-15 10:00+00'
+    );
+    raise exception 'blank_name_created_a_profile_row';
+  exception
+    when sqlstate '22023' then null;
+  end;
+  if public.read_profile_account() is not null then
+    raise exception 'rejected_blank_save_still_created_a_row';
+  end if;
+end
+$time_zone_requires_row$;
+
+do $time_zone_initialize$
+declare
+  stored jsonb;
+begin
+  stored := public.initialize_profile_time_zone(
+    'Asia/Tokyo', timestamptz '2026-11-15 10:00+00'
+  );
+  if stored ->> 'displayName' <> '' then
+    raise exception 'time_zone_initialization_fabricated_a_nickname';
+  end if;
+  if stored ->> 'timeZoneId' <> 'Asia/Tokyo' then
+    raise exception 'time_zone_initialization_did_not_store_the_zone';
+  end if;
+
+  -- A second device that also read "no value" must adopt the stored winner.
+  stored := public.initialize_profile_time_zone(
+    'Europe/London', timestamptz '2026-11-15 10:05+00'
+  );
+  if stored ->> 'timeZoneId' <> 'Asia/Tokyo' then
+    raise exception 'initialization_replaced_an_existing_account_zone';
+  end if;
+  if public.read_profile_account() ->> 'timeZoneId' <> 'Asia/Tokyo' then
+    raise exception 'initialization_winner_was_not_readable';
+  end if;
+end
+$time_zone_initialize$;
+
+do $time_zone_save_ordering$
+declare
+  stored jsonb;
+begin
+  -- An unset nickname stays unset while the time zone changes.
+  stored := public.save_profile_account(
+    '', null, false, 'Europe/London', timestamptz '2026-11-15 11:00+00'
+  );
+  if stored ->> 'displayName' <> ''
+    or stored ->> 'timeZoneId' <> 'Europe/London' then
+    raise exception 'time_zone_only_save_did_not_keep_the_unset_name';
+  end if;
+
+  -- An older request arriving late must not replace the newer choice.
+  stored := public.save_profile_account(
+    '', null, false, 'Asia/Tokyo', timestamptz '2026-11-15 09:00+00'
+  );
+  if stored ->> 'timeZoneId' <> 'Europe/London' then
+    raise exception 'late_older_request_overwrote_the_account_zone';
+  end if;
+
+  -- A nickname-only save keeps the stored account zone.
+  stored := public.save_profile_account('恢复昵称', null, false);
+  if stored ->> 'timeZoneId' <> 'Europe/London' then
+    raise exception 'nickname_save_dropped_the_account_zone';
+  end if;
+
+  -- A blank name may never clear an existing nickname.
+  begin
+    perform public.save_profile_account(
+      '', null, false, 'Asia/Tokyo', timestamptz '2026-11-15 12:00+00'
+    );
+    raise exception 'blank_name_cleared_an_existing_nickname';
+  exception
+    when sqlstate '22023' then null;
+  end;
+end
+$time_zone_save_ordering$;
+
+do $time_zone_validation$
+begin
+  begin
+    perform public.initialize_profile_time_zone('', now());
+    raise exception 'empty_time_zone_was_accepted';
+  exception
+    when sqlstate '22023' then null;
+  end;
+  begin
+    perform public.initialize_profile_time_zone('Asia/Tokyo', null);
+    raise exception 'missing_request_time_was_accepted';
+  exception
+    when sqlstate '22023' then null;
+  end;
+end
+$time_zone_validation$;
+
+reset role;
+delete from public.profile_accounts
+where user_id = current_setting('profile_test.owner_id')::uuid;
+
 -- Lifecycle removal is delegated to the Auth identity: the profile row and its
 -- avatar binary must cascade when that identity is deleted. This checks the
 -- wiring only; no probe identity or runtime test identity is deleted here.

@@ -86,7 +86,7 @@ void main() {
     );
 
     final metrics = await focusRepository.getDashboardMetrics(
-      deviceTimeZoneId: 'Asia/Shanghai',
+      timeZoneId: 'Asia/Shanghai',
     );
     expect(metrics.focusProgressSecondsByTask[task.id], 30 * 60);
     expect(metrics.totalAcceptedFocusSeconds, 30 * 60);
@@ -101,12 +101,12 @@ void main() {
     );
 
     final repeatedQuery = await focusRepository.getDashboardMetrics(
-      deviceTimeZoneId: 'Asia/Shanghai',
+      timeZoneId: 'Asia/Shanghai',
     );
     expect(repeatedQuery.totalAcceptedFocusSeconds, 30 * 60);
   });
 
-  test('跨午夜活动按所选时区拆分且更改时区不改总量或链记录', () async {
+  test('跨午夜活动按账号显示时区拆分，切换时区不改总量或链记录', () async {
     final task = await createTask('跨日专注');
     now = DateTime.utc(2026, 9, 22, 15, 50);
     final session = await focusRepository.startSession(
@@ -121,21 +121,20 @@ void main() {
     );
 
     final shanghai = await focusRepository.getDashboardMetrics(
-      deviceTimeZoneId: 'Asia/Shanghai',
+      timeZoneId: 'Asia/Shanghai',
     );
     expect(shanghai.displayTimeZoneId, 'Asia/Shanghai');
-    expect(shanghai.followsDeviceTimeZone, isTrue);
     expect(_dailySeconds(shanghai)['2026-09-22'], 10 * 60);
     expect(_dailySeconds(shanghai)['2026-09-23'], 20 * 60);
 
     final recordsBeforeChange = await focusRepository.getChainRecords();
-    await focusRepository.setDisplayTimeZonePreference('America/Los_Angeles');
+    // 另一个账号级显示时区：投影重新分摊，但总量与链记录不变。
     final losAngeles = await focusRepository.getDashboardMetrics(
-      deviceTimeZoneId: 'Asia/Shanghai',
+      timeZoneId: 'America/Los_Angeles',
     );
     expect(losAngeles.displayTimeZoneId, 'America/Los_Angeles');
-    expect(losAngeles.followsDeviceTimeZone, isFalse);
     expect(_dailySeconds(losAngeles)['2026-09-22'], 30 * 60);
+    expect(_dailySeconds(losAngeles)['2026-09-23'], isNull);
     expect(losAngeles.totalAcceptedFocusSeconds, 30 * 60);
     expect(
       (await focusRepository.getChainRecords())
@@ -160,13 +159,12 @@ void main() {
           .toList(),
     );
 
-    await focusRepository.setDisplayTimeZonePreference(null);
-    final followingDevice = await focusRepository.getDashboardMetrics(
-      deviceTimeZoneId: 'America/Los_Angeles',
+    // 无法识别的值不会被当成设备时区分支，而是固定的统一 fallback。
+    final unknownZone = await focusRepository.getDashboardMetrics(
+      timeZoneId: 'Not/AZone',
     );
-    expect(followingDevice.displayTimeZoneId, 'America/Los_Angeles');
-    expect(followingDevice.followsDeviceTimeZone, isTrue);
-    expect(followingDevice.totalAcceptedFocusSeconds, 30 * 60);
+    expect(unknownZone.displayTimeZoneId, 'Etc/UTC');
+    expect(unknownZone.totalAcceptedFocusSeconds, 30 * 60);
   });
 
   test('重开本地 SQLite 后进度和近期活动重算且不重复', () async {
@@ -213,7 +211,7 @@ void main() {
         failureReason: '验证持久化',
       );
       await persistentFocusRepository.getDashboardMetrics(
-        deviceTimeZoneId: 'Asia/Shanghai',
+        timeZoneId: 'Asia/Shanghai',
       );
 
       await persistentFocusRepository.dispose();
@@ -237,7 +235,7 @@ void main() {
         now: () => persistentNow,
       );
       final afterRestart = await persistentFocusRepository.getDashboardMetrics(
-        deviceTimeZoneId: 'Asia/Shanghai',
+        timeZoneId: 'Asia/Shanghai',
       );
       final restoredTask =
           (await persistentTaskRepository.getGoals()).single.tasks.single;
@@ -246,7 +244,7 @@ void main() {
       expect(restoredTask.focusProgressSeconds, 30 * 60);
 
       final repeated = await persistentFocusRepository.getDashboardMetrics(
-        deviceTimeZoneId: 'Asia/Shanghai',
+        timeZoneId: 'Asia/Shanghai',
       );
       expect(repeated.totalAcceptedFocusSeconds, 30 * 60);
       expect(
@@ -366,7 +364,7 @@ void main() {
     await focusRepository.sync();
 
     final metrics = await focusRepository.getDashboardMetrics(
-      deviceTimeZoneId: 'Asia/Shanghai',
+      timeZoneId: 'Asia/Shanghai',
     );
     expect(metrics.totalAcceptedFocusSeconds, 10 * 60);
     expect(await focusRepository.getNodes(), hasLength(1));
@@ -424,7 +422,7 @@ void main() {
     await focusRepository.sync();
 
     final metrics = await focusRepository.getDashboardMetrics(
-      deviceTimeZoneId: 'Asia/Shanghai',
+      timeZoneId: 'Asia/Shanghai',
     );
     expect(metrics.focusProgressSecondsByTask[task.id], 10 * 60);
     expect(metrics.totalAcceptedFocusSeconds, 10 * 60);

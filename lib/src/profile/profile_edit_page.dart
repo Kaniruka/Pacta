@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import 'account_time_zone.dart';
 import 'avatar_image.dart';
 import 'avatar_crop_page.dart';
 import 'avatar_picker.dart';
@@ -32,6 +33,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   bool _picking = false;
   bool _syncFailed = false;
   bool _nameEdited = false;
+  String? _timeZoneId;
+  String? _loadedTimeZoneId;
   String? _error;
 
   @override
@@ -52,6 +55,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     setState(() {
       if (!_nameEdited) _nameController.text = profile.displayName;
       _storedAvatar = profile.avatar?.bytes;
+      _timeZoneId = profile.displayTimeZoneId;
+      _loadedTimeZoneId = profile.displayTimeZoneId;
     });
   }
 
@@ -131,11 +136,16 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                 mimeType: AvatarImageFormat.png.mimeType,
               ),
         clearAvatar: _clearAvatar,
+        // 只有本页真正改过时才上传时区：仅改昵称/头像时省略，账号存储保留
+        // 自己的值，避免把本机缓存的旧时区重新推成"最新选择"。
+        timeZoneId: _timeZoneId == _loadedTimeZoneId ? null : _timeZoneId,
       );
       if (!mounted) return;
       setState(() {
         _storedAvatar = saved.avatar?.bytes;
         _pickedAvatar = null;
+        _timeZoneId = saved.displayTimeZoneId;
+        _loadedTimeZoneId = saved.displayTimeZoneId;
         _error = saved.syncError;
         _syncFailed = saved.syncError != null;
       });
@@ -173,6 +183,77 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       if (mounted) setState(() => _busy = false);
     }
   }
+
+  /// 账号级时区：各设备共享同一值；这里只放可编辑的常见城市，完整的 IANA
+  /// 校验仍由 FocusTimeZones 承担（导入事件的原始时区不因此收窄）。
+  Widget _timeZoneSection(BuildContext context) {
+    final selected = _timeZoneId;
+    final currentCity = AccountTimeZones.cityFor(selected);
+    final offList = AccountTimeZones.isKnown(selected) && currentCity == null;
+    final summary = currentCity == null
+        ? (offList ? selected! : '未设置')
+        : '${currentCity.label} · ${currentCity.timeZoneId}';
+    return Card(
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.schedule_outlined, size: 20),
+                const SizedBox(width: 8),
+                Text('显示时区', style: Theme.of(context).textTheme.titleMedium),
+                const Spacer(),
+                Flexible(
+                  child: Text(
+                    summary,
+                    textAlign: TextAlign.end,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '时区属于账号资料：各设备显示同一时区，城市按夏令时规则换算。'
+              '国策检查点始终按北京时间 04:00 结算，不随时区移动。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final city in AccountTimeZones.cities)
+                  _timeZoneChip(context, city, selected == city.timeZoneId),
+                if (offList)
+                  _timeZoneChip(
+                    context,
+                    DisplayTimeZoneCity(label: '当前时区', timeZoneId: selected!),
+                    true,
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _timeZoneChip(
+    BuildContext context,
+    DisplayTimeZoneCity city,
+    bool selected,
+  ) => ChoiceChip(
+    label: Text(city.label),
+    tooltip: city.timeZoneId,
+    selected: selected,
+    onSelected: _busy
+        ? null
+        : (_) => setState(() => _timeZoneId = city.timeZoneId),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -242,6 +323,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                   border: OutlineInputBorder(),
                 ),
               ),
+              const SizedBox(height: 8),
+              _timeZoneSection(context),
               if (_error != null) ...[
                 const SizedBox(height: 8),
                 Text(

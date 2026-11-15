@@ -116,14 +116,28 @@ class _FixtureProfileRemote implements ProfileRemote {
     required String displayName,
     required ProfileAvatar? avatar,
     required DateTime updatedAt,
+    String? displayTimeZoneId,
   }) async {
     stored = RemoteProfile(
       displayName: displayName,
       avatar: avatar,
       updatedAt: updatedAt,
+      displayTimeZoneId: displayTimeZoneId ?? stored?.displayTimeZoneId,
     );
     return stored!;
   }
+
+  @override
+  Future<RemoteProfile?> initializeTimeZone({
+    required String userId,
+    required String displayTimeZoneId,
+    required DateTime requestedAt,
+  }) async => stored ??= RemoteProfile(
+    displayName: '',
+    avatar: null,
+    updatedAt: requestedAt,
+    displayTimeZoneId: displayTimeZoneId,
+  );
 }
 
 class _FixtureAvatarPicker implements AvatarPicker {

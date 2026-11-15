@@ -262,3 +262,48 @@ supabase db query --linked -f supabase/tests/profile_accounts.sql
 Client tests cover local caching, retry after a failed account write,
 cross-device adoption, and unchanged profile after a business restore. They do
 not prove deployed RLS.
+
+## Account display time zone — 2026-11-15
+
+Apply `202611150002_account_time_zone.sql` for the account-time-zone ticket.
+The display time zone is account-level: one value per account, shared by every
+device, stored on the same `public.profile_accounts` row and still excluded
+from `cloud_business_snapshots`. There is no device-level override and no
+second business store.
+
+- `read_profile_account()` now also returns `timeZoneId` (null until recorded).
+- `initialize_profile_time_zone(time_zone_id, requested_at)` is the atomic first
+  migration. Two devices may both read "no value"; the database decides one
+  winner with `coalesce(existing, new)` and every caller reads the stored
+  winner back. When the account has no profile row, this RPC inserts it with an
+  empty `display_name` — an unset nickname, not a fabricated name — so the
+  time zone can exist before the person picks a nickname.
+- `save_profile_account(display_name, avatar_base64, clear_avatar,
+  time_zone_id, time_zone_requested_at)` keeps the stored time zone when the
+  zone argument is omitted, so a nickname/avatar edit never re-asserts a cached
+  device value. A zone is applied only when its request time is not older than
+  the stored one, so a late request cannot replace a newer choice. A blank
+  display name is accepted only when the stored name is already unset and the
+  call carries a time zone: it never clears an existing nickname and never
+  creates a profile row.
+
+The three-argument overload is dropped rather than kept next to the new
+signature, because PostgREST resolves RPCs by name and two overloads would make
+the same call ambiguous. RLS, owner-scoped RPCs, the active-user checks and the
+`auth.users` cascade are unchanged, so an explicit purge still removes the row
+and its time zone with the identity.
+
+The rollback-only probe now also covers: initialization creating an
+empty-nickname row, a second device adopting the stored winner, a time-zone-only
+save keeping an unset name, a late older request being ignored, a nickname-only
+save keeping the zone, a blank name failing to clear an existing nickname, and
+invalid zone arguments being rejected:
+
+```powershell
+supabase db query --linked -f supabase/tests/profile_accounts.sql
+```
+
+Local tests cover repository semantics and app-level display; the real-service
+probe `integration_test/profile_time_zone_real_service_test.dart` covers
+cross-client consistency and isolation against the isolated project, and is
+host-run.

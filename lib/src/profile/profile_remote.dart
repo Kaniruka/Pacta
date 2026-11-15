@@ -11,11 +11,15 @@ class RemoteProfile {
     required this.displayName,
     required this.avatar,
     required this.updatedAt,
+    this.displayTimeZoneId,
   });
 
   final String displayName;
   final ProfileAvatar? avatar;
   final DateTime updatedAt;
+
+  /// The account display time zone (IANA), or null when the account has none.
+  final String? displayTimeZoneId;
 }
 
 /// Account profile storage. It is not part of the business snapshot.
@@ -26,11 +30,34 @@ abstract interface class ProfileRemote {
 
   Future<RemoteProfile?> fetch({required String userId});
 
+  /// Saves the display name and avatar.
+  ///
+  /// [displayTimeZoneId] null keeps the stored account time zone, so a client
+  /// that only edits a nickname or avatar never clears it. A non-null value is
+  /// an explicit preference and only wins when it is newer than the stored one,
+  /// which keeps a late request from overwriting a newer choice.
   Future<RemoteProfile> save({
     required String userId,
     required String displayName,
     required ProfileAvatar? avatar,
     required DateTime updatedAt,
+    String? displayTimeZoneId,
+  });
+
+  /// Writes [displayTimeZoneId] only when the account has no value yet.
+  ///
+  /// This is the first-migration step: two devices may both read "no value"
+  /// before writing, so the account store decides a single winner atomically
+  /// instead of the last unconditional save winning. When the account has no
+  /// profile row at all, the account store inserts one with an empty display
+  /// name — an unset nickname, not a fabricated name — so the time zone can be
+  /// stored before the person chooses a nickname. Existing names and avatars
+  /// are untouched. Returns the account value after the attempt, so a device
+  /// that lost the race adopts the winner.
+  Future<RemoteProfile?> initializeTimeZone({
+    required String userId,
+    required String displayTimeZoneId,
+    required DateTime requestedAt,
   });
 }
 
@@ -50,6 +77,14 @@ class UnavailableProfileRemote implements ProfileRemote {
     required String displayName,
     required ProfileAvatar? avatar,
     required DateTime updatedAt,
+    String? displayTimeZoneId,
+  }) async => throw StateError('尚未配置 Supabase，资料只保存在本机。');
+
+  @override
+  Future<RemoteProfile?> initializeTimeZone({
+    required String userId,
+    required String displayTimeZoneId,
+    required DateTime requestedAt,
   }) async => throw StateError('尚未配置 Supabase，资料只保存在本机。');
 }
 
@@ -87,6 +122,7 @@ class SupabaseProfileRemote implements ProfileRemote {
     required String displayName,
     required ProfileAvatar? avatar,
     required DateTime updatedAt,
+    String? displayTimeZoneId,
   }) async {
     _assertCurrentUser(userId);
     final Object? response;
@@ -97,6 +133,8 @@ class SupabaseProfileRemote implements ProfileRemote {
           'p_display_name': displayName,
           'p_avatar_base64': avatar == null ? null : base64Encode(avatar.bytes),
           'p_clear_avatar': avatar == null,
+          'p_time_zone_id': displayTimeZoneId,
+          'p_time_zone_requested_at': updatedAt.toUtc().toIso8601String(),
         },
       );
     } on PostgrestException catch (error) {
@@ -107,6 +145,28 @@ class SupabaseProfileRemote implements ProfileRemote {
       throw StateError('保存失败：云端没有返回资料。');
     }
     return profile;
+  }
+
+  @override
+  Future<RemoteProfile?> initializeTimeZone({
+    required String userId,
+    required String displayTimeZoneId,
+    required DateTime requestedAt,
+  }) async {
+    _assertCurrentUser(userId);
+    final Object? response;
+    try {
+      response = await client.rpc(
+        'initialize_profile_time_zone',
+        params: {
+          'p_time_zone_id': displayTimeZoneId,
+          'p_time_zone_requested_at': requestedAt.toUtc().toIso8601String(),
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw StateError('时区初始化失败：${error.message}');
+    }
+    return remoteProfileFromJson(response);
   }
 }
 
@@ -124,10 +184,14 @@ RemoteProfile? remoteProfileFromJson(Object? response) {
           mimeType: json['avatarMimeType'] as String? ?? 'image/png',
         )
       : null;
+  final timeZoneId = json['timeZoneId'];
   return RemoteProfile(
     displayName: json['displayName'] as String? ?? '',
     avatar: avatar,
     updatedAt: updatedAt.toUtc(),
+    displayTimeZoneId: timeZoneId is String && timeZoneId.isNotEmpty
+        ? timeZoneId
+        : null,
   );
 }
 

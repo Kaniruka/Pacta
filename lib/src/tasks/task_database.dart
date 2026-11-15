@@ -347,6 +347,23 @@ class LocalProfileAccounts extends Table {
   /// commit when no newer local edit happened meanwhile.
   IntColumn get editSequence => integer().withDefault(const Constant(0))();
 
+  /// The account display time zone (IANA identifier), shared by every device.
+  ///
+  /// Null means the account has not recorded one yet: display then uses a fixed
+  /// fallback instead of the device zone. `focus_preferences.display_time_zone_id`
+  /// is the superseded device-level field and is only read to seed this value.
+  TextColumn get timeZoneId => text().nullable()();
+
+  /// Set only by an edit that changed the display time zone on this device and
+  /// has not been accepted by the account store yet.
+  ///
+  /// A nickname or avatar upload must not re-send a cached time zone it did not
+  /// choose: another device may already have a newer account value, and an
+  /// account value always wins over a stale device copy. The flag survives a
+  /// restart so an offline time-zone edit is still delivered exactly once.
+  BoolColumn get pendingTimeZoneUpload =>
+      boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column<Object>> get primaryKey => {userId};
 }
@@ -536,8 +553,15 @@ class PactaDatabase extends _$PactaDatabase {
     return true;
   }
 
+  /// Local schema 32.
+  ///
+  /// 30 added the account display time zone; 31 is reserved for the core
+  /// merger's own migration, so this ticket uses 32 to leave that number free.
+  /// Both account-time-zone columns are added defensively (see the migration
+  /// below), because provisional 30 fixtures can already carry `time_zone_id`
+  /// while a plain 30 database does not.
   @override
-  int get schemaVersion => 29;
+  int get schemaVersion => 32;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -717,6 +741,30 @@ class PactaDatabase extends _$PactaDatabase {
       }
       if (from < 29) {
         await m.createTable(localProfileClearMarks);
+      }
+      if (from < 32) {
+        // Account-level display time zone and the one-shot upload intent.
+        // Existing rows keep the zone null, which the profile repository seeds
+        // once from the superseded device value. The column probe keeps this
+        // migration safe for provisional schema-30 databases (column present)
+        // and for fixtures that predate it (column absent); 31 stays unused for
+        // the core merger.
+        final columns = await customSelect(
+          'PRAGMA table_info(local_profile_accounts)',
+        ).get();
+        final names = columns.map((row) => row.read<String>('name')).toSet();
+        if (!names.contains('time_zone_id')) {
+          await m.addColumn(
+            localProfileAccounts,
+            localProfileAccounts.timeZoneId,
+          );
+        }
+        if (!names.contains('pending_time_zone_upload')) {
+          await m.addColumn(
+            localProfileAccounts,
+            localProfileAccounts.pendingTimeZoneUpload,
+          );
+        }
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);
