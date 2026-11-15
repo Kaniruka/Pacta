@@ -2649,6 +2649,21 @@ class _NationalFocusFailureHistoryPageState
     }
   }
 
+  /// 标记整组失败记录为已回顾。不需要填写说明，也不改写失败结果；
+  /// 重复触发同一组时仓储层是幂等的。
+  Future<void> _markReviewed(NationalFocusFailure failure) async {
+    try {
+      await widget.repository.markFailureReviewed(batchId: failure.batchId);
+      _syncNationalFocusInBackground(widget.repository);
+      if (mounted) setState(_reload);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(_friendlyError(error))));
+      }
+    }
+  }
+
   Future<void> _openFailureTree(NationalFocusFailure failure) async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -2719,6 +2734,7 @@ class _NationalFocusFailureHistoryPageState
                       onOpenTree: () => _openFailureTree(batches[index].first),
                       onEditExplanation: () =>
                           _editExplanation(batches[index].first),
+                      onMarkReviewed: () => _markReviewed(batches[index].first),
                     ),
                   );
                 },
@@ -2762,22 +2778,26 @@ class _FailureBatchCard extends StatelessWidget {
     required this.checkpointLabel,
     required this.onOpenTree,
     required this.onEditExplanation,
+    required this.onMarkReviewed,
   });
 
   final List<NationalFocusFailure> failures;
   final String checkpointLabel;
   final VoidCallback onOpenTree;
   final VoidCallback onEditExplanation;
+  final VoidCallback onMarkReviewed;
 
   @override
   Widget build(BuildContext context) {
     final representative = failures.first;
+    final isReviewed = failures.every((failure) => failure.isReviewed);
     return Card(
       child: PactaDisclosureSection(
         tilePadding: const EdgeInsets.symmetric(horizontal: 16),
         title: Text(
           '$checkpointLabel · ${failures.length} 个节点'
-          '${failures.any((failure) => failure.isPendingReview) ? ' · 待核对' : ''}',
+          '${failures.any((failure) => failure.isPendingReview) ? ' · 待核对' : ''}'
+          '${isReviewed ? ' · 已回顾' : ' · 未回顾'}',
         ),
         subtitle: Text(
           '${representative.cause.label}'
@@ -2815,6 +2835,13 @@ class _FailureBatchCard extends StatelessWidget {
                         : '编辑共同说明',
                   ),
                 ),
+                if (!isReviewed)
+                  TextButton.icon(
+                    key: const ValueKey('national-focus-mark-reviewed'),
+                    onPressed: onMarkReviewed,
+                    icon: const Icon(Icons.check_circle_outline),
+                    label: const Text('标记已回顾'),
+                  ),
               ],
             ),
           ),

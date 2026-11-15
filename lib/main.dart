@@ -1268,6 +1268,57 @@ class _FocusClockReviewPrompt extends StatelessWidget {
   }
 }
 
+/// Ticket 11：看板对未回顾失败记录的提示入口。
+///
+/// 提示只负责把用户带到国策树里的失败记录页（10 号已有的入口），
+/// 标记回顾不会介入专注、预约或结算。
+class _FailureReviewPrompt extends StatelessWidget {
+  const _FailureReviewPrompt({
+    required this.repository,
+    required this.displayTimeZoneId,
+  });
+
+  final NationalFocusRepository repository;
+  final String displayTimeZoneId;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<NationalFocusFailure>>(
+      stream: repository.watchFailures(),
+      builder: (context, snapshot) {
+        final pendingBatches = <String>{
+          for (final failure in snapshot.data ?? const <NationalFocusFailure>[])
+            if (failure.needsReflection) failure.batchId,
+        };
+        if (pendingBatches.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Card(
+            color: Theme.of(context).colorScheme.tertiaryContainer,
+            child: ListTile(
+              key: const ValueKey('board-failure-review-hint'),
+              leading: const Icon(Icons.history_toggle_off),
+              title: Text('${pendingBatches.length} 组国策失败待回顾'),
+              subtitle: const Text('稍后再看也可以；回顾只做标记，不改动当时的失败结果。'),
+              trailing: const Icon(Icons.chevron_right),
+              // 直达 10 号已有的失败记录页，而不是只切换主导航；
+              // 完整回顾仍在那一页里进入冻结树二级页。
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => NationalFocusFailureHistoryPage(
+                    repository: repository,
+                    displayTimeZoneId: displayTimeZoneId,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 class BoardPage extends ConsumerStatefulWidget {
   const BoardPage({super.key, required this.onOpenNationalFocus});
 
@@ -1313,6 +1364,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                   deviceTimeZoneId: deviceTimeZoneId,
                 ),
                 builder: (context, metricsSnapshot) => _BoardContent(
+                  deviceTimeZoneId: deviceTimeZoneId,
                   repository: taskRepository,
                   focusRepository: focusRepository,
                   nationalFocusRepository: nationalFocusRepository,
@@ -1330,6 +1382,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
 
 class _BoardContent extends StatelessWidget {
   const _BoardContent({
+    required this.deviceTimeZoneId,
     required this.repository,
     required this.focusRepository,
     required this.nationalFocusRepository,
@@ -1339,6 +1392,7 @@ class _BoardContent extends StatelessWidget {
     required this.metrics,
   });
 
+  final String deviceTimeZoneId;
   final TaskRepository repository;
   final FocusRepository focusRepository;
   final NationalFocusRepository nationalFocusRepository;
@@ -1370,6 +1424,10 @@ class _BoardContent extends StatelessWidget {
         taskRepository: repository,
       ),
       _FocusClockReviewPrompt(repository: focusRepository),
+      _FailureReviewPrompt(
+        repository: nationalFocusRepository,
+        displayTimeZoneId: deviceTimeZoneId,
+      ),
       if (goals.isEmpty)
         Card(
           child: Padding(
