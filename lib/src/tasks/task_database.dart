@@ -122,6 +122,10 @@ class LocalNationalFocusFailures extends Table {
   TextColumn get reviewDisposition =>
       text().withDefault(const Constant('accepted'))();
 
+  /// 回顾标记（ticket 11）。非空即已回顾；与 reviewDisposition 的
+  /// 裁定语义分开存储，任何一侧变化都不改写另一侧。
+  DateTimeColumn get reviewedAt => dateTime().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
 }
@@ -541,7 +545,7 @@ class PactaDatabase extends _$PactaDatabase {
   }
 
   @override
-  int get schemaVersion => 30;
+  int get schemaVersion => 34;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -740,6 +744,27 @@ class PactaDatabase extends _$PactaDatabase {
           await m.addColumn(
             focusAppointments,
             focusAppointments.preparationSeconds,
+          );
+        }
+      }
+      // 34：失败记录的回顾状态（ticket 11）。旧记录没有回顾概念，补列后
+      // 保持 null（未回顾），由看板提示用户逐组回顾；不改写失败结果、
+      // 结算统计与冻结要求。
+      //
+      // 迁移守卫：只在旧库确实已有失败表且缺这一列时补列。合成/局部旧库
+      // 可能没有失败表（由后续 createTable 或历史版本负责），重复升级或
+      // 回拨 user_version 的库也不会重复加列。
+      if (from >= 14 && from < 34) {
+        final failureColumns = await customSelect(
+          'PRAGMA table_info(local_national_focus_failures)',
+        ).get();
+        final hasReviewedAt = failureColumns.any(
+          (row) => row.read<String>('name') == 'reviewed_at',
+        );
+        if (failureColumns.isNotEmpty && !hasReviewedAt) {
+          await m.addColumn(
+            localNationalFocusFailures,
+            localNationalFocusFailures.reviewedAt,
           );
         }
       }
