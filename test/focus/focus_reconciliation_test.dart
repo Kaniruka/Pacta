@@ -149,7 +149,7 @@ void main() {
         0,
       );
       expect(
-        (await focusRepository.getDashboardMetrics(deviceTimeZoneId: 'Etc/UTC'))
+        (await focusRepository.getDashboardMetrics(timeZoneId: 'Etc/UTC'))
             .totalAcceptedFocusSeconds,
         const Duration(minutes: 30).inSeconds,
       );
@@ -294,7 +294,7 @@ void main() {
         1,
       );
       expect(
-        (await focusRepository.getDashboardMetrics(deviceTimeZoneId: 'Etc/UTC'))
+        (await focusRepository.getDashboardMetrics(timeZoneId: 'Etc/UTC'))
             .totalAcceptedFocusSeconds,
         const Duration(minutes: 30).inSeconds,
       );

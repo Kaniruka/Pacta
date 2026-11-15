@@ -294,13 +294,27 @@ class _InMemoryProfileRemote implements ProfileRemote {
     required String displayName,
     required ProfileAvatar? avatar,
     required DateTime updatedAt,
+    String? displayTimeZoneId,
+    int? timeZoneRevision,
   }) async {
     final saved = RemoteProfile(
       displayName: displayName,
       avatar: avatar,
       updatedAt: updatedAt,
+      displayTimeZoneId: displayTimeZoneId ?? _profile?.displayTimeZoneId,
     );
     _profile = saved;
     return saved;
   }
+
+  @override
+  Future<RemoteProfile?> initializeTimeZone({
+    required String userId,
+    required String displayTimeZoneId,
+  }) async => _profile ??= RemoteProfile(
+    displayName: '',
+    avatar: null,
+    updatedAt: DateTime.now().toUtc(),
+    displayTimeZoneId: displayTimeZoneId,
+  );
 }
