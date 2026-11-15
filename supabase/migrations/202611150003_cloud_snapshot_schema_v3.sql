@@ -11,6 +11,9 @@
 -- * 版本 3 但缺 local_schedules、缺 local_schedule_recurrences、或任一预约行缺
 --   preparation_seconds 的残缺载荷同样拒绝（PT426）。判定都在任何写入之前，
 --   不会留下半份快照。
+-- * 重复规则的星期集合按客户端真实形状校验：它是 TEXT 列里的 JSON 文本
+--   （例如 "[1]"），解析成数组后逐项检查；坏 JSON、非数组、非整数、越界或
+--   重复的星期都让整份载荷被拒绝，而不是放宽类型让带病数据落库。
 -- * 请求台账重放仍是第一步：同一 request_id 且内容相同则返回它原本写入的
 --   版本；不同内容 PT422；历史已被淘汰 PT425。升级前已写入的旧请求只读重放，
 --   不被版本判定改写。
@@ -50,6 +53,55 @@ alter table public.cloud_business_snapshot_history
 comment on constraint cloud_business_snapshots_schema
   on public.cloud_business_snapshots is
   'Accepts snapshot schema versions 1, 2 and 3; version 3 adds the schedule recurrence rules and per-instance recurrence basis on top of complete core 2.';
+
+-- 星期集合的实际线上形状：客户端把它存成 TEXT 列的 JSON 文本（例如 "[1]"），
+-- 整份快照逐列导出后仍是 JSON 字符串，而不是 jsonb 数组。这里按真实协议解析
+-- 这段文本，并对内容做严格校验：非法 JSON、非数组、非整数、越界（非 1..7）
+-- 与重复的星期一律返回 NULL，由调用方把整行判为畸形。空集合返回空数组。
+create or replace function public.cloud_snapshot_weekday_values(p_value jsonb)
+returns integer[]
+language plpgsql
+immutable
+set search_path = pg_catalog
+as $$
+declare
+  raw text;
+  parsed jsonb;
+  entry jsonb;
+  days integer[] := '{}';
+begin
+  if p_value is null or jsonb_typeof(p_value) is distinct from 'string' then
+    return null;
+  end if;
+  raw := p_value #>> '{}';
+  begin
+    parsed := raw::jsonb;
+  exception
+    when others then
+      return null;
+  end;
+  if jsonb_typeof(parsed) is distinct from 'array' then
+    return null;
+  end if;
+  for entry in select value from jsonb_array_elements(parsed) loop
+    if jsonb_typeof(entry) is distinct from 'number' then
+      return null;
+    end if;
+    -- "1.0"/"1e0"/"01"/"-1"/超大数 都不是客户端会写出的形状：先做文本白名单
+    -- 再转整数，既拒绝非整数写法，也避免大数触发溢出错误而不是 PT426。
+    if (entry #>> '{}') not in ('1', '2', '3', '4', '5', '6', '7') then
+      return null;
+    end if;
+    if (entry #>> '{}')::int = any(days) then
+      return null;
+    end if;
+    days := days || (entry #>> '{}')::int;
+  end loop;
+  return days;
+end;
+$$;
+revoke all on function public.cloud_snapshot_weekday_values(jsonb)
+  from public, anon, authenticated;
 
 -- 写入口：结构与归属校验沿用原错误码，版本单独判定。
 -- 版本 1 使用独立错误码，便于旧客户端把它识别为“需要先升级”，而不是普通
@@ -181,6 +233,9 @@ begin
   if exists (
     select 1
     from jsonb_array_elements(p_payload -> 'tables' -> 'local_schedule_recurrences') as rule
+    cross join lateral (
+      select public.cloud_snapshot_weekday_values(rule -> 'weekdays') as days
+    ) as weekday_set
     where (
       jsonb_typeof(rule) = 'object'
       and rule ?& array[
@@ -194,19 +249,15 @@ begin
       and jsonb_typeof(rule -> 'id') = 'string'
       and btrim(rule ->> 'id') <> ''
       and rule ->> 'frequency' in ('daily', 'weekly')
-      and jsonb_typeof(rule -> 'weekdays') = 'array'
+      -- 客户端把星期集合写成 TEXT 里的 JSON 文本；解析与内容校验都在
+      -- cloud_snapshot_weekday_values 里完成，任何畸形形状返回 NULL 并整体拒绝。
+      and jsonb_typeof(rule -> 'weekdays') = 'string'
+      and weekday_set.days is not null
       and (
         (rule ->> 'frequency' = 'weekly'
-          and jsonb_array_length(rule -> 'weekdays') >= 1)
+          and cardinality(weekday_set.days) >= 1)
         or (rule ->> 'frequency' = 'daily'
-          and jsonb_array_length(rule -> 'weekdays') = 0)
-      )
-      and not exists (
-        select 1
-        from jsonb_array_elements(rule -> 'weekdays') as day
-        where jsonb_typeof(day) <> 'number'
-          or (day #>> '{}')::numeric <> trunc((day #>> '{}')::numeric)
-          or (day #>> '{}')::int not between 1 and 7
+          and cardinality(weekday_set.days) = 0)
       )
       and jsonb_typeof(rule -> 'time_zone_id') = 'string'
       and (rule ->> 'time_zone_id') in (select name from pg_timezone_names)

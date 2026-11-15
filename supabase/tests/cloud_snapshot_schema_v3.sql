@@ -48,74 +48,152 @@ $owner_claim$;
 do $accept_complete_version_three$
 declare
   owner_id text := current_setting('schema_v3_test.owner_id');
-  payload jsonb := jsonb_build_object(
-    'schemaVersion', '3',
-    'userId', owner_id,
-    'tables', jsonb_build_object(
-      'local_schedules', jsonb_build_array(jsonb_build_object(
-        'user_id', owner_id,
-        'id', 'schedule-1',
-        'title', '周会',
-        'notes', '',
-        'starts_at', 1763251200,
-        'ends_at', 1763254800,
-        'all_day', 0,
-        'all_day_start_date', null,
-        'all_day_end_date_exclusive', null,
-        'is_completed', 0,
-        'completed_at', null,
-        'task_id', null,
-        'reminder_minutes_before', null,
-        'origin', 'owned',
-        'source_ids', '[]',
-        'source_names', '[]',
-        'source_event_id', null,
-        'occurrence_id', null,
-        'event_identity', null,
-        'recurrence_id', 'rule-1',
-        'recurrence_series_id', 'series-1',
-        'recurrence_date', '2026-11-16',
-        'recurrence_time_zone_id', 'Asia/Shanghai',
-        'recurrence_start_minutes', 540,
-        'is_recurrence_exception', 0,
-        'is_recurrence_cancelled', 0,
-        'created_at', 1763251200,
-        'updated_at', 1763251200
-      )),
-      'local_schedule_recurrences', jsonb_build_array(jsonb_build_object(
-        'user_id', owner_id,
-        'id', 'rule-1',
-        'frequency', 'weekly',
-        'weekdays', '[1]',
-        'first_date', '2026-11-16',
-        'end_date', '2026-12-31',
-        'time_zone_id', 'Asia/Shanghai',
-        'all_day', 0,
-        'start_minutes_of_day', 540,
-        'duration_minutes', 60,
-        'day_span', 1,
-        'shift_days', 0,
-        'title', '周会',
-        'notes', '',
-        'task_id', null,
-        'created_at', 1763251200,
-        'updated_at', 1763251200
-      )),
-      'focus_appointments', jsonb_build_array(jsonb_build_object(
-        'user_id', owner_id,
-        'id', 'appointment-1',
-        'task_id', 'task-1',
-        'preparation_seconds', 600
-      )),
-      'local_national_focus_failures', jsonb_build_array(jsonb_build_object(
-        'user_id', owner_id,
-        'id', 'failure-1',
-        'reviewed_at', 1763251200
-      )),
-      'local_goals', '[]'::jsonb,
-      'local_tasks', '[]'::jsonb
-    )
-  );
+  -- 这份载荷就是客户端实际导出的形状：19 张业务表全部出现，有数据的表带齐
+  -- 该表在 Drift 里的全部列（含可空列显式 null），星期集合是 TEXT 里的 JSON
+  -- 文本。test/sync/cloud_snapshot_sql_fixture_test.dart 会读这段 JSON 与真实
+  -- 客户端导出逐表逐列比对，因此不要在这里手写不存在的字段。
+  payload jsonb := replace(
+    $snapshot_v3_fixture$
+  {
+    "schemaVersion": "3",
+    "userId": "__OWNER_ID__",
+    "tables": {
+      "local_goals": [
+        {
+          "user_id": "__OWNER_ID__",
+          "id": "goal-1",
+          "title": "阅读计划",
+          "description": "",
+          "classification": "regular",
+          "created_at": 1763251200,
+          "updated_at": 1763251200,
+          "deleted_at": null
+        }
+      ],
+      "local_tasks": [
+        {
+          "user_id": "__OWNER_ID__",
+          "id": "task-1",
+          "goal_id": "goal-1",
+          "title": "读完一章",
+          "description": "",
+          "classification": "regular",
+          "estimated_minutes": 1500,
+          "deadline": null,
+          "is_complete": 0,
+          "focus_progress_seconds": 0,
+          "created_at": 1763251200,
+          "updated_at": 1763251200,
+          "deleted_at": null
+        }
+      ],
+      "local_national_focus_cards": [],
+      "local_national_focus_strengthening_levels": [],
+      "local_national_focus_requirement_versions": [],
+      "local_national_focus_maintenance": [],
+      "local_national_focus_failures": [
+        {
+          "user_id": "__OWNER_ID__",
+          "id": "failure-1",
+          "batch_id": "batch-1",
+          "card_id": "card-1",
+          "checkpoint_at": 1763251200,
+          "cause": "missed",
+          "failure_reason": null,
+          "shared_explanation": null,
+          "tree_snapshot": "[]",
+          "review_disposition": "accepted",
+          "reviewed_at": 1763251200
+        }
+      ],
+      "focus_precedent_rules": [],
+      "focus_appointments": [
+        {
+          "user_id": "__OWNER_ID__",
+          "id": "appointment-1",
+          "task_id": "task-1",
+          "mode": "focus",
+          "duration_seconds": 1500,
+          "started_at": 1763251200,
+          "ends_at": 1763252100,
+          "status": "scheduled",
+          "settled_at": null,
+          "session_id": null,
+          "failure_reason": null,
+          "updated_at": 1763251200,
+          "review_disposition": "accepted",
+          "review_disposition_updated_at": null,
+          "configuration_basis_source_id": null,
+          "preparation_seconds": 600
+        }
+      ],
+      "focus_sessions": [],
+      "focus_nodes": [],
+      "focus_chain_records": [],
+      "appointment_chain_records": [],
+      "chain_signals": [],
+      "focus_sync_sources": [],
+      "local_calendar_sources": [],
+      "local_calendar_blocks": [],
+      "local_schedules": [
+        {
+          "user_id": "__OWNER_ID__",
+          "id": "schedule-1",
+          "title": "周会",
+          "notes": "",
+          "starts_at": 1763251200,
+          "ends_at": 1763254800,
+          "all_day": 0,
+          "all_day_start_date": null,
+          "all_day_end_date_exclusive": null,
+          "is_completed": 0,
+          "completed_at": null,
+          "task_id": null,
+          "reminder_minutes_before": null,
+          "origin": "owned",
+          "source_ids": "[]",
+          "source_names": "[]",
+          "source_event_id": null,
+          "occurrence_id": null,
+          "event_identity": null,
+          "recurrence_id": "rule-1",
+          "recurrence_series_id": "series-1",
+          "recurrence_date": "2026-11-16",
+          "recurrence_time_zone_id": "Asia/Shanghai",
+          "recurrence_start_minutes": 540,
+          "is_recurrence_exception": 0,
+          "is_recurrence_cancelled": 0,
+          "created_at": 1763251200,
+          "updated_at": 1763251200
+        }
+      ],
+      "local_schedule_recurrences": [
+        {
+          "user_id": "__OWNER_ID__",
+          "id": "rule-1",
+          "frequency": "weekly",
+          "weekdays": "[1]",
+          "first_date": "2026-11-16",
+          "end_date": "2026-12-31",
+          "time_zone_id": "Asia/Shanghai",
+          "all_day": 0,
+          "start_minutes_of_day": 540,
+          "duration_minutes": 60,
+          "day_span": 1,
+          "shift_days": 0,
+          "title": "周会",
+          "notes": "",
+          "task_id": null,
+          "created_at": 1763251200,
+          "updated_at": 1763251200
+        }
+      ]
+    }
+  }
+$snapshot_v3_fixture$,
+    '__OWNER_ID__',
+    owner_id
+  )::jsonb;
   saved public.cloud_business_snapshots;
 begin
   saved := public.save_cloud_business_snapshot(
@@ -141,6 +219,20 @@ begin
   if saved.payload -> 'tables' -> 'local_national_focus_failures'
       -> 0 ->> 'reviewed_at' <> '1763251200' then
     raise exception 'stored version 3 payload lost its reflection marker';
+  end if;
+
+  -- 这份载荷还必须是客户端能整体还原的：预约和失败记录引用的任务、卡片都在
+  -- 同一份快照里，而不是悬空的外键。
+  if jsonb_array_length(saved.payload -> 'tables' -> 'local_tasks') <> 1 then
+    raise exception 'complete version 3 upload lost the task its appointment references';
+  end if;
+  if saved.payload -> 'tables' -> 'focus_appointments' -> 0 ->> 'task_id'
+      is distinct from 'task-1' then
+    raise exception 'complete version 3 upload lost the appointment task reference';
+  end if;
+  if saved.payload -> 'tables' -> 'local_goals' -> 0 ->> 'id'
+      is distinct from 'goal-1' then
+    raise exception 'complete version 3 upload lost the goal its task references';
   end if;
 
   -- Retrying the same request returns the version it produced.
@@ -432,6 +524,75 @@ begin
   end if;
 end
 $reject_unrestorable_three$;
+-- 星期集合的真实协议形状是 TEXT 里的 JSON 文本。任何客户端不会写出的形状
+-- （原生 jsonb 数组、坏 JSON、非数组、小数、越界、重复、与频率不匹配）都必须
+-- 整体拒绝；逐个破坏同一份已被接受的载荷，确认拒绝后没有半份写入。
+do $reject_weekday_shapes$
+declare
+  owner_id text := current_setting('schema_v3_test.owner_id');
+  base_payload jsonb;
+  candidate jsonb;
+  variant record;
+  variants jsonb := jsonb_build_array(
+    jsonb_build_object('label', 'native_json_array', 'weekdays', '[1]'::jsonb),
+    jsonb_build_object('label', 'malformed_json_text', 'weekdays', to_jsonb('[1'::text)),
+    jsonb_build_object('label', 'non_array_text', 'weekdays', to_jsonb('1'::text)),
+    jsonb_build_object('label', 'fractional_weekday', 'weekdays', to_jsonb('[1.5]'::text)),
+    jsonb_build_object('label', 'weekday_zero', 'weekdays', to_jsonb('[0]'::text)),
+    jsonb_build_object('label', 'weekday_eight', 'weekdays', to_jsonb('[8]'::text)),
+    jsonb_build_object('label', 'duplicate_weekday', 'weekdays', to_jsonb('[1,1]'::text)),
+    jsonb_build_object('label', 'empty_weekly', 'weekdays', to_jsonb('[]'::text)),
+    jsonb_build_object('label', 'null_weekdays', 'weekdays', 'null'::jsonb)
+  );
+begin
+  select payload into base_payload
+  from public.cloud_business_snapshots
+  where user_id = auth.uid();
+  if base_payload -> 'tables' -> 'local_schedule_recurrences' -> 0
+      ->> 'weekdays' is distinct from '[1]' then
+    raise exception 'accepted payload no longer carries the client weekday text';
+  end if;
+  for variant in select * from jsonb_to_recordset(variants) as item(label text, weekdays jsonb)
+  loop
+    candidate := jsonb_set(
+      base_payload,
+      '{tables,local_schedule_recurrences,0,weekdays}',
+      coalesce(variant.weekdays, 'null'::jsonb)
+    );
+    begin
+      perform public.save_cloud_business_snapshot(
+        1, candidate, 'shape-device', 'Shape device',
+        '2026-11-15T02:04:50Z'::timestamptz, 3
+      );
+      raise exception 'weekdays variant % was accepted', variant.label;
+    exception
+      when sqlstate 'PT426' then null;
+    end;
+  end loop;
+
+  -- 频率与星期集合必须一致：daily 不能带星期。
+  candidate := jsonb_set(
+    base_payload,
+    '{tables,local_schedule_recurrences,0,frequency}',
+    to_jsonb('daily'::text)
+  );
+  begin
+    perform public.save_cloud_business_snapshot(
+      1, candidate, 'shape-device', 'Shape device',
+      '2026-11-15T02:04:55Z'::timestamptz, 3
+    );
+    raise exception 'daily rule with weekday values was accepted';
+  exception
+    when sqlstate 'PT426' then null;
+  end;
+
+  if (select revision from public.cloud_business_snapshots
+      where user_id = auth.uid()) <> 1 then
+    raise exception 'rejected weekday shapes changed the stored snapshot';
+  end if;
+end
+$reject_weekday_shapes$;
+
 
 -- Version 3 whose appointment rows omit the preparation duration is incomplete.
 do $reject_partial_three_preparation$

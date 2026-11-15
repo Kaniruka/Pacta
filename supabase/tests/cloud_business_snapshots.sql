@@ -48,9 +48,9 @@ begin
     perform public.save_cloud_business_snapshot(
       2,
       jsonb_build_object(
-        'schemaVersion', 2,
+        'schemaVersion', '3',
         'userId', current_setting('snapshot_test.owner_id'),
-        'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb)
       ),
       'device-a', 'Device A', now(), 0
     );
@@ -93,9 +93,9 @@ begin
     perform public.save_cloud_business_snapshot(
       0,
       jsonb_build_object(
-        'schemaVersion', 2,
+        'schemaVersion', '3',
         'userId', current_setting('snapshot_test.owner_id'),
-        'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb)
       ),
       'device-a', 'Device A', now(), 0,
       current_setting('snapshot_test.legacy_token')
@@ -115,9 +115,9 @@ begin
   perform public.save_cloud_business_snapshot(
     0,
     jsonb_build_object(
-      'schemaVersion', 2,
+      'schemaVersion', '3',
       'userId', current_setting('snapshot_test.owner_id'),
-      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb)
     ),
     'device-a', 'Device A', now(), 0,
     current_legacy_result ->> 'token'
@@ -167,9 +167,9 @@ begin
     perform public.save_cloud_business_snapshot(
       0,
       jsonb_build_object(
-        'schemaVersion', 2,
+        'schemaVersion', '3',
         'userId', current_setting('snapshot_test.owner_id'),
-        'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb)
       ),
       'device-a', 'Device A', now(), 0
     );
@@ -187,9 +187,9 @@ begin
   saved := public.save_cloud_business_snapshot(
     1,
     jsonb_build_object(
-      'schemaVersion', 2,
+      'schemaVersion', '3',
       'userId', current_setting('snapshot_test.owner_id'),
-      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb)
     ),
     'device-b', 'Device B', now(), 0, null, 'Example Corp', 'Example Model'
   );
@@ -202,9 +202,9 @@ begin
   saved := public.save_cloud_business_snapshot(
     2,
     jsonb_build_object(
-      'schemaVersion', 2,
+      'schemaVersion', '3',
       'userId', current_setting('snapshot_test.owner_id'),
-      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb)
     ),
     'old-client-device', 'Old client', now(), 0
   );
@@ -239,7 +239,7 @@ begin
   -- 回滚证据：被拒绝的版本 1 上传没有改写已存载荷。历史是私有表，
   -- 归档断言放在受信任会话里（见 $outdated_upload_left_no_history$）。
   if (select payload ->> 'schemaVersion' from public.cloud_business_snapshots
-      where user_id = current_setting('snapshot_test.owner_id')::uuid) <> '2' then
+      where user_id = current_setting('snapshot_test.owner_id')::uuid) <> '3' then
     raise exception 'rejected_outdated_upload_rewrote_the_payload';
   end if;
 end
