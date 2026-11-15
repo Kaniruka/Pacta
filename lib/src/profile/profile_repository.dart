@@ -20,7 +20,9 @@ abstract interface class ProfileRepository {
   /// [avatar] null keeps the current avatar; [clearAvatar] removes it.
   /// [timeZoneId] null keeps the account time zone and does not re-upload the
   /// cached one: only a zone chosen in this edit is sent, so a stale local copy
-  /// never replaces an account value another device wrote later. The local
+  /// never replaces an account value another device wrote later. A chosen zone
+  /// is sent with the account revision this device last observed; the account
+  /// store then applies it only while that revision is still current. The local
   /// cache is written first, so a failed account write leaves the edit visible
   /// and retryable through [hasPendingSave].
   Future<ProfileAccount> saveProfile({
@@ -166,6 +168,7 @@ class LocalProfileRepository implements ProfileRepository {
           displayName: name,
           avatar: nextAvatar,
           displayTimeZoneId: nextTimeZoneId,
+          timeZoneRevision: current.timeZoneRevision,
           updatedAt: _now().toUtc(),
           pendingSave: true,
           syncError: null,
@@ -224,7 +227,6 @@ class LocalProfileRepository implements ProfileRepository {
           initialized = await remote.initializeTimeZone(
             userId: userId,
             displayTimeZoneId: seed,
-            requestedAt: _now().toUtc(),
           );
         } catch (_) {
           initialized = null;
@@ -276,6 +278,7 @@ class LocalProfileRepository implements ProfileRepository {
         // 云端没有值时保留本机已迁移的账号值，不被空值抹掉。
         displayTimeZoneId:
             remoteProfile.displayTimeZoneId ?? local.displayTimeZoneId,
+        timeZoneRevision: remoteProfile.timeZoneRevision,
         updatedAt: remoteProfile.updatedAt,
         pendingSave: false,
         syncError: null,
@@ -294,6 +297,12 @@ class LocalProfileRepository implements ProfileRepository {
     final timeZoneIdToUpload = local.pendingTimeZoneUpload
         ? local.displayTimeZoneId
         : null;
+    // The revision this edit was based on. The account store accepts the zone
+    // only while that revision is still current; a stale request therefore
+    // returns the canonical winner instead of overwriting it.
+    final timeZoneRevisionToUpload = local.pendingTimeZoneUpload
+        ? local.timeZoneRevision
+        : null;
     try {
       final saved = await remote.save(
         userId: userId,
@@ -301,12 +310,16 @@ class LocalProfileRepository implements ProfileRepository {
         avatar: local.avatar,
         updatedAt: local.updatedAt ?? _now().toUtc(),
         displayTimeZoneId: timeZoneIdToUpload,
+        timeZoneRevision: timeZoneRevisionToUpload,
       );
       await _writeLocalIfSequenceUnchanged(
         expectedSequence: sequence,
         displayName: saved.displayName,
         avatar: saved.avatar,
+        // A conflict returns the newer accepted zone: adopt it rather than
+        // retrying a request the account store already superseded.
         displayTimeZoneId: saved.displayTimeZoneId ?? local.displayTimeZoneId,
+        timeZoneRevision: saved.timeZoneRevision,
         updatedAt: saved.updatedAt,
         pendingSave: false,
         syncError: null,
@@ -337,6 +350,7 @@ class LocalProfileRepository implements ProfileRepository {
         displayName: stored.displayName,
         avatar: stored.avatar,
         displayTimeZoneId: timeZoneId,
+        timeZoneRevision: stored.timeZoneRevision,
         updatedAt: stored.updatedAt,
         pendingSave: false,
         syncError: null,
@@ -355,6 +369,7 @@ class LocalProfileRepository implements ProfileRepository {
                 .write(
                   LocalProfileAccountsCompanion(
                     timeZoneId: drift.Value(timeZoneId),
+                    timeZoneRevision: drift.Value(stored.timeZoneRevision),
                     editSequence: drift.Value(local.editSequence + 1),
                   ),
                 );
@@ -378,6 +393,7 @@ class LocalProfileRepository implements ProfileRepository {
             displayName: local.displayName,
             avatar: local.avatar,
             displayTimeZoneId: timeZoneId,
+            timeZoneRevision: 0,
             updatedAt: _now().toUtc(),
             pendingSave: false,
             syncError: null,
@@ -463,6 +479,7 @@ class LocalProfileRepository implements ProfileRepository {
     required String displayName,
     required ProfileAvatar? avatar,
     required String? displayTimeZoneId,
+    required int timeZoneRevision,
     required DateTime updatedAt,
     required bool pendingSave,
     required String? syncError,
@@ -480,6 +497,7 @@ class LocalProfileRepository implements ProfileRepository {
           displayName: displayName,
           avatar: avatar,
           displayTimeZoneId: displayTimeZoneId,
+          timeZoneRevision: timeZoneRevision,
           updatedAt: updatedAt,
           pendingSave: pendingSave,
           syncError: syncError,
@@ -500,6 +518,7 @@ class LocalProfileRepository implements ProfileRepository {
                   avatarMimeType: drift.Value(avatar?.mimeType),
                   avatarBytes: drift.Value(avatar?.bytes),
                   timeZoneId: drift.Value(displayTimeZoneId),
+                  timeZoneRevision: drift.Value(timeZoneRevision),
                   updatedAt: drift.Value(updatedAt),
                   pendingSave: drift.Value(pendingSave),
                   syncError: drift.Value(syncError),
@@ -521,6 +540,7 @@ class LocalProfileRepository implements ProfileRepository {
     required String displayName,
     required ProfileAvatar? avatar,
     required String? displayTimeZoneId,
+    required int timeZoneRevision,
     required DateTime updatedAt,
     required bool pendingSave,
     required String? syncError,
@@ -536,6 +556,7 @@ class LocalProfileRepository implements ProfileRepository {
           avatarMimeType: drift.Value(avatar?.mimeType),
           avatarBytes: drift.Value(avatar?.bytes),
           timeZoneId: drift.Value(displayTimeZoneId),
+          timeZoneRevision: drift.Value(timeZoneRevision),
           pendingSave: drift.Value(pendingSave),
           syncError: drift.Value(syncError),
           editSequence: drift.Value(editSequence),
@@ -561,6 +582,7 @@ class LocalProfileRepository implements ProfileRepository {
       syncError: row.syncError,
       editSequence: row.editSequence,
       pendingTimeZoneUpload: row.pendingTimeZoneUpload,
+      timeZoneRevision: row.timeZoneRevision,
     );
   }
 

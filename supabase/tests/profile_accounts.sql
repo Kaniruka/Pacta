@@ -269,6 +269,7 @@ revoke select on table public.profile_accounts from authenticated;
 -- Account time zone (ticket 02). The account store owns the single value:
 -- initialization may create an empty-nickname row, but a normal save may only
 -- keep an already-unset name; it can never clear a nickname or create a row.
+-- Ordering uses the server-owned revision, never a client timestamp.
 reset role;
 delete from public.profile_accounts
 where user_id = current_setting('profile_test.owner_id')::uuid;
@@ -284,12 +285,31 @@ begin
 end
 $time_zone_claim$;
 
+-- Only known IANA identifiers are accepted, in both RPCs. A length check alone
+-- would let a caller poison the account with "not/a-zone".
+do $time_zone_iana_validation$
+begin
+  begin
+    perform public.initialize_profile_time_zone('not/a-zone');
+    raise exception 'invalid_iana_was_accepted_by_initialize';
+  exception
+    when sqlstate '22023' then null;
+  end;
+  begin
+    perform public.initialize_profile_time_zone('Mars/Olympus');
+    raise exception 'unknown_iana_was_accepted_by_initialize';
+  exception
+    when sqlstate '22023' then null;
+  end;
+end
+$time_zone_iana_validation$;
+
+-- A blank name with a zone cannot create a profile row; an unset nickname may
+-- only be kept on a row that already exists.
 do $time_zone_requires_row$
 begin
   begin
-    perform public.save_profile_account(
-      '', null, false, 'Asia/Tokyo', timestamptz '2026-11-15 10:00+00'
-    );
+    perform public.save_profile_account('', null, false, 'Asia/Tokyo', 0);
     raise exception 'blank_name_created_a_profile_row';
   exception
     when sqlstate '22023' then null;
@@ -304,22 +324,25 @@ do $time_zone_initialize$
 declare
   stored jsonb;
 begin
-  stored := public.initialize_profile_time_zone(
-    'Asia/Tokyo', timestamptz '2026-11-15 10:00+00'
-  );
+  stored := public.initialize_profile_time_zone('Asia/Tokyo');
   if stored ->> 'displayName' <> '' then
     raise exception 'time_zone_initialization_fabricated_a_nickname';
   end if;
   if stored ->> 'timeZoneId' <> 'Asia/Tokyo' then
     raise exception 'time_zone_initialization_did_not_store_the_zone';
   end if;
+  if (stored ->> 'timeZoneRevision')::bigint <> 1 then
+    raise exception 'time_zone_initialization_did_not_start_at_revision_one';
+  end if;
 
-  -- A second device that also read "no value" must adopt the stored winner.
-  stored := public.initialize_profile_time_zone(
-    'Europe/London', timestamptz '2026-11-15 10:05+00'
-  );
+  -- A second device that also read "no value" must adopt the stored winner and
+  -- must not restart or advance the revision.
+  stored := public.initialize_profile_time_zone('Europe/London');
   if stored ->> 'timeZoneId' <> 'Asia/Tokyo' then
     raise exception 'initialization_replaced_an_existing_account_zone';
+  end if;
+  if (stored ->> 'timeZoneRevision')::bigint <> 1 then
+    raise exception 'initialization_advanced_an_existing_revision';
   end if;
   if public.read_profile_account() ->> 'timeZoneId' <> 'Asia/Tokyo' then
     raise exception 'initialization_winner_was_not_readable';
@@ -331,35 +354,82 @@ do $time_zone_save_ordering$
 declare
   stored jsonb;
 begin
-  -- An unset nickname stays unset while the time zone changes.
+  -- An unset nickname stays unset while the time zone changes, and the current
+  -- revision is accepted.
   stored := public.save_profile_account(
-    '', null, false, 'Europe/London', timestamptz '2026-11-15 11:00+00'
+    '', null, false, 'Europe/London', 1
   );
   if stored ->> 'displayName' <> ''
     or stored ->> 'timeZoneId' <> 'Europe/London' then
     raise exception 'time_zone_only_save_did_not_keep_the_unset_name';
   end if;
-
-  -- An older request arriving late must not replace the newer choice.
-  stored := public.save_profile_account(
-    '', null, false, 'Asia/Tokyo', timestamptz '2026-11-15 09:00+00'
-  );
-  if stored ->> 'timeZoneId' <> 'Europe/London' then
-    raise exception 'late_older_request_overwrote_the_account_zone';
+  if (stored ->> 'timeZoneRevision')::bigint <> 2 then
+    raise exception 'accepted_save_did_not_advance_the_revision';
   end if;
 
-  -- A nickname-only save keeps the stored account zone.
-  stored := public.save_profile_account('恢复昵称', null, false);
+  -- A request based on a superseded revision must not replace the value; it
+  -- returns the winner and reports the conflict.
+  stored := public.save_profile_account(
+    '', null, false, 'Asia/Tokyo', 1
+  );
   if stored ->> 'timeZoneId' <> 'Europe/London' then
+    raise exception 'stale_revision_overwrote_the_account_zone';
+  end if;
+  if (stored ->> 'timeZoneRevision')::bigint <> 2 then
+    raise exception 'stale_revision_changed_the_revision';
+  end if;
+  if (stored ->> 'timeZoneConflict')::boolean is not true then
+    raise exception 'stale_revision_did_not_report_a_conflict';
+  end if;
+
+  -- The next edit uses the adopted revision and is accepted.
+  stored := public.save_profile_account(
+    '', null, false, 'Asia/Tokyo', 2
+  );
+  if stored ->> 'timeZoneId' <> 'Asia/Tokyo'
+    or (stored ->> 'timeZoneRevision')::bigint <> 3
+    or (stored ->> 'timeZoneConflict')::boolean is not false then
+    raise exception 'current_revision_edit_did_not_win';
+  end if;
+
+  -- A nickname-only save (including the legacy three-argument form) keeps the
+  -- stored account zone and its revision.
+  stored := public.save_profile_account('恢复昵称', null, false);
+  if stored ->> 'timeZoneId' <> 'Asia/Tokyo'
+    or (stored ->> 'timeZoneRevision')::bigint <> 3 then
     raise exception 'nickname_save_dropped_the_account_zone';
   end if;
 
   -- A blank name may never clear an existing nickname.
   begin
     perform public.save_profile_account(
-      '', null, false, 'Asia/Tokyo', timestamptz '2026-11-15 12:00+00'
+      '', null, false, 'Europe/London', 3
     );
     raise exception 'blank_name_cleared_an_existing_nickname';
+  exception
+    when sqlstate '22023' then null;
+  end;
+
+  -- The zone cannot be changed without naming a revision, so no caller can
+  -- reorder edits by a wall clock.
+  begin
+    perform public.save_profile_account(
+      '恢复昵称', null, false, 'Europe/London', null
+    );
+    raise exception 'missing_revision_was_accepted';
+  exception
+    when sqlstate '22023' then null;
+  end;
+  if public.read_profile_account() ->> 'timeZoneId' <> 'Asia/Tokyo' then
+    raise exception 'rejected_revisionless_save_changed_the_zone';
+  end if;
+
+  -- An invalid IANA identifier is rejected by save as well.
+  begin
+    perform public.save_profile_account(
+      '恢复昵称', null, false, 'not/a-zone', 3
+    );
+    raise exception 'invalid_iana_was_accepted_by_save';
   exception
     when sqlstate '22023' then null;
   end;
@@ -369,14 +439,14 @@ $time_zone_save_ordering$;
 do $time_zone_validation$
 begin
   begin
-    perform public.initialize_profile_time_zone('', now());
+    perform public.initialize_profile_time_zone('');
     raise exception 'empty_time_zone_was_accepted';
   exception
     when sqlstate '22023' then null;
   end;
   begin
-    perform public.initialize_profile_time_zone('Asia/Tokyo', null);
-    raise exception 'missing_request_time_was_accepted';
+    perform public.initialize_profile_time_zone(null);
+    raise exception 'null_time_zone_was_accepted';
   exception
     when sqlstate '22023' then null;
   end;

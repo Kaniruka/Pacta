@@ -35,6 +35,37 @@ void main() {
     expect(remoteProfileFromJson(const <String, dynamic>{}), isNull);
   });
 
+  test('云端负载带回账号时区修订号与冲突标记', () {
+    final profile = remoteProfileFromJson({
+      'displayName': '小林',
+      'updatedAt': '2026-11-13T09:00:00+00:00',
+      'timeZoneId': 'Asia/Tokyo',
+      'timeZoneRevision': 4,
+      'timeZoneConflict': true,
+    });
+    expect(profile?.displayTimeZoneId, 'Asia/Tokyo');
+    expect(profile?.timeZoneRevision, 4);
+    expect(profile?.timeZoneConflict, isTrue);
+
+    // PostgreSQL 的 bigint 也可能以文本形式到达；缺失或非法值按 0 处理，下一次
+    // 明确修改会先冲突并采用账号值，而不是静默接受。
+    final textual = remoteProfileFromJson({
+      'displayName': '小林',
+      'updatedAt': '2026-11-13T09:00:00+00:00',
+      'timeZoneId': 'Asia/Tokyo',
+      'timeZoneRevision': '7',
+    });
+    expect(textual?.timeZoneRevision, 7);
+    expect(textual?.timeZoneConflict, isFalse);
+    expect(
+      remoteProfileFromJson({
+        'displayName': '小林',
+        'updatedAt': '2026-11-13T09:00:00+00:00',
+      })?.timeZoneRevision,
+      0,
+    );
+  });
+
   test('头像为空时只保留昵称', () {
     final profile = remoteProfileFromJson({
       'displayName': '小林',

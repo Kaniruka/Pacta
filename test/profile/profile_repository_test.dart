@@ -30,12 +30,18 @@ class _FakeProfileRemote implements ProfileRemote {
   /// nickname/avatar save that keeps the stored time zone.
   final List<String?> timeZoneWrites = [];
 
+  /// The revision each ordinary save named as the account value it was based
+  /// on, aligned with [timeZoneWrites].
+  final List<int?> timeZoneRevisions = [];
+
   /// Time zone values attempted through the atomic initialize-if-null step.
   final List<String> initializeWrites = [];
 
-  /// When the stored time zone was last accepted, mirroring the account store's
-  /// per-field ordering guard.
-  DateTime? storedTimeZoneRequestedAt;
+  /// Holds every initialization until two of them are genuinely in flight, so a
+  /// first-migration race is proven by simultaneity instead of by calling one
+  /// client after the other.
+  Completer<void>? initializeBarrier;
+  int _initializeInFlight = 0;
 
   @override
   bool get isAvailable => available;
@@ -56,29 +62,40 @@ class _FakeProfileRemote implements ProfileRemote {
     required ProfileAvatar? avatar,
     required DateTime updatedAt,
     String? displayTimeZoneId,
+    int? timeZoneRevision,
   }) async {
     saveCalls++;
     timeZoneWrites.add(displayTimeZoneId);
+    timeZoneRevisions.add(timeZoneRevision);
     // 单次闸门：只让这一条请求停在途中，其它入口的保存照常完成。
     final gate = saveGate;
     saveGate = null;
     if (gate != null) await gate.future;
     if (saveError != null) throw saveError!;
-    // Null keeps the stored value; a delayed older preference never replaces a
-    // newer accepted one, like the account-store RPC.
-    final acceptedZone = storedTimeZoneRequestedAt;
+    final previous = stored;
+    if (displayTimeZoneId != null && timeZoneRevision == null) {
+      // 与账号存储一致：明确改时区必须带上是基于哪个修订号，不能靠墙钟排序。
+      throw StateError('时区修订号是必填项。');
+    }
+    // A zone applies only while the named revision is still current. A stale
+    // request returns the accepted winner instead of overwriting it, and a
+    // nickname/avatar-only save never touches the stored zone.
     final appliesTimeZone =
         displayTimeZoneId != null &&
-        (acceptedZone == null || !updatedAt.isBefore(acceptedZone));
+        (previous?.displayTimeZoneId == null ||
+            previous?.timeZoneRevision == timeZoneRevision);
     stored = RemoteProfile(
       displayName: displayName,
       avatar: avatar,
       updatedAt: updatedAt,
       displayTimeZoneId: appliesTimeZone
           ? displayTimeZoneId
-          : stored?.displayTimeZoneId,
+          : previous?.displayTimeZoneId,
+      timeZoneRevision: appliesTimeZone
+          ? (previous?.timeZoneRevision ?? 0) + 1
+          : (previous?.timeZoneRevision ?? 0),
+      timeZoneConflict: displayTimeZoneId != null && !appliesTimeZone,
     );
-    if (appliesTimeZone) storedTimeZoneRequestedAt = updatedAt;
     return stored!;
   }
 
@@ -86,35 +103,40 @@ class _FakeProfileRemote implements ProfileRemote {
   Future<RemoteProfile?> initializeTimeZone({
     required String userId,
     required String displayTimeZoneId,
-    required DateTime requestedAt,
   }) async {
     initializeCalls++;
     initializeWrites.add(displayTimeZoneId);
+    final barrier = initializeBarrier;
+    if (barrier != null) {
+      _initializeInFlight++;
+      if (_initializeInFlight >= 2) barrier.complete();
+      await barrier.future;
+    }
     final gate = initializeGate;
     if (gate != null) return gate.future;
     if (initializeError != null) throw initializeError!;
     final existing = stored;
     if (existing == null) {
-      stored = RemoteProfile(
+      return stored = RemoteProfile(
         displayName: '',
         avatar: null,
-        updatedAt: requestedAt,
+        updatedAt: DateTime.now().toUtc(),
         displayTimeZoneId: displayTimeZoneId,
+        timeZoneRevision: 1,
       );
-      storedTimeZoneRequestedAt = requestedAt;
-      return stored;
     }
-    // Atomic initialize-if-null: an existing account value is never replaced.
+    // Atomic initialize-if-null: an existing account value is never replaced,
+    // and an existing nickname is never rewritten.
     if (existing.displayTimeZoneId == null) {
-      stored = RemoteProfile(
+      return stored = RemoteProfile(
         displayName: existing.displayName,
         avatar: existing.avatar,
-        updatedAt: requestedAt,
+        updatedAt: DateTime.now().toUtc(),
         displayTimeZoneId: displayTimeZoneId,
+        timeZoneRevision: existing.timeZoneRevision + 1,
       );
-      storedTimeZoneRequestedAt = requestedAt;
     }
-    return stored;
+    return existing;
   }
 }
 
@@ -539,30 +561,136 @@ void main() {
   });
 
   test('两台设备并发首次迁移只有一个账号值赢家', () async {
-    final deviceA = buildRepository();
-    final deviceB = buildRepository();
-    // 两台设备都先读到"账号还没有时区"。
-    final staleAnswer = Completer<RemoteProfile?>();
-    remote.fetchGate = staleAnswer;
+    // 两台设备各有独立缓存，共用一个账号存储。
+    final deviceADatabase = PactaDatabase(NativeDatabase.memory());
+    addTearDown(deviceADatabase.close);
+    final deviceBDatabase = PactaDatabase(NativeDatabase.memory());
+    addTearDown(deviceBDatabase.close);
+    final deviceA = LocalProfileRepository(
+      database: deviceADatabase,
+      userId: 'user-a',
+      remote: remote,
+      now: () => clock,
+    );
+    final deviceB = LocalProfileRepository(
+      database: deviceBDatabase,
+      userId: 'user-a',
+      remote: remote,
+      now: () => clock,
+    );
+
+    // 两次原子初始化必须同时在途，而不是先后各跑一次。
+    remote.initializeBarrier = Completer<void>();
     final migratingA = deviceA.ensureDisplayTimeZone(
       deviceTimeZoneId: 'Asia/Shanghai',
     );
     final migratingB = deviceB.ensureDisplayTimeZone(
       deviceTimeZoneId: 'America/Los_Angeles',
     );
-    await Future<void>.delayed(Duration.zero);
-    staleAnswer.complete(
-      RemoteProfile(displayName: '', avatar: null, updatedAt: clock),
-    );
-    remote.fetchGate = null;
-    await migratingA;
-    await migratingB;
+    await remote.initializeBarrier!.future;
+    final results = await Future.wait([migratingA, migratingB]);
 
     // 账号存储原子决定唯一值，另一台设备采用它，而不是各自本地胜出。
-    final accountValue = remote.stored?.displayTimeZoneId;
-    expect(accountValue, isNotNull);
-    expect((await deviceA.getProfile()).displayTimeZoneId, accountValue);
-    expect((await deviceB.getProfile()).displayTimeZoneId, accountValue);
+    final winner = remote.stored?.displayTimeZoneId;
+    expect(winner, isNotNull);
+    expect(
+      remote.initializeWrites,
+      containsAll(<String>['Asia/Shanghai', 'America/Los_Angeles']),
+      reason: '两次初始化确实都发出并在途中',
+    );
+    expect(remote.stored?.displayName, isEmpty, reason: '初始化不伪造昵称');
+    expect(remote.stored?.timeZoneRevision, 1, reason: '首次接受只前进一个修订号');
+    expect(results[0].displayTimeZoneId, winner);
+    expect(results[1].displayTimeZoneId, winner);
+    expect((await deviceA.getProfile()).timeZoneRevision, 1);
+    expect((await deviceB.getProfile()).timeZoneRevision, 1);
+
+    // 未设置昵称的账号仍可只改时区保存，不需要先设置昵称。
+    final saved = await deviceA.saveProfile(
+      displayName: '',
+      timeZoneId: 'Asia/Singapore',
+    );
+    expect(saved.syncError, isNull);
+    expect(saved.displayName, isEmpty);
+    expect(saved.displayTimeZoneId, 'Asia/Singapore');
+    expect(remote.stored?.displayName, isEmpty, reason: '时区保存不得伪造昵称');
+    expect(remote.stored?.timeZoneRevision, 2);
+  });
+
+  test('基于旧修订号的明确修改不覆盖已接受的账号时区', () async {
+    final fresh = buildRepository();
+    await fresh.saveProfile(displayName: '小林', timeZoneId: 'Asia/Tokyo');
+    // 另一台设备的缓存还停在修订号 0（从未同步过）。
+    final staleDatabase = PactaDatabase(NativeDatabase.memory());
+    addTearDown(staleDatabase.close);
+    final stale = LocalProfileRepository(
+      database: staleDatabase,
+      userId: 'user-a',
+      remote: remote,
+      now: () => clock,
+    );
+
+    final conflicted = await stale.saveProfile(
+      displayName: '小林',
+      timeZoneId: 'Europe/London',
+    );
+    expect(remote.timeZoneRevisions.last, 0, reason: '请求命名它所基于的修订号');
+    expect(
+      remote.stored?.displayTimeZoneId,
+      'Asia/Tokyo',
+      reason: '旧修订号的请求不得覆盖已接受的值',
+    );
+    expect(conflicted.displayTimeZoneId, 'Asia/Tokyo', reason: '冲突时采用账号值');
+    expect(conflicted.timeZoneRevision, 1);
+    expect(conflicted.syncError, isNull, reason: '冲突由账号值收敛，不是保存失败');
+
+    // 采用当前修订号后的明确修改才是当前选择，并获胜。
+    final applied = await stale.saveProfile(
+      displayName: '小林',
+      timeZoneId: 'Europe/London',
+    );
+    expect(applied.displayTimeZoneId, 'Europe/London');
+    expect(remote.stored?.displayTimeZoneId, 'Europe/London');
+    expect(remote.stored?.timeZoneRevision, 2);
+  });
+
+  test('未来时钟设备的时区写入不会阻塞另一设备按当前修订号的明确修改', () async {
+    final futureClock = DateTime.utc(2026, 11, 16, 9);
+    final skewedDatabase = PactaDatabase(NativeDatabase.memory());
+    addTearDown(skewedDatabase.close);
+    final correctDatabase = PactaDatabase(NativeDatabase.memory());
+    addTearDown(correctDatabase.close);
+    final skewed = LocalProfileRepository(
+      database: skewedDatabase,
+      userId: 'user-a',
+      remote: remote,
+      now: () => futureClock,
+    );
+    final correct = LocalProfileRepository(
+      database: correctDatabase,
+      userId: 'user-a',
+      remote: remote,
+      now: () => clock,
+    );
+
+    // 时钟快一天的设备先写入。旧实现会让这个未来时间戳长期挡住后来者。
+    final skewedSave = await skewed.saveProfile(
+      displayName: '小林',
+      timeZoneId: 'Asia/Tokyo',
+    );
+    expect(skewedSave.displayTimeZoneId, 'Asia/Tokyo');
+
+    // 正确时钟的设备打开资料页时同步到账号当前值与修订号，再做出明确修改。
+    final adopted = await correct.syncProfile();
+    expect(adopted.displayTimeZoneId, 'Asia/Tokyo');
+    expect(adopted.timeZoneRevision, 1);
+    final corrected = await correct.saveProfile(
+      displayName: '小林',
+      timeZoneId: 'Europe/London',
+    );
+    expect(corrected.displayTimeZoneId, 'Europe/London');
+    expect(remote.stored?.displayTimeZoneId, 'Europe/London');
+    expect(remote.stored?.timeZoneRevision, 2);
   });
 
   test('账号存储读不到时保持缓存，显示用统一 fallback 而不是设备时区', () async {
@@ -814,27 +942,30 @@ void main() {
       avatar: null,
       updatedAt: clock,
       displayTimeZoneId: 'Asia/Tokyo',
+      timeZoneRevision: 3,
     );
-    remote.storedTimeZoneRequestedAt = clock;
     final deviceA = buildRepository();
     final adopted = await deviceA.syncProfile();
     expect(adopted.displayTimeZoneId, 'Asia/Tokyo');
+    expect(adopted.timeZoneRevision, 3);
 
-    // 另一台设备随后选了伦敦，账号存储里的值更新到更晚的时间。
+    // 另一台设备随后选了伦敦；账号存储把自己的修订号推进到 4。
     clock = clock.add(const Duration(minutes: 5));
     remote.stored = RemoteProfile(
       displayName: '小林',
       avatar: null,
       updatedAt: clock,
       displayTimeZoneId: 'Europe/London',
+      timeZoneRevision: 4,
     );
-    remote.storedTimeZoneRequestedAt = clock;
 
     clock = clock.add(const Duration(minutes: 1));
     final renamed = await deviceA.saveProfile(displayName: '新名');
     expect(remote.timeZoneWrites.last, isNull, reason: '未改动时区时不上传时区');
     expect(remote.stored?.displayTimeZoneId, 'Europe/London');
+    expect(remote.stored?.timeZoneRevision, 4);
     expect(renamed.displayTimeZoneId, 'Europe/London');
+    expect(renamed.timeZoneRevision, 4);
   });
 
   test('上传失败的时区在重开仓储后仍会补传一次', () async {

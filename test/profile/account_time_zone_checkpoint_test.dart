@@ -108,6 +108,7 @@ class _MemoryProfileRemote implements ProfileRemote {
     required ProfileAvatar? avatar,
     required DateTime updatedAt,
     String? displayTimeZoneId,
+    int? timeZoneRevision,
   }) async {
     stored = RemoteProfile(
       displayName: displayName,
@@ -122,14 +123,13 @@ class _MemoryProfileRemote implements ProfileRemote {
   Future<RemoteProfile?> initializeTimeZone({
     required String userId,
     required String displayTimeZoneId,
-    required DateTime requestedAt,
   }) async {
     final previous = stored;
     if (previous == null) {
       return stored = RemoteProfile(
         displayName: '',
         avatar: null,
-        updatedAt: requestedAt,
+        updatedAt: DateTime.now().toUtc(),
         displayTimeZoneId: displayTimeZoneId,
       );
     }
@@ -137,7 +137,7 @@ class _MemoryProfileRemote implements ProfileRemote {
     return stored = RemoteProfile(
       displayName: previous.displayName,
       avatar: previous.avatar,
-      updatedAt: requestedAt,
+      updatedAt: DateTime.now().toUtc(),
       displayTimeZoneId: displayTimeZoneId,
     );
   }

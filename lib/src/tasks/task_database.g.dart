@@ -14260,6 +14260,18 @@ class $LocalProfileAccountsTable extends LocalProfileAccounts
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _timeZoneRevisionMeta = const VerificationMeta(
+    'timeZoneRevision',
+  );
+  @override
+  late final GeneratedColumn<int> timeZoneRevision = GeneratedColumn<int>(
+    'time_zone_revision',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   static const VerificationMeta _pendingTimeZoneUploadMeta =
       const VerificationMeta('pendingTimeZoneUpload');
   @override
@@ -14286,6 +14298,7 @@ class $LocalProfileAccountsTable extends LocalProfileAccounts
     updatedAt,
     editSequence,
     timeZoneId,
+    timeZoneRevision,
     pendingTimeZoneUpload,
   ];
   @override
@@ -14376,6 +14389,15 @@ class $LocalProfileAccountsTable extends LocalProfileAccounts
         ),
       );
     }
+    if (data.containsKey('time_zone_revision')) {
+      context.handle(
+        _timeZoneRevisionMeta,
+        timeZoneRevision.isAcceptableOrUnknown(
+          data['time_zone_revision']!,
+          _timeZoneRevisionMeta,
+        ),
+      );
+    }
     if (data.containsKey('pending_time_zone_upload')) {
       context.handle(
         _pendingTimeZoneUploadMeta,
@@ -14430,6 +14452,10 @@ class $LocalProfileAccountsTable extends LocalProfileAccounts
         DriftSqlType.string,
         data['${effectivePrefix}time_zone_id'],
       ),
+      timeZoneRevision: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}time_zone_revision'],
+      )!,
       pendingTimeZoneUpload: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}pending_time_zone_upload'],
@@ -14464,6 +14490,13 @@ class LocalProfileAccount extends DataClass
   /// is the superseded device-level field and is only read to seed this value.
   final String? timeZoneId;
 
+  /// Server-owned revision of [timeZoneId] that this device last observed.
+  ///
+  /// Cached so an explicit edit can name the exact account value it is based
+  /// on. It is not a local counter: only the account store advances it, which
+  /// is what keeps two devices from ordering their edits by wall clocks.
+  final int timeZoneRevision;
+
   /// Set only by an edit that changed the display time zone on this device and
   /// has not been accepted by the account store yet.
   ///
@@ -14482,6 +14515,7 @@ class LocalProfileAccount extends DataClass
     required this.updatedAt,
     required this.editSequence,
     this.timeZoneId,
+    required this.timeZoneRevision,
     required this.pendingTimeZoneUpload,
   });
   @override
@@ -14504,6 +14538,7 @@ class LocalProfileAccount extends DataClass
     if (!nullToAbsent || timeZoneId != null) {
       map['time_zone_id'] = Variable<String>(timeZoneId);
     }
+    map['time_zone_revision'] = Variable<int>(timeZoneRevision);
     map['pending_time_zone_upload'] = Variable<bool>(pendingTimeZoneUpload);
     return map;
   }
@@ -14527,6 +14562,7 @@ class LocalProfileAccount extends DataClass
       timeZoneId: timeZoneId == null && nullToAbsent
           ? const Value.absent()
           : Value(timeZoneId),
+      timeZoneRevision: Value(timeZoneRevision),
       pendingTimeZoneUpload: Value(pendingTimeZoneUpload),
     );
   }
@@ -14546,6 +14582,7 @@ class LocalProfileAccount extends DataClass
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       editSequence: serializer.fromJson<int>(json['editSequence']),
       timeZoneId: serializer.fromJson<String?>(json['timeZoneId']),
+      timeZoneRevision: serializer.fromJson<int>(json['timeZoneRevision']),
       pendingTimeZoneUpload: serializer.fromJson<bool>(
         json['pendingTimeZoneUpload'],
       ),
@@ -14564,6 +14601,7 @@ class LocalProfileAccount extends DataClass
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'editSequence': serializer.toJson<int>(editSequence),
       'timeZoneId': serializer.toJson<String?>(timeZoneId),
+      'timeZoneRevision': serializer.toJson<int>(timeZoneRevision),
       'pendingTimeZoneUpload': serializer.toJson<bool>(pendingTimeZoneUpload),
     };
   }
@@ -14578,6 +14616,7 @@ class LocalProfileAccount extends DataClass
     DateTime? updatedAt,
     int? editSequence,
     Value<String?> timeZoneId = const Value.absent(),
+    int? timeZoneRevision,
     bool? pendingTimeZoneUpload,
   }) => LocalProfileAccount(
     userId: userId ?? this.userId,
@@ -14591,6 +14630,7 @@ class LocalProfileAccount extends DataClass
     updatedAt: updatedAt ?? this.updatedAt,
     editSequence: editSequence ?? this.editSequence,
     timeZoneId: timeZoneId.present ? timeZoneId.value : this.timeZoneId,
+    timeZoneRevision: timeZoneRevision ?? this.timeZoneRevision,
     pendingTimeZoneUpload: pendingTimeZoneUpload ?? this.pendingTimeZoneUpload,
   );
   LocalProfileAccount copyWithCompanion(LocalProfileAccountsCompanion data) {
@@ -14616,6 +14656,9 @@ class LocalProfileAccount extends DataClass
       timeZoneId: data.timeZoneId.present
           ? data.timeZoneId.value
           : this.timeZoneId,
+      timeZoneRevision: data.timeZoneRevision.present
+          ? data.timeZoneRevision.value
+          : this.timeZoneRevision,
       pendingTimeZoneUpload: data.pendingTimeZoneUpload.present
           ? data.pendingTimeZoneUpload.value
           : this.pendingTimeZoneUpload,
@@ -14634,6 +14677,7 @@ class LocalProfileAccount extends DataClass
           ..write('updatedAt: $updatedAt, ')
           ..write('editSequence: $editSequence, ')
           ..write('timeZoneId: $timeZoneId, ')
+          ..write('timeZoneRevision: $timeZoneRevision, ')
           ..write('pendingTimeZoneUpload: $pendingTimeZoneUpload')
           ..write(')'))
         .toString();
@@ -14650,6 +14694,7 @@ class LocalProfileAccount extends DataClass
     updatedAt,
     editSequence,
     timeZoneId,
+    timeZoneRevision,
     pendingTimeZoneUpload,
   );
   @override
@@ -14665,6 +14710,7 @@ class LocalProfileAccount extends DataClass
           other.updatedAt == this.updatedAt &&
           other.editSequence == this.editSequence &&
           other.timeZoneId == this.timeZoneId &&
+          other.timeZoneRevision == this.timeZoneRevision &&
           other.pendingTimeZoneUpload == this.pendingTimeZoneUpload);
 }
 
@@ -14679,6 +14725,7 @@ class LocalProfileAccountsCompanion
   final Value<DateTime> updatedAt;
   final Value<int> editSequence;
   final Value<String?> timeZoneId;
+  final Value<int> timeZoneRevision;
   final Value<bool> pendingTimeZoneUpload;
   final Value<int> rowid;
   const LocalProfileAccountsCompanion({
@@ -14691,6 +14738,7 @@ class LocalProfileAccountsCompanion
     this.updatedAt = const Value.absent(),
     this.editSequence = const Value.absent(),
     this.timeZoneId = const Value.absent(),
+    this.timeZoneRevision = const Value.absent(),
     this.pendingTimeZoneUpload = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -14704,6 +14752,7 @@ class LocalProfileAccountsCompanion
     required DateTime updatedAt,
     this.editSequence = const Value.absent(),
     this.timeZoneId = const Value.absent(),
+    this.timeZoneRevision = const Value.absent(),
     this.pendingTimeZoneUpload = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
@@ -14718,6 +14767,7 @@ class LocalProfileAccountsCompanion
     Expression<DateTime>? updatedAt,
     Expression<int>? editSequence,
     Expression<String>? timeZoneId,
+    Expression<int>? timeZoneRevision,
     Expression<bool>? pendingTimeZoneUpload,
     Expression<int>? rowid,
   }) {
@@ -14731,6 +14781,7 @@ class LocalProfileAccountsCompanion
       if (updatedAt != null) 'updated_at': updatedAt,
       if (editSequence != null) 'edit_sequence': editSequence,
       if (timeZoneId != null) 'time_zone_id': timeZoneId,
+      if (timeZoneRevision != null) 'time_zone_revision': timeZoneRevision,
       if (pendingTimeZoneUpload != null)
         'pending_time_zone_upload': pendingTimeZoneUpload,
       if (rowid != null) 'rowid': rowid,
@@ -14747,6 +14798,7 @@ class LocalProfileAccountsCompanion
     Value<DateTime>? updatedAt,
     Value<int>? editSequence,
     Value<String?>? timeZoneId,
+    Value<int>? timeZoneRevision,
     Value<bool>? pendingTimeZoneUpload,
     Value<int>? rowid,
   }) {
@@ -14760,6 +14812,7 @@ class LocalProfileAccountsCompanion
       updatedAt: updatedAt ?? this.updatedAt,
       editSequence: editSequence ?? this.editSequence,
       timeZoneId: timeZoneId ?? this.timeZoneId,
+      timeZoneRevision: timeZoneRevision ?? this.timeZoneRevision,
       pendingTimeZoneUpload:
           pendingTimeZoneUpload ?? this.pendingTimeZoneUpload,
       rowid: rowid ?? this.rowid,
@@ -14796,6 +14849,9 @@ class LocalProfileAccountsCompanion
     if (timeZoneId.present) {
       map['time_zone_id'] = Variable<String>(timeZoneId.value);
     }
+    if (timeZoneRevision.present) {
+      map['time_zone_revision'] = Variable<int>(timeZoneRevision.value);
+    }
     if (pendingTimeZoneUpload.present) {
       map['pending_time_zone_upload'] = Variable<bool>(
         pendingTimeZoneUpload.value,
@@ -14819,6 +14875,7 @@ class LocalProfileAccountsCompanion
           ..write('updatedAt: $updatedAt, ')
           ..write('editSequence: $editSequence, ')
           ..write('timeZoneId: $timeZoneId, ')
+          ..write('timeZoneRevision: $timeZoneRevision, ')
           ..write('pendingTimeZoneUpload: $pendingTimeZoneUpload, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -22764,6 +22821,7 @@ typedef $$LocalProfileAccountsTableCreateCompanionBuilder =
       required DateTime updatedAt,
       Value<int> editSequence,
       Value<String?> timeZoneId,
+      Value<int> timeZoneRevision,
       Value<bool> pendingTimeZoneUpload,
       Value<int> rowid,
     });
@@ -22778,6 +22836,7 @@ typedef $$LocalProfileAccountsTableUpdateCompanionBuilder =
       Value<DateTime> updatedAt,
       Value<int> editSequence,
       Value<String?> timeZoneId,
+      Value<int> timeZoneRevision,
       Value<bool> pendingTimeZoneUpload,
       Value<int> rowid,
     });
@@ -22833,6 +22892,11 @@ class $$LocalProfileAccountsTableFilterComposer
 
   ColumnFilters<String> get timeZoneId => $composableBuilder(
     column: $table.timeZoneId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get timeZoneRevision => $composableBuilder(
+    column: $table.timeZoneRevision,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -22896,6 +22960,11 @@ class $$LocalProfileAccountsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get timeZoneRevision => $composableBuilder(
+    column: $table.timeZoneRevision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<bool> get pendingTimeZoneUpload => $composableBuilder(
     column: $table.pendingTimeZoneUpload,
     builder: (column) => ColumnOrderings(column),
@@ -22947,6 +23016,11 @@ class $$LocalProfileAccountsTableAnnotationComposer
 
   GeneratedColumn<String> get timeZoneId => $composableBuilder(
     column: $table.timeZoneId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get timeZoneRevision => $composableBuilder(
+    column: $table.timeZoneRevision,
     builder: (column) => column,
   );
 
@@ -23008,6 +23082,7 @@ class $$LocalProfileAccountsTableTableManager
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> editSequence = const Value.absent(),
                 Value<String?> timeZoneId = const Value.absent(),
+                Value<int> timeZoneRevision = const Value.absent(),
                 Value<bool> pendingTimeZoneUpload = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalProfileAccountsCompanion(
@@ -23020,6 +23095,7 @@ class $$LocalProfileAccountsTableTableManager
                 updatedAt: updatedAt,
                 editSequence: editSequence,
                 timeZoneId: timeZoneId,
+                timeZoneRevision: timeZoneRevision,
                 pendingTimeZoneUpload: pendingTimeZoneUpload,
                 rowid: rowid,
               ),
@@ -23034,6 +23110,7 @@ class $$LocalProfileAccountsTableTableManager
                 required DateTime updatedAt,
                 Value<int> editSequence = const Value.absent(),
                 Value<String?> timeZoneId = const Value.absent(),
+                Value<int> timeZoneRevision = const Value.absent(),
                 Value<bool> pendingTimeZoneUpload = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalProfileAccountsCompanion.insert(
@@ -23046,6 +23123,7 @@ class $$LocalProfileAccountsTableTableManager
                 updatedAt: updatedAt,
                 editSequence: editSequence,
                 timeZoneId: timeZoneId,
+                timeZoneRevision: timeZoneRevision,
                 pendingTimeZoneUpload: pendingTimeZoneUpload,
                 rowid: rowid,
               ),

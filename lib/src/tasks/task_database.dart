@@ -414,6 +414,13 @@ class LocalProfileAccounts extends Table {
   /// is the superseded device-level field and is only read to seed this value.
   TextColumn get timeZoneId => text().nullable()();
 
+  /// Server-owned revision of [timeZoneId] that this device last observed.
+  ///
+  /// Cached so an explicit edit can name the exact account value it is based
+  /// on. It is not a local counter: only the account store advances it, which
+  /// is what keeps two devices from ordering their edits by wall clocks.
+  IntColumn get timeZoneRevision => integer().withDefault(const Constant(0))();
+
   /// Set only by an edit that changed the display time zone on this device and
   /// has not been accepted by the account store yet.
   ///
@@ -634,8 +641,14 @@ class PactaDatabase extends _$PactaDatabase {
   /// Both time-zone columns are added
   /// defensively (see the migration below), because provisional 30 fixtures can
   /// already carry `time_zone_id` while a plain 30 database does not.
+  ///
+  /// 36 adds the cached server revision of that account value. It is a separate
+  /// step because a development database already upgraded to this ticket's 35
+  /// must still receive the new column. 35 is also claimed by the goal-pin
+  /// ticket, so the final integrating schema has to reconcile both bodies above
+  /// 36; this step stays structurally guarded instead of encoding a number.
   @override
-  int get schemaVersion => 35;
+  int get schemaVersion => 36;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -859,6 +872,24 @@ class PactaDatabase extends _$PactaDatabase {
               localProfileAccounts.pendingTimeZoneUpload,
             );
           }
+        }
+      }
+      // 36: the cached account revision the local value is based on. Guarded by
+      // the actual column list, so databases created by 35, by a provisional
+      // schema-30 fixture, or by the guarded 35 block above all upgrade once.
+      if (from < 36) {
+        final revisionColumns = await customSelect(
+          'PRAGMA table_info(local_profile_accounts)',
+        ).get();
+        final revisionNames = revisionColumns
+            .map((row) => row.read<String>('name'))
+            .toSet();
+        if (revisionNames.isNotEmpty &&
+            !revisionNames.contains('time_zone_revision')) {
+          await m.addColumn(
+            localProfileAccounts,
+            localProfileAccounts.timeZoneRevision,
+          );
         }
       }
       // 34：失败记录的回顾状态（ticket 11）。旧记录没有回顾概念，补列后

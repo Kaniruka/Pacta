@@ -16,6 +16,7 @@ class ProfileAccount {
     this.syncError,
     this.editSequence = 0,
     this.pendingTimeZoneUpload = false,
+    this.timeZoneRevision = 0,
   });
 
   final String userId;
@@ -46,6 +47,12 @@ class ProfileAccount {
   /// another device wrote later.
   final bool pendingTimeZoneUpload;
 
+  /// The server-owned revision of [displayTimeZoneId] this device last
+  /// observed. An explicit edit is sent with this revision, so the account
+  /// store can reject a request based on an already superseded value without
+  /// trusting any device clock.
+  final int timeZoneRevision;
+
   bool get hasDisplayName => displayName.isNotEmpty;
 
   String get effectiveDisplayName => hasDisplayName ? displayName : '当前用户';
@@ -63,6 +70,7 @@ class ProfileAccount {
     bool clearSyncError = false,
     int? editSequence,
     bool? pendingTimeZoneUpload,
+    int? timeZoneRevision,
   }) => ProfileAccount(
     userId: userId,
     displayName: displayName ?? this.displayName,
@@ -73,5 +81,6 @@ class ProfileAccount {
     syncError: clearSyncError ? null : (syncError ?? this.syncError),
     editSequence: editSequence ?? this.editSequence,
     pendingTimeZoneUpload: pendingTimeZoneUpload ?? this.pendingTimeZoneUpload,
+    timeZoneRevision: timeZoneRevision ?? this.timeZoneRevision,
   );
 }
