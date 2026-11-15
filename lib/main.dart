@@ -34,8 +34,10 @@ import 'src/national_focus/national_focus_ai_access.dart';
 import 'src/national_focus/national_focus_ai_analysis_page.dart';
 import 'src/national_focus/national_focus_tree_page.dart';
 import 'src/notifications/focus_notification_service.dart';
+import 'src/profile/account_time_zone.dart';
 import 'src/profile/avatar_picker.dart';
 import 'src/profile/profile_card.dart';
+import 'src/profile/profile_models.dart';
 import 'src/profile/profile_overview.dart';
 import 'src/profile/profile_remote.dart';
 import 'src/profile/profile_repository.dart';
@@ -189,9 +191,14 @@ class PactaApp extends StatelessWidget {
     this.displayClock = DateTime.now,
     this.chainSignalsRepositoryFactory,
     this.profileRepositoryFactory,
+    this.deviceTimeZoneIdReader = readDeviceTimeZoneId,
   });
 
   final ProfileRepository Function(String userId)? profileRepositoryFactory;
+
+  /// Reads this device's IANA zone. It is only a one-time migration input for
+  /// the account display time zone, never a display value.
+  final Future<String?> Function() deviceTimeZoneIdReader;
 
   final CloudSnapshotRepository Function(String userId)?
   cloudSnapshotRepositoryFactory;
@@ -230,6 +237,9 @@ class PactaApp extends StatelessWidget {
         ),
         profileRepositoryFactoryProvider.overrideWithValue(
           profileRepositoryFactory,
+        ),
+        deviceTimeZoneIdReaderProvider.overrideWithValue(
+          deviceTimeZoneIdReader,
         ),
         cloudSnapshotRepositoryFactoryProvider.overrideWithValue(
           cloudSnapshotRepositoryFactory,
@@ -476,6 +486,24 @@ final profileRepositoryProvider = Provider.autoDispose<ProfileRepository>((
   ref.onDispose(repository.dispose);
   return repository;
 });
+
+/// 设备 IANA 时区，只作为账号显示时区的一次性迁移输入。
+///
+/// 显示路径不读它：账号没有值时用 [AccountTimeZones.fallbackId]，切换设备或
+/// 设备时区变化都不会改变已有账号值的显示。
+final deviceTimeZoneIdReaderProvider = Provider<Future<String?> Function()>(
+  (ref) => readDeviceTimeZoneId,
+);
+
+/// 读取设备时区；读不到时返回 null（本次不迁移，稍后重试）。
+Future<String?> readDeviceTimeZoneId() async {
+  try {
+    final zone = await FlutterTimezone.getLocalTimezone();
+    return FocusTimeZones.contains(zone.identifier) ? zone.identifier : null;
+  } catch (_) {
+    return null;
+  }
+}
 
 final avatarPickerProvider = Provider<AvatarPicker>(
   (ref) => const SystemAvatarPicker(),
@@ -902,9 +930,28 @@ class _AppShellState extends ConsumerState<AppShell>
       // Local recovery can be retried without uploading or discarding records.
     }
     await _syncFocusStatus();
+    // 账号时区迁移：已有账号值优先；没有时由本轮启动只写入一次原子初始化，
+    // 失败就保持统一 fallback 并在下次启动/恢复重试。
+    await _ensureAccountDisplayTimeZone();
     // A resume can cross midnight or a device time zone change; the reminder is
     // replanned from the current local wall clock without replaying old days.
     unawaited(_focusNotificationService.syncDailyOpenReminder());
+  }
+
+  Future<void> _ensureAccountDisplayTimeZone() async {
+    final userId = ref.read(authRepositoryProvider).currentUserId;
+    try {
+      final deviceTimeZoneId = await ref.read(deviceTimeZoneIdReaderProvider)();
+      if (!mounted ||
+          ref.read(authRepositoryProvider).currentUserId != userId) {
+        return;
+      }
+      await ref
+          .read(profileRepositoryProvider)
+          .ensureDisplayTimeZone(deviceTimeZoneId: deviceTimeZoneId);
+    } catch (_) {
+      // 迁移失败不阻塞启动：显示使用统一 fallback，稍后重试同一条路径。
+    }
   }
 
   Future<void> _syncFocusStatus() async {
@@ -1041,7 +1088,6 @@ class _AppShellState extends ConsumerState<AppShell>
     ref.watch(cloudVersionCheckProvider);
     final autoUpload = ref.watch(cloudAutoUploadCoordinatorProvider);
     final nationalFocusRepository = ref.watch(nationalFocusRepositoryProvider);
-    final focusRepository = ref.watch(focusRepositoryProvider);
     final lifecycleStatusRepository = ref.watch(
       userLifecycleStatusRepositoryProvider,
     );
@@ -1056,12 +1102,12 @@ class _AppShellState extends ConsumerState<AppShell>
         onNotificationCapabilityUse: () => unawaited(
           _focusNotificationService.ensureNotificationPermissionForUse(),
         ),
+        // 检查点本身固定北京时间 04:00；这里只决定显示用的账号时区。
         displayTimeZoneLoader: () async {
-          final deviceZone = await FlutterTimezone.getLocalTimezone();
-          final dashboard = await focusRepository.getDashboardMetrics(
-            deviceTimeZoneId: deviceZone.identifier,
-          );
-          return dashboard.displayTimeZoneId;
+          final profile = await ref
+              .read(profileRepositoryProvider)
+              .getProfile();
+          return AccountTimeZones.effectiveId(profile.displayTimeZoneId);
         },
       ),
       const FocusChainPage(),
@@ -1310,42 +1356,31 @@ class BoardPage extends ConsumerStatefulWidget {
 }
 
 class _BoardPageState extends ConsumerState<BoardPage> {
-  late final Future<String> _deviceTimeZoneId;
-
-  @override
-  void initState() {
-    super.initState();
-    _deviceTimeZoneId = _loadDeviceTimeZoneId();
-  }
-
-  Future<String> _loadDeviceTimeZoneId() async {
-    final timeZone = await FlutterTimezone.getLocalTimezone();
-    if (!FocusTimeZones.contains(timeZone.identifier)) {
-      throw StateError('设备返回了无法识别的 IANA 时区。');
-    }
-    return timeZone.identifier;
-  }
-
   @override
   Widget build(BuildContext context) {
     final taskRepository = ref.watch(taskRepositoryProvider);
     final focusRepository = ref.watch(focusRepositoryProvider);
     final nationalFocusRepository = ref.watch(nationalFocusRepositoryProvider);
     final calendarRepository = ref.watch(calendarRepositoryProvider);
-    return FutureBuilder<String>(
-      future: _deviceTimeZoneId,
-      builder: (context, timeZoneSnapshot) {
-        final deviceTimeZoneId = timeZoneSnapshot.data ?? 'Etc/UTC';
+    final profileRepository = ref.watch(profileRepositoryProvider);
+    // 显示时区只来自账号资料。账号还没有有效值时用统一 fallback 常量，
+    // 不会退回本设备时区，因此两台设备显示同一份日分摊。
+    return StreamBuilder<ProfileAccount>(
+      stream: profileRepository.watchProfile(),
+      builder: (context, profileSnapshot) {
+        final accountTimeZoneId = AccountTimeZones.effectiveId(
+          profileSnapshot.data?.displayTimeZoneId,
+        );
         return StreamBuilder<List<Goal>>(
           stream: taskRepository.watchGoals(),
           initialData: const [],
           builder: (context, goalSnapshot) =>
               StreamBuilder<FocusDashboardMetrics>(
                 stream: focusRepository.watchDashboardMetrics(
-                  deviceTimeZoneId: deviceTimeZoneId,
+                  timeZoneId: accountTimeZoneId,
                 ),
                 builder: (context, metricsSnapshot) => _BoardContent(
-                  deviceTimeZoneId: deviceTimeZoneId,
+                  displayTimeZoneId: accountTimeZoneId,
                   repository: taskRepository,
                   focusRepository: focusRepository,
                   nationalFocusRepository: nationalFocusRepository,
@@ -1363,7 +1398,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
 
 class _BoardContent extends StatelessWidget {
   const _BoardContent({
-    required this.deviceTimeZoneId,
+    required this.displayTimeZoneId,
     required this.repository,
     required this.focusRepository,
     required this.nationalFocusRepository,
@@ -1373,7 +1408,7 @@ class _BoardContent extends StatelessWidget {
     required this.metrics,
   });
 
-  final String deviceTimeZoneId;
+  final String displayTimeZoneId;
   final TaskRepository repository;
   final FocusRepository focusRepository;
   final NationalFocusRepository nationalFocusRepository;
@@ -1407,7 +1442,7 @@ class _BoardContent extends StatelessWidget {
       _FocusClockReviewPrompt(repository: focusRepository),
       _FailureReviewPrompt(
         repository: nationalFocusRepository,
-        displayTimeZoneId: deviceTimeZoneId,
+        displayTimeZoneId: displayTimeZoneId,
       ),
       if (goals.isEmpty)
         Card(
@@ -1616,103 +1651,6 @@ class _FocusActivityDayRow extends StatelessWidget {
           },
         ),
       ),
-    );
-  }
-}
-
-class _FocusTimeZonePickerDialog extends StatefulWidget {
-  const _FocusTimeZonePickerDialog({
-    required this.deviceTimeZoneId,
-    required this.selectedTimeZoneId,
-    required this.followsDeviceTimeZone,
-  });
-
-  final String deviceTimeZoneId;
-  final String selectedTimeZoneId;
-  final bool followsDeviceTimeZone;
-
-  @override
-  State<_FocusTimeZonePickerDialog> createState() =>
-      _FocusTimeZonePickerDialogState();
-}
-
-class _FocusTimeZonePickerDialogState
-    extends State<_FocusTimeZonePickerDialog> {
-  final _search = TextEditingController();
-  late final List<String> _timeZones = FocusTimeZones.identifiers.toList()
-    ..sort();
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final query = _search.text.trim().toLowerCase();
-    final filtered = _timeZones
-        .where((zone) => zone.toLowerCase().contains(query))
-        .toList();
-    return AlertDialog(
-      title: const Text('时区'),
-      content: SizedBox(
-        width: 360,
-        height: 440,
-        child: Column(
-          children: [
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('跟随设备时区'),
-              subtitle: Text(widget.deviceTimeZoneId),
-              trailing: widget.followsDeviceTimeZone
-                  ? const Icon(Icons.check, semanticLabel: '当前选择')
-                  : null,
-              onTap: () => Navigator.pop(
-                context,
-                _FocusTimeZoneSettingsCardState._followDevice,
-              ),
-            ),
-            TextField(
-              controller: _search,
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
-                hintText: '搜索时区',
-              ),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: filtered.isEmpty
-                  ? const Center(child: Text('没有匹配的时区'))
-                  : ListView.builder(
-                      itemCount: filtered.length,
-                      itemBuilder: (context, index) {
-                        final zone = filtered[index];
-                        final selected =
-                            !widget.followsDeviceTimeZone &&
-                            zone == widget.selectedTimeZoneId;
-                        return ListTile(
-                          dense: true,
-                          selected: selected,
-                          title: Text(zone),
-                          trailing: selected
-                              ? const Icon(Icons.check, semanticLabel: '当前选择')
-                              : null,
-                          onTap: () => Navigator.pop(context, zone),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-      ],
     );
   }
 }
@@ -4922,10 +4860,6 @@ class _MyPageState extends ConsumerState<MyPage> {
           ),
         ),
         const SizedBox(height: 12),
-        _FocusTimeZoneSettingsCard(
-          repository: ref.watch(focusRepositoryProvider),
-        ),
-        const SizedBox(height: 12),
         Card(
           child: ListTile(
             leading: const Icon(Icons.notifications_active_outlined),
@@ -4976,88 +4910,6 @@ class _MyPageState extends ConsumerState<MyPage> {
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
-    );
-  }
-}
-
-class _FocusTimeZoneSettingsCard extends StatefulWidget {
-  const _FocusTimeZoneSettingsCard({required this.repository});
-
-  final FocusRepository repository;
-
-  @override
-  State<_FocusTimeZoneSettingsCard> createState() =>
-      _FocusTimeZoneSettingsCardState();
-}
-
-class _FocusTimeZoneSettingsCardState
-    extends State<_FocusTimeZoneSettingsCard> {
-  static const _followDevice = '__follow_device__';
-  late final Future<String> _deviceTimeZoneId;
-
-  @override
-  void initState() {
-    super.initState();
-    _deviceTimeZoneId = _loadDeviceTimeZoneId();
-  }
-
-  Future<String> _loadDeviceTimeZoneId() async {
-    final zone = await FlutterTimezone.getLocalTimezone();
-    if (!FocusTimeZones.contains(zone.identifier)) {
-      throw StateError('设备返回了无法识别的 IANA 时区。');
-    }
-    return zone.identifier;
-  }
-
-  @override
-  Widget build(BuildContext context) => FutureBuilder<String>(
-    future: _deviceTimeZoneId,
-    builder: (context, deviceSnapshot) {
-      final deviceZone = deviceSnapshot.data ?? 'Etc/UTC';
-      return StreamBuilder<FocusDashboardMetrics>(
-        stream: widget.repository.watchDashboardMetrics(
-          deviceTimeZoneId: deviceZone,
-        ),
-        builder: (context, snapshot) {
-          final current = snapshot.data;
-          return Card(
-            child: ListTile(
-              leading: const Icon(Icons.schedule_outlined),
-              title: const Text('显示时区'),
-              subtitle: Text(
-                current == null
-                    ? '加载中'
-                    : '${current.followsDeviceTimeZone ? '跟随设备' : '手动选择'} · '
-                          '${current.displayTimeZoneId}'
-                          '${deviceSnapshot.hasError ? '\n无法读取设备时区，默认使用 UTC，可手动选择。' : ''}',
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: current == null
-                  ? null
-                  : () => _chooseTimeZone(context, current, deviceZone),
-            ),
-          );
-        },
-      );
-    },
-  );
-
-  Future<void> _chooseTimeZone(
-    BuildContext context,
-    FocusDashboardMetrics current,
-    String deviceZone,
-  ) async {
-    final choice = await showDialog<String>(
-      context: context,
-      builder: (context) => _FocusTimeZonePickerDialog(
-        deviceTimeZoneId: deviceZone,
-        selectedTimeZoneId: current.displayTimeZoneId,
-        followsDeviceTimeZone: current.followsDeviceTimeZone,
-      ),
-    );
-    if (choice == null) return;
-    await widget.repository.setDisplayTimeZonePreference(
-      choice == _followDevice ? null : choice,
     );
   }
 }

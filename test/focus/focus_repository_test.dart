@@ -1252,7 +1252,7 @@ void main() {
       isTrue,
     );
     final pendingMetrics = await secondFocusRepository.getDashboardMetrics(
-      deviceTimeZoneId: 'Etc/UTC',
+      timeZoneId: 'Etc/UTC',
     );
     expect(
       pendingMetrics.pendingReviewTaskIds,
