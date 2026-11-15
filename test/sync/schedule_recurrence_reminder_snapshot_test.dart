@@ -124,4 +124,88 @@ void main() {
       await deviceB.database.close();
     }
   });
+
+  test('契约边界的规则与实例提醒（0、10080、null）都能往返', () async {
+    final deviceA = await device(
+      'device-a',
+      'Phone A',
+      now: DateTime.utc(2026, 11, 15, 3),
+    );
+    final schedulesA = LocalScheduleRepository(
+      database: deviceA.database,
+      userId: 'user-a',
+      now: () => DateTime.utc(2026, 11, 15, 3),
+    );
+    final deviceB = await device(
+      'device-b',
+      'Tablet B',
+      now: DateTime.utc(2026, 11, 15, 5),
+    );
+    final schedulesB = LocalScheduleRepository(
+      database: deviceB.database,
+      userId: 'user-a',
+      now: () => DateTime.utc(2026, 11, 15, 5),
+    );
+    try {
+      await schedulesA.createRecurringSchedule(
+        draft: draft('零分钟', DateTime.utc(2026, 11, 16, 1)),
+        repeat: const ScheduleRepeatSpec(
+          frequency: ScheduleRepeatFrequency.daily,
+          endDate: '2026-11-16',
+        ),
+        timeZoneId: 'Etc/UTC',
+        reminderMinutesBefore: 0,
+      );
+      await schedulesA.createRecurringSchedule(
+        draft: draft('上边界', DateTime.utc(2026, 11, 16, 2)),
+        repeat: const ScheduleRepeatSpec(
+          frequency: ScheduleRepeatFrequency.daily,
+          endDate: '2026-11-16',
+        ),
+        timeZoneId: 'Etc/UTC',
+        reminderMinutesBefore: 10080,
+      );
+      await schedulesA.createRecurringSchedule(
+        draft: draft('不提醒', DateTime.utc(2026, 11, 16, 3)),
+        repeat: const ScheduleRepeatSpec(
+          frequency: ScheduleRepeatFrequency.daily,
+          endDate: '2026-11-16',
+        ),
+        timeZoneId: 'Etc/UTC',
+      );
+
+      final localA = await deviceA.snapshot.captureLocalState();
+      final saved = await deviceA.snapshot.uploadLocal(
+        expectedRevision: 0,
+        expectedFingerprint: localA.fingerprint,
+      );
+      final localB = await deviceB.snapshot.captureLocalState();
+      await deviceB.snapshot.downloadCloud(
+        expectedRevision: saved.revision,
+        expectedFingerprint: localB.fingerprint,
+      );
+
+      final rules = await schedulesB.getRecurrenceRules();
+      expect(
+        {for (final rule in rules) rule.title: rule.reminderMinutesBefore},
+        {'零分钟': 0, '上边界': 10080, '不提醒': null},
+      );
+      final restored = await schedulesB.getSchedules(
+        from: DateTime.utc(2026, 11, 16),
+        to: DateTime.utc(2026, 11, 17),
+      );
+      expect(
+        {
+          for (final schedule in restored)
+            schedule.title: schedule.reminderMinutesBefore,
+        },
+        {'零分钟': 0, '上边界': 10080, '不提醒': null},
+      );
+    } finally {
+      await schedulesA.dispose();
+      await schedulesB.dispose();
+      await deviceA.database.close();
+      await deviceB.database.close();
+    }
+  });
 }
