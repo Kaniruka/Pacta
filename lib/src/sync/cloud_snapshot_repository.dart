@@ -16,12 +16,23 @@ import 'cloud_sync_result.dart';
 
 /// 业务整份快照的载荷版本。
 ///
-/// 版本 2 是「自有日程表 + 每场预约显式准备时长」的并集：合并前 03 与 08
-/// 各自发布过一个只有一半的 v2，两者都不再被接受为完整 v2。客户端只写当前
-/// 版本；读取时仍接受版本 1，并按已文档化的默认值补齐后来新增的列（时间戳
-/// 一律沿用已存值，不重算进行中的预约）。服务端写入口只接受完整的当前版本：
-/// 旧客户端或残缺 v2 上传会丢掉另一方数据，必须被整体拒绝而不是静默合并。
-const int cloudSnapshotSchemaVersion = 2;
+/// 版本 3 在完整 core 2（自有日程表 + 每场预约显式准备时长）之上加入重复日程：
+/// `local_schedule_recurrences` 规则表，以及每条实例的规则归属、稳定系列身份、
+/// 原始本地日期、规则时区与开始分钟、例外与墓碑标记。
+///
+/// 读取侧保留版本 1 与**完整**版本 2，用下方逐字段显式转换补默认值，而不是
+/// 依赖"未知字段容错"：
+/// * v1 → 现有安全转换（旧日历块提升为自有副本 + 预约边界），再补 v2/v3 列；
+/// * v2 → 空规则表 + 每条日程的重复列取空/非重复默认值，已存值一律保留；
+/// * v3 → 严格当前形状，缺表缺列整体拒绝。
+///
+/// 残缺的 pre-merge v2（缺日程表或任一预约缺 preparation_seconds）无论哪个
+/// 版本都整体拒绝，绝不静默合并另一个领域的数据。客户端只写当前版本，服务端
+/// 写入口同样只接受完整当前版本。
+const int cloudSnapshotSchemaVersion = 3;
+
+/// 完整第 2 版：日程表 + 每场预约准备时长的并集。
+const int _version2SnapshotSchemaVersion = 2;
 
 /// 同一上传请求被用于不同内容（服务端 PT422）。自动上传必须停止并检查，
 /// 不能把它改写成新请求。
@@ -830,6 +841,7 @@ class CloudSnapshotRepository {
     'local_calendar_sources',
     'local_calendar_blocks',
     'local_schedules',
+    'local_schedule_recurrences',
   ];
 
   Future<CloudSnapshotMetadata?> inspectCloud() =>
@@ -1168,9 +1180,15 @@ class CloudSnapshotRepository {
   ) async {
     final schemaVersion = payload['schemaVersion'];
     final isLegacy = schemaVersion == _legacySnapshotSchemaVersion;
-    if (schemaVersion != cloudSnapshotSchemaVersion && !isLegacy) {
+    final isVersion2 = schemaVersion == _version2SnapshotSchemaVersion;
+    if (!isLegacy &&
+        !isVersion2 &&
+        schemaVersion != cloudSnapshotSchemaVersion) {
       throw StateError('云端快照版本不受支持：$schemaVersion。');
     }
+    // 版本 1 与完整的版本 2 都要按显式转换补上重复日程领域；版本 3 必须是
+    // 当前完整形状，任何缺失都由后面的严格列校验整体拒绝。
+    final preRecurrence = isLegacy || isVersion2;
     if (payload['userId'] != userId) {
       throw StateError('Snapshot version or user identity is invalid.');
     }
@@ -1186,8 +1204,9 @@ class CloudSnapshotRepository {
     if (isLegacy) {
       rawTables.putIfAbsent('chain_signals', () => <dynamic>[]);
     }
-    // 版本 2 是两个票据的并集，所以任何一半缺失的 v2 都是合并前生成的残缺
-    // 载荷：整体拒绝（在任何本地行被读写之前），绝不静默丢弃另一方数据。
+    // 完整 core 2 是两个票据的并集，所以任何一半缺失的 v2 都是合并前生成的
+    // 残缺载荷：整体拒绝（在任何本地行被读写之前），绝不静默丢弃另一方数据。
+    // 版本 3 是它的超集，同样必须携带这两个领域。
     if (!isLegacy) {
       if (rawTables['local_schedules'] is! List) {
         throw StateError('版本 2 快照缺少日程表，已整体拒绝；请先升级本机再上传。');
@@ -1200,6 +1219,13 @@ class CloudSnapshotRepository {
           }
         }
       }
+    }
+    if (preRecurrence) {
+      // v1/v2 没有规则表：显式转换成一个空集合，表示"这个账号还没有重复规则"，
+      // 而不是把缺失当成非法载荷。
+      rawTables.putIfAbsent('local_schedule_recurrences', () => <dynamic>[]);
+    } else if (rawTables['local_schedule_recurrences'] is! List) {
+      throw StateError('版本 3 快照缺少重复规则表，已整体拒绝；请先升级本机再上传。');
     }
     final expectedTables = isLegacy
         ? [
@@ -1235,8 +1261,13 @@ class CloudSnapshotRepository {
         if (item is! Map<String, dynamic>) {
           throw StateError('Invalid columns or user ownership in $table.');
         }
-        final sourceRow = isLegacy
-            ? _withLegacyColumnDefaults(table, item, expectedColumns)
+        final sourceRow = preRecurrence
+            ? _withOlderVersionDefaults(
+                table,
+                item,
+                expectedColumns,
+                isLegacy: isLegacy,
+              )
             : item;
         if (sourceRow.keys.length != expectedColumns.length ||
             !expectedColumns.every(sourceRow.containsKey) ||
@@ -1284,13 +1315,31 @@ class CloudSnapshotRepository {
     'focus_appointments': {'preparation_seconds': null},
   };
 
-  Map<String, dynamic> _withLegacyColumnDefaults(
+  /// 重复领域在 v1/v2 中不存在时的显式默认值。
+  ///
+  /// 只补缺失键：已存值（包括人为写入的非空值）一律保留，随后仍要过完整的
+  /// 类型与引用校验。v3 不走这条路径，缺列即拒绝。
+  static const _recurrenceColumnDefaults = <String, Object?>{
+    'recurrence_id': null,
+    'recurrence_series_id': null,
+    'recurrence_date': null,
+    'recurrence_time_zone_id': null,
+    'recurrence_start_minutes': null,
+    'is_recurrence_exception': 0,
+    'is_recurrence_cancelled': 0,
+  };
+
+  Map<String, dynamic> _withOlderVersionDefaults(
     String table,
     Map<String, dynamic> row,
-    Set<String> expectedColumns,
-  ) {
-    final defaults = _legacySnapshotColumnDefaults[table];
-    if (defaults == null) return row;
+    Set<String> expectedColumns, {
+    required bool isLegacy,
+  }) {
+    final defaults = <String, Object?>{
+      if (isLegacy) ...?_legacySnapshotColumnDefaults[table],
+      if (table == 'local_schedules') ..._recurrenceColumnDefaults,
+    };
+    if (defaults.isEmpty) return row;
     final additions = <String, dynamic>{
       for (final entry in defaults.entries)
         if (expectedColumns.contains(entry.key) && !row.containsKey(entry.key))
@@ -1372,6 +1421,8 @@ class CloudSnapshotRepository {
       'source_event_id': schedule.sourceEventId,
       'occurrence_id': schedule.occurrenceId,
       'event_identity': schedule.eventIdentity,
+      // 旧日历块提升出来的副本不是重复日程，也没有例外或墓碑。
+      ..._recurrenceColumnDefaults,
       'created_at': _epochSeconds(schedule.createdAt),
       'updated_at': _epochSeconds(schedule.updatedAt),
     };
@@ -1501,6 +1552,63 @@ class CloudSnapshotRepository {
         'calendar source reference',
       );
     }
+    final recurrenceIds = <Object?>{
+      for (final row in tables['local_schedule_recurrences']!) row['id'],
+    };
+    for (final row in tables['local_schedule_recurrences']!) {
+      final frequency = row['frequency'];
+      final weekly = frequency == 'weekly';
+      requireReference(
+        frequency == 'daily' || weekly,
+        'Schedule recurrence frequency',
+      );
+      final weekdays = _decodeWeekdays(row['weekdays']);
+      requireReference(weekdays != null, 'Schedule recurrence weekdays');
+      requireReference(
+        weekly ? weekdays!.isNotEmpty : weekdays!.isEmpty,
+        'Schedule recurrence weekday set',
+      );
+      final firstDate = row['first_date'];
+      requireReference(
+        _isCalendarDate(firstDate),
+        'Schedule recurrence first date',
+      );
+      final endDate = row['end_date'];
+      requireReference(
+        endDate == null ||
+            (_isCalendarDate(endDate) &&
+                (endDate as String).compareTo(firstDate as String) >= 0),
+        'Schedule recurrence end date',
+      );
+      final zone = row['time_zone_id'];
+      requireReference(
+        zone is String && zone.trim().isNotEmpty,
+        'Schedule recurrence time zone',
+      );
+      final allDay = row['all_day'];
+      requireReference(
+        allDay == 0 || allDay == 1,
+        'Schedule recurrence all-day',
+      );
+      final startMinutes = row['start_minutes_of_day'];
+      final duration = row['duration_minutes'];
+      final daySpan = row['day_span'];
+      if (allDay == 1) {
+        requireReference(
+          daySpan is int && daySpan >= 1,
+          'Schedule recurrence day span',
+        );
+      } else {
+        requireReference(
+          startMinutes is int && startMinutes >= 0 && startMinutes < 24 * 60,
+          'Schedule recurrence start minute',
+        );
+        requireReference(
+          duration is int && duration >= 1,
+          'Schedule recurrence duration',
+        );
+      }
+    }
     for (final row in tables['local_schedules']!) {
       final taskId = row['task_id'];
       if (taskId != null) {
@@ -1540,7 +1648,75 @@ class CloudSnapshotRepository {
             origin == ScheduleOrigin.legacyCalendarBlock.storageValue,
         'Schedule origin',
       );
+      final recurrenceId = row['recurrence_id'];
+      final exception = row['is_recurrence_exception'];
+      final cancelled = row['is_recurrence_cancelled'];
+      requireReference(
+        (exception == 0 || exception == 1) &&
+            (cancelled == 0 || cancelled == 1),
+        'Schedule recurrence flags',
+      );
+      if (recurrenceId == null) {
+        // 非重复日程不能带重复领域的一半字段：宁可整体拒绝，也不接受
+        // 归属不明、无法安全展开的实例。
+        requireReference(
+          row['recurrence_series_id'] == null &&
+              row['recurrence_date'] == null &&
+              row['recurrence_time_zone_id'] == null &&
+              row['recurrence_start_minutes'] == null &&
+              exception == 0 &&
+              cancelled == 0,
+          'Schedule recurrence linkage',
+        );
+        continue;
+      }
+      requireReference(recurrenceIds.contains(recurrenceId), 'recurrence rule');
+      requireReference(
+        row['recurrence_series_id'] is String &&
+            (row['recurrence_series_id'] as String).trim().isNotEmpty,
+        'Schedule recurrence series identity',
+      );
+      requireReference(
+        _isCalendarDate(row['recurrence_date']),
+        'Schedule recurrence date',
+      );
+      requireReference(
+        row['recurrence_time_zone_id'] is String &&
+            (row['recurrence_time_zone_id'] as String).trim().isNotEmpty,
+        'Schedule recurrence instance zone',
+      );
+      final startMinutes = row['recurrence_start_minutes'];
+      requireReference(
+        startMinutes == null ||
+            (startMinutes is int &&
+                startMinutes >= 0 &&
+                startMinutes < 24 * 60),
+        'Schedule recurrence instance start minute',
+      );
     }
+  }
+
+  bool _isCalendarDate(Object? value) =>
+      value is String && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value);
+
+  /// 星期集合的存储形式：整数数组。非法内容返回 null，由调用方拒绝整份载荷。
+  List<int>? _decodeWeekdays(Object? value) {
+    if (value is! String) return null;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(value);
+    } on FormatException {
+      return null;
+    }
+    if (decoded is! List) return null;
+    final weekdays = <int>[];
+    for (final entry in decoded) {
+      if (entry is! int || entry < DateTime.monday || entry > DateTime.sunday) {
+        return null;
+      }
+      weekdays.add(entry);
+    }
+    return weekdays;
   }
 
   Future<List<String>> _tableColumns(String table) async {

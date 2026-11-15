@@ -12005,6 +12005,90 @@ class $LocalSchedulesTable extends LocalSchedules
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _recurrenceIdMeta = const VerificationMeta(
+    'recurrenceId',
+  );
+  @override
+  late final GeneratedColumn<String> recurrenceId = GeneratedColumn<String>(
+    'recurrence_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _recurrenceSeriesIdMeta =
+      const VerificationMeta('recurrenceSeriesId');
+  @override
+  late final GeneratedColumn<String> recurrenceSeriesId =
+      GeneratedColumn<String>(
+        'recurrence_series_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _recurrenceDateMeta = const VerificationMeta(
+    'recurrenceDate',
+  );
+  @override
+  late final GeneratedColumn<String> recurrenceDate = GeneratedColumn<String>(
+    'recurrence_date',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _recurrenceTimeZoneIdMeta =
+      const VerificationMeta('recurrenceTimeZoneId');
+  @override
+  late final GeneratedColumn<String> recurrenceTimeZoneId =
+      GeneratedColumn<String>(
+        'recurrence_time_zone_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _recurrenceStartMinutesMeta =
+      const VerificationMeta('recurrenceStartMinutes');
+  @override
+  late final GeneratedColumn<int> recurrenceStartMinutes = GeneratedColumn<int>(
+    'recurrence_start_minutes',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _isRecurrenceExceptionMeta =
+      const VerificationMeta('isRecurrenceException');
+  @override
+  late final GeneratedColumn<bool> isRecurrenceException =
+      GeneratedColumn<bool>(
+        'is_recurrence_exception',
+        aliasedName,
+        false,
+        type: DriftSqlType.bool,
+        requiredDuringInsert: false,
+        defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("is_recurrence_exception" IN (0, 1))',
+        ),
+        defaultValue: const Constant(false),
+      );
+  static const VerificationMeta _isRecurrenceCancelledMeta =
+      const VerificationMeta('isRecurrenceCancelled');
+  @override
+  late final GeneratedColumn<bool> isRecurrenceCancelled =
+      GeneratedColumn<bool>(
+        'is_recurrence_cancelled',
+        aliasedName,
+        false,
+        type: DriftSqlType.bool,
+        requiredDuringInsert: false,
+        defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("is_recurrence_cancelled" IN (0, 1))',
+        ),
+        defaultValue: const Constant(false),
+      );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -12048,6 +12132,13 @@ class $LocalSchedulesTable extends LocalSchedules
     sourceEventId,
     occurrenceId,
     eventIdentity,
+    recurrenceId,
+    recurrenceSeriesId,
+    recurrenceDate,
+    recurrenceTimeZoneId,
+    recurrenceStartMinutes,
+    isRecurrenceException,
+    isRecurrenceCancelled,
     createdAt,
     updatedAt,
   ];
@@ -12211,6 +12302,69 @@ class $LocalSchedulesTable extends LocalSchedules
         ),
       );
     }
+    if (data.containsKey('recurrence_id')) {
+      context.handle(
+        _recurrenceIdMeta,
+        recurrenceId.isAcceptableOrUnknown(
+          data['recurrence_id']!,
+          _recurrenceIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('recurrence_series_id')) {
+      context.handle(
+        _recurrenceSeriesIdMeta,
+        recurrenceSeriesId.isAcceptableOrUnknown(
+          data['recurrence_series_id']!,
+          _recurrenceSeriesIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('recurrence_date')) {
+      context.handle(
+        _recurrenceDateMeta,
+        recurrenceDate.isAcceptableOrUnknown(
+          data['recurrence_date']!,
+          _recurrenceDateMeta,
+        ),
+      );
+    }
+    if (data.containsKey('recurrence_time_zone_id')) {
+      context.handle(
+        _recurrenceTimeZoneIdMeta,
+        recurrenceTimeZoneId.isAcceptableOrUnknown(
+          data['recurrence_time_zone_id']!,
+          _recurrenceTimeZoneIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('recurrence_start_minutes')) {
+      context.handle(
+        _recurrenceStartMinutesMeta,
+        recurrenceStartMinutes.isAcceptableOrUnknown(
+          data['recurrence_start_minutes']!,
+          _recurrenceStartMinutesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_recurrence_exception')) {
+      context.handle(
+        _isRecurrenceExceptionMeta,
+        isRecurrenceException.isAcceptableOrUnknown(
+          data['is_recurrence_exception']!,
+          _isRecurrenceExceptionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_recurrence_cancelled')) {
+      context.handle(
+        _isRecurrenceCancelledMeta,
+        isRecurrenceCancelled.isAcceptableOrUnknown(
+          data['is_recurrence_cancelled']!,
+          _isRecurrenceCancelledMeta,
+        ),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -12312,6 +12466,34 @@ class $LocalSchedulesTable extends LocalSchedules
         DriftSqlType.string,
         data['${effectivePrefix}event_identity'],
       ),
+      recurrenceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recurrence_id'],
+      ),
+      recurrenceSeriesId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recurrence_series_id'],
+      ),
+      recurrenceDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recurrence_date'],
+      ),
+      recurrenceTimeZoneId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}recurrence_time_zone_id'],
+      ),
+      recurrenceStartMinutes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}recurrence_start_minutes'],
+      ),
+      isRecurrenceException: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_recurrence_exception'],
+      )!,
+      isRecurrenceCancelled: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_recurrence_cancelled'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -12351,6 +12533,27 @@ class LocalSchedule extends DataClass implements Insertable<LocalSchedule> {
   final String? sourceEventId;
   final String? occurrenceId;
   final String? eventIdentity;
+
+  /// 重复规则的当前归属；null 表示独立日程。
+  final String? recurrenceId;
+
+  /// 稳定系列身份：“本次及以后”截断后仍保留原值，实例身份不漂移。
+  final String? recurrenceSeriesId;
+
+  /// 该实例原始的本地开始日期（规则时区），展开与去重的稳定依据。
+  final String? recurrenceDate;
+
+  /// 生成该实例时使用的 IANA 时区，随实例保存以防后续重算漂移。
+  final String? recurrenceTimeZoneId;
+
+  /// 生成该实例时的本地开始分钟，配合时区与日期锁定原来的挂钟时刻。
+  final int? recurrenceStartMinutes;
+
+  /// 已确认的“仅本次”改写：实例被单独改写过，规则不再覆盖它。
+  final bool isRecurrenceException;
+
+  /// 单实例删除的墓碑：行保留以免再次展开时复活，读取时过滤。
+  final bool isRecurrenceCancelled;
   final DateTime createdAt;
   final DateTime updatedAt;
   const LocalSchedule({
@@ -12373,6 +12576,13 @@ class LocalSchedule extends DataClass implements Insertable<LocalSchedule> {
     this.sourceEventId,
     this.occurrenceId,
     this.eventIdentity,
+    this.recurrenceId,
+    this.recurrenceSeriesId,
+    this.recurrenceDate,
+    this.recurrenceTimeZoneId,
+    this.recurrenceStartMinutes,
+    required this.isRecurrenceException,
+    required this.isRecurrenceCancelled,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -12416,6 +12626,23 @@ class LocalSchedule extends DataClass implements Insertable<LocalSchedule> {
     if (!nullToAbsent || eventIdentity != null) {
       map['event_identity'] = Variable<String>(eventIdentity);
     }
+    if (!nullToAbsent || recurrenceId != null) {
+      map['recurrence_id'] = Variable<String>(recurrenceId);
+    }
+    if (!nullToAbsent || recurrenceSeriesId != null) {
+      map['recurrence_series_id'] = Variable<String>(recurrenceSeriesId);
+    }
+    if (!nullToAbsent || recurrenceDate != null) {
+      map['recurrence_date'] = Variable<String>(recurrenceDate);
+    }
+    if (!nullToAbsent || recurrenceTimeZoneId != null) {
+      map['recurrence_time_zone_id'] = Variable<String>(recurrenceTimeZoneId);
+    }
+    if (!nullToAbsent || recurrenceStartMinutes != null) {
+      map['recurrence_start_minutes'] = Variable<int>(recurrenceStartMinutes);
+    }
+    map['is_recurrence_exception'] = Variable<bool>(isRecurrenceException);
+    map['is_recurrence_cancelled'] = Variable<bool>(isRecurrenceCancelled);
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -12458,6 +12685,23 @@ class LocalSchedule extends DataClass implements Insertable<LocalSchedule> {
       eventIdentity: eventIdentity == null && nullToAbsent
           ? const Value.absent()
           : Value(eventIdentity),
+      recurrenceId: recurrenceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(recurrenceId),
+      recurrenceSeriesId: recurrenceSeriesId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(recurrenceSeriesId),
+      recurrenceDate: recurrenceDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(recurrenceDate),
+      recurrenceTimeZoneId: recurrenceTimeZoneId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(recurrenceTimeZoneId),
+      recurrenceStartMinutes: recurrenceStartMinutes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(recurrenceStartMinutes),
+      isRecurrenceException: Value(isRecurrenceException),
+      isRecurrenceCancelled: Value(isRecurrenceCancelled),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -12492,6 +12736,23 @@ class LocalSchedule extends DataClass implements Insertable<LocalSchedule> {
       sourceEventId: serializer.fromJson<String?>(json['sourceEventId']),
       occurrenceId: serializer.fromJson<String?>(json['occurrenceId']),
       eventIdentity: serializer.fromJson<String?>(json['eventIdentity']),
+      recurrenceId: serializer.fromJson<String?>(json['recurrenceId']),
+      recurrenceSeriesId: serializer.fromJson<String?>(
+        json['recurrenceSeriesId'],
+      ),
+      recurrenceDate: serializer.fromJson<String?>(json['recurrenceDate']),
+      recurrenceTimeZoneId: serializer.fromJson<String?>(
+        json['recurrenceTimeZoneId'],
+      ),
+      recurrenceStartMinutes: serializer.fromJson<int?>(
+        json['recurrenceStartMinutes'],
+      ),
+      isRecurrenceException: serializer.fromJson<bool>(
+        json['isRecurrenceException'],
+      ),
+      isRecurrenceCancelled: serializer.fromJson<bool>(
+        json['isRecurrenceCancelled'],
+      ),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -12521,6 +12782,13 @@ class LocalSchedule extends DataClass implements Insertable<LocalSchedule> {
       'sourceEventId': serializer.toJson<String?>(sourceEventId),
       'occurrenceId': serializer.toJson<String?>(occurrenceId),
       'eventIdentity': serializer.toJson<String?>(eventIdentity),
+      'recurrenceId': serializer.toJson<String?>(recurrenceId),
+      'recurrenceSeriesId': serializer.toJson<String?>(recurrenceSeriesId),
+      'recurrenceDate': serializer.toJson<String?>(recurrenceDate),
+      'recurrenceTimeZoneId': serializer.toJson<String?>(recurrenceTimeZoneId),
+      'recurrenceStartMinutes': serializer.toJson<int?>(recurrenceStartMinutes),
+      'isRecurrenceException': serializer.toJson<bool>(isRecurrenceException),
+      'isRecurrenceCancelled': serializer.toJson<bool>(isRecurrenceCancelled),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -12546,6 +12814,13 @@ class LocalSchedule extends DataClass implements Insertable<LocalSchedule> {
     Value<String?> sourceEventId = const Value.absent(),
     Value<String?> occurrenceId = const Value.absent(),
     Value<String?> eventIdentity = const Value.absent(),
+    Value<String?> recurrenceId = const Value.absent(),
+    Value<String?> recurrenceSeriesId = const Value.absent(),
+    Value<String?> recurrenceDate = const Value.absent(),
+    Value<String?> recurrenceTimeZoneId = const Value.absent(),
+    Value<int?> recurrenceStartMinutes = const Value.absent(),
+    bool? isRecurrenceException,
+    bool? isRecurrenceCancelled,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => LocalSchedule(
@@ -12578,6 +12853,21 @@ class LocalSchedule extends DataClass implements Insertable<LocalSchedule> {
     eventIdentity: eventIdentity.present
         ? eventIdentity.value
         : this.eventIdentity,
+    recurrenceId: recurrenceId.present ? recurrenceId.value : this.recurrenceId,
+    recurrenceSeriesId: recurrenceSeriesId.present
+        ? recurrenceSeriesId.value
+        : this.recurrenceSeriesId,
+    recurrenceDate: recurrenceDate.present
+        ? recurrenceDate.value
+        : this.recurrenceDate,
+    recurrenceTimeZoneId: recurrenceTimeZoneId.present
+        ? recurrenceTimeZoneId.value
+        : this.recurrenceTimeZoneId,
+    recurrenceStartMinutes: recurrenceStartMinutes.present
+        ? recurrenceStartMinutes.value
+        : this.recurrenceStartMinutes,
+    isRecurrenceException: isRecurrenceException ?? this.isRecurrenceException,
+    isRecurrenceCancelled: isRecurrenceCancelled ?? this.isRecurrenceCancelled,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -12620,6 +12910,27 @@ class LocalSchedule extends DataClass implements Insertable<LocalSchedule> {
       eventIdentity: data.eventIdentity.present
           ? data.eventIdentity.value
           : this.eventIdentity,
+      recurrenceId: data.recurrenceId.present
+          ? data.recurrenceId.value
+          : this.recurrenceId,
+      recurrenceSeriesId: data.recurrenceSeriesId.present
+          ? data.recurrenceSeriesId.value
+          : this.recurrenceSeriesId,
+      recurrenceDate: data.recurrenceDate.present
+          ? data.recurrenceDate.value
+          : this.recurrenceDate,
+      recurrenceTimeZoneId: data.recurrenceTimeZoneId.present
+          ? data.recurrenceTimeZoneId.value
+          : this.recurrenceTimeZoneId,
+      recurrenceStartMinutes: data.recurrenceStartMinutes.present
+          ? data.recurrenceStartMinutes.value
+          : this.recurrenceStartMinutes,
+      isRecurrenceException: data.isRecurrenceException.present
+          ? data.isRecurrenceException.value
+          : this.isRecurrenceException,
+      isRecurrenceCancelled: data.isRecurrenceCancelled.present
+          ? data.isRecurrenceCancelled.value
+          : this.isRecurrenceCancelled,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -12647,6 +12958,13 @@ class LocalSchedule extends DataClass implements Insertable<LocalSchedule> {
           ..write('sourceEventId: $sourceEventId, ')
           ..write('occurrenceId: $occurrenceId, ')
           ..write('eventIdentity: $eventIdentity, ')
+          ..write('recurrenceId: $recurrenceId, ')
+          ..write('recurrenceSeriesId: $recurrenceSeriesId, ')
+          ..write('recurrenceDate: $recurrenceDate, ')
+          ..write('recurrenceTimeZoneId: $recurrenceTimeZoneId, ')
+          ..write('recurrenceStartMinutes: $recurrenceStartMinutes, ')
+          ..write('isRecurrenceException: $isRecurrenceException, ')
+          ..write('isRecurrenceCancelled: $isRecurrenceCancelled, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -12674,6 +12992,13 @@ class LocalSchedule extends DataClass implements Insertable<LocalSchedule> {
     sourceEventId,
     occurrenceId,
     eventIdentity,
+    recurrenceId,
+    recurrenceSeriesId,
+    recurrenceDate,
+    recurrenceTimeZoneId,
+    recurrenceStartMinutes,
+    isRecurrenceException,
+    isRecurrenceCancelled,
     createdAt,
     updatedAt,
   ]);
@@ -12700,6 +13025,13 @@ class LocalSchedule extends DataClass implements Insertable<LocalSchedule> {
           other.sourceEventId == this.sourceEventId &&
           other.occurrenceId == this.occurrenceId &&
           other.eventIdentity == this.eventIdentity &&
+          other.recurrenceId == this.recurrenceId &&
+          other.recurrenceSeriesId == this.recurrenceSeriesId &&
+          other.recurrenceDate == this.recurrenceDate &&
+          other.recurrenceTimeZoneId == this.recurrenceTimeZoneId &&
+          other.recurrenceStartMinutes == this.recurrenceStartMinutes &&
+          other.isRecurrenceException == this.isRecurrenceException &&
+          other.isRecurrenceCancelled == this.isRecurrenceCancelled &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -12724,6 +13056,13 @@ class LocalSchedulesCompanion extends UpdateCompanion<LocalSchedule> {
   final Value<String?> sourceEventId;
   final Value<String?> occurrenceId;
   final Value<String?> eventIdentity;
+  final Value<String?> recurrenceId;
+  final Value<String?> recurrenceSeriesId;
+  final Value<String?> recurrenceDate;
+  final Value<String?> recurrenceTimeZoneId;
+  final Value<int?> recurrenceStartMinutes;
+  final Value<bool> isRecurrenceException;
+  final Value<bool> isRecurrenceCancelled;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -12747,6 +13086,13 @@ class LocalSchedulesCompanion extends UpdateCompanion<LocalSchedule> {
     this.sourceEventId = const Value.absent(),
     this.occurrenceId = const Value.absent(),
     this.eventIdentity = const Value.absent(),
+    this.recurrenceId = const Value.absent(),
+    this.recurrenceSeriesId = const Value.absent(),
+    this.recurrenceDate = const Value.absent(),
+    this.recurrenceTimeZoneId = const Value.absent(),
+    this.recurrenceStartMinutes = const Value.absent(),
+    this.isRecurrenceException = const Value.absent(),
+    this.isRecurrenceCancelled = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -12771,6 +13117,13 @@ class LocalSchedulesCompanion extends UpdateCompanion<LocalSchedule> {
     this.sourceEventId = const Value.absent(),
     this.occurrenceId = const Value.absent(),
     this.eventIdentity = const Value.absent(),
+    this.recurrenceId = const Value.absent(),
+    this.recurrenceSeriesId = const Value.absent(),
+    this.recurrenceDate = const Value.absent(),
+    this.recurrenceTimeZoneId = const Value.absent(),
+    this.recurrenceStartMinutes = const Value.absent(),
+    this.isRecurrenceException = const Value.absent(),
+    this.isRecurrenceCancelled = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
@@ -12801,6 +13154,13 @@ class LocalSchedulesCompanion extends UpdateCompanion<LocalSchedule> {
     Expression<String>? sourceEventId,
     Expression<String>? occurrenceId,
     Expression<String>? eventIdentity,
+    Expression<String>? recurrenceId,
+    Expression<String>? recurrenceSeriesId,
+    Expression<String>? recurrenceDate,
+    Expression<String>? recurrenceTimeZoneId,
+    Expression<int>? recurrenceStartMinutes,
+    Expression<bool>? isRecurrenceException,
+    Expression<bool>? isRecurrenceCancelled,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -12827,6 +13187,18 @@ class LocalSchedulesCompanion extends UpdateCompanion<LocalSchedule> {
       if (sourceEventId != null) 'source_event_id': sourceEventId,
       if (occurrenceId != null) 'occurrence_id': occurrenceId,
       if (eventIdentity != null) 'event_identity': eventIdentity,
+      if (recurrenceId != null) 'recurrence_id': recurrenceId,
+      if (recurrenceSeriesId != null)
+        'recurrence_series_id': recurrenceSeriesId,
+      if (recurrenceDate != null) 'recurrence_date': recurrenceDate,
+      if (recurrenceTimeZoneId != null)
+        'recurrence_time_zone_id': recurrenceTimeZoneId,
+      if (recurrenceStartMinutes != null)
+        'recurrence_start_minutes': recurrenceStartMinutes,
+      if (isRecurrenceException != null)
+        'is_recurrence_exception': isRecurrenceException,
+      if (isRecurrenceCancelled != null)
+        'is_recurrence_cancelled': isRecurrenceCancelled,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -12853,6 +13225,13 @@ class LocalSchedulesCompanion extends UpdateCompanion<LocalSchedule> {
     Value<String?>? sourceEventId,
     Value<String?>? occurrenceId,
     Value<String?>? eventIdentity,
+    Value<String?>? recurrenceId,
+    Value<String?>? recurrenceSeriesId,
+    Value<String?>? recurrenceDate,
+    Value<String?>? recurrenceTimeZoneId,
+    Value<int?>? recurrenceStartMinutes,
+    Value<bool>? isRecurrenceException,
+    Value<bool>? isRecurrenceCancelled,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -12879,6 +13258,16 @@ class LocalSchedulesCompanion extends UpdateCompanion<LocalSchedule> {
       sourceEventId: sourceEventId ?? this.sourceEventId,
       occurrenceId: occurrenceId ?? this.occurrenceId,
       eventIdentity: eventIdentity ?? this.eventIdentity,
+      recurrenceId: recurrenceId ?? this.recurrenceId,
+      recurrenceSeriesId: recurrenceSeriesId ?? this.recurrenceSeriesId,
+      recurrenceDate: recurrenceDate ?? this.recurrenceDate,
+      recurrenceTimeZoneId: recurrenceTimeZoneId ?? this.recurrenceTimeZoneId,
+      recurrenceStartMinutes:
+          recurrenceStartMinutes ?? this.recurrenceStartMinutes,
+      isRecurrenceException:
+          isRecurrenceException ?? this.isRecurrenceException,
+      isRecurrenceCancelled:
+          isRecurrenceCancelled ?? this.isRecurrenceCancelled,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -12949,6 +13338,35 @@ class LocalSchedulesCompanion extends UpdateCompanion<LocalSchedule> {
     if (eventIdentity.present) {
       map['event_identity'] = Variable<String>(eventIdentity.value);
     }
+    if (recurrenceId.present) {
+      map['recurrence_id'] = Variable<String>(recurrenceId.value);
+    }
+    if (recurrenceSeriesId.present) {
+      map['recurrence_series_id'] = Variable<String>(recurrenceSeriesId.value);
+    }
+    if (recurrenceDate.present) {
+      map['recurrence_date'] = Variable<String>(recurrenceDate.value);
+    }
+    if (recurrenceTimeZoneId.present) {
+      map['recurrence_time_zone_id'] = Variable<String>(
+        recurrenceTimeZoneId.value,
+      );
+    }
+    if (recurrenceStartMinutes.present) {
+      map['recurrence_start_minutes'] = Variable<int>(
+        recurrenceStartMinutes.value,
+      );
+    }
+    if (isRecurrenceException.present) {
+      map['is_recurrence_exception'] = Variable<bool>(
+        isRecurrenceException.value,
+      );
+    }
+    if (isRecurrenceCancelled.present) {
+      map['is_recurrence_cancelled'] = Variable<bool>(
+        isRecurrenceCancelled.value,
+      );
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -12983,6 +13401,777 @@ class LocalSchedulesCompanion extends UpdateCompanion<LocalSchedule> {
           ..write('sourceEventId: $sourceEventId, ')
           ..write('occurrenceId: $occurrenceId, ')
           ..write('eventIdentity: $eventIdentity, ')
+          ..write('recurrenceId: $recurrenceId, ')
+          ..write('recurrenceSeriesId: $recurrenceSeriesId, ')
+          ..write('recurrenceDate: $recurrenceDate, ')
+          ..write('recurrenceTimeZoneId: $recurrenceTimeZoneId, ')
+          ..write('recurrenceStartMinutes: $recurrenceStartMinutes, ')
+          ..write('isRecurrenceException: $isRecurrenceException, ')
+          ..write('isRecurrenceCancelled: $isRecurrenceCancelled, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $LocalScheduleRecurrencesTable extends LocalScheduleRecurrences
+    with TableInfo<$LocalScheduleRecurrencesTable, LocalScheduleRecurrence> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalScheduleRecurrencesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
+  @override
+  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
+    'user_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _frequencyMeta = const VerificationMeta(
+    'frequency',
+  );
+  @override
+  late final GeneratedColumn<String> frequency = GeneratedColumn<String>(
+    'frequency',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _weekdaysMeta = const VerificationMeta(
+    'weekdays',
+  );
+  @override
+  late final GeneratedColumn<String> weekdays = GeneratedColumn<String>(
+    'weekdays',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('[]'),
+  );
+  static const VerificationMeta _firstDateMeta = const VerificationMeta(
+    'firstDate',
+  );
+  @override
+  late final GeneratedColumn<String> firstDate = GeneratedColumn<String>(
+    'first_date',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _endDateMeta = const VerificationMeta(
+    'endDate',
+  );
+  @override
+  late final GeneratedColumn<String> endDate = GeneratedColumn<String>(
+    'end_date',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _timeZoneIdMeta = const VerificationMeta(
+    'timeZoneId',
+  );
+  @override
+  late final GeneratedColumn<String> timeZoneId = GeneratedColumn<String>(
+    'time_zone_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _allDayMeta = const VerificationMeta('allDay');
+  @override
+  late final GeneratedColumn<bool> allDay = GeneratedColumn<bool>(
+    'all_day',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("all_day" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _startMinutesOfDayMeta = const VerificationMeta(
+    'startMinutesOfDay',
+  );
+  @override
+  late final GeneratedColumn<int> startMinutesOfDay = GeneratedColumn<int>(
+    'start_minutes_of_day',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _durationMinutesMeta = const VerificationMeta(
+    'durationMinutes',
+  );
+  @override
+  late final GeneratedColumn<int> durationMinutes = GeneratedColumn<int>(
+    'duration_minutes',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(60),
+  );
+  static const VerificationMeta _daySpanMeta = const VerificationMeta(
+    'daySpan',
+  );
+  @override
+  late final GeneratedColumn<int> daySpan = GeneratedColumn<int>(
+    'day_span',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    userId,
+    id,
+    frequency,
+    weekdays,
+    firstDate,
+    endDate,
+    timeZoneId,
+    allDay,
+    startMinutesOfDay,
+    durationMinutes,
+    daySpan,
+    createdAt,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_schedule_recurrences';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalScheduleRecurrence> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('user_id')) {
+      context.handle(
+        _userIdMeta,
+        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_userIdMeta);
+    }
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('frequency')) {
+      context.handle(
+        _frequencyMeta,
+        frequency.isAcceptableOrUnknown(data['frequency']!, _frequencyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_frequencyMeta);
+    }
+    if (data.containsKey('weekdays')) {
+      context.handle(
+        _weekdaysMeta,
+        weekdays.isAcceptableOrUnknown(data['weekdays']!, _weekdaysMeta),
+      );
+    }
+    if (data.containsKey('first_date')) {
+      context.handle(
+        _firstDateMeta,
+        firstDate.isAcceptableOrUnknown(data['first_date']!, _firstDateMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_firstDateMeta);
+    }
+    if (data.containsKey('end_date')) {
+      context.handle(
+        _endDateMeta,
+        endDate.isAcceptableOrUnknown(data['end_date']!, _endDateMeta),
+      );
+    }
+    if (data.containsKey('time_zone_id')) {
+      context.handle(
+        _timeZoneIdMeta,
+        timeZoneId.isAcceptableOrUnknown(
+          data['time_zone_id']!,
+          _timeZoneIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_timeZoneIdMeta);
+    }
+    if (data.containsKey('all_day')) {
+      context.handle(
+        _allDayMeta,
+        allDay.isAcceptableOrUnknown(data['all_day']!, _allDayMeta),
+      );
+    }
+    if (data.containsKey('start_minutes_of_day')) {
+      context.handle(
+        _startMinutesOfDayMeta,
+        startMinutesOfDay.isAcceptableOrUnknown(
+          data['start_minutes_of_day']!,
+          _startMinutesOfDayMeta,
+        ),
+      );
+    }
+    if (data.containsKey('duration_minutes')) {
+      context.handle(
+        _durationMinutesMeta,
+        durationMinutes.isAcceptableOrUnknown(
+          data['duration_minutes']!,
+          _durationMinutesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('day_span')) {
+      context.handle(
+        _daySpanMeta,
+        daySpan.isAcceptableOrUnknown(data['day_span']!, _daySpanMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {userId, id};
+  @override
+  LocalScheduleRecurrence map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalScheduleRecurrence(
+      userId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_id'],
+      )!,
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      frequency: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}frequency'],
+      )!,
+      weekdays: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}weekdays'],
+      )!,
+      firstDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}first_date'],
+      )!,
+      endDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}end_date'],
+      ),
+      timeZoneId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}time_zone_id'],
+      )!,
+      allDay: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}all_day'],
+      )!,
+      startMinutesOfDay: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}start_minutes_of_day'],
+      )!,
+      durationMinutes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}duration_minutes'],
+      )!,
+      daySpan: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}day_span'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalScheduleRecurrencesTable createAlias(String alias) {
+    return $LocalScheduleRecurrencesTable(attachedDatabase, alias);
+  }
+}
+
+class LocalScheduleRecurrence extends DataClass
+    implements Insertable<LocalScheduleRecurrence> {
+  final String userId;
+  final String id;
+  final String frequency;
+  final String weekdays;
+  final String firstDate;
+  final String? endDate;
+  final String timeZoneId;
+  final bool allDay;
+  final int startMinutesOfDay;
+  final int durationMinutes;
+  final int daySpan;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  const LocalScheduleRecurrence({
+    required this.userId,
+    required this.id,
+    required this.frequency,
+    required this.weekdays,
+    required this.firstDate,
+    this.endDate,
+    required this.timeZoneId,
+    required this.allDay,
+    required this.startMinutesOfDay,
+    required this.durationMinutes,
+    required this.daySpan,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['user_id'] = Variable<String>(userId);
+    map['id'] = Variable<String>(id);
+    map['frequency'] = Variable<String>(frequency);
+    map['weekdays'] = Variable<String>(weekdays);
+    map['first_date'] = Variable<String>(firstDate);
+    if (!nullToAbsent || endDate != null) {
+      map['end_date'] = Variable<String>(endDate);
+    }
+    map['time_zone_id'] = Variable<String>(timeZoneId);
+    map['all_day'] = Variable<bool>(allDay);
+    map['start_minutes_of_day'] = Variable<int>(startMinutesOfDay);
+    map['duration_minutes'] = Variable<int>(durationMinutes);
+    map['day_span'] = Variable<int>(daySpan);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  LocalScheduleRecurrencesCompanion toCompanion(bool nullToAbsent) {
+    return LocalScheduleRecurrencesCompanion(
+      userId: Value(userId),
+      id: Value(id),
+      frequency: Value(frequency),
+      weekdays: Value(weekdays),
+      firstDate: Value(firstDate),
+      endDate: endDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(endDate),
+      timeZoneId: Value(timeZoneId),
+      allDay: Value(allDay),
+      startMinutesOfDay: Value(startMinutesOfDay),
+      durationMinutes: Value(durationMinutes),
+      daySpan: Value(daySpan),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory LocalScheduleRecurrence.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalScheduleRecurrence(
+      userId: serializer.fromJson<String>(json['userId']),
+      id: serializer.fromJson<String>(json['id']),
+      frequency: serializer.fromJson<String>(json['frequency']),
+      weekdays: serializer.fromJson<String>(json['weekdays']),
+      firstDate: serializer.fromJson<String>(json['firstDate']),
+      endDate: serializer.fromJson<String?>(json['endDate']),
+      timeZoneId: serializer.fromJson<String>(json['timeZoneId']),
+      allDay: serializer.fromJson<bool>(json['allDay']),
+      startMinutesOfDay: serializer.fromJson<int>(json['startMinutesOfDay']),
+      durationMinutes: serializer.fromJson<int>(json['durationMinutes']),
+      daySpan: serializer.fromJson<int>(json['daySpan']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'userId': serializer.toJson<String>(userId),
+      'id': serializer.toJson<String>(id),
+      'frequency': serializer.toJson<String>(frequency),
+      'weekdays': serializer.toJson<String>(weekdays),
+      'firstDate': serializer.toJson<String>(firstDate),
+      'endDate': serializer.toJson<String?>(endDate),
+      'timeZoneId': serializer.toJson<String>(timeZoneId),
+      'allDay': serializer.toJson<bool>(allDay),
+      'startMinutesOfDay': serializer.toJson<int>(startMinutesOfDay),
+      'durationMinutes': serializer.toJson<int>(durationMinutes),
+      'daySpan': serializer.toJson<int>(daySpan),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  LocalScheduleRecurrence copyWith({
+    String? userId,
+    String? id,
+    String? frequency,
+    String? weekdays,
+    String? firstDate,
+    Value<String?> endDate = const Value.absent(),
+    String? timeZoneId,
+    bool? allDay,
+    int? startMinutesOfDay,
+    int? durationMinutes,
+    int? daySpan,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+  }) => LocalScheduleRecurrence(
+    userId: userId ?? this.userId,
+    id: id ?? this.id,
+    frequency: frequency ?? this.frequency,
+    weekdays: weekdays ?? this.weekdays,
+    firstDate: firstDate ?? this.firstDate,
+    endDate: endDate.present ? endDate.value : this.endDate,
+    timeZoneId: timeZoneId ?? this.timeZoneId,
+    allDay: allDay ?? this.allDay,
+    startMinutesOfDay: startMinutesOfDay ?? this.startMinutesOfDay,
+    durationMinutes: durationMinutes ?? this.durationMinutes,
+    daySpan: daySpan ?? this.daySpan,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  LocalScheduleRecurrence copyWithCompanion(
+    LocalScheduleRecurrencesCompanion data,
+  ) {
+    return LocalScheduleRecurrence(
+      userId: data.userId.present ? data.userId.value : this.userId,
+      id: data.id.present ? data.id.value : this.id,
+      frequency: data.frequency.present ? data.frequency.value : this.frequency,
+      weekdays: data.weekdays.present ? data.weekdays.value : this.weekdays,
+      firstDate: data.firstDate.present ? data.firstDate.value : this.firstDate,
+      endDate: data.endDate.present ? data.endDate.value : this.endDate,
+      timeZoneId: data.timeZoneId.present
+          ? data.timeZoneId.value
+          : this.timeZoneId,
+      allDay: data.allDay.present ? data.allDay.value : this.allDay,
+      startMinutesOfDay: data.startMinutesOfDay.present
+          ? data.startMinutesOfDay.value
+          : this.startMinutesOfDay,
+      durationMinutes: data.durationMinutes.present
+          ? data.durationMinutes.value
+          : this.durationMinutes,
+      daySpan: data.daySpan.present ? data.daySpan.value : this.daySpan,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalScheduleRecurrence(')
+          ..write('userId: $userId, ')
+          ..write('id: $id, ')
+          ..write('frequency: $frequency, ')
+          ..write('weekdays: $weekdays, ')
+          ..write('firstDate: $firstDate, ')
+          ..write('endDate: $endDate, ')
+          ..write('timeZoneId: $timeZoneId, ')
+          ..write('allDay: $allDay, ')
+          ..write('startMinutesOfDay: $startMinutesOfDay, ')
+          ..write('durationMinutes: $durationMinutes, ')
+          ..write('daySpan: $daySpan, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    userId,
+    id,
+    frequency,
+    weekdays,
+    firstDate,
+    endDate,
+    timeZoneId,
+    allDay,
+    startMinutesOfDay,
+    durationMinutes,
+    daySpan,
+    createdAt,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalScheduleRecurrence &&
+          other.userId == this.userId &&
+          other.id == this.id &&
+          other.frequency == this.frequency &&
+          other.weekdays == this.weekdays &&
+          other.firstDate == this.firstDate &&
+          other.endDate == this.endDate &&
+          other.timeZoneId == this.timeZoneId &&
+          other.allDay == this.allDay &&
+          other.startMinutesOfDay == this.startMinutesOfDay &&
+          other.durationMinutes == this.durationMinutes &&
+          other.daySpan == this.daySpan &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class LocalScheduleRecurrencesCompanion
+    extends UpdateCompanion<LocalScheduleRecurrence> {
+  final Value<String> userId;
+  final Value<String> id;
+  final Value<String> frequency;
+  final Value<String> weekdays;
+  final Value<String> firstDate;
+  final Value<String?> endDate;
+  final Value<String> timeZoneId;
+  final Value<bool> allDay;
+  final Value<int> startMinutesOfDay;
+  final Value<int> durationMinutes;
+  final Value<int> daySpan;
+  final Value<DateTime> createdAt;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const LocalScheduleRecurrencesCompanion({
+    this.userId = const Value.absent(),
+    this.id = const Value.absent(),
+    this.frequency = const Value.absent(),
+    this.weekdays = const Value.absent(),
+    this.firstDate = const Value.absent(),
+    this.endDate = const Value.absent(),
+    this.timeZoneId = const Value.absent(),
+    this.allDay = const Value.absent(),
+    this.startMinutesOfDay = const Value.absent(),
+    this.durationMinutes = const Value.absent(),
+    this.daySpan = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalScheduleRecurrencesCompanion.insert({
+    required String userId,
+    required String id,
+    required String frequency,
+    this.weekdays = const Value.absent(),
+    required String firstDate,
+    this.endDate = const Value.absent(),
+    required String timeZoneId,
+    this.allDay = const Value.absent(),
+    this.startMinutesOfDay = const Value.absent(),
+    this.durationMinutes = const Value.absent(),
+    this.daySpan = const Value.absent(),
+    required DateTime createdAt,
+    required DateTime updatedAt,
+    this.rowid = const Value.absent(),
+  }) : userId = Value(userId),
+       id = Value(id),
+       frequency = Value(frequency),
+       firstDate = Value(firstDate),
+       timeZoneId = Value(timeZoneId),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<LocalScheduleRecurrence> custom({
+    Expression<String>? userId,
+    Expression<String>? id,
+    Expression<String>? frequency,
+    Expression<String>? weekdays,
+    Expression<String>? firstDate,
+    Expression<String>? endDate,
+    Expression<String>? timeZoneId,
+    Expression<bool>? allDay,
+    Expression<int>? startMinutesOfDay,
+    Expression<int>? durationMinutes,
+    Expression<int>? daySpan,
+    Expression<DateTime>? createdAt,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (userId != null) 'user_id': userId,
+      if (id != null) 'id': id,
+      if (frequency != null) 'frequency': frequency,
+      if (weekdays != null) 'weekdays': weekdays,
+      if (firstDate != null) 'first_date': firstDate,
+      if (endDate != null) 'end_date': endDate,
+      if (timeZoneId != null) 'time_zone_id': timeZoneId,
+      if (allDay != null) 'all_day': allDay,
+      if (startMinutesOfDay != null) 'start_minutes_of_day': startMinutesOfDay,
+      if (durationMinutes != null) 'duration_minutes': durationMinutes,
+      if (daySpan != null) 'day_span': daySpan,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalScheduleRecurrencesCompanion copyWith({
+    Value<String>? userId,
+    Value<String>? id,
+    Value<String>? frequency,
+    Value<String>? weekdays,
+    Value<String>? firstDate,
+    Value<String?>? endDate,
+    Value<String>? timeZoneId,
+    Value<bool>? allDay,
+    Value<int>? startMinutesOfDay,
+    Value<int>? durationMinutes,
+    Value<int>? daySpan,
+    Value<DateTime>? createdAt,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return LocalScheduleRecurrencesCompanion(
+      userId: userId ?? this.userId,
+      id: id ?? this.id,
+      frequency: frequency ?? this.frequency,
+      weekdays: weekdays ?? this.weekdays,
+      firstDate: firstDate ?? this.firstDate,
+      endDate: endDate ?? this.endDate,
+      timeZoneId: timeZoneId ?? this.timeZoneId,
+      allDay: allDay ?? this.allDay,
+      startMinutesOfDay: startMinutesOfDay ?? this.startMinutesOfDay,
+      durationMinutes: durationMinutes ?? this.durationMinutes,
+      daySpan: daySpan ?? this.daySpan,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (userId.present) {
+      map['user_id'] = Variable<String>(userId.value);
+    }
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (frequency.present) {
+      map['frequency'] = Variable<String>(frequency.value);
+    }
+    if (weekdays.present) {
+      map['weekdays'] = Variable<String>(weekdays.value);
+    }
+    if (firstDate.present) {
+      map['first_date'] = Variable<String>(firstDate.value);
+    }
+    if (endDate.present) {
+      map['end_date'] = Variable<String>(endDate.value);
+    }
+    if (timeZoneId.present) {
+      map['time_zone_id'] = Variable<String>(timeZoneId.value);
+    }
+    if (allDay.present) {
+      map['all_day'] = Variable<bool>(allDay.value);
+    }
+    if (startMinutesOfDay.present) {
+      map['start_minutes_of_day'] = Variable<int>(startMinutesOfDay.value);
+    }
+    if (durationMinutes.present) {
+      map['duration_minutes'] = Variable<int>(durationMinutes.value);
+    }
+    if (daySpan.present) {
+      map['day_span'] = Variable<int>(daySpan.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalScheduleRecurrencesCompanion(')
+          ..write('userId: $userId, ')
+          ..write('id: $id, ')
+          ..write('frequency: $frequency, ')
+          ..write('weekdays: $weekdays, ')
+          ..write('firstDate: $firstDate, ')
+          ..write('endDate: $endDate, ')
+          ..write('timeZoneId: $timeZoneId, ')
+          ..write('allDay: $allDay, ')
+          ..write('startMinutesOfDay: $startMinutesOfDay, ')
+          ..write('durationMinutes: $durationMinutes, ')
+          ..write('daySpan: $daySpan, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -15488,6 +16677,8 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   late final $LocalCalendarBlocksTable localCalendarBlocks =
       $LocalCalendarBlocksTable(this);
   late final $LocalSchedulesTable localSchedules = $LocalSchedulesTable(this);
+  late final $LocalScheduleRecurrencesTable localScheduleRecurrences =
+      $LocalScheduleRecurrencesTable(this);
   late final $LocalScheduleMigrationsTable localScheduleMigrations =
       $LocalScheduleMigrationsTable(this);
   late final $LocalUserLifecycleStatesTable localUserLifecycleStates =
@@ -15524,6 +16715,7 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
     localCalendarSources,
     localCalendarBlocks,
     localSchedules,
+    localScheduleRecurrences,
     localScheduleMigrations,
     localUserLifecycleStates,
     localProfileAccounts,
@@ -21469,6 +22661,13 @@ typedef $$LocalSchedulesTableCreateCompanionBuilder =
       Value<String?> sourceEventId,
       Value<String?> occurrenceId,
       Value<String?> eventIdentity,
+      Value<String?> recurrenceId,
+      Value<String?> recurrenceSeriesId,
+      Value<String?> recurrenceDate,
+      Value<String?> recurrenceTimeZoneId,
+      Value<int?> recurrenceStartMinutes,
+      Value<bool> isRecurrenceException,
+      Value<bool> isRecurrenceCancelled,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<int> rowid,
@@ -21494,6 +22693,13 @@ typedef $$LocalSchedulesTableUpdateCompanionBuilder =
       Value<String?> sourceEventId,
       Value<String?> occurrenceId,
       Value<String?> eventIdentity,
+      Value<String?> recurrenceId,
+      Value<String?> recurrenceSeriesId,
+      Value<String?> recurrenceDate,
+      Value<String?> recurrenceTimeZoneId,
+      Value<int?> recurrenceStartMinutes,
+      Value<bool> isRecurrenceException,
+      Value<bool> isRecurrenceCancelled,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -21600,6 +22806,41 @@ class $$LocalSchedulesTableFilterComposer
 
   ColumnFilters<String> get eventIdentity => $composableBuilder(
     column: $table.eventIdentity,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recurrenceId => $composableBuilder(
+    column: $table.recurrenceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recurrenceSeriesId => $composableBuilder(
+    column: $table.recurrenceSeriesId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recurrenceDate => $composableBuilder(
+    column: $table.recurrenceDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get recurrenceTimeZoneId => $composableBuilder(
+    column: $table.recurrenceTimeZoneId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get recurrenceStartMinutes => $composableBuilder(
+    column: $table.recurrenceStartMinutes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isRecurrenceException => $composableBuilder(
+    column: $table.isRecurrenceException,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isRecurrenceCancelled => $composableBuilder(
+    column: $table.isRecurrenceCancelled,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -21718,6 +22959,41 @@ class $$LocalSchedulesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get recurrenceId => $composableBuilder(
+    column: $table.recurrenceId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get recurrenceSeriesId => $composableBuilder(
+    column: $table.recurrenceSeriesId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get recurrenceDate => $composableBuilder(
+    column: $table.recurrenceDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get recurrenceTimeZoneId => $composableBuilder(
+    column: $table.recurrenceTimeZoneId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get recurrenceStartMinutes => $composableBuilder(
+    column: $table.recurrenceStartMinutes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isRecurrenceException => $composableBuilder(
+    column: $table.isRecurrenceException,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isRecurrenceCancelled => $composableBuilder(
+    column: $table.isRecurrenceCancelled,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -21813,6 +23089,41 @@ class $$LocalSchedulesTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get recurrenceId => $composableBuilder(
+    column: $table.recurrenceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get recurrenceSeriesId => $composableBuilder(
+    column: $table.recurrenceSeriesId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get recurrenceDate => $composableBuilder(
+    column: $table.recurrenceDate,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get recurrenceTimeZoneId => $composableBuilder(
+    column: $table.recurrenceTimeZoneId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get recurrenceStartMinutes => $composableBuilder(
+    column: $table.recurrenceStartMinutes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isRecurrenceException => $composableBuilder(
+    column: $table.isRecurrenceException,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isRecurrenceCancelled => $composableBuilder(
+    column: $table.isRecurrenceCancelled,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -21876,6 +23187,13 @@ class $$LocalSchedulesTableTableManager
                 Value<String?> sourceEventId = const Value.absent(),
                 Value<String?> occurrenceId = const Value.absent(),
                 Value<String?> eventIdentity = const Value.absent(),
+                Value<String?> recurrenceId = const Value.absent(),
+                Value<String?> recurrenceSeriesId = const Value.absent(),
+                Value<String?> recurrenceDate = const Value.absent(),
+                Value<String?> recurrenceTimeZoneId = const Value.absent(),
+                Value<int?> recurrenceStartMinutes = const Value.absent(),
+                Value<bool> isRecurrenceException = const Value.absent(),
+                Value<bool> isRecurrenceCancelled = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -21899,6 +23217,13 @@ class $$LocalSchedulesTableTableManager
                 sourceEventId: sourceEventId,
                 occurrenceId: occurrenceId,
                 eventIdentity: eventIdentity,
+                recurrenceId: recurrenceId,
+                recurrenceSeriesId: recurrenceSeriesId,
+                recurrenceDate: recurrenceDate,
+                recurrenceTimeZoneId: recurrenceTimeZoneId,
+                recurrenceStartMinutes: recurrenceStartMinutes,
+                isRecurrenceException: isRecurrenceException,
+                isRecurrenceCancelled: isRecurrenceCancelled,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -21924,6 +23249,13 @@ class $$LocalSchedulesTableTableManager
                 Value<String?> sourceEventId = const Value.absent(),
                 Value<String?> occurrenceId = const Value.absent(),
                 Value<String?> eventIdentity = const Value.absent(),
+                Value<String?> recurrenceId = const Value.absent(),
+                Value<String?> recurrenceSeriesId = const Value.absent(),
+                Value<String?> recurrenceDate = const Value.absent(),
+                Value<String?> recurrenceTimeZoneId = const Value.absent(),
+                Value<int?> recurrenceStartMinutes = const Value.absent(),
+                Value<bool> isRecurrenceException = const Value.absent(),
+                Value<bool> isRecurrenceCancelled = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -21947,6 +23279,13 @@ class $$LocalSchedulesTableTableManager
                 sourceEventId: sourceEventId,
                 occurrenceId: occurrenceId,
                 eventIdentity: eventIdentity,
+                recurrenceId: recurrenceId,
+                recurrenceSeriesId: recurrenceSeriesId,
+                recurrenceDate: recurrenceDate,
+                recurrenceTimeZoneId: recurrenceTimeZoneId,
+                recurrenceStartMinutes: recurrenceStartMinutes,
+                isRecurrenceException: isRecurrenceException,
+                isRecurrenceCancelled: isRecurrenceCancelled,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -21974,6 +23313,383 @@ typedef $$LocalSchedulesTableProcessedTableManager =
         BaseReferences<_$PactaDatabase, $LocalSchedulesTable, LocalSchedule>,
       ),
       LocalSchedule,
+      PrefetchHooks Function()
+    >;
+typedef $$LocalScheduleRecurrencesTableCreateCompanionBuilder =
+    LocalScheduleRecurrencesCompanion Function({
+      required String userId,
+      required String id,
+      required String frequency,
+      Value<String> weekdays,
+      required String firstDate,
+      Value<String?> endDate,
+      required String timeZoneId,
+      Value<bool> allDay,
+      Value<int> startMinutesOfDay,
+      Value<int> durationMinutes,
+      Value<int> daySpan,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<int> rowid,
+    });
+typedef $$LocalScheduleRecurrencesTableUpdateCompanionBuilder =
+    LocalScheduleRecurrencesCompanion Function({
+      Value<String> userId,
+      Value<String> id,
+      Value<String> frequency,
+      Value<String> weekdays,
+      Value<String> firstDate,
+      Value<String?> endDate,
+      Value<String> timeZoneId,
+      Value<bool> allDay,
+      Value<int> startMinutesOfDay,
+      Value<int> durationMinutes,
+      Value<int> daySpan,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$LocalScheduleRecurrencesTableFilterComposer
+    extends Composer<_$PactaDatabase, $LocalScheduleRecurrencesTable> {
+  $$LocalScheduleRecurrencesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get frequency => $composableBuilder(
+    column: $table.frequency,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get weekdays => $composableBuilder(
+    column: $table.weekdays,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get firstDate => $composableBuilder(
+    column: $table.firstDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get endDate => $composableBuilder(
+    column: $table.endDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get timeZoneId => $composableBuilder(
+    column: $table.timeZoneId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get allDay => $composableBuilder(
+    column: $table.allDay,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get startMinutesOfDay => $composableBuilder(
+    column: $table.startMinutesOfDay,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get durationMinutes => $composableBuilder(
+    column: $table.durationMinutes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get daySpan => $composableBuilder(
+    column: $table.daySpan,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalScheduleRecurrencesTableOrderingComposer
+    extends Composer<_$PactaDatabase, $LocalScheduleRecurrencesTable> {
+  $$LocalScheduleRecurrencesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get userId => $composableBuilder(
+    column: $table.userId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get frequency => $composableBuilder(
+    column: $table.frequency,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get weekdays => $composableBuilder(
+    column: $table.weekdays,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get firstDate => $composableBuilder(
+    column: $table.firstDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get endDate => $composableBuilder(
+    column: $table.endDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get timeZoneId => $composableBuilder(
+    column: $table.timeZoneId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get allDay => $composableBuilder(
+    column: $table.allDay,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get startMinutesOfDay => $composableBuilder(
+    column: $table.startMinutesOfDay,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get durationMinutes => $composableBuilder(
+    column: $table.durationMinutes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get daySpan => $composableBuilder(
+    column: $table.daySpan,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalScheduleRecurrencesTableAnnotationComposer
+    extends Composer<_$PactaDatabase, $LocalScheduleRecurrencesTable> {
+  $$LocalScheduleRecurrencesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get userId =>
+      $composableBuilder(column: $table.userId, builder: (column) => column);
+
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get frequency =>
+      $composableBuilder(column: $table.frequency, builder: (column) => column);
+
+  GeneratedColumn<String> get weekdays =>
+      $composableBuilder(column: $table.weekdays, builder: (column) => column);
+
+  GeneratedColumn<String> get firstDate =>
+      $composableBuilder(column: $table.firstDate, builder: (column) => column);
+
+  GeneratedColumn<String> get endDate =>
+      $composableBuilder(column: $table.endDate, builder: (column) => column);
+
+  GeneratedColumn<String> get timeZoneId => $composableBuilder(
+    column: $table.timeZoneId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get allDay =>
+      $composableBuilder(column: $table.allDay, builder: (column) => column);
+
+  GeneratedColumn<int> get startMinutesOfDay => $composableBuilder(
+    column: $table.startMinutesOfDay,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get durationMinutes => $composableBuilder(
+    column: $table.durationMinutes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get daySpan =>
+      $composableBuilder(column: $table.daySpan, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$LocalScheduleRecurrencesTableTableManager
+    extends
+        RootTableManager<
+          _$PactaDatabase,
+          $LocalScheduleRecurrencesTable,
+          LocalScheduleRecurrence,
+          $$LocalScheduleRecurrencesTableFilterComposer,
+          $$LocalScheduleRecurrencesTableOrderingComposer,
+          $$LocalScheduleRecurrencesTableAnnotationComposer,
+          $$LocalScheduleRecurrencesTableCreateCompanionBuilder,
+          $$LocalScheduleRecurrencesTableUpdateCompanionBuilder,
+          (
+            LocalScheduleRecurrence,
+            BaseReferences<
+              _$PactaDatabase,
+              $LocalScheduleRecurrencesTable,
+              LocalScheduleRecurrence
+            >,
+          ),
+          LocalScheduleRecurrence,
+          PrefetchHooks Function()
+        > {
+  $$LocalScheduleRecurrencesTableTableManager(
+    _$PactaDatabase db,
+    $LocalScheduleRecurrencesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalScheduleRecurrencesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$LocalScheduleRecurrencesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$LocalScheduleRecurrencesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> userId = const Value.absent(),
+                Value<String> id = const Value.absent(),
+                Value<String> frequency = const Value.absent(),
+                Value<String> weekdays = const Value.absent(),
+                Value<String> firstDate = const Value.absent(),
+                Value<String?> endDate = const Value.absent(),
+                Value<String> timeZoneId = const Value.absent(),
+                Value<bool> allDay = const Value.absent(),
+                Value<int> startMinutesOfDay = const Value.absent(),
+                Value<int> durationMinutes = const Value.absent(),
+                Value<int> daySpan = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalScheduleRecurrencesCompanion(
+                userId: userId,
+                id: id,
+                frequency: frequency,
+                weekdays: weekdays,
+                firstDate: firstDate,
+                endDate: endDate,
+                timeZoneId: timeZoneId,
+                allDay: allDay,
+                startMinutesOfDay: startMinutesOfDay,
+                durationMinutes: durationMinutes,
+                daySpan: daySpan,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String userId,
+                required String id,
+                required String frequency,
+                Value<String> weekdays = const Value.absent(),
+                required String firstDate,
+                Value<String?> endDate = const Value.absent(),
+                required String timeZoneId,
+                Value<bool> allDay = const Value.absent(),
+                Value<int> startMinutesOfDay = const Value.absent(),
+                Value<int> durationMinutes = const Value.absent(),
+                Value<int> daySpan = const Value.absent(),
+                required DateTime createdAt,
+                required DateTime updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => LocalScheduleRecurrencesCompanion.insert(
+                userId: userId,
+                id: id,
+                frequency: frequency,
+                weekdays: weekdays,
+                firstDate: firstDate,
+                endDate: endDate,
+                timeZoneId: timeZoneId,
+                allDay: allDay,
+                startMinutesOfDay: startMinutesOfDay,
+                durationMinutes: durationMinutes,
+                daySpan: daySpan,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalScheduleRecurrencesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$PactaDatabase,
+      $LocalScheduleRecurrencesTable,
+      LocalScheduleRecurrence,
+      $$LocalScheduleRecurrencesTableFilterComposer,
+      $$LocalScheduleRecurrencesTableOrderingComposer,
+      $$LocalScheduleRecurrencesTableAnnotationComposer,
+      $$LocalScheduleRecurrencesTableCreateCompanionBuilder,
+      $$LocalScheduleRecurrencesTableUpdateCompanionBuilder,
+      (
+        LocalScheduleRecurrence,
+        BaseReferences<
+          _$PactaDatabase,
+          $LocalScheduleRecurrencesTable,
+          LocalScheduleRecurrence
+        >,
+      ),
+      LocalScheduleRecurrence,
       PrefetchHooks Function()
     >;
 typedef $$LocalScheduleMigrationsTableCreateCompanionBuilder =
@@ -23364,6 +25080,11 @@ class $PactaDatabaseManager {
       $$LocalCalendarBlocksTableTableManager(_db, _db.localCalendarBlocks);
   $$LocalSchedulesTableTableManager get localSchedules =>
       $$LocalSchedulesTableTableManager(_db, _db.localSchedules);
+  $$LocalScheduleRecurrencesTableTableManager get localScheduleRecurrences =>
+      $$LocalScheduleRecurrencesTableTableManager(
+        _db,
+        _db.localScheduleRecurrences,
+      );
   $$LocalScheduleMigrationsTableTableManager get localScheduleMigrations =>
       $$LocalScheduleMigrationsTableTableManager(
         _db,
