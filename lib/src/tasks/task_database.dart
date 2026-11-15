@@ -411,6 +411,30 @@ class LocalProfileAccounts extends Table {
   /// commit when no newer local edit happened meanwhile.
   IntColumn get editSequence => integer().withDefault(const Constant(0))();
 
+  /// The account display time zone (IANA identifier), shared by every device.
+  ///
+  /// Null means the account has not recorded one yet: display then uses a fixed
+  /// fallback instead of the device zone. `focus_preferences.display_time_zone_id`
+  /// is the superseded device-level field and is only read to seed this value.
+  TextColumn get timeZoneId => text().nullable()();
+
+  /// Server-owned revision of [timeZoneId] that this device last observed.
+  ///
+  /// Cached so an explicit edit can name the exact account value it is based
+  /// on. It is not a local counter: only the account store advances it, which
+  /// is what keeps two devices from ordering their edits by wall clocks.
+  IntColumn get timeZoneRevision => integer().withDefault(const Constant(0))();
+
+  /// Set only by an edit that changed the display time zone on this device and
+  /// has not been accepted by the account store yet.
+  ///
+  /// A nickname or avatar upload must not re-send a cached time zone it did not
+  /// choose: another device may already have a newer account value, and an
+  /// account value always wins over a stale device copy. The flag survives a
+  /// restart so an offline time-zone edit is still delivered exactly once.
+  BoolColumn get pendingTimeZoneUpload =>
+      boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column<Object>> get primaryKey => {userId};
 }
@@ -611,8 +635,24 @@ class PactaDatabase extends _$PactaDatabase {
     return true;
   }
 
+  /// Local schema 32.
+  ///
+  /// 31 merges the schedules table and the appointment-preparation column from
+  /// the core integration branch, and 34 adds the failure-review state. 35 adds
+  /// the account display time zone and the one-shot upload intent on top of
+  /// them; it keeps the next free number rather than reusing 32, because the
+  /// integration branch moved past that number while this ticket was isolated.
+  /// Both time-zone columns are added
+  /// defensively (see the migration below), because provisional 30 fixtures can
+  /// already carry `time_zone_id` while a plain 30 database does not.
+  ///
+  /// 36 adds the cached server revision of that account value. It is a separate
+  /// step because a development database already upgraded to this ticket's 35
+  /// must still receive the new column. 35 is also claimed by the goal-pin
+  /// ticket, so the final integrating schema has to reconcile both bodies above
+  /// 36; this step stays structurally guarded instead of encoding a number.
   @override
-  int get schemaVersion => 35;
+  int get schemaVersion => 37;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -795,7 +835,7 @@ class PactaDatabase extends _$PactaDatabase {
       }
       // 31：日程表与预约准备时长合并为同一次本地升级。
       //
-      // 31 是本合并的版本号（32 预留给 profile 票据）。合并前两个票据各自
+      // 31 是核心合并的版本号（35 是本 profile 票据）。合并前两个票据各自
       // 独立发布过一个残缺的 30：03 只有 local_schedules，08 只有
       // preparation_seconds 列。这里按 SQLite 的实际结构只补缺少的那一半，
       // 不重建、不清空、不重算已存记录：
@@ -805,6 +845,56 @@ class PactaDatabase extends _$PactaDatabase {
       // 用存在性检查而不是版本号区间，重复升级或回拨 user_version 都安全。
       if (from < 31) {
         await ensureMergedSchedulesSchema(this, m);
+      }
+      if (from < 35) {
+        // Account-level display time zone and the one-shot upload intent.
+        // Existing rows keep the zone null, which the profile repository seeds
+        // once from the superseded device value. Structural probes keep this
+        // migration safe for provisional schema-30 databases (zone column
+        // present), for partially restored databases that never had the profile
+        // table, and for fixtures written before either column existed.
+        final profileTable = await customSelect(
+          "SELECT name FROM sqlite_master WHERE type = 'table' "
+          "AND name = 'local_profile_accounts'",
+        ).get();
+        if (profileTable.isEmpty) {
+          await m.createTable(localProfileAccounts);
+        } else {
+          final columns = await customSelect(
+            'PRAGMA table_info(local_profile_accounts)',
+          ).get();
+          final names = columns.map((row) => row.read<String>('name')).toSet();
+          if (!names.contains('time_zone_id')) {
+            await m.addColumn(
+              localProfileAccounts,
+              localProfileAccounts.timeZoneId,
+            );
+          }
+          if (!names.contains('pending_time_zone_upload')) {
+            await m.addColumn(
+              localProfileAccounts,
+              localProfileAccounts.pendingTimeZoneUpload,
+            );
+          }
+        }
+      }
+      // 36: the cached account revision the local value is based on. Guarded by
+      // the actual column list, so databases created by 35, by a provisional
+      // schema-30 fixture, or by the guarded 35 block above all upgrade once.
+      if (from < 36) {
+        final revisionColumns = await customSelect(
+          'PRAGMA table_info(local_profile_accounts)',
+        ).get();
+        final revisionNames = revisionColumns
+            .map((row) => row.read<String>('name'))
+            .toSet();
+        if (revisionNames.isNotEmpty &&
+            !revisionNames.contains('time_zone_revision')) {
+          await m.addColumn(
+            localProfileAccounts,
+            localProfileAccounts.timeZoneRevision,
+          );
+        }
       }
       // 34：失败记录的回顾状态（ticket 11）。旧记录没有回顾概念，补列后
       // 保持 null（未回顾），由看板提示用户逐组回顾；不改写失败结果、
@@ -829,10 +919,11 @@ class PactaDatabase extends _$PactaDatabase {
       }
       // 35：目标置顶与手动排序位。
       //
-      // 32–34 由并行票据预留（账号时区、重复日程、失败回顾），本票不假定
-      // 中间版本包含它们；用列存在性检查只补本票列，已存目标保持
-      // "未置顶 + 无排序位"，顺序沿用既有规则。
-      if (from < 35) {
+      // 32–36 由并行票据预留（账号时区、重复日程、失败回顾），本票不假定
+      // 中间版本包含它们；这里用列存在性检查只补本票列，已存目标保持
+      // "未置顶 + 无排序位"，顺序沿用既有规则。守卫写成 < 37，使已经升到
+      // 02 的 36 的库也能拿到置顶列；37 是本分支对 35+36 的合并版本号。
+      if (from < 37) {
         await ensureGoalPinSchema(this, m);
       }
       if (from < 15) {

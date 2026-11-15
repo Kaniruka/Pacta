@@ -677,7 +677,10 @@ Future<List<String>> _runScenario({
   expect(find.text('下午复核'), findsOneWidget);
 
   // 11. 跨天 / 全天 / 已删除任务链接：编辑器要能原样读出并原样交回。
-  final today = DateTime.now();
+  // 02 之后日历的"今天"取自账号显示时区；夹具不改资料，因此就是统一 fallback
+  //（Etc/UTC）。仓库种子必须落在同一个公历日，否则在东八区的晚上会差一天。
+  final nowUtc = DateTime.now().toUtc();
+  final today = DateTime(nowUtc.year, nowUtc.month, nowUtc.day);
   String civil(DateTime day) =>
       '${day.year.toString().padLeft(4, '0')}-'
       '${day.month.toString().padLeft(2, '0')}-'
@@ -687,8 +690,8 @@ Future<List<String>> _runScenario({
     ScheduleDraft(
       title: '跨城评审',
       window: ScheduleWindow.timed(
-        startsAt: DateTime(today.year, today.month, today.day, 9),
-        endsAt: DateTime(
+        startsAt: DateTime.utc(today.year, today.month, today.day, 9),
+        endsAt: DateTime.utc(
           multiDayEnd.year,
           multiDayEnd.month,
           multiDayEnd.day,
@@ -718,8 +721,8 @@ Future<List<String>> _runScenario({
     ScheduleDraft(
       title: '供应商同步',
       window: ScheduleWindow.timed(
-        startsAt: DateTime(today.year, today.month, today.day, 15),
-        endsAt: DateTime(today.year, today.month, today.day, 16),
+        startsAt: DateTime.utc(today.year, today.month, today.day, 15),
+        endsAt: DateTime.utc(today.year, today.month, today.day, 16),
       ),
       taskId: linkTask.id,
     ),
