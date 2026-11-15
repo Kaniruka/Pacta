@@ -365,14 +365,20 @@ class MainActivity : FlutterActivity() {
             ) {
                 continue
             }
+            // An exception row names the recurring event it modifies: ORIGINAL_ID is
+            // the master row (EventsColumns.ORIGINAL_ID). Device continuity belongs to
+            // that master row, otherwise a moved exception looks like a new event.
+            val deviceRowId = event.originalId ?: instance.eventId
             val externalId = event.originalSyncId
                 ?: event.syncId
                 ?: event.uid
-                ?: "local:${instance.eventId}"
-            // A single event's identity is its provider id and event row: moving it
+                ?: "local:$deviceRowId"
+            // A single event's identity is its provider id and device row: moving it
             // must not create a second arrangement. Only a recurring event names an
             // occurrence, and an exception keeps its original instance start.
+            // RDATE-only series (no RRULE) still expand into separate occurrences.
             val recurring = !event.recurrenceRule.isNullOrBlank() ||
+                !event.recurrenceDates.isNullOrBlank() ||
                 event.originalInstanceTime != null
             val occurrenceStart = event.originalInstanceTime ?: instance.startsAt
             val occurrenceId = "$externalId@$occurrenceStart"
@@ -381,9 +387,9 @@ class MainActivity : FlutterActivity() {
             // before and after a provider sync id appears, so an import can prove
             // continuity on this installation without a cross-device claim.
             val deviceOccurrenceId = if (recurring) {
-                "local:${instance.eventId}@$occurrenceStart"
+                "local:$deviceRowId@$occurrenceStart"
             } else {
-                "local:${instance.eventId}"
+                "local:$deviceRowId"
             }
             val allDay = event.allDay
             output.add(
@@ -425,6 +431,8 @@ class MainActivity : FlutterActivity() {
             CalendarContract.Events.UID_2445,
             CalendarContract.Events.STATUS,
             CalendarContract.Events.RRULE,
+            CalendarContract.Events.RDATE,
+            CalendarContract.Events.ORIGINAL_ID,
         )
         for (chunk in eventIds.toList().chunked(400)) {
             val placeholders = chunk.joinToString(",") { "?" }
@@ -449,6 +457,8 @@ class MainActivity : FlutterActivity() {
                         uid = cursor.stringOrNull(CalendarContract.Events.UID_2445),
                         status = cursor.intOrNull(CalendarContract.Events.STATUS),
                         recurrenceRule = cursor.stringOrNull(CalendarContract.Events.RRULE),
+                        recurrenceDates = cursor.stringOrNull(CalendarContract.Events.RDATE),
+                        originalId = cursor.longOrNull(CalendarContract.Events.ORIGINAL_ID),
                     )
                 }
             }
@@ -513,5 +523,9 @@ class MainActivity : FlutterActivity() {
         val uid: String?,
         val status: Int?,
         val recurrenceRule: String?,
+        val recurrenceDates: String?,
+
+        /// Original recurring-event row for an exception row (EventsColumns.ORIGINAL_ID).
+        val originalId: Long?,
     )
 }

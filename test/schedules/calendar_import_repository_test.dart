@@ -603,6 +603,69 @@ void main() {
     },
   );
 
+  test(
+    'a moved local recurring exception keeps its original row copy',
+    () async {
+      await seedInstallation('install-test');
+      CalendarEventOccurrence masterOccurrence({DateTime? startsAt}) => timed(
+        sourceEventId: 'local:100',
+        occurrenceId: 'local:100@5000',
+        deviceOccurrenceId: 'local:100@5000',
+        isRecurring: true,
+        startsAt: startsAt ?? DateTime.utc(2026, 11, 16, 9),
+      );
+
+      final first = await repository.previewCalendarImport(
+        request([masterOccurrence()]),
+      );
+      final copy = (await repository.confirmCalendarImport(first))
+          .created
+          .single;
+
+      // Android reports the exception row on another day, but ORIGINAL_ID keeps
+      // the master row and the original instance start.
+      final moved = await repository.previewCalendarImport(
+        request([masterOccurrence(startsAt: DateTime.utc(2026, 11, 19, 15))]),
+      );
+      expect(moved.pending, isEmpty);
+      expect(moved.duplicateCount, 1);
+
+      await repository.confirmCalendarImport(moved);
+      final stored = (await repository.getSchedules()).single;
+      expect(stored.startsAt, DateTime.utc(2026, 11, 16, 9));
+      expect(stored.eventIdentity, copy.eventIdentity);
+    },
+  );
+
+  test('RDATE-only occurrences of one master stay separate', () async {
+    await seedInstallation('install-test');
+    CalendarEventOccurrence rdateOccurrence(DateTime start, int instanceKey) =>
+        timed(
+          sourceEventId: 'local:100',
+          occurrenceId: 'local:100@$instanceKey',
+          deviceOccurrenceId: 'local:100@$instanceKey',
+          isRecurring: true,
+          startsAt: start,
+        );
+    final firstDay = rdateOccurrence(DateTime.utc(2026, 11, 16, 9), 5000);
+    final secondDay = rdateOccurrence(DateTime.utc(2026, 11, 17, 9), 9000);
+
+    final preview = await repository.previewCalendarImport(
+      request([firstDay, secondDay]),
+    );
+    expect(preview.duplicateCount, 0);
+    expect(preview.pending, hasLength(2));
+    final outcome = await repository.confirmCalendarImport(preview);
+    expect(outcome.createdCount, 2);
+
+    final repeated = await repository.previewCalendarImport(
+      request([firstDay, secondDay]),
+    );
+    expect(repeated.pending, isEmpty);
+    expect(repeated.duplicateCount, 2);
+    expect(await repository.getSchedules(), hasLength(2));
+  });
+
   test('delimiter characters in public ids never collide', () async {
     await seedInstallation('install-test');
     final preview = await repository.previewCalendarImport(
