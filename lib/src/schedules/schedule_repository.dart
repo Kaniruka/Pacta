@@ -55,10 +55,14 @@ abstract interface class ScheduleRepository {
   ///
   /// [timeZoneId] 由调用方注入账号时区（例如 07 的账号时区适配器），仓储
   /// 不读取设备或当前显示时区。非法规则整体拒绝，不落库。
+  ///
+  /// [reminderMinutesBefore] 是整条系列的提醒模板：0 到 10080 分钟，null 或
+  /// 省略表示不提醒。懒展开的新实例继承它，不另存一份规则配置。
   Future<ScheduleSeries> createRecurringSchedule({
     required ScheduleDraft draft,
     required ScheduleRepeatSpec repeat,
     required String timeZoneId,
+    int? reminderMinutesBefore,
   });
 
   /// 改写重复日程的一个实例。
@@ -66,11 +70,17 @@ abstract interface class ScheduleRepository {
   /// [ScheduleRepeatScope.onlyThis] 只改写该实例并落库为例外；
   /// [ScheduleRepeatScope.thisAndFuture] 截断原规则、从该实例起新建规则，
   /// 已过去的实例原样保留，不会被当前规则重算。
+  ///
+  /// [reminderMinutesBefore] 省略（null）表示保留当前作用域已有的提醒配置，
+  /// 显式整数（0 到 10080）设置，[clearReminder] 为 true 时清除；两者同时给出
+  /// 属于矛盾输入，整体拒绝。只改标题或时间不会意外关掉已有提醒。
   Future<ScheduleRepeatEditResult> editRecurringSchedule(
     String scheduleId, {
     required ScheduleDraft draft,
     required ScheduleRepeatScope scope,
     ScheduleRepeatSpec? repeat,
+    int? reminderMinutesBefore,
+    bool clearReminder = false,
   });
 
   /// 当前账号的重复规则（供计划页展示重复设置）。
@@ -118,7 +128,15 @@ class LocalScheduleRepository implements ScheduleRepository {
   bool _disposed = false;
   final _uuid = const Uuid();
 
-  static const _maxReminderMinutesBefore = 7 * 24 * 60;
+  /// 校验提醒偏移并原样返回：0 到 7 天，null 表示不提醒。
+  int? _validatedReminder(int? minutesBefore) {
+    if (minutesBefore != null &&
+        (minutesBefore < 0 ||
+            minutesBefore > maxScheduleReminderMinutesBefore)) {
+      throw ArgumentError('提醒时间必须介于开始前 0 分钟到 7 天之间。');
+    }
+    return minutesBefore;
+  }
 
   @override
   Future<SchedulePromotionResult> promoteLegacyCalendarBlocks() async {
@@ -645,14 +663,11 @@ class LocalScheduleRepository implements ScheduleRepository {
     int? minutesBefore,
   }) async {
     await lifecycleAccess.requireActive();
-    if (minutesBefore != null &&
-        (minutesBefore < 0 || minutesBefore > _maxReminderMinutesBefore)) {
-      throw ArgumentError('提醒时间必须介于开始前 0 分钟到 7 天之间。');
-    }
+    final offset = _validatedReminder(minutesBefore);
     final existing = await _findSchedule(scheduleId);
     final updated = existing.copyWith(
-      reminderMinutesBefore: minutesBefore,
-      clearReminder: minutesBefore == null,
+      reminderMinutesBefore: offset,
+      clearReminder: offset == null,
       updatedAt: _nextTimestamp(existing.updatedAt),
     );
     await _saveSchedule(updated);
@@ -664,17 +679,25 @@ class LocalScheduleRepository implements ScheduleRepository {
     required ScheduleDraft draft,
     required ScheduleRepeatSpec repeat,
     required String timeZoneId,
+    int? reminderMinutesBefore,
   }) async {
     await lifecycleAccess.requireActive();
     final title = _requiredTitle(draft.title);
     final window = _validateWindow(draft.window);
     final taskId = await _requiredTaskId(draft.taskId);
-    final rule = buildRepeatRule(
-      id: _uuid.v4(),
-      spec: repeat,
-      window: window,
-      timeZoneId: timeZoneId,
-    ).copyWith(title: title, notes: draft.notes.trim(), taskId: taskId);
+    final reminder = _validatedReminder(reminderMinutesBefore);
+    final rule =
+        buildRepeatRule(
+          id: _uuid.v4(),
+          spec: repeat,
+          window: window,
+          timeZoneId: timeZoneId,
+        ).copyWith(
+          title: title,
+          notes: draft.notes.trim(),
+          taskId: taskId,
+          reminderMinutesBefore: reminder,
+        );
     late List<Schedule> occurrences;
     await database.transaction(() async {
       await _saveRule(rule, _nextTimestamp());
@@ -694,8 +717,14 @@ class LocalScheduleRepository implements ScheduleRepository {
     required ScheduleDraft draft,
     required ScheduleRepeatScope scope,
     ScheduleRepeatSpec? repeat,
+    int? reminderMinutesBefore,
+    bool clearReminder = false,
   }) async {
     await lifecycleAccess.requireActive();
+    if (clearReminder && reminderMinutesBefore != null) {
+      throw ArgumentError('清除提醒时不能再指定提醒时间。');
+    }
+    final reminder = _validatedReminder(reminderMinutesBefore);
     final existing = await _findSchedule(scheduleId);
     final ruleId = existing.recurrenceId;
     final originalDate = existing.recurrenceDate;
@@ -706,11 +735,17 @@ class LocalScheduleRepository implements ScheduleRepository {
     if (rule == null) throw StateError('重复规则不存在，请重新展开后再修改。');
     final title = _requiredTitle(draft.title);
     final window = _validateWindow(draft.window);
-    final taskId = await _requiredTaskId(draft.taskId);
+    final taskId = await _requiredTaskId(
+      draft.taskId,
+      retainedTaskId: existing.taskId,
+    );
     final seriesId = existing.recurrenceSeriesId ?? rule.id;
 
     late ScheduleRepeatEditResult result;
     await database.transaction(() async {
+      final instanceReminder = clearReminder
+          ? null
+          : (reminder ?? existing.reminderMinutesBefore);
       if (scope == ScheduleRepeatScope.onlyThis) {
         final updated = existing.copyWith(
           title: title,
@@ -722,6 +757,8 @@ class LocalScheduleRepository implements ScheduleRepository {
           allDayEndDateExclusive: window.allDayEndDateExclusive,
           taskId: taskId,
           clearTaskId: taskId == null,
+          reminderMinutesBefore: instanceReminder,
+          clearReminder: instanceReminder == null,
           isRecurrenceException: true,
           updatedAt: _nextTimestamp(existing.updatedAt),
         );
@@ -820,6 +857,9 @@ class LocalScheduleRepository implements ScheduleRepository {
           );
       // 新规则：可见首日 = 草稿日期，原始发生身份 = 可见日期 - 位移；
       // 内容模板属于规则自身，后续按范围补齐的实例都从它取内容。
+      final ruleReminder = clearReminder
+          ? null
+          : (reminder ?? rule.reminderMinutesBefore);
       final newRule =
           buildRepeatRule(
             id: newRuleId,
@@ -831,6 +871,7 @@ class LocalScheduleRepository implements ScheduleRepository {
             title: title,
             notes: draft.notes.trim(),
             taskId: taskId,
+            reminderMinutesBefore: ruleReminder,
           );
       final updated = existing.copyWith(
         title: title,
@@ -842,6 +883,8 @@ class LocalScheduleRepository implements ScheduleRepository {
         allDayEndDateExclusive: window.allDayEndDateExclusive,
         taskId: taskId,
         clearTaskId: taskId == null,
+        reminderMinutesBefore: instanceReminder,
+        clearReminder: instanceReminder == null,
         recurrenceId: newRule.id,
         // 原始发生身份不随改期漂移：取消过的同一期始终是同一身份。
         recurrenceDate: originalDate,
@@ -1141,6 +1184,7 @@ class LocalScheduleRepository implements ScheduleRepository {
         title: row.title,
         notes: row.notes,
         taskId: row.taskId,
+        reminderMinutesBefore: row.reminderMinutesBefore,
       );
 
   List<int> _decodeIntegers(String encoded) {
@@ -1172,6 +1216,7 @@ class LocalScheduleRepository implements ScheduleRepository {
             title: Value(rule.title),
             notes: Value(rule.notes),
             taskId: Value(rule.taskId),
+            reminderMinutesBefore: Value(rule.reminderMinutesBefore),
             createdAt: timestamp,
             updatedAt: timestamp,
           ),
@@ -1333,6 +1378,7 @@ class LocalScheduleRepository implements ScheduleRepository {
         allDayStartDate: window.allDayStartDate,
         allDayEndDateExclusive: window.allDayEndDateExclusive,
         taskId: resolved.taskId,
+        reminderMinutesBefore: rule.reminderMinutesBefore,
         recurrenceId: rule.id,
         recurrenceSeriesId: seriesId,
         recurrenceDate: occurrenceDate,
@@ -1374,7 +1420,15 @@ class LocalScheduleRepository implements ScheduleRepository {
     return window;
   }
 
-  Future<String?> _requiredTaskId(String? taskId) async {
+  /// 校验关联任务。
+  ///
+  /// [retainedTaskId] 是这条日程改动前已有的关联：任务被删后，只要用户没有
+  /// 改选关联，重复项仍可编辑标题/时间/提醒；但新选一个已删除或不属于当前
+  /// 用户的任务一律拒绝，避免新建悬空引用。
+  Future<String?> _requiredTaskId(
+    String? taskId, {
+    String? retainedTaskId,
+  }) async {
     final normalized = taskId?.trim();
     if (normalized == null || normalized.isEmpty) return null;
     final row =
@@ -1382,7 +1436,8 @@ class LocalScheduleRepository implements ScheduleRepository {
               ..where((task) => task.userId.equals(userId))
               ..where((task) => task.id.equals(normalized)))
             .getSingleOrNull();
-    if (row == null || row.deletedAt != null) {
+    if (row == null) throw StateError('任务不存在或已删除。');
+    if (row.deletedAt != null && normalized != retainedTaskId) {
       throw StateError('任务不存在或已删除。');
     }
     return normalized;
@@ -1630,6 +1685,7 @@ class UnavailableScheduleRepository implements ScheduleRepository {
     required ScheduleDraft draft,
     required ScheduleRepeatSpec repeat,
     required String timeZoneId,
+    int? reminderMinutesBefore,
   }) => _unavailable();
 
   @override
@@ -1638,6 +1694,8 @@ class UnavailableScheduleRepository implements ScheduleRepository {
     required ScheduleDraft draft,
     required ScheduleRepeatScope scope,
     ScheduleRepeatSpec? repeat,
+    int? reminderMinutesBefore,
+    bool clearReminder = false,
   }) => _unavailable();
 
   @override

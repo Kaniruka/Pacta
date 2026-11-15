@@ -1634,6 +1634,18 @@ class CloudSnapshotRepository {
         ruleTaskId == null || taskIds.contains(ruleTaskId),
         'Schedule recurrence Task reference',
       );
+      // 规则模板的提醒偏移与普通实例共用同一契约：null 或 0..10080 分钟。
+      // 类型（小数/字符串）与缺键已由 SQLite 列类型和严格列集合提前拒绝；
+      // 这里补上范围，避免越界值在恢复后随懒展开扩散到实例。
+      final ruleReminder = row['reminder_minutes_before'];
+      if (ruleReminder != null) {
+        requireReference(
+          ruleReminder is int &&
+              ruleReminder >= 0 &&
+              ruleReminder <= maxScheduleReminderMinutesBefore,
+          'Schedule recurrence reminder offset',
+        );
+      }
       final allDay = row['all_day'];
       requireReference(
         allDay == 0 || allDay == 1,

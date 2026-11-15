@@ -422,11 +422,6 @@ begin
       and public.cloud_snapshot_integer_between(rule -> 'day_span', 1, 2147483647)
       and public.cloud_snapshot_integer_between(
         rule -> 'shift_days', -3660, 3660)
-      and (
-        jsonb_typeof(rule -> 'reminder_minutes_before') = 'null'
-        or public.cloud_snapshot_integer_between(
-          rule -> 'reminder_minutes_before', 0, 2147483647)
-      )
       and jsonb_typeof(rule -> 'title') = 'string'
       and btrim(rule ->> 'title') <> ''
       and jsonb_typeof(rule -> 'notes') = 'string'
@@ -527,6 +522,32 @@ begin
     ) is not true
   ) then
     raise exception 'snapshot payload version 3 is incomplete: schedule recurrence identity is malformed; upgrade before uploading'
+      using errcode = 'PT426';
+  end if;
+
+  -- 提醒偏移的入站范围与客户端一致：null（不提醒）或 0..10080 分钟。规则模板
+  -- 与普通实例共用同一契约；负数、越界、小数与字符串都在写入前整体拒绝，绝不
+  -- 静默夹到边界。缺键与列类型由上面的完整列集合拒绝。
+  if exists (
+    select 1
+    from (
+      select rule as row
+      from jsonb_array_elements(
+        p_payload -> 'tables' -> 'local_schedule_recurrences'
+      ) as rule
+      union all
+      select instance as row
+      from jsonb_array_elements(
+        p_payload -> 'tables' -> 'local_schedules'
+      ) as instance
+    ) as reminder_row
+    where not (
+      jsonb_typeof(reminder_row.row -> 'reminder_minutes_before') = 'null'
+      or public.cloud_snapshot_integer_between(
+        reminder_row.row -> 'reminder_minutes_before', 0, 10080)
+    )
+  ) then
+    raise exception 'snapshot payload version 3 is incomplete: schedule reminder offsets are malformed; upgrade before uploading'
       using errcode = 'PT426';
   end if;
 
