@@ -96,11 +96,11 @@ void main() {
     final tables = copy['tables'] as Map<String, dynamic>
       ..remove('local_schedule_recurrences');
     tables['local_schedules'] = [
-      for (final row in (tables['local_schedules'] as List)
-          .cast<Map<String, dynamic>>())
+      for (final row
+          in (tables['local_schedules'] as List).cast<Map<String, dynamic>>())
         {
           for (final entry in row.entries)
-            if (!(entry.key as String).startsWith('recurrence_') &&
+            if (!entry.key.startsWith('recurrence_') &&
                 entry.key != 'is_recurrence_exception' &&
                 entry.key != 'is_recurrence_cancelled')
               entry.key: entry.value,
@@ -304,7 +304,10 @@ void main() {
 
     final local = await repository.captureLocalState();
     final core2 = core2Payload(local.payload);
-    expect(failureRowsOf(core2).every((row) => row['reviewed_at'] != null), isTrue);
+    expect(
+      failureRowsOf(core2).every((row) => row['reviewed_at'] != null),
+      isTrue,
+    );
     await uploadRaw(
       payload: core2,
       expectedRevision: 0,

@@ -437,9 +437,10 @@ class LocalScheduleRepository implements ScheduleRepository {
                 FocusTimeZones.location(rule.timeZoneId),
               ),
             );
-      final shiftDays = parseRecurrenceDate(draftFirstDate, '草稿日期')
-          .difference(splitAt)
-          .inDays;
+      final shiftDays = parseRecurrenceDate(
+        draftFirstDate,
+        '草稿日期',
+      ).difference(splitAt).inDays;
       final spec =
           repeat ??
           ScheduleRepeatSpec(

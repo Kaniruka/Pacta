@@ -235,10 +235,7 @@ void main() {
     final result = await repository.editRecurringSchedule(
       series.occurrences[1].id,
       // 只改内容：草稿窗口仍落在该实例自己的日期上。
-      draft: timedDraft(
-        title: '新周会',
-        startsAt: series.occurrences[1].startsAt,
-      ),
+      draft: timedDraft(title: '新周会', startsAt: series.occurrences[1].startsAt),
       scope: ScheduleRepeatScope.thisAndFuture,
     );
 

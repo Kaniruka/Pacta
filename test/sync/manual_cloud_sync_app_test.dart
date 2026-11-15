@@ -14,6 +14,9 @@ import 'package:pacta/src/calendar/calendar_repository.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
+import 'package:pacta/src/schedules/schedule_models.dart';
+import 'package:pacta/src/schedules/schedule_repeat.dart';
+import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
 import 'package:pacta/src/sync/cloud_sync_result.dart';
 import 'package:pacta/src/tasks/task_database.dart';
@@ -561,6 +564,194 @@ void main() {
       );
     }
   }
+
+  testWidgets('重复日程的例外与截断经 AppShell 手动云同步完整往返', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1000, 1800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final deviceA = PactaDatabase(NativeDatabase.memory());
+    final deviceB = PactaDatabase(NativeDatabase.memory());
+    final remote = _TrackingCloudSnapshotRemote();
+    final auth = FakeAuthRepository()..signedInUser = _userId;
+
+    // A 机：真实仓储造出"仅本次例外 + 本次及以后截断"的重复日程。
+    final schedulesA = LocalScheduleRepository(
+      database: deviceA,
+      userId: _userId,
+      now: () => DateTime.utc(2026, 11, 15, 1),
+    );
+    final series = await schedulesA.createRecurringSchedule(
+      draft: ScheduleDraft(
+        title: '周会',
+        window: ScheduleWindow.timed(
+          startsAt: DateTime.utc(2026, 11, 16, 1),
+          endsAt: DateTime.utc(2026, 11, 16, 2),
+        ),
+      ),
+      repeat: const ScheduleRepeatSpec(
+        frequency: ScheduleRepeatFrequency.daily,
+        endDate: '2026-11-20',
+      ),
+      timeZoneId: 'Asia/Shanghai',
+    );
+    await schedulesA.editRecurringSchedule(
+      series.occurrences[1].id,
+      draft: ScheduleDraft(
+        title: '一对一',
+        window: ScheduleWindow.timed(
+          startsAt: DateTime.utc(2026, 11, 17, 2),
+          endsAt: DateTime.utc(2026, 11, 17, 2, 30),
+        ),
+      ),
+      scope: ScheduleRepeatScope.onlyThis,
+    );
+    await schedulesA.editRecurringSchedule(
+      series.occurrences[2].id,
+      draft: ScheduleDraft(
+        title: '新周会',
+        window: ScheduleWindow.timed(
+          startsAt: DateTime.utc(2026, 11, 18, 3),
+          endsAt: DateTime.utc(2026, 11, 18, 4),
+        ),
+      ),
+      scope: ScheduleRepeatScope.thisAndFuture,
+    );
+    await schedulesA.dispose();
+
+    Future<void> pumpApp(
+      PactaDatabase database,
+      CloudSnapshotRepository cloudRepository,
+    ) async {
+      await tester.pumpWidget(
+        PactaApp(
+          authRepository: auth,
+          taskRepositoryFactory: (userId) => LocalTaskRepository(
+            database: database,
+            userId: userId,
+            remote: InMemoryTaskRemote(),
+            cloudSyncEnabled: false,
+          ),
+          focusRepositoryFactory: (userId) => LocalFocusRepository(
+            database: database,
+            userId: userId,
+            remote: InMemoryFocusRemote(),
+            cloudSyncEnabled: false,
+          ),
+          nationalFocusRepositoryFactory: (userId) =>
+              LocalNationalFocusRepository(
+                database: database,
+                userId: userId,
+                cloudSyncEnabled: false,
+              ),
+          calendarRepositoryFactory: (userId) => LocalCalendarRepository(
+            database: database,
+            userId: userId,
+            provider: const UnsupportedCalendarProvider(),
+            remote: InMemoryCalendarRemote(),
+            cloudSyncEnabled: false,
+          ),
+          userLifecycleRepositoryFactory: (id) => UserLifecycleRepository(
+            authRepository: auth,
+            localAccess: LocalUserLifecycleAccess(
+              database: database,
+              userId: id,
+            ),
+          ),
+          cloudSnapshotRepositoryFactory: (_) => cloudRepository,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> closeApp() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    }
+
+    final cloudA = CloudSnapshotRepository(
+      database: deviceA,
+      remote: remote,
+      userId: _userId,
+      deviceId: 'device-a',
+      deviceName: 'Device A',
+      now: () => DateTime(2026, 11, 15, 7),
+    );
+    try {
+      await pumpApp(deviceA, cloudA);
+      expect(find.byType(AppShell), findsOneWidget);
+      await tester.tap(find.text('我的'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('查看云同步'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('上传'));
+      await tester.tap(find.text('上传'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确认上传'));
+      await tester.pumpAndSettle();
+      expect(find.text('上传完成，已覆盖云端数据。'), findsOneWidget);
+      await closeApp();
+
+      final cloudB = CloudSnapshotRepository(
+        database: deviceB,
+        remote: remote,
+        userId: _userId,
+        deviceId: 'device-b',
+        deviceName: 'Device B',
+        now: () => DateTime(2026, 11, 15, 9),
+      );
+      await pumpApp(deviceB, cloudB);
+      await tester.tap(find.text('我的'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('查看云同步'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('下载'));
+      await tester.tap(find.text('下载'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确认下载'));
+      await tester.pumpAndSettle();
+      expect(find.text('下载完成，已覆盖本机数据。'), findsOneWidget);
+
+      // B 机上真正的往返结果：规则分区、例外与截断后的实例。
+      final schedulesB = LocalScheduleRepository(
+        database: deviceB,
+        userId: _userId,
+        now: () => DateTime.utc(2026, 11, 15, 9),
+      );
+      addTearDown(schedulesB.dispose);
+      final rules = await schedulesB.getRecurrenceRules();
+      expect(rules, hasLength(2));
+      final ordered = [...rules]
+        ..sort((left, right) => left.firstDate.compareTo(right.firstDate));
+      expect(ordered.first.endDate, '2026-11-17');
+      expect(ordered.last.firstDate, '2026-11-18');
+      expect(ordered.last.endDate, '2026-11-20');
+
+      final restored = await schedulesB.getSchedules(
+        from: DateTime.utc(2026, 11, 15),
+        to: DateTime.utc(2026, 11, 21),
+      );
+      String label(Schedule schedule) =>
+          '${schedule.recurrenceDate}:${schedule.title}';
+      expect(restored.map(label), [
+        '2026-11-16:周会',
+        '2026-11-17:一对一',
+        '2026-11-18:新周会',
+        '2026-11-19:新周会',
+        '2026-11-20:新周会',
+      ]);
+      expect(restored[1].isRecurrenceException, isTrue);
+      expect(restored[1].isRecurring, isTrue);
+      expect(restored[2].isRecurrenceException, isFalse);
+    } finally {
+      await closeApp();
+      await deviceA.close();
+      await deviceB.close();
+    }
+  });
 }
 
 class _TrackingCloudSnapshotRemote extends InMemoryCloudSnapshotRemote {
