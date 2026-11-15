@@ -90,6 +90,43 @@ void main() {
     expect(await database.select(database.localCalendarSources).get(), isEmpty);
   });
 
+  test('a later source change or deletion never rewrites the copy', () async {
+    await calendarRepository.requestAccess();
+    final preview = await scheduleRepository.previewCalendarImport(request());
+    await scheduleRepository.confirmCalendarImport(preview);
+
+    // The source event moves and is renamed after the copy already exists.
+    final moved = DateTime.utc(2026, 11, 17, 20);
+    provider.events = [
+      CalendarEventOccurrence(
+        sourceId: 'source-a',
+        sourceEventId: 'evt-1@example.com',
+        occurrenceId: 'evt-1@example.com@1',
+        eventIdentity: 'evt-1@example.com@1',
+        title: '改到晚上的周会',
+        startsAt: moved,
+        endsAt: moved.add(const Duration(hours: 1)),
+        allDay: false,
+        availability: CalendarAvailability.busy,
+        timeZoneId: 'Asia/Shanghai',
+      ),
+    ];
+    var copies = await scheduleRepository.getSchedules();
+    expect(copies.single.title, '周会');
+    expect(copies.single.startsAt, startsAt);
+
+    final repeated = await scheduleRepository.previewCalendarImport(request());
+    expect(repeated.pending, isEmpty);
+    expect(repeated.duplicateCount, 1);
+
+    // The source event disappears: the copy stays.
+    provider.events = const [];
+    await scheduleRepository.confirmCalendarImport(repeated);
+    copies = await scheduleRepository.getSchedules();
+    expect(copies, hasLength(1));
+    expect(copies.single.title, '周会');
+  });
+
   test(
     'a revoked permission leaves copies and refuses a new preview read',
     () async {
