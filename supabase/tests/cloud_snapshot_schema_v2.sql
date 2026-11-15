@@ -73,8 +73,6 @@ declare
     )
   );
   saved public.cloud_business_snapshots;
-  archived integer;
-  ledger integer;
 begin
   saved := public.save_cloud_business_snapshot(
     0, payload, 'probe-device', 'Probe device',
@@ -91,18 +89,8 @@ begin
       ->> 'preparation_seconds' is distinct from '600' then
     raise exception 'stored version 2 payload lost its explicit preparation duration';
   end if;
-  select count(*) into archived
-  from public.cloud_business_snapshot_history
-  where user_id = auth.uid() and revision = 1 and request_id = 'schema-v2-accept';
-  if archived <> 1 then
-    raise exception 'complete version 2 upload was not archived with its request id';
-  end if;
-  select count(*) into ledger
-  from public.cloud_business_snapshot_upload_requests
-  where user_id = auth.uid() and request_id = 'schema-v2-accept' and revision = 1;
-  if ledger <> 1 then
-    raise exception 'complete version 2 upload did not record its request ledger entry';
-  end if;
+  -- 归档与请求台账是私有表：裁剪到受信任会话断言（见
+  -- $private_upload_evidence$），不为了断言去申请额外表权限。
 
   -- Retrying the same request returns the version it produced.
   saved := public.save_cloud_business_snapshot(
@@ -115,6 +103,48 @@ begin
   end if;
 end
 $accept_complete_version_two$;
+
+-- The upload ledger is a private table: the authenticated role has no privilege
+-- on it, and history is read-only for it. The denials are part of the contract,
+-- so they are asserted rather than granted.
+do $private_snapshot_tables_are_forbidden$
+declare
+  owner_id uuid := current_setting('schema_v2_test.owner_id')::uuid;
+begin
+  begin
+    perform 1 from public.cloud_business_snapshot_upload_requests
+    where user_id = owner_id;
+    raise exception 'authenticated_could_read_the_upload_ledger';
+  exception
+    when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.cloud_business_snapshot_upload_requests (
+      user_id, request_id, revision, payload_fingerprint
+    ) values (owner_id, 'direct-ledger-write', 1, md5('{}'));
+    raise exception 'authenticated_could_write_the_upload_ledger';
+  exception
+    when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.cloud_business_snapshot_history (
+      user_id, revision, payload, device_id, device_name, data_updated_at,
+      uploaded_at, row_count
+    ) values (
+      owner_id, 99,
+      jsonb_build_object(
+        'schemaVersion', '2',
+        'userId', owner_id::text,
+        'tables', '{}'::jsonb
+      ),
+      'direct-write', 'Direct write', now(), now(), 0
+    );
+    raise exception 'authenticated_could_write_snapshot_history';
+  exception
+    when insufficient_privilege then null;
+  end;
+end
+$private_snapshot_tables_are_forbidden$;
 
 -- A brand-new version 1 upload is refused even as a first upload: it cannot
 -- represent the owned schedules or the explicit preparation duration.
@@ -236,6 +266,33 @@ end
 $keep_cas_guard$;
 
 reset role;
+
+-- Trusted-session evidence for the accepted upload: the RPC archived it and
+-- recorded its request ledger entry, which the authenticated role cannot see.
+do $private_upload_evidence$
+declare
+  owner_id uuid := current_setting('schema_v2_test.owner_id')::uuid;
+  archived integer;
+  ledger integer;
+begin
+  select count(*) into archived
+  from public.cloud_business_snapshot_history
+  where user_id = owner_id
+    and revision = 1
+    and request_id = 'schema-v2-accept';
+  if archived <> 1 then
+    raise exception 'complete version 2 upload was not archived with its request id';
+  end if;
+  select count(*) into ledger
+  from public.cloud_business_snapshot_upload_requests
+  where user_id = owner_id
+    and request_id = 'schema-v2-accept'
+    and revision = 1;
+  if ledger <> 1 then
+    raise exception 'complete version 2 upload did not record its request ledger entry';
+  end if;
+end
+$private_upload_evidence$;
 
 -- Seed a revision that was committed before the upgrade: its payload is still
 -- version 1 and its request ledger entry already exists.
