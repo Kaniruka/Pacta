@@ -305,7 +305,7 @@ void main() {
     try {
       await fixture.pump(
         tester,
-        size: const Size(1280, 900),
+        size: const Size(1280, 1600),
         brightness: Brightness.light,
       );
       await fixture.schedules.createRecurringSchedule(
@@ -354,7 +354,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 1));
       await fixture.pump(
         tester,
-        size: const Size(1280, 900),
+        size: const Size(1280, 1600),
         brightness: Brightness.light,
       );
       await _openPlanCalendar(tester);
@@ -365,12 +365,28 @@ void main() {
       await tester.tap(find.text('本次及以后'));
       await fixture.settle(tester);
       await tester.enterText(_field('名称'), '每日站会（新规则）');
+      await tester.ensureVisible(find.byType(DropdownButtonFormField<int?>));
+      await fixture.settle(tester);
+      // 模板当前无提醒：点字段显示的"不提醒"打开菜单。
+      await tester.tap(find.text('不提醒').last);
+      await fixture.settle(tester);
+      await tester.tap(find.text('提前 15 分钟').last);
+      await fixture.settle(tester);
       await tester.tap(find.text('保存'));
       await fixture.settle(tester);
-      expect(await fixture.schedules.getRecurrenceRules(), hasLength(2));
+      final rules = await fixture.schedules.getRecurrenceRules();
+      expect(rules, hasLength(2));
+      expect(
+        rules
+            .singleWhere((rule) => rule.firstDate == '2026-11-15')
+            .reminderMinutesBefore,
+        15,
+        reason: '本次及以后把可见提醒写进规则模板',
+      );
       fixture.record(const [
         'recurrence-scope',
         'reminder-persisted',
+        'reminder-template',
         'wide-light',
       ]);
     } finally {

@@ -302,6 +302,106 @@ void main() {
     }
   });
 
+  testWidgets('重复提醒显式提交：仅本次改实例，本次及以后改模板并可清除', (tester) async {
+    final harness = _Harness(
+      PactaDatabase(NativeDatabase.memory()),
+      clock: () => DateTime.utc(2026, 11, 15, 9),
+    );
+    try {
+      await harness.pump(tester);
+      await _seedDailySeries(harness);
+      await tester.pumpAndSettle();
+      await _openCalendar(tester);
+
+      // 仅本次：实例提醒改为 15 分钟，规则模板保持无提醒。
+      await tester.tap(find.text('每日站会'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(DropdownButtonFormField<int?>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('提前 15 分钟').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      var instances = await harness.schedules.getSchedules(
+        from: DateTime.utc(2026, 11, 15),
+        to: DateTime.utc(2026, 11, 17),
+      );
+      expect(
+        instances
+            .singleWhere((i) => i.recurrenceDate == '2026-11-15')
+            .reminderMinutesBefore,
+        15,
+      );
+      expect(
+        (await harness.schedules.getRecurrenceRules())
+            .single
+            .reminderMinutesBefore,
+        isNull,
+      );
+
+      // 本次及以后：模板提醒改为 30 分钟，后续实例继承。
+      await tester.tap(find.text('每日站会'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('本次及以后'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(DropdownButtonFormField<int?>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('提前 30 分钟').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      final rules = await harness.schedules.getRecurrenceRules();
+      expect(rules, hasLength(2));
+      expect(
+        rules
+            .singleWhere((rule) => rule.firstDate == '2026-11-15')
+            .reminderMinutesBefore,
+        30,
+      );
+      expect(
+        rules
+            .singleWhere((rule) => rule.endDate == '2026-11-14')
+            .reminderMinutesBefore,
+        isNull,
+      );
+      instances = await harness.schedules.getSchedules(
+        from: DateTime.utc(2026, 11, 16),
+        to: DateTime.utc(2026, 11, 17),
+      );
+      expect(instances.single.reminderMinutesBefore, 30);
+
+      // 清除：模板与后续实例都不再提醒。
+      await tester.tap(find.text('每日站会'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('本次及以后'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(DropdownButtonFormField<int?>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('不提醒').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      expect(
+        (await harness.schedules.getRecurrenceRules())
+            .singleWhere((rule) => rule.firstDate == '2026-11-15')
+            .reminderMinutesBefore,
+        isNull,
+      );
+      expect(
+        (await harness.schedules.getSchedules(
+          from: DateTime.utc(2026, 11, 16),
+          to: DateTime.utc(2026, 11, 17),
+        )).single.reminderMinutesBefore,
+        isNull,
+      );
+    } finally {
+      await harness.dispose(tester);
+    }
+  });
+
   testWidgets('非重复安排的提醒可以显式清除', (tester) async {
     final harness = _Harness(
       PactaDatabase(NativeDatabase.memory()),
