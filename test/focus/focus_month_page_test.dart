@@ -621,6 +621,133 @@ void main() {
   );
 
   testWidgets(
+    '来源未解析时更换仓库不查询，解析后只查询新仓库',
+    (tester) => withFixture(tester, () async {
+      final repositoryA = _DeferredFocusRepository();
+      final repositoryB = _DeferredFocusRepository();
+      addTearDown(repositoryA.dispose);
+      addTearDown(repositoryB.dispose);
+      final zones = StreamController<String?>();
+      addTearDown(zones.close);
+      Stream<String?> zoneSource() => zones.stream;
+      var current = repositoryA;
+      late StateSetter rebuild;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: pactaTheme(Brightness.light),
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return FocusMonthPage(
+                repository: current,
+                accountTimeZoneIds: zoneSource,
+                initialMonth: DateTime(2026, 11),
+                now: () => now,
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(repositoryA.requests, isEmpty);
+      expect(repositoryB.requests, isEmpty);
+
+      // Same stable zone callback, replacement repository, source still
+      // unresolved: no query may run against either repository yet.
+      rebuild(() => current = repositoryB);
+      await tester.pump();
+      expect(repositoryA.requests, isEmpty);
+      expect(repositoryB.requests, isEmpty);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('2026年11月'), findsOneWidget);
+
+      // Resolution queries the current repository once, in the resolved zone.
+      zones.add('Asia/Shanghai');
+      await tester.pump();
+      await tester.pump();
+      expect(repositoryB.requests, hasLength(1));
+      expect(repositoryB.last.timeZoneId, 'Asia/Shanghai');
+      expect(repositoryA.requests, isEmpty);
+
+      repositoryB.last.controller.add(
+        _monthMetrics(month: DateTime.utc(2026, 11), seconds: {12: 10 * 60}),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('10 分钟'), findsOneWidget);
+    }),
+  );
+
+  testWidgets(
+    '来源失败后更换仓库保持错误态不查询，重试后只读新仓库',
+    (tester) => withFixture(tester, () async {
+      final repositoryA = _DeferredFocusRepository();
+      final repositoryB = _DeferredFocusRepository();
+      addTearDown(repositoryA.dispose);
+      addTearDown(repositoryB.dispose);
+      var attempts = 0;
+      Stream<String?> zoneSource() {
+        attempts++;
+        if (attempts == 1) {
+          return Stream<String?>.error(StateError('profile unavailable'));
+        }
+        return Stream<String?>.value('Asia/Shanghai');
+      }
+
+      var current = repositoryA;
+      late StateSetter rebuild;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: pactaTheme(Brightness.light),
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return FocusMonthPage(
+                repository: current,
+                accountTimeZoneIds: zoneSource,
+                initialMonth: DateTime(2026, 11),
+                now: () => now,
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('专注月历加载失败。'), findsOneWidget);
+      expect(repositoryA.requests, isEmpty);
+
+      // A repository swap while the source is failed keeps the recoverable error
+      // and never queries with a stale/previous zone.
+      rebuild(() => current = repositoryB);
+      await tester.pump();
+
+      expect(find.text('专注月历加载失败。'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(repositoryA.requests, isEmpty);
+      expect(repositoryB.requests, isEmpty);
+
+      await tester.tap(find.text('重试'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(repositoryB.requests, hasLength(1));
+      expect(repositoryB.last.timeZoneId, 'Asia/Shanghai');
+      expect(repositoryA.requests, isEmpty);
+
+      repositoryB.last.controller.add(
+        _monthMetrics(month: DateTime.utc(2026, 11), seconds: {7: 20 * 60}),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('专注月历加载失败。'), findsNothing);
+      expect(find.textContaining('20 分钟'), findsOneWidget);
+    }),
+  );
+
+  testWidgets(
     '切换账号仓库后不回显上一账号的投入',
     (tester) => withFixture(tester, () async {
       final repositoryA = _DeferredFocusRepository();

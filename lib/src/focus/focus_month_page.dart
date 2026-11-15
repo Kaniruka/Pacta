@@ -103,9 +103,11 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
       // wait for its first value instead of querying with the previous account's
       // zone. The pending restart also covers a simultaneous repository change.
       _subscribeAccountTimeZone();
-    } else if (widget.repository != oldWidget.repository) {
+    } else if (widget.repository != oldWidget.repository && _zoneResolved) {
       // A different account owns different data: drop the old projection now and
       // rebuild from the new repository instead of showing the previous user.
+      // While the account zone is unresolved or failed, every query waits (the
+      // pending restart reads the current widget repository after resolution).
       _restartMonth(notify: false);
     }
   }
@@ -227,6 +229,11 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
   }
 
   void _restartMonth({bool notify = true}) {
+    // Single gate for every query path: the zone callbacks set [_zoneResolved]
+    // immediately before calling in; month switches and repository switches are
+    // rejected until then, and a failed source keeps its error/loading state.
+    if (!_zoneResolved) return;
+
     final generation = ++_generation;
     _cancel(_monthSubscription);
     _monthSubscription = null;
