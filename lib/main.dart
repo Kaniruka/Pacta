@@ -1244,11 +1244,11 @@ class _FocusClockReviewPrompt extends StatelessWidget {
 class _FailureReviewPrompt extends StatelessWidget {
   const _FailureReviewPrompt({
     required this.repository,
-    required this.onOpenNationalFocus,
+    required this.displayTimeZoneId,
   });
 
   final NationalFocusRepository repository;
-  final VoidCallback onOpenNationalFocus;
+  final String displayTimeZoneId;
 
   @override
   Widget build(BuildContext context) {
@@ -1269,7 +1269,16 @@ class _FailureReviewPrompt extends StatelessWidget {
               title: Text('${pendingBatches.length} 组国策失败待回顾'),
               subtitle: const Text('稍后再看也可以；回顾只做标记，不改动当时的失败结果。'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: onOpenNationalFocus,
+              // 直达 10 号已有的失败记录页，而不是只切换主导航；
+              // 完整回顾仍在那一页里进入冻结树二级页。
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => NationalFocusFailureHistoryPage(
+                    repository: repository,
+                    displayTimeZoneId: displayTimeZoneId,
+                  ),
+                ),
+              ),
             ),
           ),
         );
@@ -1323,6 +1332,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
                   deviceTimeZoneId: deviceTimeZoneId,
                 ),
                 builder: (context, metricsSnapshot) => _BoardContent(
+                  deviceTimeZoneId: deviceTimeZoneId,
                   repository: taskRepository,
                   focusRepository: focusRepository,
                   nationalFocusRepository: nationalFocusRepository,
@@ -1340,6 +1350,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
 
 class _BoardContent extends StatelessWidget {
   const _BoardContent({
+    required this.deviceTimeZoneId,
     required this.repository,
     required this.focusRepository,
     required this.nationalFocusRepository,
@@ -1349,6 +1360,7 @@ class _BoardContent extends StatelessWidget {
     required this.metrics,
   });
 
+  final String deviceTimeZoneId;
   final TaskRepository repository;
   final FocusRepository focusRepository;
   final NationalFocusRepository nationalFocusRepository;
@@ -1382,7 +1394,7 @@ class _BoardContent extends StatelessWidget {
       _FocusClockReviewPrompt(repository: focusRepository),
       _FailureReviewPrompt(
         repository: nationalFocusRepository,
-        onOpenNationalFocus: onOpenNationalFocus,
+        displayTimeZoneId: deviceTimeZoneId,
       ),
       if (goals.isEmpty)
         Card(

@@ -173,4 +173,77 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
+  testWidgets('看板提示直接打开失败记录页，返回后保持同一记录上下文', (tester) async {
+    const user = 'support';
+    final tasks = LocalTaskRepository(
+      database: database,
+      userId: user,
+      remote: InMemoryTaskRemote(),
+      now: () => now,
+    );
+    final focus = LocalFocusRepository(
+      database: database,
+      userId: user,
+      remote: InMemoryFocusRemote(),
+      now: () => now,
+    );
+    final tree = LocalNationalFocusRepository(
+      database: database,
+      userId: user,
+      cloudSyncEnabled: false,
+      now: () => now,
+    );
+    addTearDown(tree.dispose);
+    await createFailedBatch(tree);
+
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      PactaApp(
+        authRepository: FakeAuthRepository()..signedInUser = user,
+        taskRepositoryFactory: (_) => tasks,
+        focusRepositoryFactory: (_) => focus,
+        nationalFocusRepositoryFactory: (_) => tree,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await pumpPage(tester);
+
+    final hint = find.text('1 组国策失败待回顾');
+    expect(hint, findsOneWidget);
+    await tester.tap(hint);
+    await tester.pumpAndSettle();
+    await pumpPage(tester);
+
+    // 直达记录页，而不是只把主导航切到国策树。
+    expect(find.byType(NationalFocusFailureHistoryPage), findsOneWidget);
+    expect(find.text('国策失败记录'), findsOneWidget);
+    expect(find.byType(BoardPage), findsNothing);
+
+    // 沿用 10 号的冻结树二级页。
+    await tester.tap(find.textContaining('2 个节点'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('查看当时树'));
+    await tester.pumpAndSettle();
+    expect(find.text('当时树（只读）'), findsOneWidget);
+
+    // 返回后仍是同一条记录上下文，可直接标记回顾。
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byType(NationalFocusFailureHistoryPage), findsOneWidget);
+    expect(find.textContaining('2 个节点'), findsOneWidget);
+    expect(find.text('标记已回顾'), findsOneWidget);
+
+    await tester.tap(find.text('标记已回顾'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('已回顾'), findsWidgets);
+    expect(
+      (await tree.getFailures()).every((failure) => failure.isReviewed),
+      isTrue,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
 }
