@@ -11,6 +11,8 @@
 -- * 版本 3 但缺 local_schedules、缺 local_schedule_recurrences、或任一预约行缺
 --   preparation_seconds 的残缺载荷同样拒绝（PT426）。判定都在任何写入之前，
 --   不会留下半份快照。
+-- * 版本 3 是并集：自有日程、每场预约的准备时长、重复规则与实例身份、
+--   目标的置顶/排序位（07）以及失败回顾标记（11）都必须整列出现。
 -- * 重复规则的星期集合按客户端真实形状校验：它是 TEXT 列里的 JSON 文本
 --   （例如 "[1]"），解析成数组后逐项检查；坏 JSON、非数组、非整数、越界或
 --   重复的星期都让整份载荷被拒绝，而不是放宽类型让带病数据落库。
@@ -55,7 +57,7 @@ alter table public.cloud_business_snapshot_history
 
 comment on constraint cloud_business_snapshots_schema
   on public.cloud_business_snapshots is
-  'Accepts snapshot schema versions 1, 2 and 3; version 3 adds the schedule recurrence rules and per-instance recurrence basis on top of complete core 2.';
+  'Accepts snapshot schema versions 1, 2 and 3; version 3 carries owned schedules, per-appointment preparation seconds, schedule recurrence rules with per-instance basis, goal pin fields and the failure review marker.';
 
 -- 星期集合的实际线上形状：客户端把它存成 TEXT 列的 JSON 文本（例如 "[1]"），
 -- 整份快照逐列导出后仍是 JSON 字符串，而不是 jsonb 数组。这里按真实协议解析
@@ -166,6 +168,24 @@ begin
 end;
 $$;
 revoke all on function public.cloud_snapshot_integer_between(jsonb, numeric, numeric)
+  from public, anon, authenticated;
+
+-- 严格当前形状：行里只允许出现该表在客户端里的真实列，未知字段整体拒绝，
+-- 避免旧客户端或第三方写入被静默吞掉。
+create or replace function public.cloud_snapshot_only_keys(
+  p_row jsonb,
+  p_allowed text[]
+) returns boolean
+language sql
+immutable
+set search_path = pg_catalog
+as $$
+  select not exists (
+    select 1 from jsonb_object_keys(p_row) as key
+    where key <> all (p_allowed)
+  );
+$$;
+revoke all on function public.cloud_snapshot_only_keys(jsonb, text[])
   from public, anon, authenticated;
 
 -- 写入口：结构与归属校验沿用原错误码，版本单独判定。
@@ -283,6 +303,68 @@ begin
       using errcode = 'PT426';
   end if;
 
+  -- 07：目标置顶与手动排序位是 v3 并集的一部分。表必须存在、每行带齐两列，
+  -- 类型与范围严格，未知字段整体拒绝。
+  if jsonb_typeof(p_payload -> 'tables' -> 'local_goals') is distinct from 'array' then
+    raise exception 'snapshot payload version 3 is incomplete: goal pin fields are missing; upgrade before uploading'
+      using errcode = 'PT426';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(p_payload -> 'tables' -> 'local_goals') as goal
+    where (
+      jsonb_typeof(goal) = 'object'
+      and goal ?& array[
+        'user_id', 'id', 'title', 'description', 'classification',
+        'created_at', 'updated_at', 'deleted_at', 'is_pinned', 'sort_order'
+      ]
+      and public.cloud_snapshot_only_keys(goal, array[
+        'user_id', 'id', 'title', 'description', 'classification',
+        'created_at', 'updated_at', 'deleted_at', 'is_pinned', 'sort_order'
+      ])
+      and jsonb_typeof(goal -> 'user_id') = 'string'
+      and goal ->> 'user_id' = owner_id::text
+      and jsonb_typeof(goal -> 'id') = 'string'
+      and btrim(goal ->> 'id') <> ''
+      and jsonb_typeof(goal -> 'title') = 'string'
+      and jsonb_typeof(goal -> 'description') = 'string'
+      and jsonb_typeof(goal -> 'classification') = 'string'
+      and public.cloud_snapshot_integer_between(goal -> 'is_pinned', 0, 1)
+      and (
+        jsonb_typeof(goal -> 'sort_order') = 'null'
+        or public.cloud_snapshot_integer_between(
+          goal -> 'sort_order', 0, 2147483647)
+      )
+      and jsonb_typeof(goal -> 'created_at') = 'number'
+      and jsonb_typeof(goal -> 'updated_at') = 'number'
+      and jsonb_typeof(goal -> 'deleted_at') in ('number', 'null')
+    ) is not true
+  ) then
+    raise exception 'snapshot payload version 3 is incomplete: goal pin fields are malformed; upgrade before uploading'
+      using errcode = 'PT426';
+  end if;
+
+  -- 11：失败记录的回顾标记同样是并集列；缺表、缺键或类型不对都整体拒绝。
+  if jsonb_typeof(p_payload -> 'tables' -> 'local_national_focus_failures') is distinct from 'array' then
+    raise exception 'snapshot payload version 3 is incomplete: failure review state is missing; upgrade before uploading'
+      using errcode = 'PT426';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(
+      p_payload -> 'tables' -> 'local_national_focus_failures') as failure
+    where (
+      jsonb_typeof(failure) = 'object'
+      and jsonb_exists(failure, 'reviewed_at')
+      and jsonb_typeof(failure -> 'reviewed_at') in ('number', 'null')
+      and jsonb_typeof(failure -> 'user_id') = 'string'
+      and failure ->> 'user_id' = owner_id::text
+    ) is not true
+  ) then
+    raise exception 'snapshot payload version 3 is incomplete: failure review state is malformed; upgrade before uploading'
+      using errcode = 'PT426';
+  end if;
+
   if jsonb_typeof(p_payload -> 'tables' -> 'local_schedule_recurrences') is distinct from 'array' then
     raise exception 'snapshot payload version 3 is incomplete: schedule recurrence rules are missing; upgrade before uploading'
       using errcode = 'PT426';
@@ -307,8 +389,14 @@ begin
         'user_id', 'id', 'frequency', 'weekdays', 'first_date', 'end_date',
         'time_zone_id', 'all_day', 'start_minutes_of_day', 'duration_minutes',
         'day_span', 'shift_days', 'title', 'notes', 'task_id',
-        'created_at', 'updated_at'
+        'reminder_minutes_before', 'created_at', 'updated_at'
       ]
+      and public.cloud_snapshot_only_keys(rule, array[
+        'user_id', 'id', 'frequency', 'weekdays', 'first_date', 'end_date',
+        'time_zone_id', 'all_day', 'start_minutes_of_day', 'duration_minutes',
+        'day_span', 'shift_days', 'title', 'notes', 'task_id',
+        'reminder_minutes_before', 'created_at', 'updated_at'
+      ])
       and jsonb_typeof(rule -> 'user_id') = 'string'
       and rule ->> 'user_id' = owner_id::text
       and jsonb_typeof(rule -> 'id') = 'string'
@@ -334,6 +422,11 @@ begin
       and public.cloud_snapshot_integer_between(rule -> 'day_span', 1, 2147483647)
       and public.cloud_snapshot_integer_between(
         rule -> 'shift_days', -3660, 3660)
+      and (
+        jsonb_typeof(rule -> 'reminder_minutes_before') = 'null'
+        or public.cloud_snapshot_integer_between(
+          rule -> 'reminder_minutes_before', 0, 2147483647)
+      )
       and jsonb_typeof(rule -> 'title') = 'string'
       and btrim(rule ->> 'title') <> ''
       and jsonb_typeof(rule -> 'notes') = 'string'
@@ -375,6 +468,16 @@ begin
         'recurrence_start_minutes', 'is_recurrence_exception',
         'is_recurrence_cancelled', 'created_at', 'updated_at'
       ]
+      and public.cloud_snapshot_only_keys(instance, array[
+        'user_id', 'id', 'title', 'notes', 'starts_at', 'ends_at', 'all_day',
+        'all_day_start_date', 'all_day_end_date_exclusive', 'is_completed',
+        'completed_at', 'task_id', 'reminder_minutes_before', 'origin',
+        'source_ids', 'source_names', 'source_event_id', 'occurrence_id',
+        'event_identity', 'recurrence_id', 'recurrence_series_id',
+        'recurrence_date', 'recurrence_time_zone_id',
+        'recurrence_start_minutes', 'is_recurrence_exception',
+        'is_recurrence_cancelled', 'created_at', 'updated_at'
+      ])
       and (
         (
           jsonb_typeof(instance -> 'recurrence_id') = 'null'
@@ -584,4 +687,4 @@ grant execute on function public.read_national_focus_mcp_metadata(text, bigint)
   to service_role;
 
 comment on table public.cloud_business_snapshots is
-  'One revisioned whole-account business-data snapshot per user; upload is compare-and-swap and only accepts the complete current payload schema version (owned schedules, per-appointment preparation seconds and schedule recurrence rules with per-instance basis).';
+  'One revisioned whole-account business-data snapshot per user; upload is compare-and-swap and only accepts the complete current payload schema version (owned schedules, per-appointment preparation seconds, schedule recurrence rules with per-instance basis, goal pin fields and the failure review marker).';

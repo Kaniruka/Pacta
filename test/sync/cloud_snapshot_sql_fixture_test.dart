@@ -100,6 +100,30 @@ void main() {
     expect(after.payload['tables'], equals(fixture['tables']));
   });
 
+  test('快照替换前拒绝公历之外的 0000 年日期', () async {
+    final fixture = _fixture();
+    final tables = fixture['tables'] as Map<String, dynamic>;
+    final rules = tables['local_schedule_recurrences'] as List<dynamic>;
+    (rules.single as Map<String, dynamic>)['first_date'] = '0000-01-01';
+    await remote.upload(
+      userId: _fixtureOwner,
+      expectedRevision: 0,
+      payload: fixture,
+      deviceId: 'device-a',
+      deviceName: 'Phone A',
+      dataUpdatedAt: DateTime.utc(2026, 11, 15),
+      rowCount: 3,
+    );
+    final before = await repository.captureLocalState();
+    await expectLater(
+      repository.downloadCloud(
+        expectedRevision: 1,
+        expectedFingerprint: before.fingerprint,
+      ),
+      throwsA(isA<StateError>()),
+    );
+  });
+
   test('恢复后的星期集合仍是客户端写出的 JSON 文本', () async {
     final fixture = _fixture();
     await remote.upload(

@@ -241,6 +241,11 @@ DateTime parseRecurrenceDate(String value, String label) {
   final year = int.parse(value.substring(0, 4));
   final month = int.parse(value.substring(5, 7));
   final day = int.parse(value.substring(8, 10));
+  // PostgreSQL 的公历从 1 年开始：年份 0 客户端也不接受，否则本机能存、
+  // 服务端严格校验会拒（PT426），两端必须一致。
+  if (year < 1) {
+    throw ArgumentError('$label不是真实存在的日历日。');
+  }
   final parsed = DateTime.tryParse('${value}T00:00:00Z');
   if (parsed == null ||
       parsed.year != year ||

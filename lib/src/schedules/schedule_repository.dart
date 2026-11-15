@@ -568,7 +568,11 @@ class LocalScheduleRepository implements ScheduleRepository {
     await lifecycleAccess.requireActive();
     final existing = await _findSchedule(scheduleId);
     final window = _validateWindow(draft.window);
-    final taskId = await _requiredTaskId(draft.taskId);
+    // 原关联任务若已被删除（墓碑），未改动就保留链接身份；改指新任务仍要求
+    // 目标存在且未删除，因此不会出现"新建链接到已删除任务"。
+    final taskId = draft.taskId == existing.taskId
+        ? existing.taskId
+        : await _requiredTaskId(draft.taskId);
     final updated = _replaceFields(
       existing,
       title: _requiredTitle(draft.title),
@@ -1430,4 +1434,100 @@ class _ImportIdentityIndex {
       if (known.add(alias.encode())) owned.add(alias);
     }
   }
+}
+
+/// 未登录或快照未启用时使用的空实现：页面保持可见，但没有任何写入路径。
+class UnavailableScheduleRepository implements ScheduleRepository {
+  const UnavailableScheduleRepository();
+
+  @override
+  Future<CalendarImportPreview> previewCalendarImport(
+    CalendarImportRequest request,
+  ) => _unavailable();
+
+  @override
+  Future<CalendarImportOutcome> confirmCalendarImport(
+    CalendarImportPreview preview,
+  ) => _unavailable();
+
+  @override
+  Future<ScheduleSeries> createRecurringSchedule({
+    required ScheduleDraft draft,
+    required ScheduleRepeatSpec repeat,
+    required String timeZoneId,
+  }) => _unavailable();
+
+  @override
+  Future<ScheduleRepeatEditResult> editRecurringSchedule(
+    String scheduleId, {
+    required ScheduleDraft draft,
+    required ScheduleRepeatScope scope,
+    ScheduleRepeatSpec? repeat,
+  }) => _unavailable();
+
+  @override
+  Future<List<ScheduleRepeatRule>> getRecurrenceRules() async => const [];
+
+  @override
+  Future<int> expandRecurrences({required DateTime from, required DateTime to}) async =>
+      0;
+
+  @override
+  Future<Schedule> createSchedule(ScheduleDraft draft) => _unavailable();
+
+  @override
+  Future<Schedule> updateSchedule(String scheduleId, ScheduleDraft draft) =>
+      _unavailable();
+
+  @override
+  Future<Schedule> rescheduleSchedule(
+    String scheduleId,
+    ScheduleWindow window,
+  ) => _unavailable();
+
+  @override
+  Future<void> deleteSchedule(String scheduleId) => _unavailable();
+
+  @override
+  Future<Schedule> setScheduleCompletion(
+    String scheduleId, {
+    required bool isCompleted,
+  }) => _unavailable();
+
+  @override
+  Future<Schedule> setScheduleReminder(
+    String scheduleId, {
+    int? minutesBefore,
+  }) => _unavailable();
+
+  @override
+  Future<List<Schedule>> getSchedules({DateTime? from, DateTime? to}) async =>
+      const [];
+
+  @override
+  Stream<List<Schedule>> watchSchedules({DateTime? from, DateTime? to}) =>
+      Stream.value(const []);
+
+  @override
+  Future<SchedulePromotionResult> promoteLegacyCalendarBlocks() =>
+      _unavailable();
+
+  @override
+  Future<ScheduleMigrationStatus> getLegacyMigrationStatus() async =>
+      ScheduleMigrationStatus(
+        hasCompletedMigration: true,
+        isRolledBack: false,
+        canRollback: false,
+        promotedCount: 0,
+        sourceBlockCount: 0,
+      );
+
+  @override
+  Future<ScheduleRollbackResult> rollbackLegacyCalendarBlockPromotion() =>
+      _unavailable();
+
+  @override
+  Future<void> dispose() async {}
+
+  Future<T> _unavailable<T>() async => throw StateError('日程功能需要登录后使用。');
 }

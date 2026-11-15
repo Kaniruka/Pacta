@@ -46,6 +46,8 @@ class Goal {
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
+    this.isPinned = false,
+    this.sortOrder,
     this.tasks = const [],
   });
 
@@ -56,11 +58,44 @@ class Goal {
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
+
+  /// Account data: the goal appears in the board's pinned summary block.
+  final bool isPinned;
+
+  /// Manual position among pinned goals; null while the goal is not pinned.
+  final int? sortOrder;
   final List<Task> tasks;
 
   bool get isComplete =>
       tasks.isNotEmpty && tasks.every((task) => task.isComplete);
   bool get isDeleted => deletedAt != null;
+
+  /// Read-only board projection: the earliest unfinished deadline first, then
+  /// unfinished tasks without a deadline, then creation time and stable id.
+  /// Never a completion signal; picking a task does not change its state.
+  Task? get nextTask {
+    Task? best;
+    for (final task in tasks) {
+      if (task.isComplete) continue;
+      if (best == null || _before(task, best)) best = task;
+    }
+    return best;
+  }
+
+  static bool _before(Task candidate, Task current) {
+    final candidateDeadline = candidate.deadline;
+    final currentDeadline = current.deadline;
+    if ((candidateDeadline == null) != (currentDeadline == null)) {
+      return candidateDeadline != null;
+    }
+    if (candidateDeadline != null && currentDeadline != null) {
+      final byDeadline = candidateDeadline.compareTo(currentDeadline);
+      if (byDeadline != 0) return byDeadline < 0;
+    }
+    final byCreated = candidate.createdAt.compareTo(current.createdAt);
+    if (byCreated != 0) return byCreated < 0;
+    return candidate.id.compareTo(current.id) < 0;
+  }
 
   Goal copyWith({
     String? title,
@@ -68,6 +103,8 @@ class Goal {
     TaskClassification? classification,
     DateTime? updatedAt,
     List<Task>? tasks,
+    bool? isPinned,
+    Object? sortOrder = _unchanged,
     Object? deletedAt = _unchanged,
   }) {
     return Goal(
@@ -77,6 +114,10 @@ class Goal {
       classification: classification ?? this.classification,
       createdAt: createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
+      isPinned: isPinned ?? this.isPinned,
+      sortOrder: identical(sortOrder, _unchanged)
+          ? this.sortOrder
+          : sortOrder as int?,
       deletedAt: identical(deletedAt, _unchanged)
           ? this.deletedAt
           : deletedAt as DateTime?,

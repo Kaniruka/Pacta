@@ -50,7 +50,7 @@ begin
       jsonb_build_object(
         'schemaVersion', '3',
         'userId', current_setting('snapshot_test.owner_id'),
-        'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb)
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb, 'local_goals', '[]'::jsonb, 'local_national_focus_failures', '[]'::jsonb)
       ),
       'device-a', 'Device A', now(), 0
     );
@@ -95,7 +95,7 @@ begin
       jsonb_build_object(
         'schemaVersion', '3',
         'userId', current_setting('snapshot_test.owner_id'),
-        'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb)
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb, 'local_goals', '[]'::jsonb, 'local_national_focus_failures', '[]'::jsonb)
       ),
       'device-a', 'Device A', now(), 0,
       current_setting('snapshot_test.legacy_token')
@@ -117,7 +117,7 @@ begin
     jsonb_build_object(
       'schemaVersion', '3',
       'userId', current_setting('snapshot_test.owner_id'),
-      'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb)
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb, 'local_goals', '[]'::jsonb, 'local_national_focus_failures', '[]'::jsonb)
     ),
     'device-a', 'Device A', now(), 0,
     current_legacy_result ->> 'token'
@@ -169,7 +169,7 @@ begin
       jsonb_build_object(
         'schemaVersion', '3',
         'userId', current_setting('snapshot_test.owner_id'),
-        'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb)
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb, 'local_goals', '[]'::jsonb, 'local_national_focus_failures', '[]'::jsonb)
       ),
       'device-a', 'Device A', now(), 0
     );
@@ -189,7 +189,7 @@ begin
     jsonb_build_object(
       'schemaVersion', '3',
       'userId', current_setting('snapshot_test.owner_id'),
-      'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb)
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb, 'local_goals', '[]'::jsonb, 'local_national_focus_failures', '[]'::jsonb)
     ),
     'device-b', 'Device B', now(), 0, null, 'Example Corp', 'Example Model'
   );
@@ -204,7 +204,7 @@ begin
     jsonb_build_object(
       'schemaVersion', '3',
       'userId', current_setting('snapshot_test.owner_id'),
-      'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb)
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb, 'local_goals', '[]'::jsonb, 'local_national_focus_failures', '[]'::jsonb)
     ),
     'old-client-device', 'Old client', now(), 0
   );

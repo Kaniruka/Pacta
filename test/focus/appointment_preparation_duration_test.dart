@@ -171,6 +171,14 @@ class _Fixture {
       ),
     );
     await tester.pumpAndSettle();
+    // 任务入口在计划页；看板只保留摘要。
+    final navigation = find.byType(NavigationBar).evaluate().isNotEmpty
+        ? find.byType(NavigationBar)
+        : find.byType(NavigationRail);
+    await tester.tap(
+      find.descendant(of: navigation, matching: find.text('计划')),
+    );
+    await tester.pumpAndSettle();
   }
 
   Future<void> close(WidgetTester tester) async {

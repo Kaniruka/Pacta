@@ -132,7 +132,7 @@ void main() {
 
           // A second successful upload must replace an already visible summary
           // and the baseline used by this still-mounted card's next preview.
-          await tester.tap(find.text('看板'));
+          await tester.tap(find.text('计划'));
           await tester.pumpAndSettle();
           await tester.tap(find.text('新建目标'));
           await tester.pumpAndSettle();
@@ -465,7 +465,8 @@ void main() {
               expect(find.textContaining('数据已下载，但本机同步记录未保存'), findsWidgets);
               expect(find.textContaining('同步未完成'), findsNothing);
               expect(resultStore.successfulSaves, 1);
-              await tester.tap(find.text('看板'));
+              // 目标/任务的完整列表在计划页；看板只保留摘要。
+              await tester.tap(find.text('计划'));
               await tester.pumpAndSettle();
               expect(
                 find.text('Device snapshot before upload'),

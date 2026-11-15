@@ -67,7 +67,9 @@ declare
           "classification": "regular",
           "created_at": 1763251200,
           "updated_at": 1763251200,
-          "deleted_at": null
+          "deleted_at": null,
+          "is_pinned": 1,
+          "sort_order": 3
         }
       ],
       "local_tasks": [
@@ -198,6 +200,7 @@ declare
           "id": "rule-1",
           "frequency": "weekly",
           "weekdays": "[1]",
+          "reminder_minutes_before": 10,
           "first_date": "2026-11-16",
           "end_date": "2026-12-31",
           "time_zone_id": "Asia/Shanghai",
@@ -443,7 +446,9 @@ declare
     'tables', jsonb_build_object(
       'local_schedules', '[]'::jsonb,
       'local_schedule_recurrences', '[]'::jsonb,
-      'focus_appointments', '[]'::jsonb
+      'focus_appointments', '[]'::jsonb,
+      'local_goals', '[]'::jsonb,
+      'local_national_focus_failures', '[]'::jsonb
     )
   );
 begin
