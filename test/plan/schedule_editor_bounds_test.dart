@@ -1,5 +1,6 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
@@ -218,6 +219,52 @@ void main() {
     expect(window.allDayEndDateExclusive, '2026-03-15');
     expect(window.startsAt, DateTime.utc(2026, 3, 14));
     expect(window.endsAt, DateTime.utc(2026, 3, 15));
+  });
+
+  testWidgets('360 宽真实 MiSans 字体下安排编辑器与下拉都不溢出', (tester) async {
+    // Windows 实机在 360 宽 + MiSans 下暴露过 1.6px 的水平溢出：
+    // 下拉的选中项按最小宽度排布，真实字体比测试字体略宽就撑破一行。
+    final fontLoader = FontLoader('MiSans')
+      ..addFont(rootBundle.load('assets/fonts/MiSans-Regular.ttf'));
+    await fontLoader.load();
+
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: pactaTheme(Brightness.light),
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => Center(
+              child: ElevatedButton(
+                onPressed: () => showScheduleEditor(
+                  context,
+                  goals: const [],
+                  displayTimeZoneId: 'Etc/UTC',
+                  initialDay: DateTime(2026, 3, 14),
+                  now: () => _fixtureNow,
+                ),
+                child: const Text('打开编辑器'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开编辑器'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('独立事项（不关联任务）'), findsOneWidget);
+    expect(tester.takeException(), isNull, reason: '360 宽 + MiSans 下不应溢出');
+
+    // 打开任务下拉，菜单项同样不能溢出。
+    await tester.tap(find.byType(DropdownButtonFormField<String?>));
+    await tester.pumpAndSettle();
+    expect(find.text('独立事项（不关联任务）'), findsWidgets);
+    expect(tester.takeException(), isNull, reason: '下拉菜单在 360 宽下不应溢出');
   });
 
   testWidgets('跨夜结束按当地日历日推进：春季 DST 缺口', (tester) async {

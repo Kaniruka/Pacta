@@ -229,7 +229,17 @@ Future<List<String>> _runScenario({
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 30)),
     );
-    await tester.pumpAndSettle();
+    try {
+      // 输入框光标等持续动画会让 pumpAndSettle 一直等下去：给一个有界超时，
+      // 超时后继续，后续断言与截图仍会如实暴露真实状态。
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 50),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 4),
+      );
+    } catch (_) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
   }
 
   /// 截图前先证明目标确实在可视区域内：只断言「存在」不算可判读状态。
@@ -275,6 +285,7 @@ Future<List<String>> _runScenario({
   }) async {
     await pumpUi();
     expectOnScreen(marker, reason: '截图 $step 应停在 $about');
+    debugPrint('[plan-destination] shot $label/$step');
     final name = 'plan-destination-$label-$step';
     if (!capturedNames.add(name)) fail('截图名重复：$name');
     final object = boundaryKey.currentContext?.findRenderObject();
@@ -388,6 +399,16 @@ Future<List<String>> _runScenario({
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+
+  // 把真实 FlutterError 完整打印（含出错 RenderObject 的 creator 链）：
+  // takeException 只保留短消息，root 从日志定位溢出位置需要这份来源信息。
+  // 这里只透传，不吞掉异常。
+  final previousOnError = FlutterError.onError;
+  FlutterError.onError = (details) {
+    debugPrint('[plan-destination][flutter-error] ${details.toString()}');
+    previousOnError?.call(details);
+  };
+  addTearDown(() => FlutterError.onError = previousOnError);
 
   await tester.pumpWidget(
     RepaintBoundary(

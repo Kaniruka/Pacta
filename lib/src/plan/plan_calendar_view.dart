@@ -908,11 +908,14 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
             const SizedBox(height: 12),
             DropdownButtonFormField<String?>(
               initialValue: _taskId,
+              // 选中项按整行宽度排布并省略，避免真实字体（MiSans）在 360 宽下
+              // 于最小宽度的一行里溢出。菜单项同样受此约束。
+              isExpanded: true,
               decoration: const InputDecoration(labelText: '关联任务（可选）'),
               items: [
                 const DropdownMenuItem<String?>(
                   value: null,
-                  child: Text('独立事项（不关联任务）'),
+                  child: Text('独立事项（不关联任务）', overflow: TextOverflow.ellipsis),
                 ),
                 for (final entry in tasks)
                   DropdownMenuItem<String?>(
@@ -936,6 +939,7 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
             const SizedBox(height: 12),
             DropdownButtonFormField<int?>(
               initialValue: _reminderMinutesBefore,
+              isExpanded: true,
               decoration: const InputDecoration(labelText: '提醒（可选）'),
               items: const [
                 DropdownMenuItem<int?>(value: null, child: Text('不提醒')),
