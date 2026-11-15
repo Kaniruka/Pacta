@@ -81,6 +81,10 @@ declare
         'start_minutes_of_day', 540,
         'duration_minutes', 60,
         'day_span', 1,
+        'shift_days', 0,
+        'title', '周会',
+        'notes', '',
+        'task_id', null,
         'created_at', 1763251200,
         'updated_at', 1763251200
       )),
@@ -268,6 +272,69 @@ begin
   end if;
 end
 $reject_partial_three_recurrence$;
+
+-- Version 3 whose recurrence rule rows lack the r3 template/shift metadata, or
+-- carry a normalized calendar date, is malformed as a whole.
+do $reject_malformed_three_rules$
+declare
+  owner_id text := current_setting('schema_v3_test.owner_id');
+  missing_title jsonb := jsonb_build_object(
+    'schemaVersion', '3',
+    'userId', owner_id,
+    'tables', jsonb_build_object(
+      'local_schedules', '[]'::jsonb,
+      'local_schedule_recurrences', jsonb_build_array(jsonb_build_object(
+        'user_id', owner_id,
+        'id', 'rule-1',
+        'frequency', 'weekly',
+        'weekdays', '[1]'::jsonb,
+        'first_date', '2026-11-16',
+        'time_zone_id', 'Asia/Shanghai',
+        'shift_days', 0,
+        'notes', '',
+        'task_id', null
+      )),
+      'focus_appointments', '[]'::jsonb
+    )
+  );
+  overflow_date jsonb := jsonb_set(
+    missing_title,
+    '{tables,local_schedule_recurrences,0,title}',
+    to_jsonb('周会'::text)
+  );
+  overflow_date := jsonb_set(
+    overflow_date,
+    '{tables,local_schedule_recurrences,0,first_date}',
+    to_jsonb('2026-02-30'::text)
+  );
+begin
+  begin
+    perform public.save_cloud_business_snapshot(
+      1, missing_title, 'partial-device', 'Partial device',
+      '2026-11-15T02:04:30Z'::timestamptz, 0
+    );
+    raise exception 'version 3 rule without its template title was accepted';
+  exception
+    when sqlstate 'PT426' then
+      if sqlerrm not like '%malformed%' then
+        raise exception 'malformed rule rejection did not name the rules: %', sqlerrm;
+      end if;
+  end;
+  begin
+    perform public.save_cloud_business_snapshot(
+      1, overflow_date, 'partial-device', 'Partial device',
+      '2026-11-15T02:04:45Z'::timestamptz, 0
+    );
+    raise exception 'version 3 rule with a normalized calendar date was accepted';
+  exception
+    when sqlstate 'PT426' then null;
+  end;
+  if (select revision from public.cloud_business_snapshots
+      where user_id = auth.uid()) <> 1 then
+    raise exception 'rejected malformed rule write changed the snapshot';
+  end if;
+end
+$reject_malformed_three_rules$;
 
 -- Version 3 whose appointment rows omit the preparation duration is incomplete.
 do $reject_partial_three_preparation$

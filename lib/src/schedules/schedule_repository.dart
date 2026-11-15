@@ -330,14 +330,13 @@ class LocalScheduleRepository implements ScheduleRepository {
       spec: repeat,
       window: window,
       timeZoneId: timeZoneId,
-    );
+    ).copyWith(title: title, notes: draft.notes.trim(), taskId: taskId);
     late List<Schedule> occurrences;
     await database.transaction(() async {
       await _saveRule(rule, _nextTimestamp());
       occurrences = await _materializeRule(
         rule: rule,
         seriesId: rule.id,
-        template: (title: title, notes: draft.notes.trim(), taskId: taskId),
         fromDate: rule.firstDate,
         toDate: _horizonEndDate(rule),
       );
@@ -399,15 +398,23 @@ class LocalScheduleRepository implements ScheduleRepository {
         DateTime.utc(splitAt.year, splitAt.month, splitAt.day - 1),
       );
       final keepsEarlierInstances = splitAt.isAfter(
-        parseRecurrenceDate(rule.firstDate, '首日'),
+        parseRecurrenceDate(rule.originalFirstDate, '首日'),
       );
+      final newRuleId = _uuid.v4();
       ScheduleRepeatRule? truncated;
       if (keepsEarlierInstances) {
-        truncated = rule.copyWith(endDate: dayBeforeSplit);
+        // 截断写在可见日期域：身份 splitAt-1 对应的可见日期是它加上位移。
+        final truncateAt = shiftRecurrenceDate(dayBeforeSplit, rule.shiftDays);
+        final currentEnd = rule.endDate;
+        truncated = currentEnd != null && currentEnd.compareTo(truncateAt) <= 0
+            ? rule
+            : rule.copyWith(endDate: truncateAt);
         await _saveRule(truncated, _nextTimestamp());
       } else {
         // 该实例就是首个实例：原规则不再拥有任何实例，整体移除而不是留下
-        // 一条违反"结束日期不早于首日"的空规则。
+        // 一条违反"结束日期不早于首日"的空规则。它名下的墓碑先改挂到新规则，
+        // 否则快照里的取消记录会引用已删除的规则。
+        await _reassignRuleCancellations(rule.id, newRuleId);
         await _deleteRule(rule.id);
       }
       // 删除该起点之后的旧实例，让新规则重新生成它们；单实例删除留下的
@@ -422,10 +429,11 @@ class LocalScheduleRepository implements ScheduleRepository {
           .go();
 
       // split 之后的分段规则已被这次改动取代：留下它们会在同一段日期上再生成
-      // 一套实例，重复展开后出现重影。
+      // 一套实例，重复展开后出现重影。它们的墓碑同样改挂到新规则。
       for (final stale in seriesRules) {
         if (stale.id == rule.id) continue;
-        if (stale.firstDate.compareTo(originalDate) < 0) continue;
+        if (stale.originalFirstDate.compareTo(originalDate) < 0) continue;
+        await _reassignRuleCancellations(stale.id, newRuleId);
         await _deleteRule(stale.id);
       }
 
@@ -455,14 +463,20 @@ class LocalScheduleRepository implements ScheduleRepository {
                   },
             endDate: rule.endDate,
           );
-      // 新规则的首日就是草稿选定的日期：本次及以后的改期要真的移动日期，
-      // 原始发生日期只是历史实例的身份，不再把日期钉回旧值。
-      final newRule = buildRepeatRule(
-        id: _uuid.v4(),
-        spec: spec,
-        window: window,
-        timeZoneId: rule.timeZoneId,
-      );
+      // 新规则：可见首日 = 草稿日期，原始发生身份 = 可见日期 - 位移；
+      // 内容模板属于规则自身，后续按范围补齐的实例都从它取内容。
+      final newRule =
+          buildRepeatRule(
+            id: newRuleId,
+            spec: spec,
+            window: window,
+            timeZoneId: rule.timeZoneId,
+          ).copyWith(
+            shiftDays: shiftDays,
+            title: title,
+            notes: draft.notes.trim(),
+            taskId: taskId,
+          );
       final updated = existing.copyWith(
         title: title,
         notes: draft.notes.trim(),
@@ -474,7 +488,8 @@ class LocalScheduleRepository implements ScheduleRepository {
         taskId: taskId,
         clearTaskId: taskId == null,
         recurrenceId: newRule.id,
-        recurrenceDate: newRule.firstDate,
+        // 原始发生身份不随改期漂移：取消过的同一期始终是同一身份。
+        recurrenceDate: originalDate,
         recurrenceTimeZoneId: newRule.timeZoneId,
         recurrenceStartMinutes: newRule.allDay
             ? null
@@ -487,7 +502,6 @@ class LocalScheduleRepository implements ScheduleRepository {
       final generated = await _materializeRule(
         rule: newRule,
         seriesId: seriesId,
-        template: (title: title, notes: draft.notes.trim(), taskId: taskId),
         fromDate: newRule.firstDate,
         toDate: _horizonEndDate(newRule),
       );
@@ -560,13 +574,16 @@ class LocalScheduleRepository implements ScheduleRepository {
       final localFrom = formatRecurrenceDate(_zoneDate(fromUtc, location));
       final localTo = formatRecurrenceDate(_zoneDate(toUtc, location));
       if (localTo.compareTo(localFrom) < 0) continue;
+      // 与查询区间完全不相交的规则直接跳过：查重复日程开始之前的月份应当
+      // 返回空集合，而不是拿反向区间去触发严格展开的拒绝。
+      if (rule.firstDate.compareTo(localTo) > 0) continue;
+      final ruleEnd = rule.endDate;
+      if (ruleEnd != null && ruleEnd.compareTo(localFrom) < 0) continue;
       final created = await _materializeRule(
         rule: rule,
         seriesId: await _seriesIdForRule(rule.id),
-        template: const (title: '', notes: '', taskId: null),
         fromDate: localFrom,
         toDate: localTo,
-        inheritTemplate: true,
       );
       generated += created.length;
     }
@@ -765,6 +782,10 @@ class LocalScheduleRepository implements ScheduleRepository {
         startMinutesOfDay: row.startMinutesOfDay,
         durationMinutes: row.durationMinutes,
         daySpan: row.daySpan,
+        shiftDays: row.shiftDays,
+        title: row.title,
+        notes: row.notes,
+        taskId: row.taskId,
       );
 
   List<int> _decodeIntegers(String encoded) {
@@ -792,10 +813,29 @@ class LocalScheduleRepository implements ScheduleRepository {
             startMinutesOfDay: Value(rule.startMinutesOfDay),
             durationMinutes: Value(rule.durationMinutes),
             daySpan: Value(rule.daySpan),
+            shiftDays: Value(rule.shiftDays),
+            title: Value(rule.title),
+            notes: Value(rule.notes),
+            taskId: Value(rule.taskId),
             createdAt: timestamp,
             updatedAt: timestamp,
           ),
         );
+  }
+
+  /// 规则被删除前，把它名下的墓碑改挂到接手的规则上。
+  ///
+  /// 墓碑代表"用户删掉了这一期"，必须保持有效引用，否则本机导出的快照会被
+  /// 引用校验拒绝；身份日期不变，所以取消语义随改期一起平移。
+  Future<void> _reassignRuleCancellations(
+    String fromRuleId,
+    String toRuleId,
+  ) async {
+    await (database.update(database.localSchedules)
+          ..where((row) => row.userId.equals(userId))
+          ..where((row) => row.recurrenceId.equals(fromRuleId))
+          ..where((row) => row.isRecurrenceCancelled.equals(true)))
+        .write(LocalSchedulesCompanion(recurrenceId: Value(toRuleId)));
   }
 
   Future<void> _deleteRule(String ruleId) async {
@@ -869,8 +909,24 @@ class LocalScheduleRepository implements ScheduleRepository {
     return row?.recurrenceSeriesId ?? ruleId;
   }
 
-  /// 系列已有实例时沿用它的标题/备注/任务；没有可用实例时返回 null，
-  /// 调用方跳过展开而不是用占位标题伪造实例。
+  /// 规则自己的内容模板。
+  ///
+  /// 模板随规则持久化：按范围补齐的实例只从所属规则取内容，"仅本次"例外
+  /// 与更早的其它分段都不会污染它。只有模板列出现之前创建的旧规则才回退到
+  /// 该系列最早的非例外实例。
+  Future<({String title, String notes, String? taskId})?> _ruleTemplate(
+    ScheduleRepeatRule rule,
+    String seriesId,
+  ) async {
+    if (rule.title.trim().isNotEmpty) {
+      return (title: rule.title, notes: rule.notes, taskId: rule.taskId);
+    }
+    return _seriesTemplate(seriesId);
+  }
+
+  /// 旧规则的兜底模板：该系列最早的一条**非例外**实例。
+  ///
+  /// 例外实例承载的是用户对某一次的改写，不能当作后续实例的模板。
   Future<({String title, String notes, String? taskId})?> _seriesTemplate(
     String seriesId,
   ) async {
@@ -878,6 +934,7 @@ class LocalScheduleRepository implements ScheduleRepository {
         await (database.select(database.localSchedules)
               ..where((row) => row.userId.equals(userId))
               ..where((row) => row.recurrenceSeriesId.equals(seriesId))
+              ..where((row) => row.isRecurrenceException.equals(false))
               ..orderBy([(row) => OrderingTerm(expression: row.startsAt)])
               ..limit(1))
             .getSingleOrNull();
@@ -888,27 +945,29 @@ class LocalScheduleRepository implements ScheduleRepository {
   Future<List<Schedule>> _materializeRule({
     required ScheduleRepeatRule rule,
     required String seriesId,
-    required ({String title, String notes, String? taskId}) template,
     required String fromDate,
     required String toDate,
-    bool inheritTemplate = false,
   }) async {
+    final startDate = fromDate.compareTo(rule.firstDate) < 0
+        ? rule.firstDate
+        : fromDate;
+    // 范围整体落在规则开始之前（或结束之后）时没有实例可补：返回空集合，
+    // 而不是把反向区间交给严格的日历展开去拒绝。
+    if (startDate.compareTo(toDate) > 0) return const [];
     final dates = expandOccurrenceDates(
       rule,
-      fromDate: fromDate.compareTo(rule.firstDate) < 0
-          ? rule.firstDate
-          : fromDate,
+      fromDate: startDate,
       toDate: toDate,
     );
     if (dates.isEmpty) return const [];
-    final resolved = inheritTemplate
-        ? await _seriesTemplate(seriesId)
-        : template;
+    final resolved = await _ruleTemplate(rule, seriesId);
     if (resolved == null) return const [];
     final existing = await _existingOccurrenceDates(seriesId);
     final created = <Schedule>[];
     for (final date in dates) {
-      if (existing.contains(date)) continue;
+      // 稳定身份 = 可见日期 - 改期位移；去重、取消与例外都按它对齐。
+      final occurrenceDate = shiftRecurrenceDate(date, -rule.shiftDays);
+      if (existing.contains(occurrenceDate)) continue;
       final window = resolveOccurrenceWindow(rule, date);
       final timestamp = _nextTimestamp();
       final schedule = Schedule(
@@ -923,7 +982,7 @@ class LocalScheduleRepository implements ScheduleRepository {
         taskId: resolved.taskId,
         recurrenceId: rule.id,
         recurrenceSeriesId: seriesId,
-        recurrenceDate: date,
+        recurrenceDate: occurrenceDate,
         recurrenceTimeZoneId: rule.timeZoneId,
         recurrenceStartMinutes: rule.allDay ? null : rule.startMinutesOfDay,
         createdAt: timestamp,

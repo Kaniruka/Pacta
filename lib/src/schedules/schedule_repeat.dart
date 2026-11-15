@@ -49,6 +49,12 @@ const int maxRecurrenceOccurrences = 400;
 /// 刚创建的系列在计划/看板上立即可见，也避免无结束日期的规则无限写入。
 const int recurrenceMaterializationHorizonDays = 90;
 
+/// "本次及以后"改期允许的最大日历位移（天）。超出即视为非法规则，不落库。
+///
+/// 位移只改变实例的可见日期，不改变它的原始发生身份；上限让 90 天预生成
+/// 与按范围补齐都不会因为极端改期而退化成无界扫描。
+const int maxRecurrenceShiftDays = 3660;
+
 const Map<int, String> weekdayLabels = {
   1: '一',
   2: '二',
@@ -76,6 +82,10 @@ class ScheduleRepeatRule {
     this.startMinutesOfDay = 0,
     this.durationMinutes = 60,
     this.daySpan = 1,
+    this.shiftDays = 0,
+    this.title = '',
+    this.notes = '',
+    this.taskId,
   }) : weekdays = Set.unmodifiable(weekdays) {
     if (!FocusTimeZones.contains(timeZoneId)) {
       throw ArgumentError('未知的时区：$timeZoneId');
@@ -96,6 +106,9 @@ class ScheduleRepeatRule {
     final end = endDate;
     if (end != null && parseRecurrenceDate(end, '结束日期').isBefore(first)) {
       throw ArgumentError('结束日期不能早于首日。');
+    }
+    if (shiftDays.abs() > maxRecurrenceShiftDays) {
+      throw ArgumentError('重复日程的改期跨度超出上限。');
     }
     if (allDay) {
       if (daySpan < 1) throw ArgumentError('全天日程至少要占一天。');
@@ -125,6 +138,22 @@ class ScheduleRepeatRule {
   final int durationMinutes;
   final int daySpan;
 
+  /// 可见日期相对原始发生日期的日历位移（天）。
+  ///
+  /// 0 表示未改期。实例的 `recurrenceDate` 始终是**原始发生日期**（稳定身份），
+  /// 可见日期 = 原始日期 + [shiftDays]；因此把系列挪到别的日期后，取消过的
+  /// 那一期仍然按原身份保持取消，不会因为日期变化而复活或抵消别的实例。
+  final int shiftDays;
+
+  /// 该规则第一条实例的原始发生日期（身份域），与可见的 [firstDate] 区分。
+  String get originalFirstDate => shiftRecurrenceDate(firstDate, -shiftDays);
+
+  /// 规则自己的内容模板。按范围补齐的实例从它取标题/备注/任务；
+  /// "仅本次"例外只改单个实例，不改写这里。
+  final String title;
+  final String notes;
+  final String? taskId;
+
   ScheduleRepeatRule copyWith({
     String? id,
     ScheduleRepeatFrequency? frequency,
@@ -137,6 +166,11 @@ class ScheduleRepeatRule {
     int? startMinutesOfDay,
     int? durationMinutes,
     int? daySpan,
+    int? shiftDays,
+    String? title,
+    String? notes,
+    String? taskId,
+    bool clearTaskId = false,
   }) => ScheduleRepeatRule(
     id: id ?? this.id,
     frequency: frequency ?? this.frequency,
@@ -148,6 +182,10 @@ class ScheduleRepeatRule {
     startMinutesOfDay: startMinutesOfDay ?? this.startMinutesOfDay,
     durationMinutes: durationMinutes ?? this.durationMinutes,
     daySpan: daySpan ?? this.daySpan,
+    shiftDays: shiftDays ?? this.shiftDays,
+    title: title ?? this.title,
+    notes: notes ?? this.notes,
+    taskId: clearTaskId ? null : (taskId ?? this.taskId),
   );
 
   @override
@@ -163,7 +201,11 @@ class ScheduleRepeatRule {
       other.allDay == allDay &&
       other.startMinutesOfDay == startMinutesOfDay &&
       other.durationMinutes == durationMinutes &&
-      other.daySpan == daySpan;
+      other.daySpan == daySpan &&
+      other.shiftDays == shiftDays &&
+      other.title == title &&
+      other.notes == notes &&
+      other.taskId == taskId;
 
   @override
   int get hashCode => Object.hash(
@@ -177,6 +219,10 @@ class ScheduleRepeatRule {
     startMinutesOfDay,
     durationMinutes,
     daySpan,
+    shiftDays,
+    title,
+    notes,
+    taskId,
   );
 
   @override
@@ -185,13 +231,32 @@ class ScheduleRepeatRule {
 }
 
 /// 严格解析 `YYYY-MM-DD` 为 UTC 日历日；不受本地时区影响。
+///
+/// `DateTime` 会把溢出的日历日顺移（2026-02-30 → 2026-03-02），所以解析后
+/// 必须回读年月日。任何不存在的日历日整体拒绝，不进入规则、实例或快照。
 DateTime parseRecurrenceDate(String value, String label) {
   if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value)) {
     throw ArgumentError('$label必须是 YYYY-MM-DD。');
   }
+  final year = int.parse(value.substring(0, 4));
+  final month = int.parse(value.substring(5, 7));
+  final day = int.parse(value.substring(8, 10));
   final parsed = DateTime.tryParse('${value}T00:00:00Z');
-  if (parsed == null) throw ArgumentError('$label无效。');
+  if (parsed == null ||
+      parsed.year != year ||
+      parsed.month != month ||
+      parsed.day != day) {
+    throw ArgumentError('$label不是真实存在的日历日。');
+  }
   return parsed;
+}
+
+/// 在严格日历日上做整天平移；结果仍是严格日历日。
+String shiftRecurrenceDate(String date, int days) {
+  final parsed = parseRecurrenceDate(date, '日期');
+  return formatRecurrenceDate(
+    DateTime.utc(parsed.year, parsed.month, parsed.day + days),
+  );
 }
 
 String formatRecurrenceDate(DateTime date) =>

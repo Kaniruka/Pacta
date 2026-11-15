@@ -13599,6 +13599,47 @@ class $LocalScheduleRecurrencesTable extends LocalScheduleRecurrences
     requiredDuringInsert: false,
     defaultValue: const Constant(1),
   );
+  static const VerificationMeta _shiftDaysMeta = const VerificationMeta(
+    'shiftDays',
+  );
+  @override
+  late final GeneratedColumn<int> shiftDays = GeneratedColumn<int>(
+    'shift_days',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _notesMeta = const VerificationMeta('notes');
+  @override
+  late final GeneratedColumn<String> notes = GeneratedColumn<String>(
+    'notes',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _taskIdMeta = const VerificationMeta('taskId');
+  @override
+  late final GeneratedColumn<String> taskId = GeneratedColumn<String>(
+    'task_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -13634,6 +13675,10 @@ class $LocalScheduleRecurrencesTable extends LocalScheduleRecurrences
     startMinutesOfDay,
     durationMinutes,
     daySpan,
+    shiftDays,
+    title,
+    notes,
+    taskId,
     createdAt,
     updatedAt,
   ];
@@ -13731,6 +13776,30 @@ class $LocalScheduleRecurrencesTable extends LocalScheduleRecurrences
         daySpan.isAcceptableOrUnknown(data['day_span']!, _daySpanMeta),
       );
     }
+    if (data.containsKey('shift_days')) {
+      context.handle(
+        _shiftDaysMeta,
+        shiftDays.isAcceptableOrUnknown(data['shift_days']!, _shiftDaysMeta),
+      );
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    }
+    if (data.containsKey('notes')) {
+      context.handle(
+        _notesMeta,
+        notes.isAcceptableOrUnknown(data['notes']!, _notesMeta),
+      );
+    }
+    if (data.containsKey('task_id')) {
+      context.handle(
+        _taskIdMeta,
+        taskId.isAcceptableOrUnknown(data['task_id']!, _taskIdMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -13803,6 +13872,22 @@ class $LocalScheduleRecurrencesTable extends LocalScheduleRecurrences
         DriftSqlType.int,
         data['${effectivePrefix}day_span'],
       )!,
+      shiftDays: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}shift_days'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      notes: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}notes'],
+      )!,
+      taskId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}task_id'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -13833,6 +13918,18 @@ class LocalScheduleRecurrence extends DataClass
   final int startMinutesOfDay;
   final int durationMinutes;
   final int daySpan;
+
+  /// 可见日期相对原始发生日期的日历位移（天）；0 表示未改期。
+  ///
+  /// 实例的 `recurrence_date` 是原始发生身份，"本次及以后"改期只改变这里的
+  /// 位移，因此取消过的某一期不会因为挪动日期而复活或抵消别的实例。
+  final int shiftDays;
+
+  /// 规则自己的内容模板：之后按范围补齐的实例都从这里取内容，而不是从系列里
+  /// 任意一条实例推断。"仅本次"例外不改写它。
+  final String title;
+  final String notes;
+  final String? taskId;
   final DateTime createdAt;
   final DateTime updatedAt;
   const LocalScheduleRecurrence({
@@ -13847,6 +13944,10 @@ class LocalScheduleRecurrence extends DataClass
     required this.startMinutesOfDay,
     required this.durationMinutes,
     required this.daySpan,
+    required this.shiftDays,
+    required this.title,
+    required this.notes,
+    this.taskId,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -13866,6 +13967,12 @@ class LocalScheduleRecurrence extends DataClass
     map['start_minutes_of_day'] = Variable<int>(startMinutesOfDay);
     map['duration_minutes'] = Variable<int>(durationMinutes);
     map['day_span'] = Variable<int>(daySpan);
+    map['shift_days'] = Variable<int>(shiftDays);
+    map['title'] = Variable<String>(title);
+    map['notes'] = Variable<String>(notes);
+    if (!nullToAbsent || taskId != null) {
+      map['task_id'] = Variable<String>(taskId);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -13886,6 +13993,12 @@ class LocalScheduleRecurrence extends DataClass
       startMinutesOfDay: Value(startMinutesOfDay),
       durationMinutes: Value(durationMinutes),
       daySpan: Value(daySpan),
+      shiftDays: Value(shiftDays),
+      title: Value(title),
+      notes: Value(notes),
+      taskId: taskId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(taskId),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -13908,6 +14021,10 @@ class LocalScheduleRecurrence extends DataClass
       startMinutesOfDay: serializer.fromJson<int>(json['startMinutesOfDay']),
       durationMinutes: serializer.fromJson<int>(json['durationMinutes']),
       daySpan: serializer.fromJson<int>(json['daySpan']),
+      shiftDays: serializer.fromJson<int>(json['shiftDays']),
+      title: serializer.fromJson<String>(json['title']),
+      notes: serializer.fromJson<String>(json['notes']),
+      taskId: serializer.fromJson<String?>(json['taskId']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -13927,6 +14044,10 @@ class LocalScheduleRecurrence extends DataClass
       'startMinutesOfDay': serializer.toJson<int>(startMinutesOfDay),
       'durationMinutes': serializer.toJson<int>(durationMinutes),
       'daySpan': serializer.toJson<int>(daySpan),
+      'shiftDays': serializer.toJson<int>(shiftDays),
+      'title': serializer.toJson<String>(title),
+      'notes': serializer.toJson<String>(notes),
+      'taskId': serializer.toJson<String?>(taskId),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -13944,6 +14065,10 @@ class LocalScheduleRecurrence extends DataClass
     int? startMinutesOfDay,
     int? durationMinutes,
     int? daySpan,
+    int? shiftDays,
+    String? title,
+    String? notes,
+    Value<String?> taskId = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => LocalScheduleRecurrence(
@@ -13958,6 +14083,10 @@ class LocalScheduleRecurrence extends DataClass
     startMinutesOfDay: startMinutesOfDay ?? this.startMinutesOfDay,
     durationMinutes: durationMinutes ?? this.durationMinutes,
     daySpan: daySpan ?? this.daySpan,
+    shiftDays: shiftDays ?? this.shiftDays,
+    title: title ?? this.title,
+    notes: notes ?? this.notes,
+    taskId: taskId.present ? taskId.value : this.taskId,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -13982,6 +14111,10 @@ class LocalScheduleRecurrence extends DataClass
           ? data.durationMinutes.value
           : this.durationMinutes,
       daySpan: data.daySpan.present ? data.daySpan.value : this.daySpan,
+      shiftDays: data.shiftDays.present ? data.shiftDays.value : this.shiftDays,
+      title: data.title.present ? data.title.value : this.title,
+      notes: data.notes.present ? data.notes.value : this.notes,
+      taskId: data.taskId.present ? data.taskId.value : this.taskId,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -14001,6 +14134,10 @@ class LocalScheduleRecurrence extends DataClass
           ..write('startMinutesOfDay: $startMinutesOfDay, ')
           ..write('durationMinutes: $durationMinutes, ')
           ..write('daySpan: $daySpan, ')
+          ..write('shiftDays: $shiftDays, ')
+          ..write('title: $title, ')
+          ..write('notes: $notes, ')
+          ..write('taskId: $taskId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -14020,6 +14157,10 @@ class LocalScheduleRecurrence extends DataClass
     startMinutesOfDay,
     durationMinutes,
     daySpan,
+    shiftDays,
+    title,
+    notes,
+    taskId,
     createdAt,
     updatedAt,
   );
@@ -14038,6 +14179,10 @@ class LocalScheduleRecurrence extends DataClass
           other.startMinutesOfDay == this.startMinutesOfDay &&
           other.durationMinutes == this.durationMinutes &&
           other.daySpan == this.daySpan &&
+          other.shiftDays == this.shiftDays &&
+          other.title == this.title &&
+          other.notes == this.notes &&
+          other.taskId == this.taskId &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -14055,6 +14200,10 @@ class LocalScheduleRecurrencesCompanion
   final Value<int> startMinutesOfDay;
   final Value<int> durationMinutes;
   final Value<int> daySpan;
+  final Value<int> shiftDays;
+  final Value<String> title;
+  final Value<String> notes;
+  final Value<String?> taskId;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -14070,6 +14219,10 @@ class LocalScheduleRecurrencesCompanion
     this.startMinutesOfDay = const Value.absent(),
     this.durationMinutes = const Value.absent(),
     this.daySpan = const Value.absent(),
+    this.shiftDays = const Value.absent(),
+    this.title = const Value.absent(),
+    this.notes = const Value.absent(),
+    this.taskId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -14086,6 +14239,10 @@ class LocalScheduleRecurrencesCompanion
     this.startMinutesOfDay = const Value.absent(),
     this.durationMinutes = const Value.absent(),
     this.daySpan = const Value.absent(),
+    this.shiftDays = const Value.absent(),
+    this.title = const Value.absent(),
+    this.notes = const Value.absent(),
+    this.taskId = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
@@ -14108,6 +14265,10 @@ class LocalScheduleRecurrencesCompanion
     Expression<int>? startMinutesOfDay,
     Expression<int>? durationMinutes,
     Expression<int>? daySpan,
+    Expression<int>? shiftDays,
+    Expression<String>? title,
+    Expression<String>? notes,
+    Expression<String>? taskId,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -14124,6 +14285,10 @@ class LocalScheduleRecurrencesCompanion
       if (startMinutesOfDay != null) 'start_minutes_of_day': startMinutesOfDay,
       if (durationMinutes != null) 'duration_minutes': durationMinutes,
       if (daySpan != null) 'day_span': daySpan,
+      if (shiftDays != null) 'shift_days': shiftDays,
+      if (title != null) 'title': title,
+      if (notes != null) 'notes': notes,
+      if (taskId != null) 'task_id': taskId,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -14142,6 +14307,10 @@ class LocalScheduleRecurrencesCompanion
     Value<int>? startMinutesOfDay,
     Value<int>? durationMinutes,
     Value<int>? daySpan,
+    Value<int>? shiftDays,
+    Value<String>? title,
+    Value<String>? notes,
+    Value<String?>? taskId,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -14158,6 +14327,10 @@ class LocalScheduleRecurrencesCompanion
       startMinutesOfDay: startMinutesOfDay ?? this.startMinutesOfDay,
       durationMinutes: durationMinutes ?? this.durationMinutes,
       daySpan: daySpan ?? this.daySpan,
+      shiftDays: shiftDays ?? this.shiftDays,
+      title: title ?? this.title,
+      notes: notes ?? this.notes,
+      taskId: taskId ?? this.taskId,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -14200,6 +14373,18 @@ class LocalScheduleRecurrencesCompanion
     if (daySpan.present) {
       map['day_span'] = Variable<int>(daySpan.value);
     }
+    if (shiftDays.present) {
+      map['shift_days'] = Variable<int>(shiftDays.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (notes.present) {
+      map['notes'] = Variable<String>(notes.value);
+    }
+    if (taskId.present) {
+      map['task_id'] = Variable<String>(taskId.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -14226,6 +14411,10 @@ class LocalScheduleRecurrencesCompanion
           ..write('startMinutesOfDay: $startMinutesOfDay, ')
           ..write('durationMinutes: $durationMinutes, ')
           ..write('daySpan: $daySpan, ')
+          ..write('shiftDays: $shiftDays, ')
+          ..write('title: $title, ')
+          ..write('notes: $notes, ')
+          ..write('taskId: $taskId, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -16778,30 +16967,28 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   ];
 }
 
-typedef $$LocalGoalsTableCreateCompanionBuilder =
-    LocalGoalsCompanion Function({
-      required String userId,
-      required String id,
-      required String title,
-      Value<String> description,
-      required String classification,
-      required DateTime createdAt,
-      required DateTime updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
-typedef $$LocalGoalsTableUpdateCompanionBuilder =
-    LocalGoalsCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> title,
-      Value<String> description,
-      Value<String> classification,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
+typedef $$LocalGoalsTableCreateCompanionBuilder = LocalGoalsCompanion Function({
+  required String userId,
+  required String id,
+  required String title,
+  Value<String> description,
+  required String classification,
+  required DateTime createdAt,
+  required DateTime updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
+typedef $$LocalGoalsTableUpdateCompanionBuilder = LocalGoalsCompanion Function({
+  Value<String> userId,
+  Value<String> id,
+  Value<String> title,
+  Value<String> description,
+  Value<String> classification,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
 
 class $$LocalGoalsTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalGoalsTable> {
@@ -17036,40 +17223,38 @@ typedef $$LocalGoalsTableProcessedTableManager =
       LocalGoal,
       PrefetchHooks Function()
     >;
-typedef $$LocalTasksTableCreateCompanionBuilder =
-    LocalTasksCompanion Function({
-      required String userId,
-      required String id,
-      required String goalId,
-      required String title,
-      Value<String> description,
-      required String classification,
-      Value<int?> estimatedMinutes,
-      Value<DateTime?> deadline,
-      Value<bool> isComplete,
-      Value<int> focusProgressSeconds,
-      required DateTime createdAt,
-      required DateTime updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
-typedef $$LocalTasksTableUpdateCompanionBuilder =
-    LocalTasksCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> goalId,
-      Value<String> title,
-      Value<String> description,
-      Value<String> classification,
-      Value<int?> estimatedMinutes,
-      Value<DateTime?> deadline,
-      Value<bool> isComplete,
-      Value<int> focusProgressSeconds,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<DateTime?> deletedAt,
-      Value<int> rowid,
-    });
+typedef $$LocalTasksTableCreateCompanionBuilder = LocalTasksCompanion Function({
+  required String userId,
+  required String id,
+  required String goalId,
+  required String title,
+  Value<String> description,
+  required String classification,
+  Value<int?> estimatedMinutes,
+  Value<DateTime?> deadline,
+  Value<bool> isComplete,
+  Value<int> focusProgressSeconds,
+  required DateTime createdAt,
+  required DateTime updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
+typedef $$LocalTasksTableUpdateCompanionBuilder = LocalTasksCompanion Function({
+  Value<String> userId,
+  Value<String> id,
+  Value<String> goalId,
+  Value<String> title,
+  Value<String> description,
+  Value<String> classification,
+  Value<int?> estimatedMinutes,
+  Value<DateTime?> deadline,
+  Value<bool> isComplete,
+  Value<int> focusProgressSeconds,
+  Value<DateTime> createdAt,
+  Value<DateTime> updatedAt,
+  Value<DateTime?> deletedAt,
+  Value<int> rowid,
+});
 
 class $$LocalTasksTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalTasksTable> {
@@ -19832,30 +20017,28 @@ typedef $$FocusSessionsTableProcessedTableManager =
       FocusSession,
       PrefetchHooks Function()
     >;
-typedef $$FocusNodesTableCreateCompanionBuilder =
-    FocusNodesCompanion Function({
-      required String userId,
-      required String id,
-      required String sessionId,
-      required String taskId,
-      required String mode,
-      required DateTime createdAt,
-      required int effectiveSeconds,
-      Value<String?> note,
-      Value<int> rowid,
-    });
-typedef $$FocusNodesTableUpdateCompanionBuilder =
-    FocusNodesCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> sessionId,
-      Value<String> taskId,
-      Value<String> mode,
-      Value<DateTime> createdAt,
-      Value<int> effectiveSeconds,
-      Value<String?> note,
-      Value<int> rowid,
-    });
+typedef $$FocusNodesTableCreateCompanionBuilder = FocusNodesCompanion Function({
+  required String userId,
+  required String id,
+  required String sessionId,
+  required String taskId,
+  required String mode,
+  required DateTime createdAt,
+  required int effectiveSeconds,
+  Value<String?> note,
+  Value<int> rowid,
+});
+typedef $$FocusNodesTableUpdateCompanionBuilder = FocusNodesCompanion Function({
+  Value<String> userId,
+  Value<String> id,
+  Value<String> sessionId,
+  Value<String> taskId,
+  Value<String> mode,
+  Value<DateTime> createdAt,
+  Value<int> effectiveSeconds,
+  Value<String?> note,
+  Value<int> rowid,
+});
 
 class $$FocusNodesTableFilterComposer
     extends Composer<_$PactaDatabase, $FocusNodesTable> {
@@ -23403,6 +23586,10 @@ typedef $$LocalScheduleRecurrencesTableCreateCompanionBuilder =
       Value<int> startMinutesOfDay,
       Value<int> durationMinutes,
       Value<int> daySpan,
+      Value<int> shiftDays,
+      Value<String> title,
+      Value<String> notes,
+      Value<String?> taskId,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<int> rowid,
@@ -23420,6 +23607,10 @@ typedef $$LocalScheduleRecurrencesTableUpdateCompanionBuilder =
       Value<int> startMinutesOfDay,
       Value<int> durationMinutes,
       Value<int> daySpan,
+      Value<int> shiftDays,
+      Value<String> title,
+      Value<String> notes,
+      Value<String?> taskId,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<int> rowid,
@@ -23486,6 +23677,26 @@ class $$LocalScheduleRecurrencesTableFilterComposer
 
   ColumnFilters<int> get daySpan => $composableBuilder(
     column: $table.daySpan,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get shiftDays => $composableBuilder(
+    column: $table.shiftDays,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get notes => $composableBuilder(
+    column: $table.notes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get taskId => $composableBuilder(
+    column: $table.taskId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -23564,6 +23775,26 @@ class $$LocalScheduleRecurrencesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get shiftDays => $composableBuilder(
+    column: $table.shiftDays,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get notes => $composableBuilder(
+    column: $table.notes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get taskId => $composableBuilder(
+    column: $table.taskId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -23622,6 +23853,18 @@ class $$LocalScheduleRecurrencesTableAnnotationComposer
 
   GeneratedColumn<int> get daySpan =>
       $composableBuilder(column: $table.daySpan, builder: (column) => column);
+
+  GeneratedColumn<int> get shiftDays =>
+      $composableBuilder(column: $table.shiftDays, builder: (column) => column);
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get notes =>
+      $composableBuilder(column: $table.notes, builder: (column) => column);
+
+  GeneratedColumn<String> get taskId =>
+      $composableBuilder(column: $table.taskId, builder: (column) => column);
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -23687,6 +23930,10 @@ class $$LocalScheduleRecurrencesTableTableManager
                 Value<int> startMinutesOfDay = const Value.absent(),
                 Value<int> durationMinutes = const Value.absent(),
                 Value<int> daySpan = const Value.absent(),
+                Value<int> shiftDays = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<String> notes = const Value.absent(),
+                Value<String?> taskId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -23702,6 +23949,10 @@ class $$LocalScheduleRecurrencesTableTableManager
                 startMinutesOfDay: startMinutesOfDay,
                 durationMinutes: durationMinutes,
                 daySpan: daySpan,
+                shiftDays: shiftDays,
+                title: title,
+                notes: notes,
+                taskId: taskId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -23719,6 +23970,10 @@ class $$LocalScheduleRecurrencesTableTableManager
                 Value<int> startMinutesOfDay = const Value.absent(),
                 Value<int> durationMinutes = const Value.absent(),
                 Value<int> daySpan = const Value.absent(),
+                Value<int> shiftDays = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<String> notes = const Value.absent(),
+                Value<String?> taskId = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -23734,6 +23989,10 @@ class $$LocalScheduleRecurrencesTableTableManager
                 startMinutesOfDay: startMinutesOfDay,
                 durationMinutes: durationMinutes,
                 daySpan: daySpan,
+                shiftDays: shiftDays,
+                title: title,
+                notes: notes,
+                taskId: taskId,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,

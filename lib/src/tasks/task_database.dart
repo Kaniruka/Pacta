@@ -398,6 +398,19 @@ class LocalScheduleRecurrences extends Table {
   IntColumn get startMinutesOfDay => integer().withDefault(const Constant(0))();
   IntColumn get durationMinutes => integer().withDefault(const Constant(60))();
   IntColumn get daySpan => integer().withDefault(const Constant(1))();
+
+  /// 可见日期相对原始发生日期的日历位移（天）；0 表示未改期。
+  ///
+  /// 实例的 `recurrence_date` 是原始发生身份，"本次及以后"改期只改变这里的
+  /// 位移，因此取消过的某一期不会因为挪动日期而复活或抵消别的实例。
+  IntColumn get shiftDays => integer().withDefault(const Constant(0))();
+
+  /// 规则自己的内容模板：之后按范围补齐的实例都从这里取内容，而不是从系列里
+  /// 任意一条实例推断。"仅本次"例外不改写它。
+  TextColumn get title => text().withDefault(const Constant(''))();
+  TextColumn get notes => text().withDefault(const Constant(''))();
+  TextColumn get taskId => text().nullable()();
+
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
@@ -657,7 +670,7 @@ class PactaDatabase extends _$PactaDatabase {
   }
 
   @override
-  int get schemaVersion => 35;
+  int get schemaVersion => 37;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -855,9 +868,10 @@ class PactaDatabase extends _$PactaDatabase {
       // 补缺，不依赖版本号区间：并行票据的中间版本可能已带上部分重复结构，
       // 已存在的表/列永远不重建，已存日程与实例永远不清空。
       //
-      // 集成分支的本地版本推进到 35（34 属于 ticket 11 的回顾列），所以从 34
-      // 升级的库也要走一遍重复结构补齐；最终合并方统一以 36 做完整对账。
-      if (from < 35) {
+      // 集成分支的本地版本推进到 35，r3 的规则模板/改期位移再推进到 37
+      // （36 属于账号时区票据），所以从 34/35/36 升级的库都要走一遍重复
+      // 结构补齐；最终合并方以 >=37 做完整对账。
+      if (from < 37) {
         await ensureRecurrenceSchema(this, m);
       }
       // 34：失败记录的回顾状态（ticket 11）。旧记录没有回顾概念，补列后
@@ -915,10 +929,10 @@ Future<void> ensureMergedSchedulesSchema(
   }
 }
 
-/// v33 结构：重复规则表 + 实例上的重复列。
+/// 重复结构：规则表（含 r3 的规则内容模板与改期位移）+ 实例上的重复列。
 ///
-/// 存在性检查而不是版本号区间：32 号中间版本可能已带部分结构，重复升级或
-/// 回拨 user_version 都安全，已存日程、规则与实例一律保留。
+/// 存在性检查而不是版本号区间：中间版本可能已带部分结构，重复升级或回拨
+/// user_version 都安全，已存日程、规则与实例一律保留。
 Future<void> ensureRecurrenceSchema(
   PactaDatabase database,
   Migrator migrator,
@@ -926,14 +940,34 @@ Future<void> ensureRecurrenceSchema(
   final tableNames = await _sqliteTableNames(database);
   if (!tableNames.contains('local_schedule_recurrences')) {
     await migrator.createTable(database.localScheduleRecurrences);
+  } else {
+    final ruleColumns = await database
+        .customSelect('PRAGMA table_info(local_schedule_recurrences)')
+        .get();
+    final existingRules = {
+      for (final row in ruleColumns) row.read<String>('name'),
+    };
+    Future<void> addRuleColumn(
+      String name,
+      GeneratedColumn<Object> column,
+    ) async {
+      if (existingRules.contains(name)) return;
+      await migrator.addColumn(database.localScheduleRecurrences, column);
+    }
+
+    await addRuleColumn(
+      'shift_days',
+      database.localScheduleRecurrences.shiftDays,
+    );
+    await addRuleColumn('title', database.localScheduleRecurrences.title);
+    await addRuleColumn('notes', database.localScheduleRecurrences.notes);
+    await addRuleColumn('task_id', database.localScheduleRecurrences.taskId);
   }
   if (!tableNames.contains('local_schedules')) return;
   final columns = await database
       .customSelect('PRAGMA table_info(local_schedules)')
       .get();
-  final existing = {
-    for (final row in columns) row.read<String>('name'),
-  };
+  final existing = {for (final row in columns) row.read<String>('name')};
   Future<void> addColumn(String name, GeneratedColumn<Object> column) async {
     if (existing.contains(name)) return;
     await migrator.addColumn(database.localSchedules, column);
@@ -961,6 +995,57 @@ Future<void> ensureRecurrenceSchema(
     'is_recurrence_cancelled',
     database.localSchedules.isRecurrenceCancelled,
   );
+  // 升级到 r3 之前的规则没有自己的内容模板：用该规则最早的一条非例外实例
+  // 回填，避免升级后按范围补齐出空标题实例。
+  await _backfillRuleTemplates(database);
+}
+
+Future<void> _backfillRuleTemplates(PactaDatabase database) async {
+  await database.customStatement('''
+    UPDATE local_schedule_recurrences
+    SET title = coalesce(
+          nullif(title, ''),
+          (
+            SELECT instance.title FROM local_schedules AS instance
+            WHERE instance.user_id = local_schedule_recurrences.user_id
+              AND instance.recurrence_id = local_schedule_recurrences.id
+              AND instance.is_recurrence_exception = 0
+            ORDER BY instance.starts_at
+            LIMIT 1
+          ),
+          (
+            SELECT instance.title FROM local_schedules AS instance
+            WHERE instance.user_id = local_schedule_recurrences.user_id
+              AND instance.recurrence_id = local_schedule_recurrences.id
+            ORDER BY instance.starts_at
+            LIMIT 1
+          ),
+          title
+        ),
+        notes = coalesce(
+          (
+            SELECT instance.notes FROM local_schedules AS instance
+            WHERE instance.user_id = local_schedule_recurrences.user_id
+              AND instance.recurrence_id = local_schedule_recurrences.id
+              AND instance.is_recurrence_exception = 0
+            ORDER BY instance.starts_at
+            LIMIT 1
+          ),
+          notes
+        ),
+        task_id = coalesce(
+          (
+            SELECT instance.task_id FROM local_schedules AS instance
+            WHERE instance.user_id = local_schedule_recurrences.user_id
+              AND instance.recurrence_id = local_schedule_recurrences.id
+              AND instance.is_recurrence_exception = 0
+            ORDER BY instance.starts_at
+            LIMIT 1
+          ),
+          task_id
+        )
+    WHERE title = ''
+    ''');
 }
 
 Future<Set<String>> _sqliteTableNames(PactaDatabase database) async {

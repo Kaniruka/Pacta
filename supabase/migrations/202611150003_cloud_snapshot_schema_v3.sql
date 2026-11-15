@@ -171,6 +171,63 @@ begin
       using errcode = 'PT426';
   end if;
 
+  -- r3：规则自带内容模板（title/notes/task_id）与改期位移（shift_days），
+  -- 实例的 recurrence_date 是稳定原始身份。服务端逐行校验形状，避免把客户端
+  -- 无法展开的规则写进账本；真实 IANA 时区归属仍由客户端严格校验（服务端只
+  -- 校验非空与基本形状，避免两份时区库版本差异把合法写入挡掉）。
+  if exists (
+    select 1
+    from jsonb_array_elements(p_payload -> 'tables' -> 'local_schedule_recurrences') as rule
+    where jsonb_typeof(rule) is distinct from 'object'
+      or jsonb_typeof(rule -> 'title') is distinct from 'string'
+      or btrim(coalesce(rule ->> 'title', '')) = ''
+      or jsonb_typeof(rule -> 'notes') is distinct from 'string'
+      or jsonb_typeof(rule -> 'task_id') not in ('string', 'null')
+      or jsonb_typeof(rule -> 'shift_days') is distinct from 'number'
+      or abs((rule ->> 'shift_days')::numeric) > 3660
+      or jsonb_typeof(rule -> 'weekdays') is distinct from 'array'
+      or exists (
+        select 1
+        from jsonb_array_elements(rule -> 'weekdays') as day
+        where jsonb_typeof(day) is distinct from 'number'
+          or (day #>> '{}')::int not between 1 and 7
+      )
+      or rule ->> 'frequency' not in ('daily', 'weekly')
+      or rule ->> 'time_zone_id' !~ '^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+)*$'
+      or coalesce(rule ->> 'first_date', '') !~ '^\d{4}-\d{2}-\d{2}$'
+      or to_char(to_date(rule ->> 'first_date', 'YYYY-MM-DD'), 'YYYY-MM-DD')
+        is distinct from rule ->> 'first_date'
+      or (
+        rule ->> 'end_date' is not null
+        and (
+          rule ->> 'end_date' !~ '^\d{4}-\d{2}-\d{2}$'
+          or to_char(to_date(rule ->> 'end_date', 'YYYY-MM-DD'), 'YYYY-MM-DD')
+            is distinct from rule ->> 'end_date'
+          or rule ->> 'end_date' < rule ->> 'first_date'
+        )
+      )
+  ) then
+    raise exception 'snapshot payload version 3 is incomplete: schedule recurrence rules are malformed; upgrade before uploading'
+      using errcode = 'PT426';
+  end if;
+
+  if exists (
+    select 1
+    from jsonb_array_elements(p_payload -> 'tables' -> 'local_schedules') as instance
+    where jsonb_typeof(instance) = 'object'
+      and jsonb_typeof(instance -> 'recurrence_date') = 'string'
+      and (
+        instance ->> 'recurrence_date' !~ '^\d{4}-\d{2}-\d{2}$'
+        or to_char(
+          to_date(instance ->> 'recurrence_date', 'YYYY-MM-DD'),
+          'YYYY-MM-DD'
+        ) is distinct from instance ->> 'recurrence_date'
+      )
+  ) then
+    raise exception 'snapshot payload version 3 is incomplete: schedule recurrence identity is not a real calendar date; upgrade before uploading'
+      using errcode = 'PT426';
+  end if;
+
   select snapshot.revision into current_revision
   from public.cloud_business_snapshots as snapshot
   where snapshot.user_id = owner_id

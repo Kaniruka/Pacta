@@ -5,8 +5,10 @@ import 'package:drift/drift.dart' as drift;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../focus/focus_time_zones.dart';
 import '../schedules/schedule_migration.dart';
 import '../schedules/schedule_models.dart';
+import '../schedules/schedule_repeat.dart';
 import '../tasks/task_database.dart';
 import '../tasks/task_models.dart';
 import 'legacy_cloud_snapshot.dart';
@@ -1558,6 +1560,13 @@ class CloudSnapshotRepository {
     final recurrenceIds = <Object?>{
       for (final row in tables['local_schedule_recurrences']!) row['id'],
     };
+    final ruleZones = <Object?, Object?>{
+      for (final row in tables['local_schedule_recurrences']!)
+        row['id']: row['time_zone_id'],
+    };
+    // 稳定身份（系列 + 原始发生日期）在一份载荷里必须唯一：同一期既是活实例
+    // 又是墓碑会同时取消并展示它，恢复后无法解释。
+    final occurrences = <String>{};
     for (final row in tables['local_schedule_recurrences']!) {
       final frequency = row['frequency'];
       final weekly = frequency == 'weekly';
@@ -1584,9 +1593,27 @@ class CloudSnapshotRepository {
         'Schedule recurrence end date',
       );
       final zone = row['time_zone_id'];
+      // 只接受客户端真正能展开的 IANA 时区：Mars/Olympus 这类字符串会让
+      // getRecurrenceRules 在恢复后直接抛错，必须在替换本机数据之前整体拒绝。
       requireReference(
-        zone is String && zone.trim().isNotEmpty,
+        zone is String && _isSupportedTimeZone(zone),
         'Schedule recurrence time zone',
+      );
+      final shiftDays = row['shift_days'];
+      requireReference(
+        shiftDays is int && shiftDays.abs() <= maxRecurrenceShiftDays,
+        'Schedule recurrence shift',
+      );
+      final ruleTitle = row['title'];
+      requireReference(
+        ruleTitle is String && ruleTitle.trim().isNotEmpty,
+        'Schedule recurrence title',
+      );
+      requireReference(row['notes'] is String, 'Schedule recurrence notes');
+      final ruleTaskId = row['task_id'];
+      requireReference(
+        ruleTaskId == null || taskIds.contains(ruleTaskId),
+        'Schedule recurrence Task reference',
       );
       final allDay = row['all_day'];
       requireReference(
@@ -1683,10 +1710,16 @@ class CloudSnapshotRepository {
         _isCalendarDate(row['recurrence_date']),
         'Schedule recurrence date',
       );
+      final instanceZone = row['recurrence_time_zone_id'];
       requireReference(
-        row['recurrence_time_zone_id'] is String &&
-            (row['recurrence_time_zone_id'] as String).trim().isNotEmpty,
+        instanceZone is String &&
+            _isSupportedTimeZone(instanceZone) &&
+            instanceZone == ruleZones[recurrenceId],
         'Schedule recurrence instance zone',
+      );
+      requireReference(
+        occurrences.add('$row[recurrence_series_id]@$row[recurrence_date]'),
+        'Schedule recurrence identity',
       );
       final startMinutes = row['recurrence_start_minutes'];
       requireReference(
@@ -1699,8 +1732,24 @@ class CloudSnapshotRepository {
     }
   }
 
-  bool _isCalendarDate(Object? value) =>
-      value is String && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(value);
+  bool _isCalendarDate(Object? value) {
+    if (value is! String) return false;
+    try {
+      parseRecurrenceDate(value, '日期');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
+  bool _isSupportedTimeZone(Object? value) {
+    if (value is! String || value.trim().isEmpty) return false;
+    try {
+      return FocusTimeZones.contains(value);
+    } on Object {
+      return false;
+    }
+  }
 
   /// 星期集合的存储形式：整数数组。非法内容返回 null，由调用方拒绝整份载荷。
   List<int>? _decodeWeekdays(Object? value) {

@@ -442,8 +442,11 @@ void main() {
 
     expect(result.updated.startsAt, DateTime.utc(2026, 11, 18, 2));
     expect(result.updated.endsAt, DateTime.utc(2026, 11, 18, 2, 45));
-    expect(result.updated.recurrenceDate, '2026-11-18');
+    // 可见日期右移，原始发生身份不漂移。
+    expect(result.updated.recurrenceDate, '2026-11-16');
     expect(result.rule.firstDate, '2026-11-18');
+    expect(result.rule.shiftDays, 2);
+    expect(result.rule.originalFirstDate, '2026-11-16');
     expect(result.rule.weekdays, {DateTime.wednesday});
     expect(result.truncatedRule, isNull);
 
@@ -451,11 +454,17 @@ void main() {
       DateTime.utc(2026, 11, 15),
       DateTime.utc(2026, 12, 10),
     );
-    expect(schedules.map(label), [
-      '2026-11-18:改期周会',
-      '2026-11-25:改期周会',
-      '2026-12-02:改期周会',
-      '2026-12-09:改期周会',
+    expect(schedules.map((schedule) => schedule.startsAt), [
+      DateTime.utc(2026, 11, 18, 2),
+      DateTime.utc(2026, 11, 25, 2),
+      DateTime.utc(2026, 12, 2, 2),
+      DateTime.utc(2026, 12, 9, 2),
+    ]);
+    expect(schedules.map((schedule) => schedule.recurrenceDate), [
+      '2026-11-16',
+      '2026-11-23',
+      '2026-11-30',
+      '2026-12-07',
     ]);
   });
 
@@ -503,14 +512,24 @@ void main() {
       DateTime.utc(2026, 11, 1),
       DateTime.utc(2026, 12, 20),
     );
-    expect(firstRead.map(label), [
-      '2026-11-02:周会',
-      '2026-11-09:周会',
-      '2026-11-16:周会',
-      '2026-11-25:周会',
-      '2026-12-02:周会',
-      '2026-12-09:周会',
-      '2026-12-16:周会',
+    expect(firstRead.map((schedule) => schedule.startsAt), [
+      DateTime.utc(2026, 11, 2, 1),
+      DateTime.utc(2026, 11, 9, 1),
+      DateTime.utc(2026, 11, 16, 1),
+      DateTime.utc(2026, 11, 25, 3),
+      DateTime.utc(2026, 12, 2, 3),
+      DateTime.utc(2026, 12, 9, 3),
+      DateTime.utc(2026, 12, 16, 3),
+    ]);
+    // 身份按原始发生日期稳定：25 号那一期仍是 23 号的身份。
+    expect(firstRead.map((schedule) => schedule.recurrenceDate), [
+      '2026-11-02',
+      '2026-11-09',
+      '2026-11-16',
+      '2026-11-23',
+      '2026-11-30',
+      '2026-12-07',
+      '2026-12-14',
     ]);
 
     // 再次展开不得新增任何实例。

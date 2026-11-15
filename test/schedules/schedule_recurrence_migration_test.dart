@@ -30,9 +30,7 @@ const _schedulesAt31 = '''
 ''';
 
 Future<List<String>> _columns(PactaDatabase database, String table) async {
-  final rows = await database
-      .customSelect('PRAGMA table_info("$table")')
-      .get();
+  final rows = await database.customSelect('PRAGMA table_info("$table")').get();
   return rows.map((row) => row.read<String>('name')).toList();
 }
 
@@ -75,6 +73,15 @@ void main() {
     try {
       final tables = await _tables(database);
       expect(tables, contains('local_schedule_recurrences'));
+
+      final ruleColumns = await _columns(
+        database,
+        'local_schedule_recurrences',
+      );
+      expect(
+        ruleColumns,
+        containsAll(<String>['shift_days', 'title', 'notes', 'task_id']),
+      );
 
       final columns = await _columns(database, 'local_schedules');
       expect(
@@ -199,6 +206,10 @@ void main() {
           .get();
       expect(rules, hasLength(1));
       expect(rules.single.read<String>('id'), 'rule-1');
+      // 旧规则行缺少 r3 的模板/位移列：升级补列后从最早的非例外实例回填。
+      expect(rules.single.read<int>('shift_days'), 0);
+      expect(rules.single.read<String>('title'), '晨会');
+      expect(rules.single.read<String?>('task_id'), isNull);
 
       final rows = await database
           .customSelect('SELECT * FROM local_schedules')
