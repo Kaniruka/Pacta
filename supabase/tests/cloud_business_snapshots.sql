@@ -167,7 +167,7 @@ begin
     perform public.save_cloud_business_snapshot(
       0,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', 2,
         'userId', current_setting('snapshot_test.owner_id'),
         'tables', '{}'::jsonb
       ),
@@ -187,7 +187,7 @@ begin
   saved := public.save_cloud_business_snapshot(
     1,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', current_setting('snapshot_test.owner_id'),
       'tables', '{}'::jsonb
     ),
@@ -202,7 +202,7 @@ begin
   saved := public.save_cloud_business_snapshot(
     2,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', current_setting('snapshot_test.owner_id'),
       'tables', '{}'::jsonb
     ),
@@ -213,6 +213,70 @@ begin
   end if;
 end
 $device_metadata_and_old_client_compatibility$;
+
+-- 旧客户端（载荷版本 1）上传必须被独立错误码拒绝：版本 1 缺少后来新增的列，
+-- 静默接受等于让整份快照丢字段。
+do $outdated_schema_version$
+begin
+  begin
+    perform public.save_cloud_business_snapshot(
+      3,
+      jsonb_build_object(
+        'schemaVersion', 1,
+        'userId', current_setting('snapshot_test.owner_id'),
+        'tables', '{}'::jsonb
+      ),
+      'device-a', 'Device A', now(), 0
+    );
+    raise exception 'outdated_schema_version_was_accepted';
+  exception
+    when sqlstate 'PT426' then null;
+  end;
+  if (select revision from public.cloud_business_snapshots
+      where user_id = current_setting('snapshot_test.owner_id')::uuid) <> 3 then
+    raise exception 'rejected_upload_changed_revision';
+  end if;
+end
+$outdated_schema_version$;
+
+-- 升级前已经写入的请求（载荷当时就是版本 1）重试时按原请求身份只读返回：
+-- 不重复写入，也不改写它的载荷；请求台账的不变量保持不变。
+do $committed_outdated_request_replay$
+declare
+  saved public.cloud_business_snapshots;
+  legacy_payload jsonb := jsonb_build_object(
+    'schemaVersion', 1,
+    'userId', current_setting('snapshot_test.owner_id'),
+    'tables', '{}'::jsonb
+  );
+begin
+  insert into public.cloud_business_snapshot_history (
+    user_id, revision, payload, device_id, device_name, data_updated_at,
+    uploaded_at, row_count, request_id
+  ) values (
+    current_setting('snapshot_test.owner_id')::uuid, 4, legacy_payload,
+    'legacy-device', 'Legacy device', now(), now(), 0,
+    'committed-legacy-request'
+  ) on conflict (user_id, revision) do nothing;
+  insert into public.cloud_business_snapshot_upload_requests (
+    user_id, request_id, revision, payload_fingerprint
+  ) values (
+    current_setting('snapshot_test.owner_id')::uuid,
+    'committed-legacy-request', 4, md5(legacy_payload::text)
+  );
+  saved := public.save_cloud_business_snapshot(
+    3, legacy_payload, 'device-a', 'Device A', now(), 0,
+    null, null, null, 'committed-legacy-request'
+  );
+  if saved.revision <> 4 then
+    raise exception 'committed_legacy_replay_returned_other_revision';
+  end if;
+  if (select revision from public.cloud_business_snapshots
+      where user_id = current_setting('snapshot_test.owner_id')::uuid) <> 3 then
+    raise exception 'committed_legacy_replay_wrote_snapshot';
+  end if;
+end
+$committed_outdated_request_replay$;
 
 do $invalid_payload$
 begin

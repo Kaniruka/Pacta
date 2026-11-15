@@ -8441,6 +8441,16 @@ class $FocusAppointmentsTable extends FocusAppointments
         type: DriftSqlType.string,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _preparationSecondsMeta =
+      const VerificationMeta('preparationSeconds');
+  @override
+  late final GeneratedColumn<int> preparationSeconds = GeneratedColumn<int>(
+    'preparation_seconds',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     userId,
@@ -8458,6 +8468,7 @@ class $FocusAppointmentsTable extends FocusAppointments
     reviewDisposition,
     reviewDispositionUpdatedAt,
     configurationBasisSourceId,
+    preparationSeconds,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -8591,6 +8602,15 @@ class $FocusAppointmentsTable extends FocusAppointments
         ),
       );
     }
+    if (data.containsKey('preparation_seconds')) {
+      context.handle(
+        _preparationSecondsMeta,
+        preparationSeconds.isAcceptableOrUnknown(
+          data['preparation_seconds']!,
+          _preparationSecondsMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -8660,6 +8680,10 @@ class $FocusAppointmentsTable extends FocusAppointments
         DriftSqlType.string,
         data['${effectivePrefix}configuration_basis_source_id'],
       ),
+      preparationSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}preparation_seconds'],
+      ),
     );
   }
 
@@ -8686,6 +8710,10 @@ class FocusAppointment extends DataClass
   final String reviewDisposition;
   final DateTime? reviewDispositionUpdatedAt;
   final String? configurationBasisSourceId;
+
+  /// 本场显式存储的预约准备时长（秒）。旧记录为 `null`，读取时沿用
+  /// 已存的 start/end 边界，不重算也不延后正在进行的预约。
+  final int? preparationSeconds;
   const FocusAppointment({
     required this.userId,
     required this.id,
@@ -8702,6 +8730,7 @@ class FocusAppointment extends DataClass
     required this.reviewDisposition,
     this.reviewDispositionUpdatedAt,
     this.configurationBasisSourceId,
+    this.preparationSeconds,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -8735,6 +8764,9 @@ class FocusAppointment extends DataClass
         configurationBasisSourceId,
       );
     }
+    if (!nullToAbsent || preparationSeconds != null) {
+      map['preparation_seconds'] = Variable<int>(preparationSeconds);
+    }
     return map;
   }
 
@@ -8767,6 +8799,9 @@ class FocusAppointment extends DataClass
           configurationBasisSourceId == null && nullToAbsent
           ? const Value.absent()
           : Value(configurationBasisSourceId),
+      preparationSeconds: preparationSeconds == null && nullToAbsent
+          ? const Value.absent()
+          : Value(preparationSeconds),
     );
   }
 
@@ -8795,6 +8830,7 @@ class FocusAppointment extends DataClass
       configurationBasisSourceId: serializer.fromJson<String?>(
         json['configurationBasisSourceId'],
       ),
+      preparationSeconds: serializer.fromJson<int?>(json['preparationSeconds']),
     );
   }
   @override
@@ -8820,6 +8856,7 @@ class FocusAppointment extends DataClass
       'configurationBasisSourceId': serializer.toJson<String?>(
         configurationBasisSourceId,
       ),
+      'preparationSeconds': serializer.toJson<int?>(preparationSeconds),
     };
   }
 
@@ -8839,6 +8876,7 @@ class FocusAppointment extends DataClass
     String? reviewDisposition,
     Value<DateTime?> reviewDispositionUpdatedAt = const Value.absent(),
     Value<String?> configurationBasisSourceId = const Value.absent(),
+    Value<int?> preparationSeconds = const Value.absent(),
   }) => FocusAppointment(
     userId: userId ?? this.userId,
     id: id ?? this.id,
@@ -8861,6 +8899,9 @@ class FocusAppointment extends DataClass
     configurationBasisSourceId: configurationBasisSourceId.present
         ? configurationBasisSourceId.value
         : this.configurationBasisSourceId,
+    preparationSeconds: preparationSeconds.present
+        ? preparationSeconds.value
+        : this.preparationSeconds,
   );
   FocusAppointment copyWithCompanion(FocusAppointmentsCompanion data) {
     return FocusAppointment(
@@ -8889,6 +8930,9 @@ class FocusAppointment extends DataClass
       configurationBasisSourceId: data.configurationBasisSourceId.present
           ? data.configurationBasisSourceId.value
           : this.configurationBasisSourceId,
+      preparationSeconds: data.preparationSeconds.present
+          ? data.preparationSeconds.value
+          : this.preparationSeconds,
     );
   }
 
@@ -8909,7 +8953,8 @@ class FocusAppointment extends DataClass
           ..write('updatedAt: $updatedAt, ')
           ..write('reviewDisposition: $reviewDisposition, ')
           ..write('reviewDispositionUpdatedAt: $reviewDispositionUpdatedAt, ')
-          ..write('configurationBasisSourceId: $configurationBasisSourceId')
+          ..write('configurationBasisSourceId: $configurationBasisSourceId, ')
+          ..write('preparationSeconds: $preparationSeconds')
           ..write(')'))
         .toString();
   }
@@ -8931,6 +8976,7 @@ class FocusAppointment extends DataClass
     reviewDisposition,
     reviewDispositionUpdatedAt,
     configurationBasisSourceId,
+    preparationSeconds,
   );
   @override
   bool operator ==(Object other) =>
@@ -8950,7 +8996,8 @@ class FocusAppointment extends DataClass
           other.updatedAt == this.updatedAt &&
           other.reviewDisposition == this.reviewDisposition &&
           other.reviewDispositionUpdatedAt == this.reviewDispositionUpdatedAt &&
-          other.configurationBasisSourceId == this.configurationBasisSourceId);
+          other.configurationBasisSourceId == this.configurationBasisSourceId &&
+          other.preparationSeconds == this.preparationSeconds);
 }
 
 class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
@@ -8969,6 +9016,7 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
   final Value<String> reviewDisposition;
   final Value<DateTime?> reviewDispositionUpdatedAt;
   final Value<String?> configurationBasisSourceId;
+  final Value<int?> preparationSeconds;
   final Value<int> rowid;
   const FocusAppointmentsCompanion({
     this.userId = const Value.absent(),
@@ -8986,6 +9034,7 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
     this.reviewDisposition = const Value.absent(),
     this.reviewDispositionUpdatedAt = const Value.absent(),
     this.configurationBasisSourceId = const Value.absent(),
+    this.preparationSeconds = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FocusAppointmentsCompanion.insert({
@@ -9004,6 +9053,7 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
     this.reviewDisposition = const Value.absent(),
     this.reviewDispositionUpdatedAt = const Value.absent(),
     this.configurationBasisSourceId = const Value.absent(),
+    this.preparationSeconds = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
        id = Value(id),
@@ -9030,6 +9080,7 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
     Expression<String>? reviewDisposition,
     Expression<DateTime>? reviewDispositionUpdatedAt,
     Expression<String>? configurationBasisSourceId,
+    Expression<int>? preparationSeconds,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -9050,6 +9101,7 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
         'review_disposition_updated_at': reviewDispositionUpdatedAt,
       if (configurationBasisSourceId != null)
         'configuration_basis_source_id': configurationBasisSourceId,
+      if (preparationSeconds != null) 'preparation_seconds': preparationSeconds,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -9070,6 +9122,7 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
     Value<String>? reviewDisposition,
     Value<DateTime?>? reviewDispositionUpdatedAt,
     Value<String?>? configurationBasisSourceId,
+    Value<int?>? preparationSeconds,
     Value<int>? rowid,
   }) {
     return FocusAppointmentsCompanion(
@@ -9090,6 +9143,7 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
           reviewDispositionUpdatedAt ?? this.reviewDispositionUpdatedAt,
       configurationBasisSourceId:
           configurationBasisSourceId ?? this.configurationBasisSourceId,
+      preparationSeconds: preparationSeconds ?? this.preparationSeconds,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -9146,6 +9200,9 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
         configurationBasisSourceId.value,
       );
     }
+    if (preparationSeconds.present) {
+      map['preparation_seconds'] = Variable<int>(preparationSeconds.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -9170,6 +9227,7 @@ class FocusAppointmentsCompanion extends UpdateCompanion<FocusAppointment> {
           ..write('reviewDisposition: $reviewDisposition, ')
           ..write('reviewDispositionUpdatedAt: $reviewDispositionUpdatedAt, ')
           ..write('configurationBasisSourceId: $configurationBasisSourceId, ')
+          ..write('preparationSeconds: $preparationSeconds, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -13621,28 +13679,30 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   ];
 }
 
-typedef $$LocalGoalsTableCreateCompanionBuilder = LocalGoalsCompanion Function({
-  required String userId,
-  required String id,
-  required String title,
-  Value<String> description,
-  required String classification,
-  required DateTime createdAt,
-  required DateTime updatedAt,
-  Value<DateTime?> deletedAt,
-  Value<int> rowid,
-});
-typedef $$LocalGoalsTableUpdateCompanionBuilder = LocalGoalsCompanion Function({
-  Value<String> userId,
-  Value<String> id,
-  Value<String> title,
-  Value<String> description,
-  Value<String> classification,
-  Value<DateTime> createdAt,
-  Value<DateTime> updatedAt,
-  Value<DateTime?> deletedAt,
-  Value<int> rowid,
-});
+typedef $$LocalGoalsTableCreateCompanionBuilder =
+    LocalGoalsCompanion Function({
+      required String userId,
+      required String id,
+      required String title,
+      Value<String> description,
+      required String classification,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
+typedef $$LocalGoalsTableUpdateCompanionBuilder =
+    LocalGoalsCompanion Function({
+      Value<String> userId,
+      Value<String> id,
+      Value<String> title,
+      Value<String> description,
+      Value<String> classification,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
 
 class $$LocalGoalsTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalGoalsTable> {
@@ -13877,38 +13937,40 @@ typedef $$LocalGoalsTableProcessedTableManager =
       LocalGoal,
       PrefetchHooks Function()
     >;
-typedef $$LocalTasksTableCreateCompanionBuilder = LocalTasksCompanion Function({
-  required String userId,
-  required String id,
-  required String goalId,
-  required String title,
-  Value<String> description,
-  required String classification,
-  Value<int?> estimatedMinutes,
-  Value<DateTime?> deadline,
-  Value<bool> isComplete,
-  Value<int> focusProgressSeconds,
-  required DateTime createdAt,
-  required DateTime updatedAt,
-  Value<DateTime?> deletedAt,
-  Value<int> rowid,
-});
-typedef $$LocalTasksTableUpdateCompanionBuilder = LocalTasksCompanion Function({
-  Value<String> userId,
-  Value<String> id,
-  Value<String> goalId,
-  Value<String> title,
-  Value<String> description,
-  Value<String> classification,
-  Value<int?> estimatedMinutes,
-  Value<DateTime?> deadline,
-  Value<bool> isComplete,
-  Value<int> focusProgressSeconds,
-  Value<DateTime> createdAt,
-  Value<DateTime> updatedAt,
-  Value<DateTime?> deletedAt,
-  Value<int> rowid,
-});
+typedef $$LocalTasksTableCreateCompanionBuilder =
+    LocalTasksCompanion Function({
+      required String userId,
+      required String id,
+      required String goalId,
+      required String title,
+      Value<String> description,
+      required String classification,
+      Value<int?> estimatedMinutes,
+      Value<DateTime?> deadline,
+      Value<bool> isComplete,
+      Value<int> focusProgressSeconds,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
+typedef $$LocalTasksTableUpdateCompanionBuilder =
+    LocalTasksCompanion Function({
+      Value<String> userId,
+      Value<String> id,
+      Value<String> goalId,
+      Value<String> title,
+      Value<String> description,
+      Value<String> classification,
+      Value<int?> estimatedMinutes,
+      Value<DateTime?> deadline,
+      Value<bool> isComplete,
+      Value<int> focusProgressSeconds,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
 
 class $$LocalTasksTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalTasksTable> {
@@ -16650,28 +16712,30 @@ typedef $$FocusSessionsTableProcessedTableManager =
       FocusSession,
       PrefetchHooks Function()
     >;
-typedef $$FocusNodesTableCreateCompanionBuilder = FocusNodesCompanion Function({
-  required String userId,
-  required String id,
-  required String sessionId,
-  required String taskId,
-  required String mode,
-  required DateTime createdAt,
-  required int effectiveSeconds,
-  Value<String?> note,
-  Value<int> rowid,
-});
-typedef $$FocusNodesTableUpdateCompanionBuilder = FocusNodesCompanion Function({
-  Value<String> userId,
-  Value<String> id,
-  Value<String> sessionId,
-  Value<String> taskId,
-  Value<String> mode,
-  Value<DateTime> createdAt,
-  Value<int> effectiveSeconds,
-  Value<String?> note,
-  Value<int> rowid,
-});
+typedef $$FocusNodesTableCreateCompanionBuilder =
+    FocusNodesCompanion Function({
+      required String userId,
+      required String id,
+      required String sessionId,
+      required String taskId,
+      required String mode,
+      required DateTime createdAt,
+      required int effectiveSeconds,
+      Value<String?> note,
+      Value<int> rowid,
+    });
+typedef $$FocusNodesTableUpdateCompanionBuilder =
+    FocusNodesCompanion Function({
+      Value<String> userId,
+      Value<String> id,
+      Value<String> sessionId,
+      Value<String> taskId,
+      Value<String> mode,
+      Value<DateTime> createdAt,
+      Value<int> effectiveSeconds,
+      Value<String?> note,
+      Value<int> rowid,
+    });
 
 class $$FocusNodesTableFilterComposer
     extends Composer<_$PactaDatabase, $FocusNodesTable> {
@@ -17753,6 +17817,7 @@ typedef $$FocusAppointmentsTableCreateCompanionBuilder =
       Value<String> reviewDisposition,
       Value<DateTime?> reviewDispositionUpdatedAt,
       Value<String?> configurationBasisSourceId,
+      Value<int?> preparationSeconds,
       Value<int> rowid,
     });
 typedef $$FocusAppointmentsTableUpdateCompanionBuilder =
@@ -17772,6 +17837,7 @@ typedef $$FocusAppointmentsTableUpdateCompanionBuilder =
       Value<String> reviewDisposition,
       Value<DateTime?> reviewDispositionUpdatedAt,
       Value<String?> configurationBasisSourceId,
+      Value<int?> preparationSeconds,
       Value<int> rowid,
     });
 
@@ -17856,6 +17922,11 @@ class $$FocusAppointmentsTableFilterComposer
 
   ColumnFilters<String> get configurationBasisSourceId => $composableBuilder(
     column: $table.configurationBasisSourceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get preparationSeconds => $composableBuilder(
+    column: $table.preparationSeconds,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -17944,6 +18015,11 @@ class $$FocusAppointmentsTableOrderingComposer
     column: $table.configurationBasisSourceId,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get preparationSeconds => $composableBuilder(
+    column: $table.preparationSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FocusAppointmentsTableAnnotationComposer
@@ -18010,6 +18086,11 @@ class $$FocusAppointmentsTableAnnotationComposer
     column: $table.configurationBasisSourceId,
     builder: (column) => column,
   );
+
+  GeneratedColumn<int> get preparationSeconds => $composableBuilder(
+    column: $table.preparationSeconds,
+    builder: (column) => column,
+  );
 }
 
 class $$FocusAppointmentsTableTableManager
@@ -18069,6 +18150,7 @@ class $$FocusAppointmentsTableTableManager
                     const Value.absent(),
                 Value<String?> configurationBasisSourceId =
                     const Value.absent(),
+                Value<int?> preparationSeconds = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FocusAppointmentsCompanion(
                 userId: userId,
@@ -18086,6 +18168,7 @@ class $$FocusAppointmentsTableTableManager
                 reviewDisposition: reviewDisposition,
                 reviewDispositionUpdatedAt: reviewDispositionUpdatedAt,
                 configurationBasisSourceId: configurationBasisSourceId,
+                preparationSeconds: preparationSeconds,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -18107,6 +18190,7 @@ class $$FocusAppointmentsTableTableManager
                     const Value.absent(),
                 Value<String?> configurationBasisSourceId =
                     const Value.absent(),
+                Value<int?> preparationSeconds = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FocusAppointmentsCompanion.insert(
                 userId: userId,
@@ -18124,6 +18208,7 @@ class $$FocusAppointmentsTableTableManager
                 reviewDisposition: reviewDisposition,
                 reviewDispositionUpdatedAt: reviewDispositionUpdatedAt,
                 configurationBasisSourceId: configurationBasisSourceId,
+                preparationSeconds: preparationSeconds,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

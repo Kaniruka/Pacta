@@ -5,6 +5,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
+import 'package:pacta/src/sync/cloud_snapshot_repository.dart'
+    show cloudSnapshotSchemaVersion;
 import 'package:pacta/src/sync/legacy_cloud_snapshot.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 
@@ -128,7 +130,7 @@ void main() {
 
       expect(state, isNotNull);
       expect(state!.rowCount, 6);
-      expect(state.payload['schemaVersion'], 1);
+      expect(state.payload['schemaVersion'], cloudSnapshotSchemaVersion);
       expect(state.payload['userId'], userId);
       final tables = state.payload['tables'] as Map<String, dynamic>;
       final goal = (tables['local_goals'] as List).single as Map;

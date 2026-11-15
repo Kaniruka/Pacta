@@ -564,36 +564,46 @@ void main() {
               Map<String, dynamic>.from(rawRow as Map)..remove('description'),
           ];
         }
-        final oldCloud = await tester.runAsync(
-          () => remote.upload(
-            userId: userId,
-            expectedRevision: currentCloud!.revision,
-            payload: <String, dynamic>{...local.payload, 'tables': oldTables},
-            deviceId: 'old-version-1-probe',
-            deviceName: 'Old version 1 probe',
-            dataUpdatedAt: local.dataUpdatedAt,
-            rowCount: local.rowCount,
-          ),
+        // 载荷版本 2 起写入口只接受当前版本：旧客户端上传会丢掉后来新增的列，
+        // 服务端必须明确拒绝，而不是静默覆盖。版本 1 的读取兼容由客户端单元
+        // 测试（test/sync/cloud_snapshot_repository_test.dart）覆盖。
+        final outdatedUpload = await tester.runAsync(() async {
+          try {
+            await remote.upload(
+              userId: userId,
+              expectedRevision: currentCloud!.revision,
+              payload: <String, dynamic>{
+                ...local.payload,
+                'schemaVersion': 1,
+                'tables': oldTables,
+              },
+              deviceId: 'old-version-1-probe',
+              deviceName: 'Old version 1 probe',
+              dataUpdatedAt: local.dataUpdatedAt,
+              rowCount: local.rowCount,
+            );
+            return false;
+          } on PostgrestException catch (error) {
+            return error.code == 'PT426';
+          }
+        });
+        expect(outdatedUpload, isTrue);
+        expect(
+          (await tester.runAsync(sync.inspectCloud))!.revision,
+          currentCloud!.revision,
         );
-        final beforeLegacyDownload = await sync.captureLocalState();
-        await tester.runAsync(
-          () => sync.downloadCloud(
-            expectedRevision: oldCloud!.revision,
-            expectedFingerprint: beforeLegacyDownload.fingerprint,
-          ),
+        expect(
+          (await tasks.getGoals()).single.title,
+          'Retain through offline transport',
         );
-        final legacyRestored = (await tasks.getGoals()).single;
-        expect(legacyRestored.title, 'Retain through offline transport');
-        expect(legacyRestored.description, isEmpty);
-        expect(legacyRestored.tasks.single.title, 'Keep linked task data');
-        expect(legacyRestored.tasks.single.description, isEmpty);
 
+        // 结构不完整的当前版本载荷：服务端接受整份覆盖，客户端在替换前拒绝。
         final malformedCloud = await tester.runAsync(
           () => remote.upload(
             userId: userId,
-            expectedRevision: oldCloud!.revision,
+            expectedRevision: currentCloud.revision,
             payload: {
-              'schemaVersion': 1,
+              'schemaVersion': cloudSnapshotSchemaVersion,
               'userId': userId,
               'tables': <String, dynamic>{},
             },

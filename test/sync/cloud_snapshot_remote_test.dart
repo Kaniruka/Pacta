@@ -418,6 +418,13 @@ void main() {
       oldHint: true,
       mapped: true,
     ),
+    (
+      name: 'outdated snapshot schema',
+      code: 'PT426',
+      status: 426,
+      oldHint: true,
+      mapped: true,
+    ),
   ]) {
     test('upload does not retry ${scenario.name}', () async {
       var calls = 0;
@@ -442,6 +449,25 @@ void main() {
       expect(calls, 1);
     });
   }
+
+  test('outdated snapshot schema is a typed capability stop', () async {
+    var calls = 0;
+    final client = await _authenticatedClient((request) async {
+      calls++;
+      return http.Response(
+        jsonEncode(_oldRpcError()..['code'] = 'PT426'),
+        426,
+        request: request,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+    addTearDown(client.dispose);
+    await expectLater(
+      _upload(SupabaseCloudSnapshotRemote(client)),
+      throwsA(isA<CloudSnapshotSchemaOutdated>()),
+    );
+    expect(calls, 1);
+  });
 
   for (final code in ['PT409', '42501', 'PGRST202']) {
     test(

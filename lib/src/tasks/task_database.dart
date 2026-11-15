@@ -175,6 +175,10 @@ class FocusAppointments extends Table {
   DateTimeColumn get reviewDispositionUpdatedAt => dateTime().nullable()();
   TextColumn get configurationBasisSourceId => text().nullable()();
 
+  /// 本场显式存储的预约准备时长（秒）。旧记录为 `null`，读取时沿用
+  /// 已存的 start/end 边界，不重算也不延后正在进行的预约。
+  IntColumn get preparationSeconds => integer().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
 }
@@ -537,7 +541,7 @@ class PactaDatabase extends _$PactaDatabase {
   }
 
   @override
-  int get schemaVersion => 29;
+  int get schemaVersion => 30;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -717,6 +721,27 @@ class PactaDatabase extends _$PactaDatabase {
       }
       if (from < 29) {
         await m.createTable(localProfileClearMarks);
+      }
+      // 30：每场预约准备时长改为显式存储。旧记录不重算、不延后：
+      // 列保持 null，由 AppointmentPreparation.effectivePreparationSeconds
+      // 沿用已存的 start/end 结算边界（必要时才回到旧的 15 分钟）。
+      //
+      // 迁移守卫：只在旧库确实已有 focus_appointments 且缺这一列时补列。
+      // 版本 6 之前由 createTable 直接建成当前形状；重复升级旧副本或回拨
+      // user_version 的库不会重复加列，也不会改写已存记录。
+      if (from >= 6 && from < 30) {
+        final appointmentColumns = await customSelect(
+          'PRAGMA table_info(focus_appointments)',
+        ).get();
+        final hasPreparationSeconds = appointmentColumns.any(
+          (row) => row.read<String>('name') == 'preparation_seconds',
+        );
+        if (appointmentColumns.isNotEmpty && !hasPreparationSeconds) {
+          await m.addColumn(
+            focusAppointments,
+            focusAppointments.preparationSeconds,
+          );
+        }
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);

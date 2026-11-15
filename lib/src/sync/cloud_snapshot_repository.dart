@@ -12,6 +12,14 @@ import 'cloud_recovery_point.dart';
 import 'cloud_snapshot_history.dart';
 import 'cloud_sync_result.dart';
 
+/// 业务整份快照的载荷版本。
+///
+/// 版本 2 起每条预约显式存储本场准备时长。客户端只写当前版本；读取时仍接受
+/// 版本 1，并按已文档化的默认值补齐后来新增的列（时间戳一律沿用已存值）。
+/// 服务端的写入口只接受当前版本：旧客户端上传会丢掉新列，必须被拒绝而不是
+/// 静默合并。
+const int cloudSnapshotSchemaVersion = 2;
+
 /// 同一上传请求被用于不同内容（服务端 PT422）。自动上传必须停止并检查，
 /// 不能把它改写成新请求。
 class CloudUploadRequestConflict extends StateError {
@@ -32,6 +40,15 @@ class CloudUploadRequestIdUnsupported extends StateError {
 /// 并发版本校验失败（PT409）：云端已被推进，本次请求没有写入。
 class CloudUploadRevisionChanged extends StateError {
   CloudUploadRevisionChanged() : super('云端数据在确认期间发生变化，请重新查看并选择覆盖方向。');
+}
+
+/// 服务端只接受当前载荷版本（PT426）：本次上传完全没有写入。
+///
+/// 冻结的旧版本请求因此可以安全丢弃并按最新本机快照重发；同一 requestId
+/// 绝不能被改写内容重试。
+class CloudSnapshotSchemaOutdated extends StateError {
+  CloudSnapshotSchemaOutdated()
+    : super('该上传请求使用旧版云端载荷格式，本次没有写入；请更新 Pacta 后重新同步。');
 }
 
 /// 上传在真正发出前被取消（关闭开关、切换账号、恢复备份）。
@@ -308,6 +325,7 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
       if (error.code == 'PT409') throw CloudUploadRevisionChanged();
       if (error.code == 'PT422') throw CloudUploadRequestConflict();
       if (error.code == 'PT425') throw CloudUploadRequestEvicted();
+      if (error.code == 'PT426') throw CloudSnapshotSchemaOutdated();
       if (error.code == '42501') {
         throw StateError('当前用户无法同步，请检查登录或停用状态。');
       }
@@ -1125,15 +1143,22 @@ class CloudSnapshotRepository {
           {for (final column in columns) column: _jsonValue(row.data[column])},
       ];
     }
-    return {'schemaVersion': 1, 'userId': userId, 'tables': tables};
+    return {
+      'schemaVersion': cloudSnapshotSchemaVersion,
+      'userId': userId,
+      'tables': tables,
+    };
   }
 
   Future<Map<String, List<Map<String, Object?>>>> _validatePayload(
     Map<String, dynamic> payload,
   ) async {
-    if (payload['schemaVersion'] != 1 || payload['userId'] != userId) {
+    final schemaVersion = payload['schemaVersion'];
+    if ((schemaVersion != 1 && schemaVersion != cloudSnapshotSchemaVersion) ||
+        payload['userId'] != userId) {
       throw StateError('Snapshot version or user identity is invalid.');
     }
+    final isLegacyVersion = schemaVersion == 1;
     final sourceTables = payload['tables'];
     final rawTables = sourceTables is Map<String, dynamic>
         ? Map<String, dynamic>.from(sourceTables)
@@ -1170,17 +1195,8 @@ class CloudSnapshotRepository {
         if (item is! Map<String, dynamic>) {
           throw StateError('Invalid columns or user ownership in $table.');
         }
-        final missingLegacyDescription =
-            payload['schemaVersion'] == 1 &&
-            const {'local_goals', 'local_tasks'}.contains(table) &&
-            expectedColumns.contains('description') &&
-            !item.containsKey('description') &&
-            item.keys.length == expectedColumns.length - 1 &&
-            expectedColumns
-                .where((column) => column != 'description')
-                .every(item.containsKey);
-        final sourceRow = missingLegacyDescription
-            ? <String, dynamic>{...item, 'description': ''}
+        final sourceRow = isLegacyVersion
+            ? _withLegacyColumnDefaults(table, item, expectedColumns)
             : item;
         if (sourceRow.keys.length != expectedColumns.length ||
             !expectedColumns.every(sourceRow.containsKey) ||
@@ -1211,6 +1227,30 @@ class CloudSnapshotRepository {
     }
     await _validateReferences(result);
     return result;
+  }
+
+  /// 版本 1 的载荷缺少后来新增的列；只补这里列出的默认值，
+  /// 其余缺列、未知列、类型错误与用户归属仍按严格校验拒绝。
+  static const _legacySnapshotColumnDefaults = <String, Map<String, Object?>>{
+    'local_goals': {'description': ''},
+    'local_tasks': {'description': ''},
+    'focus_appointments': {'preparation_seconds': null},
+  };
+
+  Map<String, dynamic> _withLegacyColumnDefaults(
+    String table,
+    Map<String, dynamic> row,
+    Set<String> expectedColumns,
+  ) {
+    final defaults = _legacySnapshotColumnDefaults[table];
+    if (defaults == null) return row;
+    final additions = <String, dynamic>{
+      for (final entry in defaults.entries)
+        if (expectedColumns.contains(entry.key) && !row.containsKey(entry.key))
+          entry.key: entry.value,
+    };
+    if (additions.isEmpty) return row;
+    return <String, dynamic>{...row, ...additions};
   }
 
   Future<Map<String, Map<String, Object?>>> _tableColumnInfo(
