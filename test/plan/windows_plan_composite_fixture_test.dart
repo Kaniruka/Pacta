@@ -7,7 +7,7 @@ import '../support/plan_ui_composite_scenarios.dart';
 
 /// 07 计划 UI 组合夹具：进程内 `flutter test` 入口。
 ///
-/// 四个场景的实现与 `integration_test/plan_ui_composite_device_test.dart` 完全
+/// 五个场景的实现与 `integration_test/plan_ui_composite_device_test.dart` 完全
 /// 共用（[runUnsupportedCalendarScenario] 等）。这里产出的是 **widget 证据**：
 /// manifest 的 `scope` 是 `widget`，用于守住行为与布局回归；Windows 原生
 /// 验收必须由 integration_test 的 `native` 证据承担，两者不能互相冒充。
@@ -98,6 +98,29 @@ void main() {
     try {
       await runPreparationScenario(tester, fixture);
       expect(fixture.assertions, contains('single-handoff'));
+      expect(fixture.assertions, contains('preparation-10'));
+      expect(fixture.assertions, contains('preparation-15'));
+    } finally {
+      await fixture.dispose(tester);
+    }
+  });
+
+  testWidgets('窄窗重复编辑：两个范围与提醒选择可用', (tester) async {
+    final fixture = PlanUiCompositeFixture.open(
+      scenario: 'recurrence-scopes-dark-narrow',
+      runDirectory: runDirectory(),
+      scope: PlanUiScope.widget,
+    );
+    try {
+      await runRecurrenceScenario(
+        tester,
+        fixture,
+        size: const Size(360, 800),
+        brightness: Brightness.dark,
+        label: 'dark-narrow',
+      );
+      expect(fixture.layout?['measuredBrightness'], 'dark');
+      expect(fixture.assertions, contains('floating-labels'));
     } finally {
       await fixture.dispose(tester);
     }
