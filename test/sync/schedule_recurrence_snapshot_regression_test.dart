@@ -192,6 +192,82 @@ void main() {
       },
     );
   });
+
+  for (final invalid in <Object>[-1, 10081]) {
+    test('快照拒绝越界的规则提醒偏移 $invalid 且不改动本机', () async {
+      await _expectRejectedPayload(
+        remote: remote,
+        deviceFactory: device,
+        draft: draft,
+        tamper: (payload) {
+          for (final row
+              in (payload['tables'] as Map)['local_schedule_recurrences']
+                  as List) {
+            (row as Map)['reminder_minutes_before'] = invalid;
+          }
+        },
+      );
+    });
+
+    test('快照拒绝越界的实例提醒偏移 $invalid 且不改动本机', () async {
+      await _expectRejectedPayload(
+        remote: remote,
+        deviceFactory: device,
+        draft: draft,
+        tamper: (payload) {
+          for (final row
+              in (payload['tables'] as Map)['local_schedules'] as List) {
+            (row as Map)['reminder_minutes_before'] = invalid;
+          }
+        },
+      );
+    });
+  }
+
+  test('快照拒绝小数的规则提醒偏移且不改动本机', () async {
+    await _expectRejectedPayload(
+      remote: remote,
+      deviceFactory: device,
+      draft: draft,
+      tamper: (payload) {
+        for (final row
+            in (payload['tables'] as Map)['local_schedule_recurrences']
+                as List) {
+          (row as Map)['reminder_minutes_before'] = 1.5;
+        }
+      },
+    );
+  });
+
+  test('快照拒绝字符串的规则提醒偏移且不改动本机', () async {
+    await _expectRejectedPayload(
+      remote: remote,
+      deviceFactory: device,
+      draft: draft,
+      tamper: (payload) {
+        for (final row
+            in (payload['tables'] as Map)['local_schedule_recurrences']
+                as List) {
+          (row as Map)['reminder_minutes_before'] = '30';
+        }
+      },
+    );
+  });
+
+  test('快照拒绝缺失的规则提醒键且不改动本机', () async {
+    await _expectRejectedPayload(
+      remote: remote,
+      deviceFactory: device,
+      draft: draft,
+      tamper: (payload) {
+        for (final row
+            in (payload['tables'] as Map)['local_schedule_recurrences']
+                as List) {
+          (row as Map).remove('reminder_minutes_before');
+        }
+      },
+    );
+  });
 }
 
 typedef _DeviceFactory =

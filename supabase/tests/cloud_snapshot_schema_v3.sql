@@ -398,7 +398,17 @@ declare
     jsonb_build_object('label', 'instance_exception_two', 'op', 'set', 'path', '{tables,local_schedules,0,is_recurrence_exception}', 'expect', 'identity is malformed', 'value', to_jsonb(2)),
     jsonb_build_object('label', 'instance_cancelled_string', 'op', 'set', 'path', '{tables,local_schedules,0,is_recurrence_cancelled}', 'expect', 'identity is malformed', 'value', to_jsonb('0'::text)),
     jsonb_build_object('label', 'instance_completed_at_missing', 'op', 'remove', 'path', '{tables,local_schedules,0,completed_at}', 'expect', 'identity is malformed'),
-    jsonb_build_object('label', 'instance_origin_missing', 'op', 'remove', 'path', '{tables,local_schedules,0,origin}', 'expect', 'identity is malformed')
+    jsonb_build_object('label', 'instance_origin_missing', 'op', 'remove', 'path', '{tables,local_schedules,0,origin}', 'expect', 'identity is malformed'),
+    jsonb_build_object('label', 'rule_reminder_negative', 'op', 'set', 'path', '{tables,local_schedule_recurrences,0,reminder_minutes_before}', 'expect', 'reminder offsets are malformed', 'value', to_jsonb(-1)),
+    jsonb_build_object('label', 'rule_reminder_over_max', 'op', 'set', 'path', '{tables,local_schedule_recurrences,0,reminder_minutes_before}', 'expect', 'reminder offsets are malformed', 'value', to_jsonb(10081)),
+    jsonb_build_object('label', 'rule_reminder_fractional', 'op', 'set', 'path', '{tables,local_schedule_recurrences,0,reminder_minutes_before}', 'expect', 'reminder offsets are malformed', 'value', to_jsonb(1.5)),
+    jsonb_build_object('label', 'rule_reminder_string', 'op', 'set', 'path', '{tables,local_schedule_recurrences,0,reminder_minutes_before}', 'expect', 'reminder offsets are malformed', 'value', to_jsonb('30'::text)),
+    jsonb_build_object('label', 'rule_reminder_missing', 'op', 'remove', 'path', '{tables,local_schedule_recurrences,0,reminder_minutes_before}', 'expect', 'rules are malformed'),
+    jsonb_build_object('label', 'instance_reminder_negative', 'op', 'set', 'path', '{tables,local_schedules,0,reminder_minutes_before}', 'expect', 'reminder offsets are malformed', 'value', to_jsonb(-1)),
+    jsonb_build_object('label', 'instance_reminder_over_max', 'op', 'set', 'path', '{tables,local_schedules,0,reminder_minutes_before}', 'expect', 'reminder offsets are malformed', 'value', to_jsonb(10081)),
+    jsonb_build_object('label', 'instance_reminder_fractional', 'op', 'set', 'path', '{tables,local_schedules,0,reminder_minutes_before}', 'expect', 'reminder offsets are malformed', 'value', to_jsonb(1.5)),
+    jsonb_build_object('label', 'instance_reminder_string', 'op', 'set', 'path', '{tables,local_schedules,0,reminder_minutes_before}', 'expect', 'reminder offsets are malformed', 'value', to_jsonb('30'::text)),
+    jsonb_build_object('label', 'instance_reminder_missing', 'op', 'remove', 'path', '{tables,local_schedules,0,reminder_minutes_before}', 'expect', 'identity is malformed')
   );
 begin
   select payload into base_payload
@@ -576,6 +586,75 @@ begin
   end;
 end
 $replay_committed_version_one$;
+
+reset role;
+
+-- 合法提醒偏移必须能完整往返：0、上边界 10080 与 null（不提醒）都既属于
+-- 客户端契约，也必须被服务端接受。每条都用新 revision 写入，读回的载荷里
+-- 规则模板与实例值都必须与写入一致。
+set local role authenticated;
+do $owner_claim_for_reminder_bounds$
+begin
+  perform set_config(
+    'request.jwt.claim.sub',
+    current_setting('schema_v3_test.owner_id'),
+    true
+  );
+end
+$owner_claim_for_reminder_bounds$;
+
+do $accept_reminder_bounds$
+declare
+  base_payload jsonb;
+  candidate jsonb;
+  saved public.cloud_business_snapshots;
+  revision integer;
+  item record;
+  cases jsonb := jsonb_build_array(
+    jsonb_build_object('label', 'zero', 'rule', to_jsonb(0), 'instance', to_jsonb(0)),
+    jsonb_build_object('label', 'upper', 'rule', to_jsonb(10080), 'instance', to_jsonb(10080)),
+    jsonb_build_object('label', 'unset', 'rule', 'null'::jsonb, 'instance', 'null'::jsonb)
+  );
+begin
+  select payload, snapshot.revision into base_payload, revision
+  from public.cloud_business_snapshots as snapshot
+  where user_id = auth.uid();
+  for item in select * from jsonb_to_recordset(cases) as rec(
+      label text, rule jsonb, instance jsonb)
+  loop
+    candidate := jsonb_set(
+      jsonb_set(
+        base_payload,
+        '{tables,local_schedule_recurrences,0,reminder_minutes_before}',
+        item.rule,
+        true
+      ),
+      '{tables,local_schedules,0,reminder_minutes_before}',
+      item.instance,
+      true
+    );
+    saved := public.save_cloud_business_snapshot(
+      revision, candidate, 'bound-device', 'Bound device',
+      '2026-11-15T02:08:00Z'::timestamptz, 3, null, null, null,
+      'schema-v3-reminder-' || item.label
+    );
+    revision := revision + 1;
+    if saved.revision <> revision then
+      raise exception 'reminder bound % was not stored as the next revision',
+        item.label;
+    end if;
+    if saved.payload -> 'tables' -> 'local_schedule_recurrences' -> 0
+        -> 'reminder_minutes_before' is distinct from item.rule then
+      raise exception 'rule reminder bound % did not round-trip', item.label;
+    end if;
+    if saved.payload -> 'tables' -> 'local_schedules' -> 0
+        -> 'reminder_minutes_before' is distinct from item.instance then
+      raise exception 'instance reminder bound % did not round-trip', item.label;
+    end if;
+    base_payload := saved.payload;
+  end loop;
+end
+$accept_reminder_bounds$;
 
 reset role;
 
