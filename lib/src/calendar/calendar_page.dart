@@ -263,7 +263,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       setState(() => _working = false);
       final confirmed = await _showPreviewDialog(preview);
       if (confirmed != true || !mounted) return;
-      if (!preview.hasPending) {
+      if (!preview.hasPending && !preview.hasAliasUpdates) {
         _finish(
           preview.duplicateCount > 0
               ? '所选范围内都是已存在的日程，跳过 ${preview.duplicateCount} 个。'
@@ -277,8 +277,11 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       });
       final outcome = await scheduleRepository.confirmCalendarImport(preview);
       _finish(
-        '已导入 ${outcome.createdCount} 个日程；跳过 '
-        '${outcome.skippedDuplicates} 个已存在日程。',
+        outcome.createdCount > 0
+            ? '已导入 ${outcome.createdCount} 个日程；跳过 '
+                  '${outcome.skippedDuplicates} 个已存在日程。'
+            : '已为 ${preview.pendingAliasUpdates.length} 个已导入日程记录新的来源身份，'
+                  '日程内容不变。',
       );
     } catch (_) {
       _finish('日历读取未完成，其他功能仍可使用。');
@@ -389,6 +392,10 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
               const SizedBox(height: 6),
               Text('${preview.ignoredCount} 个活动无法作为日程导入'),
             ],
+            if (preview.hasAliasUpdates) ...[
+              const SizedBox(height: 6),
+              Text('将为 ${preview.pendingAliasUpdates.length} 个已导入日程记录新的系统身份'),
+            ],
             const SizedBox(height: 12),
             const Text('导入后这些日程归 Pacta 管理；源日历不会被修改。'),
           ],
@@ -401,7 +408,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
           ),
           FilledButton(
             key: const Key('import-confirm'),
-            onPressed: preview.hasPending
+            onPressed: preview.hasPending || preview.hasAliasUpdates
                 ? () => Navigator.of(context).pop(true)
                 : null,
             child: const Text('确认导入'),

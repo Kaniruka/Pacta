@@ -177,6 +177,7 @@ class LocalScheduleRepository implements ScheduleRepository {
     final index = await _importIdentityIndex();
     final pending = <CalendarImportCandidate>[];
     final planned = <String>{};
+    final aliasUpdates = <String, List<String>>{};
     var duplicates = 0;
     var ignored = 0;
     String? deviceProvenance;
@@ -191,29 +192,43 @@ class LocalScheduleRepository implements ScheduleRepository {
         ignored++;
         continue;
       }
-      if (calendarImportEventIsDeviceLocal(occurrence.sourceEventId)) {
-        // Only a fallback identity needs installation provenance, so a
-        // provider-only preview keeps writing nothing at all.
+      final needsDeviceAlias =
+          calendarImportEventIsDeviceLocal(occurrence.sourceEventId) ||
+          (occurrence.deviceOccurrenceId?.trim().isNotEmpty ?? false);
+      if (needsDeviceAlias) {
+        // Only an installation alias needs provenance, so a preview of provider
+        // occurrences without a device row keeps writing nothing at all.
         deviceProvenance ??= await _importDeviceProvenance();
       }
-      final identity = calendarImportIdentityKey(
+      final aliases = calendarImportIdentityAliases(
         source: source,
         occurrence: occurrence,
         deviceProvenance: deviceProvenance,
       );
       final legacyIdentity = _legacyIdentityKey(source.id, occurrence);
-      if (index.identities.contains(identity) ||
+      final owner = _aliasOwner(index, aliases);
+      if (owner != null ||
           (legacyIdentity != null &&
               index.legacyIdentities.contains(legacyIdentity)) ||
-          !planned.add(identity)) {
+          aliases.any(planned.contains)) {
         duplicates++;
+        if (owner != null) {
+          // The same copy got a new alias (for example a provider id on the
+          // device row that produced it). Recording it never rewrites content
+          // and waits for confirm, so a cancelled preview writes nothing.
+          final known = index.aliasesBySchedule[owner] ?? const <String>{};
+          if (aliases.any((alias) => !known.contains(alias))) {
+            aliasUpdates.putIfAbsent(owner, () => <String>[]).addAll(aliases);
+          }
+        }
         continue;
       }
+      planned.addAll(aliases);
       pending.add(
         CalendarImportCandidate(
           occurrence: occurrence,
           sourceName: source.displayName,
-          identityKey: identity,
+          identityAliases: aliases,
         ),
       );
     }
@@ -230,6 +245,7 @@ class LocalScheduleRepository implements ScheduleRepository {
       pending: pending,
       duplicateCount: duplicates,
       ignoredCount: ignored,
+      pendingAliasUpdates: aliasUpdates,
     );
   }
 
@@ -240,26 +256,41 @@ class LocalScheduleRepository implements ScheduleRepository {
     await lifecycleAccess.requireActive();
     final created = <Schedule>[];
     var skipped = 0;
+    var identityChanged = false;
     await database.transaction(() async {
       final index = await _importIdentityIndex();
+      for (final entry in preview.pendingAliasUpdates.entries) {
+        if (await _rememberImportAliases(entry.key, entry.value, index)) {
+          identityChanged = true;
+        }
+      }
       for (final candidate in preview.pending) {
         final legacyIdentity = _legacyIdentityKey(
           candidate.occurrence.sourceId,
           candidate.occurrence,
         );
-        if (index.identities.contains(candidate.identityKey) ||
+        final owner = _aliasOwner(index, candidate.identityAliases);
+        if (owner != null ||
             (legacyIdentity != null &&
                 index.legacyIdentities.contains(legacyIdentity))) {
           skipped++;
+          if (owner != null &&
+              await _rememberImportAliases(
+                owner,
+                candidate.identityAliases,
+                index,
+              )) {
+            identityChanged = true;
+          }
           continue;
         }
         final copy = _calendarCopy(candidate);
         await _saveSchedule(copy);
-        index.identities.add(candidate.identityKey);
+        index.addAliases(copy.id, candidate.identityAliases);
         created.add(copy);
       }
     });
-    if (created.isNotEmpty) await _publish();
+    if (created.isNotEmpty || identityChanged) await _publish();
     return CalendarImportOutcome(created: created, skippedDuplicates: skipped);
   }
 
@@ -316,16 +347,18 @@ class LocalScheduleRepository implements ScheduleRepository {
   }
 
   /// Identities already owned by this account, indexed for skip checks.
+  ///
+  /// Every copy contributes all aliases it recorded, so a device-local alias and
+  /// a provider alias for the same occurrence both take part in deduplication.
   Future<_ImportIdentityIndex> _importIdentityIndex() async {
     final rows = await (database.select(
       database.localSchedules,
     )..where((row) => row.userId.equals(userId))).get();
-    final identities = <String>{};
-    final legacyIdentities = <String>{};
+    final index = _ImportIdentityIndex();
     for (final row in rows) {
       final identity = row.eventIdentity?.trim();
       if (identity == null || identity.isEmpty) continue;
-      identities.add(identity);
+      index.addAliases(row.id, decodeCalendarImportIdentityAliases(identity));
       if (row.origin != ScheduleOrigin.legacyCalendarBlock.storageValue) {
         continue;
       }
@@ -333,7 +366,7 @@ class LocalScheduleRepository implements ScheduleRepository {
         continue;
       }
       for (final sourceId in _decodeStrings(row.sourceIds)) {
-        legacyIdentities.add(
+        index.legacyIdentities.add(
           calendarImportLegacyIdentityKey(
             sourceId: sourceId,
             rawIdentity: identity,
@@ -341,10 +374,54 @@ class LocalScheduleRepository implements ScheduleRepository {
         );
       }
     }
-    return _ImportIdentityIndex(
-      identities: identities,
-      legacyIdentities: legacyIdentities,
-    );
+    return index;
+  }
+
+  /// Copy that owns any alias of [aliases], if one already exists.
+  String? _aliasOwner(_ImportIdentityIndex index, List<String> aliases) {
+    for (final alias in aliases) {
+      final owner = index.aliasOwners[alias];
+      if (owner != null) return owner;
+    }
+    return null;
+  }
+
+  /// Records aliases learned after the copy was created.
+  ///
+  /// This happens when the platform assigns a provider identity to the device
+  /// row that produced a device-local copy: the copy is the same arrangement, so
+  /// it keeps its content (title, times, completion, notes) and only gains the
+  /// alias that lets other installations skip it. The conversation is never
+  /// inferred from a raw numeric id.
+  Future<bool> _rememberImportAliases(
+    String scheduleId,
+    List<String> aliases,
+    _ImportIdentityIndex index,
+  ) async {
+    final existing = index.aliasesBySchedule[scheduleId] ?? const <String>{};
+    final merged = _canonicalAliases({...existing, ...aliases});
+    if (merged.length == existing.length) return false;
+    await (database.update(database.localSchedules)
+          ..where((row) => row.id.equals(scheduleId))
+          ..where((row) => row.userId.equals(userId)))
+        .write(
+          LocalSchedulesCompanion(
+            eventIdentity: Value(encodeCalendarImportIdentity(merged)),
+          ),
+        );
+    index.addAliases(scheduleId, merged);
+    return true;
+  }
+
+  List<String> _canonicalAliases(Iterable<String> aliases) {
+    final sorted = aliases.toSet().toList()..sort();
+    return [
+      ...sorted.where((alias) => alias.startsWith('sync|')),
+      ...sorted.where((alias) => alias.startsWith('device|')),
+      ...sorted.where(
+        (alias) => !alias.startsWith('sync|') && !alias.startsWith('device|'),
+      ),
+    ];
   }
 
   /// Raw identity left behind by the one-time legacy block promotion.
@@ -758,11 +835,15 @@ class LocalScheduleRepository implements ScheduleRepository {
 
 /// Identity sets used to skip already owned import copies.
 class _ImportIdentityIndex {
-  const _ImportIdentityIndex({
-    required this.identities,
-    required this.legacyIdentities,
-  });
+  final Map<String, String> aliasOwners = {};
+  final Map<String, Set<String>> aliasesBySchedule = {};
+  final Set<String> legacyIdentities = {};
 
-  final Set<String> identities;
-  final Set<String> legacyIdentities;
+  void addAliases(String scheduleId, Iterable<String> aliases) {
+    final owned = aliasesBySchedule.putIfAbsent(scheduleId, () => <String>{});
+    for (final alias in aliases) {
+      owned.add(alias);
+      aliasOwners[alias] = scheduleId;
+    }
+  }
 }

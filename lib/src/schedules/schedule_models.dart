@@ -131,6 +131,12 @@ class Schedule {
   final List<String> sourceNames;
   final String? sourceEventId;
   final String? occurrenceId;
+
+  /// Structured import identity: every alias that proves this occurrence
+  /// (synced provider identity and/or this installation's device row).
+  ///
+  /// Imported copies keep it across rescheduling and snapshot sync; other
+  /// schedules leave it null.
   final String? eventIdentity;
 
   final DateTime createdAt;

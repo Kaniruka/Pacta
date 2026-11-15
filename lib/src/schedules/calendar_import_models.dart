@@ -1,13 +1,16 @@
+import 'dart:convert';
+
 import '../calendar/calendar_models.dart';
 import 'schedule_models.dart';
 
-/// Version prefix for import identities. Bump only with a documented
-/// migration: identities are compared across devices through snapshots.
+/// Serialized identity version for an imported occurrence.
 ///
-/// No released build has produced the earlier numeric-only device scope, so the
-/// installation-scoped device segment below is still version 1: unreleased
-/// development identities simply stop matching each other.
-const String calendarImportIdentityPrefix = 'calendar-import/1';
+/// Version 1 was one namespaced string (`calendar-import/1|<scope>|...`) and
+/// could only express a single namespace, so a device-local event and the
+/// provider identity that later appeared on the same device row never met.
+/// Version 2 stores every alias that proves the occurrence, and one persisted
+/// copy keeps all of them without rewriting its content.
+const int calendarImportIdentityVersion = 2;
 
 /// One system-calendar source the user picked for a manual import.
 ///
@@ -52,17 +55,21 @@ class CalendarImportRequest {
 
 /// One occurrence that would be written as a new owned copy.
 class CalendarImportCandidate {
-  const CalendarImportCandidate({
+  CalendarImportCandidate({
     required this.occurrence,
     required this.sourceName,
-    required this.identityKey,
-  });
+    required List<String> identityAliases,
+  }) : identityAliases = List.unmodifiable(identityAliases);
 
   final CalendarEventOccurrence occurrence;
   final String sourceName;
 
-  /// Namespaced deduplication key stored as the copy's identity.
-  final String identityKey;
+  /// Every alias that proves this occurrence on this installation.
+  final List<String> identityAliases;
+
+  /// Structured identity stored on the created copy and compared through
+  /// business snapshots.
+  String get identityKey => encodeCalendarImportIdentity(identityAliases);
 }
 
 /// Result of reading the selected range. Producing one writes no schedule.
@@ -74,6 +81,7 @@ class CalendarImportPreview {
     required this.duplicateCount,
     required this.ignoredCount,
     this.warnings = const [],
+    this.pendingAliasUpdates = const {},
   });
 
   final DateTime from;
@@ -90,9 +98,21 @@ class CalendarImportPreview {
 
   final List<String> warnings;
 
+  /// Aliases learned for copies that already exist, keyed by schedule id.
+  ///
+  /// A device-local copy stays the same arrangement when the platform later
+  /// assigns a provider id to that device row, so the new alias is remembered on
+  /// that copy instead of creating another one. Nothing is written here: the
+  /// update is applied only by [ScheduleRepository.confirmCalendarImport], so
+  /// cancelling a preview still leaves no trace.
+  final Map<String, List<String>> pendingAliasUpdates;
+
   int get totalCount => pending.length + duplicateCount + ignoredCount;
 
   bool get hasPending => pending.isNotEmpty;
+
+  /// True when confirming would only record identity aliases on existing copies.
+  bool get hasAliasUpdates => pendingAliasUpdates.isNotEmpty;
 }
 
 /// Outcome of confirming a preview.
@@ -113,41 +133,70 @@ class CalendarImportOutcome {
 bool calendarImportEventIsDeviceLocal(String sourceEventId) =>
     sourceEventId.startsWith('local:');
 
-/// Namespaced identity for one imported occurrence.
+/// Every alias that proves one imported occurrence.
 ///
-/// The key always names a source so two providers (or two calendars) that use
-/// the same raw event id never collapse into one copy.
+/// A provider identity is provable across devices, so it contributes a `sync`
+/// alias and equal provider occurrences still deduplicate after a snapshot
+/// restore.
 ///
-/// A provider identity is provable across devices, so it is scoped as `sync`
-/// and equal provider occurrences deduplicate after a snapshot restore.
-/// A device-local fallback id (`local:`) is only meaningful on the device that
-/// produced it: [deviceProvenance] must therefore be the persisted installation
-/// identity (`focus_source_devices.deviceId`, deliberately excluded from
-/// business snapshots), never a numeric calendar or event row. Two installations
-/// that happen to use the same calendar row id and event row id therefore keep
-/// distinct copies, while the same installation keeps skipping its own.
+/// The platform's own row identity contributes a `device` alias. It is only
+/// meaningful together with [deviceProvenance] — the persisted installation
+/// identity from `focus_source_devices`, deliberately excluded from business
+/// snapshots — never as a bare numeric calendar or event row. Two installations
+/// that happen to reuse the same rows therefore keep distinct copies, while the
+/// same installation keeps skipping its own.
 ///
-/// [deviceProvenance] is required for device-local fallbacks and ignored for
-/// provider identities, which need no installation scope.
-String calendarImportIdentityKey({
+/// A copy keeps both aliases as soon as they are known: an event imported while
+/// it was still device-local stays deduplicated when Android later assigns a
+/// provider id to that same row, and the canonical provider identity then
+/// travels to other installations through the business snapshot.
+///
+/// [deviceProvenance] is required as soon as a `device` alias is produced and
+/// ignored for provider occurrences that carry no device row identity.
+List<String> calendarImportIdentityAliases({
   required CalendarImportSource source,
   required CalendarEventOccurrence occurrence,
   String? deviceProvenance,
 }) {
+  final aliases = <String>[];
   final deviceLocal = calendarImportEventIsDeviceLocal(
     occurrence.sourceEventId,
   );
-  final scope = deviceLocal
-      ? _deviceScope(deviceProvenance, source.localCalendarId ?? source.id)
-      : 'sync';
-  final token = occurrence.occurrenceId.trim().isNotEmpty
-      ? occurrence.occurrenceId.trim()
-      : 'start:${occurrence.startsAt.toUtc().toIso8601String()}';
-  return '$calendarImportIdentityPrefix|$scope|${source.id}|'
-      '${occurrence.sourceEventId}|$token';
+  if (!deviceLocal) {
+    aliases.add(
+      'sync|${source.id}|${occurrence.sourceEventId}|'
+      '${_occurrenceToken(occurrence)}',
+    );
+  }
+  final deviceOccurrence = _deviceOccurrenceIdentity(occurrence, deviceLocal);
+  if (deviceOccurrence != null) {
+    aliases.add(
+      'device|${_requireProvenance(deviceProvenance)}|'
+      '${source.localCalendarId ?? source.id}|$deviceOccurrence',
+    );
+  }
+  return aliases;
 }
 
-String _deviceScope(String? deviceProvenance, String localCalendarScope) {
+String _occurrenceToken(CalendarEventOccurrence occurrence) {
+  final token = occurrence.occurrenceId.trim();
+  return token.isNotEmpty
+      ? token
+      : 'start:${occurrence.startsAt.toUtc().toIso8601String()}';
+}
+
+/// Device-local occurrence identity reported by the platform, or the fallback
+/// occurrence id when the event still has no provider identity.
+String? _deviceOccurrenceIdentity(
+  CalendarEventOccurrence occurrence,
+  bool deviceLocal,
+) {
+  final reported = occurrence.deviceOccurrenceId?.trim();
+  if (reported != null && reported.isNotEmpty) return reported;
+  return deviceLocal ? _occurrenceToken(occurrence) : null;
+}
+
+String _requireProvenance(String? deviceProvenance) {
   final provenance = deviceProvenance?.trim() ?? '';
   if (provenance.isEmpty || provenance.contains('|')) {
     throw ArgumentError.value(
@@ -156,7 +205,44 @@ String _deviceScope(String? deviceProvenance, String localCalendarScope) {
       'installation identity must be a non-empty key segment',
     );
   }
-  return 'device:$provenance:$localCalendarScope';
+  return provenance;
+}
+
+/// Structured identity stored on a copy.
+String encodeCalendarImportIdentity(List<String> aliases) =>
+    jsonEncode({'v': calendarImportIdentityVersion, 'aliases': aliases});
+
+/// Aliases recorded by one persisted identity.
+///
+/// Version 2 JSON is authoritative. A version 1 `sync` scope still proves the
+/// same provider occurrence and stays readable as one synced alias. Anything
+/// else — a version 1 numeric device scope, a legacy raw occurrence identity, or
+/// an unknown payload — stays opaque, so it can never alias another copy.
+List<String> decodeCalendarImportIdentityAliases(String? storedIdentity) {
+  final stored = storedIdentity?.trim() ?? '';
+  if (stored.isEmpty) return const [];
+  if (stored.startsWith('{')) {
+    try {
+      final decoded = jsonDecode(stored);
+      if (decoded is Map<String, dynamic> &&
+          decoded['v'] == calendarImportIdentityVersion) {
+        final aliases = decoded['aliases'];
+        if (aliases is List) {
+          return [
+            for (final alias in aliases)
+              if (alias is String && alias.trim().isNotEmpty) alias,
+          ];
+        }
+      }
+    } on FormatException {
+      // Keep the opaque token below.
+    }
+  }
+  const legacySyncPrefix = 'calendar-import/1|sync|';
+  if (stored.startsWith(legacySyncPrefix)) {
+    return ['sync|${stored.substring(legacySyncPrefix.length)}'];
+  }
+  return [stored];
 }
 
 /// Identity recorded by the one-time legacy calendar-block promotion.

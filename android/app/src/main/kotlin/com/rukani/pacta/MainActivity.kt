@@ -372,6 +372,10 @@ class MainActivity : FlutterActivity() {
             val occurrenceStart = event.originalInstanceTime ?: instance.startsAt
             val occurrenceId = "$externalId@$occurrenceStart"
             val eventIdentity = "$externalId@$occurrenceStart"
+            // Device-local continuation key: the same event row keeps this value
+            // before and after a provider sync id appears, so an import can prove
+            // continuity on this installation without a cross-device claim.
+            val deviceOccurrenceId = "local:${instance.eventId}@$occurrenceStart"
             val allDay = event.allDay
             output.add(
                 mapOf(
@@ -379,6 +383,7 @@ class MainActivity : FlutterActivity() {
                     "sourceEventId" to externalId,
                     "occurrenceId" to occurrenceId,
                     "eventIdentity" to eventIdentity,
+                    "deviceOccurrenceId" to deviceOccurrenceId,
                     "title" to event.title,
                     "startsAt" to instance.startsAt,
                     "endsAt" to instance.endsAt,

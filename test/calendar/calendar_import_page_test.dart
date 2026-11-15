@@ -149,6 +149,88 @@ void main() {
     expect(await scheduleRepository.getSchedules(), hasLength(2));
   });
 
+  testWidgets(
+    'a provider id on the same device row is recorded without touching the copy',
+    (tester) async {
+      provider.events = [
+        CalendarEventOccurrence(
+          sourceId: 'source-a',
+          sourceEventId: 'local:42',
+          occurrenceId: 'local:42@1',
+          eventIdentity: 'local:42@1',
+          deviceOccurrenceId: 'local:42@1',
+          title: '本机私事',
+          startsAt: atLocalHour(1, 9).toUtc(),
+          endsAt: atLocalHour(1, 10).toUtc(),
+          allDay: false,
+          availability: CalendarAvailability.busy,
+          timeZoneId: 'Asia/Shanghai',
+        ),
+      ];
+      await pumpPage(tester, isAndroid: true);
+      await tester.tap(find.byKey(const Key('calendar-import-start')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('import-source-source-a')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('import-preview')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('import-confirm')));
+      await tester.pumpAndSettle();
+
+      final created = (await scheduleRepository.getSchedules()).single;
+      await scheduleRepository.updateSchedule(
+        created.id,
+        ScheduleDraft(
+          title: '我改过的本机私事',
+          window: ScheduleWindow.timed(
+            startsAt: atLocalHour(1, 15).toUtc(),
+            endsAt: atLocalHour(1, 16).toUtc(),
+          ),
+        ),
+      );
+
+      // The platform now reports a provider id for that same device row.
+      provider.events = [
+        CalendarEventOccurrence(
+          sourceId: 'source-a',
+          sourceEventId: 'evt-42@example.com',
+          occurrenceId: 'evt-42@example.com@1',
+          eventIdentity: 'evt-42@example.com@1',
+          deviceOccurrenceId: 'local:42@1',
+          title: '本机私事',
+          startsAt: atLocalHour(1, 9).toUtc(),
+          endsAt: atLocalHour(1, 10).toUtc(),
+          allDay: false,
+          availability: CalendarAvailability.busy,
+          timeZoneId: 'Asia/Shanghai',
+        ),
+      ];
+
+      await tester.tap(find.byKey(const Key('calendar-import-start')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('import-source-source-a')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('import-preview')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('将导入 0 个日程'), findsOneWidget);
+      expect(find.text('已存在将跳过 1 个'), findsOneWidget);
+      expect(find.textContaining('记录新的系统身份'), findsOneWidget);
+
+      await tester.tap(find.byKey(const Key('import-confirm')));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('记录新的来源身份'), findsOneWidget);
+
+      final stored = (await scheduleRepository.getSchedules()).single;
+      expect(stored.title, '我改过的本机私事');
+      expect(stored.startsAt, atLocalHour(1, 15).toUtc());
+      expect(
+        decodeCalendarImportIdentityAliases(stored.eventIdentity).length,
+        2,
+      );
+    },
+  );
+
   testWidgets('Windows states that system calendar reading is unavailable', (
     tester,
   ) async {

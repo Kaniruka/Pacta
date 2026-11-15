@@ -28,6 +28,7 @@ void main() {
     String sourceId = 'source-a',
     String sourceEventId = 'evt-1@example.com',
     String? occurrenceId,
+    String? deviceOccurrenceId,
     String title = '周会',
     DateTime? startsAt,
     DateTime? endsAt,
@@ -46,6 +47,7 @@ void main() {
       allDay: false,
       availability: CalendarAvailability.busy,
       timeZoneId: 'Asia/Shanghai',
+      deviceOccurrenceId: deviceOccurrenceId,
     );
   }
 
@@ -80,8 +82,10 @@ void main() {
     expect(preview.pending, hasLength(2));
     expect(preview.duplicateCount, 0);
     expect(preview.totalCount, 2);
-    expect(preview.pending.first.identityKey, startsWith('calendar-import/1|'));
-    expect(preview.pending.first.identityKey, contains('|source-a|'));
+    expect(
+      decodeCalendarImportIdentityAliases(preview.pending.first.identityKey),
+      ['sync|source-a|evt-1@example.com|evt-1@example.com@1794819600000'],
+    );
     expect(await repository.getSchedules(), isEmpty);
   });
 
@@ -105,8 +109,8 @@ void main() {
       expect(copy.sourceNames, ['工作']);
       expect(copy.sourceEventId, 'evt-1@example.com');
       expect(
-        copy.eventIdentity,
-        startsWith('calendar-import/1|sync|source-a|'),
+        decodeCalendarImportIdentityAliases(copy.eventIdentity).single,
+        startsWith('sync|source-a|evt-1@example.com|'),
       );
       expect(copy.isCompleted, isFalse);
 
@@ -184,53 +188,56 @@ void main() {
     );
   });
 
-  test('device-local fallback ids are scoped by the local calendar', () async {
-    await seedInstallation('install-test');
-    final localA = timed(
-      sourceId: 'source-a',
-      sourceEventId: 'local:42',
-      occurrenceId: 'local:42@1',
-      title: '本机私事',
-    );
-    final localB = timed(
-      sourceId: 'source-b',
-      sourceEventId: 'local:42',
-      occurrenceId: 'local:42@1',
-      title: '本机私事',
-    );
-    final twoDevices = CalendarImportRequest(
-      sources: const [
-        CalendarImportSource(
-          id: 'source-a',
-          displayName: '本机 7',
-          localCalendarId: '7',
-        ),
-        CalendarImportSource(
-          id: 'source-b',
-          displayName: '本机 8',
-          localCalendarId: '8',
-        ),
-      ],
-      occurrences: [localA, localB],
-      from: DateTime.utc(2026, 11, 16),
-      to: DateTime.utc(2026, 11, 23),
-    );
+  test(
+    'device-local fallback ids are scoped by installation and calendar',
+    () async {
+      await seedInstallation('install-test');
+      final localA = timed(
+        sourceId: 'source-a',
+        sourceEventId: 'local:42',
+        occurrenceId: 'local:42@1',
+        title: '本机私事',
+      );
+      final localB = timed(
+        sourceId: 'source-b',
+        sourceEventId: 'local:42',
+        occurrenceId: 'local:42@1',
+        title: '本机私事',
+      );
+      final twoDevices = CalendarImportRequest(
+        sources: const [
+          CalendarImportSource(
+            id: 'source-a',
+            displayName: '本机 7',
+            localCalendarId: '7',
+          ),
+          CalendarImportSource(
+            id: 'source-b',
+            displayName: '本机 8',
+            localCalendarId: '8',
+          ),
+        ],
+        occurrences: [localA, localB],
+        from: DateTime.utc(2026, 11, 16),
+        to: DateTime.utc(2026, 11, 23),
+      );
 
-    final preview = await repository.previewCalendarImport(twoDevices);
-    expect(preview.pending, hasLength(2));
-    expect(
-      preview.pending.map((item) => item.identityKey).toSet(),
-      hasLength(2),
-    );
-    expect(
-      preview.pending.first.identityKey,
-      contains('|device:install-test:7|'),
-    );
-    expect(
-      preview.pending.last.identityKey,
-      contains('|device:install-test:8|'),
-    );
-  });
+      final preview = await repository.previewCalendarImport(twoDevices);
+      expect(preview.pending, hasLength(2));
+      expect(
+        preview.pending.map((item) => item.identityKey).toSet(),
+        hasLength(2),
+      );
+      expect(
+        decodeCalendarImportIdentityAliases(preview.pending.first.identityKey),
+        ['device|install-test|7|local:42@1'],
+      );
+      expect(
+        decodeCalendarImportIdentityAliases(preview.pending.last.identityKey),
+        ['device|install-test|8|local:42@1'],
+      );
+    },
+  );
 
   test('imports stay independent per occurrence of one series', () async {
     final series = [
@@ -327,7 +334,12 @@ void main() {
       );
       final created = await repository.confirmCalendarImport(first);
       expect(created.createdCount, 1);
-      expect(created.created.single.eventIdentity, contains('install-test'));
+      expect(
+        decodeCalendarImportIdentityAliases(
+          created.created.single.eventIdentity,
+        ),
+        ['device|install-test|7|local:42@1'],
+      );
 
       final again = await repository.previewCalendarImport(
         request([timed(sourceEventId: 'local:42', occurrenceId: 'local:42@1')]),
@@ -362,7 +374,10 @@ void main() {
       final syncedCopy = (await repository.confirmCalendarImport(syncedPreview))
           .created
           .single;
-      expect(syncedCopy.eventIdentity, startsWith('calendar-import/1|sync|'));
+      expect(
+        decodeCalendarImportIdentityAliases(syncedCopy.eventIdentity).single,
+        'sync|source-a|evt-42@example.com|evt-42@example.com@1',
+      );
 
       final stored = await repository.getSchedules();
       expect(stored, hasLength(2));
@@ -372,6 +387,55 @@ void main() {
       expect(untouched.startsAt, localCopy.startsAt);
     },
   );
+
+  test('a provider id appearing on the same device row keeps skipping the edited copy', () async {
+    await seedInstallation('install-test');
+    final localPreview = await repository.previewCalendarImport(
+      request([
+        timed(
+          sourceEventId: 'local:42',
+          occurrenceId: 'local:42@1',
+          deviceOccurrenceId: 'local:42@1',
+        ),
+      ]),
+    );
+    final copy = (await repository.confirmCalendarImport(localPreview))
+        .created
+        .single;
+    await repository.updateSchedule(
+      copy.id,
+      ScheduleDraft(
+        title: '我改过的本机日程',
+        window: ScheduleWindow.timed(
+          startsAt: DateTime.utc(2026, 11, 16, 15),
+          endsAt: DateTime.utc(2026, 11, 16, 16),
+        ),
+      ),
+    );
+
+    // The platform later exposes a provider id for the very same device row.
+    final providerPreview = await repository.previewCalendarImport(
+      request([
+        timed(
+          sourceEventId: 'evt-42@example.com',
+          occurrenceId: 'evt-42@example.com@1',
+          deviceOccurrenceId: 'local:42@1',
+        ),
+      ]),
+    );
+    expect(providerPreview.pending, isEmpty);
+    expect(providerPreview.duplicateCount, 1);
+
+    final repeated = await repository.confirmCalendarImport(providerPreview);
+    expect(repeated.createdCount, 0);
+    final stored = (await repository.getSchedules()).single;
+    expect(stored.title, '我改过的本机日程');
+    expect(stored.startsAt, DateTime.utc(2026, 11, 16, 15));
+    expect(decodeCalendarImportIdentityAliases(stored.eventIdentity).toSet(), {
+      'device|install-test|7|local:42@1',
+      'sync|source-a|evt-42@example.com|evt-42@example.com@1',
+    });
+  });
 
   test('a legacy device-local copy never causes a false skip', () async {
     await seedInstallation('install-test');

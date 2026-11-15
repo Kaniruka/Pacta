@@ -89,6 +89,8 @@ class AndroidCalendarProvider implements CalendarProvider {
       sourceEventId: row['sourceEventId'] as String,
       occurrenceId: row['occurrenceId'] as String,
       eventIdentity: row['eventIdentity'] as String,
+      deviceOccurrenceId: (row['deviceOccurrenceId'] as String?)?.trim(),
+
       title: (row['title'] as String?)?.trim().isNotEmpty == true
           ? (row['title'] as String).trim()
           : '无标题日历块',

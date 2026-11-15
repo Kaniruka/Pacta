@@ -46,6 +46,7 @@ class CalendarEventOccurrence {
     required this.timeZoneId,
     this.allDayStartDate,
     this.allDayEndDateExclusive,
+    this.deviceOccurrenceId,
   });
 
   final String sourceId;
@@ -56,6 +57,14 @@ class CalendarEventOccurrence {
 
   /// Source-independent key used to collapse the same imported occurrence.
   final String eventIdentity;
+
+  /// Device-local occurrence identity from the platform's own rows.
+  ///
+  /// Android reports the calendar row, event row and original instance start
+  /// here. They survive a provider identity appearing later on that same row,
+  /// so an import can prove continuity on this installation. The value is never
+  /// shared across devices and never used without the installation identity.
+  final String? deviceOccurrenceId;
   final String title;
   final DateTime startsAt;
   final DateTime endsAt;
