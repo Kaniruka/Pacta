@@ -27,8 +27,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('链记录读取失败，请重试。'), findsOneWidget);
-    expect(find.text('最佳 0 次'), findsNothing);
-    expect(find.textContaining('次连续'), findsNothing);
+    expect(find.text('精锐链'), findsNothing);
+    expect(find.text('普通链'), findsNothing);
     expect(tester.takeException(), isNull);
 
     await tester.ensureVisible(find.text('重试'));
@@ -38,10 +38,12 @@ void main() {
     expect(repository.chainReads, 2);
     expect(repository.appointmentReads, 2);
     expect(find.text('链记录读取失败，请重试。'), findsNothing);
-    expect(find.text('最佳 9 次'), findsOneWidget);
-    expect(find.text('最佳 6 次'), findsOneWidget);
-    expect(find.text('连续 7 次', findRichText: true), findsOneWidget);
-    expect(find.text('连续 4 次', findRichText: true), findsOneWidget);
+    // 精锐链 7/9、普通链 0/0、预约链 4/6 以对齐表格的数字单元格呈现。
+    expect(find.text('7'), findsOneWidget);
+    expect(find.text('9'), findsOneWidget);
+    expect(find.text('4'), findsOneWidget);
+    expect(find.text('6'), findsOneWidget);
+    expect(find.text('0'), findsNWidgets(2));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();

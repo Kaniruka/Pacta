@@ -122,11 +122,7 @@ void main() {
 
       expect(find.text('已专注 25分00秒'), findsOneWidget);
       await h.openTab(tester, '专注链');
-      expect(
-        find.text('连续 1 次', findRichText: true),
-        findsWidgets,
-        reason: '专注链次数应加 1',
-      );
+      expect(find.text('1'), findsWidgets, reason: '专注链次数应加 1');
       expect(
         find.descendant(
           of: _metric('精锐链', '累计专注'),
@@ -222,7 +218,7 @@ void main() {
         findsOneWidget,
         reason: '后台恢复结算后累计专注应为 25 分钟',
       );
-      expect(find.text('连续 1 次', findRichText: true), findsWidgets);
+      expect(find.text('1'), findsWidgets);
     } finally {
       await h.teardown(tester);
     }
@@ -279,7 +275,7 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.text('连续 1 次', findRichText: true), findsWidgets);
+      expect(find.text('1'), findsWidgets);
     } finally {
       await h.teardown(tester);
     }
@@ -326,11 +322,7 @@ void main() {
         findsOneWidget,
         reason: '专注链卡片累计专注应为 35 分钟',
       );
-      expect(
-        find.text('连续 2 次', findRichText: true),
-        findsWidgets,
-        reason: '第二次完成后连续次数为 2',
-      );
+      expect(find.text('2'), findsWidgets, reason: '第二次完成后连续次数为 2');
     } finally {
       await h.teardown(tester);
     }
@@ -405,17 +397,9 @@ void main() {
   });
 }
 
-/// 专注链概览中的单链卡片（标题为"精锐链"/"普通链"/"预约链"）。
-Finder _chainCard(String title) =>
-    find.ancestor(of: find.text(title), matching: find.byType(Card)).first;
-
-/// 链卡内指定指标（如"累计专注"）的数值所在列。
-Finder _metric(String chainTitle, String label) => find.descendant(
-  of: _chainCard(chainTitle),
-  matching: find
-      .ancestor(of: find.text(label), matching: find.byType(Column))
-      .first,
-);
+/// 链表中指定链的指标（如"精锐链"的"累计专注"）所在格。
+Finder _metric(String chainTitle, String label) =>
+    find.byKey(ValueKey('focus-chain-stat-$chainTitle-$label'));
 
 /// 有界等待：完成路由/对话框动画，但不等周期性定时器。
 Future<void> _boundedSettle(WidgetTester tester) async {

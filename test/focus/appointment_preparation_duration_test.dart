@@ -167,6 +167,7 @@ class _Fixture {
         focusRepositoryFactory: (_) => focus,
         nationalFocusRepositoryFactory: (_) => tree,
         chainSignalsRepositoryFactory: (_) => signals,
+        displayClock: () => now,
       ),
     );
     await tester.pumpAndSettle();

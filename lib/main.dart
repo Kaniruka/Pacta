@@ -198,6 +198,7 @@ class PactaApp extends StatelessWidget {
     this.userLifecycleRepositoryFactory,
     this.cloudSnapshotRepositoryFactory,
     this.cloudCheckClock = DateTime.now,
+    this.displayClock = DateTime.now,
     this.chainSignalsRepositoryFactory,
     this.profileRepositoryFactory,
     this.deviceTimeZoneIdReader = readDeviceTimeZoneId,
@@ -216,6 +217,10 @@ class PactaApp extends StatelessWidget {
   chainSignalsRepositoryFactory;
 
   final DateTime Function() cloudCheckClock;
+
+  /// Wall clock used by countdown surfaces; tests pass the same mutable clock
+  /// as their repository so display and persistence agree.
+  final DateTime Function() displayClock;
 
   final AuthRepository authRepository;
   final String? nationalFocusMcpUrl;
@@ -237,6 +242,7 @@ class PactaApp extends StatelessWidget {
     return ProviderScope(
       overrides: [
         cloudCheckClockProvider.overrideWithValue(cloudCheckClock),
+        displayClockProvider.overrideWithValue(displayClock),
         chainSignalsRepositoryFactoryProvider.overrideWithValue(
           chainSignalsRepositoryFactory,
         ),
@@ -394,6 +400,12 @@ final cloudSnapshotRepositoryProvider =
     });
 
 final cloudCheckClockProvider = Provider<DateTime Function()>(
+  (ref) => DateTime.now,
+);
+
+/// Wall clock used by countdown surfaces. Production defaults to the system
+/// clock; tests override it with the same mutable clock as their repository.
+final displayClockProvider = Provider<DateTime Function()>(
   (ref) => DateTime.now,
 );
 final cloudVersionCheckProvider = Provider.autoDispose<CloudVersionCheck?>((
@@ -2457,21 +2469,25 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
   String? _projectionSignature;
   late Future<List<FocusChainRecord>> _chainRecordsFuture;
   late Future<AppointmentChainRecord> _appointmentChainRecordFuture;
-  late Future<AppointmentPreparation?> _activeAppointmentFuture;
+  late Stream<AppointmentPreparation?> _activeAppointmentStream;
+  late Future<List<PrecedentRule>> _precedentRulesFuture;
 
   @override
   void initState() {
     super.initState();
-    _activeAppointmentFuture = ref
+    _activeAppointmentStream = ref
         .read(focusRepositoryProvider)
-        .getActiveAppointment();
+        .watchActiveAppointment();
+    _precedentRulesFuture = ref
+        .read(focusRepositoryProvider)
+        .getPrecedentRules();
   }
 
   void _refreshActiveAppointment() {
     if (mounted) {
       setState(() {
         final repository = ref.read(focusRepositoryProvider);
-        _activeAppointmentFuture = repository.getActiveAppointment();
+        _activeAppointmentStream = repository.watchActiveAppointment();
         _appointmentChainRecordFuture = repository.getAppointmentChainRecord();
       });
     }
@@ -2479,6 +2495,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final taskRepository = ref.watch(taskRepositoryProvider);
     final focusRepository = ref.watch(focusRepositoryProvider);
     final signalsRepository = ref.watch(chainSignalsRepositoryProvider);
@@ -2517,201 +2534,220 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
             return Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 960),
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+                child: Column(
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '专注链',
-                            style: Theme.of(context).textTheme.headlineSmall,
-                          ),
-                        ),
-                        TextButton.icon(
-                          key: const ValueKey('focus-history-entry'),
-                          icon: const Icon(Icons.history, size: 20),
-                          label: const Text('历史'),
-                          onPressed: () => Navigator.of(context).push<void>(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const FocusHistoryPage(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '选一个任务，开始本次专注。',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    if (active != null) ...[
-                      const SizedBox(height: 16),
-                      Card(
-                        color: Theme.of(context).colorScheme.primaryContainer,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                    Expanded(
+                      child: ListView(
+                        key: const ValueKey('focus-chain-list'),
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                        children: [
+                          Row(
                             children: [
-                              ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                leading: const Icon(Icons.timer_outlined),
-                                title: const Text('已有进行中的专注'),
-                                subtitle: Text(
-                                  activeTask == null
-                                      ? '原任务'
-                                      : _taskDisplayTitle(activeTask),
+                              Expanded(
+                                child: Text(
+                                  '专注链',
+                                  style: theme.textTheme.headlineSmall
+                                      ?.copyWith(fontWeight: FontWeight.w600),
                                 ),
                               ),
-                              Wrap(
-                                alignment: WrapAlignment.end,
-                                children: [
-                                  FilledButton(
-                                    onPressed: () => _openSession(
-                                      active,
-                                      taskTitles[active.taskId] ?? '原任务',
+                              TextButton.icon(
+                                key: const ValueKey('focus-history-entry'),
+                                style: TextButton.styleFrom(
+                                  minimumSize: const Size(64, 48),
+                                ),
+                                icon: const Icon(Icons.history, size: 20),
+                                label: const Text('历史'),
+                                onPressed: () => Navigator.of(context)
+                                    .push<void>(
+                                      MaterialPageRoute<void>(
+                                        builder: (_) =>
+                                            const FocusHistoryPage(),
+                                      ),
                                     ),
-                                    child: const Text('返回专注'),
-                                  ),
-                                ],
                               ),
                             ],
                           ),
-                        ),
-                      ),
-                    ],
-                    FutureBuilder<AppointmentPreparation?>(
-                      future: _activeAppointmentFuture,
-                      builder: (context, appointmentSnapshot) {
-                        final appointment = appointmentSnapshot.data;
-                        if (appointment == null) return const SizedBox.shrink();
-                        final title = taskTitles[appointment.taskId] ?? '原预约任务';
-                        return Card(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .secondaryContainer,
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  leading: const Icon(Icons.event_available),
-                                  title: const Text('已有预约准备'),
-                                  subtitle: Text(
-                                    appointment.isPendingReview
-                                        ? '$title · 待核对'
-                                        : title,
+                          if (active != null)
+                            _FocusRecoveryStrip(
+                              icon: Icons.timer_outlined,
+                              title: '已有进行中的专注',
+                              subtitle: activeTask == null
+                                  ? '原任务'
+                                  : _taskDisplayTitle(activeTask),
+                              trailing: FilledButton(
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size(96, 48),
+                                ),
+                                onPressed: () => _openSession(
+                                  active,
+                                  taskTitles[active.taskId] ?? '原任务',
+                                ),
+                                child: const Text('返回专注'),
+                              ),
+                            ),
+                          StreamBuilder<AppointmentPreparation?>(
+                            key: const ValueKey('focus-active-appointment'),
+                            stream: _activeAppointmentStream,
+                            builder: (context, appointmentSnapshot) {
+                              final appointment = appointmentSnapshot.data;
+                              if (appointment == null) {
+                                return const SizedBox.shrink();
+                              }
+                              final title =
+                                  taskTitles[appointment.taskId] ?? '原预约任务';
+                              return _FocusRecoveryStrip(
+                                icon: Icons.event_available,
+                                title: '已有预约准备',
+                                subtitle: appointment.isPendingReview
+                                    ? '$title · 待核对'
+                                    : title,
+                                tone: _RecoveryStripTone.secondary,
+                                actions: [
+                                  OutlinedButton(
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                      minimumSize: const Size(0, 48),
+                                    ),
+                                    onPressed: () =>
+                                        _openAppointment(appointment, title),
+                                    child: const Text('返回准备'),
                                   ),
-                                ),
-                                Wrap(
-                                  alignment: WrapAlignment.end,
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    OutlinedButton(
-                                      onPressed: () =>
-                                          _openAppointment(appointment, title),
-                                      child: const Text('返回准备'),
+                                  FilledButton.tonal(
+                                    style: FilledButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                      minimumSize: const Size(0, 48),
                                     ),
-                                    FilledButton.tonal(
-                                      onPressed: () =>
-                                          _enterAppointment(appointment, title),
-                                      child: const Text('提前进入专注'),
+                                    onPressed: () =>
+                                        _enterAppointment(appointment, title),
+                                    child: const Text('提前进入专注'),
+                                  ),
+                                  TextButton(
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                      minimumSize: const Size(0, 48),
                                     ),
-                                    TextButton(
-                                      onPressed: () =>
-                                          _cancelAppointment(appointment),
-                                      child: const Text('取消预约'),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                                    onPressed: () =>
+                                        _cancelAppointment(appointment),
+                                    child: const Text('取消预约'),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 4),
+                          FutureBuilder<List<FocusChainRecord>>(
+                            future: _chainRecordsFuture,
+                            builder: (context, recordSnapshot) {
+                              if (recordSnapshot.hasError) {
+                                return _recordReadError();
+                              }
+                              if (!recordSnapshot.hasData) {
+                                return const LinearProgressIndicator();
+                              }
+                              return FutureBuilder<AppointmentChainRecord>(
+                                future: _appointmentChainRecordFuture,
+                                builder: (context, appointmentSnapshot) {
+                                  if (appointmentSnapshot.hasError) {
+                                    return _recordReadError();
+                                  }
+                                  if (!appointmentSnapshot.hasData) {
+                                    return const LinearProgressIndicator();
+                                  }
+                                  return FocusChainOverview(
+                                    repository: signalsRepository,
+                                    records: recordSnapshot.data!,
+                                    appointmentRecord: appointmentSnapshot.data,
+                                    statistics: statistics,
+                                  );
+                                },
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 4),
+                          _allowanceEntry(context),
+                          const SizedBox(height: 4),
+                          Text(
+                            '累计与平均包含失败专注的有效时间，不含暂停。',
+                            key: const ValueKey('focus-chain-footnote'),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
                             ),
                           ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                    Wrap(
-                      spacing: 16,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          '开始一次专注',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        Text(
-                          '可选任务 ${tasks.length} 个',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                              ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      key: const ValueKey('focus-task-picker-entry'),
-                      onPressed: _openingTaskPicker ? null : _openTaskPicker,
-                      icon: const Icon(Icons.playlist_play),
-                      label: const Text('选择任务'),
-                    ),
-                    const SizedBox(height: 28),
-                    Text(
-                      '我的链',
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 12),
-                    FutureBuilder<List<FocusChainRecord>>(
-                      future: _chainRecordsFuture,
-                      builder: (context, recordSnapshot) {
-                        if (recordSnapshot.hasError) {
-                          return _recordReadError();
-                        }
-                        if (!recordSnapshot.hasData) {
-                          return const LinearProgressIndicator();
-                        }
-                        return FutureBuilder<AppointmentChainRecord>(
-                          future: _appointmentChainRecordFuture,
-                          builder: (context, appointmentSnapshot) {
-                            if (appointmentSnapshot.hasError) {
-                              return _recordReadError();
-                            }
-                            if (!appointmentSnapshot.hasData) {
-                              return const LinearProgressIndicator();
-                            }
-                            return FocusChainOverview(
-                              repository: signalsRepository,
-                              records: recordSnapshot.data!,
-                              appointmentRecord: appointmentSnapshot.data,
-                              statistics: statistics,
-                            );
-                          },
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      '累计与平均包含失败专注的有效时间，不含暂停。',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ],
                       ),
+                    ),
+                    _FocusStartBar(
+                      taskCount: tasks.length,
+                      busy: _openingTaskPicker,
+                      onPressed: _openTaskPicker,
                     ),
                   ],
                 ),
               ),
             );
           },
+        );
+      },
+    );
+  }
+
+  /// The 下必为例 entry point: the first screen only links to the full manager.
+  Widget _allowanceEntry(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return FutureBuilder<List<PrecedentRule>>(
+      future: _precedentRulesFuture,
+      builder: (context, snapshot) {
+        final count = snapshot.data?.length;
+        final subtitle = snapshot.hasError
+            ? '读取失败，进入管理后可重试'
+            : count == null
+            ? '读取中…'
+            : '$count 条持续许可';
+        return Container(
+          key: const ValueKey('focus-allowance-entry'),
+          padding: const EdgeInsets.only(top: 8),
+          decoration: BoxDecoration(
+            border: Border(top: BorderSide(color: colors.outlineVariant)),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '下必为例',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              TextButton.icon(
+                key: const ValueKey('focus-allowance-manage'),
+                style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
+                onPressed: _openPrecedentRules,
+                iconAlignment: IconAlignment.end,
+                icon: const Icon(Icons.chevron_right, size: 18),
+                label: const Text('管理'),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -2864,11 +2900,192 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
     }
   }
 
+  Future<void> _openPrecedentRules() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => const PrecedentRulesPage()),
+    );
+    if (!mounted) return;
+    setState(() {
+      _precedentRulesFuture = ref
+          .read(focusRepositoryProvider)
+          .getPrecedentRules();
+    });
+  }
+
   void _openSession(FocusSession session, String taskTitle) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) =>
             FocusSessionPage(session: session, taskTitle: taskTitle),
+      ),
+    );
+  }
+}
+
+enum _RecoveryStripTone { primary, secondary }
+
+/// Compact recovery strip for an unfinished session or a waiting appointment.
+class _FocusRecoveryStrip extends StatelessWidget {
+  const _FocusRecoveryStrip({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.trailing,
+    this.actions = const [],
+    this.tone = _RecoveryStripTone.primary,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget? trailing;
+  final List<Widget> actions;
+  final _RecoveryStripTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final primary = tone == _RecoveryStripTone.primary;
+    final background = primary
+        ? colors.primaryContainer
+        : colors.secondaryContainer;
+    final foreground = primary
+        ? colors.onPrimaryContainer
+        : colors.onSecondaryContainer;
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border(
+          left: BorderSide(
+            color: primary ? colors.primary : colors.secondary,
+            width: 3,
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 20, color: foreground),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: foreground,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: foreground.withValues(alpha: .85),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailing case final action?) ...[
+                const SizedBox(width: 8),
+                action,
+              ],
+            ],
+          ),
+          if (actions.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 4,
+              runSpacing: 4,
+              children: actions,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Full 下必为例 manager, opened from the Focus Chain first screen.
+class PrecedentRulesPage extends StatelessWidget {
+  const PrecedentRulesPage({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('下必为例')),
+    body: ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: const [PrecedentRulesCard()],
+    ),
+  );
+}
+
+/// The pinned start action: choosing a task never requires scrolling away.
+class _FocusStartBar extends StatelessWidget {
+  const _FocusStartBar({
+    required this.taskCount,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final int taskCount;
+  final bool busy;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.surface,
+        border: Border(top: BorderSide(color: colors.outlineVariant)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 2,
+            children: [
+              Text(
+                '开始一次专注',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text(
+                '可选任务 $taskCount 个',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          FilledButton.icon(
+            key: const ValueKey('focus-task-picker-entry'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(48),
+            ),
+            onPressed: busy ? null : onPressed,
+            icon: const Icon(Icons.playlist_play),
+            label: const Text('选择任务'),
+          ),
+        ],
       ),
     );
   }
@@ -4087,7 +4304,7 @@ class _AppointmentPreparationPageState
   @override
   Widget build(BuildContext context) {
     final appointment = _current ?? widget.appointment;
-    final now = DateTime.now().toUtc();
+    final now = ref.watch(displayClockProvider)().toUtc();
     final preparationSeconds = appointment.effectivePreparationSeconds;
     final remainingSeconds = appointment.isActive
         ? appointment.endsAt
@@ -4497,7 +4714,7 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
   @override
   Widget build(BuildContext context) {
     final session = _current ?? widget.session;
-    final now = DateTime.now().toUtc();
+    final now = ref.watch(displayClockProvider)().toUtc();
     final reference = session.isPaused ? (session.pausedAt ?? now) : now;
     final remaining = session.endsAt.difference(reference);
     final remainingSeconds = remaining.inSeconds.clamp(
@@ -4675,8 +4892,6 @@ class _MyPageState extends ConsumerState<MyPage> {
             ),
           ),
         ),
-        const SizedBox(height: 12),
-        const PrecedentRulesCard(),
         const SizedBox(height: 12),
         Card(
           child: ListTile(
