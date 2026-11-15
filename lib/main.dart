@@ -2133,6 +2133,17 @@ class _GoalCard extends StatefulWidget {
   State<_GoalCard> createState() => _GoalCardState();
 }
 
+/// 目标卡头部：动作按钮各占 48 逻辑像素，标题剩余宽度不足时改为单独一行，
+/// 避免普通短标题被挤成两行、元信息碎成多段。用最大动作数判断，置顶前后
+/// 布局一致，不会因为多出上移/下移而突然换排版。
+const double _goalHeaderComfortableTitleWidth = 160;
+const double _goalHeaderActionSlotWidth = 48;
+const int _goalHeaderMaxActionCount = 6;
+
+bool _useStackedGoalHeader(double availableWidth) =>
+    availableWidth - _goalHeaderMaxActionCount * _goalHeaderActionSlotWidth <
+    _goalHeaderComfortableTitleWidth;
+
 class _GoalCardState extends State<_GoalCard> {
   var _tasksExpanded = true;
 
@@ -2170,174 +2181,162 @@ class _GoalCardState extends State<_GoalCard> {
         ? '已完成'
         : '进行中';
     final summary = '${goal.tasks.length} 项任务 · $status';
+    // 标题块与动作按钮分开构造：窄屏时动作另起一行，宽屏才与标题并排，
+    // 这样普通短标题不会被多个图标挤成两行、元信息也不会碎成多段。
+    final header = Semantics(
+      key: ValueKey('goal-header-${goal.id}'),
+      container: true,
+      expanded: _tasksExpanded,
+      button: true,
+      value: _tasksExpanded ? '已展开' : '已折叠',
+      child: Tooltip(
+        message: _tasksExpanded ? '收起任务' : '展开任务',
+        child: InkWell(
+          onTap: () => setState(() => _tasksExpanded = !_tasksExpanded),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        goal.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      if (goal.description.isNotEmpty)
+                        Text(
+                          goal.description,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      Text(
+                        summary,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ExcludeSemantics(
+                  child: SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Center(
+                      child: Icon(
+                        _tasksExpanded ? Icons.expand_less : Icons.expand_more,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    final actions = <Widget>[
+      IconButton(
+        tooltip: '编辑目标',
+        onPressed: () async {
+          final draft = await _showGoalDialog(context, initial: goal);
+          if (draft != null) {
+            await widget.repository.updateGoal(goal.id, draft);
+          }
+        },
+        icon: const Icon(Icons.edit_outlined),
+      ),
+      IconButton(
+        tooltip: '删除目标',
+        onPressed: () => _confirmDeleteGoal(context),
+        icon: const Icon(Icons.delete_outline),
+      ),
+      // 置顶与手动排序是次级管理动作，排在编辑/删除之后：
+      // 既有操作顺序（标题 → 编辑 → 删除）不变，鼠标与触摸入口一致。
+      if (widget.showPinControls)
+        IconButton(
+          tooltip: goal.isPinned ? '取消置顶' : '置顶目标',
+          onPressed: widget.onTogglePin,
+          icon: Icon(goal.isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+        ),
+      if (widget.showPinControls && goal.isPinned) ...[
+        IconButton(
+          tooltip: '上移置顶目标',
+          onPressed: widget.canMoveUp ? widget.onMoveUp : null,
+          icon: const Icon(Icons.arrow_upward),
+        ),
+        IconButton(
+          tooltip: '下移置顶目标',
+          onPressed: widget.canMoveDown ? widget.onMoveDown : null,
+          icon: const Icon(Icons.arrow_downward),
+        ),
+      ],
+    ];
     return Card(
       margin: const EdgeInsets.only(top: 12),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Semantics(
-                    key: ValueKey('goal-header-${goal.id}'),
-                    container: true,
-                    expanded: _tasksExpanded,
-                    button: true,
-                    value: _tasksExpanded ? '已展开' : '已折叠',
-                    child: Tooltip(
-                      message: _tasksExpanded ? '收起任务' : '展开任务',
-                      child: InkWell(
-                        onTap: () =>
-                            setState(() => _tasksExpanded = !_tasksExpanded),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(minHeight: 48),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      goal.title,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleMedium,
-                                    ),
-                                    if (goal.description.isNotEmpty)
-                                      Text(
-                                        goal.description,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall,
-                                      ),
-                                    Text(
-                                      summary,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .onSurfaceVariant,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              ExcludeSemantics(
-                                child: SizedBox(
-                                  width: 48,
-                                  height: 48,
-                                  child: Center(
-                                    child: Icon(
-                                      _tasksExpanded
-                                          ? Icons.expand_less
-                                          : Icons.expand_more,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+        child: LayoutBuilder(
+          builder: (context, constraints) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_useStackedGoalHeader(constraints.maxWidth)) ...[
+                header,
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Wrap(children: actions),
                 ),
-                Wrap(
+              ] else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    IconButton(
-                      tooltip: '编辑目标',
-                      onPressed: () async {
-                        final draft = await _showGoalDialog(
-                          context,
-                          initial: goal,
-                        );
-                        if (draft != null) {
-                          await widget.repository.updateGoal(goal.id, draft);
-                        }
-                      },
-                      icon: const Icon(Icons.edit_outlined),
-                    ),
-                    IconButton(
-                      tooltip: '删除目标',
-                      onPressed: () => _confirmDeleteGoal(context),
-                      icon: const Icon(Icons.delete_outline),
-                    ),
-                    // 置顶与手动排序是次级管理动作，排在编辑/删除之后：
-                    // 既有操作顺序（标题 → 编辑 → 删除）不变，鼠标与触摸入口一致。
-                    if (widget.showPinControls)
-                      IconButton(
-                        tooltip: goal.isPinned ? '取消置顶' : '置顶目标',
-                        onPressed: widget.onTogglePin,
-                        icon: Icon(
-                          goal.isPinned
-                              ? Icons.push_pin
-                              : Icons.push_pin_outlined,
-                        ),
-                      ),
-                    if (widget.showPinControls && goal.isPinned) ...[
-                      IconButton(
-                        tooltip: '上移置顶目标',
-                        onPressed: widget.canMoveUp ? widget.onMoveUp : null,
-                        icon: const Icon(Icons.arrow_upward),
-                      ),
-                      IconButton(
-                        tooltip: '下移置顶目标',
-                        onPressed: widget.canMoveDown
-                            ? widget.onMoveDown
-                            : null,
-                        icon: const Icon(Icons.arrow_downward),
-                      ),
-                    ],
+                    Expanded(child: header),
+                    Wrap(children: actions),
                   ],
                 ),
-              ],
-            ),
-            if (_tasksExpanded) ...[
-              if (goal.tasks.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 8),
-                  child: Text('暂无任务，先添加一个可执行的下一步。'),
-                )
-              else
-                for (final task in goal.tasks)
-                  _TaskTile(
-                    repository: widget.repository,
-                    task: widget.focusProgressSecondsByTask == null
-                        ? task
-                        : task.copyWith(
-                            focusProgressSeconds:
-                                widget.focusProgressSecondsByTask![task.id] ??
-                                0,
-                          ),
-                    hasPendingReview: widget.pendingReviewTaskIds.contains(
-                      task.id,
+              if (_tasksExpanded) ...[
+                if (goal.tasks.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: Text('暂无任务，先添加一个可执行的下一步。'),
+                  )
+                else
+                  for (final task in goal.tasks)
+                    _TaskTile(
+                      repository: widget.repository,
+                      task: widget.focusProgressSecondsByTask == null
+                          ? task
+                          : task.copyWith(
+                              focusProgressSeconds:
+                                  widget.focusProgressSecondsByTask![task.id] ??
+                                  0,
+                            ),
+                      hasPendingReview: widget.pendingReviewTaskIds.contains(
+                        task.id,
+                      ),
                     ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () async {
+                      final draft = await _showTaskDialog(context, goal: goal);
+                      if (draft != null) {
+                        await widget.repository.createTask(goal.id, draft);
+                      }
+                    },
+                    icon: const Icon(Icons.add_task),
+                    label: const Text('添加任务'),
                   ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () async {
-                    final draft = await _showTaskDialog(context, goal: goal);
-                    if (draft != null) {
-                      await widget.repository.createTask(goal.id, draft);
-                    }
-                  },
-                  icon: const Icon(Icons.add_task),
-                  label: const Text('添加任务'),
                 ),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
