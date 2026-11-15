@@ -151,6 +151,27 @@ void main() {
     );
   });
 
+  for (final cancelledDuplicate in [0, 1]) {
+    test('快照拒绝同一原始身份但不同行 id 的副本（墓碑标记 $cancelledDuplicate）', () async {
+      await _expectRejectedPayload(
+        remote: remote,
+        deviceFactory: device,
+        draft: draft,
+        tamper: (payload) {
+          final rows = (payload['tables'] as Map)['local_schedules'] as List;
+          final original = rows.firstWhere(
+            (row) => (row as Map)['recurrence_date'] == '2026-11-17',
+          ) as Map;
+          rows.add({
+            ...original,
+            'id': 'duplicate-$cancelledDuplicate',
+            'is_recurrence_cancelled': cancelledDuplicate,
+          });
+        },
+      );
+    });
+  }
+
   test('快照拒绝顺移的日历日且不改动本机', () async {
     await _expectRejectedPayload(
       remote: remote,

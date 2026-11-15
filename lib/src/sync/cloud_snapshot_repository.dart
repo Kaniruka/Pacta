@@ -1717,8 +1717,12 @@ class CloudSnapshotRepository {
             instanceZone == ruleZones[recurrenceId],
         'Schedule recurrence instance zone',
       );
+      // 结构性键必须逐字段读取：字符串插值里的 `$row[...]` 只会插入整张
+      // Map，再拼上字面方括号，不同 id 的重复身份因此逃过校验。
+      final seriesKey = row['recurrence_series_id'];
+      final identityKey = row['recurrence_date'];
       requireReference(
-        occurrences.add('$row[recurrence_series_id]@$row[recurrence_date]'),
+        occurrences.add('$seriesKey@$identityKey'),
         'Schedule recurrence identity',
       );
       final startMinutes = row['recurrence_start_minutes'];

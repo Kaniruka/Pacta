@@ -171,60 +171,147 @@ begin
       using errcode = 'PT426';
   end if;
 
-  -- r3：规则自带内容模板（title/notes/task_id）与改期位移（shift_days），
-  -- 实例的 recurrence_date 是稳定原始身份。服务端逐行校验形状，避免把客户端
-  -- 无法展开的规则写进账本；真实 IANA 时区归属仍由客户端严格校验（服务端只
-  -- 校验非空与基本形状，避免两份时区库版本差异把合法写入挡掉）。
+  -- r3：重复领域是严格并集。规则行必须带齐全部列（可空列也必须出现，值可为
+  -- null），并逐字段校验类型与取值。任何子表达式为 NULL（例如缺键）都会让整行
+  -- 谓词变成 NULL，因此统一用 "is not true" 判定：不合格或无法判定都拒绝，绝不
+  -- 让 SQL 三值逻辑把坏行放过去。
+  --
+  -- 时区使用 PostgreSQL 自带的 IANA 目录（与 02 的资料时区校验同一来源），
+  -- 不把导入/重复限制成界面上的 7 个城市；客户端 supported 集合是它的子集。
   if exists (
     select 1
     from jsonb_array_elements(p_payload -> 'tables' -> 'local_schedule_recurrences') as rule
-    where jsonb_typeof(rule) is distinct from 'object'
-      or jsonb_typeof(rule -> 'title') is distinct from 'string'
-      or btrim(coalesce(rule ->> 'title', '')) = ''
-      or jsonb_typeof(rule -> 'notes') is distinct from 'string'
-      or jsonb_typeof(rule -> 'task_id') not in ('string', 'null')
-      or jsonb_typeof(rule -> 'shift_days') is distinct from 'number'
-      or abs((rule ->> 'shift_days')::numeric) > 3660
-      or jsonb_typeof(rule -> 'weekdays') is distinct from 'array'
-      or exists (
+    where (
+      jsonb_typeof(rule) = 'object'
+      and rule ?& array[
+        'user_id', 'id', 'frequency', 'weekdays', 'first_date', 'end_date',
+        'time_zone_id', 'all_day', 'start_minutes_of_day', 'duration_minutes',
+        'day_span', 'shift_days', 'title', 'notes', 'task_id',
+        'created_at', 'updated_at'
+      ]
+      and jsonb_typeof(rule -> 'user_id') = 'string'
+      and rule ->> 'user_id' = owner_id::text
+      and jsonb_typeof(rule -> 'id') = 'string'
+      and btrim(rule ->> 'id') <> ''
+      and rule ->> 'frequency' in ('daily', 'weekly')
+      and jsonb_typeof(rule -> 'weekdays') = 'array'
+      and (
+        (rule ->> 'frequency' = 'weekly'
+          and jsonb_array_length(rule -> 'weekdays') >= 1)
+        or (rule ->> 'frequency' = 'daily'
+          and jsonb_array_length(rule -> 'weekdays') = 0)
+      )
+      and not exists (
         select 1
         from jsonb_array_elements(rule -> 'weekdays') as day
-        where jsonb_typeof(day) is distinct from 'number'
+        where jsonb_typeof(day) <> 'number'
+          or (day #>> '{}')::numeric <> trunc((day #>> '{}')::numeric)
           or (day #>> '{}')::int not between 1 and 7
       )
-      or rule ->> 'frequency' not in ('daily', 'weekly')
-      or rule ->> 'time_zone_id' !~ '^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+)*$'
-      or coalesce(rule ->> 'first_date', '') !~ '^\d{4}-\d{2}-\d{2}$'
-      or to_char(to_date(rule ->> 'first_date', 'YYYY-MM-DD'), 'YYYY-MM-DD')
-        is distinct from rule ->> 'first_date'
-      or (
-        rule ->> 'end_date' is not null
-        and (
-          rule ->> 'end_date' !~ '^\d{4}-\d{2}-\d{2}$'
-          or to_char(to_date(rule ->> 'end_date', 'YYYY-MM-DD'), 'YYYY-MM-DD')
-            is distinct from rule ->> 'end_date'
-          or rule ->> 'end_date' < rule ->> 'first_date'
+      and jsonb_typeof(rule -> 'time_zone_id') = 'string'
+      and (rule ->> 'time_zone_id') in (select name from pg_timezone_names)
+      and jsonb_typeof(rule -> 'all_day') = 'number'
+      and rule ->> 'all_day' in ('0', '1')
+      and jsonb_typeof(rule -> 'start_minutes_of_day') = 'number'
+      and (rule ->> 'start_minutes_of_day')::int between 0 and 1439
+      and jsonb_typeof(rule -> 'duration_minutes') = 'number'
+      and (rule ->> 'duration_minutes')::int >= 1
+      and jsonb_typeof(rule -> 'day_span') = 'number'
+      and (rule ->> 'day_span')::int >= 1
+      and jsonb_typeof(rule -> 'shift_days') = 'number'
+      and (rule ->> 'shift_days')::numeric = trunc((rule ->> 'shift_days')::numeric)
+      and (rule ->> 'shift_days')::int between -3660 and 3660
+      and jsonb_typeof(rule -> 'title') = 'string'
+      and btrim(rule ->> 'title') <> ''
+      and jsonb_typeof(rule -> 'notes') = 'string'
+      and jsonb_typeof(rule -> 'task_id') in ('string', 'null')
+      and (rule ->> 'task_id' is null or btrim(rule ->> 'task_id') <> '')
+      and jsonb_typeof(rule -> 'first_date') = 'string'
+      and (rule ->> 'first_date') ~ '^\d{4}-\d{2}-\d{2}$'
+      and to_char(to_date(rule ->> 'first_date', 'YYYY-MM-DD'), 'YYYY-MM-DD')
+        = (rule ->> 'first_date')
+      and jsonb_typeof(rule -> 'end_date') in ('string', 'null')
+      and (
+        rule ->> 'end_date' is null
+        or (
+          (rule ->> 'end_date') ~ '^\d{4}-\d{2}-\d{2}$'
+          and to_char(to_date(rule ->> 'end_date', 'YYYY-MM-DD'), 'YYYY-MM-DD')
+            = (rule ->> 'end_date')
+          and (rule ->> 'end_date') >= (rule ->> 'first_date')
         )
       )
+      and jsonb_typeof(rule -> 'created_at') = 'number'
+      and jsonb_typeof(rule -> 'updated_at') = 'number'
+    ) is not true
   ) then
     raise exception 'snapshot payload version 3 is incomplete: schedule recurrence rules are malformed; upgrade before uploading'
       using errcode = 'PT426';
   end if;
 
+  -- 实例行同样必须带齐列。非重复行的重复领域必须整体为空；重复行的原始身份必须
+  -- 是真实日历日，时区必须可用且与所属规则一致，否则客户端恢复后无法展开。
   if exists (
     select 1
     from jsonb_array_elements(p_payload -> 'tables' -> 'local_schedules') as instance
-    where jsonb_typeof(instance) = 'object'
-      and jsonb_typeof(instance -> 'recurrence_date') = 'string'
+    where (
+      jsonb_typeof(instance) = 'object'
+      and instance ?& array[
+        'user_id', 'id', 'title', 'notes', 'starts_at', 'ends_at', 'all_day',
+        'all_day_start_date', 'all_day_end_date_exclusive', 'is_completed',
+        'completed_at', 'task_id', 'reminder_minutes_before', 'origin',
+        'source_ids', 'source_names', 'source_event_id', 'occurrence_id',
+        'event_identity', 'recurrence_id', 'recurrence_series_id',
+        'recurrence_date', 'recurrence_time_zone_id',
+        'recurrence_start_minutes', 'is_recurrence_exception',
+        'is_recurrence_cancelled', 'created_at', 'updated_at'
+      ]
       and (
-        instance ->> 'recurrence_date' !~ '^\d{4}-\d{2}-\d{2}$'
-        or to_char(
-          to_date(instance ->> 'recurrence_date', 'YYYY-MM-DD'),
-          'YYYY-MM-DD'
-        ) is distinct from instance ->> 'recurrence_date'
+        (
+          jsonb_typeof(instance -> 'recurrence_id') = 'null'
+          and jsonb_typeof(instance -> 'recurrence_series_id') = 'null'
+          and jsonb_typeof(instance -> 'recurrence_date') = 'null'
+          and jsonb_typeof(instance -> 'recurrence_time_zone_id') = 'null'
+          and jsonb_typeof(instance -> 'recurrence_start_minutes') = 'null'
+          and instance ->> 'is_recurrence_exception' = '0'
+          and instance ->> 'is_recurrence_cancelled' = '0'
+        )
+        or (
+          jsonb_typeof(instance -> 'recurrence_id') = 'string'
+          and btrim(instance ->> 'recurrence_id') <> ''
+          and jsonb_typeof(instance -> 'recurrence_series_id') = 'string'
+          and btrim(instance ->> 'recurrence_series_id') <> ''
+          and jsonb_typeof(instance -> 'recurrence_date') = 'string'
+          and (instance ->> 'recurrence_date') ~ '^\d{4}-\d{2}-\d{2}$'
+          and to_char(
+            to_date(instance ->> 'recurrence_date', 'YYYY-MM-DD'),
+            'YYYY-MM-DD'
+          ) = (instance ->> 'recurrence_date')
+          and jsonb_typeof(instance -> 'recurrence_time_zone_id') = 'string'
+          and (instance ->> 'recurrence_time_zone_id')
+            in (select name from pg_timezone_names)
+          and jsonb_typeof(instance -> 'recurrence_start_minutes')
+            in ('number', 'null')
+          and (
+            instance ->> 'recurrence_start_minutes' is null
+            or (instance ->> 'recurrence_start_minutes')::int between 0 and 1439
+          )
+          and instance ->> 'is_recurrence_exception' in ('0', '1')
+          and instance ->> 'is_recurrence_cancelled' in ('0', '1')
+          and exists (
+            select 1
+            from jsonb_array_elements(
+              p_payload -> 'tables' -> 'local_schedule_recurrences'
+            ) as rule
+            where rule ->> 'id' = instance ->> 'recurrence_id'
+              and rule ->> 'user_id' = instance ->> 'user_id'
+              and rule ->> 'time_zone_id'
+                = instance ->> 'recurrence_time_zone_id'
+          )
+        )
       )
+    ) is not true
   ) then
-    raise exception 'snapshot payload version 3 is incomplete: schedule recurrence identity is not a real calendar date; upgrade before uploading'
+    raise exception 'snapshot payload version 3 is incomplete: schedule recurrence identity is malformed; upgrade before uploading'
       using errcode = 'PT426';
   end if;
 

@@ -56,18 +56,31 @@ declare
         'user_id', owner_id,
         'id', 'schedule-1',
         'title', '周会',
+        'notes', '',
         'starts_at', 1763251200,
         'ends_at', 1763254800,
+        'all_day', 0,
+        'all_day_start_date', null,
+        'all_day_end_date_exclusive', null,
+        'is_completed', 0,
+        'completed_at', null,
+        'task_id', null,
+        'reminder_minutes_before', null,
         'origin', 'owned',
-        'created_at', 1763251200,
-        'updated_at', 1763251200,
+        'source_ids', '[]',
+        'source_names', '[]',
+        'source_event_id', null,
+        'occurrence_id', null,
+        'event_identity', null,
         'recurrence_id', 'rule-1',
         'recurrence_series_id', 'series-1',
         'recurrence_date', '2026-11-16',
         'recurrence_time_zone_id', 'Asia/Shanghai',
         'recurrence_start_minutes', 540,
         'is_recurrence_exception', 0,
-        'is_recurrence_cancelled', 0
+        'is_recurrence_cancelled', 0,
+        'created_at', 1763251200,
+        'updated_at', 1763251200
       )),
       'local_schedule_recurrences', jsonb_build_array(jsonb_build_object(
         'user_id', owner_id,
@@ -335,6 +348,90 @@ begin
   end if;
 end
 $reject_malformed_three_rules$;
+
+-- The strict union contract rejects rows a client could not restore: unknown IANA
+-- zones, missing keys for nullable columns, and wrongly typed nullable values are
+-- all refused before any write. Each case derives from the accepted payload.
+do $reject_unrestorable_three$
+declare
+  owner_id text := current_setting('schema_v3_test.owner_id');
+  base_payload jsonb;
+  unknown_zone jsonb;
+  missing_task_key jsonb;
+  wrong_task_type jsonb;
+  missing_nullable_key jsonb;
+begin
+  select payload into base_payload
+  from public.cloud_business_snapshots
+  where user_id = auth.uid();
+
+  unknown_zone := jsonb_set(
+    jsonb_set(
+      base_payload,
+      '{tables,local_schedule_recurrences,0,time_zone_id}',
+      to_jsonb('Mars/Olympus'::text)
+    ),
+    '{tables,local_schedules,0,recurrence_time_zone_id}',
+    to_jsonb('Mars/Olympus'::text)
+  );
+  missing_task_key := jsonb_set(
+    base_payload,
+    '{tables,local_schedule_recurrences,0}',
+    (base_payload -> 'tables' -> 'local_schedule_recurrences' -> 0) - 'task_id'
+  );
+  wrong_task_type := jsonb_set(
+    base_payload,
+    '{tables,local_schedule_recurrences,0,task_id}',
+    to_jsonb(42)
+  );
+  missing_nullable_key := jsonb_set(
+    base_payload,
+    '{tables,local_schedules,0}',
+    (base_payload -> 'tables' -> 'local_schedules' -> 0) - 'completed_at'
+  );
+
+  begin
+    perform public.save_cloud_business_snapshot(
+      1, unknown_zone, 'partial-device', 'Partial device',
+      '2026-11-15T02:04:10Z'::timestamptz, 1
+    );
+    raise exception 'version 3 with an unknown IANA zone was accepted';
+  exception
+    when sqlstate 'PT426' then null;
+  end;
+  begin
+    perform public.save_cloud_business_snapshot(
+      1, missing_task_key, 'partial-device', 'Partial device',
+      '2026-11-15T02:04:20Z'::timestamptz, 1
+    );
+    raise exception 'version 3 rule missing a nullable key was accepted';
+  exception
+    when sqlstate 'PT426' then null;
+  end;
+  begin
+    perform public.save_cloud_business_snapshot(
+      1, wrong_task_type, 'partial-device', 'Partial device',
+      '2026-11-15T02:04:30Z'::timestamptz, 1
+    );
+    raise exception 'version 3 rule with a wrongly typed nullable key was accepted';
+  exception
+    when sqlstate 'PT426' then null;
+  end;
+  begin
+    perform public.save_cloud_business_snapshot(
+      1, missing_nullable_key, 'partial-device', 'Partial device',
+      '2026-11-15T02:04:40Z'::timestamptz, 1
+    );
+    raise exception 'version 3 instance missing a nullable key was accepted';
+  exception
+    when sqlstate 'PT426' then null;
+  end;
+  if (select revision from public.cloud_business_snapshots
+      where user_id = auth.uid()) <> 1 then
+    raise exception 'rejected unrestorable payload changed the snapshot';
+  end if;
+end
+$reject_unrestorable_three$;
 
 -- Version 3 whose appointment rows omit the preparation duration is incomplete.
 do $reject_partial_three_preparation$

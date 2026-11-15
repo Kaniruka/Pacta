@@ -449,17 +449,19 @@ class LocalScheduleRepository implements ScheduleRepository {
         draftFirstDate,
         '草稿日期',
       ).difference(splitAt).inDays;
+      // 星期在**已有可见规则**上按增量位移旋转，而不是再叠加一次总位移：
+      // rule.weekdays 已经是"当前可见星期"，第二次同日改名/改时的总位移没变，
+      // 增量就是 0，星期必须原样保留（否则周三会被再推成周五）。
+      final incrementalShift = shiftDays - rule.shiftDays;
       final spec =
           repeat ??
           ScheduleRepeatSpec(
             frequency: rule.frequency,
-            // 改期时星期整体平移：每周规则必须包含自己的首日星期，否则挪到别的
-            // 星期后，后续实例仍落在旧星期上。
-            weekdays: shiftDays == 0
+            weekdays: incrementalShift == 0
                 ? rule.weekdays
                 : {
                     for (final day in rule.weekdays)
-                      ((day - 1 + shiftDays) % 7) + 1,
+                      ((day - 1 + incrementalShift) % 7) + 1,
                   },
             endDate: rule.endDate,
           );

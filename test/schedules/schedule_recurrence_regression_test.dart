@@ -226,6 +226,69 @@ void main() {
     ]);
   });
 
+  test('已改期的每周规则再次改名不叠加位移，正负位移都按增量旋转', () async {
+    final series = await repository.createRecurringSchedule(
+      draft: draft('周一', DateTime.utc(2026, 11, 16, 9)),
+      repeat: const ScheduleRepeatSpec(
+        frequency: ScheduleRepeatFrequency.weekly,
+        weekdays: {DateTime.monday},
+      ),
+      timeZoneId: 'Etc/UTC',
+    );
+
+    // 周一 → 周三：位移 2，可见星期变成周三。
+    final moved = await repository.editRecurringSchedule(
+      series.occurrences.first.id,
+      draft: draft('周三', DateTime.utc(2026, 11, 18, 9)),
+      scope: ScheduleRepeatScope.thisAndFuture,
+    );
+    expect(moved.rule.shiftDays, 2);
+    expect(moved.rule.weekdays, {DateTime.wednesday});
+
+    // 同日只改名：总位移仍是 2，增量 0，星期必须保持周三。
+    final renamed = await repository.editRecurringSchedule(
+      moved.updated.id,
+      draft: draft('周三改名', DateTime.utc(2026, 11, 18, 9)),
+      scope: ScheduleRepeatScope.thisAndFuture,
+    );
+    expect(renamed.rule.shiftDays, 2);
+    expect(renamed.rule.weekdays, {DateTime.wednesday});
+    final gap = await window(
+      DateTime.utc(2026, 11, 19),
+      DateTime.utc(2026, 11, 24),
+    );
+    expect(gap, isEmpty, reason: '下个周三是 11-25，改名不能生成 11-20 周五');
+
+    final wednesdays = await window(
+      DateTime.utc(2026, 11, 18),
+      DateTime.utc(2026, 12, 3),
+    );
+    expect(wednesdays.map((schedule) => schedule.startsAt), [
+      DateTime.utc(2026, 11, 18, 9),
+      DateTime.utc(2026, 11, 25, 9),
+      DateTime.utc(2026, 12, 2, 9),
+    ]);
+
+    // 周三 → 周四：增量 +1。
+    final thursday = await repository.editRecurringSchedule(
+      renamed.updated.id,
+      draft: draft('周四', DateTime.utc(2026, 11, 19, 9)),
+      scope: ScheduleRepeatScope.thisAndFuture,
+    );
+    expect(thursday.rule.shiftDays, 3);
+    expect(thursday.rule.weekdays, {DateTime.thursday});
+
+    // 周四 → 周一：增量 -3，回到最初的星期而不是继续累加。
+    final back = await repository.editRecurringSchedule(
+      thursday.updated.id,
+      draft: draft('周一回', DateTime.utc(2026, 11, 16, 9)),
+      scope: ScheduleRepeatScope.thisAndFuture,
+    );
+    expect(back.rule.shiftDays, 0);
+    expect(back.rule.weekdays, {DateTime.monday});
+    expect(back.updated.recurrenceDate, '2026-11-16');
+  });
+
   test('严格日历解析拒绝顺移日期与不可用规则时区', () {
     expect(() => parseRecurrenceDate('2026-02-30', '日期'), throwsArgumentError);
     expect(() => parseRecurrenceDate('2026-11-31', '日期'), throwsArgumentError);
