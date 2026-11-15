@@ -318,9 +318,11 @@ void main() {
           // 不自动重放旧意图，也不把旧修订号直接改写成新值。
           final adoptedBeforeEdit = await corrected.syncProfile();
           expect(adoptedBeforeEdit.displayTimeZoneId, 'Europe/London');
+          // 读取到的就是 London 写入之后的那个修订号（与写入响应相等），
+          // 不是更大；随后真正的新写入才会再推进一个修订号。
           expect(
             adoptedBeforeEdit.timeZoneRevision,
-            greaterThan(skewedSave.timeZoneRevision),
+            skewedSave.timeZoneRevision,
           );
           final correctedSave = await corrected.saveProfile(
             displayName: nickname,
@@ -330,6 +332,11 @@ void main() {
             correctedSave.displayTimeZoneId,
             'Pacific/Auckland',
             reason: '正确时钟的明确修改必须胜过未来时钟的旧写入',
+          );
+          expect(
+            correctedSave.timeZoneRevision,
+            greaterThan(adoptedBeforeEdit.timeZoneRevision),
+            reason: '新写入必须在观察到的账号修订号之后推进一次',
           );
           final cloudAfterSkew = await _read(remote, userId);
           expect(cloudAfterSkew?.displayTimeZoneId, 'Pacific/Auckland');

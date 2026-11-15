@@ -315,8 +315,8 @@ empty-nickname row, a second device adopting the stored winner, a time-zone-only
 save keeping an unset name, a stale revision being refused and reported as a
 conflict, a nickname-only (including legacy three-argument) save keeping the zone,
 a blank name failing to clear an existing nickname, a missing revision being
-rejected, invalid IANA identifiers being rejected by both RPCs, and both RPC
-bodies acquiring the account first-write lock. The real-service probe exercises
+rejected, and invalid IANA identifiers being rejected by both RPCs. The
+real-service probe exercises
 true concurrent first save/first save, first save/initialize and
 initialize/initialize requests, because one session cannot prove that race.
 
