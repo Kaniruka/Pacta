@@ -436,6 +436,38 @@ begin
 end
 $time_zone_save_ordering$;
 
+-- A missing-row first write cannot be locked with SELECT ... FOR UPDATE, so a
+-- single session cannot reproduce that race. Assert the actual RPC bodies take
+-- the account-scoped transaction lock; the real-service probe proves the
+-- concurrency behavior.
+do $time_zone_first_write_lock$
+declare
+  unlocked text := '';
+begin
+  if not exists (
+    select 1
+    from pg_proc
+    where proname = 'initialize_profile_time_zone'
+      and pronamespace = 'public'::regnamespace
+      and position('pg_advisory_xact_lock' in prosrc) > 0
+  ) then
+    unlocked := unlocked || 'initialize_profile_time_zone ';
+  end if;
+  if not exists (
+    select 1
+    from pg_proc
+    where proname = 'save_profile_account'
+      and pronamespace = 'public'::regnamespace
+      and position('pg_advisory_xact_lock' in prosrc) > 0
+  ) then
+    unlocked := unlocked || 'save_profile_account ';
+  end if;
+  if unlocked <> '' then
+    raise exception 'account first-write lock missing from: %', unlocked;
+  end if;
+end
+$time_zone_first_write_lock$;
+
 do $time_zone_validation$
 begin
   begin

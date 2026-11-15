@@ -158,37 +158,87 @@ void main() {
         expect(peerAttempt?.displayTimeZoneId, winnerZone);
         expect(peerAttempt?.timeZoneRevision, first.timeZoneRevision);
 
-        // 3. 真正的并发首次迁移：两个独立客户端同时初始化另一全新账号。
+        // 3. 真并发首次写入：同一全新账号上同时发出两次 first save 与两次
+        //    initialize，覆盖 save/save、save/initialize、initialize/initialize。
+        //    四个请求真正同时在途，不靠 sleep 制造交错。
         final otherBefore = await _read(otherRemote, otherId);
         expect(otherBefore, isNull, reason: '并发迁移需要第二个全新账号');
-        final concurrent = await Future.wait([
+        final otherRace = await Future.wait<RemoteProfile?>([
+          otherRemote.save(
+            userId: otherId,
+            displayName: '并发写入甲',
+            avatar: null,
+            updatedAt: clock,
+            displayTimeZoneId: 'Asia/Singapore',
+            timeZoneRevision: 0,
+          ),
+          otherPeerRemote.save(
+            userId: otherId,
+            displayName: '并发写入乙',
+            avatar: null,
+            updatedAt: clock,
+            displayTimeZoneId: 'America/Los_Angeles',
+            timeZoneRevision: 0,
+          ),
           otherRemote.initializeTimeZone(
             userId: otherId,
-            displayTimeZoneId: 'Asia/Singapore',
+            displayTimeZoneId: 'Europe/London',
           ),
           otherPeerRemote.initializeTimeZone(
             userId: otherId,
-            displayTimeZoneId: 'America/Los_Angeles',
+            displayTimeZoneId: 'Asia/Tokyo',
           ),
         ]);
-        final raceZones = concurrent
-            .map((profile) => profile?.displayTimeZoneId)
-            .toSet();
-        expect(raceZones, hasLength(1), reason: '两个客户端必须收敛到同一值');
-        expect(raceZones.single, isNotNull);
-        final raceRevision = concurrent.first?.timeZoneRevision;
-        expect(raceRevision, concurrent.last?.timeZoneRevision);
+        final firstSave = otherRace[0]!;
+        final secondSave = otherRace[1]!;
+        final firstInit = otherRace[2]!;
+        final secondInit = otherRace[3]!;
+        final raceZones = {
+          firstSave.displayTimeZoneId,
+          secondSave.displayTimeZoneId,
+          firstInit.displayTimeZoneId,
+          secondInit.displayTimeZoneId,
+        };
+        expect(raceZones, hasLength(1), reason: '四个首写必须收敛到同一值');
+        expect(
+          firstSave.displayTimeZoneId,
+          anyOf(
+            'Asia/Singapore',
+            'America/Los_Angeles',
+            'Europe/London',
+            'Asia/Tokyo',
+          ),
+          reason: '赢家必须是四个请求之一',
+        );
+        final raceRevisions = {
+          firstSave.timeZoneRevision,
+          secondSave.timeZoneRevision,
+          firstInit.timeZoneRevision,
+          secondInit.timeZoneRevision,
+        };
+        expect(raceRevisions, hasLength(1), reason: '回答里的修订号必须一致');
+        expect(raceRevisions.single, 1, reason: '后到的首写不得追加修订号');
+        // 冲突标记必须如实表示本次请求值是否生效：赢家 false，输家 true。
+        expect(
+          firstSave.timeZoneConflict,
+          firstSave.displayTimeZoneId != 'Asia/Singapore',
+        );
+        expect(
+          secondSave.timeZoneConflict,
+          secondSave.displayTimeZoneId != 'America/Los_Angeles',
+        );
         final otherAfter = await _read(otherRemote, otherId);
         expect(otherAfter?.displayTimeZoneId, raceZones.single);
-        expect(otherAfter?.timeZoneRevision, raceRevision);
+        expect(otherAfter?.timeZoneRevision, raceRevisions.single);
         expect(
-          raceZones.single,
-          anyOf('Asia/Singapore', 'America/Los_Angeles'),
-          reason: '首次并发初始化只能产生一个请求值作为赢家',
+          otherAfter?.displayName,
+          anyOf('并发写入甲', '并发写入乙'),
+          reason: '首写竞争不得伪造昵称，最终昵称来自其中一次保存',
         );
-        expect(raceRevision, 1);
-        expect(otherAfter?.displayName, isEmpty, reason: '并发初始化不伪造昵称');
-        print('PROFILE_TZ_REAL concurrent initialization PASS');
+        print(
+          'PROFILE_TZ_REAL concurrent first save/initialize PASS '
+          '(winner = ${raceZones.single})',
+        );
 
         // 4. 空昵称账号可以只改时区；已有昵称则保持原样，不伪造名字。
         final syncedBeforeZoneEdit = await profile.syncProfile();
@@ -259,12 +309,19 @@ void main() {
             now: () => clock,
           );
           await skewed.syncProfile();
-          await corrected.syncProfile();
           final skewedSave = await skewed.saveProfile(
             displayName: nickname,
             timeZoneId: 'Europe/London',
           );
           expect(skewedSave.displayTimeZoneId, 'Europe/London');
+          // 正确时钟的设备在 London 之后才同步，看到当前修订号后再做新选择；
+          // 不自动重放旧意图，也不把旧修订号直接改写成新值。
+          final adoptedBeforeEdit = await corrected.syncProfile();
+          expect(adoptedBeforeEdit.displayTimeZoneId, 'Europe/London');
+          expect(
+            adoptedBeforeEdit.timeZoneRevision,
+            greaterThan(skewedSave.timeZoneRevision),
+          );
           final correctedSave = await corrected.saveProfile(
             displayName: nickname,
             timeZoneId: 'Pacific/Auckland',
@@ -307,18 +364,37 @@ void main() {
         }
         print('PROFILE_TZ_REAL unsynced client adopts the winner PASS');
 
-        // 9. 服务端校验完整 IANA 标识，而不是只检查长度。
+        // 9. 服务端校验完整 IANA 标识，而不是只检查长度。公共包装器把
+        //    PostgREST 错误转成 StateError，因此精确 SQLSTATE 用原始 RPC 取证。
         var invalidInitializeRejected = false;
         try {
-          await remote.initializeTimeZone(
-            userId: userId,
-            displayTimeZoneId: 'not/a-zone',
+          await client.rpc(
+            'initialize_profile_time_zone',
+            params: {'p_time_zone_id': 'not/a-zone'},
           );
         } on PostgrestException catch (error) {
           invalidInitializeRejected = error.code == '22023';
         }
         expect(invalidInitializeRejected, isTrue);
+
         var invalidSaveRejected = false;
+        try {
+          final nowCurrent = await _read(remote, userId);
+          await client.rpc(
+            'save_profile_account',
+            params: {
+              'p_display_name': nickname,
+              'p_time_zone_id': 'Mars/Olympus',
+              'p_time_zone_revision': nowCurrent!.timeZoneRevision,
+            },
+          );
+        } on PostgrestException catch (error) {
+          invalidSaveRejected = error.code == '22023';
+        }
+        expect(invalidSaveRejected, isTrue);
+
+        // 公共包装器的错误契约也要成立，且失败的保存不改变账号值。
+        var wrapperRejected = false;
         try {
           final nowCurrent = await _read(remote, userId);
           await remote.save(
@@ -329,27 +405,27 @@ void main() {
             displayTimeZoneId: 'Mars/Olympus',
             timeZoneRevision: nowCurrent!.timeZoneRevision,
           );
-        } on PostgrestException catch (error) {
-          invalidSaveRejected = error.code == '22023';
+        } on StateError catch (error) {
+          wrapperRejected = error.message.contains('保存失败');
         }
-        expect(invalidSaveRejected, isTrue);
+        expect(wrapperRejected, isTrue);
         expect(
           (await _read(remote, userId))?.displayTimeZoneId,
           'Pacific/Auckland',
         );
         print('PROFILE_TZ_REAL invalid IANA identifiers rejected PASS');
 
-        // 10. 空白昵称不得清除已有昵称。
+        // 10. 空白昵称不得清除已有昵称（原始 RPC 取证 SQLSTATE）。
         var blankRejected = false;
         try {
           final nowCurrent = await _read(remote, userId);
-          await remote.save(
-            userId: userId,
-            displayName: '',
-            avatar: null,
-            updatedAt: clock,
-            displayTimeZoneId: 'Europe/London',
-            timeZoneRevision: nowCurrent!.timeZoneRevision,
+          await client.rpc(
+            'save_profile_account',
+            params: {
+              'p_display_name': '',
+              'p_time_zone_id': 'Europe/London',
+              'p_time_zone_revision': nowCurrent!.timeZoneRevision,
+            },
           );
         } on PostgrestException catch (error) {
           blankRejected = error.code == '22023';

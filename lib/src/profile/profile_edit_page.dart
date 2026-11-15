@@ -122,6 +122,11 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   }
 
   Future<void> _save() async {
+    // 只有本页真正改过时才上传时区：仅改昵称/头像时省略，账号存储保留
+    // 自己的值，避免把本机缓存的旧时区重新推成"最新选择"。
+    final requestedTimeZoneId = _timeZoneId == _loadedTimeZoneId
+        ? null
+        : _timeZoneId;
     setState(() {
       _busy = true;
       _error = null;
@@ -136,20 +141,32 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                 mimeType: AvatarImageFormat.png.mimeType,
               ),
         clearAvatar: _clearAvatar,
-        // 只有本页真正改过时才上传时区：仅改昵称/头像时省略，账号存储保留
-        // 自己的值，避免把本机缓存的旧时区重新推成"最新选择"。
-        timeZoneId: _timeZoneId == _loadedTimeZoneId ? null : _timeZoneId,
+        timeZoneId: requestedTimeZoneId,
       );
       if (!mounted) return;
+      // 账号时区可能已被另一台设备更新。账号存储按修订号保留了最新接受值，
+      // 这里必须如实说明"采用的是账号最新值"，不能把本次点击说成已生效。
+      final timeZoneReplaced =
+          requestedTimeZoneId != null &&
+          saved.syncError == null &&
+          saved.displayTimeZoneId != requestedTimeZoneId;
       setState(() {
         _storedAvatar = saved.avatar?.bytes;
         _pickedAvatar = null;
         _timeZoneId = saved.displayTimeZoneId;
         _loadedTimeZoneId = saved.displayTimeZoneId;
-        _error = saved.syncError;
+        _error =
+            saved.syncError ??
+            (timeZoneReplaced
+                ? '账号时区已被其他设备更新，已采用最新值：'
+                      '${AccountTimeZones.effectiveId(saved.displayTimeZoneId)}。'
+                      '如仍想使用刚才的选择，请重新选择后再保存。'
+                : null);
         _syncFailed = saved.syncError != null;
       });
-      if (saved.syncError == null) Navigator.of(context).pop();
+      if (saved.syncError == null && !timeZoneReplaced) {
+        Navigator.of(context).pop();
+      }
     } on AvatarValidationException catch (error) {
       if (mounted) {
         setState(() {

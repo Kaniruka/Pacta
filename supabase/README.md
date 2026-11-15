@@ -295,6 +295,12 @@ second business store.
 - `time_zone_revision` is written only by these RPCs and only advances on an
   accepted change; `time_zone_updated_at` records when the current value was
   accepted, in server time, for audit and never for ordering.
+- Both RPCs take an account-scoped `pg_advisory_xact_lock` before deciding
+  anything. An existing row is already serialized by `SELECT ... FOR UPDATE`,
+  but a missing row cannot be locked that way: two first writers could both read
+  "absent" and the later upsert would apply a stale decision over the winner.
+  The lock serializes first save/first save, first save/initialize and
+  initialize/initialize for the same account.
 
 The legacy three-argument call form remains valid through parameter defaults and
 never touches the stored time zone or its revision. The old five-argument
@@ -309,7 +315,10 @@ empty-nickname row, a second device adopting the stored winner, a time-zone-only
 save keeping an unset name, a stale revision being refused and reported as a
 conflict, a nickname-only (including legacy three-argument) save keeping the zone,
 a blank name failing to clear an existing nickname, a missing revision being
-rejected, and invalid IANA identifiers being rejected by both RPCs:
+rejected, invalid IANA identifiers being rejected by both RPCs, and both RPC
+bodies acquiring the account first-write lock. The real-service probe exercises
+true concurrent first save/first save, first save/initialize and
+initialize/initialize requests, because one session cannot prove that race.
 
 ```powershell
 supabase db query --linked -f supabase/tests/profile_accounts.sql

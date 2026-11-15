@@ -24,7 +24,12 @@
 -- Other invariants:
 --   * initialize_profile_time_zone() fills only a still-empty account value and
 --     is atomic, so two devices that both read "no value" cannot each decide a
---     different account zone. It inserts an empty-nickname row when none exists;
+--     different account zone.
+--   * Both RPCs serialize first writes on the account identity with a
+--     transaction-scoped advisory lock. A missing row cannot be locked with
+--     SELECT ... FOR UPDATE, so without this lock two first writers could both
+--     read "absent", and the later upsert would apply a stale decision over the
+--     row the other writer just inserted. It inserts an empty-nickname row when none exists;
 --     that is an unset nickname, not a fabricated name.
 --   * save_profile_account() keeps the stored time zone when no zone argument is
 --     given (nickname/avatar edits never re-assert a cached zone). A blank
@@ -187,6 +192,13 @@ begin
       using errcode = '22023';
   end if;
 
+  -- Account-scoped transaction lock: serialize this first write with any other
+  -- initialize/save for the same owner. The profile row may not exist yet, and
+  -- a lock on a nonexistent row locks nothing; the lock key is the account.
+  perform pg_advisory_xact_lock(
+    hashtextextended('pacta.profile_accounts:' || owner_id::text, 0)
+  );
+
   insert into public.profile_accounts (
     user_id,
     display_name,
@@ -276,6 +288,14 @@ begin
   if char_length(name_value) > 128 then
     raise exception 'display name is too long' using errcode = '22001';
   end if;
+
+  -- Serialize this save with any first write for the same owner before deciding
+  -- anything. The row lock below only protects an existing row; a concurrent
+  -- initialize or first save could otherwise insert between this check and the
+  -- upsert, and a precomputed "absent" decision would overwrite that winner.
+  perform pg_advisory_xact_lock(
+    hashtextextended('pacta.profile_accounts:' || owner_id::text, 0)
+  );
 
   -- Lock the row so the blank-name decision and the revision comparison are
   -- made against the same stored values the upsert will update.
