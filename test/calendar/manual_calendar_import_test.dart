@@ -1,4 +1,3 @@
-import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
@@ -7,9 +6,9 @@ import 'package:pacta/src/calendar/calendar_repository.dart';
 import 'package:pacta/src/calendar/manual_calendar_import.dart';
 import 'package:pacta/src/plan/plan_calendar_view.dart';
 import 'package:pacta/src/schedules/schedule_repository.dart';
-import 'package:pacta/src/tasks/task_database.dart';
 
 import '../support/fake_calendar_provider.dart';
+import '../support/test_database.dart';
 
 const _user = 'manual-import-zone';
 
@@ -165,7 +164,7 @@ void main() {
         ),
       ],
     );
-    final database = PactaDatabase(NativeDatabase.memory());
+    final database = openTestDatabase();
     final calendar = LocalCalendarRepository(
       database: database,
       userId: _user,
@@ -179,9 +178,14 @@ void main() {
       now: () => DateTime.utc(2026, 3, 7, 12),
     );
     addTearDown(() async {
+      // 先卸掉页面，再关仓储；最后推一帧，跑完 drift 关闭查询流时排的
+      // 零延迟计时器（否则会以 “A Timer is still pending” 失败）。
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 20));
       await schedules.dispose();
       await calendar.dispose();
       await database.close();
+      await tester.pump(const Duration(milliseconds: 20));
     });
 
     tester.view.physicalSize = const Size(1000, 1400);

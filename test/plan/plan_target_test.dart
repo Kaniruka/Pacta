@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
-import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -16,6 +15,7 @@ import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 
 import '../support/fake_auth_repository.dart';
+import '../support/test_database.dart';
 
 const _user = 'plan-target';
 
@@ -164,12 +164,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final database = PactaDatabase(NativeDatabase.memory());
+    final database = openTestDatabase();
     final repository = _scheduleRepositoryFor(database);
-    addTearDown(() async {
-      await repository.dispose();
-      await database.close();
-    });
+    addTearDown(() => _disposeCalendar(tester, repository, database));
 
     await tester.pumpWidget(
       MaterialApp(
@@ -197,12 +194,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final database = PactaDatabase(NativeDatabase.memory());
+    final database = openTestDatabase();
     final repository = _scheduleRepositoryFor(database);
-    addTearDown(() async {
-      await repository.dispose();
-      await database.close();
-    });
+    addTearDown(() => _disposeCalendar(tester, repository, database));
     final schedule = await repository.createSchedule(
       ScheduleDraft(
         title: '周会',
@@ -254,12 +248,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final database = PactaDatabase(NativeDatabase.memory());
+    final database = openTestDatabase();
     final repository = _scheduleRepositoryFor(database);
-    addTearDown(() async {
-      await repository.dispose();
-      await database.close();
-    });
+    addTearDown(() => _disposeCalendar(tester, repository, database));
 
     await tester.pumpWidget(
       MaterialApp(
@@ -296,8 +287,8 @@ void main() {
     // 本用例故意同时开两个内存数据库（两个账号）；它们各有独立的
     // QueryExecutor，drift 的“多个实例”提示在这里是误报。
     driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
-    final oldDatabase = PactaDatabase(NativeDatabase.memory());
-    final newDatabase = PactaDatabase(NativeDatabase.memory());
+    final oldDatabase = openTestDatabase();
+    final newDatabase = openTestDatabase();
     final gate = Completer<void>();
     final oldRepository = _GatedScheduleRepository(
       database: oldDatabase,
@@ -395,7 +386,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final database = PactaDatabase(NativeDatabase.memory());
+    final database = openTestDatabase();
     final schedules = _scheduleRepositoryFor(database);
     final focus = LocalFocusRepository(
       database: database,
@@ -449,6 +440,20 @@ void main() {
     expect(await focus.getActiveAppointment(), isNull);
     expect(tester.takeException(), isNull);
   });
+}
+
+/// 先卸掉 widget 树，再关仓储与数据库；最后推一帧让 drift 关闭查询流时
+/// 排的零延迟计时器跑完，否则测试会以 “A Timer is still pending” 失败。
+Future<void> _disposeCalendar(
+  WidgetTester tester,
+  LocalScheduleRepository repository,
+  PactaDatabase database,
+) async {
+  await tester.pumpWidget(const SizedBox.shrink());
+  await tester.pump(const Duration(milliseconds: 20));
+  await repository.dispose();
+  await database.close();
+  await tester.pump(const Duration(milliseconds: 20));
 }
 
 /// 边推进帧边等待 future；等不到就抛错（不吞超时）。

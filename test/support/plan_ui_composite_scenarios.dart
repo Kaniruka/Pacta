@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
-import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,6 +18,7 @@ import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 
 import 'fake_auth_repository.dart';
+import 'test_database.dart';
 
 /// 07 计划 UI 组合场景的唯一实现。
 ///
@@ -147,27 +147,38 @@ class PlanUiCompositeFixture {
   final List<String> assertions = [];
   Map<String, Object?>? layout;
 
-  late final PactaDatabase database = PactaDatabase(NativeDatabase.memory());
-  late final LocalTaskRepository tasks = LocalTaskRepository(
+  late final PactaDatabase database = openTestDatabase();
+
+  // 仓储按「一次应用挂载」创建，与生产一致：页面卸载时 provider 会 dispose
+  // 自己那份实例，重开必须换新实例读同一份数据库，而不是复用已被关闭的。
+  late LocalTaskRepository tasks = _newTasks();
+  late LocalFocusRepository focus = _newFocus();
+  late LocalScheduleRepository schedules = _newSchedules();
+  late LocalProfileRepository profiles = _newProfiles();
+
+  LocalTaskRepository _newTasks() => LocalTaskRepository(
     database: database,
     userId: planUiCompositeUser,
     remote: InMemoryTaskRemote(),
     cloudSyncEnabled: false,
     now: () => clock,
   );
-  late final LocalFocusRepository focus = LocalFocusRepository(
+
+  LocalFocusRepository _newFocus() => LocalFocusRepository(
     database: database,
     userId: planUiCompositeUser,
     remote: InMemoryFocusRemote(),
     cloudSyncEnabled: false,
     now: () => clock,
   );
-  late final LocalScheduleRepository schedules = LocalScheduleRepository(
+
+  LocalScheduleRepository _newSchedules() => LocalScheduleRepository(
     database: database,
     userId: planUiCompositeUser,
     now: () => clock,
   );
-  late final LocalProfileRepository profiles = LocalProfileRepository(
+
+  LocalProfileRepository _newProfiles() => LocalProfileRepository(
     database: database,
     userId: planUiCompositeUser,
     remote: remote,
@@ -218,6 +229,11 @@ class PlanUiCompositeFixture {
   }) async {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
+    // 上一棵树卸载时 provider 已 dispose 那份仓储：重开用新实例读同一份库。
+    tasks = _newTasks();
+    focus = _newFocus();
+    schedules = _newSchedules();
+    profiles = _newProfiles();
     await pump(tester, size: size, brightness: brightness);
   }
 
@@ -357,6 +373,9 @@ class PlanUiCompositeFixture {
     await _pumpUntil(tester, schedules.dispose(), 'schedules.dispose');
     await _pumpUntil(tester, profiles.dispose(), 'profiles.dispose');
     await _pumpUntil(tester, database.close(), 'database.close');
+    // drift 的查询流在关闭时排一个零延迟计时器；再推一帧让它跑完，避免
+    // 测试以 “A Timer is still pending” 失败。
+    await tester.pump(const Duration(milliseconds: 20));
     tester.view.reset();
     tester.platformDispatcher.clearPlatformBrightnessTestValue();
     flush();
@@ -367,15 +386,21 @@ class PlanUiCompositeFixture {
 ///
 /// 这里限定 5 秒，超时退化为一次固定推进，好让真正的红信号尽快出现。
 Future<void> settlePlanUi(WidgetTester tester) async {
-  try {
-    await tester.pumpAndSettle(
-      const Duration(milliseconds: 100),
-      EnginePhase.sendSemanticsUpdate,
-      const Duration(seconds: 5),
-    );
-  } on FlutterError catch (error) {
-    if (!error.message.contains('pumpAndSettle timed out')) rethrow;
-    await tester.pump(const Duration(milliseconds: 400));
+  for (var round = 0; round < 3; round++) {
+    try {
+      await tester.pumpAndSettle(
+        const Duration(milliseconds: 20),
+        EnginePhase.sendSemanticsUpdate,
+        const Duration(seconds: 5),
+      );
+    } on FlutterError catch (error) {
+      if (!error.message.contains('pumpAndSettle timed out')) rethrow;
+      await tester.pump(const Duration(milliseconds: 400));
+      continue;
+    }
+    // 数据库观察的回调是零延迟微任务/计时器：没有待排帧时 pumpAndSettle
+    // 会立刻返回，这里再推一帧，保证订阅到的数据真的进了 widget 树。
+    await tester.pump(const Duration(milliseconds: 20));
   }
 }
 

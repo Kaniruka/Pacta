@@ -56,6 +56,10 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
   /// 通知目标定位请求的代次：只接受最新一次请求的结果。
   int _targetRequest = 0;
 
+  /// 当前月窗口的订阅。每帧重建都新建流会让数据库观察反复取消/重连，既
+  /// 浪费连接，也可能在取消与重订阅之间丢掉首帧数据；这里按时窗缓存。
+  _ScheduleStreamCache? _streamCache;
+
   timezone.Location get _location =>
       FocusTimeZones.location(widget.displayTimeZoneId);
 
@@ -171,7 +175,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     final from = _utcStart(monthStart).subtract(const Duration(days: 1));
     final to = _utcStart(nextMonth).add(const Duration(days: 2));
     return StreamBuilder<List<Schedule>>(
-      stream: widget.repository.watchSchedules(from: from, to: to),
+      stream: _streamFor(monthStart, from, to),
       builder: (context, snapshot) {
         final schedules = snapshot.data ?? const <Schedule>[];
         return Column(
@@ -186,6 +190,31 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
         );
       },
     );
+  }
+
+  /// 同一个仓储、同一个时窗复用同一条流；换仓储或换月份才重建。
+  Stream<List<Schedule>> _streamFor(
+    DateTime month,
+    DateTime from,
+    DateTime to,
+  ) {
+    final cached = _streamCache;
+    if (cached != null &&
+        identical(cached.repository, widget.repository) &&
+        cached.month == month &&
+        cached.from == from &&
+        cached.to == to) {
+      return cached.stream;
+    }
+    final stream = widget.repository.watchSchedules(from: from, to: to);
+    _streamCache = _ScheduleStreamCache(
+      repository: widget.repository,
+      month: month,
+      from: from,
+      to: to,
+      stream: stream,
+    );
+    return stream;
   }
 
   Widget _buildHeader(BuildContext context, List<Schedule> schedules) {
@@ -749,6 +778,23 @@ class _ScheduleTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 月窗口与仓储的组合，用来判断能否复用已有的订阅。
+class _ScheduleStreamCache {
+  const _ScheduleStreamCache({
+    required this.repository,
+    required this.month,
+    required this.from,
+    required this.to,
+    required this.stream,
+  });
+
+  final ScheduleRepository repository;
+  final DateTime month;
+  final DateTime from;
+  final DateTime to;
+  final Stream<List<Schedule>> stream;
 }
 
 /// 编辑器结果：草稿 + 可选提醒 + 重复设置（提醒只存配置，投递由 06 负责）。
