@@ -4179,6 +4179,17 @@ class $LocalNationalFocusFailuresTable extends LocalNationalFocusFailures
         requiredDuringInsert: false,
         defaultValue: const Constant('accepted'),
       );
+  static const VerificationMeta _reviewedAtMeta = const VerificationMeta(
+    'reviewedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> reviewedAt = GeneratedColumn<DateTime>(
+    'reviewed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     userId,
@@ -4191,6 +4202,7 @@ class $LocalNationalFocusFailuresTable extends LocalNationalFocusFailures
     sharedExplanation,
     treeSnapshot,
     reviewDisposition,
+    reviewedAt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -4290,6 +4302,12 @@ class $LocalNationalFocusFailuresTable extends LocalNationalFocusFailures
         ),
       );
     }
+    if (data.containsKey('reviewed_at')) {
+      context.handle(
+        _reviewedAtMeta,
+        reviewedAt.isAcceptableOrUnknown(data['reviewed_at']!, _reviewedAtMeta),
+      );
+    }
     return context;
   }
 
@@ -4342,6 +4360,10 @@ class $LocalNationalFocusFailuresTable extends LocalNationalFocusFailures
         DriftSqlType.string,
         data['${effectivePrefix}review_disposition'],
       )!,
+      reviewedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}reviewed_at'],
+      ),
     );
   }
 
@@ -4363,6 +4385,10 @@ class LocalNationalFocusFailure extends DataClass
   final String? sharedExplanation;
   final String treeSnapshot;
   final String reviewDisposition;
+
+  /// 回顾标记（ticket 11）。非空即已回顾；与 reviewDisposition 的
+  /// 裁定语义分开存储，任何一侧变化都不改写另一侧。
+  final DateTime? reviewedAt;
   const LocalNationalFocusFailure({
     required this.userId,
     required this.id,
@@ -4374,6 +4400,7 @@ class LocalNationalFocusFailure extends DataClass
     this.sharedExplanation,
     required this.treeSnapshot,
     required this.reviewDisposition,
+    this.reviewedAt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -4392,6 +4419,9 @@ class LocalNationalFocusFailure extends DataClass
     }
     map['tree_snapshot'] = Variable<String>(treeSnapshot);
     map['review_disposition'] = Variable<String>(reviewDisposition);
+    if (!nullToAbsent || reviewedAt != null) {
+      map['reviewed_at'] = Variable<DateTime>(reviewedAt);
+    }
     return map;
   }
 
@@ -4411,6 +4441,9 @@ class LocalNationalFocusFailure extends DataClass
           : Value(sharedExplanation),
       treeSnapshot: Value(treeSnapshot),
       reviewDisposition: Value(reviewDisposition),
+      reviewedAt: reviewedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reviewedAt),
     );
   }
 
@@ -4432,6 +4465,7 @@ class LocalNationalFocusFailure extends DataClass
       ),
       treeSnapshot: serializer.fromJson<String>(json['treeSnapshot']),
       reviewDisposition: serializer.fromJson<String>(json['reviewDisposition']),
+      reviewedAt: serializer.fromJson<DateTime?>(json['reviewedAt']),
     );
   }
   @override
@@ -4448,6 +4482,7 @@ class LocalNationalFocusFailure extends DataClass
       'sharedExplanation': serializer.toJson<String?>(sharedExplanation),
       'treeSnapshot': serializer.toJson<String>(treeSnapshot),
       'reviewDisposition': serializer.toJson<String>(reviewDisposition),
+      'reviewedAt': serializer.toJson<DateTime?>(reviewedAt),
     };
   }
 
@@ -4462,6 +4497,7 @@ class LocalNationalFocusFailure extends DataClass
     Value<String?> sharedExplanation = const Value.absent(),
     String? treeSnapshot,
     String? reviewDisposition,
+    Value<DateTime?> reviewedAt = const Value.absent(),
   }) => LocalNationalFocusFailure(
     userId: userId ?? this.userId,
     id: id ?? this.id,
@@ -4477,6 +4513,7 @@ class LocalNationalFocusFailure extends DataClass
         : this.sharedExplanation,
     treeSnapshot: treeSnapshot ?? this.treeSnapshot,
     reviewDisposition: reviewDisposition ?? this.reviewDisposition,
+    reviewedAt: reviewedAt.present ? reviewedAt.value : this.reviewedAt,
   );
   LocalNationalFocusFailure copyWithCompanion(
     LocalNationalFocusFailuresCompanion data,
@@ -4502,6 +4539,9 @@ class LocalNationalFocusFailure extends DataClass
       reviewDisposition: data.reviewDisposition.present
           ? data.reviewDisposition.value
           : this.reviewDisposition,
+      reviewedAt: data.reviewedAt.present
+          ? data.reviewedAt.value
+          : this.reviewedAt,
     );
   }
 
@@ -4517,7 +4557,8 @@ class LocalNationalFocusFailure extends DataClass
           ..write('failureReason: $failureReason, ')
           ..write('sharedExplanation: $sharedExplanation, ')
           ..write('treeSnapshot: $treeSnapshot, ')
-          ..write('reviewDisposition: $reviewDisposition')
+          ..write('reviewDisposition: $reviewDisposition, ')
+          ..write('reviewedAt: $reviewedAt')
           ..write(')'))
         .toString();
   }
@@ -4534,6 +4575,7 @@ class LocalNationalFocusFailure extends DataClass
     sharedExplanation,
     treeSnapshot,
     reviewDisposition,
+    reviewedAt,
   );
   @override
   bool operator ==(Object other) =>
@@ -4548,7 +4590,8 @@ class LocalNationalFocusFailure extends DataClass
           other.failureReason == this.failureReason &&
           other.sharedExplanation == this.sharedExplanation &&
           other.treeSnapshot == this.treeSnapshot &&
-          other.reviewDisposition == this.reviewDisposition);
+          other.reviewDisposition == this.reviewDisposition &&
+          other.reviewedAt == this.reviewedAt);
 }
 
 class LocalNationalFocusFailuresCompanion
@@ -4563,6 +4606,7 @@ class LocalNationalFocusFailuresCompanion
   final Value<String?> sharedExplanation;
   final Value<String> treeSnapshot;
   final Value<String> reviewDisposition;
+  final Value<DateTime?> reviewedAt;
   final Value<int> rowid;
   const LocalNationalFocusFailuresCompanion({
     this.userId = const Value.absent(),
@@ -4575,6 +4619,7 @@ class LocalNationalFocusFailuresCompanion
     this.sharedExplanation = const Value.absent(),
     this.treeSnapshot = const Value.absent(),
     this.reviewDisposition = const Value.absent(),
+    this.reviewedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   LocalNationalFocusFailuresCompanion.insert({
@@ -4588,6 +4633,7 @@ class LocalNationalFocusFailuresCompanion
     this.sharedExplanation = const Value.absent(),
     required String treeSnapshot,
     this.reviewDisposition = const Value.absent(),
+    this.reviewedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
        id = Value(id),
@@ -4607,6 +4653,7 @@ class LocalNationalFocusFailuresCompanion
     Expression<String>? sharedExplanation,
     Expression<String>? treeSnapshot,
     Expression<String>? reviewDisposition,
+    Expression<DateTime>? reviewedAt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -4620,6 +4667,7 @@ class LocalNationalFocusFailuresCompanion
       if (sharedExplanation != null) 'shared_explanation': sharedExplanation,
       if (treeSnapshot != null) 'tree_snapshot': treeSnapshot,
       if (reviewDisposition != null) 'review_disposition': reviewDisposition,
+      if (reviewedAt != null) 'reviewed_at': reviewedAt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -4635,6 +4683,7 @@ class LocalNationalFocusFailuresCompanion
     Value<String?>? sharedExplanation,
     Value<String>? treeSnapshot,
     Value<String>? reviewDisposition,
+    Value<DateTime?>? reviewedAt,
     Value<int>? rowid,
   }) {
     return LocalNationalFocusFailuresCompanion(
@@ -4648,6 +4697,7 @@ class LocalNationalFocusFailuresCompanion
       sharedExplanation: sharedExplanation ?? this.sharedExplanation,
       treeSnapshot: treeSnapshot ?? this.treeSnapshot,
       reviewDisposition: reviewDisposition ?? this.reviewDisposition,
+      reviewedAt: reviewedAt ?? this.reviewedAt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4685,6 +4735,9 @@ class LocalNationalFocusFailuresCompanion
     if (reviewDisposition.present) {
       map['review_disposition'] = Variable<String>(reviewDisposition.value);
     }
+    if (reviewedAt.present) {
+      map['reviewed_at'] = Variable<DateTime>(reviewedAt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4704,6 +4757,7 @@ class LocalNationalFocusFailuresCompanion
           ..write('sharedExplanation: $sharedExplanation, ')
           ..write('treeSnapshot: $treeSnapshot, ')
           ..write('reviewDisposition: $reviewDisposition, ')
+          ..write('reviewedAt: $reviewedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -17633,6 +17687,7 @@ typedef $$LocalNationalFocusFailuresTableCreateCompanionBuilder =
       Value<String?> sharedExplanation,
       required String treeSnapshot,
       Value<String> reviewDisposition,
+      Value<DateTime?> reviewedAt,
       Value<int> rowid,
     });
 typedef $$LocalNationalFocusFailuresTableUpdateCompanionBuilder =
@@ -17647,6 +17702,7 @@ typedef $$LocalNationalFocusFailuresTableUpdateCompanionBuilder =
       Value<String?> sharedExplanation,
       Value<String> treeSnapshot,
       Value<String> reviewDisposition,
+      Value<DateTime?> reviewedAt,
       Value<int> rowid,
     });
 
@@ -17706,6 +17762,11 @@ class $$LocalNationalFocusFailuresTableFilterComposer
 
   ColumnFilters<String> get reviewDisposition => $composableBuilder(
     column: $table.reviewDisposition,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get reviewedAt => $composableBuilder(
+    column: $table.reviewedAt,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -17768,6 +17829,11 @@ class $$LocalNationalFocusFailuresTableOrderingComposer
     column: $table.reviewDisposition,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<DateTime> get reviewedAt => $composableBuilder(
+    column: $table.reviewedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$LocalNationalFocusFailuresTableAnnotationComposer
@@ -17816,6 +17882,11 @@ class $$LocalNationalFocusFailuresTableAnnotationComposer
 
   GeneratedColumn<String> get reviewDisposition => $composableBuilder(
     column: $table.reviewDisposition,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get reviewedAt => $composableBuilder(
+    column: $table.reviewedAt,
     builder: (column) => column,
   );
 }
@@ -17876,6 +17947,7 @@ class $$LocalNationalFocusFailuresTableTableManager
                 Value<String?> sharedExplanation = const Value.absent(),
                 Value<String> treeSnapshot = const Value.absent(),
                 Value<String> reviewDisposition = const Value.absent(),
+                Value<DateTime?> reviewedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalNationalFocusFailuresCompanion(
                 userId: userId,
@@ -17888,6 +17960,7 @@ class $$LocalNationalFocusFailuresTableTableManager
                 sharedExplanation: sharedExplanation,
                 treeSnapshot: treeSnapshot,
                 reviewDisposition: reviewDisposition,
+                reviewedAt: reviewedAt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -17902,6 +17975,7 @@ class $$LocalNationalFocusFailuresTableTableManager
                 Value<String?> sharedExplanation = const Value.absent(),
                 required String treeSnapshot,
                 Value<String> reviewDisposition = const Value.absent(),
+                Value<DateTime?> reviewedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalNationalFocusFailuresCompanion.insert(
                 userId: userId,
@@ -17914,6 +17988,7 @@ class $$LocalNationalFocusFailuresTableTableManager
                 sharedExplanation: sharedExplanation,
                 treeSnapshot: treeSnapshot,
                 reviewDisposition: reviewDisposition,
+                reviewedAt: reviewedAt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

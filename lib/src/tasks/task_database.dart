@@ -123,6 +123,10 @@ class LocalNationalFocusFailures extends Table {
   TextColumn get reviewDisposition =>
       text().withDefault(const Constant('accepted'))();
 
+  /// 回顾标记（ticket 11）。非空即已回顾；与 reviewDisposition 的
+  /// 裁定语义分开存储，任何一侧变化都不改写另一侧。
+  DateTimeColumn get reviewedAt => dateTime().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
 }
@@ -623,12 +627,15 @@ class PactaDatabase extends _$PactaDatabase {
   /// Local schema 32.
   ///
   /// 31 merges the schedules table and the appointment-preparation column from
-  /// the core integration branch; 32 adds the account display time zone and the
-  /// one-shot upload intent on top of it. Both time-zone columns are added
+  /// the core integration branch, and 34 adds the failure-review state. 35 adds
+  /// the account display time zone and the one-shot upload intent on top of
+  /// them; it keeps the next free number rather than reusing 32, because the
+  /// integration branch moved past that number while this ticket was isolated.
+  /// Both time-zone columns are added
   /// defensively (see the migration below), because provisional 30 fixtures can
   /// already carry `time_zone_id` while a plain 30 database does not.
   @override
-  int get schemaVersion => 32;
+  int get schemaVersion => 35;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -811,7 +818,7 @@ class PactaDatabase extends _$PactaDatabase {
       }
       // 31：日程表与预约准备时长合并为同一次本地升级。
       //
-      // 31 是核心合并的版本号（32 是本 profile 票据）。合并前两个票据各自
+      // 31 是核心合并的版本号（35 是本 profile 票据）。合并前两个票据各自
       // 独立发布过一个残缺的 30：03 只有 local_schedules，08 只有
       // preparation_seconds 列。这里按 SQLite 的实际结构只补缺少的那一半，
       // 不重建、不清空、不重算已存记录：
@@ -822,7 +829,7 @@ class PactaDatabase extends _$PactaDatabase {
       if (from < 31) {
         await ensureMergedSchedulesSchema(this, m);
       }
-      if (from < 32) {
+      if (from < 35) {
         // Account-level display time zone and the one-shot upload intent.
         // Existing rows keep the zone null, which the profile repository seeds
         // once from the superseded device value. Structural probes keep this
@@ -852,6 +859,27 @@ class PactaDatabase extends _$PactaDatabase {
               localProfileAccounts.pendingTimeZoneUpload,
             );
           }
+        }
+      }
+      // 34：失败记录的回顾状态（ticket 11）。旧记录没有回顾概念，补列后
+      // 保持 null（未回顾），由看板提示用户逐组回顾；不改写失败结果、
+      // 结算统计与冻结要求。
+      //
+      // 迁移守卫：只在旧库确实已有失败表且缺这一列时补列。合成/局部旧库
+      // 可能没有失败表（由后续 createTable 或历史版本负责），重复升级或
+      // 回拨 user_version 的库也不会重复加列。
+      if (from >= 14 && from < 34) {
+        final failureColumns = await customSelect(
+          'PRAGMA table_info(local_national_focus_failures)',
+        ).get();
+        final hasReviewedAt = failureColumns.any(
+          (row) => row.read<String>('name') == 'reviewed_at',
+        );
+        if (failureColumns.isNotEmpty && !hasReviewedAt) {
+          await m.addColumn(
+            localNationalFocusFailures,
+            localNationalFocusFailures.reviewedAt,
+          );
         }
       }
       if (from < 15) {

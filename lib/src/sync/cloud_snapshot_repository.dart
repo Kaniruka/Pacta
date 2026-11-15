@@ -1282,6 +1282,8 @@ class CloudSnapshotRepository {
     'local_goals': {'description': ''},
     'local_tasks': {'description': ''},
     'focus_appointments': {'preparation_seconds': null},
+    // ticket 11：v1 整份快照还没有回顾字段，旧记录的显式默认是未回顾。
+    'local_national_focus_failures': {'reviewed_at': null},
   };
 
   Map<String, dynamic> _withLegacyColumnDefaults(
