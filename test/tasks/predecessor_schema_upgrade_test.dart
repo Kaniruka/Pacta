@@ -472,6 +472,8 @@ Future<void> _expectRetention(
         'schedule-series-a',
         'schedule-exception-a',
       ],
+      if (carriedInstances && shape.hadTable('local_schedule_recurrences'))
+        'schedule-notes-a',
     });
     expect(byId['schedule-owned-a'].title, '自有日程a');
     expect(byId['schedule-owned-a'].notes, '备注a');
@@ -536,6 +538,20 @@ Future<void> _expectRetention(
         kept.shiftDays,
         shape.hadColumn('local_schedule_recurrences', 'shift_days') ? 3 : 0,
       );
+      // The backfill fills an empty title, but a rule's own notes/task link stay:
+      // the competing instance must not overwrite them.
+      final notesRule = rules.singleWhere((rule) => rule.id == 'rule-notes-a');
+      final hadNotesColumn = shape.hadColumn(
+        'local_schedule_recurrences',
+        'notes',
+      );
+      final hadTaskColumn = shape.hadColumn(
+        'local_schedule_recurrences',
+        'task_id',
+      );
+      expect(notesRule.title, '实例标题a');
+      expect(notesRule.notes, hadNotesColumn ? '规则自有备注a' : '实例别的备注a');
+      expect(notesRule.taskId, hadTaskColumn ? 'task-a' : isNull);
       final ruleRows = _rows(capture, 'local_schedule_recurrences');
       expect(
         ruleRows.singleWhere(

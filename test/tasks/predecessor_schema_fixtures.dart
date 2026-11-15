@@ -805,6 +805,58 @@ Future<void> _seed(PactaDatabase database, PredecessorShape shape) async {
       'created_at': _epoch(createdAt),
       'updated_at': _epoch(updatedAt),
     });
+    // rule-notes keeps an empty title (so it is eligible for backfill) but its own
+    // non-empty notes and task link must not be replaced by the instance values.
+    await insert('local_schedule_recurrences', <String, Object?>{
+      'user_id': user,
+      'id': 'rule-notes-$suffix',
+      'frequency': 'daily',
+      'weekdays': '[]',
+      'first_date': '2026-11-16',
+      'end_date': null,
+      'time_zone_id': 'Asia/Shanghai',
+      'all_day': 0,
+      'start_minutes_of_day': 480,
+      'duration_minutes': 30,
+      'day_span': 1,
+      'shift_days': 0,
+      'title': '',
+      'notes': '规则自有备注$suffix',
+      'task_id': 'task-$suffix',
+      'reminder_minutes_before': null,
+      'created_at': _epoch(createdAt),
+      'updated_at': _epoch(updatedAt),
+    });
+    await insert('local_schedules', <String, Object?>{
+      'user_id': user,
+      'id': 'schedule-notes-$suffix',
+      'title': '实例标题$suffix',
+      'notes': '实例别的备注$suffix',
+      'starts_at': _epoch(startsAt.add(const Duration(hours: 2))),
+      'ends_at': _epoch(endsAt.add(const Duration(hours: 2))),
+      'all_day': 0,
+      'all_day_start_date': null,
+      'all_day_end_date_exclusive': null,
+      'is_completed': 0,
+      'completed_at': null,
+      'task_id': null,
+      'reminder_minutes_before': null,
+      'origin': 'owned',
+      'source_ids': '[]',
+      'source_names': '[]',
+      'source_event_id': null,
+      'occurrence_id': null,
+      'event_identity': null,
+      'recurrence_id': 'rule-notes-$suffix',
+      'recurrence_series_id': 'series-notes-$suffix',
+      'recurrence_date': '2026-11-16',
+      'recurrence_time_zone_id': 'Asia/Shanghai',
+      'recurrence_start_minutes': 480,
+      'is_recurrence_exception': 0,
+      'is_recurrence_cancelled': 0,
+      'created_at': _epoch(createdAt),
+      'updated_at': _epoch(updatedAt),
+    });
     // rule-kept already carries non-default template values. The upgrade must not
     // rewrite them, and must not copy an instance reminder into the rule.
     await insert('local_schedule_recurrences', <String, Object?>{
