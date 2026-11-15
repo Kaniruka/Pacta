@@ -273,6 +273,10 @@ void main() {
         preparation: const Duration(minutes: 10),
       );
       await tester.pumpAndSettle();
+      expect(find.text('已有预约准备'), findsOneWidget);
+      expect(find.text('返回准备'), findsOneWidget);
+      expect(find.text('提前进入专注'), findsOneWidget);
+      expect(find.text('取消预约'), findsOneWidget);
       await shot('light-appointment-recovery');
       final appointment = await data.focus.getActiveAppointment();
       await data.focus.cancelAppointment(
@@ -280,6 +284,7 @@ void main() {
         failureReason: '独立界面截图结束后取消',
       );
       await tester.pumpAndSettle();
+      expect(find.text('已有预约准备'), findsNothing);
 
       await data.focus.startSession(
         taskId: data.taskId,
@@ -287,6 +292,8 @@ void main() {
         duration: const Duration(minutes: 25),
       );
       await tester.pumpAndSettle();
+      expect(find.text('已有进行中的专注'), findsOneWidget);
+      expect(find.text('返回专注'), findsOneWidget);
       await shot('light-session-recovery');
 
       // Keep this session active: the recovery strip's 返回专注 entry is the
@@ -297,9 +304,10 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.byType(FocusSessionPage), findsOneWidget);
-      await tester.tap(find.widgetWithText(FilledButton, '暂停'));
+      await tester.tap(find.widgetWithText(OutlinedButton, '暂停'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('选择下必为例'), findsOneWidget);
       await shot('light-rule-picker-disabled');
       await tester.tap(find.text(_rule));
       await tester.pump();

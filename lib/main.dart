@@ -2500,15 +2500,15 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
   String? _projectionSignature;
   late Future<List<FocusChainRecord>> _chainRecordsFuture;
   late Future<AppointmentChainRecord> _appointmentChainRecordFuture;
-  late Future<AppointmentPreparation?> _activeAppointmentFuture;
+  late Stream<AppointmentPreparation?> _activeAppointmentStream;
   late Future<List<PrecedentRule>> _precedentRulesFuture;
 
   @override
   void initState() {
     super.initState();
-    _activeAppointmentFuture = ref
+    _activeAppointmentStream = ref
         .read(focusRepositoryProvider)
-        .getActiveAppointment();
+        .watchActiveAppointment();
     _precedentRulesFuture = ref
         .read(focusRepositoryProvider)
         .getPrecedentRules();
@@ -2518,7 +2518,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
     if (mounted) {
       setState(() {
         final repository = ref.read(focusRepositoryProvider);
-        _activeAppointmentFuture = repository.getActiveAppointment();
+        _activeAppointmentStream = repository.watchActiveAppointment();
         _appointmentChainRecordFuture = repository.getAppointmentChainRecord();
       });
     }
@@ -2616,8 +2616,9 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                                 child: const Text('返回专注'),
                               ),
                             ),
-                          FutureBuilder<AppointmentPreparation?>(
-                            future: _activeAppointmentFuture,
+                          StreamBuilder<AppointmentPreparation?>(
+                            key: const ValueKey('focus-active-appointment'),
+                            stream: _activeAppointmentStream,
                             builder: (context, appointmentSnapshot) {
                               final appointment = appointmentSnapshot.data;
                               if (appointment == null) {

@@ -115,6 +115,44 @@ void main() {
     await _disposeWidget(tester);
   });
 
+  testWidgets('专注链已挂载后从看板新建预约，恢复条实时出现并在取消后清除', (tester) async {
+    final fixture = await _Fixture.create();
+    addTearDown(fixture.dispose);
+    await _openFocusChain(tester, fixture);
+    expect(find.text('已有预约准备'), findsNothing);
+
+    // Create the appointment through the real Board flow after Focus Chain
+    // has already mounted; the recovery strip must update without a session.
+    await _openDestination(tester, '看板');
+    await tester.tap(find.byTooltip('开始专注'));
+    await _boundedSettle(tester);
+    await tester.tap(find.text('10 分钟'));
+    await _boundedSettle(tester);
+    await tester.tap(find.text('开始准备（10分钟）'));
+    await _boundedSettle(tester);
+    expect(find.byType(AppointmentPreparationPage), findsOneWidget);
+
+    await tester.pageBack();
+    await _boundedSettle(tester);
+    await _openDestination(tester, '专注链');
+    expect(find.text('已有预约准备'), findsOneWidget);
+    expect(find.text('返回准备'), findsOneWidget);
+    expect(find.text('提前进入专注'), findsOneWidget);
+    expect(find.text('取消预约'), findsOneWidget);
+    expect(find.text('已有进行中的专注'), findsNothing);
+    expect(await fixture.focus.getActiveSession(), isNull);
+
+    await tester.tap(find.text('取消预约'));
+    await _boundedSettle(tester);
+    await tester.enterText(find.byType(TextField), '实时刷新验证');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await _boundedSettle(tester);
+    expect(find.text('已有预约准备'), findsNothing);
+    expect(find.text('返回准备'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
   testWidgets('历史入口在两种常见手机宽度下都可达', (tester) async {
     for (final size in [const Size(360, 800), const Size(390, 844)]) {
       final fixture = await _Fixture.create();
@@ -146,6 +184,13 @@ void main() {
   });
 }
 
+Future<void> _openDestination(WidgetTester tester, String label) async {
+  await tester.tap(
+    find.descendant(of: find.byType(NavigationBar), matching: find.text(label)),
+  );
+  await _boundedSettle(tester);
+}
+
 Future<void> _openFocusChain(
   WidgetTester tester,
   _Fixture fixture, {
@@ -161,10 +206,7 @@ Future<void> _openFocusChain(
     );
     await _boundedSettle(tester);
   }
-  await tester.tap(
-    find.descendant(of: find.byType(NavigationBar), matching: find.text('专注链')),
-  );
-  await _boundedSettle(tester);
+  await _openDestination(tester, '专注链');
 }
 
 /// 有界等待：推进路由与对话框动画，不等周期性定时器。

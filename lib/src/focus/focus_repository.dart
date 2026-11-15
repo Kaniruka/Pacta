@@ -184,6 +184,7 @@ abstract interface class FocusRepository {
     required String sourceId,
   });
   Future<AppointmentPreparation?> getActiveAppointment();
+  Stream<AppointmentPreparation?> watchActiveAppointment();
   Future<AppointmentChainRecord> getAppointmentChainRecord();
   Future<FocusSession> startSession({
     required String taskId,
@@ -1059,6 +1060,12 @@ class LocalFocusRepository implements FocusRepository {
     await _settleDueAppointments();
     final row = await _activeAppointmentRow();
     return row == null ? null : _appointmentFromRow(row);
+  }
+
+  @override
+  Stream<AppointmentPreparation?> watchActiveAppointment() async* {
+    yield await getActiveAppointment();
+    yield* _changes.stream.asyncMap((_) => getActiveAppointment());
   }
 
   @override
@@ -4874,6 +4881,10 @@ class UnavailableFocusRepository implements FocusRepository {
 
   @override
   Stream<List<FocusSession>> watchSessions() => Stream.value(const []);
+
+  @override
+  Stream<AppointmentPreparation?> watchActiveAppointment() =>
+      Stream.value(null);
 
   @override
   Stream<List<FocusReconciliationCase>> watchFocusReconciliations() =>
