@@ -288,13 +288,10 @@ void main() {
       );
       await tester.pumpAndSettle();
       await shot('light-session-recovery');
-      final active = await data.focus.getActiveSession();
-      await data.focus.abandonSession(
-        sessionId: active!.id,
-        failureReason: '独立界面截图结束',
-      );
-      await tester.pumpAndSettle();
 
+      // Keep this session active: the recovery strip's 返回专注 entry is the
+      // subject of the picker flow below. Final cleanup abandons it once the
+      // picker and back navigation have been exercised.
       // 规则选择对话框：未选择时确认禁用，选择后可确认。
       await tester.tap(find.text('返回专注'));
       await tester.pump();
