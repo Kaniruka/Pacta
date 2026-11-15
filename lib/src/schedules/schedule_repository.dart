@@ -717,7 +717,11 @@ class LocalScheduleRepository implements ScheduleRepository {
     if (rule == null) throw StateError('重复规则不存在，请重新展开后再修改。');
     final title = _requiredTitle(draft.title);
     final window = _validateWindow(draft.window);
-    final taskId = await _requiredTaskId(draft.taskId);
+    // 与 updateSchedule 相同：原关联任务若已删除（墓碑）且本次未改指向，
+    // 保留链接身份；只有改指新任务时才要求目标存在且未删除。
+    final taskId = draft.taskId == existing.taskId
+        ? existing.taskId
+        : await _requiredTaskId(draft.taskId);
     final seriesId = existing.recurrenceSeriesId ?? rule.id;
 
     late ScheduleRepeatEditResult result;
@@ -1469,8 +1473,10 @@ class UnavailableScheduleRepository implements ScheduleRepository {
   Future<List<ScheduleRepeatRule>> getRecurrenceRules() async => const [];
 
   @override
-  Future<int> expandRecurrences({required DateTime from, required DateTime to}) async =>
-      0;
+  Future<int> expandRecurrences({
+    required DateTime from,
+    required DateTime to,
+  }) async => 0;
 
   @override
   Future<Schedule> createSchedule(ScheduleDraft draft) => _unavailable();
