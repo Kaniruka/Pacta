@@ -5,6 +5,8 @@ import 'package:drift/drift.dart' as drift;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../schedules/schedule_migration.dart';
+import '../schedules/schedule_models.dart';
 import '../tasks/task_database.dart';
 import '../tasks/task_models.dart';
 import 'legacy_cloud_snapshot.dart';
@@ -14,10 +16,11 @@ import 'cloud_sync_result.dart';
 
 /// 业务整份快照的载荷版本。
 ///
-/// 版本 2 起每条预约显式存储本场准备时长。客户端只写当前版本；读取时仍接受
-/// 版本 1，并按已文档化的默认值补齐后来新增的列（时间戳一律沿用已存值）。
-/// 服务端的写入口只接受当前版本：旧客户端上传会丢掉新列，必须被拒绝而不是
-/// 静默合并。
+/// 版本 2 是「自有日程表 + 每场预约显式准备时长」的并集：合并前 03 与 08
+/// 各自发布过一个只有一半的 v2，两者都不再被接受为完整 v2。客户端只写当前
+/// 版本；读取时仍接受版本 1，并按已文档化的默认值补齐后来新增的列（时间戳
+/// 一律沿用已存值，不重算进行中的预约）。服务端写入口只接受完整的当前版本：
+/// 旧客户端或残缺 v2 上传会丢掉另一方数据，必须被整体拒绝而不是静默合并。
 const int cloudSnapshotSchemaVersion = 2;
 
 /// 同一上传请求被用于不同内容（服务端 PT422）。自动上传必须停止并检查，
@@ -797,6 +800,15 @@ class CloudSnapshotRepository {
   /// exists; otherwise the restored source remains unselected.
   static const _calendarSourceExcluded = {'local_calendar_id', 'is_selected'};
 
+  /// Legacy envelope version still accepted on read.
+  ///
+  /// A version 1 payload (from an older client) is accepted only through an
+  /// explicit, validated conversion: documented missing columns are filled from
+  /// the stored values and its calendar blocks are promoted into owned schedule
+  /// copies before anything local is touched. Current writes always use
+  /// [cloudSnapshotSchemaVersion], which must carry both domains.
+  static const _legacySnapshotSchemaVersion = 1;
+
   /// Keep this table list explicit. It excludes per-device preferences,
   /// lifecycle state, device identity, and the legacy upload queue.
   static const _businessTables = <String>[
@@ -817,6 +829,7 @@ class CloudSnapshotRepository {
     'focus_sync_sources',
     'local_calendar_sources',
     'local_calendar_blocks',
+    'local_schedules',
   ];
 
   Future<CloudSnapshotMetadata?> inspectCloud() =>
@@ -1154,28 +1167,55 @@ class CloudSnapshotRepository {
     Map<String, dynamic> payload,
   ) async {
     final schemaVersion = payload['schemaVersion'];
-    if ((schemaVersion != 1 && schemaVersion != cloudSnapshotSchemaVersion) ||
-        payload['userId'] != userId) {
+    final isLegacy = schemaVersion == _legacySnapshotSchemaVersion;
+    if (schemaVersion != cloudSnapshotSchemaVersion && !isLegacy) {
+      throw StateError('云端快照版本不受支持：$schemaVersion。');
+    }
+    if (payload['userId'] != userId) {
       throw StateError('Snapshot version or user identity is invalid.');
     }
-    final isLegacyVersion = schemaVersion == 1;
     final sourceTables = payload['tables'];
     final rawTables = sourceTables is Map<String, dynamic>
         ? Map<String, dynamic>.from(sourceTables)
         : sourceTables;
-    if (payload['schemaVersion'] == 1 && rawTables is Map<String, dynamic>) {
+    if (rawTables is! Map<String, dynamic>) {
+      throw StateError('Snapshot table set is invalid.');
+    }
+    // Version 1 payloads predate the chain-signal table as well; the missing
+    // table means "no signals yet", not a malformed snapshot.
+    if (isLegacy) {
       rawTables.putIfAbsent('chain_signals', () => <dynamic>[]);
     }
-    if (rawTables is! Map<String, dynamic> ||
-        rawTables.keys.length != _businessTables.length ||
-        !_businessTables.every(rawTables.containsKey)) {
+    // 版本 2 是两个票据的并集，所以任何一半缺失的 v2 都是合并前生成的残缺
+    // 载荷：整体拒绝（在任何本地行被读写之前），绝不静默丢弃另一方数据。
+    if (!isLegacy) {
+      if (rawTables['local_schedules'] is! List) {
+        throw StateError('版本 2 快照缺少日程表，已整体拒绝；请先升级本机再上传。');
+      }
+      final appointmentRows = rawTables['focus_appointments'];
+      if (appointmentRows is List) {
+        for (final row in appointmentRows) {
+          if (row is Map && !row.containsKey('preparation_seconds')) {
+            throw StateError('版本 2 快照缺少预约准备时长，已整体拒绝；请先升级本机再上传。');
+          }
+        }
+      }
+    }
+    final expectedTables = isLegacy
+        ? [
+            for (final table in _businessTables)
+              if (table != 'local_schedules') table,
+          ]
+        : _businessTables;
+    if (rawTables.keys.length != expectedTables.length ||
+        !expectedTables.every(rawTables.containsKey)) {
       throw StateError('Snapshot table set is invalid.');
     }
     final registeredTables = database.allTables
         .map((table) => table.actualTableName)
         .toSet();
     final result = <String, List<Map<String, Object?>>>{};
-    for (final table in _businessTables) {
+    for (final table in expectedTables) {
       if (!registeredTables.contains(table)) {
         throw StateError('Snapshot table is not registered in Drift: $table');
       }
@@ -1195,7 +1235,7 @@ class CloudSnapshotRepository {
         if (item is! Map<String, dynamic>) {
           throw StateError('Invalid columns or user ownership in $table.');
         }
-        final sourceRow = isLegacyVersion
+        final sourceRow = isLegacy
             ? _withLegacyColumnDefaults(table, item, expectedColumns)
             : item;
         if (sourceRow.keys.length != expectedColumns.length ||
@@ -1224,6 +1264,13 @@ class CloudSnapshotRepository {
         rows.add(row);
       }
       result[table] = rows;
+    }
+    if (isLegacy) {
+      // Explicit legacy read: promote the old calendar-block projection into
+      // owned schedule copies inside a throwaway payload copy. The conversion
+      // happens before any local row is touched, so a rejected payload leaves
+      // the device exactly as it was.
+      result['local_schedules'] = await _promotedScheduleRows(result);
     }
     await _validateReferences(result);
     return result;
@@ -1254,6 +1301,94 @@ class CloudSnapshotRepository {
     if (additions.isEmpty) return row;
     return <String, dynamic>{...row, ...additions};
   }
+
+  /// Converts the calendar blocks of a version 1 payload into owned schedule
+  /// rows, keeping every source marker for later import deduplication.
+  Future<List<Map<String, Object?>>> _promotedScheduleRows(
+    Map<String, List<Map<String, Object?>>> tables,
+  ) async {
+    final sourceNames = {
+      for (final row in tables['local_calendar_sources']!)
+        if (row['source_id'] is String && row['display_name'] is String)
+          row['source_id'] as String: row['display_name'] as String,
+    };
+    final blocks = <LegacyCalendarBlockProjection>[];
+    DateTime? migratedAt;
+    for (final row in tables['local_calendar_blocks']!) {
+      final startsAt = _epochToDateTime(row['starts_at']);
+      final endsAt = _epochToDateTime(row['ends_at']);
+      final updatedAt = _epochToDateTime(row['updated_at']);
+      if (startsAt == null || endsAt == null || updatedAt == null) {
+        throw StateError('旧版日历块缺少有效时间，无法转换日程。');
+      }
+      blocks.add(
+        LegacyCalendarBlockProjection(
+          sourceId: row['source_id'] as String,
+          sourceEventId: row['source_event_id'] as String,
+          occurrenceId: row['occurrence_id'] as String,
+          eventIdentity: row['event_identity'] as String,
+          title: row['title'] as String,
+          startsAt: startsAt,
+          endsAt: endsAt,
+          allDay: row['all_day'] == 1,
+          allDayStartDate: row['all_day_start_date'] as String?,
+          allDayEndDateExclusive: row['all_day_end_date_exclusive'] as String?,
+        ),
+      );
+      if (migratedAt == null || updatedAt.isAfter(migratedAt)) {
+        migratedAt = updatedAt;
+      }
+    }
+    final promoted = projectLegacyCalendarBlocks(
+      blocks,
+      migratedAt: migratedAt ?? DateTime.utc(1970),
+      sourceNames: sourceNames,
+    );
+    final columns = (await _tableColumns('local_schedules')).toSet();
+    return [
+      for (final schedule in promoted) _promotedScheduleRow(schedule, columns),
+    ];
+  }
+
+  Map<String, Object?> _promotedScheduleRow(
+    PromotedSchedule schedule,
+    Set<String> columns,
+  ) {
+    final row = <String, Object?>{
+      'user_id': userId,
+      'id': schedule.id,
+      'title': schedule.title,
+      'notes': '',
+      'starts_at': _epochSeconds(schedule.startsAt),
+      'ends_at': _epochSeconds(schedule.endsAt),
+      'all_day': schedule.allDay ? 1 : 0,
+      'all_day_start_date': schedule.allDayStartDate,
+      'all_day_end_date_exclusive': schedule.allDayEndDateExclusive,
+      'is_completed': 0,
+      'completed_at': null,
+      'task_id': null,
+      'reminder_minutes_before': null,
+      'origin': ScheduleOrigin.legacyCalendarBlock.storageValue,
+      'source_ids': jsonEncode(schedule.sourceIds),
+      'source_names': jsonEncode(schedule.sourceNames),
+      'source_event_id': schedule.sourceEventId,
+      'occurrence_id': schedule.occurrenceId,
+      'event_identity': schedule.eventIdentity,
+      'created_at': _epochSeconds(schedule.createdAt),
+      'updated_at': _epochSeconds(schedule.updatedAt),
+    };
+    if (row.keys.length != columns.length || !columns.every(row.containsKey)) {
+      throw StateError('转换出的日程字段与本机日程表不一致。');
+    }
+    return row;
+  }
+
+  int _epochSeconds(DateTime value) =>
+      value.toUtc().millisecondsSinceEpoch ~/ 1000;
+
+  DateTime? _epochToDateTime(Object? value) => value is int
+      ? DateTime.fromMillisecondsSinceEpoch(value * 1000, isUtc: true)
+      : null;
 
   Future<Map<String, Map<String, Object?>>> _tableColumnInfo(
     String table,
@@ -1366,6 +1501,46 @@ class CloudSnapshotRepository {
       requireReference(
         sourceIds.contains(row['source_id']),
         'calendar source reference',
+      );
+    }
+    for (final row in tables['local_schedules']!) {
+      final taskId = row['task_id'];
+      if (taskId != null) {
+        requireReference(taskIds.contains(taskId), 'Schedule Task reference');
+      }
+      final title = row['title'];
+      requireReference(
+        title is String && title.trim().isNotEmpty,
+        'Schedule title',
+      );
+      final startsAt = row['starts_at'];
+      final endsAt = row['ends_at'];
+      requireReference(
+        startsAt is int && endsAt is int && endsAt > startsAt,
+        'Schedule time range',
+      );
+      if (row['all_day'] == 1) {
+        final startDate = row['all_day_start_date'];
+        final endDate = row['all_day_end_date_exclusive'];
+        requireReference(
+          startDate is String &&
+              endDate is String &&
+              endDate.compareTo(startDate) > 0,
+          'Schedule all-day range',
+        );
+      }
+      final reminder = row['reminder_minutes_before'];
+      if (reminder != null) {
+        requireReference(
+          reminder is int && reminder >= 0 && reminder <= 7 * 24 * 60,
+          'Schedule reminder offset',
+        );
+      }
+      final origin = row['origin'];
+      requireReference(
+        origin == ScheduleOrigin.owned.storageValue ||
+            origin == ScheduleOrigin.legacyCalendarBlock.storageValue,
+        'Schedule origin',
       );
     }
   }

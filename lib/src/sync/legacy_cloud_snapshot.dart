@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:drift/native.dart';
 
 import '../national_focus/national_focus_repository.dart';
+import '../schedules/schedule_migration.dart';
 import '../tasks/task_database.dart';
 import 'cloud_snapshot_repository.dart';
 
@@ -128,6 +129,17 @@ class LegacyCloudSnapshotConverter {
         }
       }
 
+      // 旧规范化云表导入的是“当前数据库 + 晚到的旧日历块”：本机升级早已发生，
+      // onUpgrade 不会再补日程。必须在旧投影恢复之后、抓取当前快照之前显式
+      // 原子提升一次，否则这份转换出来的快照会整块漏掉日程。
+      final migratedAt = await _latestCalendarBlockUpdate(database);
+      await database.transaction(() async {
+        await promoteLegacyCalendarBlocksInTransaction(
+          database,
+          migratedAt: migratedAt,
+        );
+      });
+
       return await CloudSnapshotRepository(
         database: database,
         remote: const UnavailableCloudSnapshotRemote(),
@@ -137,6 +149,19 @@ class LegacyCloudSnapshotConverter {
     } finally {
       await database.close();
     }
+  }
+
+  /// 提升使用旧日历块里最新的更新时间作为迁移时间：转换结果只取决于输入数据，
+  /// 因此重复转换得到同一份快照，而不是随运行时的墙上时钟漂移。
+  Future<DateTime> _latestCalendarBlockUpdate(PactaDatabase database) async {
+    final rows = await database.select(database.localCalendarBlocks).get();
+    DateTime? latest;
+    for (final row in rows) {
+      if (latest == null || row.updatedAt.isAfter(latest)) {
+        latest = row.updatedAt;
+      }
+    }
+    return latest ?? DateTime.utc(1970);
   }
 
   Map<String, List<Map<String, dynamic>>> _validateRecords(

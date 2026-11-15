@@ -1,12 +1,28 @@
--- 业务整份快照载荷版本 2：预约准备时长改为每条预约显式存储。
+-- 业务整份快照载荷版本 2（合并后的唯一完整形状）。
 --
--- 客户端从版本 2 起只写当前版本；服务端写入口同样只接受当前版本。旧客户端
--- （版本 1）上传会丢掉后来新增的列，必须被明确拒绝，而不是靠“未知字段容错”
--- 静默合并。读取侧保留版本 1：现存快照与历史备份继续可读、可恢复，客户端按
--- 已存时间戳补齐缺失列，不重算也不延后正在进行的预约。
+-- 版本 2 同时包含两个领域：自有日程表 local_schedules（票据 03）与每条预约
+-- 显式存储的 preparation_seconds（票据 08）。合并前两个票据各自只写过一半，
+-- 那两个残缺形状都不再被当作完整的版本 2 接受。
+--
+-- 写入口只接受完整的当前版本：
+-- * 全新上传的版本 1 一律拒绝（PT426）：旧客户端会丢掉后来新增的表与列。
+-- * 版本 2 但缺少 local_schedules、或任一预约行缺少 preparation_seconds 的
+--   残缺载荷同样拒绝（PT426）：补救动作与旧版本一致——先升级再上传。
+--   这两个判定都在任何写入之前完成，因此不会留下半份快照。
+-- * 请求台账重放仍是第一步：同一 request_id 且内容相同则返回它原本写入的
+--   版本；不同内容 PT422；历史已淘汰 PT425。升级前已经写入的旧请求只读
+--   重放，不被版本判定改写。
+--
+-- 读取侧保留版本 1：现存快照与历史备份继续可读、可恢复，客户端按已存时间戳
+-- 补齐缺失列，不重算也不延后正在进行的预约；委托读取
+-- （read_national_focus_mcp_metadata）同样把残缺版本 2 视为
+-- unsupported_snapshot。
 --
 -- 表约束与历史表都接受 1 和 2：现存行仍是版本 1，放宽约束只是让读写两侧各自
--- 承担自己的校验（写入口拒绝旧版本，读取入口兼容旧版本）。
+-- 承担自己的校验。
+--
+-- 其余行为保持不变：每用户 advisory lock、revision CAS（PT409）、旧令牌守卫、
+-- 历史落档与 15 个版本保留清扫、RLS 与函数授权。
 
 alter table public.cloud_business_snapshots
   drop constraint if exists cloud_business_snapshots_schema;
@@ -29,6 +45,10 @@ alter table public.cloud_business_snapshot_history
       false
     )
   );
+
+comment on constraint cloud_business_snapshots_schema
+  on public.cloud_business_snapshots is
+  'Accepts snapshot schema versions 1 and 2; version 2 carries the owned schedule table and per-appointment preparation seconds.';
 
 -- 写入口：结构与归属校验沿用原错误码，版本单独判定。
 -- 版本 1 使用独立错误码，便于旧客户端把它识别为“需要先升级”，而不是普通
@@ -124,6 +144,24 @@ begin
         using errcode = 'PT426';
     end if;
     raise exception 'invalid cloud business snapshot' using errcode = '22023';
+  end if;
+
+  -- 残缺版本 2：合并前两个客户端各自只写过一半，任一残缺载荷整体拒绝。
+  -- 判定在任何写入之前，因此不会留下半份快照；错误码沿用 PT426（补救动作
+  -- 同样是先升级再上传），消息区分缺日程表与缺准备时长两种情况。
+  if jsonb_typeof(p_payload -> 'tables' -> 'local_schedules') is distinct from 'array' then
+    raise exception 'snapshot payload version 2 is incomplete: owned schedules are missing; upgrade before uploading'
+      using errcode = 'PT426';
+  end if;
+  if jsonb_typeof(p_payload -> 'tables' -> 'focus_appointments') = 'array'
+    and exists (
+      select 1
+      from jsonb_array_elements(p_payload -> 'tables' -> 'focus_appointments') as appointment
+      where jsonb_typeof(appointment) = 'object'
+        and not jsonb_exists(appointment, 'preparation_seconds')
+    ) then
+    raise exception 'snapshot payload version 2 is incomplete: appointment preparation duration is missing; upgrade before uploading'
+      using errcode = 'PT426';
   end if;
 
   select snapshot.revision into current_revision
@@ -260,7 +298,10 @@ begin
     or s.payload ->> 'schemaVersion' is null
     or s.payload ->> 'schemaVersion' not in ('1', '2')
     or jsonb_typeof(s.payload -> 'tables') is distinct from 'object'
-    or s.payload ->> 'userId' is distinct from g.user_id::text then
+    or s.payload ->> 'userId' is distinct from g.user_id::text
+    -- 残缺版本 2 不是可分析的完整快照；版本 1 本来就没有日程表。
+    or (s.payload ->> 'schemaVersion' = '2'
+      and jsonb_typeof(s.payload -> 'tables' -> 'local_schedules') is distinct from 'array') then
     return jsonb_build_object('contract_version', 1, 'status', 'unsupported_snapshot',
       'revision', s.revision, 'source_device', null, 'uploaded_at', null,
       'recovery', 'Update Pacta and manually upload a whole-data snapshot.');
@@ -277,4 +318,4 @@ grant execute on function public.read_national_focus_mcp_metadata(text, bigint)
   to service_role;
 
 comment on table public.cloud_business_snapshots is
-  'One revisioned whole-account business-data snapshot per user; upload is compare-and-swap and only accepts the current payload schema version.';
+  'One revisioned whole-account business-data snapshot per user; upload is compare-and-swap and only accepts the complete current payload schema version (owned schedules plus per-appointment preparation seconds).';

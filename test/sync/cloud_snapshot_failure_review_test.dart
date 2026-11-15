@@ -155,6 +155,8 @@ void main() {
     final local = await repository.captureLocalState();
     final legacy = payloadCopy(local.payload);
     legacy['schemaVersion'] = 1;
+    // 真正的 v1 快照早于日程表：旧载荷没有 local_schedules 键。
+    (legacy['tables'] as Map<String, dynamic>).remove('local_schedules');
     final legacyRows = failureRowsOf(legacy);
     expect(legacyRows, isNotEmpty);
     for (final row in legacyRows) {
