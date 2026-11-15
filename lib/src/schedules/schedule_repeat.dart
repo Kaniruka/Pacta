@@ -55,6 +55,12 @@ const int recurrenceMaterializationHorizonDays = 90;
 /// 与按范围补齐都不会因为极端改期而退化成无界扫描。
 const int maxRecurrenceShiftDays = 3660;
 
+/// 提醒偏移的公开范围：开始前 0 分钟到 7 天，null 表示不提醒。
+///
+/// 普通日程与重复规则模板共用这一契约；重复实例从模板继承，规则模板不另设
+/// 一套配置。超出范围的写入整体拒绝，不静默夹到边界。
+const int maxScheduleReminderMinutesBefore = 7 * 24 * 60;
+
 const Map<int, String> weekdayLabels = {
   1: '一',
   2: '二',
@@ -86,6 +92,7 @@ class ScheduleRepeatRule {
     this.title = '',
     this.notes = '',
     this.taskId,
+    this.reminderMinutesBefore,
   }) : weekdays = Set.unmodifiable(weekdays) {
     if (!FocusTimeZones.contains(timeZoneId)) {
       throw ArgumentError('未知的时区：$timeZoneId');
@@ -154,6 +161,13 @@ class ScheduleRepeatRule {
   final String notes;
   final String? taskId;
 
+  /// 规则模板自带的提醒偏移（分钟）；null 表示不提醒。
+  ///
+  /// 懒展开的新实例继承该值；历史实例上的显式配置不被迁移改写。
+  final int? reminderMinutesBefore;
+
+  bool get hasReminder => reminderMinutesBefore != null;
+
   ScheduleRepeatRule copyWith({
     String? id,
     ScheduleRepeatFrequency? frequency,
@@ -171,6 +185,8 @@ class ScheduleRepeatRule {
     String? notes,
     String? taskId,
     bool clearTaskId = false,
+    int? reminderMinutesBefore,
+    bool clearReminder = false,
   }) => ScheduleRepeatRule(
     id: id ?? this.id,
     frequency: frequency ?? this.frequency,
@@ -186,6 +202,9 @@ class ScheduleRepeatRule {
     title: title ?? this.title,
     notes: notes ?? this.notes,
     taskId: clearTaskId ? null : (taskId ?? this.taskId),
+    reminderMinutesBefore: clearReminder
+        ? null
+        : (reminderMinutesBefore ?? this.reminderMinutesBefore),
   );
 
   @override
@@ -205,7 +224,8 @@ class ScheduleRepeatRule {
       other.shiftDays == shiftDays &&
       other.title == title &&
       other.notes == notes &&
-      other.taskId == taskId;
+      other.taskId == taskId &&
+      other.reminderMinutesBefore == reminderMinutesBefore;
 
   @override
   int get hashCode => Object.hash(
@@ -223,6 +243,7 @@ class ScheduleRepeatRule {
     title,
     notes,
     taskId,
+    reminderMinutesBefore,
   );
 
   @override
