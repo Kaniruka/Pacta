@@ -408,6 +408,9 @@ class _EmptyNationalFocusRepository implements NationalFocusRepository {
   Stream<List<NationalFocusCard>> watchLibraryCards() => Stream.value(const []);
 
   @override
+  Stream<List<NationalFocusFailure>> watchFailures() => Stream.value(const []);
+
+  @override
   Stream<NationalFocusReviewState> watchNationalFocusReviewState() =>
       Stream.value(const NationalFocusReviewState());
 

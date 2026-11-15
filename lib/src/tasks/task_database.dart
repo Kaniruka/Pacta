@@ -123,6 +123,10 @@ class LocalNationalFocusFailures extends Table {
   TextColumn get reviewDisposition =>
       text().withDefault(const Constant('accepted'))();
 
+  /// 回顾标记（ticket 11）。非空即已回顾；与 reviewDisposition 的
+  /// 裁定语义分开存储，任何一侧变化都不改写另一侧。
+  DateTimeColumn get reviewedAt => dateTime().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
 }
@@ -653,7 +657,7 @@ class PactaDatabase extends _$PactaDatabase {
   }
 
   @override
-  int get schemaVersion => 33;
+  int get schemaVersion => 35;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -850,8 +854,32 @@ class PactaDatabase extends _$PactaDatabase {
       // 33：重复日程（05）。32 预留给账号时区票据，因此这里同样按实际结构
       // 补缺，不依赖版本号区间：并行票据的中间版本可能已带上部分重复结构，
       // 已存在的表/列永远不重建，已存日程与实例永远不清空。
-      if (from < 33) {
+      //
+      // 集成分支的本地版本推进到 35（34 属于 ticket 11 的回顾列），所以从 34
+      // 升级的库也要走一遍重复结构补齐；最终合并方统一以 36 做完整对账。
+      if (from < 35) {
         await ensureRecurrenceSchema(this, m);
+      }
+      // 34：失败记录的回顾状态（ticket 11）。旧记录没有回顾概念，补列后
+      // 保持 null（未回顾），由看板提示用户逐组回顾；不改写失败结果、
+      // 结算统计与冻结要求。
+      //
+      // 迁移守卫：只在旧库确实已有失败表且缺这一列时补列。合成/局部旧库
+      // 可能没有失败表（由后续 createTable 或历史版本负责），重复升级或
+      // 回拨 user_version 的库也不会重复加列。
+      if (from >= 14 && from < 34) {
+        final failureColumns = await customSelect(
+          'PRAGMA table_info(local_national_focus_failures)',
+        ).get();
+        final hasReviewedAt = failureColumns.any(
+          (row) => row.read<String>('name') == 'reviewed_at',
+        );
+        if (failureColumns.isNotEmpty && !hasReviewedAt) {
+          await m.addColumn(
+            localNationalFocusFailures,
+            localNationalFocusFailures.reviewedAt,
+          );
+        }
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);

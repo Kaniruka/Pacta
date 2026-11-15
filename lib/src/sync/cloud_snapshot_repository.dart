@@ -1337,6 +1337,9 @@ class CloudSnapshotRepository {
   }) {
     final defaults = <String, Object?>{
       if (isLegacy) ...?_legacySnapshotColumnDefaults[table],
+      // ticket 11：回顾字段晚于完整的 core 2。v1/v2 载荷缺这一列都表示未回顾，
+      // 已写入的值原样保留（只补缺失键），随后仍要过完整类型校验。
+      if (table == 'local_national_focus_failures') 'reviewed_at': null,
       if (table == 'local_schedules') ..._recurrenceColumnDefaults,
     };
     if (defaults.isEmpty) return row;

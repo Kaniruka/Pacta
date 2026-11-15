@@ -251,6 +251,7 @@ class NationalFocusFailure {
     required this.sharedExplanation,
     required this.treeSnapshot,
     this.isPendingReview = false,
+    this.reviewedAt,
   });
 
   final String id;
@@ -261,7 +262,19 @@ class NationalFocusFailure {
   final String? failureReason;
   final String? sharedExplanation;
   final List<NationalFocusCardSnapshot> treeSnapshot;
+
+  /// 既有裁定字段（reviewDisposition）的投影：这组记录是否等待核对。
+  /// 与回顾状态是两个独立概念，互不改写。
   final bool isPendingReview;
+
+  /// 回顾标记的持久时间戳；`null` 表示这条失败记录还没有被回顾。
+  final DateTime? reviewedAt;
+
+  /// 失败记录是否已被回顾，看板据此撤下未回顾提示。
+  bool get isReviewed => reviewedAt != null;
+
+  /// 是否仍待回顾；与 [isPendingReview] 的裁定含义无关。
+  bool get needsReflection => reviewedAt == null;
 }
 
 enum NationalFocusClockChangeDirection { forward, backward }
