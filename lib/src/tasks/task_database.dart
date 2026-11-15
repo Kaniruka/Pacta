@@ -1162,6 +1162,7 @@ Future<void> _backfillRuleTemplates(PactaDatabase database) async {
           notes
         ),
         task_id = coalesce(
+          nullif(task_id, ''),
           (
             SELECT instance.task_id FROM local_schedules AS instance
             WHERE instance.user_id = local_schedule_recurrences.user_id

@@ -9,6 +9,7 @@ import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/profile/profile_repository.dart';
 import 'package:pacta/src/schedules/schedule_models.dart';
+import 'package:pacta/src/schedules/schedule_repeat.dart';
 import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/sync/cloud_snapshot_history.dart';
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
@@ -160,6 +161,24 @@ void main() {
           expect(reopened['goal-a']!.sortOrder, 1);
           expect(reopened['goal-deleted']!.isPinned, isTrue);
           expect(reopened['goal-deleted']!.sortOrder, 0);
+        }
+        if (shape.hadTable('local_schedule_recurrences')) {
+          final reopenedRules = <String, ScheduleRepeatRule>{
+            for (final rule in await LocalScheduleRepository(
+              database: database,
+              userId: 'user-a',
+            ).getRecurrenceRules())
+              rule.id: rule,
+          };
+          // Reopening neither re-backfills nor re-links the rule rows: the rule
+          // keeps its own link and the instance-seeded one stays put.
+          expect(
+            reopenedRules['rule-notes-a']!.taskId,
+            shape.hadColumn('local_schedule_recurrences', 'task_id')
+                ? 'task-rule-a'
+                : 'task-a',
+          );
+          expect(reopenedRules['rule-fresh-a']!.taskId, 'task-a');
         }
         if (!shape.hadTable('local_schedules')) {
           final schedules = await LocalScheduleRepository(
@@ -414,12 +433,20 @@ Future<void> _expectRetention(
   final deletedGoal = goalsById['goal-deleted']!;
   expect(activeGoal.title, '目标a');
   expect(activeGoal.description, '描述a');
-  expect(activeGoal.tasks.single.id, 'task-a');
-  expect(activeGoal.tasks.single.description, '任务说明a');
-  expect(activeGoal.tasks.single.estimatedMinutes, 45);
-  expect(activeGoal.tasks.single.deadline, isNotNull);
-  expect(activeGoal.tasks.single.focusProgressSeconds, 120);
-  expect(activeGoal.tasks.single.isComplete, isTrue);
+  // Two real tasks under one owner: the rule keeps its own link to `task-rule-a`
+  // while the competing instance links to `task-a`.
+  final linkedTask = activeGoal.tasks.singleWhere(
+    (task) => task.id == 'task-a',
+  );
+  final ruleTask = activeGoal.tasks.singleWhere(
+    (task) => task.id == 'task-rule-a',
+  );
+  expect(linkedTask.description, '任务说明a');
+  expect(linkedTask.estimatedMinutes, 45);
+  expect(linkedTask.deadline, isNotNull);
+  expect(linkedTask.focusProgressSeconds, 120);
+  expect(linkedTask.isComplete, isTrue);
+  expect(ruleTask.title, '规则任务a');
   expect(deletedGoal.deletedAt, isNotNull);
 
   // Two real predecessors (b9b9b38 schema 35, 51a5af7 schema 37) already carry
@@ -539,7 +566,8 @@ Future<void> _expectRetention(
         shape.hadColumn('local_schedule_recurrences', 'shift_days') ? 3 : 0,
       );
       // The backfill fills an empty title, but a rule's own notes/task link stay:
-      // the competing instance must not overwrite them.
+      // the competing instance links to a different real task ('task-a') and must
+      // not overwrite the rule's own link ('task-rule-a').
       final notesRule = rules.singleWhere((rule) => rule.id == 'rule-notes-a');
       final hadNotesColumn = shape.hadColumn(
         'local_schedule_recurrences',
@@ -551,7 +579,9 @@ Future<void> _expectRetention(
       );
       expect(notesRule.title, '实例标题a');
       expect(notesRule.notes, hadNotesColumn ? '规则自有备注a' : '实例别的备注a');
-      expect(notesRule.taskId, hadTaskColumn ? 'task-a' : isNull);
+      // Shapes that already carried the link keep it; shapes that only gained the
+      // column take the earliest visible instance's real link.
+      expect(notesRule.taskId, hadTaskColumn ? 'task-rule-a' : 'task-a');
       final ruleRows = _rows(capture, 'local_schedule_recurrences');
       expect(
         ruleRows.singleWhere(
@@ -644,6 +674,24 @@ Future<void> _expectRetention(
     userId: 'user-b',
   ).getProfile();
   expect(otherProfile.displayName, '用户b');
+  if (shape.hadTable('local_schedule_recurrences')) {
+    final otherRules = <String, ScheduleRepeatRule>{
+      for (final rule in await LocalScheduleRepository(
+        database: database,
+        userId: 'user-b',
+      ).getRecurrenceRules())
+        rule.id: rule,
+    };
+    // The other owner keeps its own links; an upgrade of user-a's rows never
+    // rewrites them with a link from a different owner.
+    expect(
+      otherRules['rule-notes-b']!.taskId,
+      shape.hadColumn('local_schedule_recurrences', 'task_id')
+          ? 'task-rule-b'
+          : 'task-b',
+    );
+    expect(otherRules['rule-fresh-b']!.taskId, 'task-b');
+  }
   final captureA = await _capture(database, 'user-a');
   for (final table in <String>[
     'local_goals',

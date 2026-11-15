@@ -579,6 +579,24 @@ Future<void> _seed(PactaDatabase database, PredecessorShape shape) async {
       'updated_at': _epoch(updatedAt),
       'deleted_at': null,
     });
+    // A second real task for the same owner. The rule keeps its own link to it
+    // while the competing instance links to `task-a`, so both sides of the
+    // overwrite carry live rows instead of a dangling id.
+    await insert('local_tasks', <String, Object?>{
+      'user_id': user,
+      'id': 'task-rule-$suffix',
+      'goal_id': 'goal-$suffix',
+      'title': '规则任务$suffix',
+      'description': '规则任务说明$suffix',
+      'classification': 'regular',
+      'estimated_minutes': 30,
+      'deadline': _epoch(startsAt),
+      'is_complete': 0,
+      'focus_progress_seconds': 0,
+      'created_at': _epoch(createdAt),
+      'updated_at': _epoch(updatedAt),
+      'deleted_at': null,
+    });
     await insert('focus_appointments', <String, Object?>{
       'user_id': user,
       'id': 'appointment-$suffix',
@@ -755,7 +773,11 @@ Future<void> _seed(PactaDatabase database, PredecessorShape shape) async {
           'all_day_end_date_exclusive': null,
           'is_completed': 0,
           'completed_at': null,
-          'task_id': id.contains('series') ? 'task-$suffix' : null,
+          // The rewritten exception and the cancelled tombstone keep genuine
+          // links to a real task, yet neither may seed the rule template.
+          'task_id': id.contains('series')
+              ? 'task-$suffix'
+              : 'task-rule-$suffix',
           'reminder_minutes_before': id.contains('series') ? 5 : null,
           'origin': 'owned',
           'source_ids': '[]',
@@ -806,7 +828,8 @@ Future<void> _seed(PactaDatabase database, PredecessorShape shape) async {
       'updated_at': _epoch(updatedAt),
     });
     // rule-notes keeps an empty title (so it is eligible for backfill) but its own
-    // non-empty notes and task link must not be replaced by the instance values.
+    // non-empty notes and task link must not be replaced by the instance values:
+    // the instance below links to 'task-a' while the rule keeps 'task-rule-a'.
     await insert('local_schedule_recurrences', <String, Object?>{
       'user_id': user,
       'id': 'rule-notes-$suffix',
@@ -822,7 +845,7 @@ Future<void> _seed(PactaDatabase database, PredecessorShape shape) async {
       'shift_days': 0,
       'title': '',
       'notes': '规则自有备注$suffix',
-      'task_id': 'task-$suffix',
+      'task_id': 'task-rule-$suffix',
       'reminder_minutes_before': null,
       'created_at': _epoch(createdAt),
       'updated_at': _epoch(updatedAt),
@@ -839,7 +862,7 @@ Future<void> _seed(PactaDatabase database, PredecessorShape shape) async {
       'all_day_end_date_exclusive': null,
       'is_completed': 0,
       'completed_at': null,
-      'task_id': null,
+      'task_id': 'task-$suffix',
       'reminder_minutes_before': null,
       'origin': 'owned',
       'source_ids': '[]',
