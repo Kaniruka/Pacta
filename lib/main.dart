@@ -186,6 +186,7 @@ class PactaApp extends StatelessWidget {
     this.userLifecycleRepositoryFactory,
     this.cloudSnapshotRepositoryFactory,
     this.cloudCheckClock = DateTime.now,
+    this.displayClock = DateTime.now,
     this.chainSignalsRepositoryFactory,
     this.profileRepositoryFactory,
   });
@@ -199,6 +200,10 @@ class PactaApp extends StatelessWidget {
   chainSignalsRepositoryFactory;
 
   final DateTime Function() cloudCheckClock;
+
+  /// Wall clock used by countdown surfaces; tests pass the same mutable clock
+  /// as their repository so display and persistence agree.
+  final DateTime Function() displayClock;
 
   final AuthRepository authRepository;
   final String? nationalFocusMcpUrl;
@@ -219,6 +224,7 @@ class PactaApp extends StatelessWidget {
     return ProviderScope(
       overrides: [
         cloudCheckClockProvider.overrideWithValue(cloudCheckClock),
+        displayClockProvider.overrideWithValue(displayClock),
         chainSignalsRepositoryFactoryProvider.overrideWithValue(
           chainSignalsRepositoryFactory,
         ),
@@ -370,6 +376,12 @@ final cloudSnapshotRepositoryProvider =
     });
 
 final cloudCheckClockProvider = Provider<DateTime Function()>(
+  (ref) => DateTime.now,
+);
+
+/// Wall clock used by countdown surfaces. Production defaults to the system
+/// clock; tests override it with the same mutable clock as their repository.
+final displayClockProvider = Provider<DateTime Function()>(
   (ref) => DateTime.now,
 );
 final cloudVersionCheckProvider = Provider.autoDispose<CloudVersionCheck?>((
@@ -4304,7 +4316,7 @@ class _AppointmentPreparationPageState
   @override
   Widget build(BuildContext context) {
     final appointment = _current ?? widget.appointment;
-    final now = DateTime.now().toUtc();
+    final now = ref.watch(displayClockProvider)().toUtc();
     final preparationSeconds = appointment.effectivePreparationSeconds;
     final remainingSeconds = appointment.isActive
         ? appointment.endsAt
@@ -4714,7 +4726,7 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
   @override
   Widget build(BuildContext context) {
     final session = _current ?? widget.session;
-    final now = DateTime.now().toUtc();
+    final now = ref.watch(displayClockProvider)().toUtc();
     final reference = session.isPaused ? (session.pausedAt ?? now) : now;
     final remaining = session.endsAt.difference(reference);
     final remainingSeconds = remaining.inSeconds.clamp(
