@@ -14,6 +14,9 @@
 -- * 重复规则的星期集合按客户端真实形状校验：它是 TEXT 列里的 JSON 文本
 --   （例如 "[1]"），解析成数组后逐项检查；坏 JSON、非数组、非整数、越界或
 --   重复的星期都让整份载荷被拒绝，而不是放宽类型让带病数据落库。
+-- * 重复规则的星期集合按客户端真实形状校验：它是 TEXT 列里的 JSON 文本
+--   （例如 "[1]"），解析成数组后逐项检查；坏 JSON、非数组、非整数、越界或
+--   重复的星期都让整份载荷被拒绝，而不是放宽类型让带病数据落库。
 -- * 请求台账重放仍是第一步：同一 request_id 且内容相同则返回它原本写入的
 --   版本；不同内容 PT422；历史已被淘汰 PT425。升级前已写入的旧请求只读重放，
 --   不被版本判定改写。
@@ -101,6 +104,68 @@ begin
 end;
 $$;
 revoke all on function public.cloud_snapshot_weekday_values(jsonb)
+  from public, anon, authenticated;
+
+-- 严格日历日：只接受客户端写出的 YYYY-MM-DD 文本，且必须是真实存在的日期。
+-- 用异常兜底把非法月/日/年变成 NULL；函数绝不把 22008 之类的原始错误码抛给
+-- 调用方，否则客户端收到的就不是协议里的 PT426。
+create or replace function public.cloud_snapshot_calendar_date(p_value text)
+returns date
+language plpgsql
+immutable
+set search_path = pg_catalog
+as $$
+declare
+  parsed date;
+begin
+  if p_value is null or p_value !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then
+    return null;
+  end if;
+  begin
+    parsed := p_value::date;
+  exception
+    when others then
+      return null;
+  end;
+  if to_char(parsed, 'YYYY-MM-DD') <> p_value then
+    return null;
+  end if;
+  return parsed;
+end;
+$$;
+revoke all on function public.cloud_snapshot_calendar_date(text)
+  from public, anon, authenticated;
+
+-- JSON 整数的区间校验：只接受十进制整数文本（最多 18 位有效数字）。
+-- "1.0"/"1e9"/超大数等形状一律 false，避免 ::int 越界时抛 22003。
+create or replace function public.cloud_snapshot_integer_between(
+  p_value jsonb,
+  p_min numeric,
+  p_max numeric
+) returns boolean
+language plpgsql
+immutable
+set search_path = pg_catalog
+as $$
+declare
+  raw text;
+begin
+  if p_value is null or jsonb_typeof(p_value) is distinct from 'number' then
+    return false;
+  end if;
+  raw := p_value #>> '{}';
+  if raw is null or raw !~ '^-?[0-9]{1,18}$' then
+    return false;
+  end if;
+  begin
+    return raw::numeric between p_min and p_max;
+  exception
+    when others then
+      return false;
+  end;
+end;
+$$;
+revoke all on function public.cloud_snapshot_integer_between(jsonb, numeric, numeric)
   from public, anon, authenticated;
 
 -- 写入口：结构与归属校验沿用原错误码，版本单独判定。
@@ -261,34 +326,28 @@ begin
       )
       and jsonb_typeof(rule -> 'time_zone_id') = 'string'
       and (rule ->> 'time_zone_id') in (select name from pg_timezone_names)
-      and jsonb_typeof(rule -> 'all_day') = 'number'
-      and rule ->> 'all_day' in ('0', '1')
-      and jsonb_typeof(rule -> 'start_minutes_of_day') = 'number'
-      and (rule ->> 'start_minutes_of_day')::int between 0 and 1439
-      and jsonb_typeof(rule -> 'duration_minutes') = 'number'
-      and (rule ->> 'duration_minutes')::int >= 1
-      and jsonb_typeof(rule -> 'day_span') = 'number'
-      and (rule ->> 'day_span')::int >= 1
-      and jsonb_typeof(rule -> 'shift_days') = 'number'
-      and (rule ->> 'shift_days')::numeric = trunc((rule ->> 'shift_days')::numeric)
-      and (rule ->> 'shift_days')::int between -3660 and 3660
+      and public.cloud_snapshot_integer_between(rule -> 'all_day', 0, 1)
+      and public.cloud_snapshot_integer_between(
+        rule -> 'start_minutes_of_day', 0, 1439)
+      and public.cloud_snapshot_integer_between(
+        rule -> 'duration_minutes', 1, 2147483647)
+      and public.cloud_snapshot_integer_between(rule -> 'day_span', 1, 2147483647)
+      and public.cloud_snapshot_integer_between(
+        rule -> 'shift_days', -3660, 3660)
       and jsonb_typeof(rule -> 'title') = 'string'
       and btrim(rule ->> 'title') <> ''
       and jsonb_typeof(rule -> 'notes') = 'string'
       and jsonb_typeof(rule -> 'task_id') in ('string', 'null')
       and (rule ->> 'task_id' is null or btrim(rule ->> 'task_id') <> '')
       and jsonb_typeof(rule -> 'first_date') = 'string'
-      and (rule ->> 'first_date') ~ '^\d{4}-\d{2}-\d{2}$'
-      and to_char(to_date(rule ->> 'first_date', 'YYYY-MM-DD'), 'YYYY-MM-DD')
-        = (rule ->> 'first_date')
+      and public.cloud_snapshot_calendar_date(rule ->> 'first_date') is not null
       and jsonb_typeof(rule -> 'end_date') in ('string', 'null')
       and (
         rule ->> 'end_date' is null
         or (
-          (rule ->> 'end_date') ~ '^\d{4}-\d{2}-\d{2}$'
-          and to_char(to_date(rule ->> 'end_date', 'YYYY-MM-DD'), 'YYYY-MM-DD')
-            = (rule ->> 'end_date')
-          and (rule ->> 'end_date') >= (rule ->> 'first_date')
+          public.cloud_snapshot_calendar_date(rule ->> 'end_date') is not null
+          and public.cloud_snapshot_calendar_date(rule ->> 'end_date')
+            >= public.cloud_snapshot_calendar_date(rule ->> 'first_date')
         )
       )
       and jsonb_typeof(rule -> 'created_at') = 'number'
@@ -323,6 +382,10 @@ begin
           and jsonb_typeof(instance -> 'recurrence_date') = 'null'
           and jsonb_typeof(instance -> 'recurrence_time_zone_id') = 'null'
           and jsonb_typeof(instance -> 'recurrence_start_minutes') = 'null'
+          and public.cloud_snapshot_integer_between(
+            instance -> 'is_recurrence_exception', 0, 1)
+          and public.cloud_snapshot_integer_between(
+            instance -> 'is_recurrence_cancelled', 0, 1)
           and instance ->> 'is_recurrence_exception' = '0'
           and instance ->> 'is_recurrence_cancelled' = '0'
         )
@@ -332,22 +395,20 @@ begin
           and jsonb_typeof(instance -> 'recurrence_series_id') = 'string'
           and btrim(instance ->> 'recurrence_series_id') <> ''
           and jsonb_typeof(instance -> 'recurrence_date') = 'string'
-          and (instance ->> 'recurrence_date') ~ '^\d{4}-\d{2}-\d{2}$'
-          and to_char(
-            to_date(instance ->> 'recurrence_date', 'YYYY-MM-DD'),
-            'YYYY-MM-DD'
-          ) = (instance ->> 'recurrence_date')
+          and public.cloud_snapshot_calendar_date(
+            instance ->> 'recurrence_date') is not null
           and jsonb_typeof(instance -> 'recurrence_time_zone_id') = 'string'
           and (instance ->> 'recurrence_time_zone_id')
             in (select name from pg_timezone_names)
-          and jsonb_typeof(instance -> 'recurrence_start_minutes')
-            in ('number', 'null')
           and (
-            instance ->> 'recurrence_start_minutes' is null
-            or (instance ->> 'recurrence_start_minutes')::int between 0 and 1439
+            jsonb_typeof(instance -> 'recurrence_start_minutes') = 'null'
+            or public.cloud_snapshot_integer_between(
+              instance -> 'recurrence_start_minutes', 0, 1439)
           )
-          and instance ->> 'is_recurrence_exception' in ('0', '1')
-          and instance ->> 'is_recurrence_cancelled' in ('0', '1')
+          and public.cloud_snapshot_integer_between(
+            instance -> 'is_recurrence_exception', 0, 1)
+          and public.cloud_snapshot_integer_between(
+            instance -> 'is_recurrence_cancelled', 0, 1)
           and exists (
             select 1
             from jsonb_array_elements(
