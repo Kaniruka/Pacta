@@ -1122,6 +1122,10 @@ Future<void> ensureRecurrenceSchema(
 }
 
 Future<void> _backfillRuleTemplates(PactaDatabase database) async {
+  // 候选实例必须是这一条规则里仍然可见的那一期："仅本次"例外有自己的改写内容，
+  // 单期删除的墓碑只剩占位行，两者都不能变成整条规则的默认内容，否则升级后新生
+  // 成的实例会带上一期的改写或已删除标题。最早的非例外实例是规则内容的唯一来
+  // 源；只有整条规则只剩例外时，才退回到任意一期，并且优先取未取消的那一期。
   await database.customStatement('''
     UPDATE local_schedule_recurrences
     SET title = coalesce(
@@ -1131,25 +1135,28 @@ Future<void> _backfillRuleTemplates(PactaDatabase database) async {
             WHERE instance.user_id = local_schedule_recurrences.user_id
               AND instance.recurrence_id = local_schedule_recurrences.id
               AND instance.is_recurrence_exception = 0
-            ORDER BY instance.starts_at
+              AND instance.is_recurrence_cancelled = 0
+            ORDER BY instance.starts_at, instance.id
             LIMIT 1
           ),
           (
             SELECT instance.title FROM local_schedules AS instance
             WHERE instance.user_id = local_schedule_recurrences.user_id
               AND instance.recurrence_id = local_schedule_recurrences.id
-            ORDER BY instance.starts_at
+            ORDER BY instance.is_recurrence_cancelled, instance.starts_at, instance.id
             LIMIT 1
           ),
           title
         ),
         notes = coalesce(
+          nullif(notes, ''),
           (
             SELECT instance.notes FROM local_schedules AS instance
             WHERE instance.user_id = local_schedule_recurrences.user_id
               AND instance.recurrence_id = local_schedule_recurrences.id
               AND instance.is_recurrence_exception = 0
-            ORDER BY instance.starts_at
+              AND instance.is_recurrence_cancelled = 0
+            ORDER BY instance.starts_at, instance.id
             LIMIT 1
           ),
           notes
@@ -1160,7 +1167,8 @@ Future<void> _backfillRuleTemplates(PactaDatabase database) async {
             WHERE instance.user_id = local_schedule_recurrences.user_id
               AND instance.recurrence_id = local_schedule_recurrences.id
               AND instance.is_recurrence_exception = 0
-            ORDER BY instance.starts_at
+              AND instance.is_recurrence_cancelled = 0
+            ORDER BY instance.starts_at, instance.id
             LIMIT 1
           ),
           task_id
