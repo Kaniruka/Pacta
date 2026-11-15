@@ -1362,7 +1362,12 @@ class _PlanPageState extends ConsumerState<PlanPage> {
             if (_view == _PlanView.goals)
               ..._buildGoals(context, taskRepository, goals)
             else
-              _buildCalendar(context, scheduleRepository, goals),
+              _buildCalendar(
+                context,
+                taskRepository,
+                scheduleRepository,
+                goals,
+              ),
           ],
         );
       },
@@ -1483,21 +1488,40 @@ class _PlanPageState extends ConsumerState<PlanPage> {
     );
   }
 
+  /// 日历要能读出"已删除的任务"名称：按普通目标列表变化时刷新一次带墓碑的读取。
+  List<Goal>? _calendarGoalsSource;
+  Future<List<Goal>>? _calendarGoalsFuture;
+
+  Future<List<Goal>> _calendarGoals(
+    TaskRepository repository,
+    List<Goal> goals,
+  ) {
+    if (!identical(_calendarGoalsSource, goals)) {
+      _calendarGoalsSource = goals;
+      _calendarGoalsFuture = repository.getGoals(includeDeleted: true);
+    }
+    return _calendarGoalsFuture!;
+  }
+
   Widget _buildCalendar(
     BuildContext context,
+    TaskRepository taskRepository,
     ScheduleRepository scheduleRepository,
     List<Goal> goals,
   ) {
-    return FutureBuilder<String>(
-      future: _displayTimeZoneId,
-      builder: (context, zoneSnapshot) {
-        // 先按 UTC 呈现，账号时区到达后重建：日历不进入永久加载态。
-        return PlanCalendarView(
-          repository: scheduleRepository,
-          goals: goals,
-          displayTimeZoneId: zoneSnapshot.data ?? 'Etc/UTC',
-        );
-      },
+    return FutureBuilder<List<Goal>>(
+      future: _calendarGoals(taskRepository, goals),
+      builder: (context, goalSnapshot) => FutureBuilder<String>(
+        future: _displayTimeZoneId,
+        builder: (context, zoneSnapshot) {
+          // 先按 UTC 呈现，账号时区到达后重建：日历不进入永久加载态。
+          return PlanCalendarView(
+            repository: scheduleRepository,
+            goals: goalSnapshot.data ?? goals,
+            displayTimeZoneId: zoneSnapshot.data ?? 'Etc/UTC',
+          );
+        },
+      ),
     );
   }
 

@@ -185,7 +185,11 @@ class LocalScheduleRepository implements ScheduleRepository {
     await lifecycleAccess.requireActive();
     final existing = await _findSchedule(scheduleId);
     final window = _validateWindow(draft.window);
-    final taskId = await _requiredTaskId(draft.taskId);
+    // 原关联任务若已被删除（墓碑），未改动就保留链接身份；改指新任务仍要求
+    // 目标存在且未删除，因此不会出现"新建链接到已删除任务"。
+    final taskId = draft.taskId == existing.taskId
+        ? existing.taskId
+        : await _requiredTaskId(draft.taskId);
     final updated = _replaceFields(
       existing,
       title: _requiredTitle(draft.title),

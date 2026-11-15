@@ -290,7 +290,9 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     if (taskId == null) return null;
     for (final goal in widget.goals) {
       for (final task in goal.tasks) {
-        if (task.id == taskId) return task.title;
+        if (task.id != taskId) continue;
+        // 任务被删除（墓碑）时链接仍然保留：用可读名称说明它已删除。
+        return task.isDeleted ? '已删除的任务：${task.title}' : task.title;
       }
     }
     return '已删除的任务';
@@ -518,6 +520,118 @@ class ScheduleEditorResult {
   final int? reminderMinutesBefore;
 }
 
+/// 编辑器与改期对话框共用的日历边界。
+///
+/// 全部是**显示时区**里的公历日期：全天用 allDay 的起止日期原值，定时用
+/// 开始/结束在显示时区的当地日期。全程不经过 UTC 反推，负时区的全天安排
+/// 因此不会被挪到前一天，多天安排也不会被压回一天。
+class ScheduleCalendarBounds {
+  const ScheduleCalendarBounds({
+    required this.allDay,
+    required this.startDay,
+    required this.endDay,
+    required this.start,
+    required this.end,
+  });
+
+  final bool allDay;
+  final DateTime startDay;
+  final DateTime endDay;
+  final TimeOfDay start;
+  final TimeOfDay end;
+}
+
+DateTime _dateOnly(DateTime value) =>
+    DateTime(value.year, value.month, value.day);
+
+String _civilDateText(DateTime day) =>
+    '${day.year.toString().padLeft(4, '0')}-'
+    '${day.month.toString().padLeft(2, '0')}-'
+    '${day.day.toString().padLeft(2, '0')}';
+
+DateTime _localToUtc(
+  timezone.Location location,
+  DateTime day,
+  TimeOfDay time,
+) => timezone.TZDateTime(
+  location,
+  day.year,
+  day.month,
+  day.day,
+  time.hour,
+  time.minute,
+).toUtc();
+
+/// 从既有安排还原编辑器状态：全天读 allDay 的公历日期，定时读当地日期。
+ScheduleCalendarBounds scheduleCalendarBounds(
+  Schedule schedule,
+  String displayTimeZoneId,
+) {
+  if (schedule.allDay) {
+    final startDate = schedule.allDayStartDate;
+    final endDate = schedule.allDayEndDateExclusive;
+    if (startDate == null || endDate == null) {
+      throw StateError('全天安排缺少日期范围。');
+    }
+    return ScheduleCalendarBounds(
+      allDay: true,
+      startDay: _dateOnly(DateTime.parse(startDate)),
+      endDay: _dateOnly(DateTime.parse(endDate)),
+      start: const TimeOfDay(hour: 0, minute: 0),
+      end: const TimeOfDay(hour: 0, minute: 0),
+    );
+  }
+  final location = FocusTimeZones.location(displayTimeZoneId);
+  final start = timezone.TZDateTime.from(schedule.startsAt.toUtc(), location);
+  final end = timezone.TZDateTime.from(schedule.endsAt.toUtc(), location);
+  return ScheduleCalendarBounds(
+    allDay: false,
+    startDay: _dateOnly(start),
+    endDay: _dateOnly(end),
+    start: TimeOfDay(hour: start.hour, minute: start.minute),
+    end: TimeOfDay(hour: end.hour, minute: end.minute),
+  );
+}
+
+/// 由日历边界构造窗口。
+///
+/// 全天只用公历日期；定时在显示时区里把「日期 + 时刻」换成 UTC。结束不晚于
+/// 开始时：同一天按**当地日历日**推进一天（不是 UTC +24h，夏令时切换才不会
+/// 差一小时），跨天则视为无效输入。
+ScheduleWindow buildScheduleWindow({
+  required String displayTimeZoneId,
+  required ScheduleCalendarBounds bounds,
+}) {
+  if (bounds.allDay) {
+    if (!bounds.endDay.isAfter(bounds.startDay)) {
+      throw ArgumentError('全天安排的结束日期必须晚于开始日期。');
+    }
+    return ScheduleWindow.allDayDates(
+      startDate: _civilDateText(bounds.startDay),
+      endDateExclusive: _civilDateText(bounds.endDay),
+    );
+  }
+  final location = FocusTimeZones.location(displayTimeZoneId);
+  final startUtc = _localToUtc(location, bounds.startDay, bounds.start);
+  var endUtc = _localToUtc(location, bounds.endDay, bounds.end);
+  if (!endUtc.isAfter(startUtc)) {
+    final sameDay =
+        bounds.endDay.year == bounds.startDay.year &&
+        bounds.endDay.month == bounds.startDay.month &&
+        bounds.endDay.day == bounds.startDay.day;
+    if (!sameDay) {
+      throw ArgumentError('结束必须晚于开始。');
+    }
+    final nextDay = DateTime(
+      bounds.startDay.year,
+      bounds.startDay.month,
+      bounds.startDay.day + 1,
+    );
+    endUtc = _localToUtc(location, nextDay, bounds.end);
+  }
+  return ScheduleWindow.timed(startsAt: startUtc, endsAt: endUtc);
+}
+
 Future<ScheduleEditorResult?> showScheduleEditor(
   BuildContext context, {
   required List<Goal> goals,
@@ -562,13 +676,11 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
   late final TextEditingController _notes;
   late bool _allDay;
   late DateTime _day;
+  late DateTime _endDay;
   late TimeOfDay _start;
   late TimeOfDay _end;
   String? _taskId;
   int? _reminderMinutesBefore;
-
-  timezone.Location get _location =>
-      FocusTimeZones.location(widget.displayTimeZoneId);
 
   @override
   void initState() {
@@ -580,23 +692,20 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
     _reminderMinutesBefore = initial?.reminderMinutesBefore;
     if (initial == null) {
       _allDay = false;
-      _day = widget.initialDay;
+      _day = _dateOnly(widget.initialDay);
+      _endDay = _day;
       _start = const TimeOfDay(hour: 9, minute: 0);
       _end = const TimeOfDay(hour: 10, minute: 0);
       return;
     }
-    _allDay = initial.allDay;
-    final startLocal = timezone.TZDateTime.from(
-      initial.startsAt.toUtc(),
-      _location,
-    );
-    _day = DateTime(startLocal.year, startLocal.month, startLocal.day);
-    final start = initial.allDay
-        ? startLocal
-        : timezone.TZDateTime.from(initial.startsAt.toUtc(), _location);
-    final end = timezone.TZDateTime.from(initial.endsAt.toUtc(), _location);
-    _start = TimeOfDay(hour: start.hour, minute: start.minute);
-    _end = TimeOfDay(hour: end.hour, minute: end.minute);
+    // 既有安排按它自己的日历边界还原：全天读公历日期，定时读当地日期，
+    // 不改写、不压缩多天安排。
+    final bounds = scheduleCalendarBounds(initial, widget.displayTimeZoneId);
+    _allDay = bounds.allDay;
+    _day = bounds.startDay;
+    _endDay = bounds.endDay;
+    _start = bounds.start;
+    _end = bounds.end;
   }
 
   @override
@@ -606,26 +715,13 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
     super.dispose();
   }
 
-  String get _startDate =>
-      '${_day.year.toString().padLeft(4, '0')}-'
-      '${_day.month.toString().padLeft(2, '0')}-'
-      '${_day.day.toString().padLeft(2, '0')}';
-
-  String get _endDate {
-    final end = DateTime(_day.year, _day.month, _day.day + 1);
-    return '${end.year.toString().padLeft(4, '0')}-'
-        '${end.month.toString().padLeft(2, '0')}-'
-        '${end.day.toString().padLeft(2, '0')}';
-  }
-
-  DateTime _toUtc(DateTime day, TimeOfDay time) => timezone.TZDateTime(
-    _location,
-    day.year,
-    day.month,
-    day.day,
-    time.hour,
-    time.minute,
-  ).toUtc();
+  ScheduleCalendarBounds get _bounds => ScheduleCalendarBounds(
+    allDay: _allDay,
+    startDay: _day,
+    endDay: _endDay,
+    start: _start,
+    end: _end,
+  );
 
   void _save() {
     final title = _title.text.trim();
@@ -634,19 +730,14 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
       return;
     }
     final ScheduleWindow window;
-    if (_allDay) {
-      window = ScheduleWindow.allDayDates(
-        startDate: _startDate,
-        endDateExclusive: _endDate,
+    try {
+      window = buildScheduleWindow(
+        displayTimeZoneId: widget.displayTimeZoneId,
+        bounds: _bounds,
       );
-    } else {
-      final start = _toUtc(_day, _start);
-      var end = _toUtc(_day, _end);
-      if (!end.isAfter(start)) {
-        // 结束早于开始时视为跨到次日同一时刻。
-        end = end.add(const Duration(days: 1));
-      }
-      window = ScheduleWindow.timed(startsAt: start, endsAt: end);
+    } on ArgumentError catch (error) {
+      _showError(context, '${error.message}');
+      return;
     }
     Navigator.pop(
       context,
@@ -662,12 +753,28 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
     );
   }
 
+  /// 既有链接若指向已删除任务，返回可读标签；指向在用任务时返回 null。
+  String? _linkedTaskLabel() {
+    final taskId = _taskId;
+    if (taskId == null) return null;
+    for (final goal in widget.goals) {
+      for (final task in goal.tasks) {
+        if (task.id != taskId) continue;
+        return task.isDeleted ? '已删除的任务：${task.title}' : null;
+      }
+    }
+    return '已删除的任务（保留原关联）';
+  }
+
   @override
   Widget build(BuildContext context) {
+    // 已删除的任务不再出现在可选项里：既不能新建关联，也不能被重新挂上。
     final tasks = [
       for (final goal in widget.goals)
-        for (final task in goal.tasks) (goal: goal, task: task),
+        for (final task in goal.tasks)
+          if (!task.isDeleted) (goal: goal, task: task),
     ];
+    final linkedLabel = _linkedTaskLabel();
     return AlertDialog(
       title: Text(widget.initial == null ? '新建安排' : '编辑安排'),
       content: SingleChildScrollView(
@@ -701,53 +808,94 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
               onChanged: (value) => setState(() => _allDay = value),
               title: const Text('全天'),
             ),
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: _day,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) {
-                        setState(() => _day = picked);
-                      }
-                    },
-                    icon: const Icon(Icons.event),
-                    label: Text(_startDate),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _day,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime(2100),
+                    );
+                    if (picked != null) {
+                      setState(() {
+                        _day = _dateOnly(picked);
+                        // 开始日越过结束日时：全天推到次日，定时回到同一天。
+                        if (!_endDay.isAfter(_day)) {
+                          _endDay = _allDay
+                              ? DateTime(_day.year, _day.month, _day.day + 1)
+                              : _day;
+                        }
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.event),
+                  label: Text('开始 ${_civilDateText(_day)}'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _endDay.isAfter(_day)
+                          ? _endDay
+                          : DateTime(_day.year, _day.month, _day.day + 1),
+                      firstDate: _day,
+                      lastDate: DateTime(2100),
+                    );
+                    if (picked != null) {
+                      setState(() => _endDay = _dateOnly(picked));
+                    }
+                  },
+                  icon: const Icon(Icons.event_available),
+                  label: Text(
+                    _allDay
+                        ? '结束（不含） ${_civilDateText(_endDay)}'
+                        : '结束 ${_civilDateText(_endDay)}',
                   ),
                 ),
                 if (!_allDay) ...[
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () async {
-                        final picked = await showTimePicker(
-                          context: context,
-                          initialTime: _start,
-                        );
-                        if (picked != null) setState(() => _start = picked);
-                      },
-                      child: Text('开始 ${_start.format(context)}'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () async {
-                        final picked = await showTimePicker(
-                          context: context,
-                          initialTime: _end,
-                        );
-                        if (picked != null) setState(() => _end = picked);
-                      },
-                      child: Text('结束 ${_end.format(context)}'),
-                    ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            final picked = await showTimePicker(
+                              context: context,
+                              initialTime: _start,
+                            );
+                            if (picked != null) setState(() => _start = picked);
+                          },
+                          child: Text('开始 ${_start.format(context)}'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () async {
+                            final picked = await showTimePicker(
+                              context: context,
+                              initialTime: _end,
+                            );
+                            if (picked != null) setState(() => _end = picked);
+                          },
+                          child: Text('结束 ${_end.format(context)}'),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
+                if (_allDay)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      '全天安排按日历日期保存，结束日期不含当天。',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
               ],
             ),
             const SizedBox(height: 12),
@@ -766,6 +914,14 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
                       entry.task.title,
                       overflow: TextOverflow.ellipsis,
                     ),
+                  ),
+                // 原关联任务已被删除时保留身份：只显示只读条目，
+                // 既不让下拉断言失败，也不允许新关联到已删除的任务。
+                if (linkedLabel != null)
+                  DropdownMenuItem<String?>(
+                    value: _taskId,
+                    enabled: false,
+                    child: Text(linkedLabel, overflow: TextOverflow.ellipsis),
                   ),
               ],
               onChanged: (value) => setState(() => _taskId = value),
@@ -834,64 +990,43 @@ class _RescheduleDialog extends StatefulWidget {
 
 class _RescheduleDialogState extends State<_RescheduleDialog> {
   late DateTime _day;
+  late DateTime _endDay;
   late TimeOfDay _start;
   late TimeOfDay _end;
-
-  timezone.Location get _location =>
-      FocusTimeZones.location(widget.displayTimeZoneId);
 
   @override
   void initState() {
     super.initState();
-    final start = timezone.TZDateTime.from(
-      widget.schedule.startsAt.toUtc(),
-      _location,
+    // 改期同样按安排自己的日历边界还原：全天用公历日期，定时用当地日期，
+    // 多天窗口原样保留，不压回一天。
+    final bounds = scheduleCalendarBounds(
+      widget.schedule,
+      widget.displayTimeZoneId,
     );
-    final end = timezone.TZDateTime.from(
-      widget.schedule.endsAt.toUtc(),
-      _location,
-    );
-    _day = DateTime(start.year, start.month, start.day);
-    _start = TimeOfDay(hour: start.hour, minute: start.minute);
-    _end = TimeOfDay(hour: end.hour, minute: end.minute);
+    _day = bounds.startDay;
+    _endDay = bounds.endDay;
+    _start = bounds.start;
+    _end = bounds.end;
   }
-
-  String get _startDate =>
-      '${_day.year.toString().padLeft(4, '0')}-'
-      '${_day.month.toString().padLeft(2, '0')}-'
-      '${_day.day.toString().padLeft(2, '0')}';
-
-  String get _endDate {
-    final end = DateTime(_day.year, _day.month, _day.day + 1);
-    return '${end.year.toString().padLeft(4, '0')}-'
-        '${end.month.toString().padLeft(2, '0')}-'
-        '${end.day.toString().padLeft(2, '0')}';
-  }
-
-  DateTime _toUtc(TimeOfDay time) => timezone.TZDateTime(
-    _location,
-    _day.year,
-    _day.month,
-    _day.day,
-    time.hour,
-    time.minute,
-  ).toUtc();
 
   void _save() {
-    if (widget.schedule.allDay) {
-      Navigator.pop(
-        context,
-        ScheduleWindow.allDayDates(
-          startDate: _startDate,
-          endDateExclusive: _endDate,
+    final ScheduleWindow window;
+    try {
+      window = buildScheduleWindow(
+        displayTimeZoneId: widget.displayTimeZoneId,
+        bounds: ScheduleCalendarBounds(
+          allDay: widget.schedule.allDay,
+          startDay: _day,
+          endDay: _endDay,
+          start: _start,
+          end: _end,
         ),
       );
+    } on ArgumentError catch (error) {
+      _showError(context, '${error.message}');
       return;
     }
-    final start = _toUtc(_start);
-    var end = _toUtc(_end);
-    if (!end.isAfter(start)) end = end.add(const Duration(days: 1));
-    Navigator.pop(context, ScheduleWindow.timed(startsAt: start, endsAt: end));
+    Navigator.pop(context, window);
   }
 
   @override
@@ -910,10 +1045,41 @@ class _RescheduleDialogState extends State<_RescheduleDialog> {
                 firstDate: DateTime(2020),
                 lastDate: DateTime(2100),
               );
-              if (picked != null) setState(() => _day = picked);
+              if (picked != null) {
+                setState(() {
+                  _day = _dateOnly(picked);
+                  if (!_endDay.isAfter(_day)) {
+                    _endDay = widget.schedule.allDay
+                        ? DateTime(_day.year, _day.month, _day.day + 1)
+                        : _day;
+                  }
+                });
+              }
             },
             icon: const Icon(Icons.event),
-            label: Text(_startDate),
+            label: Text('开始 ${_civilDateText(_day)}'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: _endDay.isAfter(_day)
+                    ? _endDay
+                    : DateTime(_day.year, _day.month, _day.day + 1),
+                firstDate: _day,
+                lastDate: DateTime(2100),
+              );
+              if (picked != null) {
+                setState(() => _endDay = _dateOnly(picked));
+              }
+            },
+            icon: const Icon(Icons.event_available),
+            label: Text(
+              widget.schedule.allDay
+                  ? '结束（不含） ${_civilDateText(_endDay)}'
+                  : '结束 ${_civilDateText(_endDay)}',
+            ),
           ),
           if (!widget.schedule.allDay) ...[
             const SizedBox(height: 12),
