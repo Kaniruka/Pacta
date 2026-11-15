@@ -174,13 +174,24 @@ class LocalScheduleRepository implements ScheduleRepository {
     CalendarImportRequest request,
   ) async {
     await lifecycleAccess.requireActive();
-    final index = await _importIdentityIndex();
+    final needsDeviceAlias = request.occurrences.any(
+      (occurrence) =>
+          calendarImportEventIsDeviceLocal(occurrence.sourceEventId) ||
+          (occurrence.deviceOccurrenceId?.trim().isNotEmpty ?? false),
+    );
+    // Only an installation alias needs provenance, so a preview of provider
+    // occurrences without a device row keeps writing nothing at all.
+    final deviceProvenance = needsDeviceAlias
+        ? await _importDeviceProvenance()
+        : await _existingDeviceProvenance();
+    final index = await _importIdentityIndex(
+      deviceProvenance: deviceProvenance,
+    );
     final pending = <CalendarImportCandidate>[];
-    final planned = <String>{};
-    final aliasUpdates = <String, List<String>>{};
+    final planned = <CalendarImportAlias>[];
+    final aliasUpdates = <String, List<CalendarImportAlias>>{};
     var duplicates = 0;
     var ignored = 0;
-    String? deviceProvenance;
     for (final occurrence in request.occurrences) {
       final source = request.sourceFor(occurrence.sourceId);
       if (source == null) {
@@ -192,14 +203,6 @@ class LocalScheduleRepository implements ScheduleRepository {
         ignored++;
         continue;
       }
-      final needsDeviceAlias =
-          calendarImportEventIsDeviceLocal(occurrence.sourceEventId) ||
-          (occurrence.deviceOccurrenceId?.trim().isNotEmpty ?? false);
-      if (needsDeviceAlias) {
-        // Only an installation alias needs provenance, so a preview of provider
-        // occurrences without a device row keeps writing nothing at all.
-        deviceProvenance ??= await _importDeviceProvenance();
-      }
       final aliases = calendarImportIdentityAliases(
         source: source,
         occurrence: occurrence,
@@ -210,15 +213,22 @@ class LocalScheduleRepository implements ScheduleRepository {
       if (owner != null ||
           (legacyIdentity != null &&
               index.legacyIdentities.contains(legacyIdentity)) ||
-          aliases.any(planned.contains)) {
+          _aliasesOverlap(planned, aliases)) {
         duplicates++;
         if (owner != null) {
           // The same copy got a new alias (for example a provider id on the
           // device row that produced it). Recording it never rewrites content
           // and waits for confirm, so a cancelled preview writes nothing.
-          final known = index.aliasesBySchedule[owner] ?? const <String>{};
-          if (aliases.any((alias) => !known.contains(alias))) {
-            aliasUpdates.putIfAbsent(owner, () => <String>[]).addAll(aliases);
+          final known = index.aliasesBySchedule[owner] ?? const [];
+          final learned = aliases
+              .where(
+                (alias) => !known.any(
+                  (existing) => existing.encode() == alias.encode(),
+                ),
+              )
+              .toList();
+          if (learned.isNotEmpty) {
+            aliasUpdates.putIfAbsent(owner, () => []).addAll(learned);
           }
         }
         continue;
@@ -258,7 +268,9 @@ class LocalScheduleRepository implements ScheduleRepository {
     var skipped = 0;
     var identityChanged = false;
     await database.transaction(() async {
-      final index = await _importIdentityIndex();
+      final index = await _importIdentityIndex(
+        deviceProvenance: await _existingDeviceProvenance(),
+      );
       for (final entry in preview.pendingAliasUpdates.entries) {
         if (await _rememberImportAliases(entry.key, entry.value, index)) {
           identityChanged = true;
@@ -329,6 +341,13 @@ class LocalScheduleRepository implements ScheduleRepository {
   /// snapshots, so restoring another device's data never renames this
   /// installation. Without it, a `local:` fallback id would claim a global
   /// identity that two devices' numeric calendar and event rows can share.
+  Future<String?> _existingDeviceProvenance() async {
+    final existing = await (database.select(
+      database.focusSourceDevices,
+    )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+    return existing?.deviceId;
+  }
+
   Future<String> _importDeviceProvenance() async {
     final existing = await (database.select(
       database.focusSourceDevices,
@@ -350,7 +369,9 @@ class LocalScheduleRepository implements ScheduleRepository {
   ///
   /// Every copy contributes all aliases it recorded, so a device-local alias and
   /// a provider alias for the same occurrence both take part in deduplication.
-  Future<_ImportIdentityIndex> _importIdentityIndex() async {
+  Future<_ImportIdentityIndex> _importIdentityIndex({
+    String? deviceProvenance,
+  }) async {
     final rows = await (database.select(
       database.localSchedules,
     )..where((row) => row.userId.equals(userId))).get();
@@ -358,7 +379,13 @@ class LocalScheduleRepository implements ScheduleRepository {
     for (final row in rows) {
       final identity = row.eventIdentity?.trim();
       if (identity == null || identity.isEmpty) continue;
-      index.addAliases(row.id, decodeCalendarImportIdentityAliases(identity));
+      index.addAliases(
+        row.id,
+        decodeCalendarImportIdentityAliases(
+          identity,
+          deviceProvenance: deviceProvenance,
+        ),
+      );
       if (row.origin != ScheduleOrigin.legacyCalendarBlock.storageValue) {
         continue;
       }
@@ -378,12 +405,26 @@ class LocalScheduleRepository implements ScheduleRepository {
   }
 
   /// Copy that owns any alias of [aliases], if one already exists.
-  String? _aliasOwner(_ImportIdentityIndex index, List<String> aliases) {
-    for (final alias in aliases) {
-      final owner = index.aliasOwners[alias];
-      if (owner != null) return owner;
+  String? _aliasOwner(
+    _ImportIdentityIndex index,
+    List<CalendarImportAlias> aliases,
+  ) {
+    for (final entry in index.aliasesBySchedule.entries) {
+      if (_aliasesOverlap(entry.value, aliases)) return entry.key;
     }
     return null;
+  }
+
+  bool _aliasesOverlap(
+    List<CalendarImportAlias> existing,
+    List<CalendarImportAlias> incoming,
+  ) {
+    for (final alias in existing) {
+      for (final candidate in incoming) {
+        if (alias.proves(candidate)) return true;
+      }
+    }
+    return false;
   }
 
   /// Records aliases learned after the copy was created.
@@ -395,11 +436,11 @@ class LocalScheduleRepository implements ScheduleRepository {
   /// inferred from a raw numeric id.
   Future<bool> _rememberImportAliases(
     String scheduleId,
-    List<String> aliases,
+    List<CalendarImportAlias> aliases,
     _ImportIdentityIndex index,
   ) async {
-    final existing = index.aliasesBySchedule[scheduleId] ?? const <String>{};
-    final merged = _canonicalAliases({...existing, ...aliases});
+    final existing = index.aliasesBySchedule[scheduleId] ?? const [];
+    final merged = _canonicalAliases([...existing, ...aliases]);
     if (merged.length == existing.length) return false;
     await (database.update(database.localSchedules)
           ..where((row) => row.id.equals(scheduleId))
@@ -413,15 +454,12 @@ class LocalScheduleRepository implements ScheduleRepository {
     return true;
   }
 
-  List<String> _canonicalAliases(Iterable<String> aliases) {
-    final sorted = aliases.toSet().toList()..sort();
-    return [
-      ...sorted.where((alias) => alias.startsWith('sync|')),
-      ...sorted.where((alias) => alias.startsWith('device|')),
-      ...sorted.where(
-        (alias) => !alias.startsWith('sync|') && !alias.startsWith('device|'),
-      ),
-    ];
+  List<CalendarImportAlias> _canonicalAliases(
+    Iterable<CalendarImportAlias> aliases,
+  ) {
+    final byEncoding = {for (final alias in aliases) alias.encode(): alias};
+    final encodings = byEncoding.keys.toList()..sort();
+    return [for (final encoding in encodings) byEncoding[encoding]!];
   }
 
   /// Raw identity left behind by the one-time legacy block promotion.
@@ -835,15 +873,17 @@ class LocalScheduleRepository implements ScheduleRepository {
 
 /// Identity sets used to skip already owned import copies.
 class _ImportIdentityIndex {
-  final Map<String, String> aliasOwners = {};
-  final Map<String, Set<String>> aliasesBySchedule = {};
+  final Map<String, List<CalendarImportAlias>> aliasesBySchedule = {};
   final Set<String> legacyIdentities = {};
 
-  void addAliases(String scheduleId, Iterable<String> aliases) {
-    final owned = aliasesBySchedule.putIfAbsent(scheduleId, () => <String>{});
+  void addAliases(String scheduleId, Iterable<CalendarImportAlias> aliases) {
+    final owned = aliasesBySchedule.putIfAbsent(
+      scheduleId,
+      () => <CalendarImportAlias>[],
+    );
+    final known = {for (final alias in owned) alias.encode()};
     for (final alias in aliases) {
-      owned.add(alias);
-      aliasOwners[alias] = scheduleId;
+      if (known.add(alias.encode())) owned.add(alias);
     }
   }
 }

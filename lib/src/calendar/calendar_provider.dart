@@ -90,6 +90,7 @@ class AndroidCalendarProvider implements CalendarProvider {
       occurrenceId: row['occurrenceId'] as String,
       eventIdentity: row['eventIdentity'] as String,
       deviceOccurrenceId: (row['deviceOccurrenceId'] as String?)?.trim(),
+      isRecurring: (row['isRecurring'] as bool?) ?? false,
 
       title: (row['title'] as String?)?.trim().isNotEmpty == true
           ? (row['title'] as String).trim()

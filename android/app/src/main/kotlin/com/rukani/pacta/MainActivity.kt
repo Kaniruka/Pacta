@@ -369,13 +369,22 @@ class MainActivity : FlutterActivity() {
                 ?: event.syncId
                 ?: event.uid
                 ?: "local:${instance.eventId}"
+            // A single event's identity is its provider id and event row: moving it
+            // must not create a second arrangement. Only a recurring event names an
+            // occurrence, and an exception keeps its original instance start.
+            val recurring = !event.recurrenceRule.isNullOrBlank() ||
+                event.originalInstanceTime != null
             val occurrenceStart = event.originalInstanceTime ?: instance.startsAt
             val occurrenceId = "$externalId@$occurrenceStart"
             val eventIdentity = "$externalId@$occurrenceStart"
             // Device-local continuation key: the same event row keeps this value
             // before and after a provider sync id appears, so an import can prove
             // continuity on this installation without a cross-device claim.
-            val deviceOccurrenceId = "local:${instance.eventId}@$occurrenceStart"
+            val deviceOccurrenceId = if (recurring) {
+                "local:${instance.eventId}@$occurrenceStart"
+            } else {
+                "local:${instance.eventId}"
+            }
             val allDay = event.allDay
             output.add(
                 mapOf(
@@ -384,6 +393,7 @@ class MainActivity : FlutterActivity() {
                     "occurrenceId" to occurrenceId,
                     "eventIdentity" to eventIdentity,
                     "deviceOccurrenceId" to deviceOccurrenceId,
+                    "isRecurring" to recurring,
                     "title" to event.title,
                     "startsAt" to instance.startsAt,
                     "endsAt" to instance.endsAt,
@@ -414,6 +424,7 @@ class MainActivity : FlutterActivity() {
             CalendarContract.Events.ORIGINAL_INSTANCE_TIME,
             CalendarContract.Events.UID_2445,
             CalendarContract.Events.STATUS,
+            CalendarContract.Events.RRULE,
         )
         for (chunk in eventIds.toList().chunked(400)) {
             val placeholders = chunk.joinToString(",") { "?" }
@@ -437,6 +448,7 @@ class MainActivity : FlutterActivity() {
                         originalInstanceTime = cursor.longOrNull(CalendarContract.Events.ORIGINAL_INSTANCE_TIME),
                         uid = cursor.stringOrNull(CalendarContract.Events.UID_2445),
                         status = cursor.intOrNull(CalendarContract.Events.STATUS),
+                        recurrenceRule = cursor.stringOrNull(CalendarContract.Events.RRULE),
                     )
                 }
             }
@@ -500,5 +512,6 @@ class MainActivity : FlutterActivity() {
         val originalInstanceTime: Long?,
         val uid: String?,
         val status: Int?,
+        val recurrenceRule: String?,
     )
 }

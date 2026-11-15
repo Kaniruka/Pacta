@@ -60,7 +60,7 @@ void main() {
             sourceEventId: 'local:42',
             occurrenceId: 'local:42@1',
             eventIdentity: 'local:42@1',
-            deviceOccurrenceId: 'local:42@1',
+            deviceOccurrenceId: 'local:42',
             title: title,
             startsAt: _start,
             endsAt: _end,
@@ -87,7 +87,7 @@ void main() {
         sourceEventId: 'evt-42@example.com',
         occurrenceId: 'evt-42@example.com@${_start.millisecondsSinceEpoch}',
         eventIdentity: 'evt-42@example.com@${_start.millisecondsSinceEpoch}',
-        deviceOccurrenceId: 'local:42@1',
+        deviceOccurrenceId: 'local:42',
         title: '先导入的本机事件',
         startsAt: _start,
         endsAt: _end,
@@ -161,10 +161,11 @@ void main() {
           expect(restored.title, '周会');
           expect(restored.origin, ScheduleOrigin.calendarImport);
           expect(restored.sourceIds, ['source-a']);
-          expect(
-            decodeCalendarImportIdentityAliases(restored.eventIdentity).single,
-            startsWith('sync|source-a|evt-1@example.com|'),
-          );
+          final restoredAlias = decodeCalendarImportIdentityAliases(
+            restored.eventIdentity,
+          ).single;
+          expect(restoredAlias.kind, calendarImportAliasSync);
+          expect(restoredAlias.sourceEventId, 'evt-1@example.com');
 
           final repeated = await schedulesB.previewCalendarImport(request());
           expect(repeated.pending, isEmpty);
@@ -198,10 +199,19 @@ void main() {
       final created = await schedulesA.confirmCalendarImport(preview);
       expect(created.createdCount, 1);
       expect(
-        decodeCalendarImportIdentityAliases(
-          created.created.single.eventIdentity,
-        ),
-        ['device|install-a|7|local:42@1'],
+        [
+          for (final alias in decodeCalendarImportIdentityAliases(
+            created.created.single.eventIdentity,
+          ))
+            alias.encode(),
+        ],
+        [
+          const CalendarImportAlias.device(
+            installId: 'install-a',
+            calendarId: '7',
+            deviceRowId: 'local:42',
+          ).encode(),
+        ],
       );
 
       final snapshotA = CloudSnapshotRepository(
@@ -239,9 +249,21 @@ void main() {
         );
 
         final received = (await schedulesB.getSchedules()).single;
-        expect(decodeCalendarImportIdentityAliases(received.eventIdentity), [
-          'device|install-a|7|local:42@1',
-        ]);
+        expect(
+          [
+            for (final alias in decodeCalendarImportIdentityAliases(
+              received.eventIdentity,
+            ))
+              alias.encode(),
+          ],
+          [
+            const CalendarImportAlias.device(
+              installId: 'install-a',
+              calendarId: '7',
+              deviceRowId: 'local:42',
+            ).encode(),
+          ],
+        );
 
         final candidate = await schedulesB.previewCalendarImport(
           localRequest(title: 'B 的本机事件'),
@@ -249,10 +271,19 @@ void main() {
         expect(candidate.duplicateCount, 0);
         expect(candidate.pending, hasLength(1));
         expect(
-          decodeCalendarImportIdentityAliases(
-            candidate.pending.single.identityKey,
-          ),
-          ['device|install-b|7|local:42@1'],
+          [
+            for (final alias in decodeCalendarImportIdentityAliases(
+              candidate.pending.single.identityKey,
+            ))
+              alias.encode(),
+          ],
+          [
+            const CalendarImportAlias.device(
+              installId: 'install-b',
+              calendarId: '7',
+              deviceRowId: 'local:42',
+            ).encode(),
+          ],
         );
 
         final imported = await schedulesB.confirmCalendarImport(candidate);
@@ -298,10 +329,22 @@ void main() {
       final localCopy = (await schedulesA.getSchedules()).single;
       expect(localCopy.title, '先导入的本机事件');
       expect(
-        decodeCalendarImportIdentityAliases(localCopy.eventIdentity).toSet(),
         {
-          'sync|source-a|evt-42@example.com|evt-42@example.com@${_start.millisecondsSinceEpoch}',
-          'device|install-a|7|local:42@1',
+          for (final alias in decodeCalendarImportIdentityAliases(
+            localCopy.eventIdentity,
+          ))
+            alias.encode(),
+        },
+        {
+          const CalendarImportAlias.sync(
+            sourceId: 'source-a',
+            sourceEventId: 'evt-42@example.com',
+          ).encode(),
+          const CalendarImportAlias.device(
+            installId: 'install-a',
+            calendarId: '7',
+            deviceRowId: 'local:42',
+          ).encode(),
         },
       );
 
