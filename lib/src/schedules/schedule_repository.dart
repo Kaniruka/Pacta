@@ -112,7 +112,9 @@ class LocalScheduleRepository implements ScheduleRepository {
   final String userId;
   final UserLifecycleAccess lifecycleAccess;
   final DateTime Function() _now;
-  final _changes = StreamController<void>.broadcast();
+
+  /// 观察本账号日程的数据库级变化；跨仓储实例与快照整体替换都能到达。
+  final _watches = <_ScheduleWatch>{};
   final _uuid = const Uuid();
 
   static const _maxReminderMinutesBefore = 7 * 24 * 60;
@@ -128,7 +130,6 @@ class LocalScheduleRepository implements ScheduleRepository {
         migratedAt: _now().toUtc(),
       );
     });
-    if (!result.alreadyPromoted) await _publish();
     return result;
   }
 
@@ -194,7 +195,6 @@ class LocalScheduleRepository implements ScheduleRepository {
         restoredBlocks: restored,
       );
     });
-    await _publish();
     return result;
   }
 
@@ -299,15 +299,12 @@ class LocalScheduleRepository implements ScheduleRepository {
     await lifecycleAccess.requireActive();
     final created = <Schedule>[];
     var skipped = 0;
-    var identityChanged = false;
     await database.transaction(() async {
       final index = await _importIdentityIndex(
         deviceProvenance: await _existingDeviceProvenance(),
       );
       for (final entry in preview.pendingAliasUpdates.entries) {
-        if (await _rememberImportAliases(entry.key, entry.value, index)) {
-          identityChanged = true;
-        }
+        await _rememberImportAliases(entry.key, entry.value, index);
       }
       for (final candidate in preview.pending) {
         final legacyIdentity = _legacyIdentityKey(
@@ -319,13 +316,12 @@ class LocalScheduleRepository implements ScheduleRepository {
             (legacyIdentity != null &&
                 index.legacyIdentities.contains(legacyIdentity))) {
           skipped++;
-          if (owner != null &&
-              await _rememberImportAliases(
-                owner,
-                candidate.identityAliases,
-                index,
-              )) {
-            identityChanged = true;
+          if (owner != null) {
+            await _rememberImportAliases(
+              owner,
+              candidate.identityAliases,
+              index,
+            );
           }
           continue;
         }
@@ -335,7 +331,6 @@ class LocalScheduleRepository implements ScheduleRepository {
         created.add(copy);
       }
     });
-    if (created.isNotEmpty || identityChanged) await _publish();
     return CalendarImportOutcome(created: created, skippedDuplicates: skipped);
   }
 
@@ -556,7 +551,6 @@ class LocalScheduleRepository implements ScheduleRepository {
       updatedAt: timestamp,
     );
     await _saveSchedule(schedule);
-    await _publish();
     return schedule;
   }
 
@@ -581,7 +575,6 @@ class LocalScheduleRepository implements ScheduleRepository {
       taskId: taskId,
     );
     await _saveSchedule(updated);
-    await _publish();
     return updated;
   }
 
@@ -600,7 +593,6 @@ class LocalScheduleRepository implements ScheduleRepository {
       taskId: existing.taskId,
     );
     await _saveSchedule(updated);
-    await _publish();
     return updated;
   }
 
@@ -625,7 +617,6 @@ class LocalScheduleRepository implements ScheduleRepository {
             ..where((row) => row.id.equals(scheduleId)))
           .go();
     }
-    await _publish();
   }
 
   @override
@@ -644,7 +635,6 @@ class LocalScheduleRepository implements ScheduleRepository {
       updatedAt: completedAt ?? _nextTimestamp(existing.updatedAt),
     );
     await _saveSchedule(updated);
-    await _publish();
     return updated;
   }
 
@@ -665,7 +655,6 @@ class LocalScheduleRepository implements ScheduleRepository {
       updatedAt: _nextTimestamp(existing.updatedAt),
     );
     await _saveSchedule(updated);
-    await _publish();
     return updated;
   }
 
@@ -695,7 +684,6 @@ class LocalScheduleRepository implements ScheduleRepository {
         toDate: _horizonEndDate(rule),
       );
     });
-    if (occurrences.isNotEmpty) await _publish();
     return ScheduleSeries(rule: rule, occurrences: occurrences);
   }
 
@@ -878,7 +866,6 @@ class LocalScheduleRepository implements ScheduleRepository {
         truncatedRule: truncated,
       );
     });
-    await _publish();
     return result;
   }
 
@@ -932,27 +919,35 @@ class LocalScheduleRepository implements ScheduleRepository {
     if (toUtc.difference(fromUtc).inDays > maxRecurrenceExpansionDays) {
       throw ArgumentError('重复日程的展开范围过大，请缩小查询区间。');
     }
-    final rules = await getRecurrenceRules();
-    if (rules.isEmpty) return 0;
+    // 规则读取、已有身份去重与写入必须是同一个数据库事务。
+    //
+    // 三个步骤分开执行时，两个观察者会各自读到"还没有实例"，再各自生成一套
+    // 不同 UUID 但同系列同日期的行：主键是 (userId, id)，拦不住这种重复。
+    // 事务同时把整份快照替换/清除挡在外面——要么展开先提交、随后被替换删掉，
+    // 要么替换先提交、展开读到的是替换后的规则，不会给已经不存在的规则补行。
     var generated = 0;
-    for (final rule in rules) {
-      final location = FocusTimeZones.location(rule.timeZoneId);
-      final localFrom = formatRecurrenceDate(_zoneDate(fromUtc, location));
-      final localTo = formatRecurrenceDate(_zoneDate(toUtc, location));
-      if (localTo.compareTo(localFrom) < 0) continue;
-      // 与查询区间完全不相交的规则直接跳过：查重复日程开始之前的月份应当
-      // 返回空集合，而不是拿反向区间去触发严格展开的拒绝。
-      if (rule.firstDate.compareTo(localTo) > 0) continue;
-      final ruleEnd = rule.endDate;
-      if (ruleEnd != null && ruleEnd.compareTo(localFrom) < 0) continue;
-      final created = await _materializeRule(
-        rule: rule,
-        seriesId: await _seriesIdForRule(rule.id),
-        fromDate: localFrom,
-        toDate: localTo,
-      );
-      generated += created.length;
-    }
+    await database.transaction(() async {
+      final rules = await getRecurrenceRules();
+      if (rules.isEmpty) return;
+      for (final rule in rules) {
+        final location = FocusTimeZones.location(rule.timeZoneId);
+        final localFrom = formatRecurrenceDate(_zoneDate(fromUtc, location));
+        final localTo = formatRecurrenceDate(_zoneDate(toUtc, location));
+        if (localTo.compareTo(localFrom) < 0) continue;
+        // 与查询区间完全不相交的规则直接跳过：查重复日程开始之前的月份应当
+        // 返回空集合，而不是拿反向区间去触发严格展开的拒绝。
+        if (rule.firstDate.compareTo(localTo) > 0) continue;
+        final ruleEnd = rule.endDate;
+        if (ruleEnd != null && ruleEnd.compareTo(localFrom) < 0) continue;
+        final created = await _materializeRule(
+          rule: rule,
+          seriesId: await _seriesIdForRule(rule.id),
+          fromDate: localFrom,
+          toDate: localTo,
+        );
+        generated += created.length;
+      }
+    });
     return generated;
   }
 
@@ -979,42 +974,22 @@ class LocalScheduleRepository implements ScheduleRepository {
     ];
   }
 
-  /// Emits the current schedules, then one emission per change.
+  /// 当前日程，随后每一次数据库变更再推一次。
   ///
-  /// The stream is built explicitly instead of with `async*` so that cancelling
-  /// the subscription returns immediately: an `async*` generator suspended in
-  /// `await for` cannot observe cancellation until another event arrives.
+  /// 观察的是数据库里的日程表本身，而不是本仓储实例的写入口：云快照恢复
+  /// 直接事务替换整份账号数据、另一个仓储实例（同一数据库、另一个页面）
+  /// 写入，都不会经过这个对象，却都必须让计划页与提醒看到新状态。
+  ///
+  /// 流仍显式构造而不是 `async*`：取消订阅要立即释放数据库观察，不能让一个
+  /// 停在 `await for` 里的生成器等到下一次变更才醒来。
   @override
   Stream<List<Schedule>> watchSchedules({DateTime? from, DateTime? to}) {
-    late StreamController<List<Schedule>> controller;
-    StreamSubscription<void>? changes;
-    Future<void> emit() async {
-      try {
-        final schedules = await getSchedules(from: from, to: to);
-        if (!controller.isClosed) controller.add(schedules);
-      } catch (error, stackTrace) {
-        if (!controller.isClosed) controller.addError(error, stackTrace);
-      }
-    }
-
-    controller = StreamController<List<Schedule>>(
-      onListen: () {
-        changes = _changes.stream.listen(
-          (_) => emit(),
-          onDone: () async {
-            await emit();
-            if (!controller.isClosed) await controller.close();
-          },
-        );
-        emit();
-      },
-      onCancel: () async {
-        await changes?.cancel();
-        changes = null;
-      },
-    );
-    return controller.stream;
+    final watch = _ScheduleWatch(repository: this, from: from, to: to);
+    _watches.add(watch);
+    return watch.stream;
   }
+
+  void _forgetWatch(_ScheduleWatch watch) => _watches.remove(watch);
 
   bool _overlaps(LocalSchedule row, DateTime? from, DateTime? to) {
     if (from != null && !row.endsAt.toUtc().isAfter(from)) return false;
@@ -1131,6 +1106,19 @@ class LocalScheduleRepository implements ScheduleRepository {
             .getSingleOrNull();
     if (row == null) return null;
     return _ruleFromRow(row);
+  }
+
+  /// 规则此刻是否仍属于本账号。
+  ///
+  /// 展开只在事务里读写，事务本身已经排除了交错；这一步是写入前的最后一道
+  /// 身份检查，让"给已被整份替换掉的旧规则补实例"在结构上不可能发生。
+  Future<bool> _ruleExists(String ruleId) async {
+    final row =
+        await (database.select(database.localScheduleRecurrences)
+              ..where((rule) => rule.userId.equals(userId))
+              ..where((rule) => rule.id.equals(ruleId)))
+            .getSingleOrNull();
+    return row != null;
   }
 
   ScheduleRepeatRule _ruleFromRow(LocalScheduleRecurrence row) =>
@@ -1311,6 +1299,7 @@ class LocalScheduleRepository implements ScheduleRepository {
     required String fromDate,
     required String toDate,
   }) async {
+    if (!await _ruleExists(rule.id)) return const [];
     final startDate = fromDate.compareTo(rule.firstDate) < 0
         ? rule.firstDate
         : fromDate;
@@ -1411,12 +1400,137 @@ class LocalScheduleRepository implements ScheduleRepository {
         : previousUtc.add(const Duration(seconds: 1));
   }
 
-  Future<void> _publish() async {
-    if (!_changes.isClosed) _changes.add(null);
+  @override
+  Future<void> dispose() async {
+    // 关掉仍存活的观察，之后任何迟到的查询结果都不会再推给已取消/已切号的
+    // 订阅者。
+    final watches = _watches.toList();
+    _watches.clear();
+    for (final watch in watches) {
+      await watch.close();
+    }
+  }
+}
+
+/// 一次 [LocalScheduleRepository.watchSchedules] 订阅背后的数据库观察。
+///
+/// 触发源是 drift 的表变更通知（本仓储写入、同库另一个仓储实例写入，以及云
+/// 快照恢复在事务提交后显式发出的 notifyUpdates），因此边界是"这两张表变了"，
+/// 具体内容仍以重新查询为准。范围物化会写行，所以查询自身也会被通知：相同
+/// 结果按签名去重，不会把同一份旧数据反复推给订阅者，也不会形成自触发循环。
+/// 取消订阅与仓储关闭都会释放观察，查询途中返回的旧结果直接丢弃。
+class _ScheduleWatch {
+  _ScheduleWatch({required this.repository, this.from, this.to});
+
+  static const _tickQuery = 'SELECT 1 AS tick';
+
+  final LocalScheduleRepository repository;
+  final DateTime? from;
+  final DateTime? to;
+
+  late final StreamController<List<Schedule>> _controller =
+      StreamController<List<Schedule>>(
+        onListen: _start,
+        onCancel: () => unawaited(close()),
+      );
+  StreamSubscription<void>? _changes;
+  String? _signature;
+  bool _closed = false;
+  bool _running = false;
+  bool _rerun = false;
+
+  Stream<List<Schedule>> get stream => _controller.stream;
+
+  PactaDatabase get _database => repository.database;
+
+  void _start() {
+    if (_closed) return;
+    _changes = _database
+        .customSelect(
+          _tickQuery,
+          readsFrom: {
+            _database.localSchedules,
+            _database.localScheduleRecurrences,
+          },
+        )
+        .watch()
+        .listen((_) => unawaited(_refresh()), onError: _emitError);
   }
 
-  @override
-  Future<void> dispose() async => _changes.close();
+  Future<void> _refresh() async {
+    if (_closed || _controller.isClosed) return;
+    if (_running) {
+      // 本轮查询自己的物化写入会再发一次通知：合并成一次重读，不排成队列。
+      _rerun = true;
+      return;
+    }
+    _running = true;
+    try {
+      do {
+        _rerun = false;
+        final List<Schedule> schedules;
+        try {
+          schedules = await repository.getSchedules(from: from, to: to);
+        } catch (error, stackTrace) {
+          _emitError(error, stackTrace);
+          return;
+        }
+        // 取消或关闭可能发生在查询途中：旧结果绝不推给已经离开的订阅者。
+        if (_closed || _controller.isClosed) return;
+        final signature = _signatureOf(schedules);
+        if (signature == _signature) continue;
+        _signature = signature;
+        _controller.add(schedules);
+      } while (_rerun);
+    } finally {
+      _running = false;
+    }
+  }
+
+  void _emitError(Object error, [StackTrace? stackTrace]) {
+    if (_closed || _controller.isClosed) return;
+    _controller.addError(error, stackTrace);
+  }
+
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    repository._forgetWatch(this);
+    final changes = _changes;
+    _changes = null;
+    if (changes != null) {
+      try {
+        await changes.cancel();
+      } catch (_) {
+        // 关库途中取消观察失败不改变"已经停止"这一事实。
+      }
+    }
+    if (!_controller.isClosed) await _controller.close();
+  }
+
+  /// 结果签名：按行序拼出可观察到的身份与内容。updatedAt 由每次写入推进，
+  /// 所以未变化的读取一定得到相同签名。
+  String _signatureOf(List<Schedule> schedules) {
+    final buffer = StringBuffer();
+    for (final schedule in schedules) {
+      buffer
+        ..write(schedule.id)
+        ..write('\u0001')
+        ..write(schedule.updatedAt.toUtc().toIso8601String())
+        ..write('\u0001')
+        ..write(schedule.title)
+        ..write('\u0001')
+        ..write(schedule.startsAt.toUtc().toIso8601String())
+        ..write('\u0001')
+        ..write(schedule.endsAt.toUtc().toIso8601String())
+        ..write('\u0001')
+        ..write(schedule.isCompleted ? '1' : '0')
+        ..write(schedule.isRecurrenceException ? '1' : '0')
+        ..write(schedule.isRecurrenceCancelled ? '1' : '0')
+        ..write('\u0002');
+    }
+    return buffer.toString();
+  }
 }
 
 /// Identity sets used to skip already owned import copies.
@@ -1469,8 +1583,10 @@ class UnavailableScheduleRepository implements ScheduleRepository {
   Future<List<ScheduleRepeatRule>> getRecurrenceRules() async => const [];
 
   @override
-  Future<int> expandRecurrences({required DateTime from, required DateTime to}) async =>
-      0;
+  Future<int> expandRecurrences({
+    required DateTime from,
+    required DateTime to,
+  }) async => 0;
 
   @override
   Future<Schedule> createSchedule(ScheduleDraft draft) => _unavailable();
