@@ -214,6 +214,16 @@ Future<List<String>> _runScenario({
     now: () => fixtureNow,
   );
 
+  // 失败路径同样要卸载并关闭内存库：挂载中的 StreamBuilder 会让 close 一直等待。
+  addTearDown(() async {
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 1));
+    await schedules.dispose();
+    await focus.dispose();
+    await tree.dispose();
+    await database.close();
+  });
+
   Future<void> pumpUi() async {
     await tester.pump();
     await tester.runAsync(
@@ -250,13 +260,21 @@ Future<List<String>> _runScenario({
     );
   }
 
-  Future<void> shot(String step, {required String landmark}) async {
+  /// 当前弹层里的文案：非不透明 AlertDialog 之下仍有页面文案，必须限定。
+  Finder dialogText(String text) =>
+      find.descendant(of: find.byType(AlertDialog), matching: find.text(text));
+
+  /// 指定页面里的文案，避免与弹层或其它目的地重名。
+  Finder pageText(Type page, String text) =>
+      find.descendant(of: find.byType(page), matching: find.text(text));
+
+  Future<void> shot(
+    String step, {
+    required Finder marker,
+    required String about,
+  }) async {
     await pumpUi();
-    expect(
-      find.text(landmark),
-      findsOneWidget,
-      reason: '截图 $step 应停在 $landmark',
-    );
+    expectOnScreen(marker, reason: '截图 $step 应停在 $about');
     final name = 'plan-destination-$label-$step';
     if (!capturedNames.add(name)) fail('截图名重复：$name');
     final object = boundaryKey.currentContext?.findRenderObject();
@@ -367,14 +385,22 @@ Future<List<String>> _runScenario({
   expect(find.byType(BoardPage), findsOneWidget);
   expectOnScreen(find.text('今天先做什么'), reason: '看板标题应在视口内');
   expect(find.text('还没有置顶目标'), findsOneWidget);
-  await shot('01-board-empty', landmark: '今天先做什么');
+  await shot(
+    '01-board-empty',
+    marker: pageText(BoardPage, '今天先做什么'),
+    about: '看板标题',
+  );
 
   // 2. 计划：目标视图空态。
   await openDestination('计划');
   expect(find.byType(PlanPage), findsOneWidget);
   expectOnScreen(find.text('目标与任务'), reason: '计划标题应在视口内');
   expect(find.text('还没有目标'), findsOneWidget);
-  await shot('02-plan-empty', landmark: '目标与任务');
+  await shot(
+    '02-plan-empty',
+    marker: pageText(PlanPage, '目标与任务'),
+    about: '计划标题',
+  );
 
   // 3. 新建目标表单：浮动标签可见。
   await tapVisible(find.text('新建目标'));
@@ -382,14 +408,18 @@ Future<List<String>> _runScenario({
   expectOnScreen(_field('目标名称'), reason: '目标名称输入框应在视口内');
   expect(find.text('目标名称'), findsOneWidget);
   expect(find.text('描述（可选）'), findsOneWidget);
-  await shot('03-goal-form', landmark: '新建目标');
+  await shot('03-goal-form', marker: dialogText('新建目标'), about: '新建目标弹层');
 
   await tester.enterText(_field('目标名称'), '整理发布材料');
   await pumpUi();
   await saveDialog();
   expect(find.text('整理发布材料'), findsOneWidget);
   expect(find.text('0 项任务 · 暂无任务 · 未完成'), findsOneWidget);
-  await shot('04-goal-created', landmark: '整理发布材料');
+  await shot(
+    '04-goal-created',
+    marker: pageText(PlanPage, '整理发布材料'),
+    about: '计划里的新目标',
+  );
 
   // 4. 任务：新建、编辑、完成。
   await tapVisible(find.text('添加任务'));
@@ -398,12 +428,16 @@ Future<List<String>> _runScenario({
   await pumpUi();
   await saveDialog();
   expect(find.text('1 项任务 · 进行中'), findsOneWidget);
-  await shot('05-task-created', landmark: '写提纲');
+  await shot(
+    '05-task-created',
+    marker: pageText(PlanPage, '写提纲'),
+    about: '计划里的新任务',
+  );
 
   await tapVisible(find.text('写提纲'));
   expect(find.text('编辑任务'), findsOneWidget);
   expectOnScreen(_field('任务名称'), reason: '任务编辑输入框应在视口内');
-  await shot('06-task-edit-form', landmark: '编辑任务');
+  await shot('06-task-edit-form', marker: dialogText('编辑任务'), about: '编辑任务弹层');
   await tester.enterText(_field('任务名称'), '写提纲（修订）');
   await pumpUi();
   await saveDialog();
@@ -419,14 +453,22 @@ Future<List<String>> _runScenario({
     ),
   );
   expect(find.text('1 项任务 · 已完成'), findsOneWidget);
-  await shot('07-task-completed', landmark: '写提纲（修订）');
+  await shot(
+    '07-task-completed',
+    marker: pageText(PlanPage, '写提纲（修订）'),
+    about: '已完成任务',
+  );
 
   // 5. 目标折叠：标题整体是折叠控制，描述仍可读。
   await tapVisible(find.text('整理发布材料'));
   await pumpUi();
   expect(find.text('写提纲（修订）'), findsNothing);
   expect(find.text('添加任务'), findsNothing);
-  await shot('08-goal-collapsed', landmark: '整理发布材料');
+  await shot(
+    '08-goal-collapsed',
+    marker: pageText(PlanPage, '整理发布材料'),
+    about: '折叠后的目标',
+  );
   await tapVisible(find.text('整理发布材料'));
   await pumpUi();
   expect(find.text('写提纲（修订）'), findsOneWidget);
@@ -442,7 +484,11 @@ Future<List<String>> _runScenario({
     ),
   );
   expect(find.text('删除任务？'), findsOneWidget);
-  await shot('09-task-delete-confirm', landmark: '删除任务？');
+  await shot(
+    '09-task-delete-confirm',
+    marker: dialogText('删除任务？'),
+    about: '删除任务确认',
+  );
   await tapVisible(find.widgetWithText(FilledButton, '删除'));
   expect(find.text('写提纲（修订）'), findsNothing);
   expect(find.text('整理发布材料'), findsOneWidget);
@@ -453,7 +499,11 @@ Future<List<String>> _runScenario({
   await saveDialog();
   expect(find.text('1 项任务 · 进行中'), findsOneWidget);
   expect(find.text('补充证据'), findsOneWidget);
-  await shot('10-task-recreated', landmark: '补充证据');
+  await shot(
+    '10-task-recreated',
+    marker: pageText(PlanPage, '补充证据'),
+    about: '重建的任务',
+  );
 
   // 7. 目标删除：先建一个一次性目标再删掉。
   await tapVisible(find.text('新建目标'));
@@ -465,7 +515,11 @@ Future<List<String>> _runScenario({
     find.descendant(of: _goalCard('临时目标'), matching: find.byTooltip('删除目标')),
   );
   expect(find.text('删除目标和任务？'), findsOneWidget);
-  await shot('11-goal-delete-confirm', landmark: '删除目标和任务？');
+  await shot(
+    '11-goal-delete-confirm',
+    marker: dialogText('删除目标和任务？'),
+    about: '删除目标确认',
+  );
   await tapVisible(find.widgetWithText(FilledButton, '删除'));
   expect(find.text('临时目标'), findsNothing);
 
@@ -487,7 +541,11 @@ Future<List<String>> _runScenario({
     _top(tester, find.text('本周交付')),
     lessThan(_top(tester, find.text('整理发布材料'))),
   );
-  await shot('12-pins-order', landmark: '置顶目标 · 手动顺序');
+  await shot(
+    '12-pins-order',
+    marker: pageText(PlanPage, '置顶目标 · 手动顺序'),
+    about: '置顶顺序',
+  );
 
   await tapVisible(
     find.descendant(of: _goalCard('本周交付'), matching: find.byTooltip('下移置顶目标')),
@@ -496,7 +554,11 @@ Future<List<String>> _runScenario({
     _top(tester, find.text('整理发布材料')),
     lessThan(_top(tester, find.text('本周交付'))),
   );
-  await shot('13-pins-reordered', landmark: '置顶目标 · 手动顺序');
+  await shot(
+    '13-pins-reordered',
+    marker: pageText(PlanPage, '置顶目标 · 手动顺序'),
+    about: '重排后的顺序',
+  );
 
   // 9. 看板只保留摘要：置顶目标 + 下一项，不展开任务、没有管理入口。
   await openDestination('看板');
@@ -507,14 +569,18 @@ Future<List<String>> _runScenario({
   expect(find.text('添加任务'), findsNothing);
   expect(find.byTooltip('开始专注'), findsNothing);
   expect(find.text('还没有置顶目标'), findsNothing);
-  await shot('14-board-summary-only', landmark: '置顶目标');
+  await shot(
+    '14-board-summary-only',
+    marker: pageText(BoardPage, '置顶目标'),
+    about: '看板置顶摘要',
+  );
 
   // 10. 计划日历：一条任务两条安排 + 独立事项。
   await openDestination('计划');
   await tapVisible(find.text('日历'));
   expect(find.text('新建安排'), findsOneWidget);
   expect(find.text('添加事项'), findsOneWidget);
-  await shot('15-calendar', landmark: '新建安排');
+  await shot('15-calendar', marker: pageText(PlanPage, '新建安排'), about: '计划日历');
 
   Future<void> createArrangement(
     String title, {
@@ -533,21 +599,37 @@ Future<List<String>> _runScenario({
   expect(find.text('上午整理'), findsOneWidget);
   expect(find.text('任务：补充证据'), findsOneWidget);
   expect(find.text('提前 10 分钟提醒'), findsOneWidget);
-  await shot('16-arrangement-linked', landmark: '上午整理');
+  await shot(
+    '16-arrangement-linked',
+    marker: pageText(PlanPage, '上午整理'),
+    about: '关联任务安排',
+  );
 
   await createArrangement('下午复核', task: '补充证据');
   expect(find.text('下午复核'), findsOneWidget);
   expect(find.textContaining('2 项安排'), findsOneWidget);
-  await shot('17-two-arrangements', landmark: '下午复核');
+  await shot(
+    '17-two-arrangements',
+    marker: pageText(PlanPage, '下午复核'),
+    about: '第二条安排',
+  );
 
   await createArrangement('取快递');
   expect(find.text('取快递'), findsOneWidget);
   expect(find.text('独立事项'), findsOneWidget);
-  await shot('18-standalone-created', landmark: '取快递');
+  await shot(
+    '18-standalone-created',
+    marker: pageText(PlanPage, '取快递'),
+    about: '独立事项',
+  );
 
   await tapVisible(_scheduleTile('取快递'));
   expect(find.text('编辑安排'), findsOneWidget);
-  await shot('19-standalone-edit-form', landmark: '编辑安排');
+  await shot(
+    '19-standalone-edit-form',
+    marker: dialogText('编辑安排'),
+    about: '编辑安排弹层',
+  );
   await tester.enterText(_field('名称'), '取快递并寄件');
   await pumpUi();
   await saveDialog();
@@ -570,7 +652,11 @@ Future<List<String>> _runScenario({
         .value,
     isTrue,
   );
-  await shot('20-standalone-completed', landmark: '取快递并寄件');
+  await shot(
+    '20-standalone-completed',
+    marker: pageText(PlanPage, '取快递并寄件'),
+    about: '已完成的独立事项',
+  );
 
   await tapVisible(
     find.descendant(
@@ -580,7 +666,11 @@ Future<List<String>> _runScenario({
   );
   await tapVisible(find.text('删除安排'));
   expect(find.text('删除这条安排？'), findsOneWidget);
-  await shot('21-standalone-delete-confirm', landmark: '删除这条安排？');
+  await shot(
+    '21-standalone-delete-confirm',
+    marker: dialogText('删除这条安排？'),
+    about: '删除安排确认',
+  );
   await tapVisible(find.widgetWithText(FilledButton, '删除'));
   expect(find.text('取快递并寄件'), findsNothing);
   expect(find.text('上午整理'), findsOneWidget);
@@ -639,7 +729,11 @@ Future<List<String>> _runScenario({
 
   await tapVisible(find.text('跨城评审'));
   expectOnScreen(find.text('结束 ${civil(multiDayEnd)}'), reason: '跨天安排要显示结束日');
-  await shot('22-multiday-edit-form', landmark: '编辑安排');
+  await shot(
+    '22-multiday-edit-form',
+    marker: dialogText('编辑安排'),
+    about: '跨天安排编辑弹层',
+  );
   await tapVisible(find.widgetWithText(FilledButton, '保存'));
   final multiDaySaved = (await schedules.getSchedules()).singleWhere(
     (schedule) => schedule.id == multiDay.id,
@@ -652,7 +746,11 @@ Future<List<String>> _runScenario({
     find.text('结束（不含） ${civil(allDayEnd)}'),
     reason: '全天安排要显示不含的结束日',
   );
-  await shot('23-allday-edit-form', landmark: '编辑安排');
+  await shot(
+    '23-allday-edit-form',
+    marker: dialogText('编辑安排'),
+    about: '全天安排编辑弹层',
+  );
   await tapVisible(find.widgetWithText(FilledButton, '保存'));
   final allDaySaved = (await schedules.getSchedules()).singleWhere(
     (schedule) => schedule.id == allDayItem.id,
@@ -662,8 +760,12 @@ Future<List<String>> _runScenario({
   expect(allDaySaved.startsAt, allDayItem.startsAt, reason: '全天日期不因时区被挪动');
 
   await tapVisible(find.text('供应商同步'));
-  expectOnScreen(find.text('已删除的任务：对接供应商'), reason: '已删除任务的链接仍要可读');
-  await shot('24-deleted-link-edit', landmark: '编辑安排');
+  // 窄窗口下表单要滚动：先把它滚进视口，再断言与截图。
+  final deletedLabel = dialogText('已删除的任务：对接供应商');
+  await tester.ensureVisible(deletedLabel);
+  await pumpUi();
+  expectOnScreen(deletedLabel, reason: '已删除任务的链接仍要可读');
+  await shot('24-deleted-link-edit', marker: deletedLabel, about: '已删除任务链接弹层');
   await tapVisible(find.widgetWithText(FilledButton, '保存'));
   final linkedSaved = (await schedules.getSchedules()).singleWhere(
     (schedule) => schedule.id == linkedItem.id,
@@ -677,13 +779,11 @@ Future<List<String>> _runScenario({
     _top(tester, find.text('整理发布材料')),
     lessThan(_top(tester, find.text('本周交付'))),
   );
-  await shot('22-plan-final', landmark: '整理发布材料');
+  await shot(
+    '25-plan-final',
+    marker: pageText(PlanPage, '整理发布材料'),
+    about: '最终计划视图',
+  );
 
-  await tester.pumpWidget(const SizedBox.shrink());
-  await tester.pumpAndSettle();
-  await schedules.dispose();
-  await focus.dispose();
-  await tree.dispose();
-  await database.close();
   return written;
 }

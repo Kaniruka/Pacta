@@ -805,7 +805,14 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               value: _allDay,
-              onChanged: (value) => setState(() => _allDay = value),
+              onChanged: (value) => setState(() {
+                _allDay = value;
+                // 切到全天时，同一天的定时草稿没有合法的"不含结束日"：
+                // 只把这一种情况推进到次日；已有多天范围原样保留。
+                if (value && !_endDay.isAfter(_day)) {
+                  _endDay = DateTime(_day.year, _day.month, _day.day + 1);
+                }
+              }),
               title: const Text('全天'),
             ),
             Column(

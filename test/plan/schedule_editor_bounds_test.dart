@@ -77,9 +77,11 @@ class _Fixture {
 /// 因此断言的是编辑器换算本身，而不是数据库里原来的那一行（不会自证）。
 Future<ScheduleEditorResult?> _runEditor(
   WidgetTester tester, {
-  required List<Goal> goals,
-  required Schedule schedule,
+  List<Goal> goals = const [],
+  Schedule? schedule,
+  DateTime? initialDay,
   String? newTitle,
+  bool toggleAllDay = false,
   void Function()? inspect,
 }) async {
   ScheduleEditorResult? result;
@@ -95,7 +97,7 @@ Future<ScheduleEditorResult?> _runEditor(
                   context,
                   goals: goals,
                   displayTimeZoneId: _newYork,
-                  initialDay: DateTime(2026, 3, 14),
+                  initialDay: initialDay ?? DateTime(2026, 3, 14),
                   initial: schedule,
                   now: () => _fixtureNow,
                 );
@@ -110,6 +112,10 @@ Future<ScheduleEditorResult?> _runEditor(
   await tester.tap(find.text('打开编辑器'));
   await tester.pumpAndSettle();
   inspect?.call();
+  if (toggleAllDay) {
+    await tester.tap(find.text('全天'));
+    await tester.pumpAndSettle();
+  }
   if (newTitle != null) {
     await tester.enterText(
       find.byWidgetPredicate(
@@ -193,6 +199,25 @@ void main() {
     } finally {
       await fixture.dispose(tester);
     }
+  });
+
+  testWidgets('新建安排切到全天：默认就是一天，不需要额外改结束日期', (tester) async {
+    final result = await _runEditor(
+      tester,
+      initialDay: DateTime(2026, 3, 14),
+      newTitle: '取快递',
+      inspect: () {
+        expect(find.text('开始 2026-03-14'), findsOneWidget);
+        expect(find.text('结束 2026-03-14'), findsOneWidget);
+      },
+      toggleAllDay: true,
+    );
+    final window = result!.draft.window;
+    expect(window.allDay, isTrue);
+    expect(window.allDayStartDate, '2026-03-14');
+    expect(window.allDayEndDateExclusive, '2026-03-15');
+    expect(window.startsAt, DateTime.utc(2026, 3, 14));
+    expect(window.endsAt, DateTime.utc(2026, 3, 15));
   });
 
   testWidgets('跨夜结束按当地日历日推进：春季 DST 缺口', (tester) async {
