@@ -1265,6 +1265,7 @@ class _FailureReviewPrompt extends StatelessWidget {
           child: Card(
             color: Theme.of(context).colorScheme.tertiaryContainer,
             child: ListTile(
+              key: const ValueKey('board-failure-review-hint'),
               leading: const Icon(Icons.history_toggle_off),
               title: Text('${pendingBatches.length} 组国策失败待回顾'),
               subtitle: const Text('稍后再看也可以；回顾只做标记，不改动当时的失败结果。'),

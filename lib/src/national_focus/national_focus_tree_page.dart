@@ -2837,6 +2837,7 @@ class _FailureBatchCard extends StatelessWidget {
                 ),
                 if (!isReviewed)
                   TextButton.icon(
+                    key: const ValueKey('national-focus-mark-reviewed'),
                     onPressed: onMarkReviewed,
                     icon: const Icon(Icons.check_circle_outline),
                     label: const Text('标记已回顾'),
