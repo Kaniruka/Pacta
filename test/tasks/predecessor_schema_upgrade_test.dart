@@ -147,6 +147,20 @@ void main() {
           (await _capture(database, 'user-a')).fingerprint,
           firstFingerprint,
         );
+        if (shape.hadColumn('local_goals', 'is_pinned')) {
+          final reopened = <String, Goal>{
+            for (final goal in await LocalTaskRepository(
+              database: database,
+              userId: 'user-a',
+              remote: InMemoryTaskRemote(),
+            ).getGoals(includeDeleted: true))
+              goal.id: goal,
+          };
+          expect(reopened['goal-a']!.isPinned, isTrue);
+          expect(reopened['goal-a']!.sortOrder, 1);
+          expect(reopened['goal-deleted']!.isPinned, isTrue);
+          expect(reopened['goal-deleted']!.sortOrder, 0);
+        }
         if (!shape.hadTable('local_schedules')) {
           final schedules = await LocalScheduleRepository(
             database: database,
@@ -287,6 +301,9 @@ void main() {
     },
   );
 
+  // Supplementary to the upgrade paths above: two predecessors (b9b9b38,
+  // 51a5af7) already carry pins, so this only covers a database that is already
+  // on 39 and a rule reminder value no predecessor could hold.
   test('schema 39 keeps non-default goal pins, order and rule reminder', () async {
     final directory = await Directory.systemTemp.createTemp('pacta-39-pins-');
     final file = File('${directory.path}${Platform.pathSeparator}pacta.sqlite');
@@ -391,20 +408,35 @@ Future<void> _expectRetention(
     userId: 'user-a',
     remote: InMemoryTaskRemote(),
   ).getGoals(includeDeleted: true);
-  expect(goals.map((goal) => goal.id), <String>['goal-a', 'goal-deleted']);
-  expect(goals.first.title, '目标a');
-  expect(goals.first.description, '描述a');
-  // Every historical shape predates goal pins: the column arrives as the
-  // documented default and never invents an order.
-  expect(goals.first.isPinned, isFalse);
-  expect(goals.first.sortOrder, isNull);
-  expect(goals.last.deletedAt, isNotNull);
-  expect(goals.first.tasks.single.id, 'task-a');
-  expect(goals.first.tasks.single.description, '任务说明a');
-  expect(goals.first.tasks.single.estimatedMinutes, 45);
-  expect(goals.first.tasks.single.deadline, isNotNull);
-  expect(goals.first.tasks.single.focusProgressSeconds, 120);
-  expect(goals.first.tasks.single.isComplete, isTrue);
+  final goalsById = <String, Goal>{for (final goal in goals) goal.id: goal};
+  expect(goalsById.keys.toSet(), <String>{'goal-a', 'goal-deleted'});
+  final activeGoal = goalsById['goal-a']!;
+  final deletedGoal = goalsById['goal-deleted']!;
+  expect(activeGoal.title, '目标a');
+  expect(activeGoal.description, '描述a');
+  expect(activeGoal.tasks.single.id, 'task-a');
+  expect(activeGoal.tasks.single.description, '任务说明a');
+  expect(activeGoal.tasks.single.estimatedMinutes, 45);
+  expect(activeGoal.tasks.single.deadline, isNotNull);
+  expect(activeGoal.tasks.single.focusProgressSeconds, 120);
+  expect(activeGoal.tasks.single.isComplete, isTrue);
+  expect(deletedGoal.deletedAt, isNotNull);
+
+  // Two real predecessors (b9b9b38 schema 35, 51a5af7 schema 37) already carry
+  // the pin columns; their non-default pins and manual order must survive the
+  // upgrade untouched. Shapes without the columns get the documented defaults.
+  final carriedPins = shape.hadColumn('local_goals', 'is_pinned');
+  if (carriedPins) {
+    expect(activeGoal.isPinned, isTrue);
+    expect(activeGoal.sortOrder, 1);
+    expect(deletedGoal.isPinned, isTrue);
+    expect(deletedGoal.sortOrder, 0);
+  } else {
+    expect(activeGoal.isPinned, isFalse);
+    expect(activeGoal.sortOrder, isNull);
+    expect(deletedGoal.isPinned, isFalse);
+    expect(deletedGoal.sortOrder, isNull);
+  }
 
   final scheduleRepository = LocalScheduleRepository(
     database: database,
@@ -583,6 +615,14 @@ Future<void> _expectRetention(
   ).getGoals();
   expect(otherGoals.single.id, 'goal-b');
   expect(otherGoals.single.title, '目标b');
+  if (carriedPins) {
+    // The other owner keeps its own pinned goal and its own order value.
+    expect(otherGoals.single.isPinned, isTrue);
+    expect(otherGoals.single.sortOrder, 0);
+  } else {
+    expect(otherGoals.single.isPinned, isFalse);
+    expect(otherGoals.single.sortOrder, isNull);
+  }
   final otherProfile = await LocalProfileRepository(
     database: database,
     userId: 'user-b',

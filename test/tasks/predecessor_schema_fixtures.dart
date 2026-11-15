@@ -558,8 +558,11 @@ Future<void> _seed(PactaDatabase database, PredecessorShape shape) async {
       'created_at': _epoch(createdAt),
       'updated_at': _epoch(updatedAt),
       'deleted_at': null,
-      'is_pinned': 0,
-      'sort_order': null,
+      // Non-default pins for the two shapes that already have the columns
+      // (b9b9b38 schema 35, 51a5af7 schema 37); the insert helper drops them for
+      // shapes that predate the columns.
+      'is_pinned': 1,
+      'sort_order': user == 'user-a' ? 1 : 0,
     });
     await insert('local_tasks', <String, Object?>{
       'user_id': user,
@@ -632,8 +635,9 @@ Future<void> _seed(PactaDatabase database, PredecessorShape shape) async {
     'created_at': _epoch(createdAt),
     'updated_at': _epoch(updatedAt),
     'deleted_at': _epoch(deletedAt),
-    'is_pinned': 0,
-    'sort_order': null,
+    // A pinned tombstone keeps its pin and its manual position.
+    'is_pinned': 1,
+    'sort_order': 0,
   });
 
   if (!shape.hadTable('local_schedules')) {
