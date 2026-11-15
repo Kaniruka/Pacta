@@ -1299,12 +1299,16 @@ class CloudSnapshotRepository {
     'local_goals': {'description': '', 'is_pinned': 0, 'sort_order': null},
     'local_tasks': {'description': ''},
     'focus_appointments': {'preparation_seconds': null},
+    // ticket 11：v1 整份快照还没有回顾字段，旧记录的显式默认是未回顾。
+    'local_national_focus_failures': {'reviewed_at': null},
   };
 
-  /// 完整核心 2 只缺本票新增的置顶列；默认“未置顶、无排序位”，
-  /// 既有目标的顺序仍由仓储的既有规则决定。
+  /// 完整核心 2 可能缺后来两票新增的列：目标置顶（07）与失败回顾（11）。
+  /// 缺列时补文档化默认值，已存值原样保留：置顶默认“未置顶、无排序位”，
+  /// 顺序沿用仓储既有规则；回顾状态默认 null（未回顾）。
   static const _coreSnapshotColumnDefaults = <String, Map<String, Object?>>{
     'local_goals': {'is_pinned': 0, 'sort_order': null},
+    'local_national_focus_failures': {'reviewed_at': null},
   };
 
   Map<String, dynamic> _withVersionColumnDefaults(

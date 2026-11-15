@@ -171,6 +171,18 @@ begin
     raise exception 'snapshot payload version 3 is incomplete: goal pin fields are missing; upgrade before uploading'
       using errcode = 'PT426';
   end if;
+  -- 版本 3 是本次全部新增字段的并集：失败回顾标记同样必须整列出现，
+  -- 否则升级后上传会丢掉另一张票的数据。
+  if jsonb_typeof(p_payload -> 'tables' -> 'local_national_focus_failures') = 'array'
+    and exists (
+      select 1
+      from jsonb_array_elements(p_payload -> 'tables' -> 'local_national_focus_failures') as failure
+      where jsonb_typeof(failure) = 'object'
+        and not jsonb_exists(failure, 'reviewed_at')
+    ) then
+    raise exception 'snapshot payload version 3 is incomplete: failure review state is missing; upgrade before uploading'
+      using errcode = 'PT426';
+  end if;
 
   select snapshot.revision into current_revision
   from public.cloud_business_snapshots as snapshot

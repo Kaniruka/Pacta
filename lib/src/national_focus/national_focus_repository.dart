@@ -48,11 +48,15 @@ abstract interface class NationalFocusRepository {
   });
   Future<int> confirmToday({DateTime? expectedConfirmationCheckpoint});
   Future<void> settleDueCheckpoints();
+  Stream<List<NationalFocusFailure>> watchFailures();
   Future<List<NationalFocusFailure>> getFailures({String? cardId});
   Future<void> updateFailureExplanation({
     required String batchId,
     required String? explanation,
   });
+
+  /// 把一组失败记录标为已回顾；重复标记是幂等的，不产生额外副作用。
+  Future<void> markFailureReviewed({required String batchId});
   Stream<NationalFocusReviewState> watchNationalFocusReviewState();
   Future<NationalFocusReviewState> getNationalFocusReviewState();
   Future<void> deferNationalFocusReconciliation(String caseId);
@@ -1428,6 +1432,53 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   }
 
   @override
+  Stream<List<NationalFocusFailure>> watchFailures() async* {
+    await settleDueCheckpoints();
+    final query = database.select(database.localNationalFocusFailures)
+      ..where((failure) => failure.userId.equals(userId))
+      ..orderBy([
+        (failure) => OrderingTerm.desc(failure.checkpointAt),
+        (failure) => OrderingTerm.asc(failure.cardId),
+      ]);
+    yield* query.watch().map(
+      (rows) => rows.map(_failureFromRow).toList(growable: false),
+    );
+  }
+
+  @override
+  Future<void> markFailureReviewed({required String batchId}) async {
+    await settleDueCheckpoints();
+    await lifecycleAccess.requireActive();
+    final reviewedAt = _nextTimestamp();
+    await database.transaction(() async {
+      final updated =
+          await (database.update(database.localNationalFocusFailures)
+                ..where((failure) => failure.userId.equals(userId))
+                ..where((failure) => failure.batchId.equals(batchId))
+                ..where((failure) => failure.reviewedAt.isNull()))
+              .write(
+                LocalNationalFocusFailuresCompanion(
+                  reviewedAt: Value(reviewedAt),
+                ),
+              );
+      if (updated == 0) {
+        // 幂等：整组已经回顾过就什么都不写，也不新增同步来源。
+        final existing =
+            await (database.select(database.localNationalFocusFailures)
+                  ..where((failure) => failure.userId.equals(userId))
+                  ..where((failure) => failure.batchId.equals(batchId))
+                  ..limit(1))
+                .getSingleOrNull();
+        if (existing == null) {
+          throw StateError('找不到这组国策失败记录。');
+        }
+        return;
+      }
+      await _recordSyncSnapshot(operation: 'mark_failure_reviewed');
+    });
+  }
+
+  @override
   Future<void> updateFailureExplanation({
     required String batchId,
     required String? explanation,
@@ -2243,6 +2294,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
             'sharedExplanation': failure.sharedExplanation,
             'treeSnapshot': failure.treeSnapshot,
             'reviewDisposition': failure.reviewDisposition,
+            'reviewedAt': failure.reviewedAt?.toUtc().toIso8601String(),
           },
       ],
       'maintenance': maintenance == null
@@ -2503,10 +2555,22 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
         final failureId = failure['id'];
         if (failureId is! String) continue;
         final existing = failuresById[failureId];
-        if (existing == null ||
-            (existing['sharedExplanation'] == null &&
-                failure['sharedExplanation'] != null)) {
+        if (existing == null) {
           failuresById[failureId] = failure;
+          continue;
+        }
+        // 回顾状态是一次性事实：任一副本已回顾就保持已回顾，
+        // 取最早的时间戳，保证合并结果与读取顺序无关。
+        final reviewedAt = _earliestReviewedAt(
+          existing['reviewedAt'],
+          failure['reviewedAt'],
+        );
+        if (existing['sharedExplanation'] == null &&
+            failure['sharedExplanation'] != null) {
+          failure['reviewedAt'] = reviewedAt;
+          failuresById[failureId] = failure;
+        } else {
+          existing['reviewedAt'] = reviewedAt;
         }
       }
     }
@@ -2719,6 +2783,9 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
                 reviewDisposition: Value(
                   (failure['reviewDisposition'] as String?) ?? 'accepted',
                 ),
+                // 旧版载荷没有回顾字段：显式转换为未回顾，而不是让整个
+                // 同步失败，也不臆测历史记录曾被回顾。
+                reviewedAt: Value(_optionalReviewedAt(failure['reviewedAt'])),
               ),
             );
       }
@@ -3172,6 +3239,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       sharedExplanation: row.sharedExplanation,
       treeSnapshot: snapshot,
       isPendingReview: row.reviewDisposition == 'pending_review',
+      reviewedAt: row.reviewedAt,
     );
   }
 
@@ -3295,6 +3363,9 @@ class UnavailableNationalFocusRepository implements NationalFocusRepository {
   Future<void> settleDueCheckpoints() async {}
 
   @override
+  Stream<List<NationalFocusFailure>> watchFailures() => Stream.value(const []);
+
+  @override
   Future<List<NationalFocusFailure>> getFailures({String? cardId}) async =>
       const [];
 
@@ -3303,6 +3374,9 @@ class UnavailableNationalFocusRepository implements NationalFocusRepository {
     required String batchId,
     required String? explanation,
   }) => _unavailable();
+
+  @override
+  Future<void> markFailureReviewed({required String batchId}) => _unavailable();
 
   @override
   Stream<NationalFocusReviewState> watchNationalFocusReviewState() =>
@@ -3843,3 +3917,14 @@ String _nationalFocusCheckpointKey(String cardId, DateTime checkpoint) =>
 
 DateTime? _optionalNationalFocusDate(Object? value) =>
     value == null ? null : DateTime.parse(value as String).toUtc();
+
+/// 回顾标记的显式转换：只有合法的时间字符串才算已回顾，
+/// 缺字段、`null` 或类型不符都按未回顾处理（ticket 11 的 v1 默认值）。
+DateTime? _optionalReviewedAt(Object? value) =>
+    value is String ? DateTime.parse(value).toUtc() : null;
+
+/// 合并时保留更早的回顾时间戳；ISO-8601 UTC 字符串可直接按字典序比较。
+Object? _earliestReviewedAt(Object? left, Object? right) {
+  final candidates = [left, right].whereType<String>().toList()..sort();
+  return candidates.isEmpty ? null : candidates.first;
+}
