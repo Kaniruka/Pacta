@@ -152,6 +152,56 @@ Future<void> _captureDesktop(
   await file.writeAsBytes(data.buffer.asUint8List());
 }
 
+void _expectFirstScreenGeometry(
+  WidgetTester tester,
+  String state,
+  List<String> recoveryLabels,
+) {
+  final list = tester.getRect(find.byKey(const ValueKey('focus-chain-list')));
+  final scrollable = find.descendant(
+    of: find.byKey(const ValueKey('focus-chain-list')),
+    matching: find.byType(Scrollable),
+  );
+  final position = tester.state<ScrollableState>(scrollable).position;
+  expect(position.maxScrollExtent, 0, reason: '$state 首屏不应需要纵向滚动');
+  for (final key in const [
+    'focus-chain-table',
+    'focus-chain-signals',
+    'focus-allowance-entry',
+    'focus-chain-footnote',
+  ]) {
+    final rect = tester.getRect(find.byKey(ValueKey(key)));
+    expect(
+      rect.top,
+      greaterThanOrEqualTo(list.top - 0.5),
+      reason: '$state $key 顶部在可视列表内',
+    );
+    expect(
+      rect.bottom,
+      lessThanOrEqualTo(list.bottom + 0.5),
+      reason: '$state $key 底部在可视列表内',
+    );
+    expect(
+      rect.left,
+      greaterThanOrEqualTo(list.left - 0.5),
+      reason: '$state $key 左侧未被裁切',
+    );
+    expect(
+      rect.right,
+      lessThanOrEqualTo(list.right + 0.5),
+      reason: '$state $key 右侧未被裁切',
+    );
+  }
+  for (final label in recoveryLabels) {
+    final rect = tester.getRect(find.text(label));
+    expect(
+      rect.bottom,
+      lessThanOrEqualTo(list.bottom + 0.5),
+      reason: '$state $label 完整可见',
+    );
+  }
+}
+
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets('专注链首屏：同一份内存数据的亮暗窄宽截图', (tester) async {
@@ -277,6 +327,12 @@ void main() {
       expect(find.text('返回准备'), findsOneWidget);
       expect(find.text('提前进入专注'), findsOneWidget);
       expect(find.text('取消预约'), findsOneWidget);
+      _expectFirstScreenGeometry(tester, 'appointment-recovery', const [
+        '已有预约准备',
+        '返回准备',
+        '提前进入专注',
+        '取消预约',
+      ]);
       await shot('light-appointment-recovery');
       final appointment = await data.focus.getActiveAppointment();
       await data.focus.cancelAppointment(
@@ -294,6 +350,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('已有进行中的专注'), findsOneWidget);
       expect(find.text('返回专注'), findsOneWidget);
+      _expectFirstScreenGeometry(tester, 'session-recovery', const [
+        '已有进行中的专注',
+        '返回专注',
+      ]);
       await shot('light-session-recovery');
 
       // Keep this session active: the recovery strip's 返回专注 entry is the

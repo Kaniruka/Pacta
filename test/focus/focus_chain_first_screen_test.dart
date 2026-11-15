@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -119,6 +120,53 @@ void main() {
     await _disposeWidget(tester);
   });
 
+  testWidgets('预约恢复与长信号在 360×800/390×844 下全部信息可见且无需滚动', (tester) async {
+    for (final size in [const Size(360, 800), const Size(390, 844)]) {
+      final fixture = await _Fixture.create();
+      await _saveLongSignals(fixture);
+      await fixture.focus.startAppointment(
+        taskId: await _primaryTaskId(fixture),
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 25),
+        preparation: const Duration(minutes: 10),
+      );
+      await _pumpApp(tester, fixture, width: size.width, height: size.height);
+      await _openFocusChain(tester);
+      expect(find.text('已有预约准备'), findsOneWidget);
+      _expectAllInformationVisible(tester, _sizeLabel(size));
+      await _disposeWidget(tester);
+      await fixture.dispose();
+    }
+  });
+
+  testWidgets('待核对预约恢复与长信号在 360×800/390×844 下全部信息可见且无需滚动', (tester) async {
+    for (final size in [const Size(360, 800), const Size(390, 844)]) {
+      final fixture = await _Fixture.create();
+      await _saveLongSignals(fixture);
+      final appointment = await fixture.focus.startAppointment(
+        taskId: await _primaryTaskId(fixture),
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 25),
+        preparation: const Duration(minutes: 10),
+      );
+      await (fixture.database.update(
+        fixture.database.focusAppointments,
+      )..where((row) => row.id.equals(appointment.id))).write(
+        FocusAppointmentsCompanion(
+          reviewDisposition: Value(
+            FocusRecordDisposition.pendingReview.storageValue,
+          ),
+          reviewDispositionUpdatedAt: Value(DateTime.utc(2026, 11, 15, 11, 31)),
+        ),
+      );
+      await _pumpApp(tester, fixture, width: size.width, height: size.height);
+      await _openFocusChain(tester);
+      expect(find.textContaining('· 待核对'), findsOneWidget);
+      _expectAllInformationVisible(tester, _sizeLabel(size));
+      await _disposeWidget(tester);
+      await fixture.dispose();
+    }
+  });
   testWidgets('专注链首屏在 390×844 与 360×800 布局一致且一屏容纳', (tester) async {
     final fixture = await _Fixture.create();
     addTearDown(fixture.dispose);
@@ -187,6 +235,63 @@ void main() {
     );
     await _disposeWidget(tester);
   });
+}
+
+Future<void> _saveLongSignals(_Fixture fixture) => fixture.signals.save(
+  const ChainSignalTexts(
+    focusMarker: '戴上耳机，坐到书桌前，关闭消息提醒，把手机翻面并打开当前任务的第一页',
+    appointmentTriggerSignal: '合上手机，倒一杯水，把桌面清空',
+  ),
+);
+
+Future<String> _primaryTaskId(_Fixture fixture) async {
+  final goals = await fixture.tasks.getGoals(includeDeleted: true);
+  return goals.first.tasks.first.id;
+}
+
+String _sizeLabel(Size size) => '${size.width.toInt()}×${size.height.toInt()}';
+
+void _expectAllInformationVisible(WidgetTester tester, String viewport) {
+  final state = tester.state<ScrollableState>(_chainScrollable(tester));
+  final list = tester.getRect(find.byKey(chainList));
+  expect(state.position.maxScrollExtent, 0, reason: '$viewport 预约恢复态不应需要纵向滚动');
+  for (final key in [
+    historyEntry,
+    chainTable,
+    signalsSurface,
+    allowanceEntry,
+    chainFootnote,
+  ]) {
+    final rect = tester.getRect(find.byKey(key));
+    expect(
+      rect.top,
+      greaterThanOrEqualTo(list.top - 0.5),
+      reason: '$viewport $key 顶部在可视列表内',
+    );
+    expect(
+      rect.bottom,
+      lessThanOrEqualTo(list.bottom + 0.5),
+      reason: '$viewport $key 底部在可视列表内',
+    );
+    expect(
+      rect.left,
+      greaterThanOrEqualTo(list.left - 0.5),
+      reason: '$viewport $key 左侧未被裁切',
+    );
+    expect(
+      rect.right,
+      lessThanOrEqualTo(list.right + 0.5),
+      reason: '$viewport $key 右侧未被裁切',
+    );
+  }
+  for (final label in ['已有预约准备', '返回准备', '提前进入专注', '取消预约']) {
+    final rect = tester.getRect(find.text(label));
+    expect(
+      rect.bottom,
+      lessThanOrEqualTo(list.bottom + 0.5),
+      reason: '$viewport $label 完整可见',
+    );
+  }
 }
 
 Future<void> _pumpApp(

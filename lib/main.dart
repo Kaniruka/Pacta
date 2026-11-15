@@ -2570,7 +2570,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                     Expanded(
                       child: ListView(
                         key: const ValueKey('focus-chain-list'),
-                        padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
                         children: [
                           Row(
                             children: [
@@ -2635,16 +2635,34 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                                 tone: _RecoveryStripTone.secondary,
                                 actions: [
                                   OutlinedButton(
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                      minimumSize: const Size(0, 48),
+                                    ),
                                     onPressed: () =>
                                         _openAppointment(appointment, title),
                                     child: const Text('返回准备'),
                                   ),
                                   FilledButton.tonal(
+                                    style: FilledButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                      minimumSize: const Size(0, 48),
+                                    ),
                                     onPressed: () =>
                                         _enterAppointment(appointment, title),
                                     child: const Text('提前进入专注'),
                                   ),
                                   TextButton(
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                      minimumSize: const Size(0, 48),
+                                    ),
                                     onPressed: () =>
                                         _cancelAppointment(appointment),
                                     child: const Text('取消预约'),
@@ -2653,7 +2671,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                               );
                             },
                           ),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 4),
                           FutureBuilder<List<FocusChainRecord>>(
                             future: _chainRecordsFuture,
                             builder: (context, recordSnapshot) {
@@ -2682,9 +2700,9 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                               );
                             },
                           ),
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 4),
                           _allowanceEntry(context),
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 4),
                           Text(
                             '累计与平均包含失败专注的有效时间，不含暂停。',
                             key: const ValueKey('focus-chain-footnote'),
@@ -2967,8 +2985,8 @@ class _FocusRecoveryStrip extends StatelessWidget {
         ? colors.onPrimaryContainer
         : colors.onSecondaryContainer;
     return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(12),
@@ -3014,10 +3032,10 @@ class _FocusRecoveryStrip extends StatelessWidget {
             ],
           ),
           if (actions.isNotEmpty) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Wrap(
               alignment: WrapAlignment.end,
-              spacing: 8,
+              spacing: 4,
               runSpacing: 4,
               children: actions,
             ),

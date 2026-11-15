@@ -299,7 +299,7 @@ class _ChainTableRow extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.only(top: 2, bottom: 6),
           child: Wrap(
-            spacing: 12,
+            spacing: 6,
             runSpacing: 2,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: footnotes,
@@ -362,7 +362,11 @@ class _SignalAction extends StatelessWidget {
 }
 
 class _DurationMetric extends StatelessWidget {
-  const _DurationMetric({super.key, required this.label, required this.seconds});
+  const _DurationMetric({
+    super.key,
+    required this.label,
+    required this.seconds,
+  });
   final String label;
   final int seconds;
 
