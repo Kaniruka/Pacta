@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../notifications/device_permission_gateway.dart';
+import '../schedules/calendar_import_models.dart';
+import '../schedules/schedule_repository.dart';
 import 'calendar_models.dart';
 import 'calendar_repository.dart';
 
@@ -123,11 +125,16 @@ class CalendarSourcesPage extends StatefulWidget {
     super.key,
     required this.repository,
     required this.isAndroid,
+    this.scheduleRepository,
     this.permissionGateway,
   });
 
   final CalendarRepository repository;
   final bool isAndroid;
+
+  /// Owns the imported copies. When absent the page explains that the import
+  /// destination is not wired instead of writing anything.
+  final ScheduleRepository? scheduleRepository;
 
   /// Optional so tests can observe the system settings entry.
   final DevicePermissionGateway? permissionGateway;
@@ -176,7 +183,17 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
     }
   }
 
-  Future<void> _chooseSources() async {
+  void _finish(String? message) {
+    if (!mounted) return;
+    setState(() {
+      _working = false;
+      _message = message;
+    });
+  }
+
+  /// Preview first, write only after confirmation. Cancelling either step
+  /// leaves the account untouched.
+  Future<void> _startImport() async {
     setState(() {
       _working = true;
       _message = null;
@@ -188,89 +205,110 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
         if (!mounted) return;
         setState(() => _state = state);
       }
-      if (state!.permission == CalendarPermissionState.unknown) {
-        setState(() {
-          _working = false;
-          _message = '无法确认日历权限状态。已保留缓存并标记为未更新。';
-        });
+      if (state == null) {
+        _finish('日历状态暂时无法读取，其他功能仍可使用。');
+        return;
+      }
+      if (state.permission == CalendarPermissionState.unknown) {
+        _finish('无法确认日历权限状态，请稍后重试。');
         return;
       }
       if (state.permission != CalendarPermissionState.granted) {
-        setState(() {
-          _working = false;
-          _message = '未获得日历读取权限，其他功能仍可使用。';
-        });
+        _finish('未获得日历读取权限，其他功能仍可使用。');
         return;
       }
-      final importedIds = state.importedSourceIds;
-      final choices = state.availableSources
-          .where((source) => !importedIds.contains(source.id))
-          .toList();
-      if (choices.isEmpty) {
-        setState(() {
-          _working = false;
-          _message = state!.availableSources.isEmpty
-              ? '设备中没有可读取的系统日历。'
-              : '日历来源均已导入。';
-        });
+      final sources = state.availableSources;
+      if (sources.isEmpty) {
+        _finish('设备中没有可读取的系统日历。');
         return;
       }
-      final selectedIds = await _showSourcePicker(
-        state.availableSources,
-        importedIds,
+      final scheduleRepository = widget.scheduleRepository;
+      if (scheduleRepository == null) {
+        _finish('导入目标尚未就绪，日程管理仍可使用。');
+        return;
+      }
+
+      // Stop the busy indicator before opening a dialog: an indeterminate
+      // spinner never settles while the user reads the preview.
+      setState(() => _working = false);
+      final selection = await _showImportDialog(sources);
+      if (selection == null || !mounted) {
+        if (mounted) _finish(null);
+        return;
+      }
+      setState(() => _working = true);
+
+      final occurrences = await widget.repository.readOccurrences(
+        sourceIds: selection.sourceIds,
+        from: selection.from,
+        to: selection.to,
       );
-      if (selectedIds == null || selectedIds.isEmpty || !mounted) {
-        if (mounted) setState(() => _working = false);
+      final preview = await scheduleRepository.previewCalendarImport(
+        CalendarImportRequest(
+          sources: [
+            for (final source in sources)
+              if (selection.sourceIds.contains(source.id))
+                CalendarImportSource(
+                  id: source.id,
+                  displayName: source.displayName,
+                  localCalendarId: source.localCalendarId,
+                ),
+          ],
+          occurrences: occurrences,
+          from: selection.from,
+          to: selection.to,
+        ),
+      );
+      if (!mounted) return;
+      setState(() => _working = false);
+      final confirmed = await _showPreviewDialog(preview);
+      if (confirmed != true || !mounted) return;
+      if (!preview.hasPending) {
+        _finish(
+          preview.duplicateCount > 0
+              ? '所选范围内都是已存在的日程，跳过 ${preview.duplicateCount} 个。'
+              : '所选范围内没有可导入的日程。',
+        );
         return;
       }
-      final result = await widget.repository.importCalendars(selectedIds);
-      final refreshed = await widget.repository.loadImportState();
-      if (!mounted) return;
       setState(() {
-        _state = refreshed;
-        _working = false;
-        _message = result.isStale
-            ? '本机日历来源暂未更新，已有缓存已保留。'
-            : '已导入 ${result.importedOccurrences} 个日历活动。';
+        _working = true;
+        _message = null;
       });
+      final outcome = await scheduleRepository.confirmCalendarImport(preview);
+      _finish(
+        '已导入 ${outcome.createdCount} 个日程；跳过 '
+        '${outcome.skippedDuplicates} 个已存在日程。',
+      );
     } catch (_) {
-      if (!mounted) return;
-      setState(() {
-        _working = false;
-        _message = '日历读取未完成，其他功能仍可使用。';
-      });
+      _finish('日历读取未完成，其他功能仍可使用。');
     }
   }
 
-  Future<Set<String>?> _showSourcePicker(
+  Future<_CalendarImportSelection?> _showImportDialog(
     List<CalendarSource> sources,
-    Set<String> importedIds,
-  ) async {
-    final choices = sources
-        .where((source) => !importedIds.contains(source.id))
-        .toList();
+  ) {
     final selected = <String>{};
-    return showDialog<Set<String>>(
+    final today = DateTime.now();
+    var from = DateTime(today.year, today.month, today.day);
+    var to = from.add(const Duration(days: 7));
+    return showDialog<_CalendarImportSelection>(
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
-          title: const Text('选择要读取的日历'),
+          title: const Text('导入系统日历'),
           content: SizedBox(
-            width: 420,
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                for (final source in sources)
-                  if (importedIds.contains(source.id))
-                    ListTile(
-                      key: ValueKey('imported-${source.id}'),
-                      leading: const Icon(Icons.check_circle_outline),
-                      title: Text(source.displayName),
-                      subtitle: const Text('已导入'),
-                    )
-                  else
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('选择来源日历，并指定要导入的日期范围。'),
+                  const SizedBox(height: 8),
+                  for (final source in sources)
                     CheckboxListTile(
-                      key: ValueKey('calendar-${source.id}'),
+                      key: ValueKey('import-source-${source.id}'),
                       value: selected.contains(source.id),
                       title: Text(source.displayName),
                       subtitle: Text(source.timeZoneId),
@@ -283,12 +321,32 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
                         }
                       }),
                     ),
-                if (choices.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: Text('没有新的日历来源可添加。'),
+                  ListTile(
+                    key: const Key('import-range'),
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.date_range_outlined),
+                    title: const Text('日期范围'),
+                    subtitle: Text('${_dateLabel(from)} 至 ${_dateLabel(to)}'),
+                    trailing: const Icon(Icons.edit_calendar_outlined),
+                    onTap: () async {
+                      final picked = await showDateRangePicker(
+                        context: context,
+                        firstDate: DateTime(today.year - 2),
+                        lastDate: DateTime(today.year + 3),
+                        initialDateRange: DateTimeRange(
+                          start: from,
+                          end: to.subtract(const Duration(days: 1)),
+                        ),
+                      );
+                      if (picked == null) return;
+                      setDialogState(() {
+                        from = picked.start;
+                        to = picked.end.add(const Duration(days: 1));
+                      });
+                    },
                   ),
-              ],
+                ],
+              ),
             ),
           ),
           actions: [
@@ -297,10 +355,17 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
               child: const Text('取消'),
             ),
             FilledButton(
+              key: const Key('import-preview'),
               onPressed: selected.isEmpty
                   ? null
-                  : () => Navigator.of(context).pop(Set<String>.of(selected)),
-              child: const Text('导入所选'),
+                  : () => Navigator.of(context).pop(
+                      _CalendarImportSelection(
+                        sourceIds: Set<String>.of(selected),
+                        from: from,
+                        to: to,
+                      ),
+                    ),
+              child: const Text('预览'),
             ),
           ],
         ),
@@ -308,100 +373,49 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
     );
   }
 
-  Future<void> _sync() async {
-    setState(() {
-      _working = true;
-      _message = null;
-    });
-    try {
-      await widget.repository.sync();
-      final state = await widget.repository.loadImportState();
-      if (!mounted) return;
-      setState(() {
-        _state = state;
-        _working = false;
-        _message = state.hasPendingUpdates ? '部分日历尚未更新，已保留缓存。' : '日历已刷新。';
-      });
-    } catch (_) {
-      if (!mounted) return;
-      final state = await widget.repository.loadImportState();
-      setState(() {
-        _state = state;
-        _working = false;
-        _message = '日历暂时无法更新，已保留缓存。';
-      });
-    }
-  }
-
-  Future<void> _removeSource(CalendarSource source) => _removeSources(
-    {source.id},
-    title: '取消导入日历？',
-    content: '将从本机移除“${source.displayName}”及其日历块。',
-    confirmLabel: '取消导入',
-  );
-
-  Future<void> _confirmPermissionRevocation() => _removeSources(
-    _state!.importedSourceIds,
-    title: '移除所有已导入日历？',
-    content: '设备日历权限已关闭。确认后会从本机移除缓存的日历来源和日历块；目标、任务和历史记录不受影响。',
-    confirmLabel: '确认移除',
-  );
-
-  Future<void> _removeSources(
-    Set<String> sourceIds, {
-    required String title,
-    required String content,
-    required String confirmLabel,
-  }) async {
-    final confirmed = await showDialog<bool>(
+  Future<bool?> _showPreviewDialog(CalendarImportPreview preview) {
+    return showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text(title),
-        content: Text(content),
+        title: const Text('确认导入'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('将导入 ${preview.pending.length} 个日程'),
+            const SizedBox(height: 6),
+            Text('已存在将跳过 ${preview.duplicateCount} 个'),
+            if (preview.ignoredCount > 0) ...[
+              const SizedBox(height: 6),
+              Text('${preview.ignoredCount} 个活动无法作为日程导入'),
+            ],
+            const SizedBox(height: 12),
+            const Text('导入后这些日程归 Pacta 管理；源日历不会被修改。'),
+          ],
+        ),
         actions: [
           TextButton(
+            key: const Key('import-cancel'),
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('保留'),
+            child: const Text('取消'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(confirmLabel),
+            key: const Key('import-confirm'),
+            onPressed: preview.hasPending
+                ? () => Navigator.of(context).pop(true)
+                : null,
+            child: const Text('确认导入'),
           ),
         ],
       ),
     );
-    if (confirmed != true || !mounted || sourceIds.isEmpty) return;
-
-    setState(() {
-      _working = true;
-      _message = null;
-    });
-    try {
-      await widget.repository.removeSources(sourceIds);
-      final state = await widget.repository.loadImportState();
-      if (!mounted) return;
-      setState(() {
-        _state = state;
-        _working = false;
-        _message = state.hasPendingUpdates ? '已移除来源；部分缓存仍待刷新。' : '日历来源已移除。';
-      });
-    } catch (_) {
-      final state = await widget.repository.loadImportState();
-      if (!mounted) return;
-      setState(() {
-        _state = state;
-        _working = false;
-        _message = '移除未完成，请重试。';
-      });
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     final state = _state;
-    final imported = state?.importedSources ?? const <CalendarSource>[];
     return Scaffold(
-      appBar: AppBar(title: const Text('日历块')),
+      appBar: AppBar(title: const Text('系统日历导入')),
       body: SafeArea(
         child: Align(
           alignment: Alignment.topCenter,
@@ -414,62 +428,23 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
                   child: Padding(
                     padding: EdgeInsets.all(16),
                     child: Text(
-                      '日历只作规划参考。全天活动保留原日期；空闲活动不计入占用，也不限制开始专注。需要在设备间同步日历数据时，前往“我的”上传或下载。',
+                      '系统日历只读：Pacta 只复制你确认导入的日程，不会修改或删除源日历；'
+                      '源事件之后的变化不会回写到已导入的副本。',
                     ),
                   ),
                 ),
                 if (_loading)
                   const Center(child: CircularProgressIndicator())
                 else if (widget.isAndroid)
-                  _androidImportStatus(state)
+                  _androidStatus(state)
                 else
-                  Card(
+                  const Card(
                     child: ListTile(
-                      leading: Icon(Icons.sync_outlined),
-                      title: Text('本机已保存的日历块'),
-                      subtitle: Text('在设备间同步数据，请前往“我的”上传或下载。'),
+                      leading: Icon(Icons.desktop_access_disabled_outlined),
+                      title: Text('Windows 暂不支持读取系统日历'),
+                      subtitle: Text('自有日程与已导入的副本仍可正常管理；导入入口只在 Android 提供。'),
                     ),
                   ),
-                if (state?.hasPendingUpdates == true)
-                  Card(
-                    child: Semantics(
-                      liveRegion: true,
-                      label: '部分日历数据尚未更新，已保留缓存。',
-                      child: const ListTile(
-                        leading: Icon(Icons.sync_problem_outlined),
-                        title: Text('日历数据未更新'),
-                        subtitle: Text('已保留缓存；检查日历权限后可重试。'),
-                      ),
-                    ),
-                  ),
-                if (imported.isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  Text('已导入来源', style: Theme.of(context).textTheme.titleMedium),
-                  for (final source in imported)
-                    Card(
-                      child: ListTile(
-                        key: ValueKey('source-${source.id}'),
-                        leading: const Icon(Icons.event_available_outlined),
-                        title: Text(source.displayName),
-                        subtitle: Text(
-                          '${source.timeZoneId} · ${source.isStale ? '未更新' : '已更新'}',
-                        ),
-                        trailing: widget.isAndroid
-                            ? IconButton(
-                                tooltip: '取消导入 ${source.displayName}',
-                                onPressed: _working
-                                    ? null
-                                    : () => _removeSource(source),
-                                icon: const Icon(Icons.remove_circle_outline),
-                              )
-                            : Icon(
-                                source.isStale
-                                    ? Icons.cloud_off_outlined
-                                    : Icons.check_circle_outline,
-                              ),
-                      ),
-                    ),
-                ],
                 if (_message != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 12),
@@ -478,24 +453,16 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
                 const SizedBox(height: 12),
                 if (widget.isAndroid)
                   FilledButton.icon(
-                    onPressed: _working ? null : _chooseSources,
+                    key: const Key('calendar-import-start'),
+                    onPressed: _working ? null : _startImport,
                     icon: _working
                         ? const SizedBox.square(
                             dimension: 18,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.calendar_month_outlined),
-                    label: Text(
-                      state?.permission == CalendarPermissionState.granted
-                          ? '选择其他日历'
-                          : '允许并选择日历',
-                    ),
+                    label: const Text('导入系统日历'),
                   ),
-                OutlinedButton.icon(
-                  onPressed: _working ? null : _sync,
-                  icon: const Icon(Icons.sync),
-                  label: const Text('刷新本机日历'),
-                ),
               ],
             ),
           ),
@@ -504,24 +471,13 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
     );
   }
 
-  Widget _androidImportStatus(CalendarImportState? state) {
+  Widget _androidStatus(CalendarImportState? state) {
     if (state?.permission == CalendarPermissionState.granted) {
-      final hasStaleSource = state!.importedSources.any(
-        (source) => source.isStale,
-      );
-      return Card(
+      return const Card(
         child: ListTile(
-          leading: Icon(
-            hasStaleSource
-                ? Icons.cloud_off_outlined
-                : Icons.verified_user_outlined,
-          ),
-          title: Text(hasStaleSource ? '日历来源未更新' : '已允许读取日历'),
-          subtitle: Text(
-            hasStaleSource
-                ? '日历读取未成功，Pacta 已保留缓存。'
-                : 'Pacta 只读取你选择的日历，不会修改源日历。',
-          ),
+          leading: Icon(Icons.verified_user_outlined),
+          title: Text('已允许读取日历'),
+          subtitle: Text('Pacta 只读取你选择的日历，不会修改源日历。'),
         ),
       );
     }
@@ -530,12 +486,11 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
         child: ListTile(
           leading: Icon(Icons.cloud_off_outlined),
           title: Text('日历权限状态暂不可用'),
-          subtitle: Text('已保留缓存并标记未更新。确认权限状态前不会删除日历块。'),
+          subtitle: Text('其他功能仍可使用；稍后可重试读取权限状态。'),
         ),
       );
     }
-    if (state?.permission == CalendarPermissionState.denied &&
-        state!.importedSources.isNotEmpty) {
+    if (state?.permission == CalendarPermissionState.denied) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -543,14 +498,10 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
             child: ListTile(
               leading: Icon(Icons.info_outline),
               title: Text('设备日历权限已关闭'),
-              subtitle: Text('已保留缓存并标记未更新。确认后才会移除已导入来源。'),
+              subtitle: Text(
+                '可能尚未授权或被系统关闭。已导入的副本仍会保留，其他功能仍可使用；重新导入前请开启日历读取权限。',
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _working ? null : _confirmPermissionRevocation,
-            icon: const Icon(Icons.delete_outline),
-            label: const Text('确认撤权并移除所有来源'),
           ),
           const SizedBox(height: 8),
           TextButton.icon(
@@ -568,25 +519,36 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
           const ListTile(
             leading: Icon(Icons.info_outline),
             title: Text('日历权限尚未开启'),
-            subtitle: Text('允许后可选择要读取的日历。拒绝权限不影响其他功能。'),
+            subtitle: Text('允许后可选择只读导入的系统日历。拒绝权限不影响其他功能。'),
           ),
-          if (widget.isAndroid)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  key: const Key('calendar-open-system-settings'),
-                  onPressed: _working ? null : _openSystemSettings,
-                  icon: const Icon(Icons.settings_outlined),
-                  label: const Text('去系统设置开启日历权限'),
-                ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const Key('calendar-open-system-settings'),
+                onPressed: _working ? null : _openSystemSettings,
+                icon: const Icon(Icons.settings_outlined),
+                label: const Text('去系统设置开启日历权限'),
               ),
             ),
+          ),
         ],
       ),
     );
   }
+}
+
+class _CalendarImportSelection {
+  const _CalendarImportSelection({
+    required this.sourceIds,
+    required this.from,
+    required this.to,
+  });
+
+  final Set<String> sourceIds;
+  final DateTime from;
+  final DateTime to;
 }
 
 String _formatTime(BuildContext context, DateTime value) =>

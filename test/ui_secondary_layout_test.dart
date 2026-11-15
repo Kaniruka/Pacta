@@ -14,6 +14,7 @@ import 'package:pacta/src/national_focus/national_focus_strengthening_page.dart'
 import 'package:pacta/src/notifications/focus_device_preferences.dart';
 import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/notifications/focus_notification_settings_page.dart';
+import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -53,38 +54,48 @@ void main() {
     await _scan(tester);
   });
 
-  testWidgets('320 dp / 200% calendar sources and sync remain readable', (
+  testWidgets('320 dp / 200% calendar import preview stays readable', (
     tester,
   ) async {
     final database = PactaDatabase(NativeDatabase.memory());
-    final remote = InMemoryCalendarRemote();
     final repository = LocalCalendarRepository(
       database: database,
       userId: 'layout-user',
-      provider: FakeCalendarProvider.unsupported(),
-      remote: remote,
+      provider: FakeCalendarProvider(
+        sources: const [
+          CalendarSource(
+            id: 'source',
+            displayName: '工作与家庭的共享规划日历来源',
+            timeZoneId: 'Asia/Shanghai',
+            localCalendarId: '3',
+          ),
+        ],
+        permission: CalendarPermissionState.granted,
+      ),
+      remote: InMemoryCalendarRemote(),
+    );
+    final schedules = LocalScheduleRepository(
+      database: database,
+      userId: 'layout-user',
     );
     addTearDown(() async {
+      await schedules.dispose();
       await repository.dispose();
       await database.close();
     });
-    await remote.upsertSources(
-      userId: 'layout-user',
-      sources: const [
-        CalendarSource(
-          id: 'source',
-          displayName: '工作与家庭的共享规划日历来源',
-          timeZoneId: 'Asia/Shanghai',
-        ),
-      ],
-    );
-    await repository.sync();
     await _mount(
       tester,
-      CalendarSourcesPage(repository: repository, isAndroid: false),
+      CalendarSourcesPage(
+        repository: repository,
+        isAndroid: true,
+        scheduleRepository: schedules,
+      ),
     );
+    await _reveal(tester, find.text('导入系统日历'));
+    await tester.tap(find.byKey(const Key('calendar-import-start')));
+    await tester.pumpAndSettle();
     await _reveal(tester, find.text('工作与家庭的共享规划日历来源'));
-    await _reveal(tester, find.text('刷新本机日历'));
+    await _reveal(tester, find.text('日期范围'));
     await _scan(tester);
   });
 

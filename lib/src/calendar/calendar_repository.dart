@@ -78,6 +78,16 @@ abstract interface class CalendarRepository {
   Future<CalendarImportState> loadImportState();
   Future<CalendarImportState> requestAccess();
   Future<CalendarImportResult> importCalendars(Set<String> sourceIds);
+
+  /// Reads raw occurrences for a manual import preview.
+  ///
+  /// Read-only: the platform supplies instances inside [from]..[to] and Pacta
+  /// writes nothing here. Repeated instances arrive as separate occurrences.
+  Future<List<CalendarEventOccurrence>> readOccurrences({
+    required Set<String> sourceIds,
+    required DateTime from,
+    required DateTime to,
+  });
   Future<void> removeSources(Set<String> sourceIds);
   Future<CalendarAgenda> getAgenda({
     required DateTime from,
@@ -108,6 +118,13 @@ class UnavailableCalendarRepository implements CalendarRepository {
   @override
   Future<CalendarImportResult> importCalendars(Set<String> sourceIds) async =>
       throw UnsupportedError('当前日历功能暂不可用。');
+
+  @override
+  Future<List<CalendarEventOccurrence>> readOccurrences({
+    required Set<String> sourceIds,
+    required DateTime from,
+    required DateTime to,
+  }) async => throw UnsupportedError('当前日历功能暂不可用。');
 
   @override
   Future<void> removeSources(Set<String> sourceIds) async =>
@@ -279,6 +296,29 @@ class LocalCalendarRepository implements CalendarRepository {
         (source) => sourceIds.contains(source.id) && source.isStale,
       ),
     );
+  }
+
+  @override
+  Future<List<CalendarEventOccurrence>> readOccurrences({
+    required Set<String> sourceIds,
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    await lifecycleAccess.requireActive();
+    if (sourceIds.isEmpty || !to.isAfter(from)) return const [];
+    if (!provider.isSupported) {
+      throw UnsupportedError('当前平台不支持读取系统日历。');
+    }
+    if (await provider.permissionStatus() != CalendarPermissionState.granted) {
+      throw StateError('尚未获得读取日历权限。');
+    }
+    final available = {
+      for (final source in await provider.listCalendars()) source.id,
+    };
+    if (!sourceIds.every(available.contains)) {
+      throw ArgumentError('所选日历已不可用，请重新选择。');
+    }
+    return provider.readEvents(sourceIds: sourceIds, from: from, to: to);
   }
 
   @override

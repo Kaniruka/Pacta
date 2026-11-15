@@ -19,6 +19,7 @@ import 'src/board/national_focus_summary_card.dart';
 import 'src/calendar/calendar_page.dart';
 import 'src/calendar/calendar_provider.dart';
 import 'src/calendar/calendar_repository.dart';
+import 'src/schedules/schedule_repository.dart';
 import 'src/focus/focus_models.dart';
 import 'src/focus/chain_signals_repository.dart';
 import 'src/focus/chain_signals_card.dart';
@@ -131,6 +132,14 @@ Future<void> main() async {
           userId: userId,
         ),
       ),
+      scheduleRepositoryFactory: (userId) => LocalScheduleRepository(
+        database: database,
+        userId: userId,
+        lifecycleAccess: LocalUserLifecycleAccess(
+          database: database,
+          userId: userId,
+        ),
+      ),
       chainSignalsRepositoryFactory: (userId) => ChainSignalsRepository(
         database: database,
         userId: userId,
@@ -183,6 +192,7 @@ class PactaApp extends StatelessWidget {
     this.focusRepositoryFactory,
     this.nationalFocusRepositoryFactory,
     this.calendarRepositoryFactory,
+    this.scheduleRepositoryFactory,
     this.userLifecycleRepositoryFactory,
     this.cloudSnapshotRepositoryFactory,
     this.cloudCheckClock = DateTime.now,
@@ -211,6 +221,7 @@ class PactaApp extends StatelessWidget {
   final NationalFocusRepository Function(String userId)?
   nationalFocusRepositoryFactory;
   final CalendarRepository Function(String userId)? calendarRepositoryFactory;
+  final ScheduleRepository Function(String userId)? scheduleRepositoryFactory;
   final UserLifecycleStatusRepository Function(String userId)?
   userLifecycleRepositoryFactory;
 
@@ -252,6 +263,9 @@ class PactaApp extends StatelessWidget {
         calendarRepositoryFactoryProvider.overrideWithValue(
           calendarRepositoryFactory ??
               (_) => const UnavailableCalendarRepository(),
+        ),
+        scheduleRepositoryFactoryProvider.overrideWithValue(
+          scheduleRepositoryFactory,
         ),
         userLifecycleRepositoryFactoryProvider.overrideWithValue(
           userLifecycleRepositoryFactory ??
@@ -550,6 +564,23 @@ final calendarRepositoryProvider = Provider.autoDispose<CalendarRepository>((
   final userId = ref.watch(authUserIdProvider);
   if (userId == null) return const UnavailableCalendarRepository();
   final repository = ref.watch(calendarRepositoryFactoryProvider)(userId);
+  ref.onDispose(repository.dispose);
+  return repository;
+});
+
+final scheduleRepositoryFactoryProvider =
+    Provider<ScheduleRepository Function(String userId)?>((ref) => null);
+
+/// Owns Pacta schedules and the imported copies. Null until a destination
+/// wires it, so the calendar import page can report that it is not ready yet.
+final scheduleRepositoryProvider = Provider.autoDispose<ScheduleRepository?>((
+  ref,
+) {
+  final userId = ref.watch(authUserIdProvider);
+  if (userId == null) return null;
+  final factory = ref.watch(scheduleRepositoryFactoryProvider);
+  if (factory == null) return null;
+  final repository = factory(userId);
   ref.onDispose(repository.dispose);
   return repository;
 });
@@ -4594,6 +4625,7 @@ class _MyPageState extends ConsumerState<MyPage> {
   Widget build(BuildContext context) {
     final repository = ref.watch(authRepositoryProvider);
     final calendarRepository = ref.watch(calendarRepositoryProvider);
+    final scheduleRepository = ref.watch(scheduleRepositoryProvider);
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
@@ -4641,6 +4673,7 @@ class _MyPageState extends ConsumerState<MyPage> {
                 builder: (_) => CalendarSourcesPage(
                   repository: calendarRepository,
                   isAndroid: Platform.isAndroid,
+                  scheduleRepository: scheduleRepository,
                 ),
               ),
             ),

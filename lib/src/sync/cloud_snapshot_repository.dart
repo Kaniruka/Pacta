@@ -1536,8 +1536,8 @@ class CloudSnapshotRepository {
       }
       final origin = row['origin'];
       requireReference(
-        origin == ScheduleOrigin.owned.storageValue ||
-            origin == ScheduleOrigin.legacyCalendarBlock.storageValue,
+        origin is String &&
+            ScheduleOrigin.values.any((known) => known.storageValue == origin),
         'Schedule origin',
       );
     }

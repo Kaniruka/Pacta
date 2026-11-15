@@ -5,7 +5,9 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../auth/user_lifecycle.dart';
+import '../calendar/calendar_models.dart';
 import '../tasks/task_database.dart';
+import 'calendar_import_models.dart';
 import 'schedule_migration.dart';
 import 'schedule_models.dart';
 
@@ -13,6 +15,21 @@ import 'schedule_models.dart';
 /// carried by the whole-account business snapshot; there is no per-entity
 /// remote and no system-calendar write path.
 abstract interface class ScheduleRepository {
+  /// Reads the selected range and reports which occurrences would be copied.
+  ///
+  /// Producing a preview writes no schedule, so cancelling leaves nothing
+  /// behind.
+  Future<CalendarImportPreview> previewCalendarImport(
+    CalendarImportRequest request,
+  );
+
+  /// Creates owned copies for [preview], skipping occurrences already owned.
+  ///
+  /// Existing copies are never rewritten: a user edit or a reschedule stays.
+  Future<CalendarImportOutcome> confirmCalendarImport(
+    CalendarImportPreview preview,
+  );
+
   Future<Schedule> createSchedule(ScheduleDraft draft);
 
   Future<Schedule> updateSchedule(String scheduleId, ScheduleDraft draft);
@@ -151,6 +168,182 @@ class LocalScheduleRepository implements ScheduleRepository {
   Future<LocalScheduleMigration?> _migrationRun() => (database.select(
     database.localScheduleMigrations,
   )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+
+  @override
+  Future<CalendarImportPreview> previewCalendarImport(
+    CalendarImportRequest request,
+  ) async {
+    await lifecycleAccess.requireActive();
+    final index = await _importIdentityIndex();
+    final pending = <CalendarImportCandidate>[];
+    final planned = <String>{};
+    var duplicates = 0;
+    var ignored = 0;
+    for (final occurrence in request.occurrences) {
+      final source = request.sourceFor(occurrence.sourceId);
+      if (source == null) {
+        ignored++;
+        continue;
+      }
+      if (!_occursWithin(occurrence, request.from, request.to)) continue;
+      if (occurrence.title.trim().isEmpty) {
+        ignored++;
+        continue;
+      }
+      final identity = calendarImportIdentityKey(
+        source: source,
+        occurrence: occurrence,
+      );
+      final legacyIdentity = _legacyIdentityKey(source.id, occurrence);
+      if (index.identities.contains(identity) ||
+          (legacyIdentity != null &&
+              index.legacyIdentities.contains(legacyIdentity)) ||
+          !planned.add(identity)) {
+        duplicates++;
+        continue;
+      }
+      pending.add(
+        CalendarImportCandidate(
+          occurrence: occurrence,
+          sourceName: source.displayName,
+          identityKey: identity,
+        ),
+      );
+    }
+    pending.sort((left, right) {
+      final byStart = left.occurrence.startsAt.compareTo(
+        right.occurrence.startsAt,
+      );
+      if (byStart != 0) return byStart;
+      return left.identityKey.compareTo(right.identityKey);
+    });
+    return CalendarImportPreview(
+      from: request.from,
+      to: request.to,
+      pending: pending,
+      duplicateCount: duplicates,
+      ignoredCount: ignored,
+    );
+  }
+
+  @override
+  Future<CalendarImportOutcome> confirmCalendarImport(
+    CalendarImportPreview preview,
+  ) async {
+    await lifecycleAccess.requireActive();
+    final created = <Schedule>[];
+    var skipped = 0;
+    await database.transaction(() async {
+      final index = await _importIdentityIndex();
+      for (final candidate in preview.pending) {
+        final legacyIdentity = _legacyIdentityKey(
+          candidate.occurrence.sourceId,
+          candidate.occurrence,
+        );
+        if (index.identities.contains(candidate.identityKey) ||
+            (legacyIdentity != null &&
+                index.legacyIdentities.contains(legacyIdentity))) {
+          skipped++;
+          continue;
+        }
+        final copy = _calendarCopy(candidate);
+        await _saveSchedule(copy);
+        index.identities.add(candidate.identityKey);
+        created.add(copy);
+      }
+    });
+    if (created.isNotEmpty) await _publish();
+    return CalendarImportOutcome(created: created, skippedDuplicates: skipped);
+  }
+
+  Schedule _calendarCopy(CalendarImportCandidate candidate) {
+    final occurrence = candidate.occurrence;
+    final timestamp = _nextTimestamp();
+    final allDay = occurrence.allDay;
+    return Schedule(
+      id: _uuid.v4(),
+      title: occurrence.title.trim(),
+      startsAt: occurrence.startsAt.toUtc(),
+      endsAt: occurrence.endsAt.toUtc(),
+      allDay: allDay,
+      allDayStartDate: allDay
+          ? (occurrence.allDayStartDate ?? _utcDateKey(occurrence.startsAt))
+          : null,
+      allDayEndDateExclusive: allDay
+          ? (occurrence.allDayEndDateExclusive ??
+                _utcDateKey(occurrence.endsAt))
+          : null,
+      origin: ScheduleOrigin.calendarImport,
+      sourceIds: [occurrence.sourceId],
+      sourceNames: [candidate.sourceName],
+      sourceEventId: occurrence.sourceEventId,
+      occurrenceId: occurrence.occurrenceId,
+      eventIdentity: candidate.identityKey,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    );
+  }
+
+  /// Identities already owned by this account, indexed for skip checks.
+  Future<_ImportIdentityIndex> _importIdentityIndex() async {
+    final rows = await (database.select(
+      database.localSchedules,
+    )..where((row) => row.userId.equals(userId))).get();
+    final identities = <String>{};
+    final legacyIdentities = <String>{};
+    for (final row in rows) {
+      final identity = row.eventIdentity?.trim();
+      if (identity == null || identity.isEmpty) continue;
+      identities.add(identity);
+      if (row.origin != ScheduleOrigin.legacyCalendarBlock.storageValue) {
+        continue;
+      }
+      for (final sourceId in _decodeStrings(row.sourceIds)) {
+        legacyIdentities.add(
+          calendarImportLegacyIdentityKey(
+            sourceId: sourceId,
+            rawIdentity: identity,
+          ),
+        );
+      }
+    }
+    return _ImportIdentityIndex(
+      identities: identities,
+      legacyIdentities: legacyIdentities,
+    );
+  }
+
+  /// Raw identity left behind by the one-time legacy block promotion.
+  String? _legacyIdentityKey(
+    String sourceId,
+    CalendarEventOccurrence occurrence,
+  ) {
+    final raw = occurrence.occurrenceId.trim().isNotEmpty
+        ? occurrence.occurrenceId.trim()
+        : occurrence.eventIdentity.trim();
+    if (raw.isEmpty) return null;
+    return calendarImportLegacyIdentityKey(
+      sourceId: sourceId,
+      rawIdentity: raw,
+    );
+  }
+
+  bool _occursWithin(
+    CalendarEventOccurrence occurrence,
+    DateTime from,
+    DateTime to,
+  ) {
+    final start = occurrence.startsAt.toUtc();
+    final end = occurrence.endsAt.toUtc();
+    return start.isBefore(to.toUtc()) && end.isAfter(from.toUtc());
+  }
+
+  String _utcDateKey(DateTime value) {
+    final utc = value.toUtc();
+    return '${utc.year.toString().padLeft(4, '0')}-'
+        '${utc.month.toString().padLeft(2, '0')}-'
+        '${utc.day.toString().padLeft(2, '0')}';
+  }
 
   @override
   Future<Schedule> createSchedule(ScheduleDraft draft) async {
@@ -519,4 +712,15 @@ class LocalScheduleRepository implements ScheduleRepository {
 
   @override
   Future<void> dispose() async => _changes.close();
+}
+
+/// Identity sets used to skip already owned import copies.
+class _ImportIdentityIndex {
+  const _ImportIdentityIndex({
+    required this.identities,
+    required this.legacyIdentities,
+  });
+
+  final Set<String> identities;
+  final Set<String> legacyIdentities;
 }

@@ -29,34 +29,23 @@ void main() {
     await database.close();
   });
 
-  testWidgets('Windows shows synchronized Calendar Block sources', (
-    tester,
-  ) async {
-    await remote.upsertSources(
-      userId: 'user-a',
-      sources: const [
-        CalendarSource(
-          id: 'stable-source-id',
-          displayName: '已同步日历',
-          timeZoneId: 'Asia/Shanghai',
+  testWidgets(
+    'Windows states that reading the system calendar is unavailable',
+    (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CalendarSourcesPage(repository: repository, isAndroid: false),
         ),
-      ],
-    );
-    await repository.sync();
+      );
+      await tester.pumpAndSettle();
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: CalendarSourcesPage(repository: repository, isAndroid: false),
-      ),
-    );
-    await tester.pumpAndSettle();
+      expect(find.text('Windows 暂不支持读取系统日历'), findsOneWidget);
+      expect(find.text('导入系统日历'), findsNothing);
+      expect(find.text('刷新本机日历'), findsNothing);
+    },
+  );
 
-    expect(find.text('本机已保存的日历块'), findsOneWidget);
-    expect(find.text('已同步日历'), findsOneWidget);
-    expect(find.text('刷新本机日历'), findsOneWidget);
-  });
-
-  testWidgets('Android exposes a retry action for calendar reconciliation', (
+  testWidgets('Android offers the manual import entry and no refresh control', (
     tester,
   ) async {
     await repository.dispose();
@@ -77,8 +66,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('刷新本机日历'), findsOneWidget);
-    expect(find.text('选择其他日历'), findsOneWidget);
+    expect(find.text('导入系统日历'), findsOneWidget);
+    expect(find.text('已允许读取日历'), findsOneWidget);
+    expect(find.text('刷新本机日历'), findsNothing);
   });
 
   testWidgets('Board shows remote events and their merged busy occupancy', (
@@ -232,12 +222,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('日历权限尚未开启'), findsOneWidget);
+    expect(find.text('设备日历权限已关闭'), findsOneWidget);
     expect(find.textContaining('其他功能'), findsOneWidget);
-    expect(find.text('允许并选择日历'), findsOneWidget);
+    expect(find.text('导入系统日历'), findsOneWidget);
   });
 
-  testWidgets('Windows clearly marks stale synchronized sources', (
+  testWidgets('Windows keeps synced cache visible without a refresh control', (
     tester,
   ) async {
     await remote.upsertSources(
@@ -260,11 +250,12 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('日历数据未更新'), findsOneWidget);
-    expect(find.textContaining('未更新'), findsWidgets);
+    expect(find.text('Windows 暂不支持读取系统日历'), findsOneWidget);
+    expect(find.text('刷新本机日历'), findsNothing);
+    expect(find.text('日历数据未更新'), findsNothing);
   });
 
-  testWidgets('撤销设备权限后保留缓存，用户确认才移除来源', (tester) async {
+  testWidgets('撤销设备权限后保留缓存，且不再提供来源删除入口', (tester) async {
     await repository.dispose();
     final provider = FakeCalendarProvider(
       sources: const [
@@ -279,9 +270,9 @@ void main() {
       events: [
         CalendarEventOccurrence(
           sourceId: 'revoked-source',
-          sourceEventId: 'event-one',
-          occurrenceId: 'event-one',
-          eventIdentity: 'event-one',
+          sourceEventId: 'event-one@example.com',
+          occurrenceId: 'event-one@example.com@1',
+          eventIdentity: 'event-one@example.com@1',
           title: '仍保留的缓存活动',
           startsAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
           endsAt: DateTime.now().toUtc().add(const Duration(hours: 2)),
@@ -310,19 +301,11 @@ void main() {
 
     expect(find.text('设备日历权限已关闭'), findsOneWidget);
     expect(find.text('仍保留的缓存活动'), findsNothing);
-    expect(find.text('权限撤销日历'), findsOneWidget);
-    expect(find.textContaining('未更新'), findsWidgets);
-
-    await tester.tap(find.text('确认撤权并移除所有来源'));
-    await tester.pumpAndSettle();
-    expect(find.text('移除所有已导入日历？'), findsOneWidget);
-    expect(find.text('仍保留的缓存活动'), findsNothing);
-
-    await tester.tap(find.text('确认移除'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('权限撤销日历'), findsNothing);
-    expect(find.textContaining('日历来源已移除'), findsOneWidget);
-    expect((await remote.pull(userId: 'user-a')).events, isEmpty);
+    expect(find.text('确认撤权并移除所有来源'), findsNothing);
+    expect(find.text('去系统设置开启日历权限'), findsOneWidget);
+    expect(
+      await database.select(database.localCalendarBlocks).get(),
+      hasLength(1),
+    );
   });
 }

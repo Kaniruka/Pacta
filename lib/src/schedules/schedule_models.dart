@@ -5,6 +5,10 @@
 /// source identity so a later calendar import can skip what already exists.
 enum ScheduleOrigin {
   owned,
+
+  /// A copy of a system-calendar occurrence. Pacta owns the content; the
+  /// source only supplies the identity used to skip repeated imports.
+  calendarImport,
   legacyCalendarBlock;
 
   static ScheduleOrigin fromStorage(Object? value) => values.firstWhere(
