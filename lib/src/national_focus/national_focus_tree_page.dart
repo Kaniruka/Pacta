@@ -1015,8 +1015,9 @@ class _TreeCanvas extends StatefulWidget {
   final double treeHeight;
   final Widget child;
 
-  /// 拟合时允许的最小初始比例。0 表示沿用现有树的行为：
-  /// 只在需要时缩小，绝不放大小于原始尺寸的内容。
+  /// 初始取景允许的最小可读比例。0 表示沿用现有树的行为：
+  /// 只在需要时缩小，绝不放大原始尺寸的内容；历史视角用 0.85 保证初始
+  /// 字号可读，显式「适应屏幕」仍按全览拟合。
   final double minimumFitScale;
 
   /// 视口高度是否贴合内容高度。历史小森林据此不再漂浮在整屏空白里；
@@ -1106,24 +1107,30 @@ class _TreeCanvasState extends State<_TreeCanvas> {
       ..scaleByDouble(next, next, 1, 1);
   }
 
-  double _fitScale(Size viewport) {
-    final fitted = math.min(
-      1.0,
-      math.min(
-        math.max(1, viewport.width - 24) / widget.treeWidth,
-        math.max(1, viewport.height - 24) / widget.treeHeight,
-      ),
-    );
-    // 只有显式要求可读下限的视图（历史视角）才会抬高初始比例；
-    // 现有树的 minimumFitScale 为 0，拟合结果与之前完全一致。
-    return math.max(fitted, widget.minimumFitScale.clamp(0.0, 1.0));
-  }
+  /// 全览拟合比例：把整棵树放进视口，不套用可读下限。
+  ///
+  /// 「适应屏幕」按这个比例取景，保证宽兄弟与高森林都能完整看到。
+  double _fitAllScale(Size viewport) => math.min(
+    1.0,
+    math.min(
+      math.max(1, viewport.width - 24) / widget.treeWidth,
+      math.max(1, viewport.height - 24) / widget.treeHeight,
+    ),
+  );
 
-  double _minimumScale(Size viewport) => math.min(0.01, _fitScale(viewport));
+  /// 初始取景比例：在全览比例之上套用可读下限。
+  ///
+  /// 历史视角因此一开始就把字号保持在 85% 以上，即便森林更大；
+  /// 现有树的 minimumFitScale 为 0，初始取景与全览完全一致。
+  double _initialFitScale(Size viewport) =>
+      math.max(_fitAllScale(viewport), widget.minimumFitScale.clamp(0.0, 1.0));
 
-  void _fit(Size viewport) {
+  double _minimumScale(Size viewport) =>
+      math.min(0.01, _initialFitScale(viewport));
+
+  void _fit(Size viewport, {bool fitAll = false}) {
     _viewport = viewport;
-    final scale = _fitScale(viewport);
+    final scale = fitAll ? _fitAllScale(viewport) : _initialFitScale(viewport);
     _transform.value = Matrix4.identity()
       ..translateByDouble(
         (viewport.width - widget.treeWidth * scale) / 2,
@@ -1234,7 +1241,7 @@ class _TreeCanvasState extends State<_TreeCanvas> {
                   borderRadius: BorderRadius.circular(12),
                   child: IconButton(
                     tooltip: '适应屏幕',
-                    onPressed: () => _fit(viewport),
+                    onPressed: () => _fit(viewport, fitAll: true),
                     icon: const Icon(Icons.fit_screen),
                   ),
                 ),
@@ -3137,8 +3144,9 @@ const _historyNodeWidth = 210.0;
 const _historyBranchGap = 36.0;
 const _historyRootGap = 28.0;
 
-/// 历史视角的默认可读下限：即便森林较大，初始拟合也不把字号压到
-/// 原始尺寸的 85% 以下；仍可缩放、平移，也能随时「适应屏幕」。
+/// 历史视角的初始可读下限：即便森林较大，初始取景也不把字号压到
+/// 原始尺寸的 85% 以下；显式「适应屏幕」仍按全览拟合，保证整片森林
+/// 完整可见；捏合可继续缩放、平移。
 const _historyMinimumFitScale = 0.85;
 
 double _historyNodeHeight(BuildContext context) =>
