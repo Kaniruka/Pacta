@@ -40,7 +40,7 @@ void main() {
     );
     expect(find.byKey(appointmentEditKey), findsOneWidget);
     expect(find.byType(IconButton), findsNWidgets(2));
-    expect(find.text('最佳 12 次'), findsOneWidget);
+    expect(find.text('12'), findsOneWidget);
     expect(find.text('1 小时 30 分钟 1 秒'), findsOneWidget);
     expect(find.text('平均每次'), findsNWidgets(2));
     await _disposeWidget(tester);
@@ -115,15 +115,15 @@ void main() {
         ),
       },
     );
-    expect(find.text('最佳 12 次'), findsOneWidget);
-    expect(find.text('最佳 5 次'), findsOneWidget);
+    expect(find.text('12'), findsOneWidget);
+    expect(find.text('5'), findsOneWidget);
     expect(find.text('记录待核对'), findsOneWidget);
 
     await _editAndSave(tester, markerEditKey, '坐到书桌前');
 
     expect(find.text('坐到书桌前'), findsOneWidget);
-    expect(find.text('最佳 12 次'), findsOneWidget);
-    expect(find.text('最佳 5 次'), findsOneWidget);
+    expect(find.text('12'), findsOneWidget);
+    expect(find.text('5'), findsOneWidget);
     expect(find.text('记录待核对'), findsOneWidget);
     expect(find.text('1 小时'), findsOneWidget);
     expect(find.text('30 分钟'), findsOneWidget);
@@ -148,7 +148,7 @@ void main() {
           );
           expect(find.text(action), findsOneWidget);
           expect(find.text('100000 小时 1 秒'), findsOneWidget);
-          expect(find.text('最佳 12 次'), findsOneWidget);
+          expect(find.text('12'), findsOneWidget);
           await _openEditor(tester, markerEditKey);
           expect(find.widgetWithText(TextField, action), findsOneWidget);
           await tester.enterText(find.byType(TextField), '取消的修改');
@@ -199,7 +199,7 @@ void main() {
       for (final title in ['精锐链', '普通链', '预约链']) {
         expect(find.text(title), findsOneWidget);
       }
-      expect(find.text('最佳 0 次'), findsNWidgets(3));
+      expect(find.text('0'), findsNWidgets(6));
       expect(find.text('累计专注'), findsNWidgets(2));
       expect(find.text('平均每次'), findsNWidgets(2));
       expect(find.text('0 秒'), findsNWidgets(4));
