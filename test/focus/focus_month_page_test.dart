@@ -246,12 +246,388 @@ void main() {
   );
 
   testWidgets(
+    '仅替换时区来源时立即清空旧投影，等待新来源解析再查询',
+    (tester) => withFixture(tester, () async {
+      final repository = _DeferredFocusRepository();
+      addTearDown(repository.dispose);
+      final zonesA = StreamController<String?>();
+      final zonesB = StreamController<String?>();
+      addTearDown(zonesA.close);
+      addTearDown(zonesB.close);
+      var activeZoneStream = zonesA.stream;
+      late StateSetter rebuild;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: pactaTheme(Brightness.light),
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return FocusMonthPage(
+                repository: repository,
+                accountTimeZoneIds: () => activeZoneStream,
+                initialMonth: DateTime(2026, 11),
+                now: () => now,
+              );
+            },
+          ),
+        ),
+      );
+      zonesA.add('Asia/Shanghai');
+      await tester.pump();
+      await tester.pump();
+      expect(repository.requests, hasLength(1));
+      repository.last.controller.add(
+        _monthMetrics(month: DateTime.utc(2026, 11), seconds: {12: 45 * 60}),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('45 分钟'), findsOneWidget);
+      expect(repository.requests, hasLength(1));
+      expect(repository.last.timeZoneId, 'Asia/Shanghai');
+
+      // Same repository, new zone source that has not emitted yet: the old
+      // account's projection must be dropped, and no query may run until the
+      // replacement source resolves.
+      rebuild(() => activeZoneStream = zonesB.stream);
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.textContaining('45 分钟'), findsNothing);
+      expect(repository.requests, hasLength(1));
+
+      // Month switching cannot bypass the pending source: both arrows are
+      // disabled and a tap issues no query against the previous zone.
+      expect(_monthNavigationDisabled(tester, '上个月'), isTrue);
+      expect(_monthNavigationDisabled(tester, '下个月'), isTrue);
+      await tester.tap(find.byTooltip('下个月'));
+      await tester.pump();
+      expect(repository.requests, hasLength(1));
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      // A late emission from the replaced source cannot resurrect the old
+      // projection either.
+      repository.requests.single.controller.add(
+        _monthMetrics(month: DateTime.utc(2026, 11), seconds: {12: 90 * 60}),
+      );
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.textContaining('1 小时 30 分钟'), findsNothing);
+
+      zonesB.add('Etc/UTC');
+      await tester.pump();
+      await tester.pump();
+      expect(repository.requests, hasLength(2));
+      expect(repository.last.timeZoneId, 'Etc/UTC');
+
+      repository.last.controller.add(
+        _monthMetrics(
+          month: DateTime.utc(2026, 11),
+          seconds: {12: 10 * 60},
+          timeZoneId: 'Etc/UTC',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('10 分钟'), findsOneWidget);
+      expect(find.textContaining('45 分钟'), findsNothing);
+    }),
+  );
+
+  testWidgets(
+    '资料时区流异步失败进入可恢复错误态，重试重新读取时区与月投影',
+    (tester) => withFixture(tester, () async {
+      final repository = _DeferredFocusRepository();
+      addTearDown(repository.dispose);
+      var attempts = 0;
+      Stream<String?> source() {
+        attempts++;
+        if (attempts == 1) {
+          return Stream<String?>.error(StateError('profile unavailable'));
+        }
+        return Stream<String?>.value('Asia/Shanghai');
+      }
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: pactaTheme(Brightness.light),
+          home: FocusMonthPage(
+            repository: repository,
+            accountTimeZoneIds: source,
+            initialMonth: DateTime(2026, 11),
+            now: () => now,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('专注月历加载失败。'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.textContaining('45 分钟'), findsNothing);
+
+      // A failed source also blocks month switching: the error must not be
+      // bypassed with a query against the previous zone.
+      expect(_monthNavigationDisabled(tester, '上个月'), isTrue);
+      expect(_monthNavigationDisabled(tester, '下个月'), isTrue);
+      await tester.tap(find.byTooltip('下个月'));
+      await tester.pump();
+      expect(repository.requests, isEmpty);
+      expect(find.text('专注月历加载失败。'), findsOneWidget);
+
+      await tester.tap(find.text('重试'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(attempts, 2);
+      expect(repository.requests, hasLength(1));
+      expect(repository.last.timeZoneId, 'Asia/Shanghai');
+
+      repository.last.controller.add(
+        _monthMetrics(month: DateTime.utc(2026, 11), seconds: {5: 10 * 60}),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('专注月历加载失败。'), findsNothing);
+      expect(find.textContaining('10 分钟'), findsOneWidget);
+    }),
+  );
+
+  testWidgets(
+    '资料时区回调同步抛错进入可恢复错误态，重试后恢复真实数据',
+    (tester) => withFixture(tester, () async {
+      final repository = _DeferredFocusRepository();
+      addTearDown(repository.dispose);
+      var attempts = 0;
+      Stream<String?> source() {
+        attempts++;
+        if (attempts == 1) throw StateError('profile unavailable');
+        return Stream<String?>.value('Asia/Shanghai');
+      }
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: pactaTheme(Brightness.light),
+          home: FocusMonthPage(
+            repository: repository,
+            accountTimeZoneIds: source,
+            initialMonth: DateTime(2026, 11),
+            now: () => now,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('专注月历加载失败。'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+
+      await tester.tap(find.text('重试'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(attempts, 2);
+      expect(repository.requests, hasLength(1));
+      repository.last.controller.add(
+        _monthMetrics(month: DateTime.utc(2026, 11), seconds: {6: 5 * 60}),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('专注月历加载失败。'), findsNothing);
+      expect(find.textContaining('5 分钟'), findsOneWidget);
+    }),
+  );
+
+  testWidgets(
+    '跨月后新投影不会把上月数据标成当月，标题与数据一起停留',
+    (tester) => withFixture(tester, () async {
+      final repository = _DeferredFocusRepository();
+      addTearDown(repository.dispose);
+      // 上海 11 月 30 日 23:59（UTC 仍是 11 月 30 日 15:59）。
+      now = DateTime.utc(2026, 11, 30, 15, 59);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: pactaTheme(Brightness.light),
+          home: FocusMonthPage(
+            repository: repository,
+            accountTimeZoneIds: () => Stream<String?>.value('Asia/Shanghai'),
+            now: () => now,
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(repository.requests, hasLength(1));
+      expect(repository.last.month, DateTime.utc(2026, 11));
+      repository.last.controller.add(
+        _monthMetrics(month: DateTime.utc(2026, 11), seconds: {30: 45 * 60}),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('2026年11月'), findsOneWidget);
+      expect(find.textContaining('45 分钟'), findsOneWidget);
+
+      // Midnight passes in the account zone; a settled session arrives without
+      // touching the month selector.
+      now = DateTime.utc(2026, 11, 30, 16, 0, 5);
+      repository.last.controller.add(
+        _monthMetrics(month: DateTime.utc(2026, 11), seconds: {30: 60 * 60}),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('2026年11月'), findsOneWidget);
+      expect(find.text('2026年12月'), findsNothing);
+      expect(find.textContaining('1 小时'), findsOneWidget);
+      expect(find.textContaining('45 分钟'), findsNothing);
+      expect(repository.requests, hasLength(1));
+
+      // The current-month label is the explicit way forward; it re-queries.
+      await tester.tap(find.text('回到本月'));
+      await tester.pump();
+      expect(find.text('2026年12月'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(repository.requests, hasLength(2));
+      expect(repository.last.month, DateTime.utc(2026, 12));
+    }),
+  );
+
+  testWidgets(
+    '来源未解析时“回到本月”不可用，不会按旧时区查询',
+    (tester) => withFixture(tester, () async {
+      final repository = _DeferredFocusRepository();
+      addTearDown(repository.dispose);
+      final zonesA = StreamController<String?>();
+      final zonesB = StreamController<String?>();
+      addTearDown(zonesA.close);
+      addTearDown(zonesB.close);
+      var activeZoneStream = zonesA.stream;
+      late StateSetter rebuild;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: pactaTheme(Brightness.light),
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return FocusMonthPage(
+                repository: repository,
+                accountTimeZoneIds: () => activeZoneStream,
+                initialMonth: DateTime(2026, 10),
+                now: () => now,
+              );
+            },
+          ),
+        ),
+      );
+      zonesA.add('Asia/Shanghai');
+      await tester.pump();
+      await tester.pump();
+      repository.last.controller.add(
+        _monthMetrics(month: DateTime.utc(2026, 10), seconds: {9: 30 * 60}),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('2026年10月'), findsOneWidget);
+      expect(find.textContaining('30 分钟'), findsOneWidget);
+      expect(find.text('回到本月'), findsOneWidget);
+
+      rebuild(() => activeZoneStream = zonesB.stream);
+      await tester.pump();
+
+      expect(find.text('回到本月'), findsNothing);
+      expect(_monthNavigationDisabled(tester, '下个月'), isTrue);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(repository.requests, hasLength(1));
+
+      zonesB.add('Etc/UTC');
+      await tester.pump();
+      await tester.pump();
+
+      // Resolution re-queries the month already on screen (October), now in the
+      // replacement account zone.
+      expect(repository.requests, hasLength(2));
+      expect(repository.last.timeZoneId, 'Etc/UTC');
+      expect(repository.last.month, DateTime.utc(2026, 10));
+      expect(find.text('2026年10月'), findsOneWidget);
+      repository.last.controller.add(
+        _monthMetrics(
+          month: DateTime.utc(2026, 10),
+          seconds: {9: 30 * 60},
+          timeZoneId: 'Etc/UTC',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('回到本月'), findsOneWidget);
+
+      await tester.tap(find.text('回到本月'));
+      await tester.pump();
+      expect(find.text('2026年11月'), findsOneWidget);
+      expect(repository.requests, hasLength(3));
+      expect(repository.last.month, DateTime.utc(2026, 11));
+    }),
+  );
+
+  testWidgets(
+    '替换来源为空时使用账号兜底时区，不继承上一个来源',
+    (tester) => withFixture(tester, () async {
+      final repository = _DeferredFocusRepository();
+      addTearDown(repository.dispose);
+      final zonesA = StreamController<String?>();
+      addTearDown(zonesA.close);
+      var activeZoneStream = zonesA.stream;
+      late StateSetter rebuild;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: pactaTheme(Brightness.light),
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return FocusMonthPage(
+                repository: repository,
+                accountTimeZoneIds: () => activeZoneStream,
+                initialMonth: DateTime(2026, 11),
+                now: () => now,
+              );
+            },
+          ),
+        ),
+      );
+      zonesA.add('Asia/Shanghai');
+      await tester.pump();
+      await tester.pump();
+      repository.last.controller.add(
+        _monthMetrics(month: DateTime.utc(2026, 11), seconds: {12: 45 * 60}),
+      );
+      await tester.pumpAndSettle();
+      expect(repository.last.timeZoneId, 'Asia/Shanghai');
+
+      // The replacement source closes without a value: the account fallback is
+      // used explicitly; the previous source's zone must not leak through.
+      rebuild(() => activeZoneStream = Stream<String?>.empty());
+      await tester.pump();
+      await tester.pump();
+
+      expect(repository.requests, hasLength(2));
+      expect(repository.last.timeZoneId, 'Etc/UTC');
+      expect(repository.last.month, DateTime.utc(2026, 11));
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.textContaining('45 分钟'), findsNothing);
+
+      repository.last.controller.add(
+        _monthMetrics(
+          month: DateTime.utc(2026, 11),
+          seconds: {12: 10 * 60},
+          timeZoneId: 'Etc/UTC',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('10 分钟'), findsOneWidget);
+    }),
+  );
+
+  testWidgets(
     '切换账号仓库后不回显上一账号的投入',
     (tester) => withFixture(tester, () async {
       final repositoryA = _DeferredFocusRepository();
       final repositoryB = _DeferredFocusRepository();
       addTearDown(repositoryA.dispose);
       addTearDown(repositoryB.dispose);
+      Stream<String?> zoneSource() => Stream<String?>.value('Asia/Shanghai');
       var current = repositoryA;
       late StateSetter rebuild;
 
@@ -263,8 +639,7 @@ void main() {
               rebuild = setState;
               return FocusMonthPage(
                 repository: current,
-                accountTimeZoneIds: () =>
-                    Stream<String?>.value('Asia/Shanghai'),
+                accountTimeZoneIds: zoneSource,
                 initialMonth: DateTime(2026, 11),
                 now: () => now,
               );
@@ -320,6 +695,13 @@ void main() {
       expect(find.text('2026年11月'), findsOneWidget);
     }),
   );
+}
+
+bool _monthNavigationDisabled(WidgetTester tester, String tooltip) {
+  final button = tester
+      .widgetList<IconButton>(find.byType(IconButton))
+      .singleWhere((button) => button.tooltip == tooltip);
+  return button.onPressed == null;
 }
 
 FocusMonthMetrics _monthMetrics({

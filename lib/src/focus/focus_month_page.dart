@@ -20,6 +20,11 @@ import 'focus_time_zones.dart';
 /// there is no device-time-zone branch here. The callback is invoked once per
 /// subscription, which lets the caller build it from a provider without creating
 /// a new stream on every rebuild.
+///
+/// The visible month is captured when a projection query starts. It advances
+/// only through an explicit month switch, "回到本月" or a re-subscription
+/// (account zone, repository, retry); a midnight rollover alone never relabels
+/// numbers that are already on screen.
 class FocusMonthPage extends StatefulWidget {
   const FocusMonthPage({
     super.key,
@@ -50,11 +55,26 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
   StreamSubscription<FocusMonthMetrics>? _monthSubscription;
   String _timeZoneId = AccountTimeZones.fallbackId;
   DateTime? _monthOverride;
+
+  /// The month on screen and the month of the running query.
+  ///
+  /// It is captured when the query starts (not recomputed in every build), so a
+  /// midnight rollover can never relabel one month's numbers with the next
+  /// month's name. It advances only through an explicit month change, "回到本月"
+  /// or a re-subscription (account zone / repository / retry).
+  late DateTime _month;
   int? _selectedDay;
   FocusMonthMetrics? _metrics;
   Object? _error;
   bool _loading = true;
   int _generation = 0;
+
+  /// Whether the current account-zone source has produced a value (or closed).
+  /// While it is false — a replacement source that has not emitted yet, or a
+  /// failed source — the page must not query the month with the previous
+  /// account's zone, so month switching stays disabled until it resolves.
+  bool _zoneResolved = false;
+  int _zoneSourceGeneration = 0;
 
   DateTime get _now => (widget.now ?? DateTime.now)();
 
@@ -64,8 +84,6 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
     return DateTime.utc(local.year, local.month);
   }
 
-  DateTime get _visibleMonth => _monthOverride ?? _currentMonthInAccountZone;
-
   @override
   void initState() {
     super.initState();
@@ -73,16 +91,19 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
     _monthOverride = initial == null
         ? null
         : DateTime.utc(initial.year, initial.month);
-    _subscribeAccountTimeZone();
+    _month = _monthOverride ?? _currentMonthInAccountZone;
+    _subscribeAccountTimeZone(notify: false);
   }
 
   @override
   void didUpdateWidget(FocusMonthPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.accountTimeZoneIds != oldWidget.accountTimeZoneIds) {
+      // The replacement source has not resolved yet: drop the old projection and
+      // wait for its first value instead of querying with the previous account's
+      // zone. The pending restart also covers a simultaneous repository change.
       _subscribeAccountTimeZone();
-    }
-    if (widget.repository != oldWidget.repository) {
+    } else if (widget.repository != oldWidget.repository) {
       // A different account owns different data: drop the old projection now and
       // rebuild from the new repository instead of showing the previous user.
       _restartMonth(notify: false);
@@ -96,29 +117,81 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
     super.dispose();
   }
 
-  void _subscribeAccountTimeZone() {
+  /// Replaces the account-zone source.
+  ///
+  /// The projection is invalidated first; the new month query starts only once
+  /// the replacement source resolves (first value or done). A synchronous throw
+  /// from the callback and an asynchronous stream error both land in the same
+  /// recoverable error card instead of leaving the page loading forever.
+  void _subscribeAccountTimeZone({bool notify = true}) {
     _cancel(_zoneSubscription);
+    _zoneSubscription = null;
+    _zoneResolved = false;
+    _invalidateProjection(notify: notify);
+
+    final source = ++_zoneSourceGeneration;
     var resolved = false;
-    _zoneSubscription = widget.accountTimeZoneIds().listen(
-      (value) {
-        final zoneId = AccountTimeZones.effectiveId(value);
-        final first = !resolved;
-        resolved = true;
-        if (!first && zoneId == _timeZoneId) return;
-        _timeZoneId = zoneId;
-        if (!first) _selectedDay = null;
-        _restartMonth(notify: mounted);
-      },
-      onDone: () {
-        if (resolved) return;
-        resolved = true;
-        _restartMonth(notify: mounted);
-      },
-    );
+
+    bool stale() => source != _zoneSourceGeneration;
+
+    void fail(Object error) {
+      if (stale()) return;
+      _cancel(_zoneSubscription);
+      _zoneSubscription = null;
+      _zoneResolved = false;
+      _generation++;
+      _cancel(_monthSubscription);
+      _monthSubscription = null;
+      _applyError(error);
+    }
+
+    void start() {
+      if (stale() || resolved) return;
+      resolved = true;
+      _zoneResolved = true;
+      // A source that closes without a value carries no account zone: use the
+      // explicit account fallback instead of inheriting the previous source's
+      // zone.
+      _timeZoneId = AccountTimeZones.fallbackId;
+      _restartMonth(notify: mounted);
+    }
+
+    final Stream<String?> ids;
+    try {
+      ids = widget.accountTimeZoneIds();
+    } catch (error) {
+      fail(error);
+      return;
+    }
+    try {
+      _zoneSubscription = ids.listen(
+        (value) {
+          if (stale()) return;
+          final zoneId = AccountTimeZones.effectiveId(value);
+          final first = !resolved;
+          resolved = true;
+          _zoneResolved = true;
+          if (!first && zoneId == _timeZoneId) return;
+          _timeZoneId = zoneId;
+          if (!first) _selectedDay = null;
+          _restartMonth(notify: mounted);
+        },
+        onError: (Object error, StackTrace stackTrace) => fail(error),
+        onDone: start,
+      );
+    } catch (error) {
+      fail(error);
+    }
   }
 
-  void _restartMonth({bool notify = true}) {
-    final generation = ++_generation;
+  /// Re-reads both required sources: the account zone (its first value gates the
+  /// query) and, once it resolves, the month projection.
+  void _retry() {
+    _subscribeAccountTimeZone();
+  }
+
+  void _invalidateProjection({required bool notify}) {
+    _generation++;
     _cancel(_monthSubscription);
     _monthSubscription = null;
 
@@ -133,8 +206,48 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
     } else {
       reset();
     }
+  }
 
-    final month = _visibleMonth;
+  void _applyError(Object error) {
+    void apply() {
+      _loading = false;
+      _error = error;
+      _metrics = null;
+      _selectedDay = null;
+    }
+
+    // Errors can arrive after the initial build (an asynchronous stream error
+    // from the initial non-notifying subscription), so always schedule the
+    // rebuild that shows the recoverable error card.
+    if (mounted) {
+      setState(apply);
+    } else {
+      apply();
+    }
+  }
+
+  void _restartMonth({bool notify = true}) {
+    final generation = ++_generation;
+    _cancel(_monthSubscription);
+    _monthSubscription = null;
+
+    final month = _monthOverride ?? _currentMonthInAccountZone;
+    final monthChanged = month != _month;
+    _month = month;
+
+    void reset() {
+      _loading = true;
+      _error = null;
+      _metrics = null;
+      if (monthChanged) _selectedDay = null;
+    }
+
+    if (notify && mounted) {
+      setState(reset);
+    } else {
+      reset();
+    }
+
     try {
       _monthSubscription = widget.repository
           .watchMonthMetrics(timeZoneId: _timeZoneId, month: month)
@@ -158,19 +271,23 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
           );
     } catch (error) {
       if (generation == _generation) {
-        _loading = false;
-        _error = error;
+        _applyError(error);
       }
     }
   }
 
   void _showMonth(DateTime month) {
+    // No query while the account zone is unknown or failed: the month buttons
+    // are disabled in that state, and this guard keeps a programmatic call from
+    // re-reading the previous account's zone.
+    if (!_zoneResolved) return;
     _monthOverride = DateTime.utc(month.year, month.month);
     _selectedDay = null;
     _restartMonth();
   }
 
   void _showCurrentMonth() {
+    if (!_zoneResolved) return;
     _monthOverride = null;
     _selectedDay = null;
     _restartMonth();
@@ -184,13 +301,13 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
 
   @override
   Widget build(BuildContext context) {
-    final month = _visibleMonth;
+    final month = _month;
     final isCurrentMonth = month == _currentMonthInAccountZone;
     return Scaffold(
       appBar: AppBar(
         title: const Text('专注月历'),
         actions: [
-          if (!isCurrentMonth)
+          if (_zoneResolved && !isCurrentMonth)
             TextButton(onPressed: _showCurrentMonth, child: const Text('回到本月')),
         ],
       ),
@@ -203,10 +320,16 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
               children: [
                 _MonthHeader(
                   month: month,
-                  onPrevious: () =>
-                      _showMonth(DateTime.utc(month.year, month.month - 1)),
-                  onNext: () =>
-                      _showMonth(DateTime.utc(month.year, month.month + 1)),
+                  onPrevious: _zoneResolved
+                      ? () => _showMonth(
+                          DateTime.utc(month.year, month.month - 1),
+                        )
+                      : null,
+                  onNext: _zoneResolved
+                      ? () => _showMonth(
+                          DateTime.utc(month.year, month.month + 1),
+                        )
+                      : null,
                 ),
                 const SizedBox(height: 8),
                 ..._buildMonthBody(context, month),
@@ -248,7 +371,7 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                FilledButton(onPressed: _restartMonth, child: const Text('重试')),
+                FilledButton(onPressed: _retry, child: const Text('重试')),
               ],
             ),
           ),
@@ -380,8 +503,8 @@ class _MonthHeader extends StatelessWidget {
   });
 
   final DateTime month;
-  final VoidCallback onPrevious;
-  final VoidCallback onNext;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
 
   @override
   Widget build(BuildContext context) {
