@@ -4895,8 +4895,6 @@ class _MyPageState extends ConsumerState<MyPage> {
           repository: ref.watch(focusRepositoryProvider),
         ),
         const SizedBox(height: 12),
-        const PrecedentRulesCard(),
-        const SizedBox(height: 12),
         Card(
           child: ListTile(
             leading: const Icon(Icons.notifications_active_outlined),

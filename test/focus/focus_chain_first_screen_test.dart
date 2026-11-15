@@ -62,7 +62,7 @@ void main() {
     expect(find.text('选择任务'), findsOneWidget);
     expect(find.text('可选任务 2 个'), findsOneWidget);
 
-    // 许可管理入口只做入口：完整 CRUD 留在既有管理界面。
+    // 许可管理入口只做入口：完整 CRUD 在专注链管理页。
     expect(find.text(orderRule), findsNothing);
     expect(find.text('2 条持续许可'), findsOneWidget);
     await tester.tap(find.byKey(allowanceManage));
@@ -76,6 +76,46 @@ void main() {
     expect(_maxScrollExtent(tester), 0, reason: '360×800 常见手机高度应一屏容纳');
     expect(tester.takeException(), isNull);
     _printBounds(tester, '360x800');
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('我的不再重复承载下必为例管理面且管理仍从专注链进入', (tester) async {
+    final fixture = await _Fixture.create();
+    addTearDown(fixture.dispose);
+    await _pumpApp(
+      tester,
+      fixture,
+      width: 360,
+      height: 800,
+      topInset: 24,
+      bottomInset: 48,
+    );
+
+    await _openDestination(tester, '我的');
+    await tester.scrollUntilVisible(
+      find.text('提醒与通知'),
+      160,
+      scrollable: find
+          .descendant(
+            of: find.byType(MyPage),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+      maxScrolls: 40,
+    );
+    await tester.pump();
+    expect(find.text('新建规则'), findsNothing);
+    expect(find.byTooltip('编辑下必为例'), findsNothing);
+    expect(find.text(orderRule), findsNothing);
+    expect(find.text(materialRule), findsNothing);
+
+    await _openFocusChain(tester);
+    expect(find.text('2 条持续许可'), findsOneWidget);
+    await tester.tap(find.byKey(allowanceManage));
+    await tester.pumpAndSettle();
+    expect(find.text('新建规则'), findsOneWidget);
+    expect(find.text(orderRule), findsOneWidget);
+    expect(tester.takeException(), isNull);
     await _disposeWidget(tester);
   });
 
@@ -174,13 +214,16 @@ Future<void> _pumpApp(
   await tester.pumpAndSettle();
 }
 
-Future<void> _openFocusChain(WidgetTester tester) async {
+Future<void> _openDestination(WidgetTester tester, String label) async {
   final host = find.byType(NavigationBar).evaluate().isNotEmpty
       ? find.byType(NavigationBar)
       : find.byType(NavigationRail);
-  await tester.tap(find.descendant(of: host, matching: find.text('专注链')));
+  await tester.tap(find.descendant(of: host, matching: find.text(label)));
   await tester.pumpAndSettle();
 }
+
+Future<void> _openFocusChain(WidgetTester tester) =>
+    _openDestination(tester, '专注链');
 
 Finder _chainScrollable(WidgetTester tester) => find.descendant(
   of: find.byKey(chainList),
