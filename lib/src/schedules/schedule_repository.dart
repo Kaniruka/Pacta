@@ -179,6 +179,7 @@ class LocalScheduleRepository implements ScheduleRepository {
     final planned = <String>{};
     var duplicates = 0;
     var ignored = 0;
+    String? deviceProvenance;
     for (final occurrence in request.occurrences) {
       final source = request.sourceFor(occurrence.sourceId);
       if (source == null) {
@@ -190,9 +191,15 @@ class LocalScheduleRepository implements ScheduleRepository {
         ignored++;
         continue;
       }
+      if (calendarImportEventIsDeviceLocal(occurrence.sourceEventId)) {
+        // Only a fallback identity needs installation provenance, so a
+        // provider-only preview keeps writing nothing at all.
+        deviceProvenance ??= await _importDeviceProvenance();
+      }
       final identity = calendarImportIdentityKey(
         source: source,
         occurrence: occurrence,
+        deviceProvenance: deviceProvenance,
       );
       final legacyIdentity = _legacyIdentityKey(source.id, occurrence);
       if (index.identities.contains(identity) ||
@@ -284,6 +291,30 @@ class LocalScheduleRepository implements ScheduleRepository {
     );
   }
 
+  /// Persisted installation identity used to namespace device-local fallback
+  /// ids.
+  ///
+  /// `focus_source_devices` is per-user and deliberately excluded from business
+  /// snapshots, so restoring another device's data never renames this
+  /// installation. Without it, a `local:` fallback id would claim a global
+  /// identity that two devices' numeric calendar and event rows can share.
+  Future<String> _importDeviceProvenance() async {
+    final existing = await (database.select(
+      database.focusSourceDevices,
+    )..where((row) => row.userId.equals(userId))).getSingleOrNull();
+    if (existing != null) return existing.deviceId;
+    final generated = _uuid.v4();
+    await database
+        .into(database.focusSourceDevices)
+        .insertOnConflictUpdate(
+          FocusSourceDevicesCompanion.insert(
+            userId: userId,
+            deviceId: generated,
+          ),
+        );
+    return generated;
+  }
+
   /// Identities already owned by this account, indexed for skip checks.
   Future<_ImportIdentityIndex> _importIdentityIndex() async {
     final rows = await (database.select(
@@ -296,6 +327,9 @@ class LocalScheduleRepository implements ScheduleRepository {
       if (identity == null || identity.isEmpty) continue;
       identities.add(identity);
       if (row.origin != ScheduleOrigin.legacyCalendarBlock.storageValue) {
+        continue;
+      }
+      if (calendarImportEventIsDeviceLocal(identity)) {
         continue;
       }
       for (final sourceId in _decodeStrings(row.sourceIds)) {
@@ -314,10 +348,18 @@ class LocalScheduleRepository implements ScheduleRepository {
   }
 
   /// Raw identity left behind by the one-time legacy block promotion.
+  ///
+  /// Legacy copies recorded no installation provenance, so a `local:` fallback
+  /// identity is not provable across devices: two installations can reuse the
+  /// same numeric row id. Matching it would skip a genuine new arrangement, so
+  /// only provider identities take part in legacy matching.
   String? _legacyIdentityKey(
     String sourceId,
     CalendarEventOccurrence occurrence,
   ) {
+    if (calendarImportEventIsDeviceLocal(occurrence.sourceEventId)) {
+      return null;
+    }
     final raw = occurrence.occurrenceId.trim().isNotEmpty
         ? occurrence.occurrenceId.trim()
         : occurrence.eventIdentity.trim();

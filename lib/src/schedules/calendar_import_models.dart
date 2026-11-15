@@ -3,13 +3,19 @@ import 'schedule_models.dart';
 
 /// Version prefix for import identities. Bump only with a documented
 /// migration: identities are compared across devices through snapshots.
+///
+/// No released build has produced the earlier numeric-only device scope, so the
+/// installation-scoped device segment below is still version 1: unreleased
+/// development identities simply stop matching each other.
 const String calendarImportIdentityPrefix = 'calendar-import/1';
 
 /// One system-calendar source the user picked for a manual import.
 ///
 /// [id] is the provider's cross-device source identity when it has one.
-/// [localCalendarId] is the device-local calendar row id and is only used to
-/// scope identities of events that carry no provider identity at all.
+/// [localCalendarId] is the device-local calendar row id. It only helps scope
+/// identities of events that carry no provider identity at all, and it is
+/// always combined with the persisted installation identity: a bare numeric
+/// row id is not a device namespace.
 class CalendarImportSource {
   const CalendarImportSource({
     required this.id,
@@ -110,24 +116,47 @@ bool calendarImportEventIsDeviceLocal(String sourceEventId) =>
 /// Namespaced identity for one imported occurrence.
 ///
 /// The key always names a source so two providers (or two calendars) that use
-/// the same raw event id never collapse into one copy. Device-local fallback
-/// ids are additionally scoped by the device-local calendar row, because a
-/// numeric provider row id is only unique on the device that produced it.
+/// the same raw event id never collapse into one copy.
+///
+/// A provider identity is provable across devices, so it is scoped as `sync`
+/// and equal provider occurrences deduplicate after a snapshot restore.
+/// A device-local fallback id (`local:`) is only meaningful on the device that
+/// produced it: [deviceProvenance] must therefore be the persisted installation
+/// identity (`focus_source_devices.deviceId`, deliberately excluded from
+/// business snapshots), never a numeric calendar or event row. Two installations
+/// that happen to use the same calendar row id and event row id therefore keep
+/// distinct copies, while the same installation keeps skipping its own.
+///
+/// [deviceProvenance] is required for device-local fallbacks and ignored for
+/// provider identities, which need no installation scope.
 String calendarImportIdentityKey({
   required CalendarImportSource source,
   required CalendarEventOccurrence occurrence,
+  String? deviceProvenance,
 }) {
   final deviceLocal = calendarImportEventIsDeviceLocal(
     occurrence.sourceEventId,
   );
   final scope = deviceLocal
-      ? 'device:${source.localCalendarId ?? source.id}'
+      ? _deviceScope(deviceProvenance, source.localCalendarId ?? source.id)
       : 'sync';
   final token = occurrence.occurrenceId.trim().isNotEmpty
       ? occurrence.occurrenceId.trim()
       : 'start:${occurrence.startsAt.toUtc().toIso8601String()}';
   return '$calendarImportIdentityPrefix|$scope|${source.id}|'
       '${occurrence.sourceEventId}|$token';
+}
+
+String _deviceScope(String? deviceProvenance, String localCalendarScope) {
+  final provenance = deviceProvenance?.trim() ?? '';
+  if (provenance.isEmpty || provenance.contains('|')) {
+    throw ArgumentError.value(
+      deviceProvenance,
+      'deviceProvenance',
+      'installation identity must be a non-empty key segment',
+    );
+  }
+  return 'device:$provenance:$localCalendarScope';
 }
 
 /// Identity recorded by the one-time legacy calendar-block promotion.

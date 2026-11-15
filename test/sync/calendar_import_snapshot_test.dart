@@ -45,6 +45,42 @@ void main() {
     to: _rangeTo,
   );
 
+  CalendarImportRequest localRequest({String title = '本机事件'}) =>
+      CalendarImportRequest(
+        sources: const [
+          CalendarImportSource(
+            id: 'source-a',
+            displayName: '工作',
+            localCalendarId: '7',
+          ),
+        ],
+        occurrences: [
+          CalendarEventOccurrence(
+            sourceId: 'source-a',
+            sourceEventId: 'local:42',
+            occurrenceId: 'local:42@1',
+            eventIdentity: 'local:42@1',
+            title: title,
+            startsAt: _start,
+            endsAt: _end,
+            allDay: false,
+            availability: CalendarAvailability.busy,
+            timeZoneId: 'Asia/Shanghai',
+          ),
+        ],
+        from: _rangeFrom,
+        to: _rangeTo,
+      );
+
+  Future<void> seedInstallation(PactaDatabase db, String installId) => db
+      .into(db.focusSourceDevices)
+      .insert(
+        FocusSourceDevicesCompanion.insert(
+          userId: 'user-a',
+          deviceId: installId,
+        ),
+      );
+
   test(
     'import copies survive a snapshot round trip and keep skipping',
     () async {
@@ -115,6 +151,84 @@ void main() {
       }
     },
   );
+
+  test('two installations with the same local calendar and event ids never collide', () async {
+    final deviceA = PactaDatabase(NativeDatabase.memory());
+    await seedInstallation(deviceA, 'install-a');
+    final schedulesA = LocalScheduleRepository(
+      database: deviceA,
+      userId: 'user-a',
+      now: () => DateTime.utc(2026, 11, 15, 1),
+    );
+    try {
+      final preview = await schedulesA.previewCalendarImport(
+        localRequest(title: 'A 的本机事件'),
+      );
+      final created = await schedulesA.confirmCalendarImport(preview);
+      expect(created.createdCount, 1);
+      expect(created.created.single.eventIdentity, contains('install-a'));
+
+      final snapshotA = CloudSnapshotRepository(
+        database: deviceA,
+        remote: remote,
+        userId: 'user-a',
+        deviceId: 'device-a',
+        deviceName: 'Phone A',
+      );
+      final captured = await snapshotA.captureLocalState();
+      final saved = await snapshotA.uploadLocal(
+        expectedRevision: 0,
+        expectedFingerprint: captured.fingerprint,
+      );
+
+      final deviceB = PactaDatabase(NativeDatabase.memory());
+      await seedInstallation(deviceB, 'install-b');
+      final schedulesB = LocalScheduleRepository(
+        database: deviceB,
+        userId: 'user-a',
+        now: () => DateTime.utc(2026, 11, 15, 2),
+      );
+      try {
+        final snapshotB = CloudSnapshotRepository(
+          database: deviceB,
+          remote: remote,
+          userId: 'user-a',
+          deviceId: 'device-b',
+          deviceName: 'Tablet B',
+        );
+        final localB = await snapshotB.captureLocalState();
+        await snapshotB.downloadCloud(
+          expectedRevision: saved.revision,
+          expectedFingerprint: localB.fingerprint,
+        );
+
+        final received = (await schedulesB.getSchedules()).single;
+        expect(received.eventIdentity, contains('install-a'));
+
+        final candidate = await schedulesB.previewCalendarImport(
+          localRequest(title: 'B 的本机事件'),
+        );
+        expect(candidate.duplicateCount, 0);
+        expect(candidate.pending, hasLength(1));
+        expect(candidate.pending.single.identityKey, contains('install-b'));
+
+        final imported = await schedulesB.confirmCalendarImport(candidate);
+        expect(imported.createdCount, 1);
+        final copies = await schedulesB.getSchedules();
+        expect(copies, hasLength(2));
+        expect(copies.map((copy) => copy.title).toSet(), {
+          'A 的本机事件',
+          'B 的本机事件',
+        });
+      } finally {
+        await schedulesB.dispose();
+        await deviceB.close();
+      }
+    } finally {
+      await schedulesA.dispose();
+      await deviceA.close();
+    }
+  });
 }
 
 final DateTime _start = DateTime.utc(2026, 11, 16, 9);

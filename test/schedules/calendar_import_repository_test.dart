@@ -49,6 +49,15 @@ void main() {
     );
   }
 
+  Future<void> seedInstallation(String installId) => database
+      .into(database.focusSourceDevices)
+      .insert(
+        FocusSourceDevicesCompanion.insert(
+          userId: 'user-a',
+          deviceId: installId,
+        ),
+      );
+
   CalendarImportRequest request(List<CalendarEventOccurrence> occurrences) =>
       CalendarImportRequest(
         sources: const [
@@ -176,6 +185,7 @@ void main() {
   });
 
   test('device-local fallback ids are scoped by the local calendar', () async {
+    await seedInstallation('install-test');
     final localA = timed(
       sourceId: 'source-a',
       sourceEventId: 'local:42',
@@ -212,8 +222,14 @@ void main() {
       preview.pending.map((item) => item.identityKey).toSet(),
       hasLength(2),
     );
-    expect(preview.pending.first.identityKey, contains('|device:7|'));
-    expect(preview.pending.last.identityKey, contains('|device:8|'));
+    expect(
+      preview.pending.first.identityKey,
+      contains('|device:install-test:7|'),
+    );
+    expect(
+      preview.pending.last.identityKey,
+      contains('|device:install-test:8|'),
+    );
   });
 
   test('imports stay independent per occurrence of one series', () async {
@@ -301,4 +317,103 @@ void main() {
       expect(otherOrigin.duplicateCount, 0);
     },
   );
+
+  test(
+    'the same installation keeps skipping its device-local import',
+    () async {
+      await seedInstallation('install-test');
+      final first = await repository.previewCalendarImport(
+        request([timed(sourceEventId: 'local:42', occurrenceId: 'local:42@1')]),
+      );
+      final created = await repository.confirmCalendarImport(first);
+      expect(created.createdCount, 1);
+      expect(created.created.single.eventIdentity, contains('install-test'));
+
+      final again = await repository.previewCalendarImport(
+        request([timed(sourceEventId: 'local:42', occurrenceId: 'local:42@1')]),
+      );
+      expect(again.pending, isEmpty);
+      expect(again.duplicateCount, 1);
+      expect(await repository.getSchedules(), hasLength(1));
+    },
+  );
+
+  test(
+    'a source that gains a provider identity keeps the local copy',
+    () async {
+      await seedInstallation('install-test');
+      final localPreview = await repository.previewCalendarImport(
+        request([timed(sourceEventId: 'local:42', occurrenceId: 'local:42@1')]),
+      );
+      final localCopy = (await repository.confirmCalendarImport(localPreview))
+          .created
+          .single;
+
+      final syncedPreview = await repository.previewCalendarImport(
+        request([
+          timed(
+            sourceEventId: 'evt-42@example.com',
+            occurrenceId: 'evt-42@example.com@1',
+          ),
+        ]),
+      );
+      expect(syncedPreview.duplicateCount, 0);
+      expect(syncedPreview.pending, hasLength(1));
+      final syncedCopy = (await repository.confirmCalendarImport(syncedPreview))
+          .created
+          .single;
+      expect(syncedCopy.eventIdentity, startsWith('calendar-import/1|sync|'));
+
+      final stored = await repository.getSchedules();
+      expect(stored, hasLength(2));
+      final untouched = stored.firstWhere((item) => item.id == localCopy.id);
+      expect(untouched.eventIdentity, localCopy.eventIdentity);
+      expect(untouched.title, localCopy.title);
+      expect(untouched.startsAt, localCopy.startsAt);
+    },
+  );
+
+  test('a legacy device-local copy never causes a false skip', () async {
+    await seedInstallation('install-test');
+    await database
+        .into(database.localCalendarSources)
+        .insert(
+          LocalCalendarSourcesCompanion.insert(
+            userId: 'user-a',
+            sourceId: 'source-a',
+            displayName: '工作',
+            timeZoneId: 'Asia/Shanghai',
+            updatedAt: DateTime.utc(2026, 11, 1),
+          ),
+        );
+    const rawIdentity = 'local:42@1763283600000';
+    await database
+        .into(database.localCalendarBlocks)
+        .insert(
+          LocalCalendarBlocksCompanion.insert(
+            userId: 'user-a',
+            sourceId: 'source-a',
+            sourceEventId: 'local:42',
+            occurrenceId: rawIdentity,
+            eventIdentity: rawIdentity,
+            title: '别的设备的本机事件',
+            startsAt: DateTime.utc(2026, 11, 16, 9),
+            endsAt: DateTime.utc(2026, 11, 16, 10),
+            availability: 'busy',
+            timeZoneId: 'Asia/Shanghai',
+            updatedAt: DateTime.utc(2026, 11, 1),
+          ),
+        );
+    await repository.promoteLegacyCalendarBlocks();
+    expect(
+      (await repository.getSchedules()).single.origin,
+      ScheduleOrigin.legacyCalendarBlock,
+    );
+
+    final preview = await repository.previewCalendarImport(
+      request([timed(sourceEventId: 'local:42', occurrenceId: rawIdentity)]),
+    );
+    expect(preview.duplicateCount, 0);
+    expect(preview.pending, hasLength(1));
+  });
 }
