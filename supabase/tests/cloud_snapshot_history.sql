@@ -62,7 +62,7 @@ begin
       jsonb_build_object(
         'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
-        'tables', '{}'::jsonb
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
       ),
       'device-a', 'Pixel 7（Android）', now(), 0
     );
@@ -106,7 +106,7 @@ begin
       jsonb_build_object(
         'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
-        'tables', '{}'::jsonb
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
       ),
       'device-a', 'Pixel 7（Android）', now(), 0
     );
@@ -135,7 +135,7 @@ begin
     jsonb_build_object(
       'schemaVersion', 2,
       'userId', current_setting('history_test.owner_id'),
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
     ),
     'device-a', 'Pixel 7（Android）', now(), 0,
     null, null, null, 'request-92'
@@ -145,7 +145,7 @@ begin
     jsonb_build_object(
       'schemaVersion', 2,
       'userId', current_setting('history_test.owner_id'),
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
     ),
     'device-a', 'Pixel 7（Android）', now(), 0,
     null, null, null, 'request-92'
@@ -178,7 +178,7 @@ begin
     jsonb_build_object(
       'schemaVersion', 2,
       'userId', current_setting('history_test.owner_id'),
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
     ),
     'device-a', 'Pixel 7（Android）', now(), 0,
     null, null, null, 'request-92-second'
@@ -194,7 +194,7 @@ begin
     jsonb_build_object(
       'schemaVersion', 2,
       'userId', current_setting('history_test.owner_id'),
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
     ),
     'device-b', 'DESKTOP-ABC（Windows）', now(), 0
   );
@@ -204,7 +204,7 @@ begin
     jsonb_build_object(
       'schemaVersion', 2,
       'userId', current_setting('history_test.owner_id'),
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
     ),
     'device-a', 'Pixel 7（Android）', now(), 0,
     null, null, null, 'request-92-second'
@@ -228,7 +228,7 @@ begin
       jsonb_build_object(
         'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
-        'tables', jsonb_build_object('marker', 'different')
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'marker', 'different')
       ),
       'device-a', 'Pixel 7（Android）', now(), 0,
       null, null, null, 'request-92-second'
@@ -263,7 +263,7 @@ begin
       jsonb_build_object(
         'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
-        'tables', '{}'::jsonb
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
       ),
       'device-c', 'Filler device', now(), 0
     );
@@ -287,7 +287,7 @@ begin
       jsonb_build_object(
         'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
-        'tables', '{}'::jsonb
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
       ),
       'device-a', 'Pixel 7（Android）', now(), 0,
       null, null, null, 'request-92-second'
@@ -337,7 +337,7 @@ begin
       jsonb_build_object(
         'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
-        'tables', '{}'::jsonb
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
       ),
       'direct-write', 'Direct write', now(), 0
     );
@@ -406,7 +406,7 @@ begin
     jsonb_build_object(
       'schemaVersion', 2,
       'userId', owner_id,
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
     )::text
   );
   if fingerprint is distinct from expected_fingerprint then
@@ -471,7 +471,7 @@ begin
     jsonb_build_object(
       'schemaVersion', 2,
       'userId', target_id,
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
     ),
     'seed', 'Seed', now(), 0
   );

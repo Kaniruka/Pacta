@@ -10,7 +10,7 @@ import 'package:pacta/src/tasks/task_database.dart';
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
-  test('schema 30 升级只新增预约准备时长列，旧记录保留已存成交时刻', () async {
+  test('schema 31 升级只新增预约准备时长列，旧记录保留已存成交时刻', () async {
     final directory = await Directory.systemTemp.createTemp('pacta-prep-');
     final file = File('${directory.path}/pacta.sqlite');
     final startedAt = DateTime.utc(2026, 11, 15, 8);
