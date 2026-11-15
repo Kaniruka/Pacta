@@ -1,7 +1,10 @@
 """Isolated Start Menu shortcut probe for the ticket-06 delivery gap.
 
-STATUS: source for review only. Nothing here has been executed by this session.
-The default action prints a plan and writes nothing.
+STATUS: review-only. This session ran --dry-run and the in-memory --self-check
+only; no shortcut, folder or registry value was created. The first root attempt
+failed before creating a .lnk because propsys!InitPropVariantFromString has no
+export on this host; the SDK header body is now reproduced inline and freed by
+ole32!PropVariantClear. Default action prints a plan and writes nothing.
 
 Purpose
 -------
@@ -38,6 +41,9 @@ Review sequence (not executed)
 2. python ... --register --target <same> --aumid Pacta.Test.Schedule06Probe.<token> --guid <uuid4>
 3. python tool/schedule_reminder_fixture/run.py --mode exit --aumid <same> --guid <same>
 4. python ... --cleanup --manifest <manifest.json>
+
+Self-check (no write; property plumbing only):
+python ... --self-check --target <same> --aumid Pacta.Test.Schedule06Probe.selfcheck
 """
 import argparse
 import ctypes
@@ -165,7 +171,7 @@ def create_shortcut(path, target, aumid):
         check(ole32.CoCreateInstance(byref(clsid), None, 1, byref(iid), byref(shell_link)), 'CoCreateInstance(ShellLink)')
         check(com_method(shell_link, 20, c_wchar_p)(shell_link, target), 'SetPath')
         check(com_method(shell_link, 7, c_wchar_p)(shell_link, 'Pacta ticket06 probe'), 'SetDescription')
-        check(com_method(shell_link, 9, c_wchar_p)(shell_link, str(path.parent)), 'SetWorkingDirectory')
+        check(com_method(shell_link, 9, c_wchar_p)(shell_link, str(pathlib.Path(target).parent)), 'SetWorkingDirectory')
 
         iid_props = GUID.parse(IID_IPROPERTY_STORE)
         check(
@@ -288,13 +294,25 @@ def self_check(aumid):
         ole32.CoUninitialize()
 
 
+def same_path(left, right) -> bool:
+    if not left or not right:
+        return False
+    try:
+        return pathlib.Path(left).resolve() == pathlib.Path(right).resolve()
+    except OSError:
+        return False
+
+
 def plan(aumid, guid, target):
     token = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S') + '-' + uuid.uuid4().hex[:6]
     aumid = aumid or (PROBE_PREFIX + token)
     guid = guid or str(uuid.uuid4())
     if not aumid.startswith(PROBE_PREFIX):
         raise SystemExit(f'refusing AUMID outside {PROBE_PREFIX}')
-    uuid.UUID(guid)
+    if len(aumid) > 128:
+        raise SystemExit('refusing an AUMID longer than 128 characters')
+    if uuid.UUID(guid).version != 4:
+        raise SystemExit('refusing a GUID that is not UUIDv4 (runner requires it)')
     target_path = pathlib.Path(target).resolve()
     if target_path != DEFAULT_TARGET.resolve():
         raise SystemExit(f'refusing target outside the built fixture: {target_path}')
@@ -335,16 +353,22 @@ def register(details):
         raise SystemExit(f'refusing to overwrite existing shortcut: {path}')
     folder_existed = PROBE_DIR.exists()
     intent_path, intent = write_intent(details)
+    created_hash = None
     try:
         PROBE_DIR.mkdir(parents=True, exist_ok=True)
         create_shortcut(path, details['target'], details['aumid'])
+        # Hash immediately: if readback fails, cleanup still has an exact
+        # identity for the file this attempt created.
+        created_hash = sha256(path)
+        intent['shortcutSha256'] = created_hash
+        intent_path.write_text(json.dumps(intent, indent=2, ensure_ascii=False), encoding='utf-8')
         readback = read_shortcut(path)
         manifest = {
             **intent,
             'state': 'created',
             'createdAtUtc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'readback': readback,
-            'matches': readback.get('aumid') == details['aumid'] and readback.get('target') == details['target'],
+            'matches': readback.get('aumid') == details['aumid'] and same_path(readback.get('target'), details['target']),
             'shortcutSha256': sha256(path),
             'folderCreated': not folder_existed,
         }
@@ -361,6 +385,7 @@ def register(details):
             'failedAtUtc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'error': type(error).__name__,
             'shortcutExists': path.exists(),
+            'shortcutSha256': created_hash,
             'folderExistedBefore': folder_existed,
             'probeDirExists': PROBE_DIR.exists(),
         })
@@ -382,7 +407,7 @@ def cleanup(manifest_path):
     if existed:
         current = read_shortcut(path)
         current_hash = sha256(path)
-        same_identity = current.get('aumid') == probe.get('aumid') and current.get('target') == probe.get('target')
+        same_identity = current.get('aumid') == probe.get('aumid') and same_path(current.get('target'), probe.get('target'))
         same_hash = manifest.get('shortcutSha256') == current_hash
         if not manifest.get('shortcutSha256') and not manifest.get('readback'):
             raise SystemExit(f'refusing to delete without a recorded readback or hash: {path}')
@@ -421,6 +446,10 @@ def main():
     parser.add_argument('--target', default=str(DEFAULT_TARGET))
     args = parser.parse_args()
 
+    if args.cleanup and (args.register or args.self_check):
+        raise SystemExit('--cleanup cannot be combined with --register or --self-check')
+    if args.register and args.self_check:
+        raise SystemExit('--register and --self-check are separate actions')
     if args.cleanup:
         if not args.manifest:
             raise SystemExit('--cleanup requires --manifest')
