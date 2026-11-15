@@ -109,8 +109,11 @@ class PlanUiCompositeFixture {
     required this.scope,
   }) : directory = Directory('${runDirectory.path}/$scenario');
 
-  /// 打开一次运行：`runDirectory` 必须是绝对路径且为空；每个场景写入自己的
-  /// 子目录，因此四个场景可以共用同一个唯一的运行目录而不覆盖旧证据。
+  /// 打开一个场景。运行根由**入口整轮校验一次**：native 入口在启动时要求
+  /// 绝对路径且为空，随后四个场景共用它；widget 入口每场给一个唯一临时根。
+  ///
+  /// 这里只负责本场景子目录：已存在就拒绝覆盖（manifest/PNG 都不会被旧证据
+  /// 混进来），但运行根在第一个场景写完之后当然不再为空，不能当成错误。
   static PlanUiCompositeFixture open({
     required String scenario,
     required Directory runDirectory,
@@ -118,9 +121,6 @@ class PlanUiCompositeFixture {
   }) {
     if (!runDirectory.isAbsolute) {
       fail('证据目录必须是绝对路径：${runDirectory.path}');
-    }
-    if (runDirectory.existsSync() && runDirectory.listSync().isNotEmpty) {
-      fail('拒绝复用或覆盖已有证据目录：${runDirectory.absolute.path}');
     }
     runDirectory.createSync(recursive: true);
     final fixture = PlanUiCompositeFixture._(
@@ -466,28 +466,79 @@ Future<void> runUnsupportedCalendarScenario(
   );
   await openPlanCalendar(tester, fixture);
 
+  // 360 宽下每个日期格必须是 ≥48×48 的真命中区，且年月整段单行可读。
+  final today = find.byKey(const ValueKey('plan-day-2026-11-15'));
+  expect(today, findsOneWidget);
+  final todaySize = tester.getSize(today);
+  expect(todaySize.width, greaterThanOrEqualTo(48), reason: '日期命中区宽度');
+  expect(todaySize.height, greaterThanOrEqualTo(48), reason: '日期命中区高度');
+  final monthParagraph = tester.renderObject<RenderParagraph>(
+    find.byKey(const ValueKey('plan-month-label')),
+  );
+  expect(monthParagraph.didExceedMaxLines, isFalse, reason: '360 宽下年月不折行、不省略');
+  expect(
+    monthParagraph.size.height,
+    lessThan((monthParagraph.text.style?.fontSize ?? 16) * 1.8),
+    reason: '年月只占一行',
+  );
+  expect(find.byKey(const ValueKey('plan-import-open')), findsOneWidget);
+  expect(find.text('新建安排'), findsOneWidget);
+  await tester.tap(find.byKey(const ValueKey('plan-day-2026-11-16')));
+  await fixture.settle(tester);
+  expect(find.textContaining('11月16日'), findsOneWidget, reason: '真实触摸换日');
+  await tester.tap(today);
+  await fixture.settle(tester);
+  expect(find.textContaining('11月15日'), findsOneWidget);
+
+  // 导入入口：提示先真实可见，再截图——先等 5 秒会让 SnackBar 自己退场，
+  // 截出来只是一张空日历。
   await tester.tap(find.byKey(const ValueKey('plan-import-open')));
   await settlePlanUi(tester);
-  expect(find.text('这台设备暂时不能读取系统日历；你自己的安排仍可新建和编辑。'), findsOneWidget);
+  final unsupportedPrompt = find.text('这台设备暂时不能读取系统日历；你自己的安排仍可新建和编辑。');
+  expect(unsupportedPrompt, findsOneWidget);
+  await tester.pump();
+  await fixture.capture(tester, 'unsupported-calendar-dark-narrow');
+  expect(unsupportedPrompt, findsOneWidget, reason: '截图时提示仍真实可见');
   await tester.pump(const Duration(seconds: 5));
   await fixture.settle(tester);
-  await fixture.capture(tester, 'unsupported-calendar-dark-narrow');
+  expect(unsupportedPrompt, findsNothing, reason: '提示按时退场，不残留');
 
+  // 自有安排：新增 → 编辑标题 → 落库与页面同时更新。
   await tester.tap(find.text('添加事项'));
   await fixture.settle(tester);
   await tester.enterText(planFormField('名称'), '离线整理');
   await tester.tap(find.text('保存'));
   await fixture.settle(tester);
-
   expect(find.text('离线整理'), findsOneWidget);
   expect((await fixture.schedules.getSchedules()).single.title, '离线整理');
   expect(find.text('新建安排'), findsOneWidget);
   expect(tester.getSize(find.text('新建安排')).height, greaterThan(0));
+
+  await tester.tap(find.text('离线整理'));
+  await fixture.settle(tester);
+  expect(find.text('编辑安排'), findsOneWidget);
+  await tester.enterText(planFormField('名称'), '离线整理（已改）');
+  await tester.pump();
+  expect(find.text('名称'), findsOneWidget, reason: '已填标题时浮动标签完整可见');
+  await fixture.capture(tester, 'owned-schedule-editor-dark-narrow');
+  await tester.tap(find.text('保存'));
+  await fixture.settle(tester);
+  expect(
+    (await fixture.schedules.getSchedules()).single.title,
+    '离线整理（已改）',
+    reason: '编辑写入仓储，不只是页面内存',
+  );
+  expect(find.text('离线整理（已改）'), findsOneWidget);
+  expect(find.text('离线整理'), findsNothing, reason: '编辑后旧标题不再显示');
   expect(tester.takeException(), isNull, reason: '360 宽 + MiSans 不溢出');
-  await fixture.capture(tester, 'owned-schedule-dark-narrow');
+  await fixture.capture(tester, 'owned-schedule-edited-dark-narrow');
   fixture.record(const [
     'unsupported-calendar',
+    'unsupported-prompt-visible',
+    'hitbox-48',
+    'month-title-single-line',
     'owned-crud',
+    'owned-edit',
     'no-overflow',
     'dark-360x800',
   ]);

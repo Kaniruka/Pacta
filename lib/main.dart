@@ -1429,37 +1429,45 @@ class _PlanPageState extends ConsumerState<PlanPage> {
             initialData: const [],
             builder: (context, snapshot) {
               final goals = snapshot.data ?? const <Goal>[];
+              // 日历视图左右内边距收到 12：360 宽下 7 列日期仍保有 ≥48×48
+              // 的命中区（(360-24)/7 = 48）。标题行补回 4，和其他目的地
+              // 一样从 16 起排，视觉左边界不变。
+              final calendar = _view == _PlanView.calendar;
+              final horizontal = calendar ? 12.0 : 16.0;
               return ListView(
-                padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+                padding: EdgeInsets.fromLTRB(horizontal, 20, horizontal, 28),
                 children: [
-                  Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 16,
-                    runSpacing: 12,
-                    children: [
-                      Text(
-                        '计划',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                      SegmentedButton<_PlanView>(
-                        segments: const [
-                          ButtonSegment(
-                            value: _PlanView.goals,
-                            icon: Icon(Icons.flag_outlined),
-                            label: Text('目标'),
-                          ),
-                          ButtonSegment(
-                            value: _PlanView.calendar,
-                            icon: Icon(Icons.calendar_month_outlined),
-                            label: Text('日历'),
-                          ),
-                        ],
-                        selected: {_view},
-                        onSelectionChanged: (selection) =>
-                            setState(() => _view = selection.first),
-                      ),
-                    ],
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: calendar ? 4 : 0),
+                    child: Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 16,
+                      runSpacing: 12,
+                      children: [
+                        Text(
+                          '计划',
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        SegmentedButton<_PlanView>(
+                          segments: const [
+                            ButtonSegment(
+                              value: _PlanView.goals,
+                              icon: Icon(Icons.flag_outlined),
+                              label: Text('目标'),
+                            ),
+                            ButtonSegment(
+                              value: _PlanView.calendar,
+                              icon: Icon(Icons.calendar_month_outlined),
+                              label: Text('日历'),
+                            ),
+                          ],
+                          selected: {_view},
+                          onSelectionChanged: (selection) =>
+                              setState(() => _view = selection.first),
+                        ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                   if (_view == _PlanView.goals)
