@@ -289,6 +289,72 @@ void main() {
     expect(back.updated.recurrenceDate, '2026-11-16');
   });
 
+  test('未来分段改写不得删除已经开始的历史例外', () async {
+    var now = DateTime.utc(2026, 11, 15, 1);
+    final mutable = LocalScheduleRepository(
+      database: database,
+      userId: 'user-a',
+      now: () => now,
+    );
+    addTearDown(mutable.dispose);
+
+    final series = await mutable.createRecurringSchedule(
+      draft: draft('每日', DateTime.utc(2026, 11, 21, 9)),
+      repeat: const ScheduleRepeatSpec(
+        frequency: ScheduleRepeatFrequency.daily,
+        endDate: '2026-11-25',
+      ),
+      timeZoneId: 'Etc/UTC',
+    );
+    // 未来的 11-23 那一期被"仅本次"挪到更早的 11-19（创建时仍在未来）。
+    final moved = series.occurrences.firstWhere(
+      (schedule) => schedule.recurrenceDate == '2026-11-23',
+    );
+    await mutable.editRecurringSchedule(
+      moved.id,
+      draft: draft('挪到过去的例外', DateTime.utc(2026, 11, 19, 9)),
+      scope: ScheduleRepeatScope.onlyThis,
+    );
+    final exception = (await mutable.getSchedules(
+      from: DateTime.utc(2026, 11, 18),
+      to: DateTime.utc(2026, 11, 20),
+    )).single;
+    await mutable.setScheduleCompletion(exception.id, isCompleted: true);
+
+    // 时间走到 11-20：这条例外已经成为历史。
+    now = DateTime.utc(2026, 11, 20, 1);
+
+    // 改写仍属未来的 11-21 那一期。
+    await mutable.editRecurringSchedule(
+      series.occurrences.first.id,
+      draft: draft('改后', DateTime.utc(2026, 11, 21, 9)),
+      scope: ScheduleRepeatScope.thisAndFuture,
+    );
+
+    final rows = await mutable.getSchedules(
+      from: DateTime.utc(2026, 11, 18),
+      to: DateTime.utc(2026, 11, 26),
+    );
+    expect(rows.map((schedule) => schedule.startsAt), [
+      DateTime.utc(2026, 11, 19, 9),
+      DateTime.utc(2026, 11, 21, 9),
+      DateTime.utc(2026, 11, 22, 9),
+      DateTime.utc(2026, 11, 24, 9),
+      DateTime.utc(2026, 11, 25, 9),
+    ]);
+    final preserved = rows.first;
+    expect(preserved.recurrenceDate, '2026-11-23');
+    expect(preserved.isRecurrenceException, isTrue);
+    expect(preserved.title, '挪到过去的例外');
+    expect(preserved.isCompleted, isTrue);
+    expect(rows.skip(1).map((schedule) => schedule.title).toSet(), {'改后'});
+    // 原 11-23 不会被新规则重新生成。
+    expect(
+      rows.map((schedule) => schedule.startsAt),
+      isNot(contains(DateTime.utc(2026, 11, 23, 9))),
+    );
+  });
+
   test('严格日历解析拒绝顺移日期与不可用规则时区', () {
     expect(() => parseRecurrenceDate('2026-02-30', '日期'), throwsArgumentError);
     expect(() => parseRecurrenceDate('2026-11-31', '日期'), throwsArgumentError);

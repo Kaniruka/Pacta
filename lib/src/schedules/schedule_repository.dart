@@ -401,6 +401,10 @@ class LocalScheduleRepository implements ScheduleRepository {
         parseRecurrenceDate(rule.originalFirstDate, '首日'),
       );
       final newRuleId = _uuid.v4();
+      final nowUtc = _now().toUtc();
+      // 本次改动会整段替换 split 之后的分段规则；被替换规则名下仍保留的行
+      // （墓碑、已过去的例外）在删除规则前统一改挂到新规则，保持引用有效。
+      final replacedRuleIds = <String>{};
       ScheduleRepeatRule? truncated;
       if (keepsEarlierInstances) {
         // 截断写在可见日期域：身份 splitAt-1 对应的可见日期是它加上位移。
@@ -412,29 +416,35 @@ class LocalScheduleRepository implements ScheduleRepository {
         await _saveRule(truncated, _nextTimestamp());
       } else {
         // 该实例就是首个实例：原规则不再拥有任何实例，整体移除而不是留下
-        // 一条违反"结束日期不早于首日"的空规则。它名下的墓碑先改挂到新规则，
-        // 否则快照里的取消记录会引用已删除的规则。
-        await _reassignRuleCancellations(rule.id, newRuleId);
-        await _deleteRule(rule.id);
+        // 一条违反"结束日期不早于首日"的空规则。
+        replacedRuleIds.add(rule.id);
       }
-      // 删除该起点之后的旧实例，让新规则重新生成它们；单实例删除留下的
-      // 墓碑保留下来，规则改写不应把用户删掉的某次安排复活。
+      // split 之后的分段规则已被这次改动取代：留下它们会在同一段日期上再生成
+      // 一套实例，重复展开后出现重影。
+      for (final stale in seriesRules) {
+        if (stale.id == rule.id) continue;
+        if (stale.originalFirstDate.compareTo(originalDate) < 0) continue;
+        replacedRuleIds.add(stale.id);
+      }
+
+      // 只重写**尚未开始**的实例。身份日期在 cut 之后、但可见时间已经开始的
+      // 实例（例如被"仅本次"挪到过去的例外）属于历史：删除它们会丢失例外、
+      // 完成状态与到达方式，等于改写已经发生的事。墓碑照旧保留。
       await (database.delete(database.localSchedules)
             ..where((row) => row.userId.equals(userId))
             ..where((row) => row.recurrenceSeriesId.equals(seriesId))
             ..where(
               (row) => row.recurrenceDate.isBiggerOrEqualValue(originalDate),
             )
-            ..where((row) => row.isRecurrenceCancelled.equals(false)))
+            ..where((row) => row.isRecurrenceCancelled.equals(false))
+            ..where((row) => row.startsAt.isBiggerOrEqualValue(nowUtc)))
           .go();
 
-      // split 之后的分段规则已被这次改动取代：留下它们会在同一段日期上再生成
-      // 一套实例，重复展开后出现重影。它们的墓碑同样改挂到新规则。
-      for (final stale in seriesRules) {
-        if (stale.id == rule.id) continue;
-        if (stale.originalFirstDate.compareTo(originalDate) < 0) continue;
-        await _reassignRuleCancellations(stale.id, newRuleId);
-        await _deleteRule(stale.id);
+      // 被替换规则剩下的行（墓碑 + 保留下来的过去实例）改挂到新规则：
+      // 身份日期不变，取消语义与完成状态也不变。
+      for (final removedRuleId in replacedRuleIds) {
+        await _reassignRuleRows(removedRuleId, newRuleId);
+        await _deleteRule(removedRuleId);
       }
 
       final draftFirstDate = window.allDay
@@ -825,18 +835,15 @@ class LocalScheduleRepository implements ScheduleRepository {
         );
   }
 
-  /// 规则被删除前，把它名下的墓碑改挂到接手的规则上。
+  /// 规则被删除前，把它名下所有剩余行改挂到接手的规则上。
   ///
-  /// 墓碑代表"用户删掉了这一期"，必须保持有效引用，否则本机导出的快照会被
-  /// 引用校验拒绝；身份日期不变，所以取消语义随改期一起平移。
-  Future<void> _reassignRuleCancellations(
-    String fromRuleId,
-    String toRuleId,
-  ) async {
+  /// 剩余行只有两种：墓碑（"用户删掉了这一期"）与已经过去的例外实例。二者都必须
+  /// 保持有效引用，否则本机导出的快照会被引用校验拒绝；身份日期不变，所以取消
+  /// 语义与完成状态随改期一起平移，也不会被新规则重新生成。
+  Future<void> _reassignRuleRows(String fromRuleId, String toRuleId) async {
     await (database.update(database.localSchedules)
           ..where((row) => row.userId.equals(userId))
-          ..where((row) => row.recurrenceId.equals(fromRuleId))
-          ..where((row) => row.isRecurrenceCancelled.equals(true)))
+          ..where((row) => row.recurrenceId.equals(fromRuleId)))
         .write(LocalSchedulesCompanion(recurrenceId: Value(toRuleId)));
   }
 
