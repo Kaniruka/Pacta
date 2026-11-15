@@ -1627,6 +1627,7 @@ class _PlanPageState extends ConsumerState<PlanPage> {
         displayTimeZoneId: displayTimeZoneId,
         calendarRepository: ref.watch(calendarRepositoryProvider),
         initialDay: widget.navigationTarget?.day,
+        highlightScheduleId: widget.navigationTarget?.scheduleId,
         // 与专注倒计时共用同一个注入时钟：日期、今天标记和月视图都能
         // 在同一份 fixture 里被固定，页面不各自读取系统时间。
         now: ref.watch(displayClockProvider),
@@ -5445,6 +5446,10 @@ class _MyPageState extends ConsumerState<MyPage> {
                   repository: calendarRepository,
                   isAndroid: Platform.isAndroid,
                   scheduleRepository: scheduleRepository,
+                  displayTimeZoneIdLoader: () =>
+                      resolveAccountDisplayTimeZoneId(
+                        ref.read(profileRepositoryProvider),
+                      ),
                 ),
               ),
             ),

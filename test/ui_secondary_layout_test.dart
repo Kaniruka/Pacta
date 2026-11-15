@@ -88,6 +88,7 @@ void main() {
       CalendarSourcesPage(
         repository: repository,
         isAndroid: true,
+        displayTimeZoneIdLoader: () async => 'Etc/UTC',
         scheduleRepository: schedules,
       ),
     );

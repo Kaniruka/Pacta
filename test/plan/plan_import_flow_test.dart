@@ -134,9 +134,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('从系统日历导入'), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey('plan-import-source-cal-a')));
+      await tester.tap(
+        find.byKey(const ValueKey('calendar-import-source-cal-a')),
+      );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('plan-import-preview')));
+      await tester.tap(find.byKey(const ValueKey('calendar-import-preview')));
       await tester.pumpAndSettle();
 
       // 预览只说明会发生什么，此时还没有写任何副本。
@@ -144,7 +146,7 @@ void main() {
       expect(find.text('已导入过的 0 项会跳过：不会重复添加，也不会覆盖你改过的内容。'), findsOneWidget);
       expect(await harness.schedules.getSchedules(), isEmpty);
 
-      await tester.tap(find.byKey(const Key('plan-import-confirm')));
+      await tester.tap(find.byKey(const ValueKey('calendar-import-confirm')));
       await tester.pumpAndSettle();
       expect(find.text('已复制 1 项安排；跳过 0 项已经导入过的。'), findsOneWidget);
       // 让上一条提示退场，第二次导入的结果提示才会显示。
@@ -164,9 +166,11 @@ void main() {
 
       await tester.tap(find.byKey(const ValueKey('plan-import-open')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('plan-import-source-cal-a')));
+      await tester.tap(
+        find.byKey(const ValueKey('calendar-import-source-cal-a')),
+      );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('plan-import-preview')));
+      await tester.tap(find.byKey(const ValueKey('calendar-import-preview')));
       await tester.pumpAndSettle();
 
       expect(find.text('所选范围内都是已导入过的安排，已跳过 1 项。'), findsOneWidget);

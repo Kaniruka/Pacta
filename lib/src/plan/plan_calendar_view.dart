@@ -1,14 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:timezone/timezone.dart' as timezone;
 
 import '../calendar/calendar_repository.dart';
+import '../calendar/manual_calendar_import.dart';
 import '../focus/focus_time_zones.dart';
 import '../schedules/schedule_models.dart';
 import '../schedules/schedule_repeat.dart';
 import '../schedules/schedule_repeat_editor.dart';
 import '../schedules/schedule_repository.dart';
 import '../tasks/task_models.dart';
-import 'plan_import_flow.dart';
 
 /// 计划日历：按账号显示时区呈现 Pacta 自有日程。
 ///
@@ -24,6 +26,7 @@ class PlanCalendarView extends StatefulWidget {
     this.now,
     this.calendarRepository,
     this.initialDay,
+    this.highlightScheduleId,
   });
 
   final ScheduleRepository repository;
@@ -37,6 +40,10 @@ class PlanCalendarView extends StatefulWidget {
   /// 打开时先选中的日历日（账号显示时区）；通知点击用它定位到具体安排。
   final DateTime? initialDay;
 
+  /// 通知要定位的已拥有安排；只在当前账号的日程流里命中时才强调，
+  /// 不存在（已删除或不属于本账号）就只停留在 [initialDay]，不建专注。
+  final String? highlightScheduleId;
+
   @override
   State<PlanCalendarView> createState() => _PlanCalendarViewState();
 }
@@ -44,6 +51,10 @@ class PlanCalendarView extends StatefulWidget {
 class _PlanCalendarViewState extends State<PlanCalendarView> {
   late DateTime _visibleMonth;
   late DateTime _selectedDay;
+  String? _highlightedScheduleId;
+
+  /// 通知目标定位请求的代次：只接受最新一次请求的结果。
+  int _targetRequest = 0;
 
   timezone.Location get _location =>
       FocusTimeZones.location(widget.displayTimeZoneId);
@@ -60,16 +71,83 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     final initial = widget.initialDay ?? DateTime(now.year, now.month, now.day);
     _visibleMonth = DateTime(initial.year, initial.month);
     _selectedDay = DateTime(initial.year, initial.month, initial.day);
+    _highlightedScheduleId = widget.highlightScheduleId;
+    unawaited(_resolveHighlightedSchedule());
   }
 
   @override
   void didUpdateWidget(PlanCalendarView oldWidget) {
     super.didUpdateWidget(oldWidget);
     final target = widget.initialDay;
-    if (target == null || target == oldWidget.initialDay) return;
+    final idChanged =
+        widget.highlightScheduleId != oldWidget.highlightScheduleId;
+    final dayChanged = target != null && target != oldWidget.initialDay;
+    // 数据源换了（仓储/账号所有者）或显示时区换了：旧请求一律作废。
+    final sourceChanged =
+        !identical(widget.repository, oldWidget.repository) ||
+        widget.displayTimeZoneId != oldWidget.displayTimeZoneId;
+    if (!idChanged && !dayChanged && !sourceChanged) return;
+    _targetRequest += 1;
     setState(() {
-      _selectedDay = DateTime(target.year, target.month, target.day);
-      _visibleMonth = DateTime(target.year, target.month);
+      if (idChanged) _highlightedScheduleId = widget.highlightScheduleId;
+      if (dayChanged) {
+        _selectedDay = DateTime(target.year, target.month, target.day);
+        _visibleMonth = DateTime(target.year, target.month);
+      }
+    });
+    if (_highlightedScheduleId != null) {
+      unawaited(_resolveHighlightedSchedule());
+    }
+  }
+
+  /// 用户自己换了日子/月份：通知带来的强调与在途请求一起失效。
+  void _clearHighlightedSchedule() {
+    _highlightedScheduleId = null;
+    _targetRequest += 1;
+  }
+
+  /// 通知指向的安排若被改期，就跟它当前所在的账号时区日走。
+  ///
+  /// 月视图只订阅当前月的窗口，所以这里按 id 做一次**只读**的全量读取：
+  /// 命中当前账号的安排就移到它所在的那一天；id 已不存在（删除或不属于
+  /// 本账号）时保留负载日期，不猜、不写、不建专注。
+  Future<void> _resolveHighlightedSchedule() async {
+    final id = _highlightedScheduleId;
+    if (id == null) return;
+    // 捕获本次请求的来源与代次：等待期间仓储/账号所有者/时区/目标日可能
+    // 已经换掉，旧结果即使命中同一个 id 也不能改写新账号的日期。
+    final repository = widget.repository;
+    final zoneId = widget.displayTimeZoneId;
+    final request = ++_targetRequest;
+    final List<Schedule> schedules;
+    try {
+      schedules = await repository.getSchedules();
+    } catch (_) {
+      return;
+    }
+    if (!mounted || request != _targetRequest) return;
+    if (_highlightedScheduleId != id) return;
+    if (!identical(widget.repository, repository)) return;
+    if (widget.displayTimeZoneId != zoneId) return;
+    Schedule? match;
+    for (final schedule in schedules) {
+      if (schedule.id != id) continue;
+      match = schedule;
+      break;
+    }
+    if (match == null) return;
+    final days = scheduleDays(match, widget.displayTimeZoneId);
+    if (days.isEmpty || days.contains(_selectedDay)) return;
+    final sorted = days.toList()..sort();
+    final day = sorted.firstWhere(
+      (candidate) =>
+          candidate.year == _selectedDay.year &&
+          candidate.month == _selectedDay.month,
+      orElse: () => sorted.first,
+    );
+    setState(() {
+      _selectedDay = day;
+      _visibleMonth = DateTime(day.year, day.month);
     });
   }
 
@@ -121,6 +199,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
               _visibleMonth.month - 1,
             );
             _selectedDay = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
+            _clearHighlightedSchedule();
           }),
           icon: const Icon(Icons.chevron_left),
         ),
@@ -138,6 +217,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
               _visibleMonth.month + 1,
             );
             _selectedDay = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
+            _clearHighlightedSchedule();
           }),
           icon: const Icon(Icons.chevron_right),
         ),
@@ -226,7 +306,11 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
       label: '${day.month}月${day.day}日',
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => setState(() => _selectedDay = day),
+        onTap: () => setState(() {
+          _selectedDay = day;
+          // 用户自己换了日子，就不再强调通知带来的那一条。
+          _clearHighlightedSchedule();
+        }),
         child: Container(
           constraints: const BoxConstraints(minHeight: 48),
           margin: const EdgeInsets.all(2),
@@ -301,6 +385,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
             _ScheduleTile(
               key: ValueKey('schedule-${schedule.id}'),
               schedule: schedule,
+              highlighted: schedule.id == _highlightedScheduleId,
               timeLabel: scheduleTimeLabel(schedule, widget.displayTimeZoneId),
               taskLabel: _taskLabel(schedule.taskId),
               onToggleCompletion: (value) => _setCompletion(schedule, value),
@@ -337,7 +422,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
   Future<void> _importFromCalendar() async {
     final calendar = widget.calendarRepository;
     if (calendar == null) return;
-    final message = await runPlanManualImport(
+    final message = await runManualCalendarImport(
       context,
       calendar: calendar,
       schedules: widget.repository,
@@ -542,6 +627,7 @@ class _ScheduleTile extends StatelessWidget {
   const _ScheduleTile({
     super.key,
     required this.schedule,
+    required this.highlighted,
     required this.timeLabel,
     required this.taskLabel,
     required this.onToggleCompletion,
@@ -551,6 +637,9 @@ class _ScheduleTile extends StatelessWidget {
   });
 
   final Schedule schedule;
+
+  /// 通知点开的那一条：只用边框强调，不改变任何数据或专注状态。
+  final bool highlighted;
   final String timeLabel;
   final String? taskLabel;
   final ValueChanged<bool> onToggleCompletion;
@@ -561,84 +650,102 @@ class _ScheduleTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.only(top: 8),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        leading: Checkbox(
-          value: schedule.isCompleted,
-          onChanged: (value) {
-            if (value != null) onToggleCompletion(value);
-          },
+    return Semantics(
+      container: true,
+      selected: highlighted,
+      child: Card(
+        key: ValueKey(
+          highlighted
+              ? 'schedule-highlight-${schedule.id}'
+              : 'schedule-card-${schedule.id}',
         ),
-        title: Text(
-          schedule.title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: schedule.isCompleted
-              ? const TextStyle(decoration: TextDecoration.lineThrough)
-              : null,
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(timeLabel),
-            if (taskLabel != null)
-              Text(
-                '任务：$taskLabel',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+        margin: const EdgeInsets.only(top: 8),
+        shape: highlighted
+            ? RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(color: theme.colorScheme.primary, width: 2),
               )
-            else
-              Text(
-                '独立事项',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+            : null,
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 4,
+          ),
+          leading: Checkbox(
+            value: schedule.isCompleted,
+            onChanged: (value) {
+              if (value != null) onToggleCompletion(value);
+            },
+          ),
+          title: Text(
+            schedule.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: schedule.isCompleted
+                ? const TextStyle(decoration: TextDecoration.lineThrough)
+                : null,
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(timeLabel),
+              if (taskLabel != null)
+                Text(
+                  '任务：$taskLabel',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                )
+              else
+                Text(
+                  '独立事项',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-            if (schedule.isRecurring)
-              Text(
-                '重复安排',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              if (schedule.isRecurring)
+                Text(
+                  '重复安排',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-            if (schedule.notes.isNotEmpty)
-              Text(
-                schedule.notes,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall,
-              ),
-            if (schedule.hasReminder)
-              Text(
-                '提前 ${formatReminderOffset(schedule.reminderMinutesBefore!)}提醒',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              if (schedule.notes.isNotEmpty)
+                Text(
+                  schedule.notes,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall,
                 ),
-              ),
-          ],
+              if (schedule.hasReminder)
+                Text(
+                  '提前 ${formatReminderOffset(schedule.reminderMinutesBefore!)}提醒',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
+          trailing: PopupMenuButton<String>(
+            tooltip: '安排操作',
+            onSelected: (value) {
+              switch (value) {
+                case 'edit':
+                  onEdit();
+                case 'reschedule':
+                  onReschedule();
+                case 'delete':
+                  onDelete();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'edit', child: Text('编辑安排')),
+              PopupMenuItem(value: 'reschedule', child: Text('改期')),
+              PopupMenuItem(value: 'delete', child: Text('删除安排')),
+            ],
+          ),
+          onTap: onEdit,
         ),
-        trailing: PopupMenuButton<String>(
-          tooltip: '安排操作',
-          onSelected: (value) {
-            switch (value) {
-              case 'edit':
-                onEdit();
-              case 'reschedule':
-                onReschedule();
-              case 'delete':
-                onDelete();
-            }
-          },
-          itemBuilder: (context) => const [
-            PopupMenuItem(value: 'edit', child: Text('编辑安排')),
-            PopupMenuItem(value: 'reschedule', child: Text('改期')),
-            PopupMenuItem(value: 'delete', child: Text('删除安排')),
-          ],
-        ),
-        onTap: onEdit,
       ),
     );
   }
