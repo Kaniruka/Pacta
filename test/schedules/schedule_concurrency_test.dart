@@ -435,6 +435,211 @@ void main() {
     expect(visible.map((schedule) => schedule.title), ['恢复后的安排']);
     expect(await _instanceRows(local), isEmpty);
   });
+
+  test('同一 updatedAt 下的不同提醒与备注在快照恢复后仍会推送', () async {
+    final remote = InMemoryCloudSnapshotRemote();
+    final deviceA = PactaDatabase(NativeDatabase.memory());
+    final deviceB = PactaDatabase(NativeDatabase.memory());
+    // 同一个受控时钟：两台设备每一次写入都会算出相同的下一个 updatedAt。
+    final clock = DateTime.utc(2026, 11, 15, 8);
+    final repositoryA = LocalScheduleRepository(
+      database: deviceA,
+      userId: 'same-updated-at',
+      now: () => clock,
+    );
+    final repositoryB = LocalScheduleRepository(
+      database: deviceB,
+      userId: 'same-updated-at',
+      now: () => clock,
+    );
+    addTearDown(() async {
+      await repositoryA.dispose();
+      await repositoryB.dispose();
+      await deviceA.close();
+      await deviceB.close();
+    });
+
+    final created = await repositoryA.createSchedule(_draft(title: '同步的日程'));
+    final snapshotA = CloudSnapshotRepository(
+      database: deviceA,
+      remote: remote,
+      userId: 'same-updated-at',
+      deviceId: 'device-a',
+      deviceName: 'Phone A',
+    );
+    final initialA = await snapshotA.captureLocalState();
+    final first = await snapshotA.uploadLocal(
+      expectedRevision: 0,
+      expectedFingerprint: initialA.fingerprint,
+    );
+    final snapshotB = CloudSnapshotRepository(
+      database: deviceB,
+      remote: remote,
+      userId: 'same-updated-at',
+      deviceId: 'device-b',
+      deviceName: 'Tablet B',
+    );
+    var localB = await snapshotB.captureLocalState();
+    await snapshotB.downloadCloud(
+      expectedRevision: first.revision,
+      expectedFingerprint: localB.fingerprint,
+    );
+
+    // 同一身份、同一 updatedAt，只有提醒与备注不同：旧签名看不出来的差异。
+    await repositoryA.setScheduleReminder(created.id, minutesBefore: 5);
+    await repositoryA.updateSchedule(
+      created.id,
+      _draft(title: '同步的日程', notes: 'A 的备注'),
+    );
+    await repositoryB.setScheduleReminder(created.id, minutesBefore: 10);
+    await repositoryB.updateSchedule(
+      created.id,
+      _draft(title: '同步的日程', notes: 'B 的备注'),
+    );
+    final onB = (await repositoryB.getSchedules()).single;
+    expect(
+      onB.updatedAt,
+      (await repositoryA.getSchedules()).single.updatedAt,
+      reason: '两台设备的写入序号相同，去重键不能只靠 updatedAt',
+    );
+
+    final emissions = <List<Schedule>>[];
+    final subscription = repositoryB
+        .watchSchedules(
+          from: DateTime.utc(2026, 11, 1),
+          to: DateTime.utc(2026, 11, 30),
+        )
+        .listen(emissions.add);
+    addTearDown(subscription.cancel);
+    await pumpEventQueue();
+    expect(emissions.last.single.reminderMinutesBefore, 10);
+    expect(emissions.last.single.notes, 'B 的备注');
+
+    final changedA = await snapshotA.captureLocalState();
+    final second = await snapshotA.uploadLocal(
+      expectedRevision: first.revision,
+      expectedFingerprint: changedA.fingerprint,
+    );
+    localB = await snapshotB.captureLocalState();
+    await snapshotB.downloadCloud(
+      expectedRevision: second.revision,
+      expectedFingerprint: localB.fingerprint,
+    );
+    await pumpEventQueue();
+
+    expect(emissions, hasLength(2), reason: '内容变了就必须推送一次');
+    final restored = emissions.last.single;
+    expect(restored.id, created.id);
+    expect(
+      restored.updatedAt,
+      onB.updatedAt,
+      reason: '恢复后的 updatedAt 与恢复前完全相同，旧签名会把它当成没变',
+    );
+    expect(restored.reminderMinutesBefore, 5);
+    expect(restored.notes, 'A 的备注');
+  });
+
+  test('从未订阅的观察不会挂住 dispose，也不再访问数据库', () async {
+    final database = PactaDatabase(NativeDatabase.memory());
+    final repository = LocalScheduleRepository(
+      database: database,
+      userId: 'never-listened',
+      now: () => DateTime.utc(2026, 11, 15),
+    );
+    addTearDown(database.close);
+
+    final unused = repository.watchSchedules();
+    await repository.dispose().timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => fail('未订阅的流不应让 dispose 等待 done 事件'),
+    );
+
+    final events = <List<Schedule>>[];
+    final done = Completer<void>();
+    final subscription = unused.listen(events.add, onDone: done.complete);
+    await done.future.timeout(const Duration(seconds: 5));
+    expect(events, isEmpty, reason: '关闭后订阅不应再产生任何结果');
+    await subscription.cancel();
+  });
+
+  test('暂停中的订阅释放数据库观察，关闭不被挂住也不再推送', () async {
+    final database = PactaDatabase(NativeDatabase.memory());
+    final watcher = LocalScheduleRepository(
+      database: database,
+      userId: 'paused-watch',
+      now: () => DateTime.utc(2026, 11, 15),
+    );
+    final writer = LocalScheduleRepository(
+      database: database,
+      userId: 'paused-watch',
+      now: () => DateTime.utc(2026, 11, 15),
+    );
+    addTearDown(() async {
+      await writer.dispose();
+      await database.close();
+    });
+    await writer.createSchedule(_draft(title: '暂停前'));
+
+    final emissions = <List<Schedule>>[];
+    final subscription = watcher.watchSchedules().listen(emissions.add);
+    await pumpEventQueue();
+    expect(emissions, hasLength(1));
+
+    subscription.pause();
+    await writer.createSchedule(_draft(title: '暂停期间'));
+    await pumpEventQueue();
+    await watcher.dispose().timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => fail('暂停中的订阅不应让 dispose 等待 done 事件'),
+    );
+    await writer.createSchedule(_draft(title: '关闭之后'));
+    await pumpEventQueue();
+
+    subscription.resume();
+    await subscription.asFuture<void>().timeout(const Duration(seconds: 5));
+    expect(emissions, hasLength(1), reason: '暂停期间不排队，关闭后不再推送');
+    expect(emissions.single.map((schedule) => schedule.title), ['暂停前']);
+  });
+
+  test('恢复订阅会重新读到暂停期间的变更', () async {
+    final database = PactaDatabase(NativeDatabase.memory());
+    final watcher = LocalScheduleRepository(
+      database: database,
+      userId: 'resumed-watch',
+      now: () => DateTime.utc(2026, 11, 15),
+    );
+    final writer = LocalScheduleRepository(
+      database: database,
+      userId: 'resumed-watch',
+      now: () => DateTime.utc(2026, 11, 15),
+    );
+    addTearDown(() async {
+      await watcher.dispose();
+      await writer.dispose();
+      await database.close();
+    });
+    await writer.createSchedule(
+      _draft(title: '暂停前', startsAt: DateTime.utc(2026, 11, 16, 9)),
+    );
+
+    final emissions = <List<Schedule>>[];
+    final subscription = watcher.watchSchedules().listen(emissions.add);
+    await pumpEventQueue();
+    expect(emissions, hasLength(1));
+
+    subscription.pause();
+    await writer.createSchedule(
+      _draft(title: '暂停期间', startsAt: DateTime.utc(2026, 11, 16, 11)),
+    );
+    subscription.resume();
+    await pumpEventQueue();
+
+    expect(emissions, hasLength(2));
+    expect(emissions.last.map((schedule) => schedule.title), [
+      '暂停前',
+      '暂停期间',
+    ], reason: '恢复订阅必须重读当前结果，不能丢暂停期间的变更');
+  });
 }
 
 final _farFrom = DateTime.utc(2027, 5, 1);
@@ -448,10 +653,15 @@ ScheduleDraft _dailyDraft() => ScheduleDraft(
   ),
 );
 
-ScheduleDraft _draft({required String title, DateTime? startsAt}) {
+ScheduleDraft _draft({
+  required String title,
+  DateTime? startsAt,
+  String notes = '',
+}) {
   final start = startsAt ?? DateTime.utc(2026, 11, 16, 9);
   return ScheduleDraft(
     title: title,
+    notes: notes,
     window: ScheduleWindow.timed(
       startsAt: start,
       endsAt: start.add(const Duration(hours: 1)),

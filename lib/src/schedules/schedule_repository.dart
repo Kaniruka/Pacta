@@ -113,8 +113,9 @@ class LocalScheduleRepository implements ScheduleRepository {
   final UserLifecycleAccess lifecycleAccess;
   final DateTime Function() _now;
 
-  /// 观察本账号日程的数据库级变化；跨仓储实例与快照整体替换都能到达。
+  /// 已经真正建立数据库观察的订阅；未订阅的流不在这里。
   final _watches = <_ScheduleWatch>{};
+  bool _disposed = false;
   final _uuid = const Uuid();
 
   static const _maxReminderMinutesBefore = 7 * 24 * 60;
@@ -982,12 +983,12 @@ class LocalScheduleRepository implements ScheduleRepository {
   ///
   /// 流仍显式构造而不是 `async*`：取消订阅要立即释放数据库观察，不能让一个
   /// 停在 `await for` 里的生成器等到下一次变更才醒来。
+  ///
+  /// 观察只在真正有人订阅时才建立；从未订阅的流既不占用数据库连接，也不进入
+  /// 关闭列表。暂停会释放观察，恢复时重新建连并重读当前结果。
   @override
-  Stream<List<Schedule>> watchSchedules({DateTime? from, DateTime? to}) {
-    final watch = _ScheduleWatch(repository: this, from: from, to: to);
-    _watches.add(watch);
-    return watch.stream;
-  }
+  Stream<List<Schedule>> watchSchedules({DateTime? from, DateTime? to}) =>
+      _ScheduleWatch(repository: this, from: from, to: to).stream;
 
   void _forgetWatch(_ScheduleWatch watch) => _watches.remove(watch);
 
@@ -1403,7 +1404,9 @@ class LocalScheduleRepository implements ScheduleRepository {
   @override
   Future<void> dispose() async {
     // 关掉仍存活的观察，之后任何迟到的查询结果都不会再推给已取消/已切号的
-    // 订阅者。
+    // 订阅者。只有真正订阅过的观察在这里；未订阅的流没有数据库资源可释放，
+    // 也不会被等待。
+    _disposed = true;
     final watches = _watches.toList();
     _watches.clear();
     for (final watch in watches) {
@@ -1418,7 +1421,7 @@ class LocalScheduleRepository implements ScheduleRepository {
 /// 快照恢复在事务提交后显式发出的 notifyUpdates），因此边界是"这两张表变了"，
 /// 具体内容仍以重新查询为准。范围物化会写行，所以查询自身也会被通知：相同
 /// 结果按签名去重，不会把同一份旧数据反复推给订阅者，也不会形成自触发循环。
-/// 取消订阅与仓储关闭都会释放观察，查询途中返回的旧结果直接丢弃。
+/// 取消订阅、暂停与仓储关闭都会释放观察，查询途中返回的旧结果直接丢弃。
 class _ScheduleWatch {
   _ScheduleWatch({required this.repository, this.from, this.to});
 
@@ -1431,9 +1434,14 @@ class _ScheduleWatch {
   late final StreamController<List<Schedule>> _controller =
       StreamController<List<Schedule>>(
         onListen: _start,
+        onPause: _stopObservation,
+        onResume: _start,
         onCancel: () => unawaited(close()),
       );
   StreamSubscription<void>? _changes;
+  Future<void>? _pendingCancel;
+  Object? _cancelError;
+  StackTrace? _cancelStack;
   String? _signature;
   bool _closed = false;
   bool _running = false;
@@ -1443,8 +1451,18 @@ class _ScheduleWatch {
 
   PactaDatabase get _database => repository.database;
 
+  /// 建立数据库观察（首次订阅与从暂停恢复都走这里）。
+  ///
+  /// 从未订阅的流不注册、不建连：没有数据库资源可释放，也不会被关闭流程
+  /// 等待。
   void _start() {
-    if (_closed) return;
+    if (_closed || _changes != null) return;
+    if (repository._disposed) {
+      // 仓储已关闭：不再碰数据库，直接把这条流结束掉。
+      unawaited(close());
+      return;
+    }
+    repository._watches.add(this);
     _changes = _database
         .customSelect(
           _tickQuery,
@@ -1455,6 +1473,29 @@ class _ScheduleWatch {
         )
         .watch()
         .listen((_) => unawaited(_refresh()), onError: _emitError);
+  }
+
+  /// 暂停或关闭时释放数据库观察。
+  ///
+  /// 暂停的订阅不再占着连接，也不会有新事件排队进来；恢复订阅会重新建连并
+  /// 重读一次当前结果，所以暂停期间的变更不会丢，也不会积压成队列。
+  void _stopObservation() {
+    final changes = _changes;
+    _changes = null;
+    if (changes == null) return;
+    // 取消失败不在这里吞掉：记下来交给 close() 重抛，让生命周期边界看到。
+    final cancellation = changes.cancel().catchError((
+      Object error,
+      StackTrace stackTrace,
+    ) {
+      _cancelError = error;
+      _cancelStack = stackTrace;
+    });
+    // 上一次（暂停后再暂停）的取消也要结算完，不能因为被覆盖就丢掉失败。
+    final previous = _pendingCancel;
+    _pendingCancel = previous == null
+        ? cancellation
+        : previous.then((_) => cancellation);
   }
 
   Future<void> _refresh() async {
@@ -1492,45 +1533,65 @@ class _ScheduleWatch {
     _controller.addError(error, stackTrace);
   }
 
+  /// 停止观察并结束这条流。
+  ///
+  /// 数据库观察在这里结算；但控制器的 done 绝不等待：单订阅控制器在从未被
+  /// 订阅、或订阅仍处于暂停时，done 事件没有消费者，等它会把 dispose 挂死。
+  /// 取消失败不会被当作成功，关闭后原样重抛。
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
     repository._forgetWatch(this);
-    final changes = _changes;
-    _changes = null;
-    if (changes != null) {
-      try {
-        await changes.cancel();
-      } catch (_) {
-        // 关库途中取消观察失败不改变"已经停止"这一事实。
-      }
+    _stopObservation();
+    final pending = _pendingCancel;
+    _pendingCancel = null;
+    if (pending != null) await pending;
+    unawaited(_controller.close());
+    final error = _cancelError;
+    if (error != null) {
+      Error.throwWithStackTrace(error, _cancelStack ?? StackTrace.current);
     }
-    if (!_controller.isClosed) await _controller.close();
   }
 
-  /// 结果签名：按行序拼出可观察到的身份与内容。updatedAt 由每次写入推进，
-  /// 所以未变化的读取一定得到相同签名。
-  String _signatureOf(List<Schedule> schedules) {
-    final buffer = StringBuffer();
-    for (final schedule in schedules) {
-      buffer
-        ..write(schedule.id)
-        ..write('\u0001')
-        ..write(schedule.updatedAt.toUtc().toIso8601String())
-        ..write('\u0001')
-        ..write(schedule.title)
-        ..write('\u0001')
-        ..write(schedule.startsAt.toUtc().toIso8601String())
-        ..write('\u0001')
-        ..write(schedule.endsAt.toUtc().toIso8601String())
-        ..write('\u0001')
-        ..write(schedule.isCompleted ? '1' : '0')
-        ..write(schedule.isRecurrenceException ? '1' : '0')
-        ..write(schedule.isRecurrenceCancelled ? '1' : '0')
-        ..write('\u0002');
-    }
-    return buffer.toString();
-  }
+  /// 完整可观察值的去重签名。
+  ///
+  /// 只比身份与 updatedAt 不够：updatedAt 是每个客户端本地的写入序号，两台
+  /// 设备在同一个受控时钟上各改一次会得到完全相同的值，快照恢复后内容变了
+  /// 也不会推送。这里用 jsonEncode 对结构编码，逐字段比较——结构性编码不会
+  /// 因为字段里含有分隔符而碰撞，也不会漏掉 notes、taskId、提醒、全天日期、
+  /// 完成时间与重复元数据。
+  String _signatureOf(List<Schedule> schedules) => jsonEncode([
+    for (final schedule in schedules)
+      [
+        schedule.id,
+        schedule.title,
+        schedule.notes,
+        schedule.startsAt.toUtc().toIso8601String(),
+        schedule.endsAt.toUtc().toIso8601String(),
+        schedule.allDay,
+        schedule.allDayStartDate,
+        schedule.allDayEndDateExclusive,
+        schedule.isCompleted,
+        schedule.completedAt?.toUtc().toIso8601String(),
+        schedule.taskId,
+        schedule.reminderMinutesBefore,
+        schedule.origin.storageValue,
+        schedule.sourceIds,
+        schedule.sourceNames,
+        schedule.sourceEventId,
+        schedule.occurrenceId,
+        schedule.eventIdentity,
+        schedule.recurrenceId,
+        schedule.recurrenceSeriesId,
+        schedule.recurrenceDate,
+        schedule.recurrenceTimeZoneId,
+        schedule.recurrenceStartMinutes,
+        schedule.isRecurrenceException,
+        schedule.isRecurrenceCancelled,
+        schedule.createdAt.toUtc().toIso8601String(),
+        schedule.updatedAt.toUtc().toIso8601String(),
+      ],
+  ]);
 }
 
 /// Identity sets used to skip already owned import copies.
