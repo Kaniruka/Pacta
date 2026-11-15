@@ -239,10 +239,60 @@ class FocusDashboardMetrics {
   final Map<String, int> focusProgressSecondsByTask;
   final List<FocusActivityDay> recentActivity;
   final int totalAcceptedFocusSeconds;
+
   /// 账号资料里的显示时区；日分摊按它计算。没有设备级分支。
   final String displayTimeZoneId;
   final bool hasPendingReview;
   final Set<String> pendingReviewTaskIds;
+}
+
+/// Effective focus time of one visible month, allocated by the account display
+/// time zone.
+///
+/// [days] covers every calendar day of [month] in order, including days without
+/// accepted time; a zero day means "no effective effort", never a failure, a
+/// broken chain or an unmet daily target. [totalActiveSeconds] is the month's
+/// own sum, not the lifetime total and not the fixed recent-activity window.
+class FocusMonthMetrics {
+  const FocusMonthMetrics({
+    required this.displayTimeZoneId,
+    required this.month,
+    required this.days,
+    required this.totalActiveSeconds,
+    required this.activeDayCount,
+  });
+
+  /// Account display time zone the allocation was computed in.
+  final String displayTimeZoneId;
+
+  /// First day of the projected month as a UTC date-only value.
+  final DateTime month;
+
+  /// Every day of the month, UTC date-only, zero-filled.
+  final List<FocusActivityDay> days;
+
+  /// Sum of [days] restricted to this month.
+  final int totalActiveSeconds;
+
+  /// How many days carry accepted effective time.
+  final int activeDayCount;
+
+  bool get hasActivity => totalActiveSeconds > 0;
+
+  /// Accepted effective seconds on one calendar day of [days].
+  ///
+  /// Compares calendar components only: callers may pass a local or a UTC
+  /// date-only value and get the same day.
+  int activeSecondsOn(DateTime date) {
+    for (final day in days) {
+      if (day.date.year == date.year &&
+          day.date.month == date.month &&
+          day.date.day == date.day) {
+        return day.activeSeconds;
+      }
+    }
+    return 0;
+  }
 }
 
 /// 每场预约准备时长：5 / 10 / 15 分钟预设，或 1–60 分钟的整分钟自定义值。
