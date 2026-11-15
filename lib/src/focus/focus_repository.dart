@@ -164,13 +164,14 @@ abstract interface class FocusRepository {
     required Map<String, FocusSessionReconciliationSelection> sessionSelections,
     String? adoptedSessionId,
   });
+  /// [timeZoneId] is the account display time zone resolved by the caller from
+  /// the account profile; there is no device-zone branch in this projection.
   Stream<FocusDashboardMetrics> watchDashboardMetrics({
-    required String deviceTimeZoneId,
+    required String timeZoneId,
   });
   Future<FocusDashboardMetrics> getDashboardMetrics({
-    required String deviceTimeZoneId,
+    required String timeZoneId,
   });
-  Future<void> setDisplayTimeZonePreference(String? timeZoneId);
   Future<List<FocusSession>> getSessions();
   Future<FocusSession?> getSession(String sessionId);
   Future<FocusSession?> getActiveSession();
@@ -792,26 +793,19 @@ class LocalFocusRepository implements FocusRepository {
 
   @override
   Stream<FocusDashboardMetrics> watchDashboardMetrics({
-    required String deviceTimeZoneId,
+    required String timeZoneId,
   }) => watchSessions().asyncMap(
-    (_) => getDashboardMetrics(deviceTimeZoneId: deviceTimeZoneId),
+    (_) => getDashboardMetrics(timeZoneId: timeZoneId),
   );
 
   @override
   Future<FocusDashboardMetrics> getDashboardMetrics({
-    required String deviceTimeZoneId,
+    required String timeZoneId,
   }) async {
     await _settleDueSessions();
-    final preference = await (database.select(
-      database.focusPreferences,
-    )..where((row) => row.userId.equals(userId))).getSingleOrNull();
-    final preferredZone = preference?.displayTimeZoneId;
-    final usesPreference =
-        preferredZone != null && FocusTimeZones.contains(preferredZone);
-    final zoneId = usesPreference
-        ? preferredZone
-        : FocusTimeZones.contains(deviceTimeZoneId)
-        ? deviceTimeZoneId
+    // 显示时区来自账号资料；这里不读设备时区，也不读被取代的设备级偏好。
+    final zoneId = FocusTimeZones.contains(timeZoneId)
+        ? timeZoneId
         : 'Etc/UTC';
     final location = FocusTimeZones.location(zoneId);
     final sessions = await _getSessionsWithoutSettling();
@@ -883,7 +877,6 @@ class LocalFocusRepository implements FocusRepository {
       recentActivity: List.unmodifiable(recentActivity),
       totalAcceptedFocusSeconds: totalSeconds,
       displayTimeZoneId: zoneId,
-      followsDeviceTimeZone: !usesPreference,
       hasPendingReview:
           pendingReviewSessions.isNotEmpty ||
           pendingClockReviewSessions.isNotEmpty,
@@ -892,35 +885,6 @@ class LocalFocusRepository implements FocusRepository {
         for (final session in pendingClockReviewSessions) session.taskId,
       },
     );
-  }
-
-  @override
-  Future<void> setDisplayTimeZonePreference(String? timeZoneId) async {
-    await lifecycleAccess.requireActive();
-    if (timeZoneId != null && !FocusTimeZones.contains(timeZoneId)) {
-      throw ArgumentError.value(timeZoneId, 'timeZoneId', '未知的时区标识。');
-    }
-    final row = await (database.select(
-      database.focusPreferences,
-    )..where((entry) => entry.userId.equals(userId))).getSingleOrNull();
-    if (row == null) {
-      await database
-          .into(database.focusPreferences)
-          .insert(
-            db.FocusPreferencesCompanion.insert(
-              userId: userId,
-              lastMode: FocusChainMode.regular.storageValue,
-              displayTimeZoneId: Value(timeZoneId),
-            ),
-          );
-    } else {
-      await (database.update(
-        database.focusPreferences,
-      )..where((entry) => entry.userId.equals(userId))).write(
-        db.FocusPreferencesCompanion(displayTimeZoneId: Value(timeZoneId)),
-      );
-    }
-    await _publish();
   }
 
   @override
@@ -4860,13 +4824,12 @@ class InMemoryFocusRemote implements FocusRemoteDataSource {
   }
 }
 
-FocusDashboardMetrics _emptyDashboardMetrics(String deviceTimeZoneId) =>
+FocusDashboardMetrics _emptyDashboardMetrics(String timeZoneId) =>
     FocusDashboardMetrics(
       focusProgressSecondsByTask: const {},
       recentActivity: const [],
       totalAcceptedFocusSeconds: 0,
-      displayTimeZoneId: deviceTimeZoneId,
-      followsDeviceTimeZone: true,
+      displayTimeZoneId: timeZoneId,
     );
 
 class UnavailableFocusRepository implements FocusRepository {
@@ -4908,16 +4871,13 @@ class UnavailableFocusRepository implements FocusRepository {
 
   @override
   Stream<FocusDashboardMetrics> watchDashboardMetrics({
-    required String deviceTimeZoneId,
-  }) => Stream.value(_emptyDashboardMetrics(deviceTimeZoneId));
+    required String timeZoneId,
+  }) => Stream.value(_emptyDashboardMetrics(timeZoneId));
 
   @override
   Future<FocusDashboardMetrics> getDashboardMetrics({
-    required String deviceTimeZoneId,
-  }) async => _emptyDashboardMetrics(deviceTimeZoneId);
-
-  @override
-  Future<void> setDisplayTimeZonePreference(String? timeZoneId) async {}
+    required String timeZoneId,
+  }) async => _emptyDashboardMetrics(timeZoneId);
 
   @override
   Future<List<FocusSession>> getSessions() async => const [];

@@ -11,11 +11,31 @@ class RemoteProfile {
     required this.displayName,
     required this.avatar,
     required this.updatedAt,
+    this.displayTimeZoneId,
+    this.timeZoneRevision = 0,
+    this.timeZoneConflict = false,
   });
 
   final String displayName;
   final ProfileAvatar? avatar;
   final DateTime updatedAt;
+
+  /// The account display time zone (IANA), or null when the account has none.
+  final String? displayTimeZoneId;
+
+  /// Server-owned, strictly increasing revision of [displayTimeZoneId].
+  ///
+  /// The account store is the only writer of this counter, so a client can
+  /// order its edit by the revision it last observed instead of by a device
+  /// clock. Zero means the account has never accepted a time zone.
+  final int timeZoneRevision;
+
+  /// True when this request carried a zone that the account store refused
+  /// because a newer accepted revision already existed.
+  ///
+  /// The returned [displayTimeZoneId] and [timeZoneRevision] are then the
+  /// canonical winner, and the caller adopts them instead of retrying.
+  final bool timeZoneConflict;
 }
 
 /// Account profile storage. It is not part of the business snapshot.
@@ -26,11 +46,39 @@ abstract interface class ProfileRemote {
 
   Future<RemoteProfile?> fetch({required String userId});
 
+  /// Saves the display name and avatar.
+  ///
+  /// [displayTimeZoneId] null keeps the stored account time zone, so a client
+  /// that only edits a nickname or avatar never clears it.
+  ///
+  /// A non-null zone is an explicit preference and must carry the
+  /// [timeZoneRevision] this edit was based on. The account store applies it
+  /// only when the stored revision still matches; otherwise the newer accepted
+  /// value wins and is returned with [RemoteProfile.timeZoneConflict]. Ordering
+  /// therefore never depends on a device clock.
   Future<RemoteProfile> save({
     required String userId,
     required String displayName,
     required ProfileAvatar? avatar,
     required DateTime updatedAt,
+    String? displayTimeZoneId,
+    int? timeZoneRevision,
+  });
+
+  /// Writes [displayTimeZoneId] only when the account has no value yet.
+  ///
+  /// This is the first-migration step: two devices may both read "no value"
+  /// before writing, so the account store decides a single winner atomically
+  /// instead of the last unconditional save winning. When the account has no
+  /// profile row at all, the account store inserts one with an empty display
+  /// name — an unset nickname, not a fabricated name — so the time zone can be
+  /// stored before the person chooses a nickname. Existing names and avatars
+  /// are untouched, and only a still-empty account value is ever filled. It
+  /// returns the account value after the attempt (with its revision), so a
+  /// device that lost the race adopts the winner.
+  Future<RemoteProfile?> initializeTimeZone({
+    required String userId,
+    required String displayTimeZoneId,
   });
 }
 
@@ -50,6 +98,14 @@ class UnavailableProfileRemote implements ProfileRemote {
     required String displayName,
     required ProfileAvatar? avatar,
     required DateTime updatedAt,
+    String? displayTimeZoneId,
+    int? timeZoneRevision,
+  }) async => throw StateError('尚未配置 Supabase，资料只保存在本机。');
+
+  @override
+  Future<RemoteProfile?> initializeTimeZone({
+    required String userId,
+    required String displayTimeZoneId,
   }) async => throw StateError('尚未配置 Supabase，资料只保存在本机。');
 }
 
@@ -87,6 +143,8 @@ class SupabaseProfileRemote implements ProfileRemote {
     required String displayName,
     required ProfileAvatar? avatar,
     required DateTime updatedAt,
+    String? displayTimeZoneId,
+    int? timeZoneRevision,
   }) async {
     _assertCurrentUser(userId);
     final Object? response;
@@ -97,6 +155,8 @@ class SupabaseProfileRemote implements ProfileRemote {
           'p_display_name': displayName,
           'p_avatar_base64': avatar == null ? null : base64Encode(avatar.bytes),
           'p_clear_avatar': avatar == null,
+          'p_time_zone_id': displayTimeZoneId,
+          'p_time_zone_revision': timeZoneRevision,
         },
       );
     } on PostgrestException catch (error) {
@@ -107,6 +167,24 @@ class SupabaseProfileRemote implements ProfileRemote {
       throw StateError('保存失败：云端没有返回资料。');
     }
     return profile;
+  }
+
+  @override
+  Future<RemoteProfile?> initializeTimeZone({
+    required String userId,
+    required String displayTimeZoneId,
+  }) async {
+    _assertCurrentUser(userId);
+    final Object? response;
+    try {
+      response = await client.rpc(
+        'initialize_profile_time_zone',
+        params: {'p_time_zone_id': displayTimeZoneId},
+      );
+    } on PostgrestException catch (error) {
+      throw StateError('时区初始化失败：${error.message}');
+    }
+    return remoteProfileFromJson(response);
   }
 }
 
@@ -124,10 +202,17 @@ RemoteProfile? remoteProfileFromJson(Object? response) {
           mimeType: json['avatarMimeType'] as String? ?? 'image/png',
         )
       : null;
+  final timeZoneId = json['timeZoneId'];
+  final conflict = json['timeZoneConflict'];
   return RemoteProfile(
     displayName: json['displayName'] as String? ?? '',
     avatar: avatar,
     updatedAt: updatedAt.toUtc(),
+    displayTimeZoneId: timeZoneId is String && timeZoneId.isNotEmpty
+        ? timeZoneId
+        : null,
+    timeZoneRevision: _parseRevision(json['timeZoneRevision']),
+    timeZoneConflict: conflict == true,
   );
 }
 
@@ -143,4 +228,13 @@ Uint8List _decodeBase64Avatar(String value) {
       ? value.replaceAll('\r', '').replaceAll('\n', '')
       : value;
   return base64Decode(normalized);
+}
+
+/// Reads the account revision from either JSON number or PostgreSQL's textual
+/// bigint form. An absent or malformed value is treated as revision zero: the
+/// next explicit edit then conflicts instead of silently overwriting.
+int _parseRevision(Object? value) {
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value) ?? 0;
+  return 0;
 }

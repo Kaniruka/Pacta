@@ -164,7 +164,7 @@ void main() {
       isTrue,
     );
     final metrics = await focusRepository.getDashboardMetrics(
-      deviceTimeZoneId: 'Etc/UTC',
+      timeZoneId: 'Etc/UTC',
     );
     expect(metrics.focusProgressSecondsByTask[completed.taskId], 20 * 60);
   });
@@ -205,7 +205,7 @@ void main() {
     );
     expect(resolved.effectiveIntervals[1].excludeFromFocusProgress, isTrue);
     final metrics = await focusRepository.getDashboardMetrics(
-      deviceTimeZoneId: 'Etc/UTC',
+      timeZoneId: 'Etc/UTC',
     );
     expect(
       metrics.focusProgressSecondsByTask[completed.taskId],
@@ -266,7 +266,7 @@ void main() {
     await focusRepository.sync();
 
     final metrics = await focusRepository.getDashboardMetrics(
-      deviceTimeZoneId: 'Etc/UTC',
+      timeZoneId: 'Etc/UTC',
     );
     expect(metrics.focusProgressSecondsByTask.containsKey(task.id), isFalse);
     expect(metrics.totalAcceptedFocusSeconds, 0);
@@ -431,7 +431,7 @@ void main() {
       FocusClockReviewStatus.resolved,
     );
     final metrics = await focusRepository.getDashboardMetrics(
-      deviceTimeZoneId: 'Etc/UTC',
+      timeZoneId: 'Etc/UTC',
     );
     expect(metrics.focusProgressSecondsByTask[task.id], 10 * 60);
   });

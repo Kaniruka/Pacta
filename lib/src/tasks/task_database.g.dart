@@ -15627,6 +15627,44 @@ class $LocalProfileAccountsTable extends LocalProfileAccounts
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _timeZoneIdMeta = const VerificationMeta(
+    'timeZoneId',
+  );
+  @override
+  late final GeneratedColumn<String> timeZoneId = GeneratedColumn<String>(
+    'time_zone_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _timeZoneRevisionMeta = const VerificationMeta(
+    'timeZoneRevision',
+  );
+  @override
+  late final GeneratedColumn<int> timeZoneRevision = GeneratedColumn<int>(
+    'time_zone_revision',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _pendingTimeZoneUploadMeta =
+      const VerificationMeta('pendingTimeZoneUpload');
+  @override
+  late final GeneratedColumn<bool> pendingTimeZoneUpload =
+      GeneratedColumn<bool>(
+        'pending_time_zone_upload',
+        aliasedName,
+        false,
+        type: DriftSqlType.bool,
+        requiredDuringInsert: false,
+        defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("pending_time_zone_upload" IN (0, 1))',
+        ),
+        defaultValue: const Constant(false),
+      );
   @override
   List<GeneratedColumn> get $columns => [
     userId,
@@ -15637,6 +15675,9 @@ class $LocalProfileAccountsTable extends LocalProfileAccounts
     syncError,
     updatedAt,
     editSequence,
+    timeZoneId,
+    timeZoneRevision,
+    pendingTimeZoneUpload,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -15717,6 +15758,33 @@ class $LocalProfileAccountsTable extends LocalProfileAccounts
         ),
       );
     }
+    if (data.containsKey('time_zone_id')) {
+      context.handle(
+        _timeZoneIdMeta,
+        timeZoneId.isAcceptableOrUnknown(
+          data['time_zone_id']!,
+          _timeZoneIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('time_zone_revision')) {
+      context.handle(
+        _timeZoneRevisionMeta,
+        timeZoneRevision.isAcceptableOrUnknown(
+          data['time_zone_revision']!,
+          _timeZoneRevisionMeta,
+        ),
+      );
+    }
+    if (data.containsKey('pending_time_zone_upload')) {
+      context.handle(
+        _pendingTimeZoneUploadMeta,
+        pendingTimeZoneUpload.isAcceptableOrUnknown(
+          data['pending_time_zone_upload']!,
+          _pendingTimeZoneUploadMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -15758,6 +15826,18 @@ class $LocalProfileAccountsTable extends LocalProfileAccounts
         DriftSqlType.int,
         data['${effectivePrefix}edit_sequence'],
       )!,
+      timeZoneId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}time_zone_id'],
+      ),
+      timeZoneRevision: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}time_zone_revision'],
+      )!,
+      pendingTimeZoneUpload: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}pending_time_zone_upload'],
+      )!,
     );
   }
 
@@ -15780,6 +15860,29 @@ class LocalProfileAccount extends DataClass
   /// Increments on every payload change so a late network response can only
   /// commit when no newer local edit happened meanwhile.
   final int editSequence;
+
+  /// The account display time zone (IANA identifier), shared by every device.
+  ///
+  /// Null means the account has not recorded one yet: display then uses a fixed
+  /// fallback instead of the device zone. `focus_preferences.display_time_zone_id`
+  /// is the superseded device-level field and is only read to seed this value.
+  final String? timeZoneId;
+
+  /// Server-owned revision of [timeZoneId] that this device last observed.
+  ///
+  /// Cached so an explicit edit can name the exact account value it is based
+  /// on. It is not a local counter: only the account store advances it, which
+  /// is what keeps two devices from ordering their edits by wall clocks.
+  final int timeZoneRevision;
+
+  /// Set only by an edit that changed the display time zone on this device and
+  /// has not been accepted by the account store yet.
+  ///
+  /// A nickname or avatar upload must not re-send a cached time zone it did not
+  /// choose: another device may already have a newer account value, and an
+  /// account value always wins over a stale device copy. The flag survives a
+  /// restart so an offline time-zone edit is still delivered exactly once.
+  final bool pendingTimeZoneUpload;
   const LocalProfileAccount({
     required this.userId,
     required this.displayName,
@@ -15789,6 +15892,9 @@ class LocalProfileAccount extends DataClass
     this.syncError,
     required this.updatedAt,
     required this.editSequence,
+    this.timeZoneId,
+    required this.timeZoneRevision,
+    required this.pendingTimeZoneUpload,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -15807,6 +15913,11 @@ class LocalProfileAccount extends DataClass
     }
     map['updated_at'] = Variable<DateTime>(updatedAt);
     map['edit_sequence'] = Variable<int>(editSequence);
+    if (!nullToAbsent || timeZoneId != null) {
+      map['time_zone_id'] = Variable<String>(timeZoneId);
+    }
+    map['time_zone_revision'] = Variable<int>(timeZoneRevision);
+    map['pending_time_zone_upload'] = Variable<bool>(pendingTimeZoneUpload);
     return map;
   }
 
@@ -15826,6 +15937,11 @@ class LocalProfileAccount extends DataClass
           : Value(syncError),
       updatedAt: Value(updatedAt),
       editSequence: Value(editSequence),
+      timeZoneId: timeZoneId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(timeZoneId),
+      timeZoneRevision: Value(timeZoneRevision),
+      pendingTimeZoneUpload: Value(pendingTimeZoneUpload),
     );
   }
 
@@ -15843,6 +15959,11 @@ class LocalProfileAccount extends DataClass
       syncError: serializer.fromJson<String?>(json['syncError']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       editSequence: serializer.fromJson<int>(json['editSequence']),
+      timeZoneId: serializer.fromJson<String?>(json['timeZoneId']),
+      timeZoneRevision: serializer.fromJson<int>(json['timeZoneRevision']),
+      pendingTimeZoneUpload: serializer.fromJson<bool>(
+        json['pendingTimeZoneUpload'],
+      ),
     );
   }
   @override
@@ -15857,6 +15978,9 @@ class LocalProfileAccount extends DataClass
       'syncError': serializer.toJson<String?>(syncError),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'editSequence': serializer.toJson<int>(editSequence),
+      'timeZoneId': serializer.toJson<String?>(timeZoneId),
+      'timeZoneRevision': serializer.toJson<int>(timeZoneRevision),
+      'pendingTimeZoneUpload': serializer.toJson<bool>(pendingTimeZoneUpload),
     };
   }
 
@@ -15869,6 +15993,9 @@ class LocalProfileAccount extends DataClass
     Value<String?> syncError = const Value.absent(),
     DateTime? updatedAt,
     int? editSequence,
+    Value<String?> timeZoneId = const Value.absent(),
+    int? timeZoneRevision,
+    bool? pendingTimeZoneUpload,
   }) => LocalProfileAccount(
     userId: userId ?? this.userId,
     displayName: displayName ?? this.displayName,
@@ -15880,6 +16007,9 @@ class LocalProfileAccount extends DataClass
     syncError: syncError.present ? syncError.value : this.syncError,
     updatedAt: updatedAt ?? this.updatedAt,
     editSequence: editSequence ?? this.editSequence,
+    timeZoneId: timeZoneId.present ? timeZoneId.value : this.timeZoneId,
+    timeZoneRevision: timeZoneRevision ?? this.timeZoneRevision,
+    pendingTimeZoneUpload: pendingTimeZoneUpload ?? this.pendingTimeZoneUpload,
   );
   LocalProfileAccount copyWithCompanion(LocalProfileAccountsCompanion data) {
     return LocalProfileAccount(
@@ -15901,6 +16031,15 @@ class LocalProfileAccount extends DataClass
       editSequence: data.editSequence.present
           ? data.editSequence.value
           : this.editSequence,
+      timeZoneId: data.timeZoneId.present
+          ? data.timeZoneId.value
+          : this.timeZoneId,
+      timeZoneRevision: data.timeZoneRevision.present
+          ? data.timeZoneRevision.value
+          : this.timeZoneRevision,
+      pendingTimeZoneUpload: data.pendingTimeZoneUpload.present
+          ? data.pendingTimeZoneUpload.value
+          : this.pendingTimeZoneUpload,
     );
   }
 
@@ -15914,7 +16053,10 @@ class LocalProfileAccount extends DataClass
           ..write('pendingSave: $pendingSave, ')
           ..write('syncError: $syncError, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('editSequence: $editSequence')
+          ..write('editSequence: $editSequence, ')
+          ..write('timeZoneId: $timeZoneId, ')
+          ..write('timeZoneRevision: $timeZoneRevision, ')
+          ..write('pendingTimeZoneUpload: $pendingTimeZoneUpload')
           ..write(')'))
         .toString();
   }
@@ -15929,6 +16071,9 @@ class LocalProfileAccount extends DataClass
     syncError,
     updatedAt,
     editSequence,
+    timeZoneId,
+    timeZoneRevision,
+    pendingTimeZoneUpload,
   );
   @override
   bool operator ==(Object other) =>
@@ -15941,7 +16086,10 @@ class LocalProfileAccount extends DataClass
           other.pendingSave == this.pendingSave &&
           other.syncError == this.syncError &&
           other.updatedAt == this.updatedAt &&
-          other.editSequence == this.editSequence);
+          other.editSequence == this.editSequence &&
+          other.timeZoneId == this.timeZoneId &&
+          other.timeZoneRevision == this.timeZoneRevision &&
+          other.pendingTimeZoneUpload == this.pendingTimeZoneUpload);
 }
 
 class LocalProfileAccountsCompanion
@@ -15954,6 +16102,9 @@ class LocalProfileAccountsCompanion
   final Value<String?> syncError;
   final Value<DateTime> updatedAt;
   final Value<int> editSequence;
+  final Value<String?> timeZoneId;
+  final Value<int> timeZoneRevision;
+  final Value<bool> pendingTimeZoneUpload;
   final Value<int> rowid;
   const LocalProfileAccountsCompanion({
     this.userId = const Value.absent(),
@@ -15964,6 +16115,9 @@ class LocalProfileAccountsCompanion
     this.syncError = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.editSequence = const Value.absent(),
+    this.timeZoneId = const Value.absent(),
+    this.timeZoneRevision = const Value.absent(),
+    this.pendingTimeZoneUpload = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   LocalProfileAccountsCompanion.insert({
@@ -15975,6 +16129,9 @@ class LocalProfileAccountsCompanion
     this.syncError = const Value.absent(),
     required DateTime updatedAt,
     this.editSequence = const Value.absent(),
+    this.timeZoneId = const Value.absent(),
+    this.timeZoneRevision = const Value.absent(),
+    this.pendingTimeZoneUpload = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : userId = Value(userId),
        updatedAt = Value(updatedAt);
@@ -15987,6 +16144,9 @@ class LocalProfileAccountsCompanion
     Expression<String>? syncError,
     Expression<DateTime>? updatedAt,
     Expression<int>? editSequence,
+    Expression<String>? timeZoneId,
+    Expression<int>? timeZoneRevision,
+    Expression<bool>? pendingTimeZoneUpload,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -15998,6 +16158,10 @@ class LocalProfileAccountsCompanion
       if (syncError != null) 'sync_error': syncError,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (editSequence != null) 'edit_sequence': editSequence,
+      if (timeZoneId != null) 'time_zone_id': timeZoneId,
+      if (timeZoneRevision != null) 'time_zone_revision': timeZoneRevision,
+      if (pendingTimeZoneUpload != null)
+        'pending_time_zone_upload': pendingTimeZoneUpload,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -16011,6 +16175,9 @@ class LocalProfileAccountsCompanion
     Value<String?>? syncError,
     Value<DateTime>? updatedAt,
     Value<int>? editSequence,
+    Value<String?>? timeZoneId,
+    Value<int>? timeZoneRevision,
+    Value<bool>? pendingTimeZoneUpload,
     Value<int>? rowid,
   }) {
     return LocalProfileAccountsCompanion(
@@ -16022,6 +16189,10 @@ class LocalProfileAccountsCompanion
       syncError: syncError ?? this.syncError,
       updatedAt: updatedAt ?? this.updatedAt,
       editSequence: editSequence ?? this.editSequence,
+      timeZoneId: timeZoneId ?? this.timeZoneId,
+      timeZoneRevision: timeZoneRevision ?? this.timeZoneRevision,
+      pendingTimeZoneUpload:
+          pendingTimeZoneUpload ?? this.pendingTimeZoneUpload,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -16053,6 +16224,17 @@ class LocalProfileAccountsCompanion
     if (editSequence.present) {
       map['edit_sequence'] = Variable<int>(editSequence.value);
     }
+    if (timeZoneId.present) {
+      map['time_zone_id'] = Variable<String>(timeZoneId.value);
+    }
+    if (timeZoneRevision.present) {
+      map['time_zone_revision'] = Variable<int>(timeZoneRevision.value);
+    }
+    if (pendingTimeZoneUpload.present) {
+      map['pending_time_zone_upload'] = Variable<bool>(
+        pendingTimeZoneUpload.value,
+      );
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -16070,6 +16252,9 @@ class LocalProfileAccountsCompanion
           ..write('syncError: $syncError, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('editSequence: $editSequence, ')
+          ..write('timeZoneId: $timeZoneId, ')
+          ..write('timeZoneRevision: $timeZoneRevision, ')
+          ..write('pendingTimeZoneUpload: $pendingTimeZoneUpload, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -16967,28 +17152,30 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   ];
 }
 
-typedef $$LocalGoalsTableCreateCompanionBuilder = LocalGoalsCompanion Function({
-  required String userId,
-  required String id,
-  required String title,
-  Value<String> description,
-  required String classification,
-  required DateTime createdAt,
-  required DateTime updatedAt,
-  Value<DateTime?> deletedAt,
-  Value<int> rowid,
-});
-typedef $$LocalGoalsTableUpdateCompanionBuilder = LocalGoalsCompanion Function({
-  Value<String> userId,
-  Value<String> id,
-  Value<String> title,
-  Value<String> description,
-  Value<String> classification,
-  Value<DateTime> createdAt,
-  Value<DateTime> updatedAt,
-  Value<DateTime?> deletedAt,
-  Value<int> rowid,
-});
+typedef $$LocalGoalsTableCreateCompanionBuilder =
+    LocalGoalsCompanion Function({
+      required String userId,
+      required String id,
+      required String title,
+      Value<String> description,
+      required String classification,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
+typedef $$LocalGoalsTableUpdateCompanionBuilder =
+    LocalGoalsCompanion Function({
+      Value<String> userId,
+      Value<String> id,
+      Value<String> title,
+      Value<String> description,
+      Value<String> classification,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
 
 class $$LocalGoalsTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalGoalsTable> {
@@ -17223,38 +17410,40 @@ typedef $$LocalGoalsTableProcessedTableManager =
       LocalGoal,
       PrefetchHooks Function()
     >;
-typedef $$LocalTasksTableCreateCompanionBuilder = LocalTasksCompanion Function({
-  required String userId,
-  required String id,
-  required String goalId,
-  required String title,
-  Value<String> description,
-  required String classification,
-  Value<int?> estimatedMinutes,
-  Value<DateTime?> deadline,
-  Value<bool> isComplete,
-  Value<int> focusProgressSeconds,
-  required DateTime createdAt,
-  required DateTime updatedAt,
-  Value<DateTime?> deletedAt,
-  Value<int> rowid,
-});
-typedef $$LocalTasksTableUpdateCompanionBuilder = LocalTasksCompanion Function({
-  Value<String> userId,
-  Value<String> id,
-  Value<String> goalId,
-  Value<String> title,
-  Value<String> description,
-  Value<String> classification,
-  Value<int?> estimatedMinutes,
-  Value<DateTime?> deadline,
-  Value<bool> isComplete,
-  Value<int> focusProgressSeconds,
-  Value<DateTime> createdAt,
-  Value<DateTime> updatedAt,
-  Value<DateTime?> deletedAt,
-  Value<int> rowid,
-});
+typedef $$LocalTasksTableCreateCompanionBuilder =
+    LocalTasksCompanion Function({
+      required String userId,
+      required String id,
+      required String goalId,
+      required String title,
+      Value<String> description,
+      required String classification,
+      Value<int?> estimatedMinutes,
+      Value<DateTime?> deadline,
+      Value<bool> isComplete,
+      Value<int> focusProgressSeconds,
+      required DateTime createdAt,
+      required DateTime updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
+typedef $$LocalTasksTableUpdateCompanionBuilder =
+    LocalTasksCompanion Function({
+      Value<String> userId,
+      Value<String> id,
+      Value<String> goalId,
+      Value<String> title,
+      Value<String> description,
+      Value<String> classification,
+      Value<int?> estimatedMinutes,
+      Value<DateTime?> deadline,
+      Value<bool> isComplete,
+      Value<int> focusProgressSeconds,
+      Value<DateTime> createdAt,
+      Value<DateTime> updatedAt,
+      Value<DateTime?> deletedAt,
+      Value<int> rowid,
+    });
 
 class $$LocalTasksTableFilterComposer
     extends Composer<_$PactaDatabase, $LocalTasksTable> {
@@ -20017,28 +20206,30 @@ typedef $$FocusSessionsTableProcessedTableManager =
       FocusSession,
       PrefetchHooks Function()
     >;
-typedef $$FocusNodesTableCreateCompanionBuilder = FocusNodesCompanion Function({
-  required String userId,
-  required String id,
-  required String sessionId,
-  required String taskId,
-  required String mode,
-  required DateTime createdAt,
-  required int effectiveSeconds,
-  Value<String?> note,
-  Value<int> rowid,
-});
-typedef $$FocusNodesTableUpdateCompanionBuilder = FocusNodesCompanion Function({
-  Value<String> userId,
-  Value<String> id,
-  Value<String> sessionId,
-  Value<String> taskId,
-  Value<String> mode,
-  Value<DateTime> createdAt,
-  Value<int> effectiveSeconds,
-  Value<String?> note,
-  Value<int> rowid,
-});
+typedef $$FocusNodesTableCreateCompanionBuilder =
+    FocusNodesCompanion Function({
+      required String userId,
+      required String id,
+      required String sessionId,
+      required String taskId,
+      required String mode,
+      required DateTime createdAt,
+      required int effectiveSeconds,
+      Value<String?> note,
+      Value<int> rowid,
+    });
+typedef $$FocusNodesTableUpdateCompanionBuilder =
+    FocusNodesCompanion Function({
+      Value<String> userId,
+      Value<String> id,
+      Value<String> sessionId,
+      Value<String> taskId,
+      Value<String> mode,
+      Value<DateTime> createdAt,
+      Value<int> effectiveSeconds,
+      Value<String?> note,
+      Value<int> rowid,
+    });
 
 class $$FocusNodesTableFilterComposer
     extends Composer<_$PactaDatabase, $FocusNodesTable> {
@@ -24610,6 +24801,9 @@ typedef $$LocalProfileAccountsTableCreateCompanionBuilder =
       Value<String?> syncError,
       required DateTime updatedAt,
       Value<int> editSequence,
+      Value<String?> timeZoneId,
+      Value<int> timeZoneRevision,
+      Value<bool> pendingTimeZoneUpload,
       Value<int> rowid,
     });
 typedef $$LocalProfileAccountsTableUpdateCompanionBuilder =
@@ -24622,6 +24816,9 @@ typedef $$LocalProfileAccountsTableUpdateCompanionBuilder =
       Value<String?> syncError,
       Value<DateTime> updatedAt,
       Value<int> editSequence,
+      Value<String?> timeZoneId,
+      Value<int> timeZoneRevision,
+      Value<bool> pendingTimeZoneUpload,
       Value<int> rowid,
     });
 
@@ -24671,6 +24868,21 @@ class $$LocalProfileAccountsTableFilterComposer
 
   ColumnFilters<int> get editSequence => $composableBuilder(
     column: $table.editSequence,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get timeZoneId => $composableBuilder(
+    column: $table.timeZoneId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get timeZoneRevision => $composableBuilder(
+    column: $table.timeZoneRevision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get pendingTimeZoneUpload => $composableBuilder(
+    column: $table.pendingTimeZoneUpload,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -24723,6 +24935,21 @@ class $$LocalProfileAccountsTableOrderingComposer
     column: $table.editSequence,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get timeZoneId => $composableBuilder(
+    column: $table.timeZoneId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get timeZoneRevision => $composableBuilder(
+    column: $table.timeZoneRevision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get pendingTimeZoneUpload => $composableBuilder(
+    column: $table.pendingTimeZoneUpload,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$LocalProfileAccountsTableAnnotationComposer
@@ -24765,6 +24992,21 @@ class $$LocalProfileAccountsTableAnnotationComposer
 
   GeneratedColumn<int> get editSequence => $composableBuilder(
     column: $table.editSequence,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get timeZoneId => $composableBuilder(
+    column: $table.timeZoneId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get timeZoneRevision => $composableBuilder(
+    column: $table.timeZoneRevision,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get pendingTimeZoneUpload => $composableBuilder(
+    column: $table.pendingTimeZoneUpload,
     builder: (column) => column,
   );
 }
@@ -24820,6 +25062,9 @@ class $$LocalProfileAccountsTableTableManager
                 Value<String?> syncError = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> editSequence = const Value.absent(),
+                Value<String?> timeZoneId = const Value.absent(),
+                Value<int> timeZoneRevision = const Value.absent(),
+                Value<bool> pendingTimeZoneUpload = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalProfileAccountsCompanion(
                 userId: userId,
@@ -24830,6 +25075,9 @@ class $$LocalProfileAccountsTableTableManager
                 syncError: syncError,
                 updatedAt: updatedAt,
                 editSequence: editSequence,
+                timeZoneId: timeZoneId,
+                timeZoneRevision: timeZoneRevision,
+                pendingTimeZoneUpload: pendingTimeZoneUpload,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -24842,6 +25090,9 @@ class $$LocalProfileAccountsTableTableManager
                 Value<String?> syncError = const Value.absent(),
                 required DateTime updatedAt,
                 Value<int> editSequence = const Value.absent(),
+                Value<String?> timeZoneId = const Value.absent(),
+                Value<int> timeZoneRevision = const Value.absent(),
+                Value<bool> pendingTimeZoneUpload = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => LocalProfileAccountsCompanion.insert(
                 userId: userId,
@@ -24852,6 +25103,9 @@ class $$LocalProfileAccountsTableTableManager
                 syncError: syncError,
                 updatedAt: updatedAt,
                 editSequence: editSequence,
+                timeZoneId: timeZoneId,
+                timeZoneRevision: timeZoneRevision,
+                pendingTimeZoneUpload: pendingTimeZoneUpload,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

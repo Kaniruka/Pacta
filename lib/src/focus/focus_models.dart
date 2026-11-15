@@ -232,7 +232,6 @@ class FocusDashboardMetrics {
     required this.recentActivity,
     required this.totalAcceptedFocusSeconds,
     required this.displayTimeZoneId,
-    required this.followsDeviceTimeZone,
     this.hasPendingReview = false,
     this.pendingReviewTaskIds = const {},
   });
@@ -240,8 +239,8 @@ class FocusDashboardMetrics {
   final Map<String, int> focusProgressSecondsByTask;
   final List<FocusActivityDay> recentActivity;
   final int totalAcceptedFocusSeconds;
+  /// 账号资料里的显示时区；日分摊按它计算。没有设备级分支。
   final String displayTimeZoneId;
-  final bool followsDeviceTimeZone;
   final bool hasPendingReview;
   final Set<String> pendingReviewTaskIds;
 }
