@@ -433,7 +433,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('全部确认 (1)'), findsOneWidget);
     expect(find.byTooltip('更多'), findsOneWidget);
-    expect(find.text('检查点与失败记录'), findsNothing);
+    expect(find.text('失败记录'), findsNothing);
     expect(find.text('整理发布材料'), findsNothing);
 
     await tester.pumpWidget(const SizedBox.shrink());

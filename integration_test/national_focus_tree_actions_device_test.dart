@@ -48,7 +48,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('检查点与失败记录'), findsNothing);
+      expect(find.text('失败记录'), findsNothing);
       await tester.tap(
         find.byKey(ValueKey('national-focus-node-${parent.id}')),
       );
@@ -67,10 +67,11 @@ void main() {
       expect(tester.takeException(), isNull);
       await tester.tap(find.byTooltip('更多'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('检查点与失败记录'));
+      await tester.tap(find.text('失败记录'));
       await tester.pumpAndSettle();
+      expect(find.text('国策失败记录'), findsOneWidget);
       expect(find.textContaining('下次检查点'), findsOneWidget);
-      expect(find.text('查看失败记录'), findsOneWidget);
+      expect(find.text('检查点说明'), findsOneWidget);
     },
   );
 }
