@@ -40,6 +40,7 @@ void main() {
           home: CalendarSourcesPage(
             repository: repository,
             isAndroid: true,
+            displayTimeZoneIdLoader: () async => 'Etc/UTC',
             permissionGateway: gateway,
           ),
         ),

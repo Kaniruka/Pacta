@@ -44,6 +44,7 @@ import 'src/profile/profile_remote.dart';
 import 'src/profile/profile_repository.dart';
 import 'src/notifications/focus_notification_settings_page.dart';
 import 'src/plan/plan_calendar_view.dart';
+import 'src/plan/plan_target.dart';
 import 'src/schedules/schedule_models.dart';
 import 'src/tasks/task_database.dart' show PactaDatabase;
 import 'src/tasks/task_models.dart';
@@ -868,6 +869,7 @@ class AppShell extends ConsumerStatefulWidget {
 class _AppShellState extends ConsumerState<AppShell>
     with WidgetsBindingObserver {
   int _index = 0;
+  PlanTarget? _planTarget;
   late final FocusNotificationService _focusNotificationService;
   late final String? _reminderOwnerUserId;
   late final StreamSubscription<List<ConnectivityResult>>
@@ -1028,6 +1030,15 @@ class _AppShellState extends ConsumerState<AppShell>
 
   Future<void> _openFocusFlow(String payload) async {
     if (!mounted) return;
+    // 普通安排提醒只打开计划页的日历日/安排，不进入专注流程。
+    final planTarget = PlanTarget.tryParse(payload);
+    if (planTarget != null) {
+      setState(() {
+        _index = _planIndex;
+        _planTarget = planTarget;
+      });
+      return;
+    }
     if (payload.startsWith('daily-open-reminder:')) {
       setState(() => _index = _boardIndex);
       return;
@@ -1138,6 +1149,7 @@ class _AppShellState extends ConsumerState<AppShell>
         displayTimeZoneLoader: () => resolveAccountDisplayTimeZoneId(
           ref.read(profileRepositoryProvider),
         ),
+        navigationTarget: _planTarget,
       ),
       NationalFocusTreePage(
         key: ValueKey(ref.watch(authRepositoryProvider).currentUserId),
@@ -1363,69 +1375,114 @@ Future<String> resolveAccountDisplayTimeZoneId(
 }
 
 class PlanPage extends ConsumerStatefulWidget {
-  const PlanPage({super.key, required this.displayTimeZoneLoader});
+  const PlanPage({
+    super.key,
+    required this.displayTimeZoneLoader,
+    this.navigationTarget,
+  });
 
   final Future<String> Function() displayTimeZoneLoader;
+
+  /// 普通安排提醒点开的目标（06 通知）；null 表示正常进入计划页。
+  final PlanTarget? navigationTarget;
 
   @override
   ConsumerState<PlanPage> createState() => _PlanPageState();
 }
 
 class _PlanPageState extends ConsumerState<PlanPage> {
-  var _view = _PlanView.goals;
-  late final Future<String> _displayTimeZoneId = widget.displayTimeZoneLoader();
+  late var _view = widget.navigationTarget == null
+      ? _PlanView.goals
+      : _PlanView.calendar;
+  late final Future<String> _fallbackDisplayTimeZoneId = widget
+      .displayTimeZoneLoader();
+
+  @override
+  void didUpdateWidget(PlanPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.navigationTarget == null ||
+        widget.navigationTarget == oldWidget.navigationTarget) {
+      return;
+    }
+    setState(() => _view = _PlanView.calendar);
+  }
 
   @override
   Widget build(BuildContext context) {
     final taskRepository = ref.watch(taskRepositoryProvider);
     final scheduleRepository = ref.watch(scheduleRepositoryProvider);
-    return StreamBuilder<List<Goal>>(
-      stream: taskRepository.watchGoals(),
-      initialData: const [],
-      builder: (context, snapshot) {
-        final goals = snapshot.data ?? const <Goal>[];
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
-          children: [
-            Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 16,
-              runSpacing: 12,
-              children: [
-                Text('计划', style: Theme.of(context).textTheme.headlineSmall),
-                SegmentedButton<_PlanView>(
-                  segments: const [
-                    ButtonSegment(
-                      value: _PlanView.goals,
-                      icon: Icon(Icons.flag_outlined),
-                      label: Text('目标'),
+    final profileRepository = ref.watch(profileRepositoryProvider);
+    // 账号时区是页面唯一的显示来源：资料流更新（含另一台设备写入）后
+    // 日历与目标卡立即按新时区重建；设备时区只在资料为空时提供固定 fallback。
+    return FutureBuilder<String>(
+      future: _fallbackDisplayTimeZoneId,
+      builder: (context, fallbackSnapshot) => StreamBuilder<ProfileAccount>(
+        stream: profileRepository.watchProfile(),
+        builder: (context, profileSnapshot) {
+          final displayTimeZoneId = profileSnapshot.hasData
+              ? AccountTimeZones.effectiveId(
+                  profileSnapshot.data!.displayTimeZoneId,
+                )
+              : (fallbackSnapshot.data ?? 'Etc/UTC');
+          return StreamBuilder<List<Goal>>(
+            stream: taskRepository.watchGoals(),
+            initialData: const [],
+            builder: (context, snapshot) {
+              final goals = snapshot.data ?? const <Goal>[];
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+                children: [
+                  Wrap(
+                    alignment: WrapAlignment.spaceBetween,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 16,
+                    runSpacing: 12,
+                    children: [
+                      Text(
+                        '计划',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      SegmentedButton<_PlanView>(
+                        segments: const [
+                          ButtonSegment(
+                            value: _PlanView.goals,
+                            icon: Icon(Icons.flag_outlined),
+                            label: Text('目标'),
+                          ),
+                          ButtonSegment(
+                            value: _PlanView.calendar,
+                            icon: Icon(Icons.calendar_month_outlined),
+                            label: Text('日历'),
+                          ),
+                        ],
+                        selected: {_view},
+                        onSelectionChanged: (selection) =>
+                            setState(() => _view = selection.first),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  if (_view == _PlanView.goals)
+                    ..._buildGoals(
+                      context,
+                      taskRepository,
+                      goals,
+                      displayTimeZoneId,
+                    )
+                  else
+                    _buildCalendar(
+                      context,
+                      taskRepository,
+                      scheduleRepository,
+                      goals,
+                      displayTimeZoneId,
                     ),
-                    ButtonSegment(
-                      value: _PlanView.calendar,
-                      icon: Icon(Icons.calendar_month_outlined),
-                      label: Text('日历'),
-                    ),
-                  ],
-                  selected: {_view},
-                  onSelectionChanged: (selection) =>
-                      setState(() => _view = selection.first),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (_view == _PlanView.goals)
-              ..._buildGoals(context, taskRepository, goals)
-            else
-              _buildCalendar(
-                context,
-                taskRepository,
-                scheduleRepository,
-                goals,
-              ),
-          ],
-        );
-      },
+                ],
+              );
+            },
+          );
+        },
+      ),
     );
   }
 
@@ -1433,6 +1490,7 @@ class _PlanPageState extends ConsumerState<PlanPage> {
     BuildContext context,
     TaskRepository taskRepository,
     List<Goal> goals,
+    String displayTimeZoneId,
   ) {
     final pinned = [
       for (final goal in goals)
@@ -1484,6 +1542,7 @@ class _PlanPageState extends ConsumerState<PlanPage> {
           _goalCard(
             taskRepository,
             pinned[index],
+            displayTimeZoneId: displayTimeZoneId,
             canMoveUp: index > 0,
             canMoveDown: index < pinned.length - 1,
             onMoveUp: () => _movePinned(taskRepository, pinned, index, -1),
@@ -1497,7 +1556,8 @@ class _PlanPageState extends ConsumerState<PlanPage> {
           style: Theme.of(context).textTheme.labelLarge
               ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
-        for (final goal in others) _goalCard(taskRepository, goal),
+        for (final goal in others)
+          _goalCard(taskRepository, goal, displayTimeZoneId: displayTimeZoneId),
       ],
     ];
   }
@@ -1505,39 +1565,33 @@ class _PlanPageState extends ConsumerState<PlanPage> {
   Widget _goalCard(
     TaskRepository taskRepository,
     Goal goal, {
+    required String displayTimeZoneId,
     bool canMoveUp = false,
     bool canMoveDown = false,
     VoidCallback? onMoveUp,
     VoidCallback? onMoveDown,
   }) {
-    return FutureBuilder<String>(
-      future: _displayTimeZoneId,
-      builder: (context, zoneSnapshot) {
-        final focusRepository = ref.watch(focusRepositoryProvider);
-        return StreamBuilder<FocusDashboardMetrics>(
-          stream: focusRepository.watchDashboardMetrics(
-            timeZoneId: zoneSnapshot.data ?? 'Etc/UTC',
-          ),
-          builder: (context, metricsSnapshot) {
-            final metrics = metricsSnapshot.data;
-            return _GoalCard(
-              key: ValueKey(goal.id),
-              repository: taskRepository,
-              goal: goal,
-              showPinControls: true,
-              canMoveUp: canMoveUp,
-              canMoveDown: canMoveDown,
-              onTogglePin: () => taskRepository.setGoalPinned(
-                goal.id,
-                isPinned: !goal.isPinned,
-              ),
-              onMoveUp: onMoveUp,
-              onMoveDown: onMoveDown,
-              focusProgressSecondsByTask: metrics?.focusProgressSecondsByTask,
-              pendingReviewTaskIds:
-                  metrics?.pendingReviewTaskIds ?? const <String>{},
-            );
-          },
+    final focusRepository = ref.watch(focusRepositoryProvider);
+    return StreamBuilder<FocusDashboardMetrics>(
+      stream: focusRepository.watchDashboardMetrics(
+        timeZoneId: displayTimeZoneId,
+      ),
+      builder: (context, metricsSnapshot) {
+        final metrics = metricsSnapshot.data;
+        return _GoalCard(
+          key: ValueKey(goal.id),
+          repository: taskRepository,
+          goal: goal,
+          showPinControls: true,
+          canMoveUp: canMoveUp,
+          canMoveDown: canMoveDown,
+          onTogglePin: () =>
+              taskRepository.setGoalPinned(goal.id, isPinned: !goal.isPinned),
+          onMoveUp: onMoveUp,
+          onMoveDown: onMoveDown,
+          focusProgressSecondsByTask: metrics?.focusProgressSecondsByTask,
+          pendingReviewTaskIds:
+              metrics?.pendingReviewTaskIds ?? const <String>{},
         );
       },
     );
@@ -1563,19 +1617,20 @@ class _PlanPageState extends ConsumerState<PlanPage> {
     TaskRepository taskRepository,
     ScheduleRepository scheduleRepository,
     List<Goal> goals,
+    String displayTimeZoneId,
   ) {
     return FutureBuilder<List<Goal>>(
       future: _calendarGoals(taskRepository, goals),
-      builder: (context, goalSnapshot) => FutureBuilder<String>(
-        future: _displayTimeZoneId,
-        builder: (context, zoneSnapshot) {
-          // 先按 UTC 呈现，账号时区到达后重建：日历不进入永久加载态。
-          return PlanCalendarView(
-            repository: scheduleRepository,
-            goals: goalSnapshot.data ?? goals,
-            displayTimeZoneId: zoneSnapshot.data ?? 'Etc/UTC',
-          );
-        },
+      builder: (context, goalSnapshot) => PlanCalendarView(
+        repository: scheduleRepository,
+        goals: goalSnapshot.data ?? goals,
+        displayTimeZoneId: displayTimeZoneId,
+        calendarRepository: ref.watch(calendarRepositoryProvider),
+        initialDay: widget.navigationTarget?.day,
+        highlightScheduleId: widget.navigationTarget?.scheduleId,
+        // 与专注倒计时共用同一个注入时钟：日期、今天标记和月视图都能
+        // 在同一份 fixture 里被固定，页面不各自读取系统时间。
+        now: ref.watch(displayClockProvider),
       ),
     );
   }
@@ -5391,6 +5446,10 @@ class _MyPageState extends ConsumerState<MyPage> {
                   repository: calendarRepository,
                   isAndroid: Platform.isAndroid,
                   scheduleRepository: scheduleRepository,
+                  displayTimeZoneIdLoader: () =>
+                      resolveAccountDisplayTimeZoneId(
+                        ref.read(profileRepositoryProvider),
+                      ),
                 ),
               ),
             ),

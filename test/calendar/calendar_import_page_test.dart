@@ -86,6 +86,7 @@ void main() {
         home: CalendarSourcesPage(
           repository: calendarRepository,
           isAndroid: isAndroid,
+          displayTimeZoneIdLoader: () async => 'Etc/UTC',
           scheduleRepository: scheduleRepository,
         ),
       ),
@@ -100,13 +101,15 @@ void main() {
 
       await tester.tap(find.byKey(const Key('calendar-import-start')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('import-source-source-a')));
+      await tester.tap(
+        find.byKey(const ValueKey('calendar-import-source-source-a')),
+      );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('import-preview')));
+      await tester.tap(find.byKey(const ValueKey('calendar-import-preview')));
       await tester.pumpAndSettle();
 
-      expect(find.text('将导入 2 个日程'), findsOneWidget);
-      expect(find.text('已存在将跳过 0 个'), findsOneWidget);
+      expect(find.text('将复制 2 项安排'), findsOneWidget);
+      expect(find.text('已导入过的 0 项会跳过：不会重复添加，也不会覆盖你改过的内容。'), findsOneWidget);
 
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
@@ -121,11 +124,13 @@ void main() {
 
     await tester.tap(find.byKey(const Key('calendar-import-start')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('import-source-source-a')));
+    await tester.tap(
+      find.byKey(const ValueKey('calendar-import-source-source-a')),
+    );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('import-preview')));
+    await tester.tap(find.byKey(const ValueKey('calendar-import-preview')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('import-confirm')));
+    await tester.tap(find.byKey(const ValueKey('calendar-import-confirm')));
     await tester.pumpAndSettle();
 
     final copies = await scheduleRepository.getSchedules();
@@ -134,18 +139,20 @@ void main() {
       copies.map((item) => item.origin),
       everyElement(ScheduleOrigin.calendarImport),
     );
-    expect(find.textContaining('已导入 2 个日程'), findsOneWidget);
+    expect(find.textContaining('已复制 2 项安排'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('calendar-import-start')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('import-source-source-a')));
+    await tester.tap(
+      find.byKey(const ValueKey('calendar-import-source-source-a')),
+    );
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('import-preview')));
+    await tester.tap(find.byKey(const ValueKey('calendar-import-preview')));
     await tester.pumpAndSettle();
 
-    expect(find.text('已存在将跳过 2 个'), findsOneWidget);
-    await tester.tap(find.text('取消'));
-    await tester.pumpAndSettle();
+    // 第二次没有可写入的项：不弹确认框，直接说明全部跳过。
+    expect(find.text('所选范围内都是已导入过的安排，已跳过 2 项。'), findsOneWidget);
+    expect(find.byKey(const ValueKey('calendar-import-confirm')), findsNothing);
     expect(await scheduleRepository.getSchedules(), hasLength(2));
   });
 
@@ -170,11 +177,13 @@ void main() {
       await pumpPage(tester, isAndroid: true);
       await tester.tap(find.byKey(const Key('calendar-import-start')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('import-source-source-a')));
+      await tester.tap(
+        find.byKey(const ValueKey('calendar-import-source-source-a')),
+      );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('import-preview')));
+      await tester.tap(find.byKey(const ValueKey('calendar-import-preview')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('import-confirm')));
+      await tester.tap(find.byKey(const ValueKey('calendar-import-confirm')));
       await tester.pumpAndSettle();
 
       final created = (await scheduleRepository.getSchedules()).single;
@@ -208,18 +217,21 @@ void main() {
 
       await tester.tap(find.byKey(const Key('calendar-import-start')));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('import-source-source-a')));
+      await tester.tap(
+        find.byKey(const ValueKey('calendar-import-source-source-a')),
+      );
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('import-preview')));
+      await tester.tap(find.byKey(const ValueKey('calendar-import-preview')));
       await tester.pumpAndSettle();
 
-      expect(find.text('将导入 0 个日程'), findsOneWidget);
-      expect(find.text('已存在将跳过 1 个'), findsOneWidget);
-      expect(find.textContaining('记录新的系统身份'), findsOneWidget);
+      expect(find.text('将复制 0 项安排'), findsOneWidget);
+      expect(find.text('已导入过的 1 项会跳过：不会重复添加，也不会覆盖你改过的内容。'), findsOneWidget);
+      // 预览只说明这条副本已经导入过，来源标识另行记录但不改内容。
+      expect(find.text('1 项此前已导入过，内容保持原样。'), findsOneWidget);
 
-      await tester.tap(find.byKey(const Key('import-confirm')));
+      await tester.tap(find.byKey(const ValueKey('calendar-import-confirm')));
       await tester.pumpAndSettle();
-      expect(find.textContaining('记录新的来源身份'), findsOneWidget);
+      expect(find.text('这些安排此前已经导入过，内容保持原样。'), findsOneWidget);
 
       final stored = (await scheduleRepository.getSchedules()).single;
       expect(stored.title, '我改过的本机私事');
@@ -280,7 +292,7 @@ void main() {
       expect(await scheduleRepository.getSchedules(), hasLength(2));
       await tester.tap(find.byKey(const Key('calendar-import-start')));
       await tester.pumpAndSettle();
-      expect(find.textContaining('未获得日历读取权限'), findsOneWidget);
+      expect(find.textContaining('没有得到日历读取权限'), findsOneWidget);
       expect(await scheduleRepository.getSchedules(), hasLength(2));
     },
   );

@@ -1,8 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:timezone/timezone.dart' as timezone;
 
+import '../calendar/calendar_repository.dart';
+import '../calendar/manual_calendar_import.dart';
 import '../focus/focus_time_zones.dart';
 import '../schedules/schedule_models.dart';
+import '../schedules/schedule_repeat.dart';
+import '../schedules/schedule_repeat_editor.dart';
 import '../schedules/schedule_repository.dart';
 import '../tasks/task_models.dart';
 
@@ -18,12 +24,25 @@ class PlanCalendarView extends StatefulWidget {
     required this.goals,
     required this.displayTimeZoneId,
     this.now,
+    this.calendarRepository,
+    this.initialDay,
+    this.highlightScheduleId,
   });
 
   final ScheduleRepository repository;
   final List<Goal> goals;
   final String displayTimeZoneId;
   final DateTime Function()? now;
+
+  /// 手动导入的来源读取入口；为 null 时页面不显示导入入口。
+  final CalendarRepository? calendarRepository;
+
+  /// 打开时先选中的日历日（账号显示时区）；通知点击用它定位到具体安排。
+  final DateTime? initialDay;
+
+  /// 通知要定位的已拥有安排；只在当前账号的日程流里命中时才强调，
+  /// 不存在（已删除或不属于本账号）就只停留在 [initialDay]，不建专注。
+  final String? highlightScheduleId;
 
   @override
   State<PlanCalendarView> createState() => _PlanCalendarViewState();
@@ -32,6 +51,14 @@ class PlanCalendarView extends StatefulWidget {
 class _PlanCalendarViewState extends State<PlanCalendarView> {
   late DateTime _visibleMonth;
   late DateTime _selectedDay;
+  String? _highlightedScheduleId;
+
+  /// 通知目标定位请求的代次：只接受最新一次请求的结果。
+  int _targetRequest = 0;
+
+  /// 当前月窗口的订阅。每帧重建都新建流会让数据库观察反复取消/重连，既
+  /// 浪费连接，也可能在取消与重订阅之间丢掉首帧数据；这里按时窗缓存。
+  _ScheduleStreamCache? _streamCache;
 
   timezone.Location get _location =>
       FocusTimeZones.location(widget.displayTimeZoneId);
@@ -45,8 +72,87 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
   void initState() {
     super.initState();
     final now = _nowInZone();
-    _visibleMonth = DateTime(now.year, now.month);
-    _selectedDay = DateTime(now.year, now.month, now.day);
+    final initial = widget.initialDay ?? DateTime(now.year, now.month, now.day);
+    _visibleMonth = DateTime(initial.year, initial.month);
+    _selectedDay = DateTime(initial.year, initial.month, initial.day);
+    _highlightedScheduleId = widget.highlightScheduleId;
+    unawaited(_resolveHighlightedSchedule());
+  }
+
+  @override
+  void didUpdateWidget(PlanCalendarView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final target = widget.initialDay;
+    final idChanged =
+        widget.highlightScheduleId != oldWidget.highlightScheduleId;
+    final dayChanged = target != null && target != oldWidget.initialDay;
+    // 数据源换了（仓储/账号所有者）或显示时区换了：旧请求一律作废。
+    final sourceChanged =
+        !identical(widget.repository, oldWidget.repository) ||
+        widget.displayTimeZoneId != oldWidget.displayTimeZoneId;
+    if (!idChanged && !dayChanged && !sourceChanged) return;
+    _targetRequest += 1;
+    setState(() {
+      if (idChanged) _highlightedScheduleId = widget.highlightScheduleId;
+      if (dayChanged) {
+        _selectedDay = DateTime(target.year, target.month, target.day);
+        _visibleMonth = DateTime(target.year, target.month);
+      }
+    });
+    if (_highlightedScheduleId != null) {
+      unawaited(_resolveHighlightedSchedule());
+    }
+  }
+
+  /// 用户自己换了日子/月份：通知带来的强调与在途请求一起失效。
+  void _clearHighlightedSchedule() {
+    _highlightedScheduleId = null;
+    _targetRequest += 1;
+  }
+
+  /// 通知指向的安排若被改期，就跟它当前所在的账号时区日走。
+  ///
+  /// 月视图只订阅当前月的窗口，所以这里按 id 做一次**只读**的全量读取：
+  /// 命中当前账号的安排就移到它所在的那一天；id 已不存在（删除或不属于
+  /// 本账号）时保留负载日期，不猜、不写、不建专注。
+  Future<void> _resolveHighlightedSchedule() async {
+    final id = _highlightedScheduleId;
+    if (id == null) return;
+    // 捕获本次请求的来源与代次：等待期间仓储/账号所有者/时区/目标日可能
+    // 已经换掉，旧结果即使命中同一个 id 也不能改写新账号的日期。
+    final repository = widget.repository;
+    final zoneId = widget.displayTimeZoneId;
+    final request = ++_targetRequest;
+    final List<Schedule> schedules;
+    try {
+      schedules = await repository.getSchedules();
+    } catch (_) {
+      return;
+    }
+    if (!mounted || request != _targetRequest) return;
+    if (_highlightedScheduleId != id) return;
+    if (!identical(widget.repository, repository)) return;
+    if (widget.displayTimeZoneId != zoneId) return;
+    Schedule? match;
+    for (final schedule in schedules) {
+      if (schedule.id != id) continue;
+      match = schedule;
+      break;
+    }
+    if (match == null) return;
+    final days = scheduleDays(match, widget.displayTimeZoneId);
+    if (days.isEmpty || days.contains(_selectedDay)) return;
+    final sorted = days.toList()..sort();
+    final day = sorted.firstWhere(
+      (candidate) =>
+          candidate.year == _selectedDay.year &&
+          candidate.month == _selectedDay.month,
+      orElse: () => sorted.first,
+    );
+    setState(() {
+      _selectedDay = day;
+      _visibleMonth = DateTime(day.year, day.month);
+    });
   }
 
   timezone.TZDateTime _zoned(DateTime date, {int hour = 0, int minute = 0}) =>
@@ -69,7 +175,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     final from = _utcStart(monthStart).subtract(const Duration(days: 1));
     final to = _utcStart(nextMonth).add(const Duration(days: 2));
     return StreamBuilder<List<Schedule>>(
-      stream: widget.repository.watchSchedules(from: from, to: to),
+      stream: _streamFor(monthStart, from, to),
       builder: (context, snapshot) {
         final schedules = snapshot.data ?? const <Schedule>[];
         return Column(
@@ -86,6 +192,31 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     );
   }
 
+  /// 同一个仓储、同一个时窗复用同一条流；换仓储或换月份才重建。
+  Stream<List<Schedule>> _streamFor(
+    DateTime month,
+    DateTime from,
+    DateTime to,
+  ) {
+    final cached = _streamCache;
+    if (cached != null &&
+        identical(cached.repository, widget.repository) &&
+        cached.month == month &&
+        cached.from == from &&
+        cached.to == to) {
+      return cached.stream;
+    }
+    final stream = widget.repository.watchSchedules(from: from, to: to);
+    _streamCache = _ScheduleStreamCache(
+      repository: widget.repository,
+      month: month,
+      from: from,
+      to: to,
+      stream: stream,
+    );
+    return stream;
+  }
+
   Widget _buildHeader(BuildContext context, List<Schedule> schedules) {
     return Row(
       children: [
@@ -97,6 +228,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
               _visibleMonth.month - 1,
             );
             _selectedDay = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
+            _clearHighlightedSchedule();
           }),
           icon: const Icon(Icons.chevron_left),
         ),
@@ -114,12 +246,20 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
               _visibleMonth.month + 1,
             );
             _selectedDay = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
+            _clearHighlightedSchedule();
           }),
           icon: const Icon(Icons.chevron_right),
         ),
+        if (widget.calendarRepository != null)
+          IconButton(
+            key: const ValueKey('plan-import-open'),
+            tooltip: '从系统日历导入',
+            onPressed: _importFromCalendar,
+            icon: const Icon(Icons.download_outlined),
+          ),
         const SizedBox(width: 8),
         FilledButton.icon(
-          onPressed: () => _createSchedule(context),
+          onPressed: _createSchedule,
           icon: const Icon(Icons.add),
           label: const Text('新建安排'),
         ),
@@ -195,7 +335,11 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
       label: '${day.month}月${day.day}日',
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => setState(() => _selectedDay = day),
+        onTap: () => setState(() {
+          _selectedDay = day;
+          // 用户自己换了日子，就不再强调通知带来的那一条。
+          _clearHighlightedSchedule();
+        }),
         child: Container(
           constraints: const BoxConstraints(minHeight: 48),
           margin: const EdgeInsets.all(2),
@@ -249,7 +393,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
               ),
             ),
             TextButton.icon(
-              onPressed: () => _createSchedule(context, day: _selectedDay),
+              onPressed: () => _createSchedule(day: _selectedDay),
               icon: const Icon(Icons.add),
               label: const Text('添加事项'),
             ),
@@ -270,12 +414,13 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
             _ScheduleTile(
               key: ValueKey('schedule-${schedule.id}'),
               schedule: schedule,
+              highlighted: schedule.id == _highlightedScheduleId,
               timeLabel: scheduleTimeLabel(schedule, widget.displayTimeZoneId),
               taskLabel: _taskLabel(schedule.taskId),
               onToggleCompletion: (value) => _setCompletion(schedule, value),
-              onEdit: () => _editSchedule(context, schedule),
-              onReschedule: () => _reschedule(context, schedule),
-              onDelete: () => _confirmDelete(context, schedule),
+              onEdit: () => _editSchedule(schedule),
+              onReschedule: () => _reschedule(schedule),
+              onDelete: () => _confirmDelete(schedule),
             ),
       ],
     );
@@ -303,6 +448,22 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
       for (final day in scheduleDays(schedule, widget.displayTimeZoneId)) day,
   };
 
+  Future<void> _importFromCalendar() async {
+    final calendar = widget.calendarRepository;
+    if (calendar == null) return;
+    final message = await runManualCalendarImport(
+      context,
+      calendar: calendar,
+      schedules: widget.repository,
+      now: (widget.now ?? DateTime.now)(),
+      displayTimeZoneId: widget.displayTimeZoneId,
+      initialDay: _selectedDay,
+    );
+    if (message == null || !mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _setCompletion(Schedule schedule, bool value) async {
     try {
       await widget.repository.setScheduleCompletion(
@@ -315,7 +476,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     }
   }
 
-  Future<void> _createSchedule(BuildContext context, {DateTime? day}) async {
+  Future<void> _createSchedule({DateTime? day}) async {
     final result = await showScheduleEditor(
       context,
       goals: widget.goals,
@@ -325,20 +486,59 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     );
     if (result == null) return;
     try {
-      final created = await widget.repository.createSchedule(result.draft);
-      if (result.reminderMinutesBefore != null) {
-        await widget.repository.setScheduleReminder(
-          created.id,
-          minutesBefore: result.reminderMinutesBefore,
+      final spec = result.repeat.spec;
+      if (spec != null) {
+        // 重复规则自带时区、窗口模板与提醒偏移；实例由仓储按规则生成。
+        await widget.repository.createRecurringSchedule(
+          draft: result.draft,
+          repeat: spec,
+          timeZoneId: widget.displayTimeZoneId,
+          reminderMinutesBefore: result.reminderMinutesBefore,
         );
+        return;
       }
+      final created = await widget.repository.createSchedule(result.draft);
+      await widget.repository.setScheduleReminder(
+        created.id,
+        minutesBefore: result.reminderMinutesBefore,
+      );
     } catch (_) {
       if (!mounted) return;
-      _showError(this.context, '安排没有保存，请稍后重试。');
+      _showError(context, '安排没有保存，请稍后重试。');
     }
   }
 
-  Future<void> _editSchedule(BuildContext context, Schedule schedule) async {
+  /// 既有重复实例所属规则：重复设置与规则级提醒；规则缺失时返回 null。
+  Future<({ScheduleRepeatSelection selection, int? reminder})?> _ruleStateFor(
+    Schedule schedule,
+  ) async {
+    if (!schedule.isRecurring) return null;
+    try {
+      final rules = await widget.repository.getRecurrenceRules();
+      for (final rule in rules) {
+        if (rule.id != schedule.recurrenceId) continue;
+        return (
+          selection: ScheduleRepeatSelection.repeating(
+            frequency: rule.frequency,
+            weekdays: rule.weekdays,
+            endDate: rule.endDate,
+          ),
+          reminder: rule.reminderMinutesBefore,
+        );
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }
+
+  Future<void> _editSchedule(Schedule schedule) async {
+    final ruleState = await _ruleStateFor(schedule);
+    if (!mounted) return;
+    if (schedule.isRecurring && ruleState == null) {
+      _showError(context, '这条重复安排的规则暂时读不到，请稍后再试。');
+      return;
+    }
     final result = await showScheduleEditor(
       context,
       goals: widget.goals,
@@ -346,8 +546,29 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
       initial: schedule,
       initialDay: _selectedDay,
       now: widget.now,
+      existingRepeat: ruleState?.selection,
+      existingRuleReminder: ruleState?.reminder,
     );
     if (result == null) return;
+    if (schedule.isRecurring) {
+      try {
+        // 界面总是显式提交可见的提醒选择：整数或清除，从不依赖省略。
+        await widget.repository.editRecurringSchedule(
+          schedule.id,
+          draft: result.draft,
+          scope: result.scope,
+          repeat: result.scope == ScheduleRepeatScope.thisAndFuture
+              ? result.repeat.spec
+              : null,
+          reminderMinutesBefore: result.reminderMinutesBefore,
+          clearReminder: result.reminderMinutesBefore == null,
+        );
+      } catch (_) {
+        if (!mounted) return;
+        _showError(context, '安排没有更新，请稍后重试。');
+      }
+      return;
+    }
     try {
       await widget.repository.updateSchedule(schedule.id, result.draft);
       await widget.repository.setScheduleReminder(
@@ -356,11 +577,17 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
       );
     } catch (_) {
       if (!mounted) return;
-      _showError(this.context, '安排没有更新，请稍后重试。');
+      _showError(context, '安排没有更新，请稍后重试。');
     }
   }
 
-  Future<void> _reschedule(BuildContext context, Schedule schedule) async {
+  Future<void> _reschedule(Schedule schedule) async {
+    var scope = ScheduleRepeatScope.onlyThis;
+    if (schedule.isRecurring) {
+      final chosen = await showRepeatScopeDialog(context);
+      if (chosen == null || !mounted) return;
+      scope = chosen;
+    }
     final window = await showRescheduleDialog(
       context,
       schedule: schedule,
@@ -368,14 +595,29 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     );
     if (window == null) return;
     try {
-      await widget.repository.rescheduleSchedule(schedule.id, window);
+      if (schedule.isRecurring) {
+        // 重复实例改期同样走实例/系列编辑：仅本次会留下持久例外，
+        // 本次及以后才截断规则，历史实例不被当前规则重算。
+        await widget.repository.editRecurringSchedule(
+          schedule.id,
+          draft: ScheduleDraft(
+            title: schedule.title,
+            notes: schedule.notes,
+            window: window,
+            taskId: schedule.taskId,
+          ),
+          scope: scope,
+        );
+      } else {
+        await widget.repository.rescheduleSchedule(schedule.id, window);
+      }
     } catch (_) {
       if (!mounted) return;
-      _showError(this.context, '新的时间没有保存，请稍后重试。');
+      _showError(context, '新的时间没有保存，请稍后重试。');
     }
   }
 
-  Future<void> _confirmDelete(BuildContext context, Schedule schedule) async {
+  Future<void> _confirmDelete(Schedule schedule) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -401,7 +643,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
       await widget.repository.deleteSchedule(schedule.id);
     } catch (_) {
       if (!mounted) return;
-      _showError(this.context, '安排没有删除，请稍后重试。');
+      _showError(context, '安排没有删除，请稍后重试。');
     }
   }
 }
@@ -414,6 +656,7 @@ class _ScheduleTile extends StatelessWidget {
   const _ScheduleTile({
     super.key,
     required this.schedule,
+    required this.highlighted,
     required this.timeLabel,
     required this.taskLabel,
     required this.onToggleCompletion,
@@ -423,6 +666,9 @@ class _ScheduleTile extends StatelessWidget {
   });
 
   final Schedule schedule;
+
+  /// 通知点开的那一条：只用边框强调，不改变任何数据或专注状态。
+  final bool highlighted;
   final String timeLabel;
   final String? taskLabel;
   final ValueChanged<bool> onToggleCompletion;
@@ -433,91 +679,144 @@ class _ScheduleTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Card(
-      margin: const EdgeInsets.only(top: 8),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        leading: Checkbox(
-          value: schedule.isCompleted,
-          onChanged: (value) {
-            if (value != null) onToggleCompletion(value);
-          },
+    return Semantics(
+      container: true,
+      selected: highlighted,
+      child: Card(
+        key: ValueKey(
+          highlighted
+              ? 'schedule-highlight-${schedule.id}'
+              : 'schedule-card-${schedule.id}',
         ),
-        title: Text(
-          schedule.title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: schedule.isCompleted
-              ? const TextStyle(decoration: TextDecoration.lineThrough)
-              : null,
-        ),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(timeLabel),
-            if (taskLabel != null)
-              Text(
-                '任务：$taskLabel',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+        margin: const EdgeInsets.only(top: 8),
+        shape: highlighted
+            ? RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+                side: BorderSide(color: theme.colorScheme.primary, width: 2),
               )
-            else
-              Text(
-                '独立事项',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+            : null,
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 4,
+          ),
+          leading: Checkbox(
+            value: schedule.isCompleted,
+            onChanged: (value) {
+              if (value != null) onToggleCompletion(value);
+            },
+          ),
+          title: Text(
+            schedule.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: schedule.isCompleted
+                ? const TextStyle(decoration: TextDecoration.lineThrough)
+                : null,
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(timeLabel),
+              if (taskLabel != null)
+                Text(
+                  '任务：$taskLabel',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                )
+              else
+                Text(
+                  '独立事项',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-            if (schedule.notes.isNotEmpty)
-              Text(
-                schedule.notes,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textTheme.bodySmall,
-              ),
-            if (schedule.hasReminder)
-              Text(
-                '提前 ${formatReminderOffset(schedule.reminderMinutesBefore!)}提醒',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
+              if (schedule.isRecurring)
+                Text(
+                  '重复安排',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-          ],
+              if (schedule.notes.isNotEmpty)
+                Text(
+                  schedule.notes,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall,
+                ),
+              if (schedule.hasReminder)
+                Text(
+                  '提前 ${formatReminderOffset(schedule.reminderMinutesBefore!)}提醒',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
+          trailing: PopupMenuButton<String>(
+            tooltip: '安排操作',
+            onSelected: (value) {
+              switch (value) {
+                case 'edit':
+                  onEdit();
+                case 'reschedule':
+                  onReschedule();
+                case 'delete':
+                  onDelete();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(value: 'edit', child: Text('编辑安排')),
+              PopupMenuItem(value: 'reschedule', child: Text('改期')),
+              PopupMenuItem(value: 'delete', child: Text('删除安排')),
+            ],
+          ),
+          onTap: onEdit,
         ),
-        trailing: PopupMenuButton<String>(
-          tooltip: '安排操作',
-          onSelected: (value) {
-            switch (value) {
-              case 'edit':
-                onEdit();
-              case 'reschedule':
-                onReschedule();
-              case 'delete':
-                onDelete();
-            }
-          },
-          itemBuilder: (context) => const [
-            PopupMenuItem(value: 'edit', child: Text('编辑安排')),
-            PopupMenuItem(value: 'reschedule', child: Text('改期')),
-            PopupMenuItem(value: 'delete', child: Text('删除安排')),
-          ],
-        ),
-        onTap: onEdit,
       ),
     );
   }
 }
 
-/// 编辑器结果：草稿 + 可选提醒（提醒只存配置，投递由 06 负责）。
+/// 月窗口与仓储的组合，用来判断能否复用已有的订阅。
+class _ScheduleStreamCache {
+  const _ScheduleStreamCache({
+    required this.repository,
+    required this.month,
+    required this.from,
+    required this.to,
+    required this.stream,
+  });
+
+  final ScheduleRepository repository;
+  final DateTime month;
+  final DateTime from;
+  final DateTime to;
+  final Stream<List<Schedule>> stream;
+}
+
+/// 编辑器结果：草稿 + 可选提醒 + 重复设置（提醒只存配置，投递由 06 负责）。
 class ScheduleEditorResult {
   const ScheduleEditorResult({
     required this.draft,
     required this.reminderMinutesBefore,
+    this.repeat = const ScheduleRepeatSelection.none(),
+    this.scope = ScheduleRepeatScope.onlyThis,
+    this.isExistingRecurring = false,
   });
 
   final ScheduleDraft draft;
   final int? reminderMinutesBefore;
+
+  /// 新建时的重复选择；编辑既有重复项时，本次及以后使用它的新规则。
+  final ScheduleRepeatSelection repeat;
+
+  /// 编辑既有重复项的作用范围；新建或非重复项忽略。
+  final ScheduleRepeatScope scope;
+
+  final bool isExistingRecurring;
 }
 
 /// 编辑器与改期对话框共用的日历边界。
@@ -639,6 +938,9 @@ Future<ScheduleEditorResult?> showScheduleEditor(
   required DateTime initialDay,
   Schedule? initial,
   DateTime Function()? now,
+  ScheduleRepeatSelection? initialRepeat,
+  ScheduleRepeatSelection? existingRepeat,
+  int? existingRuleReminder,
 }) {
   return showDialog<ScheduleEditorResult>(
     context: context,
@@ -648,6 +950,48 @@ Future<ScheduleEditorResult?> showScheduleEditor(
       initialDay: initialDay,
       initial: initial,
       now: now,
+      initialRepeat: initialRepeat,
+      existingRepeat: existingRepeat,
+      existingRuleReminder: existingRuleReminder,
+    ),
+  );
+}
+
+/// 重复日程的修改范围选择：先确认「仅本次 / 本次及以后」，再进入具体编辑。
+Future<ScheduleRepeatScope?> showRepeatScopeDialog(
+  BuildContext context, {
+  ScheduleRepeatScope initial = ScheduleRepeatScope.onlyThis,
+}) {
+  var scope = initial;
+  return showDialog<ScheduleRepeatScope>(
+    context: context,
+    builder: (context) => StatefulBuilder(
+      builder: (context, setDialogState) => AlertDialog(
+        title: const Text('修改这条重复安排'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('这次修改要影响哪些实例？'),
+            const SizedBox(height: 8),
+            ScheduleRepeatScopeSelector(
+              value: scope,
+              onChanged: (next) => setDialogState(() => scope = next),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            key: const ValueKey('schedule-scope-confirm'),
+            onPressed: () => Navigator.of(context).pop(scope),
+            child: const Text('继续'),
+          ),
+        ],
+      ),
     ),
   );
 }
@@ -659,6 +1003,9 @@ class _ScheduleEditorDialog extends StatefulWidget {
     required this.initialDay,
     this.initial,
     this.now,
+    this.initialRepeat,
+    this.existingRepeat,
+    this.existingRuleReminder,
   });
 
   final List<Goal> goals;
@@ -666,6 +1013,15 @@ class _ScheduleEditorDialog extends StatefulWidget {
   final DateTime initialDay;
   final Schedule? initial;
   final DateTime Function()? now;
+
+  /// 编辑既有重复项时从规则还原的当前设置。
+  final ScheduleRepeatSelection? existingRepeat;
+
+  /// 规则模板自身的提醒偏移；"本次及以后"用它作为可见初值。
+  final int? existingRuleReminder;
+
+  /// 新建时的初始重复选择（默认不重复）。
+  final ScheduleRepeatSelection? initialRepeat;
 
   @override
   State<_ScheduleEditorDialog> createState() => _ScheduleEditorDialogState();
@@ -681,6 +1037,10 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
   late TimeOfDay _end;
   String? _taskId;
   int? _reminderMinutesBefore;
+  late ScheduleRepeatSelection _repeat;
+  var _scope = ScheduleRepeatScope.onlyThis;
+
+  bool get _isExistingRecurring => widget.initial?.isRecurring ?? false;
 
   @override
   void initState() {
@@ -690,6 +1050,10 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
     _notes = TextEditingController(text: initial?.notes ?? '');
     _taskId = initial?.taskId;
     _reminderMinutesBefore = initial?.reminderMinutesBefore;
+    _repeat =
+        widget.existingRepeat ??
+        widget.initialRepeat ??
+        const ScheduleRepeatSelection.none();
     if (initial == null) {
       _allDay = false;
       _day = _dateOnly(widget.initialDay);
@@ -723,10 +1087,19 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
     end: _end,
   );
 
+  /// 本次是否会写出重复规则：新建重复，或既有重复项改到"本次及以后"。
+  bool get _writesRepeatRule => _isExistingRecurring
+      ? _scope == ScheduleRepeatScope.thisAndFuture
+      : _repeat.repeats;
+
   void _save() {
     final title = _title.text.trim();
     if (title.isEmpty) {
       _showError(context, '安排需要一个名称。');
+      return;
+    }
+    if (_writesRepeatRule && !_repeat.isValid) {
+      _showError(context, '每周重复至少要选一天，结束日期要用有效日历日。');
       return;
     }
     final ScheduleWindow window;
@@ -749,6 +1122,11 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
           taskId: _taskId,
         ),
         reminderMinutesBefore: _reminderMinutesBefore,
+        repeat: _repeat,
+        scope: _writesRepeatRule
+            ? ScheduleRepeatScope.thisAndFuture
+            : ScheduleRepeatScope.onlyThis,
+        isExistingRecurring: _isExistingRecurring,
       ),
     );
   }
@@ -906,6 +1284,43 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
               ],
             ),
             const SizedBox(height: 12),
+            if (_isExistingRecurring) ...[
+              Text('重复安排', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 4),
+              ScheduleRepeatScopeSelector(
+                value: _scope,
+                onChanged: (next) => setState(() {
+                  _scope = next;
+                  // 两种范围各自有一个明确初值：仅本次是这条实例的提醒，
+                  // 本次及以后是规则模板的提醒。切换时直接换成对应值，
+                  // 保存时再显式提交，不把实例值悄悄写进规则。
+                  _reminderMinutesBefore = next == ScheduleRepeatScope.onlyThis
+                      ? widget.initial?.reminderMinutesBefore
+                      : widget.existingRuleReminder;
+                }),
+              ),
+              if (_scope == ScheduleRepeatScope.onlyThis)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '仅本次只改这一个实例，重复规则和其他实例保持原样。',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                )
+              else
+                ScheduleRepeatEditor(
+                  value: _repeat,
+                  onChanged: (next) => setState(() => _repeat = next),
+                  firstDate: _day,
+                  allowDisable: false,
+                ),
+            ] else
+              ScheduleRepeatEditor(
+                value: _repeat,
+                onChanged: (next) => setState(() => _repeat = next),
+                firstDate: _day,
+              ),
+            const SizedBox(height: 12),
             DropdownButtonFormField<String?>(
               initialValue: _taskId,
               // 选中项按整行宽度排布并省略，避免真实字体（MiSans）在 360 宽下
@@ -938,6 +1353,8 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<int?>(
+              // 切换修改范围会替换提醒初值；用范围作 key 让表单字段按新初值重建。
+              key: ValueKey('schedule-reminder-${_scope.name}'),
               initialValue: _reminderMinutesBefore,
               isExpanded: true,
               decoration: const InputDecoration(labelText: '提醒（可选）'),

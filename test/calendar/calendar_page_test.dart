@@ -34,7 +34,11 @@ void main() {
     (tester) async {
       await tester.pumpWidget(
         MaterialApp(
-          home: CalendarSourcesPage(repository: repository, isAndroid: false),
+          home: CalendarSourcesPage(
+            repository: repository,
+            isAndroid: false,
+            displayTimeZoneIdLoader: () async => 'Etc/UTC',
+          ),
         ),
       );
       await tester.pumpAndSettle();
@@ -61,7 +65,11 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: CalendarSourcesPage(repository: repository, isAndroid: true),
+        home: CalendarSourcesPage(
+          repository: repository,
+          isAndroid: true,
+          displayTimeZoneIdLoader: () async => 'Etc/UTC',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -217,7 +225,11 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: CalendarSourcesPage(repository: repository, isAndroid: true),
+        home: CalendarSourcesPage(
+          repository: repository,
+          isAndroid: true,
+          displayTimeZoneIdLoader: () async => 'Etc/UTC',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -245,7 +257,11 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: CalendarSourcesPage(repository: repository, isAndroid: false),
+        home: CalendarSourcesPage(
+          repository: repository,
+          isAndroid: false,
+          displayTimeZoneIdLoader: () async => 'Etc/UTC',
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -294,7 +310,11 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: CalendarSourcesPage(repository: repository, isAndroid: true),
+        home: CalendarSourcesPage(
+          repository: repository,
+          isAndroid: true,
+          displayTimeZoneIdLoader: () async => 'Etc/UTC',
+        ),
       ),
     );
     await tester.pumpAndSettle();
