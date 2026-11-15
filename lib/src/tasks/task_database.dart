@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 
 import '../auth/user_lifecycle_models.dart';
+import '../schedules/schedule_migration.dart';
 
 part 'task_database.g.dart';
 
@@ -175,6 +176,10 @@ class FocusAppointments extends Table {
   DateTimeColumn get reviewDispositionUpdatedAt => dateTime().nullable()();
   TextColumn get configurationBasisSourceId => text().nullable()();
 
+  /// 本场显式存储的预约准备时长（秒）。旧记录为 `null`，读取时沿用
+  /// 已存的 start/end 边界，不重算也不延后正在进行的预约。
+  IntColumn get preparationSeconds => integer().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
 }
@@ -317,6 +322,57 @@ class LocalCalendarBlocks extends Table {
   Set<Column<Object>> get primaryKey => {userId, sourceId, occurrenceId};
 }
 
+/// Pacta 自有日程。与导入副本（local_calendar_blocks）分开：日程归应用拥有，
+/// 系统日历来源只作为来源标记保留，用于后续导入去重。
+class LocalSchedules extends Table {
+  TextColumn get userId => text()();
+  TextColumn get id => text()();
+  TextColumn get title => text()();
+  TextColumn get notes => text().withDefault(const Constant(''))();
+  DateTimeColumn get startsAt => dateTime()();
+  DateTimeColumn get endsAt => dateTime()();
+  BoolColumn get allDay => boolean().withDefault(const Constant(false))();
+  TextColumn get allDayStartDate => text().nullable()();
+  TextColumn get allDayEndDateExclusive => text().nullable()();
+  BoolColumn get isCompleted => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get completedAt => dateTime().nullable()();
+  TextColumn get taskId => text().nullable()();
+
+  /// 可选提醒偏移（开始前多少分钟）；投递不在本表，未设置即不提醒。
+  IntColumn get reminderMinutesBefore => integer().nullable()();
+  TextColumn get origin => text().withDefault(const Constant('owned'))();
+  TextColumn get sourceIds => text().withDefault(const Constant('[]'))();
+  TextColumn get sourceNames => text().withDefault(const Constant('[]'))();
+  TextColumn get sourceEventId => text().nullable()();
+  TextColumn get occurrenceId => text().nullable()();
+  TextColumn get eventIdentity => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get updatedAt => dateTime()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId, id};
+}
+
+/// 旧日历块一次性提升为自有日程的台账：是否已提升、提升数量与可回滚副本。
+///
+/// 不进入整份业务快照：这是本机的迁移证据，不是用户业务数据。
+class LocalScheduleMigrations extends Table {
+  TextColumn get userId => text()();
+  TextColumn get migrationId => text()();
+  TextColumn get status => text()();
+  IntColumn get sourceBlockCount => integer()();
+  IntColumn get promotedCount => integer()();
+  TextColumn get promotedScheduleIds =>
+      text().withDefault(const Constant('[]'))();
+  TextColumn get backupPayload => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get completedAt => dateTime()();
+  DateTimeColumn get rolledBackAt => dateTime().nullable()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {userId};
+}
+
 class LocalUserLifecycleStates extends Table {
   TextColumn get userId => text()();
   BoolColumn get isSuspended => boolean().withDefault(const Constant(false))();
@@ -420,6 +476,8 @@ class LocalCloudRecoveryPoints extends Table {
     FocusSyncSources,
     LocalCalendarSources,
     LocalCalendarBlocks,
+    LocalSchedules,
+    LocalScheduleMigrations,
     LocalUserLifecycleStates,
     LocalProfileAccounts,
     LocalProfileClearMarks,
@@ -435,6 +493,8 @@ class PactaDatabase extends _$PactaDatabase {
     final rows = await customSelect('''
       SELECT user_id FROM local_calendar_blocks
       UNION SELECT user_id FROM local_calendar_sources
+      UNION SELECT user_id FROM local_schedules
+      UNION SELECT user_id FROM local_schedule_migrations
       UNION SELECT user_id FROM task_sync_entries
       UNION SELECT user_id FROM focus_sync_sources
       UNION SELECT user_id FROM focus_nodes
@@ -472,6 +532,13 @@ class PactaDatabase extends _$PactaDatabase {
       )..where((row) => row.userId.equals(userId))).go();
       await (delete(
         localCalendarSources,
+      )..where((row) => row.userId.equals(userId))).go();
+      // 日程与其迁移回滚副本同属该账号的业务数据，清除后不得残留。
+      await (delete(
+        localSchedules,
+      )..where((row) => row.userId.equals(userId))).go();
+      await (delete(
+        localScheduleMigrations,
       )..where((row) => row.userId.equals(userId))).go();
       await (delete(
         taskSyncEntries,
@@ -555,11 +622,11 @@ class PactaDatabase extends _$PactaDatabase {
 
   /// Local schema 32.
   ///
-  /// 30 added the account display time zone; 31 is reserved for the core
-  /// merger's own migration, so this ticket uses 32 to leave that number free.
-  /// Both account-time-zone columns are added defensively (see the migration
-  /// below), because provisional 30 fixtures can already carry `time_zone_id`
-  /// while a plain 30 database does not.
+  /// 31 merges the schedules table and the appointment-preparation column from
+  /// the core integration branch; 32 adds the account display time zone and the
+  /// one-shot upload intent on top of it. Both time-zone columns are added
+  /// defensively (see the migration below), because provisional 30 fixtures can
+  /// already carry `time_zone_id` while a plain 30 database does not.
   @override
   int get schemaVersion => 32;
 
@@ -742,34 +809,111 @@ class PactaDatabase extends _$PactaDatabase {
       if (from < 29) {
         await m.createTable(localProfileClearMarks);
       }
+      // 31：日程表与预约准备时长合并为同一次本地升级。
+      //
+      // 31 是核心合并的版本号（32 是本 profile 票据）。合并前两个票据各自
+      // 独立发布过一个残缺的 30：03 只有 local_schedules，08 只有
+      // preparation_seconds 列。这里按 SQLite 的实际结构只补缺少的那一半，
+      // 不重建、不清空、不重算已存记录：
+      //   * < 30 的老库：建表 + 补列 + 提升旧日历块。
+      //   * 03 的 30：只补 preparation_seconds 列。
+      //   * 08 的 30：只建表并提升旧日历块。
+      // 用存在性检查而不是版本号区间，重复升级或回拨 user_version 都安全。
+      if (from < 31) {
+        await ensureMergedSchedulesSchema(this, m);
+      }
       if (from < 32) {
         // Account-level display time zone and the one-shot upload intent.
         // Existing rows keep the zone null, which the profile repository seeds
-        // once from the superseded device value. The column probe keeps this
-        // migration safe for provisional schema-30 databases (column present)
-        // and for fixtures that predate it (column absent); 31 stays unused for
-        // the core merger.
-        final columns = await customSelect(
-          'PRAGMA table_info(local_profile_accounts)',
+        // once from the superseded device value. Structural probes keep this
+        // migration safe for provisional schema-30 databases (zone column
+        // present), for partially restored databases that never had the profile
+        // table, and for fixtures written before either column existed.
+        final profileTable = await customSelect(
+          "SELECT name FROM sqlite_master WHERE type = 'table' "
+          "AND name = 'local_profile_accounts'",
         ).get();
-        final names = columns.map((row) => row.read<String>('name')).toSet();
-        if (!names.contains('time_zone_id')) {
-          await m.addColumn(
-            localProfileAccounts,
-            localProfileAccounts.timeZoneId,
-          );
-        }
-        if (!names.contains('pending_time_zone_upload')) {
-          await m.addColumn(
-            localProfileAccounts,
-            localProfileAccounts.pendingTimeZoneUpload,
-          );
+        if (profileTable.isEmpty) {
+          await m.createTable(localProfileAccounts);
+        } else {
+          final columns = await customSelect(
+            'PRAGMA table_info(local_profile_accounts)',
+          ).get();
+          final names = columns.map((row) => row.read<String>('name')).toSet();
+          if (!names.contains('time_zone_id')) {
+            await m.addColumn(
+              localProfileAccounts,
+              localProfileAccounts.timeZoneId,
+            );
+          }
+          if (!names.contains('pending_time_zone_upload')) {
+            await m.addColumn(
+              localProfileAccounts,
+              localProfileAccounts.pendingTimeZoneUpload,
+            );
+          }
         }
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);
       }
     },
+  );
+}
+
+/// v31 结构：自有日程表与预约准备时长必须同时存在。
+///
+/// 合并前两个票据各自发布过一个残缺的 schema 30，因此这里按实际结构补缺，
+/// 不依赖版本号区间：已存在的表/列永远不重建，已存数据永远不清空。
+Future<void> ensureMergedSchedulesSchema(
+  PactaDatabase database,
+  Migrator migrator,
+) async {
+  final tableNames = await _sqliteTableNames(database);
+  final needsSchedules = !tableNames.contains('local_schedules');
+  if (needsSchedules) {
+    await migrator.createTable(database.localSchedules);
+  }
+  if (!tableNames.contains('local_schedule_migrations')) {
+    await migrator.createTable(database.localScheduleMigrations);
+  }
+  await _addPreparationSecondsIfMissing(database, migrator);
+  if (needsSchedules) {
+    // 旧日历块一次性提升为自有日程副本；失败则整个升级事务回滚，
+    // 不会留下半份日程或半份回滚副本。
+    await promoteLegacyCalendarBlocksInTransaction(
+      database,
+      migratedAt: DateTime.now().toUtc(),
+    );
+  }
+}
+
+Future<Set<String>> _sqliteTableNames(PactaDatabase database) async {
+  final rows = await database
+      .customSelect("SELECT name FROM sqlite_master WHERE type = 'table'")
+      .get();
+  return {for (final row in rows) row.read<String>('name')};
+}
+
+/// 只在 focus_appointments 已存在且缺 preparation_seconds 时补列。
+///
+/// 版本 6 之前由 createTable 直接建成当前形状；重复升级旧副本或回拨
+/// user_version 的库不会重复加列，也不会改写已存记录。
+Future<void> _addPreparationSecondsIfMissing(
+  PactaDatabase database,
+  Migrator migrator,
+) async {
+  final columns = await database
+      .customSelect('PRAGMA table_info(focus_appointments)')
+      .get();
+  if (columns.isEmpty) return;
+  final hasPreparationSeconds = columns.any(
+    (row) => row.read<String>('name') == 'preparation_seconds',
+  );
+  if (hasPreparationSeconds) return;
+  await migrator.addColumn(
+    database.focusAppointments,
+    database.focusAppointments.preparationSeconds,
   );
 }
 

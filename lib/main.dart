@@ -3414,6 +3414,9 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
   final _durationFocus = flutter.FocusNode();
   late FocusChainMode _mode;
   late final TextEditingController _duration;
+  late final TextEditingController _preparation;
+  late int _preparationMinutes;
+  late bool _customPreparation;
   String? _error;
   bool _busy = false;
 
@@ -3423,12 +3426,16 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
     _durationFocus.addListener(_revealFocusedDuration);
     _mode = widget.initialMode;
     _duration = TextEditingController(text: '25');
+    _preparationMinutes = AppointmentPreparationDuration.defaultMinutes;
+    _customPreparation = false;
+    _preparation = TextEditingController(text: '$_preparationMinutes');
   }
 
   @override
   void dispose() {
     _durationFocus.dispose();
     _duration.dispose();
+    _preparation.dispose();
     super.dispose();
   }
 
@@ -3469,10 +3476,46 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
     }
   }
 
+  /// 本场准备时长；自定义非法时返回 null，由界面就地拒绝而不是截断。
+  Duration? _resolvedPreparation() {
+    if (!_customPreparation) {
+      return AppointmentPreparationDuration.validateMinutes(
+        _preparationMinutes,
+      );
+    }
+    final minutes = int.tryParse(_preparation.text.trim());
+    if (minutes == null) return null;
+    try {
+      return AppointmentPreparationDuration.validateMinutes(minutes);
+    } on ArgumentError {
+      return null;
+    }
+  }
+
+  String get _preparationButtonLabel {
+    final preparation = _resolvedPreparation();
+    if (preparation == null) return '开始准备（自定义）';
+    return '开始准备（${preparation.inMinutes}分钟）';
+  }
+
+  void _showPreparationError() {
+    setState(() => _error = AppointmentPreparationDuration.invalidMessage);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _errorKey.currentContext;
+      if (!mounted || context == null) return;
+      Scrollable.ensureVisible(context, alignment: 1);
+    });
+  }
+
   Future<void> _startAppointment() async {
     final minutes = int.tryParse(_duration.text.trim());
     if (minutes == null || minutes <= 0) {
       _showDurationError();
+      return;
+    }
+    final preparation = _resolvedPreparation();
+    if (preparation == null) {
+      _showPreparationError();
       return;
     }
     setState(() {
@@ -3491,6 +3534,7 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
             taskId: widget.task.id,
             mode: _mode,
             duration: Duration(minutes: minutes),
+            preparation: preparation,
           );
       if (mounted) Navigator.of(context).pop(appointment);
     } catch (error) {
@@ -3561,6 +3605,50 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: '时长（分钟）'),
               ),
+              const SizedBox(height: 14),
+              Text('预约准备时长', style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final minutes in AppointmentPreparationDuration.presets)
+                    ChoiceChip(
+                      label: Text('$minutes 分钟'),
+                      selected:
+                          !_customPreparation && _preparationMinutes == minutes,
+                      onSelected: _busy
+                          ? null
+                          : (_) => setState(() {
+                              _customPreparation = false;
+                              _preparationMinutes = minutes;
+                            }),
+                    ),
+                  ChoiceChip(
+                    label: const Text('自定义'),
+                    selected: _customPreparation,
+                    onSelected: _busy
+                        ? null
+                        : (_) => setState(() {
+                            _customPreparation = true;
+                            _preparation.text = '$_preparationMinutes';
+                          }),
+                  ),
+                ],
+              ),
+              if (_customPreparation) ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _preparation,
+                  enabled: !_busy,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: '自定义准备时长（分钟）',
+                    helperText: '1–60 分钟；超出范围或非整数不会开始预约。',
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
               if (_error != null) ...[
                 const SizedBox(height: 10),
                 Text(
@@ -3576,7 +3664,7 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
                 const SizedBox(height: 10),
               ],
               const Text(
-                '触发信号和专注标志由你执行。可立即开始专注，或先准备15分钟；准备结束自动进入专注，无需再次执行专注标志。',
+                '触发信号和专注标志由你执行。可立即开始专注，或先按本场准备时长准备；准备结束自动进入专注，无需再次执行专注标志。',
               ),
             ],
           ),
@@ -3590,7 +3678,7 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
       ),
       OutlinedButton(
         onPressed: _busy ? null : _startAppointment,
-        child: const Text('开始准备（15分钟）'),
+        child: Text(_preparationButtonLabel),
       ),
       FilledButton(
         onPressed: _busy ? null : _start,
@@ -3910,10 +3998,16 @@ class _AppointmentPreparationPageState
   Widget build(BuildContext context) {
     final appointment = _current ?? widget.appointment;
     final now = DateTime.now().toUtc();
+    final preparationSeconds = appointment.effectivePreparationSeconds;
     final remainingSeconds = appointment.isActive
-        ? appointment.endsAt.difference(now).inSeconds.clamp(0, 15 * 60)
+        ? appointment.endsAt
+              .difference(now)
+              .inSeconds
+              .clamp(0, preparationSeconds)
         : 0;
-    final progress = 1 - (remainingSeconds / (15 * 60));
+    final progress = preparationSeconds <= 0
+        ? 0.0
+        : 1 - (remainingSeconds / preparationSeconds);
     final tasks = _tasks;
     final canEdit = !_busy && !appointment.isPendingReview;
     final canProceed = !_busy;
@@ -3935,7 +4029,7 @@ class _AppointmentPreparationPageState
                 appointment.isPendingReview
                     ? '两端对这份预约的配置存在分歧，自动交接已暂停，当前来源待核对。你仍可继续此预约或取消。'
                     : appointment.isActive
-                    ? '准备结束后自动进入专注，不需要再次点击或执行专注标志。'
+                    ? '本场准备 ${AppointmentPreparationDuration.describe(preparationSeconds)}，结束后自动进入专注，不需要再次点击或执行专注标志。'
                     : appointment.isFailed
                     ? '预约已取消，预约链当前记录已清零。'
                     : '预约已成功进入专注。',

@@ -5,6 +5,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
+import 'package:pacta/src/sync/cloud_snapshot_repository.dart'
+    show cloudSnapshotSchemaVersion;
 import 'package:pacta/src/sync/legacy_cloud_snapshot.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 
@@ -127,8 +129,10 @@ void main() {
       final state = await converter.convert(userId: userId, records: records);
 
       expect(state, isNotNull);
-      expect(state!.rowCount, 6);
-      expect(state.payload['schemaVersion'], 1);
+      // 旧日历块在抓取快照之前被提升为自有日程，因此多出一行。
+      expect(state!.rowCount, 7);
+
+      expect(state.payload['schemaVersion'], cloudSnapshotSchemaVersion);
       expect(state.payload['userId'], userId);
       final tables = state.payload['tables'] as Map<String, dynamic>;
       final goal = (tables['local_goals'] as List).single as Map;
@@ -163,6 +167,81 @@ void main() {
         event['starts_at'],
         DateTime.parse('2026-09-04T00:00:00Z').millisecondsSinceEpoch ~/ 1000,
       );
+
+      // 旧云表导入的是“当前库 + 晚到的旧块”，升级已先发生，因此必须在这里
+      // 显式提升，否则快照会整块漏掉日程。
+      final schedule = (tables['local_schedules'] as List).single as Map;
+      expect(schedule['origin'], 'legacyCalendarBlock');
+      expect(schedule['event_identity'], 'event-1:20260904');
+      expect(schedule['source_event_id'], 'event-1');
+      expect(schedule['all_day'], 1);
+      expect(jsonDecode(schedule['source_ids'] as String), ['calendar-1']);
+      expect(jsonDecode(schedule['source_names'] as String), [
+        'Legacy calendar',
+      ]);
+    },
+  );
+
+  test(
+    'promotes late legacy calendar blocks before capture and stays idempotent',
+    () async {
+      final records = _emptyRecords();
+      records['calendar_sources'] = [
+        {
+          'user_id': userId,
+          'source_id': 'calendar-1',
+          'display_name': '工作',
+          'time_zone_id': 'Asia/Shanghai',
+          'updated_at': '2026-09-02T06:00:00Z',
+        },
+      ];
+      records['calendar_blocks'] = [
+        {
+          'user_id': userId,
+          'source_id': 'calendar-1',
+          'source_event_id': 'event-1',
+          'occurrence_id': 'event-1:20260904',
+          'event_identity': 'event-1:20260904',
+          'title': '周会',
+          'starts_at': '2026-09-04T01:00:00Z',
+          'ends_at': '2026-09-04T02:00:00Z',
+          'availability': 'busy',
+          'time_zone_id': 'Asia/Shanghai',
+          'updated_at': '2026-09-02T07:00:00Z',
+        },
+        {
+          'user_id': userId,
+          'source_id': 'calendar-1',
+          'source_event_id': 'event-2',
+          'occurrence_id': 'event-2:20260905',
+          'event_identity': 'event-2:20260905',
+          'title': '体检',
+          'starts_at': '2026-09-05T03:00:00Z',
+          'ends_at': '2026-09-05T04:00:00Z',
+          'availability': 'busy',
+          'time_zone_id': 'Asia/Shanghai',
+          'updated_at': '2026-09-02T08:00:00Z',
+        },
+      ];
+
+      final first = await converter.convert(userId: userId, records: records);
+      expect(first, isNotNull);
+      final tables = first!.payload['tables'] as Map<String, dynamic>;
+      final schedules = tables['local_schedules'] as List;
+      expect(schedules, hasLength(2));
+      expect(schedules.map((row) => (row as Map)['origin']).toSet(), {
+        'legacyCalendarBlock',
+      });
+      expect(schedules.map((row) => (row as Map)['event_identity']).toSet(), {
+        'event-1:20260904',
+        'event-2:20260905',
+      });
+      // 提升时间取自旧块自身的更新时间，因此重复转换得到同一份快照。
+      expect(first.rowCount, 5);
+
+      final second = await converter.convert(userId: userId, records: records);
+      expect(second, isNotNull);
+      expect(jsonEncode(second!.payload), jsonEncode(first.payload));
     },
   );
 

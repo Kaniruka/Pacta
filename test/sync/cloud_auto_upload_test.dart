@@ -572,6 +572,69 @@ void main() {
     expect(await remote.history(userId: _userId), hasLength(1));
   });
 
+  test('升级前冻结的旧版载荷被拒绝后按当前版本重发，不重复使用旧请求身份', () async {
+    final coordinator = coordinatorFor();
+    await coordinator.setEnabled(true);
+    await coordinator.enqueue();
+    expect(remote.uploadCalls, 1);
+    await seedGoal('升级之后的新内容');
+    remote.rejectOutdatedSchema = true;
+
+    final legacyPayload = <String, dynamic>{
+      'schemaVersion': 1,
+      'userId': _userId,
+      'tables': <String, dynamic>{},
+    };
+    final legacyFingerprint = repository.fingerprintOfPayload(legacyPayload);
+    await store.save(
+      _userId,
+      CloudAutoUploadQueue(
+        pending: true,
+        requestedAt: DateTime.utc(2026, 11, 15, 9),
+        request: CloudAutoUploadAttempt(
+          requestId: 'legacy-request',
+          fingerprint: legacyFingerprint,
+          expectedRevision: 1,
+          startedAt: DateTime.utc(2026, 11, 15, 9),
+          attempted: true,
+          payload: legacyPayload,
+          rowCount: 0,
+          dataUpdatedAt: DateTime.utc(2026, 11, 15, 9),
+        ),
+      ),
+    );
+
+    await coordinator.trigger();
+
+    // 旧请求未被写入：队列不被永久阻断，改用当前版本载荷与新请求身份重发。
+    expect(coordinator.blockedReason, isNull);
+    expect(remote.requestIds, ['request-1', 'legacy-request', 'request-2']);
+    expect(remote.payloads.last['schemaVersion'], cloudSnapshotSchemaVersion);
+    expect(remote.payloads[1]['schemaVersion'], 1);
+    final queue = await store.load(_userId);
+    expect(queue.hasWork, isFalse);
+    expect(queue.request, isNull);
+    expect((await repository.loadSyncResult())!.cloudRevision, 2);
+  });
+
+  test('当前载荷版本仍被服务端拒绝时停止自动上传并提示更新', () async {
+    final coordinator = coordinatorFor();
+    await coordinator.setEnabled(true);
+    remote.rejectAnySchema = true;
+
+    await coordinator.enqueue();
+
+    expect(
+      coordinator.blockedReason,
+      '该上传请求使用旧版云端载荷格式，本次没有写入；请更新 Pacta 后重新同步。',
+    );
+    final uploadsAfterBlock = remote.uploadCalls;
+    expect((await store.load(_userId)).request, isNotNull);
+    await coordinator.enqueue();
+    await coordinator.trigger();
+    expect(remote.uploadCalls, uploadsAfterBlock);
+  });
+
   test('恢复备份前取消队列后不再自动上传历史内容', () async {
     final coordinator = coordinatorFor();
     await coordinator.setEnabled(true);
@@ -588,10 +651,17 @@ void main() {
 
 class _TrackingRemote extends InMemoryCloudSnapshotRemote {
   final List<String?> requestIds = [];
+  final List<Map<String, dynamic>> payloads = [];
   int uploadCalls = 0;
   bool failUploads = false;
   bool loseNextResponse = false;
   bool requestIdUnsupported = false;
+
+  /// 模拟服务端载荷版本保护：拒绝非当前版本的上传（PT426 映射后的类型）。
+  bool rejectOutdatedSchema = false;
+
+  /// 模拟服务端要求更高版本：拒绝任何本机当前版本的上传。
+  bool rejectAnySchema = false;
   Completer<void>? uploadGate;
 
   /// 服务端已处理、应答尚未返回的窗口。
@@ -626,8 +696,14 @@ class _TrackingRemote extends InMemoryCloudSnapshotRemote {
   }) async {
     uploadCalls++;
     requestIds.add(requestId);
+    payloads.add(payload);
     if (requestIdUnsupported && requestId != null) {
       throw CloudUploadRequestIdUnsupported();
+    }
+    if (rejectAnySchema ||
+        (rejectOutdatedSchema &&
+            payload['schemaVersion'] != cloudSnapshotSchemaVersion)) {
+      throw CloudSnapshotSchemaOutdated();
     }
     if (!uploadStarted.isCompleted) uploadStarted.complete();
     final gate = uploadGate;

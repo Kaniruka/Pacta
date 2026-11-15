@@ -138,9 +138,10 @@ void main() {
     await tester.ensureVisible(find.byTooltip('更多'));
     await tester.tap(find.byTooltip('更多'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('检查点与失败记录'));
+    await tester.tap(find.text('失败记录'));
     await tester.pumpAndSettle();
-    expect(find.text('查看失败记录'), findsOneWidget);
+    expect(find.text('国策失败记录'), findsOneWidget);
+    expect(find.text('检查点说明'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));

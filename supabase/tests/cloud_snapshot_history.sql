@@ -60,9 +60,9 @@ begin
     perform public.save_cloud_business_snapshot(
       index,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
-        'tables', '{}'::jsonb
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
       ),
       'device-a', 'Pixel 7（Android）', now(), 0
     );
@@ -104,9 +104,9 @@ begin
     perform public.save_cloud_business_snapshot(
       3,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
-        'tables', '{}'::jsonb
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
       ),
       'device-a', 'Pixel 7（Android）', now(), 0
     );
@@ -133,9 +133,9 @@ begin
   saved := public.save_cloud_business_snapshot(
     17,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', current_setting('history_test.owner_id'),
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
     ),
     'device-a', 'Pixel 7（Android）', now(), 0,
     null, null, null, 'request-92'
@@ -143,9 +143,9 @@ begin
   retried := public.save_cloud_business_snapshot(
     17,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', current_setting('history_test.owner_id'),
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
     ),
     'device-a', 'Pixel 7（Android）', now(), 0,
     null, null, null, 'request-92'
@@ -176,9 +176,9 @@ begin
   owner_saved := public.save_cloud_business_snapshot(
     18,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', current_setting('history_test.owner_id'),
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
     ),
     'device-a', 'Pixel 7（Android）', now(), 0,
     null, null, null, 'request-92-second'
@@ -192,9 +192,9 @@ begin
   perform public.save_cloud_business_snapshot(
     owner_revision,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', current_setting('history_test.owner_id'),
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
     ),
     'device-b', 'DESKTOP-ABC（Windows）', now(), 0
   );
@@ -202,9 +202,9 @@ begin
   retried := public.save_cloud_business_snapshot(
     18,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', current_setting('history_test.owner_id'),
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
     ),
     'device-a', 'Pixel 7（Android）', now(), 0,
     null, null, null, 'request-92-second'
@@ -226,9 +226,9 @@ begin
     perform public.save_cloud_business_snapshot(
       current_setting('history_test.request_two_revision')::bigint,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
-        'tables', jsonb_build_object('marker', 'different')
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'marker', 'different')
       ),
       'device-a', 'Pixel 7（Android）', now(), 0,
       null, null, null, 'request-92-second'
@@ -261,9 +261,9 @@ begin
     perform public.save_cloud_business_snapshot(
       current,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
-        'tables', '{}'::jsonb
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
       ),
       'device-c', 'Filler device', now(), 0
     );
@@ -285,9 +285,9 @@ begin
     perform public.save_cloud_business_snapshot(
       current,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
-        'tables', '{}'::jsonb
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
       ),
       'device-a', 'Pixel 7（Android）', now(), 0,
       null, null, null, 'request-92-second'
@@ -335,9 +335,9 @@ begin
       current_setting('history_test.owner_id')::uuid,
       9999,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', 2,
         'userId', current_setting('history_test.owner_id'),
-        'tables', '{}'::jsonb
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
       ),
       'direct-write', 'Direct write', now(), 0
     );
@@ -404,9 +404,9 @@ begin
     and request.request_id = 'request-92';
   expected_fingerprint := md5(
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', owner_id,
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
     )::text
   );
   if fingerprint is distinct from expected_fingerprint then
@@ -469,9 +469,9 @@ begin
     target_id,
     1,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 2,
       'userId', target_id,
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
     ),
     'seed', 'Seed', now(), 0
   );

@@ -210,6 +210,10 @@ class CloudAutoUploadCoordinator extends ChangeNotifier {
       }
       await _stopForUnhandledCloud(generation);
       return false;
+    } on CloudSnapshotSchemaOutdated {
+      // 服务端只接受当前载荷版本，且已确认这次上传完全没有写入：丢弃冻结的
+      // 旧版本请求身份，保留待传意图，由本轮按当前版本重新生成载荷与新请求。
+      return _mutateQueue((queue) => queue.clearRequest(), generation);
     } catch (_) {
       // 离线、超时或登录状态变化：保留身份，下次继续。
       return false;
@@ -276,6 +280,10 @@ class CloudAutoUploadCoordinator extends ChangeNotifier {
         return;
       }
       await _stopForUnhandledCloud(generation);
+    } on CloudSnapshotSchemaOutdated catch (error) {
+      // 本机已按当前版本生成载荷，服务端仍要求更高的载荷版本：这是能力缺失，
+      // 反复重试不会成功。停止并提示更新，保留冻结请求与待传意图。
+      await _block(error.message, generation);
     } catch (_) {
       // 失败保留请求与意图，联网或恢复访问后重试。
     }
