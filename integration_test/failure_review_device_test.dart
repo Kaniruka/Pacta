@@ -241,20 +241,31 @@ Future<List<String>> _runScenario({
     expect(tester.takeException(), isNull, reason: '截图 $name 不应抛异常');
   }
 
-  // 真实失败记录：两张卡在同一检查点熄灭，构成一组失败。
-  for (final name in ['接到临时需求', '把报告写完']) {
-    final card = await tree.createCard(
-      NationalFocusCardDraft(name: name, action: '先做十五分钟'),
-    );
-    await tree.placeCard(cardId: card.id, parentId: null);
-    await tree.lightCard(card.id);
-  }
+  // 真实失败记录：一条父子边（长中文名与长要求）+ 一个独立根，
+  // 三张卡在同一检查点熄灭，构成一组失败。
+  const longName = '把这个季度的复盘、风险与下季度计划一次写完';
+  const longAction = '先列出三个必须交付的结论，再逐条补齐证据、负责人和截止时间';
+  final parent = await tree.createCard(
+    const NationalFocusCardDraft(name: longName, action: longAction),
+  );
+  await tree.placeCard(cardId: parent.id, parentId: null);
+  await tree.lightCard(parent.id);
+  final child = await tree.createCard(
+    const NationalFocusCardDraft(name: '周三前发出评审邀请', action: '列出五个必须到场的评审人'),
+  );
+  await tree.placeCard(cardId: child.id, parentId: parent.id);
+  await tree.lightCard(child.id);
+  final independent = await tree.createCard(
+    const NationalFocusCardDraft(name: '独立根：整理桌面', action: '清空收件箱'),
+  );
+  await tree.placeCard(cardId: independent.id, parentId: null);
+  await tree.lightCard(independent.id);
   now = DateTime.utc(2026, 11, 13, 20);
   await tree.settleDueCheckpoints();
   now = DateTime.utc(2026, 11, 14, 20);
   await tree.settleDueCheckpoints();
   final failures = await tree.getFailures();
-  expect(failures, hasLength(2), reason: '看板提示需要一组含两张卡的失败记录');
+  expect(failures, hasLength(3), reason: '看板提示需要一组含三张卡的失败记录');
   final batchId = failures.first.batchId;
   expect(failures.every((failure) => failure.batchId == batchId), isTrue);
 
@@ -298,7 +309,7 @@ Future<List<String>> _runScenario({
   await shot('02-history-collapsed');
 
   // 3. 展开这一组失败记录。
-  await tester.tap(find.textContaining('2 个节点'));
+  await tester.tap(find.textContaining('3 个节点'));
   await pumpUi();
   expect(find.text('查看当时树'), findsOneWidget);
   await shot('03-history-expanded');
@@ -311,7 +322,7 @@ Future<List<String>> _runScenario({
 
   // 5. 节点冻结要求。
   final nodeFinder = find.byKey(
-    ValueKey('national-focus-history-node-${failures.first.cardId}'),
+    ValueKey('national-focus-history-node-${parent.id}'),
   );
   expect(nodeFinder, findsOneWidget, reason: '冻结树应包含失败节点');
   await tester.ensureVisible(nodeFinder);
@@ -319,6 +330,11 @@ Future<List<String>> _runScenario({
   await pumpUi();
   expect(find.text('冻结要求'), findsOneWidget);
   expect(find.text('当时状态'), findsOneWidget);
+  // 历史措辞：待今日确认，而不是实时动作标签「确认」。
+  expect(find.text('待今日确认'), findsWidgets);
+  expect(find.text('确认'), findsNothing);
+  // 冻结的长中文要求完整保留。
+  expect(find.text(longAction), findsWidgets);
   await shot('05-frozen-node-requirements');
 
   // 关闭节点详情，回到记录页并保留同一条记录上下文。
@@ -327,7 +343,7 @@ Future<List<String>> _runScenario({
   await tester.pageBack();
   await pumpUi();
   expect(find.byType(NationalFocusFailureHistoryPage), findsOneWidget);
-  expect(find.textContaining('2 个节点'), findsOneWidget);
+  expect(find.textContaining('3 个节点'), findsOneWidget);
   expect(
     find.byKey(const ValueKey('national-focus-mark-reviewed')),
     findsOneWidget,
@@ -350,7 +366,7 @@ Future<List<String>> _runScenario({
     reason: '不填说明也能标为已回顾',
   );
   expect(marked.map((failure) => failure.treeSnapshot.length).toSet(), {
-    2,
+    3,
   }, reason: '回顾不得改写冻结快照');
   await shot('07-history-reviewed');
 

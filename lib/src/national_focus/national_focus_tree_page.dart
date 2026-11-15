@@ -1007,11 +1007,22 @@ class _TreeCanvas extends StatefulWidget {
     required this.treeWidth,
     required this.treeHeight,
     required this.child,
+    this.minimumFitScale = 0,
+    this.fitViewportToContent = false,
   });
 
   final double treeWidth;
   final double treeHeight;
   final Widget child;
+
+  /// 初始取景允许的最小可读比例。0 表示沿用现有树的行为：
+  /// 只在需要时缩小，绝不放大原始尺寸的内容；历史视角用 0.85 保证初始
+  /// 字号可读，显式「适应屏幕」仍按全览拟合。
+  final double minimumFitScale;
+
+  /// 视口高度是否贴合内容高度。历史小森林据此不再漂浮在整屏空白里；
+  /// 现有树保持固定视口比例不变。
+  final bool fitViewportToContent;
 
   @override
   State<_TreeCanvas> createState() => _TreeCanvasState();
@@ -1096,7 +1107,10 @@ class _TreeCanvasState extends State<_TreeCanvas> {
       ..scaleByDouble(next, next, 1, 1);
   }
 
-  double _fitScale(Size viewport) => math.min(
+  /// 全览拟合比例：把整棵树放进视口，不套用可读下限。
+  ///
+  /// 「适应屏幕」按这个比例取景，保证宽兄弟与高森林都能完整看到。
+  double _fitAllScale(Size viewport) => math.min(
     1.0,
     math.min(
       math.max(1, viewport.width - 24) / widget.treeWidth,
@@ -1104,11 +1118,19 @@ class _TreeCanvasState extends State<_TreeCanvas> {
     ),
   );
 
-  double _minimumScale(Size viewport) => math.min(0.01, _fitScale(viewport));
+  /// 初始取景比例：在全览比例之上套用可读下限。
+  ///
+  /// 历史视角因此一开始就把字号保持在 85% 以上，即便森林更大；
+  /// 现有树的 minimumFitScale 为 0，初始取景与全览完全一致。
+  double _initialFitScale(Size viewport) =>
+      math.max(_fitAllScale(viewport), widget.minimumFitScale.clamp(0.0, 1.0));
 
-  void _fit(Size viewport) {
+  double _minimumScale(Size viewport) =>
+      math.min(0.01, _initialFitScale(viewport));
+
+  void _fit(Size viewport, {bool fitAll = false}) {
     _viewport = viewport;
-    final scale = _fitScale(viewport);
+    final scale = fitAll ? _fitAllScale(viewport) : _initialFitScale(viewport);
     _transform.value = Matrix4.identity()
       ..translateByDouble(
         (viewport.width - widget.treeWidth * scale) / 2,
@@ -1123,9 +1145,15 @@ class _TreeCanvasState extends State<_TreeCanvas> {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
+      final availableHeight = (MediaQuery.sizeOf(context).height * 0.65).clamp(
+        360.0,
+        720.0,
+      );
       final viewport = Size(
         constraints.maxWidth,
-        (MediaQuery.sizeOf(context).height * 0.65).clamp(360.0, 720.0),
+        widget.fitViewportToContent
+            ? (widget.treeHeight + 24).clamp(200.0, availableHeight)
+            : availableHeight,
       );
       if (_viewport != viewport) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1213,7 +1241,7 @@ class _TreeCanvasState extends State<_TreeCanvas> {
                   borderRadius: BorderRadius.circular(12),
                   child: IconButton(
                     tooltip: '适应屏幕',
-                    onPressed: () => _fit(viewport),
+                    onPressed: () => _fit(viewport, fitAll: true),
                     icon: const Icon(Icons.fit_screen),
                   ),
                 ),
@@ -2903,20 +2931,21 @@ class NationalFocusFailureTreePage extends StatelessWidget {
               )
             else
               _TreeCanvas(
-                treeWidth: index.roots.fold<double>(
-                  0,
-                  (width, root) =>
-                      width + index.branchWidth(root, _historyNodeWidth),
-                ),
-                treeHeight: index.depth * (nodeHeight + _historyBranchGap),
-                child: Row(
+                treeWidth: _historyForestWidth(index, _historyNodeWidth),
+                treeHeight: _historyForestHeight(index, nodeHeight),
+                minimumFitScale: _historyMinimumFitScale,
+                fitViewportToContent: true,
+                // 独立根纵向排列：小森林在窄窗里按原始尺寸显示，
+                // 不会为了并排放置两个根把字号压到看不清。
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     for (
                       var position = 0;
                       position < index.roots.length;
                       position++
-                    )
+                    ) ...[
+                      if (position > 0) const SizedBox(height: _historyRootGap),
                       _buildBranch(
                         context: context,
                         card: index.roots[position],
@@ -2924,6 +2953,7 @@ class NationalFocusFailureTreePage extends StatelessWidget {
                         index: index,
                         nodeHeight: nodeHeight,
                       ),
+                    ],
                   ],
                 ),
               ),
@@ -3029,8 +3059,8 @@ class NationalFocusFailureTreePage extends StatelessWidget {
               _FieldText(
                 label: '当时状态',
                 value: card.isInTree
-                    ? card.state.label
-                    : '${card.state.label}（当时在卡片库）',
+                    ? _historyStateLabel(card.state)
+                    : '${_historyStateLabel(card.state)}（当时在卡片库）',
               ),
               const SizedBox(height: 12),
               Text('冻结要求', style: Theme.of(sheetContext).textTheme.titleSmall),
@@ -3100,9 +3130,10 @@ class NationalFocusFailureTreePage extends StatelessWidget {
     }
     final cascadeSourceId = card.cascadeSourceCardId;
     if (cascadeSourceId != null) {
+      final priorState = card.cascadePriorState;
       notes.add(
         '因「${index.nameOf(cascadeSourceId)}」连带熄灭；'
-        '熄灭前状态：${card.cascadePriorState?.label ?? '未知'}。',
+        '熄灭前状态：${priorState == null ? '未知' : _historyStateLabel(priorState)}。',
       );
     }
     return notes;
@@ -3111,9 +3142,57 @@ class NationalFocusFailureTreePage extends StatelessWidget {
 
 const _historyNodeWidth = 210.0;
 const _historyBranchGap = 36.0;
+const _historyRootGap = 28.0;
+
+/// 历史视角的初始可读下限：即便森林较大，初始取景也不把字号压到
+/// 原始尺寸的 85% 以下；显式「适应屏幕」仍按全览拟合，保证整片森林
+/// 完整可见；捏合可继续缩放、平移。
+const _historyMinimumFitScale = 0.85;
 
 double _historyNodeHeight(BuildContext context) =>
     140 * MediaQuery.textScalerOf(context).scale(1);
+
+/// 历史视角对冻结状态的措辞：描述检查点时已经发生的状态，
+/// 而不是沿用实时树里进行时的动作标签（点亮/确认/熄灭）。
+String _historyStateLabel(NationalFocusCardState state) => switch (state) {
+  NationalFocusCardState.lit => '已点亮',
+  NationalFocusCardState.pendingTodayConfirmation => '待今日确认',
+  NationalFocusCardState.extinguished => '已熄灭',
+};
+
+/// 垂直堆叠时整片森林的宽度：舍入到最宽的一支。
+double _historyForestWidth(_HistoryTreeIndex index, double nodeWidth) {
+  var width = 0.0;
+  for (final root in index.roots) {
+    width = math.max(width, index.branchWidth(root, nodeWidth));
+  }
+  return width;
+}
+
+/// 垂直堆叠时整片森林的高度：各根分支高度之和加上根间距。
+double _historyForestHeight(_HistoryTreeIndex index, double nodeHeight) {
+  var height = 0.0;
+  for (final root in index.roots) {
+    height += _historyBranchHeight(index, root, nodeHeight);
+  }
+  if (index.roots.length > 1) {
+    height += _historyRootGap * (index.roots.length - 1);
+  }
+  return height;
+}
+
+double _historyBranchHeight(
+  _HistoryTreeIndex index,
+  NationalFocusCardSnapshot card,
+  double nodeHeight,
+) {
+  final children = index.childrenOf(card.id);
+  if (children.isEmpty) return nodeHeight;
+  final childHeight = children
+      .map((child) => _historyBranchHeight(index, child, nodeHeight))
+      .reduce(math.max);
+  return nodeHeight + _historyBranchGap + childHeight;
+}
 
 /// Groups one frozen snapshot into a browsable forest without changing it.
 ///
@@ -3230,7 +3309,7 @@ class _HistoricalFocusNode extends StatelessWidget {
     return Semantics(
       button: true,
       label:
-          '历史节点 $path，${card.name}，${card.state.label}，'
+          '历史节点 $path，${card.name}，${_historyStateLabel(card.state)}，'
           '连续 ${card.currentConsecutiveDays} 天，打开冻结要求',
       child: Card(
         clipBehavior: Clip.antiAlias,
@@ -3263,7 +3342,7 @@ class _HistoricalFocusNode extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '${card.state.label} · 连续 ${card.currentConsecutiveDays} 天',
+                  '${_historyStateLabel(card.state)} · 连续 ${card.currentConsecutiveDays} 天',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall,
                   maxLines: 1,
