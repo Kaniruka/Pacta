@@ -305,7 +305,45 @@ Future<List<String>> _runScenario({
     await pumpUi();
   }
 
-  Future<void> tapVisible(Finder target) async {
+  /// 计划页的列表是懒加载：从看板返回会保留旧滚动位置，顶部段控可能还没
+  /// 构建，ensureVisible 对"根本不存在"的控件无能为力。这里用有界双向滚动
+  /// 把目标找回来（不重置应用、不放松断言）。
+  Finder planScrollable() => find
+      .descendant(of: find.byType(PlanPage), matching: find.byType(Scrollable))
+      .first;
+
+  Future<void> reveal(Finder target, {bool preferTop = false}) async {
+    if (target.evaluate().isNotEmpty) {
+      await tester.ensureVisible(target);
+      await pumpUi();
+      return;
+    }
+    if (find.byType(PlanPage).evaluate().isEmpty) return;
+    final list = planScrollable();
+    final steps = preferTop ? const [-240.0, 240.0] : const [240.0, -240.0];
+    for (final delta in steps) {
+      try {
+        await tester.scrollUntilVisible(
+          target,
+          delta,
+          scrollable: list,
+          maxScrolls: 14,
+        );
+        await pumpUi();
+        if (target.evaluate().isNotEmpty) {
+          await tester.ensureVisible(target);
+          await pumpUi();
+          return;
+        }
+      } catch (_) {
+        // 这个方向到头仍未找到，换另一个方向继续。
+        await pumpUi();
+      }
+    }
+  }
+
+  Future<void> tapVisible(Finder target, {bool preferTop = false}) async {
+    await reveal(target, preferTop: preferTop);
     await tester.ensureVisible(target);
     await pumpUi();
     expectOnScreen(target, reason: '点击前目标应在视口内');
@@ -403,7 +441,7 @@ Future<List<String>> _runScenario({
   );
 
   // 3. 新建目标表单：浮动标签可见。
-  await tapVisible(find.text('新建目标'));
+  await tapVisible(find.text('新建目标'), preferTop: true);
   expect(find.byType(AlertDialog), findsOneWidget);
   expectOnScreen(_field('目标名称'), reason: '目标名称输入框应在视口内');
   expect(find.text('目标名称'), findsOneWidget);
@@ -506,7 +544,7 @@ Future<List<String>> _runScenario({
   );
 
   // 7. 目标删除：先建一个一次性目标再删掉。
-  await tapVisible(find.text('新建目标'));
+  await tapVisible(find.text('新建目标'), preferTop: true);
   await tester.enterText(_field('目标名称'), '临时目标');
   await pumpUi();
   await saveDialog();
@@ -525,7 +563,7 @@ Future<List<String>> _runScenario({
 
   // 8. 置顶两个目标并手动排序。
   for (final title in ['季度复盘', '本周交付']) {
-    await tapVisible(find.text('新建目标'));
+    await tapVisible(find.text('新建目标'), preferTop: true);
     await tester.enterText(_field('目标名称'), title);
     await pumpUi();
     await saveDialog();
@@ -577,8 +615,10 @@ Future<List<String>> _runScenario({
 
   // 10. 计划日历：一条任务两条安排 + 独立事项。
   await openDestination('计划');
-  await tapVisible(find.text('日历'));
+  await tapVisible(find.text('日历'), preferTop: true);
+  await reveal(find.text('新建安排'), preferTop: true);
   expect(find.text('新建安排'), findsOneWidget);
+  await reveal(find.text('添加事项'), preferTop: true);
   expect(find.text('添加事项'), findsOneWidget);
   await shot('15-calendar', marker: pageText(PlanPage, '新建安排'), about: '计划日历');
 
@@ -776,8 +816,10 @@ Future<List<String>> _runScenario({
   expect(linkedSaved.taskId, linkTask.id, reason: '既有链接不能被保存清空');
 
   // 12. 回到目标视图：任务仍在、置顶顺序仍在。
-  await tapVisible(find.text('目标'));
+  await tapVisible(find.text('目标'), preferTop: true);
+  await reveal(find.text('置顶目标 · 手动顺序'), preferTop: true);
   expect(find.text('置顶目标 · 手动顺序'), findsOneWidget);
+  await reveal(find.text('整理发布材料'), preferTop: true);
   expect(
     _top(tester, find.text('整理发布材料')),
     lessThan(_top(tester, find.text('本周交付'))),
