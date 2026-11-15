@@ -44,6 +44,7 @@ class _Data {
     required this.focus,
     required this.signals,
     required this.taskId,
+    required this.clock,
   });
 
   final PactaDatabase database;
@@ -52,6 +53,7 @@ class _Data {
   final LocalFocusRepository focus;
   final ChainSignalsRepository signals;
   final String taskId;
+  final DateTime Function() clock;
 
   static Future<_Data> create() async {
     const userId = 'focus-chain-first-screen-device';
@@ -119,6 +121,7 @@ class _Data {
       focus: focus,
       signals: signals,
       taskId: task.id,
+      clock: () => now,
     );
   }
 
@@ -165,9 +168,9 @@ void main() {
 
     Future<void> shot(String state) async {
       final name = 'focus-first-$_view-$state';
-      final media = MediaQuery.of(
-        tester.element(find.byKey(const ValueKey('focus-chain-list'))),
-      );
+      // The manager route makes the Focus Chain list offstage; read the
+      // active route's media instead of requiring that page to be visible.
+      final media = MediaQuery.of(tester.element(find.byType(Scaffold).first));
       print(
         '[focus-first] state=$state view=$_view platform=${Platform.operatingSystem} '
         'logical=${(tester.view.physicalSize / tester.view.devicePixelRatio)} '
@@ -195,6 +198,8 @@ void main() {
     }
 
     try {
+      // The host may already be dark; pin the light baseline explicitly.
+      tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
       await tester.pumpWidget(
         RepaintBoundary(
           key: boundaryKey,
@@ -203,6 +208,7 @@ void main() {
             taskRepositoryFactory: (_) => data.tasks,
             focusRepositoryFactory: (_) => data.focus,
             chainSignalsRepositoryFactory: (_) => data.signals,
+            displayClock: data.clock,
           ),
         ),
       );
@@ -237,7 +243,7 @@ void main() {
       tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
       await tester.pumpAndSettle();
       await shot('dark-overview');
-      tester.platformDispatcher.clearPlatformBrightnessTestValue();
+      tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
       await tester.pumpAndSettle();
 
       // 承诺动作编辑：字段标签与保存动作。
