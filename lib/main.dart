@@ -35,6 +35,9 @@ import 'src/national_focus/national_focus_ai_access.dart';
 import 'src/national_focus/national_focus_ai_analysis_page.dart';
 import 'src/national_focus/national_focus_tree_page.dart';
 import 'src/notifications/focus_notification_service.dart';
+import 'src/notifications/schedule_reminder_inbox.dart';
+import 'src/notifications/schedule_reminder_plan.dart';
+import 'src/notifications/schedule_reminder_sync.dart';
 import 'src/profile/account_time_zone.dart';
 import 'src/profile/avatar_picker.dart';
 import 'src/profile/profile_card.dart';
@@ -551,6 +554,18 @@ final focusNotificationServiceProvider = Provider<FocusNotificationService>((
   return DisabledFocusNotificationService();
 });
 
+/// Opens one ordinary schedule reminder.
+///
+/// The Plan destination owns this navigation once it is integrated; until then
+/// the shell keeps the request instead of pretending the destination exists.
+final scheduleReminderOpenHandlerProvider =
+    Provider<Future<void> Function(ScheduleReminderRequest)?>((ref) => null);
+
+/// Holds reminder clicks while the Plan destination is not integrated yet.
+final scheduleReminderInboxProvider = Provider<ScheduleReminderInbox>(
+  (ref) => ScheduleReminderInbox(),
+);
+
 final taskRepositoryFactoryProvider =
     Provider<TaskRepository Function(String userId)>((ref) {
       return (_) => const UnavailableTaskRepository();
@@ -872,6 +887,9 @@ class _AppShellState extends ConsumerState<AppShell>
   late final StreamSubscription<List<ConnectivityResult>>
   _connectivitySubscription;
   late final StreamSubscription<String> _notificationOpenSubscription;
+  late final StreamSubscription<ScheduleReminderRequest>
+  _scheduleOpenSubscription;
+  late final ScheduleReminderSync _scheduleReminderSync;
   late StreamSubscription<List<NationalFocusCard>>
   _nationalFocusReminderSubscription;
   late final NationalFocusCheckpointScheduler _nationalFocusCheckpointScheduler;
@@ -907,6 +925,15 @@ class _AppShellState extends ConsumerState<AppShell>
           _focusNotificationService.takePendingOpenRequest();
           unawaited(_openFocusFlow(payload));
         });
+    _scheduleReminderSync = ScheduleReminderSync(
+      notificationService: _focusNotificationService,
+      accountTimeZoneId: () async {
+        final profile = await ref.read(profileRepositoryProvider).getProfile();
+        return AccountTimeZones.effectiveId(profile.displayTimeZoneId);
+      },
+    );
+    _scheduleOpenSubscription = _focusNotificationService.openScheduleRequests
+        .listen((request) => unawaited(_openScheduleReminder(request)));
     _nationalFocusReminderSubscription = ref
         .read(nationalFocusRepositoryProvider)
         .watchTreeCards()
@@ -923,6 +950,9 @@ class _AppShellState extends ConsumerState<AppShell>
       unawaited(_focusNotificationService.syncDailyOpenReminder());
       final request = _focusNotificationService.takePendingOpenRequest();
       if (request != null) unawaited(_openFocusFlow(request));
+      unawaited(
+        _scheduleReminderSync.attach(ref.read(scheduleRepositoryProvider)),
+      );
     });
   }
 
@@ -930,6 +960,8 @@ class _AppShellState extends ConsumerState<AppShell>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_refreshLocalState(checkCloud: true));
+      // A resume can cross the bounded window; reconcile without replaying.
+      unawaited(_scheduleReminderSync.reconcileOnce());
     }
   }
 
@@ -1019,6 +1051,18 @@ class _AppShellState extends ConsumerState<AppShell>
     }
   }
 
+  Future<void> _openScheduleReminder(ScheduleReminderRequest request) async {
+    if (!mounted) return;
+    _focusNotificationService.takePendingScheduleRequest();
+    final handler = ref.read(scheduleReminderOpenHandlerProvider);
+    if (handler != null) {
+      await handler(request);
+      return;
+    }
+    // 计划目的地（07）尚未集成：把请求留在收件箱给 merger 接上，而不是假装已跳转。
+    ref.read(scheduleReminderInboxProvider).pending = request;
+  }
+
   Future<void> _openFocusFlow(String payload) async {
     if (!mounted) return;
     if (payload.startsWith('daily-open-reminder:')) {
@@ -1092,9 +1136,12 @@ class _AppShellState extends ConsumerState<AppShell>
     WidgetsBinding.instance.removeObserver(this);
     _connectivitySubscription.cancel();
     _notificationOpenSubscription.cancel();
+    _scheduleOpenSubscription.cancel();
     _nationalFocusReminderSubscription.cancel();
     _nationalFocusCheckpointScheduler.dispose();
-    unawaited(_focusNotificationService.releaseUser(_reminderOwnerUserId));
+    unawaited(_scheduleReminderSync.detach());
+    // 正常退出只停止本进程监听，未来 OS 提醒继续排队；登出/切号走 releaseUser。
+    unawaited(_focusNotificationService.detachForProcessExit());
     super.dispose();
   }
 
@@ -1110,10 +1157,16 @@ class _AppShellState extends ConsumerState<AppShell>
     ref.listen(focusRepositoryProvider, (previous, next) {
       unawaited(_syncFocusStatus());
     });
+    ref.watch(scheduleRepositoryProvider);
+    ref.listen(scheduleRepositoryProvider, (previous, next) {
+      unawaited(_scheduleReminderSync.attach(next));
+    });
     ref.listen(authUserIdProvider, (previous, next) {
       if (previous != null && previous != next) {
         // 切换账号作废旧用户的待上传请求，避免随后按错误身份继续。
         unawaited(ref.read(cloudAutoUploadQueueStoreProvider).clear(previous));
+        // 登出/切号时取消旧账号已登记的提醒；正常退出不会走到这里。
+        unawaited(_focusNotificationService.releaseUser(previous));
       }
     });
     ref.watch(cloudVersionCheckProvider);
@@ -4932,7 +4985,14 @@ class _MyPageState extends ConsumerState<MyPage> {
         ),
         const SizedBox(height: 12),
         OutlinedButton.icon(
-          onPressed: () => ref.read(authRepositoryProvider).signOut(),
+          onPressed: () async {
+            final userId = ref.read(authRepositoryProvider).currentUserId;
+            // 明确登出才取消已登记的提醒；正常关应用保留未来项。
+            await ref
+                .read(focusNotificationServiceProvider)
+                .releaseUser(userId);
+            await ref.read(authRepositoryProvider).signOut();
+          },
           icon: const Icon(Icons.logout),
           label: const Text('退出登录'),
         ),
