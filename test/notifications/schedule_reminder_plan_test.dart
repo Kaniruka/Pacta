@@ -47,6 +47,7 @@ void main() {
         ],
         now: now,
         timeZoneId: 'Asia/Tokyo',
+        ownerId: 'user-a',
       );
 
       expect(plans, hasLength(1));
@@ -76,6 +77,7 @@ void main() {
         ],
         now: now,
         timeZoneId: 'Asia/Tokyo',
+        ownerId: 'user-a',
       );
 
       expect(
@@ -110,6 +112,7 @@ void main() {
       ],
       now: now,
       timeZoneId: 'Asia/Tokyo',
+      ownerId: 'user-a',
     );
 
     expect(plans, isEmpty);
@@ -130,6 +133,7 @@ void main() {
       ],
       now: DateTime.utc(2026, 11, 14, 1),
       timeZoneId: 'Asia/Tokyo',
+      ownerId: 'user-a',
     );
 
     expect(plans.single.deliverAt, DateTime.utc(2026, 11, 14, 14, 30));
@@ -150,6 +154,7 @@ void main() {
       ],
       now: DateTime.utc(2027, 3, 1),
       timeZoneId: 'America/New_York',
+      ownerId: 'user-a',
     );
 
     expect(plans.single.deliverAt, DateTime.utc(2027, 3, 15, 4));
@@ -168,6 +173,7 @@ void main() {
         ],
         now: DateTime.utc(2027, 3, 1),
         timeZoneId: 'America/New_York',
+        ownerId: 'user-a',
       );
 
       expect(plans.single.deliverAt, DateTime.utc(2027, 3, 15, 12));
@@ -198,6 +204,7 @@ void main() {
         ],
         now: now,
         timeZoneId: 'Asia/Tokyo',
+        ownerId: 'user-a',
       );
 
       expect(plans.map((plan) => plan.identity).toSet(), hasLength(2));
@@ -225,11 +232,13 @@ void main() {
       schedules: schedules,
       now: now,
       timeZoneId: 'Asia/Tokyo',
+      ownerId: 'user-a',
     );
     final second = ScheduleReminderPlanner.plan(
       schedules: schedules.reversed,
       now: now,
       timeZoneId: 'Asia/Tokyo',
+      ownerId: 'user-a',
     );
 
     final ids = first.map((plan) => plan.notificationId).toList();
@@ -241,14 +250,108 @@ void main() {
     );
   });
 
-  test('payload round-trips the schedule and its account civil day', () {
+  test('payload carries the owner, the schedule and its account civil day', () {
     final request = ScheduleReminderRequest.tryParse(
-      'schedule-reminder:s-1:2026-11-16',
+      'schedule-reminder:user-a:s-1:2026-11-16',
     );
+    expect(request?.ownerId, 'user-a');
     expect(request?.scheduleId, 's-1');
     expect(request?.dateKey, '2026-11-16');
-    expect(request?.toPayload(), 'schedule-reminder:s-1:2026-11-16');
+    expect(request?.toPayload(), 'schedule-reminder:user-a:s-1:2026-11-16');
+    expect(
+      ScheduleReminderRequest.tryParse(
+        'schedule-reminder:user%40mail.test:s-1:2026-11-16',
+      )?.ownerId,
+      'user@mail.test',
+    );
     expect(ScheduleReminderRequest.tryParse('appointment:a-1'), isNull);
     expect(ScheduleReminderRequest.tryParse('schedule-reminder:s-1'), isNull);
+    expect(
+      ScheduleReminderRequest.tryParse('schedule-reminder:user-a:s-1'),
+      isNull,
+    );
+  });
+
+  test('a real hash collision still receives distinct ids', () {
+    final identities = [
+      for (var index = 0; index < 60; index += 1) 'schedule:s-$index',
+    ];
+    final starts = <int, List<String>>{};
+    for (final identity in identities) {
+      starts
+          .putIfAbsent(
+            ScheduleReminderPlanner.startIndexFor(identity, spaceSize: 16),
+            () => [],
+          )
+          .add(identity);
+    }
+    final colliding = starts.values
+        .firstWhere((group) => group.length > 1 && group.length <= 8)
+        .take(8)
+        .toList();
+    expect(colliding.length, greaterThan(1));
+
+    final ids = ScheduleReminderPlanner.allocateIds(colliding, spaceSize: 16);
+    expect(ids.values.toSet(), hasLength(colliding.length));
+  });
+
+  test('registration equality covers identity and payload, not only time', () {
+    final base = ScheduleReminderPlan(
+      ownerId: 'user-a',
+      identity: 'schedule:1',
+      notificationId: 230001,
+      scheduleId: '1',
+      dateKey: '2026-11-16',
+      deliverAt: DateTime.utc(2026, 11, 16, 9, 30),
+      title: '日程提醒',
+      body: '取快递 · 10:00 开始',
+    );
+    final same = ScheduleReminderPlan(
+      ownerId: 'user-a',
+      identity: 'schedule:1',
+      notificationId: 230001,
+      scheduleId: '1',
+      dateKey: '2026-11-16',
+      deliverAt: DateTime.utc(2026, 11, 16, 9, 30),
+      title: '日程提醒',
+      body: '取快递 · 10:00 开始',
+    );
+    final otherOwner = ScheduleReminderPlan(
+      ownerId: 'user-b',
+      identity: 'schedule:1',
+      notificationId: 230001,
+      scheduleId: '1',
+      dateKey: '2026-11-16',
+      deliverAt: DateTime.utc(2026, 11, 16, 9, 30),
+      title: '日程提醒',
+      body: '取快递 · 10:00 开始',
+    );
+    final otherRow = ScheduleReminderPlan(
+      ownerId: 'user-a',
+      identity: 'schedule:2',
+      notificationId: 230001,
+      scheduleId: '2',
+      dateKey: '2026-11-16',
+      deliverAt: DateTime.utc(2026, 11, 16, 9, 30),
+      title: '日程提醒',
+      body: '取快递 · 10:00 开始',
+    );
+
+    expect(base.sameRegistration(same), isTrue);
+    expect(base.sameRegistration(otherOwner), isFalse);
+    expect(base.sameRegistration(otherRow), isFalse);
+  });
+
+  test('id allocation exhausts instead of reusing an occupied slot', () {
+    final identities = [for (var index = 0; index < 8; index += 1) 'x$index'];
+    final ids = ScheduleReminderPlanner.allocateIds(identities, spaceSize: 8);
+    expect(ids.values.toSet(), hasLength(8));
+    expect(
+      () => ScheduleReminderPlanner.allocateIds([
+        ...identities,
+        'overflow',
+      ], spaceSize: 8),
+      throwsStateError,
+    );
   });
 }

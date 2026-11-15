@@ -105,7 +105,10 @@ class FocusNotificationService {
   bool _windowsScheduleReady = false;
   final Map<int, _WindowsScheduledEvent> _windowsFocusScheduled = {};
   final Map<int, ScheduleReminderPlan> _plannedScheduleReminders = {};
+  _ScheduleReminderSnapshot? _lastScheduleSnapshot;
   Future<void> _scheduleReminderWork = Future<void>.value();
+  Future<void> _windowsPlanWork = Future<void>.value();
+  int _windowsPlanRevision = 0;
   int _scheduleReminderEpoch = 0;
   String? _pendingOpenRequest;
   final Set<String> _notifiedAppointmentTransitions = {};
@@ -120,6 +123,12 @@ class FocusNotificationService {
   /// commitment, so the Plan destination owns the follow-up navigation.
   Stream<ScheduleReminderRequest> get openScheduleRequests =>
       _openScheduleRequests.stream;
+
+  /// The account this service currently schedules reminders for.
+  ///
+  /// Null means signed out: no schedule may be registered until a later
+  /// [setUserId] binds an owner.
+  String? get ownerUserId => _ownerUserId;
 
   ScheduleReminderRequest? _pendingScheduleRequest;
 
@@ -188,6 +197,9 @@ class FocusNotificationService {
   Future<void> updatePreferences(FocusDevicePreferences preferences) async {
     await (await _settingsStore).save(preferences);
     await _applyCurrentPlan();
+    // Disabling must cancel the ordinary reminders immediately; enabling only
+    // re-registers future instances, never the missed ones.
+    await _reconcileFromLastSnapshot();
   }
 
   Future<void> syncNationalFocusReminder({
@@ -229,7 +241,10 @@ class FocusNotificationService {
       final allowed = await requestNotificationPermission();
       if (_staleOwner(generation)) return allowed;
       await store.markNotificationPermissionRequested();
-      if (allowed) unawaited(_applyCurrentPlan().catchError((Object _) {}));
+      if (allowed) {
+        unawaited(_applyCurrentPlan().catchError((Object _) {}));
+        unawaited(_reconcileFromLastSnapshot().catchError((Object _) {}));
+      }
       return allowed;
     } catch (_) {
       // A platform or store failure must not break the user's action.
@@ -319,50 +334,69 @@ class FocusNotificationService {
     required List<Schedule> schedules,
     required String timeZoneId,
   }) {
-    final epoch = ++_scheduleReminderEpoch;
+    // Owner and epoch are captured when the caller submits the list, not when
+    // the queued callback eventually runs: a list from a previous account must
+    // never be accepted by a newer owner generation.
+    final snapshot = _ScheduleReminderSnapshot(
+      ownerId: _ownerUserId,
+      generation: _ownerGeneration,
+      epoch: ++_scheduleReminderEpoch,
+      schedules: List<Schedule>.unmodifiable(schedules),
+      timeZoneId: timeZoneId,
+    );
+    _lastScheduleSnapshot = snapshot;
     final operation = _scheduleReminderWork.then(
-      (_) => _reconcileScheduleReminders(
-        schedules: schedules,
-        timeZoneId: timeZoneId,
-        epoch: epoch,
-      ),
+      (_) => _reconcileScheduleReminders(snapshot),
     );
     _scheduleReminderWork = operation.catchError((Object _) {});
     return operation;
   }
 
-  Future<void> _reconcileScheduleReminders({
-    required List<Schedule> schedules,
-    required String timeZoneId,
-    required int epoch,
-  }) async {
-    final entryGeneration = _ownerGeneration;
+  /// Re-applies the last submitted schedule list, for example after the user
+  /// enabled reminders again or granted the permission.
+  Future<void> _reconcileFromLastSnapshot() {
+    final snapshot = _lastScheduleSnapshot;
+    if (snapshot == null || snapshot.ownerId != _ownerUserId) {
+      return Future<void>.value();
+    }
+    return syncScheduleReminders(
+      schedules: snapshot.schedules,
+      timeZoneId: snapshot.timeZoneId,
+    );
+  }
+
+  Future<void> _reconcileScheduleReminders(
+    _ScheduleReminderSnapshot snapshot,
+  ) async {
+    final owner = snapshot.ownerId;
     await _awaitOwnerSettled();
-    // The owner changed while this list was queued for the previous account.
-    if (_staleOwner(entryGeneration)) return;
-    final generation = _ownerGeneration;
-    if (epoch != _scheduleReminderEpoch) return;
+    if (!snapshot.isCurrent(this)) return;
+    if (owner == null) {
+      // No signed-in owner can own a pending reminder; the release path already
+      // cancels the namespace, this only prevents registering the old list.
+      return;
+    }
     final preferences = await (await _settingsStore).load();
-    if (_staleOwner(generation) || epoch != _scheduleReminderEpoch) return;
+    if (!snapshot.isCurrent(this)) return;
     // A refused permission never blocks schedules, imports or focus; it only
     // means nothing is registered until the user allows reminders again, and
     // already missed reminders are not replayed.
     final canDeliver =
         preferences.notificationsEnabled &&
         (!Platform.isAndroid || await notificationsAllowed());
-    if (_staleOwner(generation) || epoch != _scheduleReminderEpoch) return;
+    if (!snapshot.isCurrent(this)) return;
     final plans = canDeliver
         ? ScheduleReminderPlanner.plan(
-            schedules: schedules,
+            schedules: snapshot.schedules,
             now: _now(),
-            timeZoneId: timeZoneId,
-            ownerUserId: _ownerUserId,
+            timeZoneId: snapshot.timeZoneId,
+            ownerId: owner,
           )
         : const <ScheduleReminderPlan>[];
     final desired = {for (final plan in plans) plan.notificationId: plan};
-    final pending = (await _scheduleReminderPendingIds()).toSet();
-    if (_staleOwner(generation) || epoch != _scheduleReminderEpoch) return;
-    for (final id in pending.where(
+    final pendingIds = (await _scheduleReminderPendingIds()).toSet();
+    if (!snapshot.isCurrent(this)) return;
+    for (final id in pendingIds.where(
       ScheduleReminderPlanner.ownsNotificationId,
     )) {
       if (desired.containsKey(id)) continue;
@@ -371,22 +405,22 @@ class FocusNotificationService {
     _plannedScheduleReminders.removeWhere((id, _) => !desired.containsKey(id));
 
     for (final plan in plans) {
-      if (_staleOwner(generation) || epoch != _scheduleReminderEpoch) return;
+      if (!snapshot.isCurrent(this)) return;
       final known = _plannedScheduleReminders[plan.notificationId];
-      if (known != null &&
-          known.deliverAt.isAtSameMomentAs(plan.deliverAt) &&
-          known.body == plan.body) {
+      final registrationLive = pendingIds.contains(plan.notificationId);
+      if (known != null && known.sameRegistration(plan) && registrationLive) {
         continue;
       }
       await _scheduleScheduleReminderNotification(plan);
       // A reconciliation that arrived while this call was in flight owns the
       // queue now; the just-registered item must not outlive its cancellation.
-      if (_staleOwner(generation) || epoch != _scheduleReminderEpoch) {
+      if (!snapshot.isCurrent(this)) {
         await _cancelScheduleReminderNotification(plan.notificationId);
         _plannedScheduleReminders.remove(plan.notificationId);
         return;
       }
       _plannedScheduleReminders[plan.notificationId] = plan;
+      pendingIds.add(plan.notificationId);
     }
   }
 
@@ -688,6 +722,13 @@ class FocusNotificationService {
     // the new owner still runs after the previous owner is released.
     _plannedScheduleReminders.clear();
     _windowsFocusScheduled.clear();
+    _lastScheduleSnapshot = null;
+    // A cold-start activation arrives before the first owner binding; only a
+    // request that belongs to a different account is dropped.
+    final pendingSchedule = _pendingScheduleRequest;
+    if (pendingSchedule != null && pendingSchedule.ownerId != userId) {
+      _pendingScheduleRequest = null;
+    }
 
     // New work waits behind this barrier, so the previous owner's alarms are
     // removed before the next owner may schedule anything.
@@ -714,13 +755,25 @@ class FocusNotificationService {
       }
       final adapter = await _scheduleAdapter();
       if (adapter != null) {
-        for (final id in [
-          _appointmentTransitionNotificationId,
-          _sessionEndNotificationId,
-        ]) {
-          await adapter.cancel(id);
-        }
-        _windowsFocusScheduled.clear();
+        // Invalidate any in-flight plan and queue the removal behind it, so a
+        // slow registration cannot resurrect an event after the release.
+        final revision = ++_windowsPlanRevision;
+        final generation = _ownerGeneration;
+        final operation = _windowsPlanWork.then((_) async {
+          if (revision != _windowsPlanRevision ||
+              generation != _ownerGeneration) {
+            return;
+          }
+          for (final id in [
+            _appointmentTransitionNotificationId,
+            _sessionEndNotificationId,
+          ]) {
+            await adapter.cancel(id);
+          }
+          _windowsFocusScheduled.clear();
+        });
+        _windowsPlanWork = operation.catchError((Object _) {});
+        await operation;
       }
     } catch (_) {
       // Cancelling a previous owner's alarm is best effort.
@@ -1429,15 +1482,47 @@ class FocusNotificationService {
     }
   }
 
-  Future<void> _applyWindowsPlan(FocusDevicePreferences preferences) async {
+  /// Serializes every Windows focus registration through one queue.
+  ///
+  /// A newer plan (or an owner release) bumps the revision, so an older queued
+  /// run stops before its next native call and a registration that completed in
+  /// flight is compensated instead of outliving the newer decision.
+  Future<void> _applyWindowsPlan(FocusDevicePreferences preferences) {
+    final revision = ++_windowsPlanRevision;
+    final owner = _ownerUserId;
+    final generation = _ownerGeneration;
+    final operation = _windowsPlanWork.then(
+      (_) => _runWindowsPlan(revision, owner, generation, preferences),
+    );
+    _windowsPlanWork = operation.catchError((Object _) {});
+    return operation;
+  }
+
+  bool _windowsPlanCurrent(int revision, String? owner, int generation) =>
+      revision == _windowsPlanRevision &&
+      owner == _ownerUserId &&
+      generation == _ownerGeneration;
+
+  Future<void> _runWindowsPlan(
+    int revision,
+    String? owner,
+    int generation,
+    FocusDevicePreferences preferences,
+  ) async {
+    bool current() => _windowsPlanCurrent(revision, owner, generation);
+    if (!current()) return;
     await _windowsChannel.invokeMethod<void>(
       'setBackgroundRunningEnabled',
       preferences.backgroundRunningEnabled,
     );
     _windowsTicker?.cancel();
+    _windowsTicker = null;
+    if (!current()) return;
     final adapter = await _scheduleAdapter();
+    if (!current()) return;
     if (adapter != null) {
-      await _applyWindowsFocusSchedule(adapter, preferences);
+      await _applyWindowsFocusSchedule(adapter, preferences, current);
+      if (!current()) return;
     }
     final plan = _currentPlan;
     if (plan == null) {
@@ -1520,10 +1605,13 @@ class FocusNotificationService {
   Future<void> _applyWindowsFocusSchedule(
     WindowsNotificationAdapter adapter,
     FocusDevicePreferences preferences,
+    bool Function() current,
   ) async {
+    if (!current()) return;
     final plan = _currentPlan;
     final now = _now();
     final pending = (await adapter.pendingIds()).toSet();
+    if (!current()) return;
     final desired = <int, _WindowsScheduledEvent>{};
     if (plan != null && preferences.notificationsEnabled) {
       final transitionAt = plan.stageEndsAt;
@@ -1550,6 +1638,7 @@ class FocusNotificationService {
       _appointmentTransitionNotificationId,
       _sessionEndNotificationId,
     ]) {
+      if (!current()) return;
       final target = desired[id];
       if (target == null) {
         if (pending.contains(id) || _windowsFocusScheduled.containsKey(id)) {
@@ -1561,6 +1650,7 @@ class FocusNotificationService {
       if (pending.contains(id) && _windowsFocusScheduled[id] == target) {
         continue;
       }
+      if (!current()) return;
       await adapter.schedule(
         id: id,
         title: target.title,
@@ -1568,6 +1658,13 @@ class FocusNotificationService {
         at: target.at,
         payload: target.payload,
       );
+      if (!current()) {
+        // This registration lost its plan while it was in flight; the newer
+        // plan or the release already owns the id.
+        await adapter.cancel(id);
+        _windowsFocusScheduled.remove(id);
+        return;
+      }
       _windowsFocusScheduled[id] = target;
     }
   }
@@ -1767,6 +1864,27 @@ class FocusNotificationService {
     if (payload.startsWith('session:')) return payload.substring(8);
     return null;
   }
+}
+
+class _ScheduleReminderSnapshot {
+  const _ScheduleReminderSnapshot({
+    required this.ownerId,
+    required this.generation,
+    required this.epoch,
+    required this.schedules,
+    required this.timeZoneId,
+  });
+
+  final String? ownerId;
+  final int generation;
+  final int epoch;
+  final List<Schedule> schedules;
+  final String timeZoneId;
+
+  bool isCurrent(FocusNotificationService service) =>
+      service._ownerUserId == ownerId &&
+      service._ownerGeneration == generation &&
+      service._scheduleReminderEpoch == epoch;
 }
 
 class _WindowsScheduledEvent {

@@ -76,28 +76,37 @@ void main() {
     });
   });
 
-  testWidgets(
-    'schedule changes reach the OS queue and clicks wait for the Plan destination',
-    (tester) async {
-      late Schedule created;
-      await tester.runAsync(() async {
-        created = await repository.createSchedule(
-          ScheduleDraft(
-            title: '取快递',
-            window: ScheduleWindow.timed(
-              startsAt: DateTime.utc(2026, 11, 16, 10),
-              endsAt: DateTime.utc(2026, 11, 16, 11),
-            ),
+  Future<Schedule> createReminder(
+    WidgetTester tester, {
+    int minutes = 30,
+  }) async {
+    late Schedule created;
+    await tester.runAsync(() async {
+      created = await repository.createSchedule(
+        ScheduleDraft(
+          title: '取快递',
+          window: ScheduleWindow.timed(
+            startsAt: DateTime.utc(2026, 11, 16, 10),
+            endsAt: DateTime.utc(2026, 11, 16, 11),
           ),
-        );
-        await repository.setScheduleReminder(created.id, minutesBefore: 30);
-      });
+        ),
+      );
+      await repository.setScheduleReminder(created.id, minutesBefore: minutes);
+    });
+    return created;
+  }
 
+  testWidgets(
+    'schedule changes reach the OS queue and validated clicks wait for Plan',
+    (tester) async {
+      final created = await createReminder(tester);
+      final opened = <ScheduleReminderRequest>[];
       await tester.pumpWidget(
         PactaApp(
           authRepository: FakeAuthRepository()..signedInUser = 'schedule-user',
           focusNotificationService: service,
           scheduleRepositoryFactory: (_) => repository,
+          scheduleReminderOpenHandler: (request) async => opened.add(request),
         ),
       );
       await _settle(tester);
@@ -107,33 +116,64 @@ void main() {
       );
       expect(reminder.at, DateTime.utc(2026, 11, 16, 9, 30));
 
-      await tester.runAsync(() async {
-        await repository.setScheduleReminder(created.id);
-      });
-      await _settle(tester);
-      expect(fake.scheduled.containsKey(reminder.id), isFalse);
-
-      await tester.runAsync(() async {
-        await repository.setScheduleReminder(created.id, minutesBefore: 30);
-      });
-      await _settle(tester);
-      final rescheduled = fake.scheduled.values.singleWhere(
-        (item) => ScheduleReminderPlanner.ownsNotificationId(item.id),
-      );
-
       service.handleNotificationResponse(
-        const NotificationResponse(
+        NotificationResponse(
           notificationResponseType:
               NotificationResponseType.selectedNotification,
-          id: 230001,
-          payload: 'schedule-reminder:s-1:2026-11-16',
+          id: reminder.id,
+          payload: 'schedule-reminder:schedule-user:${created.id}:2026-11-16',
+        ),
+      );
+      await _settle(tester);
+      expect(opened.single.scheduleId, created.id);
+
+      // A reminder displayed before an account switch must not open the next
+      // account's schedule.
+      service.handleNotificationResponse(
+        NotificationResponse(
+          notificationResponseType:
+              NotificationResponseType.selectedNotification,
+          id: reminder.id,
+          payload: 'schedule-reminder:someone-else:${created.id}:2026-11-16',
+        ),
+      );
+      await _settle(tester);
+      expect(opened, hasLength(1));
+      expect(find.byType(AppShell), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+    skip: !Platform.isWindows,
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
+  testWidgets(
+    'a cold-start reminder activation is drained once the shell is ready',
+    (tester) async {
+      final created = await createReminder(tester, minutes: 15);
+      final opened = <ScheduleReminderRequest>[];
+      // The launch response arrives before the shell subscribes.
+      service.handleNotificationResponse(
+        NotificationResponse(
+          notificationResponseType:
+              NotificationResponseType.selectedNotification,
+          id: 230777,
+          payload: 'schedule-reminder:schedule-user:${created.id}:2026-11-16',
+        ),
+      );
+
+      await tester.pumpWidget(
+        PactaApp(
+          authRepository: FakeAuthRepository()..signedInUser = 'schedule-user',
+          focusNotificationService: service,
+          scheduleRepositoryFactory: (_) => repository,
+          scheduleReminderOpenHandler: (request) async => opened.add(request),
         ),
       );
       await _settle(tester);
 
-      expect(find.byType(AppShell), findsOneWidget);
-      expect(tester.takeException(), isNull);
-      expect(rescheduled.payload, startsWith('schedule-reminder:'));
+      expect(opened, hasLength(1));
+      expect(opened.single.scheduleId, created.id);
+      expect(service.takePendingScheduleRequest(), isNull);
     },
     skip: !Platform.isWindows,
     timeout: const Timeout(Duration(minutes: 2)),
@@ -142,19 +182,7 @@ void main() {
   testWidgets(
     'leaving the shell keeps future OS reminders queued',
     (tester) async {
-      await tester.runAsync(() async {
-        final created = await repository.createSchedule(
-          ScheduleDraft(
-            title: '取快递',
-            window: ScheduleWindow.timed(
-              startsAt: DateTime.utc(2026, 11, 16, 10),
-              endsAt: DateTime.utc(2026, 11, 16, 11),
-            ),
-          ),
-        );
-        await repository.setScheduleReminder(created.id, minutesBefore: 10);
-      });
-
+      await createReminder(tester, minutes: 10);
       await tester.pumpWidget(
         PactaApp(
           authRepository: FakeAuthRepository()..signedInUser = 'schedule-user',
@@ -180,7 +208,7 @@ void main() {
 }
 
 Future<void> _settle(WidgetTester tester) async {
-  for (var i = 0; i < 8; i += 1) {
+  for (var index = 0; index < 8; index += 1) {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 20)),
     );

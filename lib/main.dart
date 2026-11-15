@@ -19,6 +19,7 @@ import 'src/board/national_focus_summary_card.dart';
 import 'src/calendar/calendar_page.dart';
 import 'src/calendar/calendar_provider.dart';
 import 'src/calendar/calendar_repository.dart';
+import 'src/schedules/schedule_models.dart';
 import 'src/schedules/schedule_repository.dart';
 import 'src/focus/focus_models.dart';
 import 'src/focus/chain_signals_repository.dart';
@@ -198,6 +199,7 @@ class PactaApp extends StatelessWidget {
     this.nationalFocusRepositoryFactory,
     this.calendarRepositoryFactory,
     this.scheduleRepositoryFactory,
+    this.scheduleReminderOpenHandler,
     this.userLifecycleRepositoryFactory,
     this.cloudSnapshotRepositoryFactory,
     this.cloudCheckClock = DateTime.now,
@@ -237,6 +239,10 @@ class PactaApp extends StatelessWidget {
   nationalFocusRepositoryFactory;
   final CalendarRepository Function(String userId)? calendarRepositoryFactory;
   final ScheduleRepository Function(String userId)? scheduleRepositoryFactory;
+
+  /// Opens an ordinary schedule reminder once the Plan destination is wired.
+  final Future<void> Function(ScheduleReminderRequest)?
+  scheduleReminderOpenHandler;
   final UserLifecycleStatusRepository Function(String userId)?
   userLifecycleRepositoryFactory;
 
@@ -285,6 +291,9 @@ class PactaApp extends StatelessWidget {
         ),
         scheduleRepositoryFactoryProvider.overrideWithValue(
           scheduleRepositoryFactory,
+        ),
+        scheduleReminderOpenHandlerProvider.overrideWithValue(
+          scheduleReminderOpenHandler,
         ),
         userLifecycleRepositoryFactoryProvider.overrideWithValue(
           userLifecycleRepositoryFactory ??
@@ -890,6 +899,8 @@ class _AppShellState extends ConsumerState<AppShell>
   late final StreamSubscription<ScheduleReminderRequest>
   _scheduleOpenSubscription;
   late final ScheduleReminderSync _scheduleReminderSync;
+  StreamSubscription<ProfileAccount>? _profileReminderSubscription;
+  String? _reminderTimeZoneId;
   late StreamSubscription<List<NationalFocusCard>>
   _nationalFocusReminderSubscription;
   late final NationalFocusCheckpointScheduler _nationalFocusCheckpointScheduler;
@@ -953,6 +964,14 @@ class _AppShellState extends ConsumerState<AppShell>
       unawaited(
         _scheduleReminderSync.attach(ref.read(scheduleRepositoryProvider)),
       );
+      _watchProfileTimeZone();
+      // A cold-start reminder activation must be drained once the shell is
+      // ready; the stream only covers clicks that arrive while it is listening.
+      final scheduleRequest = _focusNotificationService
+          .takePendingScheduleRequest();
+      if (scheduleRequest != null) {
+        unawaited(_openScheduleReminder(scheduleRequest));
+      }
     });
   }
 
@@ -1051,9 +1070,59 @@ class _AppShellState extends ConsumerState<AppShell>
     }
   }
 
+  /// Watches the account time zone so all-day reminders follow a change.
+  ///
+  /// The profile stream is the only notification a time zone edit produces, so
+  /// an existing plan must be rebuilt without waiting for a schedule edit.
+  void _watchProfileTimeZone() {
+    unawaited(_profileReminderSubscription?.cancel());
+    _profileReminderSubscription = ref
+        .read(profileRepositoryProvider)
+        .watchProfile()
+        .listen(
+          (profile) {
+            final zone = AccountTimeZones.effectiveId(
+              profile.displayTimeZoneId,
+            );
+            final previous = _reminderTimeZoneId;
+            _reminderTimeZoneId = zone;
+            if (previous != null && previous != zone) {
+              unawaited(_scheduleReminderSync.reconcileOnce());
+            }
+          },
+          onError: (Object _) {
+            // An unreadable profile keeps the current plan; the next edit or
+            // resume reconciles again.
+          },
+        );
+  }
+
   Future<void> _openScheduleReminder(ScheduleReminderRequest request) async {
     if (!mounted) return;
     _focusNotificationService.takePendingScheduleRequest();
+    final userId = ref.read(authRepositoryProvider).currentUserId;
+    // A notification shown before an account switch must never open the next
+    // account's data: the payload carries the owner that registered it.
+    if (userId == null || request.ownerId != userId) return;
+    final repository = ref.read(scheduleRepositoryProvider);
+    final date = DateTime.tryParse(request.dateKey);
+    if (date == null) return;
+    if (repository != null) {
+      List<Schedule> rows;
+      try {
+        rows = await repository.getSchedules(
+          from: date.subtract(const Duration(days: 1)),
+          to: date.add(const Duration(days: 2)),
+        );
+      } catch (_) {
+        return;
+      }
+      final owned = rows.any(
+        (row) => row.id == request.scheduleId && !row.isRecurrenceCancelled,
+      );
+      if (!owned) return;
+    }
+    if (!mounted) return;
     final handler = ref.read(scheduleReminderOpenHandlerProvider);
     if (handler != null) {
       await handler(request);
@@ -1137,6 +1206,7 @@ class _AppShellState extends ConsumerState<AppShell>
     _connectivitySubscription.cancel();
     _notificationOpenSubscription.cancel();
     _scheduleOpenSubscription.cancel();
+    unawaited(_profileReminderSubscription?.cancel());
     _nationalFocusReminderSubscription.cancel();
     _nationalFocusCheckpointScheduler.dispose();
     unawaited(_scheduleReminderSync.detach());
@@ -1160,6 +1230,10 @@ class _AppShellState extends ConsumerState<AppShell>
     ref.watch(scheduleRepositoryProvider);
     ref.listen(scheduleRepositoryProvider, (previous, next) {
       unawaited(_scheduleReminderSync.attach(next));
+    });
+    ref.watch(profileRepositoryProvider);
+    ref.listen(profileRepositoryProvider, (previous, next) {
+      _watchProfileTimeZone();
     });
     ref.listen(authUserIdProvider, (previous, next) {
       if (previous != null && previous != next) {

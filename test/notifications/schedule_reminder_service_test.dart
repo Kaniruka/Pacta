@@ -59,6 +59,7 @@ void main() {
         backgroundRunningEnabled: true,
       ),
     );
+    await service.setUserId('user-a');
   });
 
   tearDown(() async {
@@ -127,6 +128,7 @@ void main() {
   );
 
   test('past reminders are skipped without touching the OS queue', () async {
+    fake.cancelled.clear();
     await service.syncScheduleReminders(
       schedules: [
         schedule(
@@ -256,11 +258,12 @@ void main() {
           notificationResponseType:
               NotificationResponseType.selectedNotification,
           id: 230123,
-          payload: 'schedule-reminder:s-9:2026-11-16',
+          payload: 'schedule-reminder:user-a:s-9:2026-11-16',
         ),
       );
       await Future<void>.delayed(Duration.zero);
 
+      expect(scheduleClicks.single.ownerId, 'user-a');
       expect(scheduleClicks.single.scheduleId, 's-9');
       expect(scheduleClicks.single.dateKey, '2026-11-16');
       expect(service.takePendingScheduleRequest()?.scheduleId, 's-9');
@@ -314,6 +317,227 @@ void main() {
         fake.scheduleCalls.where((id) => id == 2203).length,
         registrations,
       );
+    },
+    skip: !Platform.isWindows,
+  );
+
+  test('a signed-out service never registers a queued old list', () async {
+    await service.setUserId(null);
+    await service.syncScheduleReminders(
+      schedules: [
+        schedule(
+          id: 'old-owner',
+          startsAt: DateTime.utc(2026, 11, 16, 10),
+          reminderMinutesBefore: 10,
+        ),
+      ],
+      timeZoneId: 'Asia/Tokyo',
+    );
+
+    expect(fake.scheduleCalls, isEmpty);
+    expect(fake.scheduled, isEmpty);
+  }, skip: !Platform.isWindows);
+
+  test(
+    'a list submitted by the previous owner is not accepted by the new owner',
+    () async {
+      await service.setUserId('user-a');
+      final entered = Completer<void>();
+      final gate = Completer<void>();
+      fake.beforePending = () async {
+        if (!entered.isCompleted) entered.complete();
+        await gate.future;
+      };
+
+      final pending = service.syncScheduleReminders(
+        schedules: [
+          schedule(
+            id: 'switch',
+            startsAt: DateTime.utc(2026, 11, 16, 10),
+            reminderMinutesBefore: 10,
+          ),
+        ],
+        timeZoneId: 'Asia/Tokyo',
+      );
+      await entered.future;
+      final switchOwner = service.setUserId('user-b');
+      gate.complete();
+      await switchOwner;
+      await pending;
+
+      expect(fake.scheduleCalls, isEmpty);
+    },
+    skip: !Platform.isWindows,
+  );
+
+  test(
+    'disabling notifications cancels ordinary reminders without another sync',
+    () async {
+      await service.syncScheduleReminders(
+        schedules: [
+          schedule(
+            id: 'armed',
+            startsAt: DateTime.utc(2026, 11, 16, 10),
+            reminderMinutesBefore: 10,
+          ),
+        ],
+        timeZoneId: 'Asia/Tokyo',
+      );
+      final id = fake.scheduled.keys.single;
+
+      await service.updatePreferences(
+        const FocusDevicePreferences(
+          notificationsEnabled: false,
+          backgroundRunningEnabled: false,
+        ),
+      );
+
+      expect(fake.cancelled, contains(id));
+      expect(fake.scheduled, isEmpty);
+    },
+    skip: !Platform.isWindows,
+  );
+
+  test(
+    'a reminder the OS dropped is registered again from the cached plan',
+    () async {
+      await service.syncScheduleReminders(
+        schedules: [
+          schedule(
+            id: 'dropped',
+            startsAt: DateTime.utc(2026, 11, 16, 10),
+            reminderMinutesBefore: 10,
+          ),
+        ],
+        timeZoneId: 'Asia/Tokyo',
+      );
+      final id = fake.scheduled.keys.single;
+      final calls = fake.scheduleCalls.length;
+      fake.scheduled.clear();
+
+      await service.syncScheduleReminders(
+        schedules: [
+          schedule(
+            id: 'dropped',
+            startsAt: DateTime.utc(2026, 11, 16, 10),
+            reminderMinutesBefore: 10,
+          ),
+        ],
+        timeZoneId: 'Asia/Tokyo',
+      );
+
+      expect(fake.scheduleCalls.where((item) => item == id).length, 2);
+      expect(fake.scheduleCalls.length, calls + 1);
+    },
+    skip: !Platform.isWindows,
+  );
+
+  test(
+    'a queued schedule list is dropped when its owner signs out first',
+    () async {
+      var blocked = false;
+      final entered = Completer<void>();
+      final gate = Completer<void>();
+      fake.beforePending = () async {
+        if (blocked) return;
+        blocked = true;
+        if (!entered.isCompleted) entered.complete();
+        await gate.future;
+      };
+
+      final pending = service.syncScheduleReminders(
+        schedules: [
+          schedule(
+            id: 'signout-race',
+            startsAt: DateTime.utc(2026, 11, 16, 10),
+            reminderMinutesBefore: 10,
+          ),
+        ],
+        timeZoneId: 'Asia/Tokyo',
+      );
+      await entered.future;
+      final release = service.releaseUser('user-a');
+      gate.complete();
+      await release;
+      await pending;
+
+      expect(fake.scheduleCalls, isEmpty);
+      expect(fake.scheduled, isEmpty);
+    },
+    skip: !Platform.isWindows,
+  );
+
+  test(
+    'a schedule registration that completes after sign-out is cancelled',
+    () async {
+      var blocked = false;
+      final entered = Completer<void>();
+      final gate = Completer<void>();
+      fake.beforeSchedule = () async {
+        if (blocked) return;
+        blocked = true;
+        if (!entered.isCompleted) entered.complete();
+        await gate.future;
+      };
+
+      final pending = service.syncScheduleReminders(
+        schedules: [
+          schedule(
+            id: 'late-registration',
+            startsAt: DateTime.utc(2026, 11, 16, 10),
+            reminderMinutesBefore: 10,
+          ),
+        ],
+        timeZoneId: 'Asia/Tokyo',
+      );
+      await entered.future;
+      final release = service.releaseUser('user-a');
+      gate.complete();
+      await release;
+      await pending;
+
+      expect(fake.scheduled, isEmpty);
+      expect(fake.cancelled, isNotEmpty);
+    },
+    skip: !Platform.isWindows,
+  );
+
+  test(
+    'a focus registration that loses its plan is compensated and released',
+    () async {
+      await service.setUserId('user-a');
+      final startsAt = DateTime.utc(2026, 11, 15, 2);
+      final appointment = AppointmentPreparation(
+        id: 'appointment-race',
+        taskId: 'task-1',
+        mode: FocusChainMode.regular,
+        durationSeconds: 600,
+        startedAt: startsAt,
+        endsAt: startsAt.add(const Duration(minutes: 10)),
+        status: AppointmentPreparationStatus.active,
+        settledAt: null,
+        updatedAt: startsAt,
+      );
+      final entered = Completer<void>();
+      final gate = Completer<void>();
+      fake.beforeSchedule = () async {
+        if (!entered.isCompleted) entered.complete();
+        await gate.future;
+      };
+
+      final pendingSync = service.sync(
+        appointment: appointment,
+        taskTitle: '写报告',
+      );
+      await entered.future;
+      final release = service.releaseUser('user-a');
+      gate.complete();
+      await release;
+      await pendingSync;
+
+      expect(fake.scheduled.containsKey(2202), isFalse);
+      expect(fake.scheduled.containsKey(2203), isFalse);
+      expect(fake.cancelled, contains(2202));
     },
     skip: !Platform.isWindows,
   );

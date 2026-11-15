@@ -10,28 +10,44 @@ import '../schedules/schedule_models.dart';
 /// session or appointment identity: a reminder is not a commitment.
 class ScheduleReminderRequest {
   const ScheduleReminderRequest({
+    required this.ownerId,
     required this.scheduleId,
     required this.dateKey,
   });
 
   static const String payloadPrefix = 'schedule-reminder:';
 
+  /// The account that owned the reminder when it was registered.
+  ///
+  /// A delivered notification outlives the account binding, so activation must
+  /// compare this value with the signed-in owner before opening anything.
+  final String ownerId;
   final String scheduleId;
 
   /// The account-time-zone civil day of the reminder target, `YYYY-MM-DD`.
   final String dateKey;
 
-  String toPayload() => '$payloadPrefix$scheduleId:$dateKey';
+  String toPayload() =>
+      '$payloadPrefix${Uri.encodeComponent(ownerId)}:$scheduleId:$dateKey';
 
   static ScheduleReminderRequest? tryParse(String payload) {
     if (!payload.startsWith(payloadPrefix)) return null;
     final body = payload.substring(payloadPrefix.length);
-    final separator = body.lastIndexOf(':');
-    if (separator <= 0 || separator == body.length - 1) return null;
-    final dateKey = body.substring(separator + 1);
+    final ownerSeparator = body.indexOf(':');
+    final dateSeparator = body.lastIndexOf(':');
+    if (ownerSeparator <= 0 || dateSeparator <= ownerSeparator + 1) return null;
+    final dateKey = body.substring(dateSeparator + 1);
     if (!_datePattern.hasMatch(dateKey)) return null;
+    final String ownerId;
+    try {
+      ownerId = Uri.decodeComponent(body.substring(0, ownerSeparator));
+    } catch (_) {
+      return null;
+    }
+    if (ownerId.isEmpty) return null;
     return ScheduleReminderRequest(
-      scheduleId: body.substring(0, separator),
+      ownerId: ownerId,
+      scheduleId: body.substring(ownerSeparator + 1, dateSeparator),
       dateKey: dateKey,
     );
   }
@@ -42,6 +58,7 @@ class ScheduleReminderRequest {
 /// One ordinary schedule reminder that is still due after [ScheduleReminderPlanner.plan].
 class ScheduleReminderPlan {
   const ScheduleReminderPlan({
+    required this.ownerId,
     required this.identity,
     required this.notificationId,
     required this.scheduleId,
@@ -50,6 +67,9 @@ class ScheduleReminderPlan {
     required this.title,
     required this.body,
   });
+
+  /// The account that asked for this reminder.
+  final String ownerId;
 
   /// Stable identity of the reminder target.
   ///
@@ -69,9 +89,21 @@ class ScheduleReminderPlan {
   final String body;
 
   String get payload => ScheduleReminderRequest(
+    ownerId: ownerId,
     scheduleId: scheduleId,
     dateKey: dateKey,
   ).toPayload();
+
+  /// Full-content equality used to decide whether a registration is reusable.
+  bool sameRegistration(ScheduleReminderPlan other) =>
+      other.ownerId == ownerId &&
+      other.identity == identity &&
+      other.scheduleId == scheduleId &&
+      other.dateKey == dateKey &&
+      other.deliverAt.isAtSameMomentAs(deliverAt) &&
+      other.title == title &&
+      other.body == body &&
+      other.payload == payload;
 }
 
 /// Resolves owned schedules into platform delivery plans.
@@ -94,11 +126,14 @@ class ScheduleReminderPlanner {
 
   static bool _timeZonesInitialized = false;
 
+  /// Largest stored reminder offset a schedule may carry.
+  static const Duration maxReminderOffset = Duration(days: 7);
+
   static List<ScheduleReminderPlan> plan({
     required Iterable<Schedule> schedules,
     required DateTime now,
     required String timeZoneId,
-    String? ownerUserId,
+    required String ownerId,
     Duration horizon = horizon,
   }) {
     final location = _locationFor(timeZoneId);
@@ -128,6 +163,7 @@ class ScheduleReminderPlanner {
         [
           for (final identity in identities)
             ScheduleReminderPlan(
+              ownerId: ownerId,
               identity: identity,
               notificationId: ids[identity]!,
               scheduleId: targets[identity]!.scheduleId,
@@ -142,6 +178,12 @@ class ScheduleReminderPlanner {
         });
     return plans;
   }
+
+  /// Upper bound of a schedule query that must still see every deliverable
+  /// reminder: an event may start after the delivery horizon when its stored
+  /// offset pushes delivery inside the window.
+  static DateTime queryEnd(DateTime now, {Duration horizon = horizon}) =>
+      now.toUtc().add(horizon + maxReminderOffset);
 
   /// Every platform id this planner may legitimately own.
   static bool ownsNotificationId(int id) =>
@@ -193,22 +235,64 @@ class ScheduleReminderPlanner {
   }
 
   /// Deterministic id allocation with open addressing for hash collisions.
-  static Map<String, int> _allocate(List<String> identities) {
+  ///
+  /// The probe step is coprime with the namespace size, so probing reaches every
+  /// slot exactly once. Exhaustion throws instead of returning an occupied id.
+  static Map<String, int> _allocate(List<String> identities) =>
+      allocateIds(identities);
+
+  /// Allocates platform ids for [identities]; public for collision and capacity
+  /// regression tests. [spaceSize] defaults to the real namespace.
+  static Map<String, int> allocateIds(
+    List<String> identities, {
+    int spaceSize = idSpaceSize,
+  }) {
     final ids = <String, int>{};
     final taken = <int>{};
     for (final identity in identities) {
-      final start = _fnv1a(identity) % idSpaceSize;
-      final step = 1 + _fnv1a(identity, seed: 0x9e3779b9) % (idSpaceSize - 1);
-      var offset = 0;
+      final start = startIndexFor(identity, spaceSize: spaceSize);
+      final step = _coprimeStep(_fnv1a(identity, seed: 0x9e3779b9), spaceSize);
       var index = start;
-      while (taken.contains(index) && offset < idSpaceSize) {
-        offset += 1;
-        index = (start + offset * step) % idSpaceSize;
+      var probes = 0;
+      while (taken.contains(index)) {
+        probes += 1;
+        if (probes >= spaceSize) {
+          throw StateError('schedule reminder id space exhausted');
+        }
+        index = (index + step) % spaceSize;
       }
       taken.add(index);
       ids[identity] = idSpaceBase + index;
     }
     return ids;
+  }
+
+  /// First candidate slot for [identity]; public so tests can construct real
+  /// hash collisions instead of trusting a large sample.
+  static int startIndexFor(String identity, {int spaceSize = idSpaceSize}) =>
+      _fnv1a(identity) % spaceSize;
+
+  static int _coprimeStep(int hash, int spaceSize) {
+    if (spaceSize <= 1) return 1;
+    var candidate = 1 + hash % (spaceSize - 1);
+    var attempts = 0;
+    while (_gcd(candidate, spaceSize) != 1) {
+      candidate = candidate % (spaceSize - 1) + 1;
+      attempts += 1;
+      if (attempts > spaceSize) return 1;
+    }
+    return candidate;
+  }
+
+  static int _gcd(int left, int right) {
+    var a = left;
+    var b = right;
+    while (b != 0) {
+      final remainder = a % b;
+      a = b;
+      b = remainder;
+    }
+    return a;
   }
 
   static int _fnv1a(String value, {int seed = 0x811c9dc5}) {

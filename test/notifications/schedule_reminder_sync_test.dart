@@ -53,6 +53,7 @@ void main() {
         backgroundRunningEnabled: false,
       ),
     );
+    await service.setUserId('sync-user');
     final sync = ScheduleReminderSync(
       notificationService: service,
       accountTimeZoneId: () async => 'Etc/UTC',
