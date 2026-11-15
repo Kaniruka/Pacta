@@ -492,8 +492,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('更多'));
       await tester.pumpAndSettle();
-      await tapText('检查点与失败记录');
-      await tapText('查看失败记录');
+      await tapText('失败记录');
       await shot('10-failure-history-collapsed');
       await tester.tap(find.textContaining(' 个节点').first);
       await tester.pumpAndSettle();
