@@ -796,7 +796,7 @@ void main() {
   );
 
   testWidgets(
-    '360 窄窗与 1440 宽窗都能完整呈现，亮暗主题可读',
+    '360 窄窗与 1440 宽窗都能完整呈现，日期格不小于 48，亮暗主题可读',
     (tester) => withFixture(tester, () async {
       final task = await createTask(tester);
       await seed(tester, task, {DateTime.utc(2026, 11, 3, 2): 45 * 60});
@@ -804,13 +804,25 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       tester.view.devicePixelRatio = 1;
 
-      for (final size in [const Size(360, 800), const Size(1440, 900)]) {
+      for (final size in [
+        const Size(320, 800),
+        const Size(360, 800),
+        const Size(1440, 900),
+      ]) {
         tester.view.physicalSize = size;
         await tester.pumpWidget(host(repository: focusRepository));
         await tester.pumpAndSettle();
-        expect(tester.takeException(), isNull);
+        expect(tester.takeException(), isNull, reason: 'width=${size.width}');
         expect(find.text('2026年11月'), findsOneWidget);
-        expect(find.byKey(const ValueKey('focus-month-day-3')), findsOneWidget);
+        final dayCell = find.byKey(const ValueKey('focus-month-day-3'));
+        expect(dayCell, findsOneWidget);
+        final cellSize = tester.getSize(dayCell);
+        expect(
+          cellSize.width,
+          greaterThanOrEqualTo(48),
+          reason: 'width=${size.width} 时日期格仍需保留 48 的点击宽度',
+        );
+        expect(cellSize.height, greaterThanOrEqualTo(48));
       }
 
       tester.view.physicalSize = const Size(360, 800);

@@ -322,25 +322,39 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 720),
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-              children: [
-                _MonthHeader(
-                  month: month,
-                  onPrevious: _zoneResolved
-                      ? () => _showMonth(
-                          DateTime.utc(month.year, month.month - 1),
-                        )
-                      : null,
-                  onNext: _zoneResolved
-                      ? () => _showMonth(
-                          DateTime.utc(month.year, month.month + 1),
-                        )
-                      : null,
-                ),
-                const SizedBox(height: 8),
-                ..._buildMonthBody(context, month),
-              ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // 七个日期格各占一列；窄窗先收外边距，保证每格不窄于
+                // 48 的最小点击尺寸，宽窗维持 16。
+                final horizontalPadding = _monthHorizontalPadding(
+                  constraints.maxWidth,
+                );
+                return ListView(
+                  padding: EdgeInsets.fromLTRB(
+                    horizontalPadding,
+                    8,
+                    horizontalPadding,
+                    24,
+                  ),
+                  children: [
+                    _MonthHeader(
+                      month: month,
+                      onPrevious: _zoneResolved
+                          ? () => _showMonth(
+                              DateTime.utc(month.year, month.month - 1),
+                            )
+                          : null,
+                      onNext: _zoneResolved
+                          ? () => _showMonth(
+                              DateTime.utc(month.year, month.month + 1),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(height: 8),
+                    ..._buildMonthBody(context, month),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -398,9 +412,7 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
       for (final day in metrics.days) day.date.day: day.activeSeconds,
     };
     return [
-      const _WeekdayHeader(),
-      const SizedBox(height: 4),
-      ..._buildGrid(context, month, secondsByDay),
+      _buildGridFrame(context, month, secondsByDay),
       const SizedBox(height: 16),
       _MonthSummaryCard(
         month: month,
@@ -409,6 +421,35 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
         onClearSelection: () => _selectDay(_selectedDay ?? 0),
       ),
     ];
+  }
+
+  /// 星期表头与日期格共用一个宽度框架：窄于七列 48 时整体横向滚动，
+  /// 而不是把每天的点击区域压到最小值以下。
+  Widget _buildGridFrame(
+    BuildContext context,
+    DateTime month,
+    Map<int, int> secondsByDay,
+  ) {
+    final rows = _buildGrid(context, month, secondsByDay);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final content = Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _WeekdayHeader(),
+            const SizedBox(height: 4),
+            ...rows,
+          ],
+        );
+        final minimumWidth = 7 * _minimumDayCellSize;
+        if (constraints.maxWidth >= minimumWidth) return content;
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(width: minimumWidth, child: content),
+        );
+      },
+    );
   }
 
   List<Widget> _buildGrid(
@@ -643,6 +684,17 @@ String _formatDuration(int seconds) {
     if (minutes > 0) '$minutes 分钟',
     if (remainingSeconds > 0 || seconds == 0) '$remainingSeconds 秒',
   ].join(' ');
+}
+
+/// 日期格的统一最小点击尺寸（宽和高）。
+const double _minimumDayCellSize = 48;
+
+/// 月份列表的水平内边距：先保证七列各 48，再收回到常规 16。
+double _monthHorizontalPadding(double width) {
+  final ideal = (width - 7 * _minimumDayCellSize) / 2;
+  if (ideal > 16) return 16;
+  if (ideal < 8) return 8;
+  return ideal;
 }
 
 void _cancel(StreamSubscription<Object?>? subscription) {
