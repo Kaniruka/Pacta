@@ -283,7 +283,11 @@ void main() {
         (await seedingSchedules.getSchedules()).single.isCompleted,
         isTrue,
       );
-      expect(await seedingFocus.getSessions(), isEmpty);
+      // The fixture seeds one session for the board's number; completing a Plan
+      // arrangement must not add another one.
+      final sessions = await seedingFocus.getSessions();
+      expect(sessions, hasLength(1));
+      expect(sessions.single.id, 'board-entry-fx');
       await shot('plan-completed');
 
       await tester.tap(find.text('看板'));
