@@ -191,14 +191,16 @@ std::wstring ResolveAppUserModelId(std::string* source) {
     *source = "environment";
     return *test_identity;
   }
-  if constexpr (kFixtureBuild) {
-    if (auto fixture = ReadFixtureAppUserModelId(); fixture) {
-      if (IsTestIdentity(*fixture) && fixture->size() <= kMaxAumidLength) {
-        *source = "fixture-file";
-        return *fixture;
-      }
-      *source = "fixture-file-rejected";
+  // The file is honoured in every build, but only for the Pacta.Test.*
+  // namespace: an installed product keeps its own identity even if the file is
+  // present, while a fixture placed beside the executable can be activated by
+  // the shell after the process that scheduled the toast has exited.
+  if (auto fixture = ReadFixtureAppUserModelId(); fixture) {
+    if (IsTestIdentity(*fixture) && fixture->size() <= kMaxAumidLength) {
+      *source = "fixture-file";
+      return *fixture;
     }
+    *source = "fixture-file-rejected";
   }
   *source = kFixtureBuild ? "fixture-default" : "product";
   return kProductAppUserModelId;

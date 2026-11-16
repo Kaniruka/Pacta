@@ -24,6 +24,7 @@ import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/notifications/schedule_reminder_plan.dart';
 import 'package:pacta/src/notifications/schedule_reminder_sync.dart';
 import 'package:pacta/src/notifications/windows_notification_adapter.dart';
+import 'package:pacta/src/plan/plan_calendar_view.dart';
 import 'package:pacta/src/schedules/schedule_models.dart';
 import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
@@ -33,6 +34,11 @@ const fixtureBuildMarker = 'schedule06-fixture-v3';
 
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The shell launches the executable with its own activation switch after a
+  // notification click; there is no fixture argument in that launch.
+  final activationLaunch = args.any(
+    (argument) => argument.contains('AppNotificationActivated'),
+  );
   final options = _FixtureOptions.parse(args);
   final startedAtUtc = DateTime.now().toUtc();
   final report = <String, Object?>{
@@ -45,10 +51,19 @@ Future<void> main(List<String> args) async {
     'fixtureBuildMarker': fixtureBuildMarker,
     'startedAtUtc': startedAtUtc.toIso8601String(),
   };
-  final output = File(options.output);
-  if (options.output.isEmpty || await output.exists()) {
-    stderr.writeln('refusing an empty or existing output path');
-    exit(2);
+  final output = File(
+    options.output.isEmpty
+        ? '${Directory.systemTemp.path}${Platform.pathSeparator}'
+              'pacta-notification-activation${Platform.pathSeparator}'
+              '${options.aumid}-$pid.json'
+        : options.output,
+  );
+  if (await output.exists()) {
+    if (!activationLaunch) {
+      stderr.writeln('refusing an existing output path');
+      exit(2);
+    }
+    await output.delete();
   }
   if (!options.aumid.startsWith('Pacta.Test.')) {
     report['error'] = 'refusing a non-test AUMID';
@@ -58,7 +73,20 @@ Future<void> main(List<String> args) async {
   // ignore: invalid_use_of_visible_for_testing_member
   SharedPreferences.setMockInitialValues({});
 
-  final database = PactaDatabase(NativeDatabase.memory());
+  // A cold activation opens a second process with no arguments; it can only
+  // see the arrangement the scheduling run wrote if that run used the same
+  // file database.
+  final persistentDatabase = activationLaunch || options.mode != 'cleanup';
+  final database = persistentDatabase
+      ? PactaDatabase(
+          NativeDatabase(
+            File(
+              '${Directory.systemTemp.path}${Platform.pathSeparator}'
+              'pacta-fixture-db${Platform.pathSeparator}${options.aumid}.sqlite',
+            )..parent.createSync(recursive: true),
+          ),
+        )
+      : PactaDatabase(NativeDatabase.memory());
   final repository = LocalScheduleRepository(
     database: database,
     userId: 'fixture-user',
@@ -79,6 +107,60 @@ Future<void> main(List<String> args) async {
     notificationService: service,
     accountTimeZoneId: () async => 'Etc/UTC',
   );
+  if (activationLaunch) {
+    var exitCode = 0;
+    final clicks = <ScheduleReminderRequest>[];
+    final subscription = service.openScheduleRequests.listen(clicks.add);
+    try {
+      report['activationLaunch'] = true;
+      report['initialized'] = await adapter.initialize();
+      report['registeredAumid'] = adapter.registeredAumid;
+      report['identitySource'] = adapter.identitySource;
+      await service.updatePreferences(
+        const FocusDevicePreferences(
+          notificationsEnabled: true,
+          backgroundRunningEnabled: false,
+        ),
+      );
+      await service.setUserId('fixture-user');
+      runApp(
+        PactaApp(
+          authRepository: _FixtureAuthRepository(),
+          focusNotificationService: service,
+          scheduleRepositoryFactory: (_) => repository,
+        ),
+      );
+      final shell = await _waitForElement((widget) => widget is AppShell);
+      report['shellMounted'] = shell != null;
+      final payloadArrived = await _waitForCondition(
+        () => clicks.isNotEmpty,
+        attempts: 400,
+      );
+      report['clickPayload'] = clicks.isEmpty ? null : clicks.first.toPayload();
+      final planOpened = await _waitForCondition(
+        () => _findElement((widget) => widget is PlanCalendarView) != null,
+        attempts: 100,
+      );
+      report['planOpened'] = planOpened;
+      if (!payloadArrived) exitCode = 3;
+    } catch (error) {
+      exitCode = 1;
+      report['error'] = error.toString();
+    } finally {
+      await subscription.cancel();
+      report['finishedAtUtc'] = DateTime.now().toUtc().toIso8601String();
+      await _write(output, report);
+      stdout.writeln(
+        jsonEncode({
+          'output': output.path,
+          'mode': 'activation',
+          'payload': report['clickPayload'],
+          'planOpened': report['planOpened'],
+        }),
+      );
+    }
+    exit(exitCode);
+  }
   var exitCode = 0;
   try {
     report['initialized'] = await adapter.initialize();
@@ -244,6 +326,33 @@ Future<void> main(List<String> args) async {
         // cannot be mistaken for preservation.
         await Future<void>.delayed(const Duration(milliseconds: 800));
         report['pendingAfterShellUnmountSettled'] = await adapter.pendingIds();
+        break;
+      case 'click':
+        final clicks = <ScheduleReminderRequest>[];
+        final subscription = service.openScheduleRequests.listen(clicks.add);
+        runApp(
+          PactaApp(
+            authRepository: _FixtureAuthRepository(),
+            focusNotificationService: service,
+            scheduleRepositoryFactory: (_) => repository,
+          ),
+        );
+        final shell = await _waitForElement((widget) => widget is AppShell);
+        report['shellMounted'] = shell != null;
+        final arrived = await _waitForCondition(
+          () => clicks.isNotEmpty,
+          attempts: 1200,
+        );
+        report['clickPayload'] = clicks.isEmpty
+            ? null
+            : clicks.first.toPayload();
+        final planOpened = await _waitForCondition(
+          () => _findElement((widget) => widget is PlanCalendarView) != null,
+          attempts: 100,
+        );
+        report['planOpened'] = planOpened;
+        await subscription.cancel();
+        if (!arrived) throw StateError('no notification click arrived');
         break;
       case 'cleanup':
         // Permanent deregistration is the only teardown that leaves no SDK
@@ -448,12 +557,34 @@ class _FixtureOptions {
       marker: values['marker'] ?? 'default',
       aumid:
           Platform.environment['PACTA_TEST_NOTIFICATION_AUMID'] ??
+          _identityFileAumid() ??
           values['aumid'] ??
           'Pacta.Test.Schedule06.default',
       rescheduleDelaySeconds:
           int.tryParse(values['reschedule-delay'] ?? '') ?? 180,
     );
   }
+}
+
+/// The identity the runner used for this executable.
+///
+/// The runner resolves the notification identity before Dart starts, so a cold
+/// activation (no fixture arguments, no inherited environment) learns it from
+/// the same file the native side read.
+String? _identityFileAumid() {
+  try {
+    final directory = File(Platform.resolvedExecutable).parent.path;
+    final file = File(
+      '$directory${Platform.pathSeparator}pacta_fixture_identity.json',
+    );
+    final text = file.readAsStringSync();
+    final marker = RegExp(r'"aumid"\s*:\s*"([^"]+)"').firstMatch(text);
+    final value = marker?.group(1);
+    if (value != null && value.startsWith('Pacta.Test.')) return value;
+  } catch (_) {
+    // No identity file: fall back to the arguments.
+  }
+  return null;
 }
 
 /// Fixture-only account so the shell can mount without a cloud session.

@@ -75,7 +75,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument('--exe', default=str(DEFAULT_EXE))
     parser.add_argument('--base', default=str(ROOT / '.scratch/schedule-reminder-fixture-runs'))
-    parser.add_argument('--mode', choices=['exit', 'logout', 'reschedule', 'shell', 'cleanup'], default='exit')
+    parser.add_argument('--mode', choices=['exit', 'logout', 'reschedule', 'shell', 'cleanup', 'click'], default='exit')
     parser.add_argument('--due', type=int, default=45)
     parser.add_argument('--offset', type=int, default=30)
     parser.add_argument('--reschedule-delay', type=int, default=90)
@@ -267,6 +267,7 @@ def queue_check_name(mode: str) -> str:
         'logout': 'logoutCancelled',
         'reschedule': 'rescheduleSingleSurvivor',
         'cleanup': 'queueEmptyAfterCleanup',
+        'click': 'queueContainsPlanned',
     }[mode]
 
 
@@ -617,6 +618,9 @@ def verify(report, fixture, events, due, expected_due, old_due, new_due):
     details['scheduledToastsBeforeDue'] = toast_summary(report.get('scheduledToastsBeforeDue'))
     details['scheduledToastsAfterDue'] = toast_summary(report.get('scheduledToastsAfterDue'))
 
+    if mode == 'click':
+        gate('clickPayload', str(fixture.get('clickPayload', '')).startswith('schedule-reminder:'))
+        gate('planOpened', fixture.get('planOpened') is True)
     if mode == 'cleanup':
         pending_after = field('pendingAfterCleanup')
         gate('cleanupUnregistered', fixture.get('unregisteredAll') is True)
