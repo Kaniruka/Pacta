@@ -145,7 +145,7 @@ class FocusNotificationService {
         final adapter =
             windowsNotifications ??
             (_resolvedWindowsNotifications =
-                LocalNotificationsWindowsAdapter());
+                RunnerWindowsNotificationAdapter());
         _windowsNotificationsInitialized = true;
         _windowsScheduleReady = await adapter.initialize(
           onResponse: handleNotificationResponse,

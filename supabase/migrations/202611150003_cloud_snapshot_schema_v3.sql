@@ -11,6 +11,14 @@
 -- * 版本 3 但缺 local_schedules、缺 local_schedule_recurrences、或任一预约行缺
 --   preparation_seconds 的残缺载荷同样拒绝（PT426）。判定都在任何写入之前，
 --   不会留下半份快照。
+-- * 版本 3 是并集：自有日程、每场预约的准备时长、重复规则与实例身份、
+--   目标的置顶/排序位（07）以及失败回顾标记（11）都必须整列出现。
+-- * 重复规则的星期集合按客户端真实形状校验：它是 TEXT 列里的 JSON 文本
+--   （例如 "[1]"），解析成数组后逐项检查；坏 JSON、非数组、非整数、越界或
+--   重复的星期都让整份载荷被拒绝，而不是放宽类型让带病数据落库。
+-- * 重复规则的星期集合按客户端真实形状校验：它是 TEXT 列里的 JSON 文本
+--   （例如 "[1]"），解析成数组后逐项检查；坏 JSON、非数组、非整数、越界或
+--   重复的星期都让整份载荷被拒绝，而不是放宽类型让带病数据落库。
 -- * 请求台账重放仍是第一步：同一 request_id 且内容相同则返回它原本写入的
 --   版本；不同内容 PT422；历史已被淘汰 PT425。升级前已写入的旧请求只读重放，
 --   不被版本判定改写。
@@ -49,7 +57,136 @@ alter table public.cloud_business_snapshot_history
 
 comment on constraint cloud_business_snapshots_schema
   on public.cloud_business_snapshots is
-  'Accepts snapshot schema versions 1, 2 and 3; version 3 adds the schedule recurrence rules and per-instance recurrence basis on top of complete core 2.';
+  'Accepts snapshot schema versions 1, 2 and 3; version 3 carries owned schedules, per-appointment preparation seconds, schedule recurrence rules with per-instance basis, goal pin fields and the failure review marker.';
+
+-- 星期集合的实际线上形状：客户端把它存成 TEXT 列的 JSON 文本（例如 "[1]"），
+-- 整份快照逐列导出后仍是 JSON 字符串，而不是 jsonb 数组。这里按真实协议解析
+-- 这段文本，并对内容做严格校验：非法 JSON、非数组、非整数、越界（非 1..7）
+-- 与重复的星期一律返回 NULL，由调用方把整行判为畸形。空集合返回空数组。
+create or replace function public.cloud_snapshot_weekday_values(p_value jsonb)
+returns integer[]
+language plpgsql
+immutable
+set search_path = pg_catalog
+as $$
+declare
+  raw text;
+  parsed jsonb;
+  entry jsonb;
+  days integer[] := '{}';
+begin
+  if p_value is null or jsonb_typeof(p_value) is distinct from 'string' then
+    return null;
+  end if;
+  raw := p_value #>> '{}';
+  begin
+    parsed := raw::jsonb;
+  exception
+    when others then
+      return null;
+  end;
+  if jsonb_typeof(parsed) is distinct from 'array' then
+    return null;
+  end if;
+  for entry in select value from jsonb_array_elements(parsed) loop
+    if jsonb_typeof(entry) is distinct from 'number' then
+      return null;
+    end if;
+    -- "1.0"/"1e0"/"01"/"-1"/超大数 都不是客户端会写出的形状：先做文本白名单
+    -- 再转整数，既拒绝非整数写法，也避免大数触发溢出错误而不是 PT426。
+    if (entry #>> '{}') not in ('1', '2', '3', '4', '5', '6', '7') then
+      return null;
+    end if;
+    if (entry #>> '{}')::int = any(days) then
+      return null;
+    end if;
+    days := days || (entry #>> '{}')::int;
+  end loop;
+  return days;
+end;
+$$;
+revoke all on function public.cloud_snapshot_weekday_values(jsonb)
+  from public, anon, authenticated;
+
+-- 严格日历日：只接受客户端写出的 YYYY-MM-DD 文本，且必须是真实存在的日期。
+-- 用异常兜底把非法月/日/年变成 NULL；函数绝不把 22008 之类的原始错误码抛给
+-- 调用方，否则客户端收到的就不是协议里的 PT426。
+create or replace function public.cloud_snapshot_calendar_date(p_value text)
+returns date
+language plpgsql
+immutable
+set search_path = pg_catalog
+as $$
+declare
+  parsed date;
+begin
+  if p_value is null or p_value !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then
+    return null;
+  end if;
+  begin
+    parsed := p_value::date;
+  exception
+    when others then
+      return null;
+  end;
+  if to_char(parsed, 'YYYY-MM-DD') <> p_value then
+    return null;
+  end if;
+  return parsed;
+end;
+$$;
+revoke all on function public.cloud_snapshot_calendar_date(text)
+  from public, anon, authenticated;
+
+-- JSON 整数的区间校验：只接受十进制整数文本（最多 18 位有效数字）。
+-- "1.0"/"1e9"/超大数等形状一律 false，避免 ::int 越界时抛 22003。
+create or replace function public.cloud_snapshot_integer_between(
+  p_value jsonb,
+  p_min numeric,
+  p_max numeric
+) returns boolean
+language plpgsql
+immutable
+set search_path = pg_catalog
+as $$
+declare
+  raw text;
+begin
+  if p_value is null or jsonb_typeof(p_value) is distinct from 'number' then
+    return false;
+  end if;
+  raw := p_value #>> '{}';
+  if raw is null or raw !~ '^-?[0-9]{1,18}$' then
+    return false;
+  end if;
+  begin
+    return raw::numeric between p_min and p_max;
+  exception
+    when others then
+      return false;
+  end;
+end;
+$$;
+revoke all on function public.cloud_snapshot_integer_between(jsonb, numeric, numeric)
+  from public, anon, authenticated;
+
+-- 严格当前形状：行里只允许出现该表在客户端里的真实列，未知字段整体拒绝，
+-- 避免旧客户端或第三方写入被静默吞掉。
+create or replace function public.cloud_snapshot_only_keys(
+  p_row jsonb,
+  p_allowed text[]
+) returns boolean
+language sql
+immutable
+set search_path = pg_catalog
+as $$
+  select not exists (
+    select 1 from jsonb_object_keys(p_row) as key
+    where key <> all (p_allowed)
+  );
+$$;
+revoke all on function public.cloud_snapshot_only_keys(jsonb, text[])
+  from public, anon, authenticated;
 
 -- 写入口：结构与归属校验沿用原错误码，版本单独判定。
 -- 版本 1 使用独立错误码，便于旧客户端把它识别为“需要先升级”，而不是普通
@@ -166,6 +303,68 @@ begin
       using errcode = 'PT426';
   end if;
 
+  -- 07：目标置顶与手动排序位是 v3 并集的一部分。表必须存在、每行带齐两列，
+  -- 类型与范围严格，未知字段整体拒绝。
+  if jsonb_typeof(p_payload -> 'tables' -> 'local_goals') is distinct from 'array' then
+    raise exception 'snapshot payload version 3 is incomplete: goal pin fields are missing; upgrade before uploading'
+      using errcode = 'PT426';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(p_payload -> 'tables' -> 'local_goals') as goal
+    where (
+      jsonb_typeof(goal) = 'object'
+      and goal ?& array[
+        'user_id', 'id', 'title', 'description', 'classification',
+        'created_at', 'updated_at', 'deleted_at', 'is_pinned', 'sort_order'
+      ]
+      and public.cloud_snapshot_only_keys(goal, array[
+        'user_id', 'id', 'title', 'description', 'classification',
+        'created_at', 'updated_at', 'deleted_at', 'is_pinned', 'sort_order'
+      ])
+      and jsonb_typeof(goal -> 'user_id') = 'string'
+      and goal ->> 'user_id' = owner_id::text
+      and jsonb_typeof(goal -> 'id') = 'string'
+      and btrim(goal ->> 'id') <> ''
+      and jsonb_typeof(goal -> 'title') = 'string'
+      and jsonb_typeof(goal -> 'description') = 'string'
+      and jsonb_typeof(goal -> 'classification') = 'string'
+      and public.cloud_snapshot_integer_between(goal -> 'is_pinned', 0, 1)
+      and (
+        jsonb_typeof(goal -> 'sort_order') = 'null'
+        or public.cloud_snapshot_integer_between(
+          goal -> 'sort_order', 0, 2147483647)
+      )
+      and jsonb_typeof(goal -> 'created_at') = 'number'
+      and jsonb_typeof(goal -> 'updated_at') = 'number'
+      and jsonb_typeof(goal -> 'deleted_at') in ('number', 'null')
+    ) is not true
+  ) then
+    raise exception 'snapshot payload version 3 is incomplete: goal pin fields are malformed; upgrade before uploading'
+      using errcode = 'PT426';
+  end if;
+
+  -- 11：失败记录的回顾标记同样是并集列；缺表、缺键或类型不对都整体拒绝。
+  if jsonb_typeof(p_payload -> 'tables' -> 'local_national_focus_failures') is distinct from 'array' then
+    raise exception 'snapshot payload version 3 is incomplete: failure review state is missing; upgrade before uploading'
+      using errcode = 'PT426';
+  end if;
+  if exists (
+    select 1
+    from jsonb_array_elements(
+      p_payload -> 'tables' -> 'local_national_focus_failures') as failure
+    where (
+      jsonb_typeof(failure) = 'object'
+      and jsonb_exists(failure, 'reviewed_at')
+      and jsonb_typeof(failure -> 'reviewed_at') in ('number', 'null')
+      and jsonb_typeof(failure -> 'user_id') = 'string'
+      and failure ->> 'user_id' = owner_id::text
+    ) is not true
+  ) then
+    raise exception 'snapshot payload version 3 is incomplete: failure review state is malformed; upgrade before uploading'
+      using errcode = 'PT426';
+  end if;
+
   if jsonb_typeof(p_payload -> 'tables' -> 'local_schedule_recurrences') is distinct from 'array' then
     raise exception 'snapshot payload version 3 is incomplete: schedule recurrence rules are missing; upgrade before uploading'
       using errcode = 'PT426';
@@ -181,63 +380,62 @@ begin
   if exists (
     select 1
     from jsonb_array_elements(p_payload -> 'tables' -> 'local_schedule_recurrences') as rule
+    cross join lateral (
+      select public.cloud_snapshot_weekday_values(rule -> 'weekdays') as days
+    ) as weekday_set
     where (
       jsonb_typeof(rule) = 'object'
       and rule ?& array[
         'user_id', 'id', 'frequency', 'weekdays', 'first_date', 'end_date',
         'time_zone_id', 'all_day', 'start_minutes_of_day', 'duration_minutes',
         'day_span', 'shift_days', 'title', 'notes', 'task_id',
-        'created_at', 'updated_at'
+        'reminder_minutes_before', 'created_at', 'updated_at'
       ]
+      and public.cloud_snapshot_only_keys(rule, array[
+        'user_id', 'id', 'frequency', 'weekdays', 'first_date', 'end_date',
+        'time_zone_id', 'all_day', 'start_minutes_of_day', 'duration_minutes',
+        'day_span', 'shift_days', 'title', 'notes', 'task_id',
+        'reminder_minutes_before', 'created_at', 'updated_at'
+      ])
       and jsonb_typeof(rule -> 'user_id') = 'string'
       and rule ->> 'user_id' = owner_id::text
       and jsonb_typeof(rule -> 'id') = 'string'
       and btrim(rule ->> 'id') <> ''
       and rule ->> 'frequency' in ('daily', 'weekly')
-      and jsonb_typeof(rule -> 'weekdays') = 'array'
+      -- 客户端把星期集合写成 TEXT 里的 JSON 文本；解析与内容校验都在
+      -- cloud_snapshot_weekday_values 里完成，任何畸形形状返回 NULL 并整体拒绝。
+      and jsonb_typeof(rule -> 'weekdays') = 'string'
+      and weekday_set.days is not null
       and (
         (rule ->> 'frequency' = 'weekly'
-          and jsonb_array_length(rule -> 'weekdays') >= 1)
+          and cardinality(weekday_set.days) >= 1)
         or (rule ->> 'frequency' = 'daily'
-          and jsonb_array_length(rule -> 'weekdays') = 0)
-      )
-      and not exists (
-        select 1
-        from jsonb_array_elements(rule -> 'weekdays') as day
-        where jsonb_typeof(day) <> 'number'
-          or (day #>> '{}')::numeric <> trunc((day #>> '{}')::numeric)
-          or (day #>> '{}')::int not between 1 and 7
+          and cardinality(weekday_set.days) = 0)
       )
       and jsonb_typeof(rule -> 'time_zone_id') = 'string'
       and (rule ->> 'time_zone_id') in (select name from pg_timezone_names)
-      and jsonb_typeof(rule -> 'all_day') = 'number'
-      and rule ->> 'all_day' in ('0', '1')
-      and jsonb_typeof(rule -> 'start_minutes_of_day') = 'number'
-      and (rule ->> 'start_minutes_of_day')::int between 0 and 1439
-      and jsonb_typeof(rule -> 'duration_minutes') = 'number'
-      and (rule ->> 'duration_minutes')::int >= 1
-      and jsonb_typeof(rule -> 'day_span') = 'number'
-      and (rule ->> 'day_span')::int >= 1
-      and jsonb_typeof(rule -> 'shift_days') = 'number'
-      and (rule ->> 'shift_days')::numeric = trunc((rule ->> 'shift_days')::numeric)
-      and (rule ->> 'shift_days')::int between -3660 and 3660
+      and public.cloud_snapshot_integer_between(rule -> 'all_day', 0, 1)
+      and public.cloud_snapshot_integer_between(
+        rule -> 'start_minutes_of_day', 0, 1439)
+      and public.cloud_snapshot_integer_between(
+        rule -> 'duration_minutes', 1, 2147483647)
+      and public.cloud_snapshot_integer_between(rule -> 'day_span', 1, 2147483647)
+      and public.cloud_snapshot_integer_between(
+        rule -> 'shift_days', -3660, 3660)
       and jsonb_typeof(rule -> 'title') = 'string'
       and btrim(rule ->> 'title') <> ''
       and jsonb_typeof(rule -> 'notes') = 'string'
       and jsonb_typeof(rule -> 'task_id') in ('string', 'null')
       and (rule ->> 'task_id' is null or btrim(rule ->> 'task_id') <> '')
       and jsonb_typeof(rule -> 'first_date') = 'string'
-      and (rule ->> 'first_date') ~ '^\d{4}-\d{2}-\d{2}$'
-      and to_char(to_date(rule ->> 'first_date', 'YYYY-MM-DD'), 'YYYY-MM-DD')
-        = (rule ->> 'first_date')
+      and public.cloud_snapshot_calendar_date(rule ->> 'first_date') is not null
       and jsonb_typeof(rule -> 'end_date') in ('string', 'null')
       and (
         rule ->> 'end_date' is null
         or (
-          (rule ->> 'end_date') ~ '^\d{4}-\d{2}-\d{2}$'
-          and to_char(to_date(rule ->> 'end_date', 'YYYY-MM-DD'), 'YYYY-MM-DD')
-            = (rule ->> 'end_date')
-          and (rule ->> 'end_date') >= (rule ->> 'first_date')
+          public.cloud_snapshot_calendar_date(rule ->> 'end_date') is not null
+          and public.cloud_snapshot_calendar_date(rule ->> 'end_date')
+            >= public.cloud_snapshot_calendar_date(rule ->> 'first_date')
         )
       )
       and jsonb_typeof(rule -> 'created_at') = 'number'
@@ -265,6 +463,16 @@ begin
         'recurrence_start_minutes', 'is_recurrence_exception',
         'is_recurrence_cancelled', 'created_at', 'updated_at'
       ]
+      and public.cloud_snapshot_only_keys(instance, array[
+        'user_id', 'id', 'title', 'notes', 'starts_at', 'ends_at', 'all_day',
+        'all_day_start_date', 'all_day_end_date_exclusive', 'is_completed',
+        'completed_at', 'task_id', 'reminder_minutes_before', 'origin',
+        'source_ids', 'source_names', 'source_event_id', 'occurrence_id',
+        'event_identity', 'recurrence_id', 'recurrence_series_id',
+        'recurrence_date', 'recurrence_time_zone_id',
+        'recurrence_start_minutes', 'is_recurrence_exception',
+        'is_recurrence_cancelled', 'created_at', 'updated_at'
+      ])
       and (
         (
           jsonb_typeof(instance -> 'recurrence_id') = 'null'
@@ -272,6 +480,10 @@ begin
           and jsonb_typeof(instance -> 'recurrence_date') = 'null'
           and jsonb_typeof(instance -> 'recurrence_time_zone_id') = 'null'
           and jsonb_typeof(instance -> 'recurrence_start_minutes') = 'null'
+          and public.cloud_snapshot_integer_between(
+            instance -> 'is_recurrence_exception', 0, 1)
+          and public.cloud_snapshot_integer_between(
+            instance -> 'is_recurrence_cancelled', 0, 1)
           and instance ->> 'is_recurrence_exception' = '0'
           and instance ->> 'is_recurrence_cancelled' = '0'
         )
@@ -281,22 +493,20 @@ begin
           and jsonb_typeof(instance -> 'recurrence_series_id') = 'string'
           and btrim(instance ->> 'recurrence_series_id') <> ''
           and jsonb_typeof(instance -> 'recurrence_date') = 'string'
-          and (instance ->> 'recurrence_date') ~ '^\d{4}-\d{2}-\d{2}$'
-          and to_char(
-            to_date(instance ->> 'recurrence_date', 'YYYY-MM-DD'),
-            'YYYY-MM-DD'
-          ) = (instance ->> 'recurrence_date')
+          and public.cloud_snapshot_calendar_date(
+            instance ->> 'recurrence_date') is not null
           and jsonb_typeof(instance -> 'recurrence_time_zone_id') = 'string'
           and (instance ->> 'recurrence_time_zone_id')
             in (select name from pg_timezone_names)
-          and jsonb_typeof(instance -> 'recurrence_start_minutes')
-            in ('number', 'null')
           and (
-            instance ->> 'recurrence_start_minutes' is null
-            or (instance ->> 'recurrence_start_minutes')::int between 0 and 1439
+            jsonb_typeof(instance -> 'recurrence_start_minutes') = 'null'
+            or public.cloud_snapshot_integer_between(
+              instance -> 'recurrence_start_minutes', 0, 1439)
           )
-          and instance ->> 'is_recurrence_exception' in ('0', '1')
-          and instance ->> 'is_recurrence_cancelled' in ('0', '1')
+          and public.cloud_snapshot_integer_between(
+            instance -> 'is_recurrence_exception', 0, 1)
+          and public.cloud_snapshot_integer_between(
+            instance -> 'is_recurrence_cancelled', 0, 1)
           and exists (
             select 1
             from jsonb_array_elements(
@@ -312,6 +522,32 @@ begin
     ) is not true
   ) then
     raise exception 'snapshot payload version 3 is incomplete: schedule recurrence identity is malformed; upgrade before uploading'
+      using errcode = 'PT426';
+  end if;
+
+  -- 提醒偏移的入站范围与客户端一致：null（不提醒）或 0..10080 分钟。规则模板
+  -- 与普通实例共用同一契约；负数、越界、小数与字符串都在写入前整体拒绝，绝不
+  -- 静默夹到边界。缺键与列类型由上面的完整列集合拒绝。
+  if exists (
+    select 1
+    from (
+      select rule as row
+      from jsonb_array_elements(
+        p_payload -> 'tables' -> 'local_schedule_recurrences'
+      ) as rule
+      union all
+      select instance as row
+      from jsonb_array_elements(
+        p_payload -> 'tables' -> 'local_schedules'
+      ) as instance
+    ) as reminder_row
+    where not (
+      jsonb_typeof(reminder_row.row -> 'reminder_minutes_before') = 'null'
+      or public.cloud_snapshot_integer_between(
+        reminder_row.row -> 'reminder_minutes_before', 0, 10080)
+    )
+  ) then
+    raise exception 'snapshot payload version 3 is incomplete: schedule reminder offsets are malformed; upgrade before uploading'
       using errcode = 'PT426';
   end if;
 
@@ -472,4 +708,4 @@ grant execute on function public.read_national_focus_mcp_metadata(text, bigint)
   to service_role;
 
 comment on table public.cloud_business_snapshots is
-  'One revisioned whole-account business-data snapshot per user; upload is compare-and-swap and only accepts the complete current payload schema version (owned schedules, per-appointment preparation seconds and schedule recurrence rules with per-instance basis).';
+  'One revisioned whole-account business-data snapshot per user; upload is compare-and-swap and only accepts the complete current payload schema version (owned schedules, per-appointment preparation seconds, schedule recurrence rules with per-instance basis, goal pin fields and the failure review marker).';

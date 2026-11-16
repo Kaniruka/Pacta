@@ -141,6 +141,11 @@ void main() {
       expect(opened, hasLength(1));
       expect(find.byType(AppShell), findsOneWidget);
       expect(tester.takeException(), isNull);
+
+      // Unmount here: the shell's database observation closes within this
+      // fake-async zone instead of leaving a timer for teardown.
+      await tester.pumpWidget(const SizedBox());
+      await _settle(tester);
     },
     skip: !Platform.isWindows,
     timeout: const Timeout(Duration(minutes: 2)),
@@ -174,6 +179,11 @@ void main() {
       expect(opened, hasLength(1));
       expect(opened.single.scheduleId, created.id);
       expect(service.takePendingScheduleRequest(), isNull);
+
+      // The shell owns a database observation; unmount inside the test so its
+      // close runs in this fake-async zone instead of after teardown.
+      await tester.pumpWidget(const SizedBox());
+      await _settle(tester);
     },
     skip: !Platform.isWindows,
     timeout: const Timeout(Duration(minutes: 2)),

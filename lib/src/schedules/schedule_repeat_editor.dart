@@ -110,6 +110,7 @@ class ScheduleRepeatEditor extends StatelessWidget {
     this.firstDate,
     this.enabled = true,
     this.compact = false,
+    this.allowDisable = true,
   });
 
   final ScheduleRepeatSelection value;
@@ -122,6 +123,10 @@ class ScheduleRepeatEditor extends StatelessWidget {
 
   /// 紧凑模式只保留开关与一行摘要，适合已有表单的折叠区。
   final bool compact;
+
+  /// 编辑既有重复系列时关掉开关会误以为"改成不重复"：调用方传 false
+  /// 表示只能调整频率/星期/结束日期，不能移除重复本身。
+  final bool allowDisable;
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +142,7 @@ class ScheduleRepeatEditor extends StatelessWidget {
           title: const Text('重复'),
           subtitle: Text(value.repeats ? _summary() : '不重复，只发生这一次'),
           value: value.repeats,
-          onChanged: enabled
+          onChanged: enabled && (allowDisable || !value.repeats)
               ? (on) => onChanged(
                   on
                       ? value.copyWith(repeats: true)

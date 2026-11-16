@@ -424,6 +424,7 @@ void main() {
           home: CalendarSourcesPage(
             repository: windowsRepository!,
             isAndroid: false,
+            displayTimeZoneIdLoader: () async => 'Etc/UTC',
           ),
         ),
       );

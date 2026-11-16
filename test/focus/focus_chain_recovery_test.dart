@@ -115,15 +115,17 @@ void main() {
     await _disposeWidget(tester);
   });
 
-  testWidgets('专注链已挂载后从看板新建预约，恢复条实时出现并在取消后清除', (tester) async {
+  testWidgets('专注链已挂载后从计划新建预约，恢复条实时出现并在取消后清除', (tester) async {
     final fixture = await _Fixture.create();
     addTearDown(fixture.dispose);
     await _openFocusChain(tester, fixture);
     expect(find.text('已有预约准备'), findsNothing);
 
-    // Create the appointment through the real Board flow after Focus Chain
-    // has already mounted; the recovery strip must update without a session.
-    await _openDestination(tester, '看板');
+    // Create the appointment through the real Plan entry after Focus Chain has
+    // already mounted; the recovery strip must update without a session.
+    await _openDestination(tester, '计划');
+    await tester.ensureVisible(find.byTooltip('开始专注'));
+    await _boundedSettle(tester);
     await tester.tap(find.byTooltip('开始专注'));
     await _boundedSettle(tester);
     await tester.tap(find.text('10 分钟'));

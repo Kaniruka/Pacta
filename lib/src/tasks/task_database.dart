@@ -16,6 +16,10 @@ class LocalGoals extends Table {
   DateTimeColumn get updatedAt => dateTime()();
   DateTimeColumn get deletedAt => dateTime().nullable()();
 
+  /// 35：账号级置顶标记与手动排序位（仅业务快照携带，旧逐实体同步不写）。
+  BoolColumn get isPinned => boolean().withDefault(const Constant(false))();
+  IntColumn get sortOrder => integer().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {userId, id};
 }
@@ -411,6 +415,10 @@ class LocalScheduleRecurrences extends Table {
   TextColumn get notes => text().withDefault(const Constant(''))();
   TextColumn get taskId => text().nullable()();
 
+  /// 规则模板自带的提醒偏移（分钟）。旧规则为 null，表示"不提醒"；
+  /// 懒展开的新实例继承它，历史实例上的显式配置不被迁移改写。
+  IntColumn get reminderMinutesBefore => integer().nullable()();
+
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
@@ -710,7 +718,7 @@ class PactaDatabase extends _$PactaDatabase {
   /// ticket, so the final integrating schema has to reconcile both bodies above
   /// 36; this step stays structurally guarded instead of encoding a number.
   @override
-  int get schemaVersion => 38;
+  int get schemaVersion => 39;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -984,6 +992,26 @@ class PactaDatabase extends _$PactaDatabase {
           );
         }
       }
+      // 35：目标置顶与手动排序位。
+      //
+      // 32–36 由并行票据预留（账号时区、重复日程、失败回顾），本票不假定
+      // 中间版本包含它们；这里用列存在性检查只补本票列，已存目标保持
+      // "未置顶 + 无排序位"，顺序沿用既有规则。守卫写成 < 37，使已经升到
+      // 02 的 36 的库也能拿到置顶列；37 是本分支对 35+36 的合并版本号。
+      if (from < 37) {
+        await ensureGoalPinSchema(this, m);
+      }
+      // 39：最终完整并集。按结构（而不是版本号区间）补齐所有并行票据的
+      // 表/列：核心日程与准备时长、重复规则与模板（含提醒偏移）、目标置顶、
+      // 失败回顾、账号显示时区与 revision。任何更旧的库（29/30/31/33/34/
+      // 35/36/37/38）都会走一遍；已存在的结构一律不动、已存值不清空。
+      if (from < 39) {
+        await ensureMergedSchedulesSchema(this, m);
+        await ensureRecurrenceSchema(this, m);
+        await ensureGoalPinSchema(this, m);
+        await ensureFailureReviewSchema(this, m);
+        await ensureProfileZoneSchema(this, m);
+      }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);
       }
@@ -1051,6 +1079,10 @@ Future<void> ensureRecurrenceSchema(
     await addRuleColumn('title', database.localScheduleRecurrences.title);
     await addRuleColumn('notes', database.localScheduleRecurrences.notes);
     await addRuleColumn('task_id', database.localScheduleRecurrences.taskId);
+    await addRuleColumn(
+      'reminder_minutes_before',
+      database.localScheduleRecurrences.reminderMinutesBefore,
+    );
   }
   if (!tableNames.contains('local_schedules')) return;
   final columns = await database
@@ -1090,6 +1122,10 @@ Future<void> ensureRecurrenceSchema(
 }
 
 Future<void> _backfillRuleTemplates(PactaDatabase database) async {
+  // 候选实例必须是这一条规则里仍然可见的那一期："仅本次"例外有自己的改写内容，
+  // 单期删除的墓碑只剩占位行，两者都不能变成整条规则的默认内容，否则升级后新生
+  // 成的实例会带上一期的改写或已删除标题。最早的非例外实例是规则内容的唯一来
+  // 源；只有整条规则只剩例外时，才退回到任意一期，并且优先取未取消的那一期。
   await database.customStatement('''
     UPDATE local_schedule_recurrences
     SET title = coalesce(
@@ -1099,42 +1135,128 @@ Future<void> _backfillRuleTemplates(PactaDatabase database) async {
             WHERE instance.user_id = local_schedule_recurrences.user_id
               AND instance.recurrence_id = local_schedule_recurrences.id
               AND instance.is_recurrence_exception = 0
-            ORDER BY instance.starts_at
+              AND instance.is_recurrence_cancelled = 0
+            ORDER BY instance.starts_at, instance.id
             LIMIT 1
           ),
           (
             SELECT instance.title FROM local_schedules AS instance
             WHERE instance.user_id = local_schedule_recurrences.user_id
               AND instance.recurrence_id = local_schedule_recurrences.id
-            ORDER BY instance.starts_at
+            ORDER BY instance.is_recurrence_cancelled, instance.starts_at, instance.id
             LIMIT 1
           ),
           title
         ),
         notes = coalesce(
+          nullif(notes, ''),
           (
             SELECT instance.notes FROM local_schedules AS instance
             WHERE instance.user_id = local_schedule_recurrences.user_id
               AND instance.recurrence_id = local_schedule_recurrences.id
               AND instance.is_recurrence_exception = 0
-            ORDER BY instance.starts_at
+              AND instance.is_recurrence_cancelled = 0
+            ORDER BY instance.starts_at, instance.id
             LIMIT 1
           ),
           notes
         ),
         task_id = coalesce(
+          nullif(task_id, ''),
           (
             SELECT instance.task_id FROM local_schedules AS instance
             WHERE instance.user_id = local_schedule_recurrences.user_id
               AND instance.recurrence_id = local_schedule_recurrences.id
               AND instance.is_recurrence_exception = 0
-            ORDER BY instance.starts_at
+              AND instance.is_recurrence_cancelled = 0
+            ORDER BY instance.starts_at, instance.id
             LIMIT 1
           ),
           task_id
         )
     WHERE title = ''
     ''');
+}
+
+/// v35 结构：目标表补置顶标记与手动排序位。
+///
+/// 只在列缺失时补列，重复升级或回拨 user_version 都安全；不重建目标表，
+/// 也不改写已存标题、描述、分类或删除标记。
+Future<void> ensureGoalPinSchema(
+  PactaDatabase database,
+  Migrator migrator,
+) async {
+  final columns = await database
+      .customSelect('PRAGMA table_info(local_goals)')
+      .get();
+  if (columns.isEmpty) return;
+  final names = {for (final row in columns) row.read<String>('name')};
+  if (!names.contains('is_pinned')) {
+    await migrator.addColumn(database.localGoals, database.localGoals.isPinned);
+  }
+  if (!names.contains('sort_order')) {
+    await migrator.addColumn(
+      database.localGoals,
+      database.localGoals.sortOrder,
+    );
+  }
+}
+
+/// 11 的回顾标记：只在缺列时补，已存 reviewed_at（含非空值）原样保留。
+Future<void> ensureFailureReviewSchema(
+  PactaDatabase database,
+  Migrator migrator,
+) async {
+  final columns = await database
+      .customSelect('PRAGMA table_info(local_national_focus_failures)')
+      .get();
+  if (columns.isEmpty) return;
+  final names = {for (final row in columns) row.read<String>('name')};
+  if (names.contains('reviewed_at')) return;
+  await migrator.addColumn(
+    database.localNationalFocusFailures,
+    database.localNationalFocusFailures.reviewedAt,
+  );
+}
+
+/// 02 的账号显示时区三列：缺表则建空表，缺列才补；不重置已选时区、
+/// 待上传意图或缓存的 revision。
+Future<void> ensureProfileZoneSchema(
+  PactaDatabase database,
+  Migrator migrator,
+) async {
+  final table = await database
+      .customSelect(
+        "SELECT name FROM sqlite_master WHERE type = 'table' "
+        "AND name = 'local_profile_accounts'",
+      )
+      .get();
+  if (table.isEmpty) {
+    await migrator.createTable(database.localProfileAccounts);
+    return;
+  }
+  final columns = await database
+      .customSelect('PRAGMA table_info(local_profile_accounts)')
+      .get();
+  final names = {for (final row in columns) row.read<String>('name')};
+  if (!names.contains('time_zone_id')) {
+    await migrator.addColumn(
+      database.localProfileAccounts,
+      database.localProfileAccounts.timeZoneId,
+    );
+  }
+  if (!names.contains('pending_time_zone_upload')) {
+    await migrator.addColumn(
+      database.localProfileAccounts,
+      database.localProfileAccounts.pendingTimeZoneUpload,
+    );
+  }
+  if (!names.contains('time_zone_revision')) {
+    await migrator.addColumn(
+      database.localProfileAccounts,
+      database.localProfileAccounts.timeZoneRevision,
+    );
+  }
 }
 
 Future<Set<String>> _sqliteTableNames(PactaDatabase database) async {

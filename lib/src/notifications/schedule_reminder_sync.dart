@@ -135,6 +135,15 @@ class ScheduleReminderSync {
     }
     if (epoch != _epoch || !identical(repository, _repository)) return;
     await _push(schedules, epoch, repository);
+    // A database observation can deliver the same window while this read is
+    // queued, and the newer push supersedes this one. That push carries an
+    // equally complete list, so the completion condition is the newest work
+    // chain finishing, not merely this revision being queued.
+    for (var attempt = 0; attempt < 8; attempt += 1) {
+      final work = _work;
+      await work;
+      if (identical(work, _work)) return;
+    }
   }
 
   Future<void> _push(

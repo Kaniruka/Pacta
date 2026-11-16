@@ -20,6 +20,7 @@ import base64
 import datetime
 import hashlib
 import json
+import os
 import pathlib
 import random
 import re
@@ -42,6 +43,9 @@ FIXTURE_SOURCES = [
     'lib/src/notifications/focus_notification_service.dart',
     'lib/src/notifications/schedule_reminder_plan.dart',
     'lib/src/notifications/schedule_reminder_sync.dart',
+    'lib/src/notifications/windows_notification_adapter.dart',
+    'windows/runner/windows_notification_bridge.cpp',
+    'windows/runner/windows_notification_bridge.h',
 ]
 ID_SPACE = range(230000, 330000)
 
@@ -71,12 +75,11 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument('--exe', default=str(DEFAULT_EXE))
     parser.add_argument('--base', default=str(ROOT / '.scratch/schedule-reminder-fixture-runs'))
-    parser.add_argument('--mode', choices=['exit', 'logout', 'reschedule', 'shell', 'control'], default='exit')
+    parser.add_argument('--mode', choices=['exit', 'logout', 'reschedule', 'shell', 'cleanup'], default='exit')
     parser.add_argument('--due', type=int, default=45)
     parser.add_argument('--offset', type=int, default=30)
     parser.add_argument('--reschedule-delay', type=int, default=90)
     parser.add_argument('--aumid', default=None, help='explicit test AUMID (Pacta.Test.*) for a paired probe')
-    parser.add_argument('--guid', default=None, help='explicit GUID paired with --aumid')
     parser.add_argument('--no-build', action='store_true', help='reuse the existing fixture binary')
     args = parser.parse_args()
 
@@ -102,16 +105,12 @@ def main() -> int:
         print(json.dumps({'stage': 'exe', 'error': f'missing {exe}', 'passed': False}))
         return 2
 
-    if (args.aumid is None) != (args.guid is None):
-        print(json.dumps({'stage': 'identity', 'error': '--aumid and --guid must be provided together', 'passed': False}))
-        return 2
     if args.aumid is not None and not args.aumid.startswith(PROBE_PREFIX):
         print(json.dumps({'stage': 'identity', 'error': f'explicit AUMID must start with {PROBE_PREFIX}', 'passed': False}))
         return 2
     token = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d%H%M%S') + '-' + format(random.randrange(16**6), '06x')
     aumid_source = 'explicit' if args.aumid else 'generated'
     aumid = args.aumid or f'{TEST_PREFIX}Schedule06.{token}'
-    guid = args.guid or str(uuid.uuid4())
     if not aumid.startswith(TEST_PREFIX):
         print(json.dumps({'stage': 'identity', 'error': 'test AUMID required', 'passed': False}))
         return 2
@@ -139,7 +138,6 @@ def main() -> int:
         'mode': args.mode,
         'aumid': aumid,
         'aumidSource': aumid_source,
-        'guid': guid,
         'marker': token,
         'exe': str(exe),
         'exeSha256': sha256(exe),
@@ -148,7 +146,7 @@ def main() -> int:
         'sourceSha256': source_digests,
         'runStartUtc': iso(run_started),
         'visualDeliveryReviewed': False,
-        'acceptance': args.mode != 'control',
+        'acceptance': True,
         'warnings': warnings,
     }
     command = [
@@ -156,7 +154,6 @@ def main() -> int:
         f'--mode={args.mode}',
         f'--output={output}',
         f'--aumid={aumid}',
-        f'--guid={guid}',
         f'--due={args.due}',
         f'--offset={args.offset}',
         f'--reschedule-delay={args.reschedule_delay}',
@@ -165,8 +162,15 @@ def main() -> int:
     report['command'] = command
     real_pid = None
     try:
+        # The runner resolves the notification identity before Dart starts, so
+        # the test identity travels in the environment. Permanent teardown is
+        # additionally opted in, and only for the cleanup mode.
+        environment = dict(os.environ)
+        environment['PACTA_TEST_NOTIFICATION_AUMID'] = aumid
+        if args.mode == 'cleanup':
+            environment['PACTA_NOTIFICATION_FIXTURE_ALLOW_UNREGISTER_ALL'] = '1'
         with log_path.open('w', encoding='utf-8') as stream:
-            process = subprocess.Popen(command, cwd=ROOT, stdout=stream, stderr=subprocess.STDOUT)
+            process = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=stream, stderr=subprocess.STDOUT)
         real_pid = process.pid
         report['popenPid'] = real_pid
         process.wait(timeout=max(120, args.due + args.reschedule_delay + 90))
@@ -262,7 +266,7 @@ def queue_check_name(mode: str) -> str:
         'shell': 'queuePreservedAcrossUnmount',
         'logout': 'logoutCancelled',
         'reschedule': 'rescheduleSingleSurvivor',
-        'control': 'controlScheduledQueued',
+        'cleanup': 'queueEmptyAfterCleanup',
     }[mode]
 
 
@@ -534,8 +538,8 @@ def verify(report, fixture, events, due, expected_due, old_due, new_due):
         and str(report.get('aumid')).startswith(PROBE_PREFIX if explicit_aumid else TEST_PREFIX)
         and (explicit_aumid or str(report.get('aumid')).endswith(report.get('token', ''))),
     )
-    gate('fixtureGuid', field('guid') == report.get('guid'))
-    gate('guidFormat', is_uuid4(str(report.get('guid', ''))))
+    gate('registeredAumid', fixture.get('registeredAumid') == report.get('aumid'), fixture.get('registeredAumid'))
+    gate('identityFromEnvironment', fixture.get('identitySource') == 'environment', fixture.get('identitySource'))
     gate('fixtureMode', field('mode') == mode, fixture.get('mode'))
     gate('fixtureMarker', field('marker') == report.get('token'))
     gate('fixturePid', fixture.get('pid') is not None and fixture.get('pid') == report.get('popenPid'), {'fixture': fixture.get('pid'), 'popen': report.get('popenPid')})
@@ -567,7 +571,7 @@ def verify(report, fixture, events, due, expected_due, old_due, new_due):
     gate('pendingIsList', isinstance(pending, list), pending)
     gate('queueContainsPlanned', isinstance(pending, list) and planned_id in pending, pending)
 
-    if mode in ('exit', 'shell', 'logout', 'control'):
+    if mode in ('exit', 'shell', 'logout', 'cleanup'):
         gate('processExitedBeforeDue', exit_at is not None and due is not None and exit_at < due, {'exit': report.get('processExitedAtUtc'), 'due': fixture.get('plannedDueAtUtc')})
 
     if mode == 'exit':
@@ -613,41 +617,11 @@ def verify(report, fixture, events, due, expected_due, old_due, new_due):
     details['scheduledToastsBeforeDue'] = toast_summary(report.get('scheduledToastsBeforeDue'))
     details['scheduledToastsAfterDue'] = toast_summary(report.get('scheduledToastsAfterDue'))
 
-    if mode == 'control':
-        shown = parse_iso(fixture.get('controlShownAtUtc'))
-        gate('field:controlShownAtUtc', shown is not None)
-        control_id = field('controlNotificationId')
-        gate(
-            'controlIdOutsideNamespaces',
-            isinstance(control_id, int)
-            and not (2200 <= control_id <= 2205)
-            and not (230000 <= control_id < 330000),
-            control_id,
-        )
-        pending_after = field('pendingAfterControl')
-        gate('controlScheduledQueued', is_list_with(pending_after, planned_id), pending_after)
-        control_hits = within(times, shown, before=1, after=25) if shown else None
-        gate(
-            'controlEventObserved',
-            control_hits is not None and len(control_hits) == 1,
-            {'hitCount': None if control_hits is None else len(control_hits), 'shownAt': fixture.get('controlShownAtUtc')},
-        )
-        due_hits = within(times, due)
-        gate(
-            'scheduledEventObserved',
-            due_hits is not None and len(due_hits) == 1,
-            {'hitCount': None if due_hits is None else len(due_hits), 'due': fixture.get('plannedDueAtUtc')},
-        )
-        gate(
-            'controlSeparatedFromScheduled',
-            shown is not None and due is not None and (due - shown).total_seconds() >= 25,
-            {'shownAt': fixture.get('controlShownAtUtc'), 'due': fixture.get('plannedDueAtUtc')},
-        )
-        gate(
-            'scheduledToastHeldBeforeDue',
-            toast_matches_due(report.get('scheduledToastsBeforeDue'), due),
-            toast_summary(report.get('scheduledToastsBeforeDue')),
-        )
+    if mode == 'cleanup':
+        pending_after = field('pendingAfterCleanup')
+        gate('cleanupUnregistered', fixture.get('unregisteredAll') is True)
+        gate('queueEmptyAfterCleanup', pending_after == [], pending_after)
+        gate('noDeliveryAfterCleanup', within(times, due) == [], {'due': fixture.get('plannedDueAtUtc')})
     elif mode == 'logout':
         hits = within(times, due)
         gate('logoutNoDelivery', hits == [], {'hitCount': None if hits is None else len(hits)})

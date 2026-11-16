@@ -13,6 +13,7 @@ import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 
 import '../support/fake_auth_repository.dart';
+import '../support/plan_navigation.dart';
 
 void main() {
   testWidgets('目标摘要紧凑呈现任务数和状态，折叠保留标识并明显缩短', (tester) async {
@@ -45,7 +46,7 @@ void main() {
         classification: TaskClassification.regular,
       ),
     );
-    await harness.show(tester);
+    await harness.showPlan(tester);
     expect(find.text('2 项任务 · 进行中'), findsOneWidget);
     final card = find.ancestor(
       of: find.text('季度规划'),
@@ -82,7 +83,7 @@ void main() {
       PactaDatabase(NativeDatabase.memory()),
     );
     addTearDown(harness.database.close);
-    await harness.show(tester);
+    await harness.showPlan(tester);
 
     await tester.tap(find.text('新建目标'));
     await tester.pumpAndSettle();
@@ -149,7 +150,7 @@ void main() {
         classification: TaskClassification.regular,
       ),
     );
-    await harness.show(tester);
+    await harness.showPlan(tester);
     final header = find.byKey(ValueKey('goal-header-${goal.id}'));
     final headerNodeId = tester.getSemantics(header).id;
     expect(find.text('暂无任务，先添加一个可执行的下一步。'), findsOneWidget);
@@ -294,7 +295,7 @@ void main() {
       goal.id,
       const TaskDraft(title: '分类任务', classification: TaskClassification.both),
     );
-    await harness.show(tester);
+    await harness.showPlan(tester);
     expect(find.textContaining('精锐'), findsNothing);
     expect(find.textContaining('两者'), findsNothing);
     await tester.tap(find.byTooltip('编辑目标'));
@@ -337,8 +338,10 @@ void main() {
         classification: TaskClassification.regular,
       ),
     );
-    await harness.show(tester);
+    await harness.showPlan(tester);
 
+    await tester.ensureVisible(find.text('添加任务'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('添加任务'));
     await tester.pumpAndSettle();
     await tester.enterText(_field('任务名称'), '整理发布文案');
@@ -454,5 +457,11 @@ class _BoardHarness {
       ),
     );
     await tester.pumpAndSettle();
+  }
+
+  /// 目标卡片的完整管理在计划页；看板只显示置顶摘要。
+  Future<void> showPlan(WidgetTester tester) async {
+    await show(tester);
+    await openPlan(tester);
   }
 }

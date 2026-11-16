@@ -1,14 +1,13 @@
-import 'dart:async';
-
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:timezone/timezone.dart' as timezone;
 
 /// The Windows platform boundary used by [FocusNotificationService].
 ///
-/// The production adapter wraps the already locked
-/// `flutter_local_notifications_windows` plugin so notifications are registered
-/// with the OS scheduler instead of an in-process timer: they must survive a
-/// normal process exit. Tests inject a fake adapter at this seam.
+/// The production adapter talks to the Flutter runner, which owns the Windows
+/// App SDK registration and the OS-scheduled queue. The locked
+/// `flutter_local_notifications_windows` plugin is deliberately not used here:
+/// its `initialize` writes its own COM activator over the SDK's registration,
+/// which is what the R5 probe proved must not happen.
 abstract interface class WindowsNotificationAdapter {
   /// Registers this app's AUMID and the click callback, and returns whether the
   /// OS accepted the registration.
@@ -42,45 +41,79 @@ class WindowsNotificationIdentity {
   const WindowsNotificationIdentity({
     this.appName = 'Pacta',
     this.appUserModelId = 'Pacta.Desktop.Focus',
-    this.guid = '6f1a3c2e-8d4b-4f7a-9c21-3a5d7e9b4c60',
   });
 
   final String appName;
   final String appUserModelId;
-  final String guid;
 }
 
-/// Production adapter over the locked Windows plugin.
-class LocalNotificationsWindowsAdapter implements WindowsNotificationAdapter {
-  LocalNotificationsWindowsAdapter({
-    FlutterLocalNotificationsWindows? plugin,
+/// Production adapter over the runner's native bridge.
+///
+/// The bridge method names and the click event are declared in
+/// `windows/runner/windows_notification_bridge.{h,cpp}`. Every call returns the
+/// real platform verdict: an unavailable SDK, a rejected identity or a refused
+/// schedule is reported, never hidden behind a successful no-op.
+class RunnerWindowsNotificationAdapter implements WindowsNotificationAdapter {
+  RunnerWindowsNotificationAdapter({
+    MethodChannel? channel,
     this.identity = const WindowsNotificationIdentity(),
-  }) : _plugin = plugin ?? FlutterLocalNotificationsWindows();
+  }) : _channel = channel ?? const MethodChannel(channelName);
 
-  final FlutterLocalNotificationsWindows _plugin;
+  static const String channelName = 'com.pacta/windows_notifications';
+
+  final MethodChannel _channel;
   final WindowsNotificationIdentity identity;
+
   bool _ready = false;
+  bool _handlerAttached = false;
+  DidReceiveNotificationResponseCallback? _onResponse;
+
+  /// What the process actually registered, as reported by the runner. The Dart
+  /// side only asserts the expected identity; the bridge decides it.
+  String? registeredAumid;
+  String? identitySource;
 
   @override
   Future<bool> initialize({
     DidReceiveNotificationResponseCallback? onResponse,
   }) async {
+    if (onResponse != null) _onResponse = onResponse;
+    if (!_handlerAttached) {
+      _handlerAttached = true;
+      _channel.setMethodCallHandler(_handlePlatformCall);
+    }
     if (_ready) return true;
     try {
-      _ready = await _plugin.initialize(
-        settings: WindowsInitializationSettings(
-          appName: identity.appName,
-          appUserModelId: identity.appUserModelId,
-          guid: identity.guid,
-        ),
-        onDidReceiveNotificationResponse: onResponse,
+      final reply = await _channel.invokeMapMethod<Object?, Object?>(
+        'initialize',
+        {'expectedAumid': identity.appUserModelId},
       );
-    } catch (_) {
-      // An unavailable shell registration must not break the app; scheduling
-      // and delivery then stay unavailable and stay reported as unverified.
+      _ready = reply != null && reply['ready'] == true;
+      registeredAumid = reply?['aumid'] is String
+          ? reply!['aumid']! as String
+          : null;
+      identitySource = reply?['identitySource'] is String
+          ? reply!['identitySource']! as String
+          : null;
+    } on PlatformException {
+      _ready = false;
+    } on MissingPluginException {
       _ready = false;
     }
     return _ready;
+  }
+
+  Future<Object?> _handlePlatformCall(MethodCall call) async {
+    if (call.method != 'notificationClicked') return null;
+    final payload = call.arguments;
+    if (payload is! String || payload.isEmpty) return null;
+    _onResponse?.call(
+      NotificationResponse(
+        notificationResponseType: NotificationResponseType.selectedNotification,
+        payload: payload,
+      ),
+    );
+    return null;
   }
 
   @override
@@ -92,31 +125,87 @@ class LocalNotificationsWindowsAdapter implements WindowsNotificationAdapter {
     String? payload,
   }) async {
     if (!_ready) return;
-    // Windows keeps several scheduled toasts per id; cancel first so an edit
-    // leaves exactly one pending item.
-    await _plugin.cancel(id: id);
-    await _plugin.zonedSchedule(
-      id: id,
-      title: title,
-      body: body,
-      scheduledDate: timezone.TZDateTime.from(at.toUtc(), timezone.UTC),
-      payload: payload,
-    );
+    try {
+      await _channel.invokeMethod<void>('schedule', {
+        'id': id,
+        'title': title,
+        'body': body,
+        'dueUnixMs': at.toUtc().millisecondsSinceEpoch,
+        'payload': payload ?? '',
+      });
+    } on PlatformException {
+      // A refused registration leaves the in-process tray countdown intact; the
+      // caller keeps its bookkeeping because nothing was queued.
+    } on MissingPluginException {
+      _ready = false;
+    }
   }
 
   @override
   Future<void> cancel(int id) async {
     if (!_ready) return;
-    await _plugin.cancel(id: id);
+    try {
+      await _channel.invokeMethod<void>('cancel', {'id': id});
+    } on PlatformException {
+      // Cancelling an id the OS no longer holds is not a state change.
+    } on MissingPluginException {
+      _ready = false;
+    }
   }
 
   @override
   Future<List<int>> pendingIds() async {
     if (!_ready) return const [];
-    final pending = await _plugin.pendingNotificationRequests();
-    return [for (final request in pending) request.id];
+    try {
+      final ids = await _channel.invokeListMethod<Object?>('pendingIds');
+      if (ids == null) return const [];
+      return [
+        for (final id in ids)
+          if (id is int) id,
+      ];
+    } on PlatformException {
+      return const [];
+    } on MissingPluginException {
+      _ready = false;
+      return const [];
+    }
+  }
+
+  /// Read-only view of the OS notification switch. Never writes a setting.
+  Future<bool> notificationsEnabled() async {
+    if (!_ready) return false;
+    try {
+      return await _channel.invokeMethod<bool>('notificationsEnabled') ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
+
+  /// Fixture-only permanent deregistration for a `Pacta.Test.*` identity.
+  ///
+  /// It exists so native acceptance can leave no SDK registration behind; the
+  /// bridge refuses the product identity and non-fixture processes.
+  Future<void> unregisterAllForTestIdentity() async {
+    await _channel.invokeMethod<void>('unregisterAllForTestIdentity');
   }
 
   @override
-  Future<void> dispose() async => _plugin.dispose();
+  Future<void> dispose() async {
+    if (_handlerAttached) {
+      _handlerAttached = false;
+      _channel.setMethodCallHandler(null);
+    }
+    if (_ready) {
+      try {
+        await _channel.invokeMethod<void>('dispose');
+      } on PlatformException {
+        // The process is going away; the registration outlives this adapter.
+      } on MissingPluginException {
+        // Nothing to detach from.
+      }
+    }
+    _ready = false;
+  }
 }

@@ -5,13 +5,16 @@
 // registers under the product AUMID.
 //
 // Build: flutter build windows --release -t tool/schedule_reminder_fixture/main.dart
-// Run:   tool/schedule_reminder_fixture/run.py --mode exit|logout|reschedule|shell
+// Run:   PACTA_TEST_NOTIFICATION_AUMID=<Pacta.Test.*> tool/schedule_reminder_fixture/run.py
+//
+// The identity is chosen by the runner before Dart starts, so it travels in
+// PACTA_TEST_NOTIFICATION_AUMID. Only Pacta.Test.* is accepted there; the
+// product identity can never be replaced from outside the process.
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/auth/auth_repository.dart';
@@ -28,9 +31,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const fixtureBuildMarker = 'schedule06-fixture-v3';
 
-/// Outside both the focus id range and the schedule reminder namespace.
-const _controlNotificationId = 229997;
-
 Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
   final options = _FixtureOptions.parse(args);
@@ -41,7 +41,6 @@ Future<void> main(List<String> args) async {
     'exe': Platform.resolvedExecutable,
     'appUserModelId': options.aumid,
     'aumid': options.aumid,
-    'guid': options.guid,
     'marker': options.marker,
     'fixtureBuildMarker': fixtureBuildMarker,
     'startedAtUtc': startedAtUtc.toIso8601String(),
@@ -64,15 +63,10 @@ Future<void> main(List<String> args) async {
     database: database,
     userId: 'fixture-user',
   );
-  // Kept so the diagnostic control mode can post one immediate toast through
-  // the same initialized plugin instance the adapter uses.
-  final plugin = FlutterLocalNotificationsWindows();
-  final adapter = LocalNotificationsWindowsAdapter(
-    plugin: plugin,
+  final adapter = RunnerWindowsNotificationAdapter(
     identity: WindowsNotificationIdentity(
       appName: 'Pacta Reminder Fixture',
       appUserModelId: options.aumid,
-      guid: options.guid,
     ),
   );
   final service = FocusNotificationService(
@@ -88,6 +82,10 @@ Future<void> main(List<String> args) async {
   var exitCode = 0;
   try {
     report['initialized'] = await adapter.initialize();
+    // The bridge, not this fixture, decides which identity the process
+    // registered; record what it actually says.
+    report['registeredAumid'] = adapter.registeredAumid;
+    report['identitySource'] = adapter.identitySource;
     if (report['initialized'] != true) {
       throw StateError('notification initialization failed');
     }
@@ -247,27 +245,15 @@ Future<void> main(List<String> args) async {
         await Future<void>.delayed(const Duration(milliseconds: 800));
         report['pendingAfterShellUnmountSettled'] = await adapter.pendingIds();
         break;
-      case 'control':
-        // Diagnostic only: one immediate toast with its own marker, then the
-        // already-scheduled toast is left untouched. It never counts as an
-        // acceptance mode.
-        report['controlMarker'] = 'control-${options.marker}';
-        report['controlNotificationId'] = _controlNotificationId;
-        report['scheduledNotificationId'] = planned.notificationId;
-        report['scheduledDueAtUtc'] = planned.deliverAt.toIso8601String();
-        report['controlShownAtUtc'] = DateTime.now().toUtc().toIso8601String();
-        await plugin.show(
-          id: _controlNotificationId,
-          title: '即时对照 ${options.marker}',
-          body: 'control toast',
-          payload: 'control-diagnostic:${options.marker}',
-        );
-        report['controlShowReturnedAtUtc'] = DateTime.now()
-            .toUtc()
-            .toIso8601String();
-        report['pendingAfterControl'] = await _waitForQueue(
+      case 'cleanup':
+        // Permanent deregistration is the only teardown that leaves no SDK
+        // registration behind. The bridge requires a Pacta.Test.* identity and
+        // the explicit runtime opt-in, so the product identity is unreachable.
+        await adapter.unregisterAllForTestIdentity();
+        report['unregisteredAll'] = true;
+        report['pendingAfterCleanup'] = await _waitForQueue(
           adapter,
-          (ids) => ids.contains(planned.notificationId),
+          (ids) => ids.isEmpty,
         );
         break;
       default:
@@ -435,7 +421,6 @@ class _FixtureOptions {
     required this.offsetMinutes,
     required this.marker,
     required this.aumid,
-    required this.guid,
     required this.rescheduleDelaySeconds,
   });
 
@@ -445,7 +430,6 @@ class _FixtureOptions {
   final int offsetMinutes;
   final String marker;
   final String aumid;
-  final String guid;
   final int rescheduleDelaySeconds;
 
   static _FixtureOptions parse(List<String> args) {
@@ -462,8 +446,10 @@ class _FixtureOptions {
       dueInSeconds: int.tryParse(values['due'] ?? '') ?? 90,
       offsetMinutes: int.tryParse(values['offset'] ?? '') ?? 30,
       marker: values['marker'] ?? 'default',
-      aumid: values['aumid'] ?? 'Pacta.Test.Schedule06.default',
-      guid: values['guid'] ?? '0b6f1c55-9b1a-4f21-9c9d-3c76a1e7b210',
+      aumid:
+          Platform.environment['PACTA_TEST_NOTIFICATION_AUMID'] ??
+          values['aumid'] ??
+          'Pacta.Test.Schedule06.default',
       rescheduleDelaySeconds:
           int.tryParse(values['reschedule-delay'] ?? '') ?? 180,
     );

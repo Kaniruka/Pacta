@@ -164,6 +164,7 @@ abstract interface class FocusRepository {
     required Map<String, FocusSessionReconciliationSelection> sessionSelections,
     String? adoptedSessionId,
   });
+
   /// [timeZoneId] is the account display time zone resolved by the caller from
   /// the account profile; there is no device-zone branch in this projection.
   Stream<FocusDashboardMetrics> watchDashboardMetrics({
@@ -171,6 +172,21 @@ abstract interface class FocusRepository {
   });
   Future<FocusDashboardMetrics> getDashboardMetrics({
     required String timeZoneId,
+  });
+
+  /// Accepted effective time of one visible [month] in [timeZoneId].
+  ///
+  /// Only this month is summed: the lifetime total and the fixed recent window
+  /// are different projections. [month] is normalized to its year and month.
+  Future<FocusMonthMetrics> getMonthMetrics({
+    required String timeZoneId,
+    required DateTime month,
+  });
+
+  /// Subscription form of [getMonthMetrics]; re-emits as sessions settle.
+  Stream<FocusMonthMetrics> watchMonthMetrics({
+    required String timeZoneId,
+    required DateTime month,
   });
   Future<List<FocusSession>> getSessions();
   Future<FocusSession?> getSession(String sessionId);
@@ -805,9 +821,7 @@ class LocalFocusRepository implements FocusRepository {
   }) async {
     await _settleDueSessions();
     // 显示时区来自账号资料；这里不读设备时区，也不读被取代的设备级偏好。
-    final zoneId = FocusTimeZones.contains(timeZoneId)
-        ? timeZoneId
-        : 'Etc/UTC';
+    final zoneId = FocusTimeZones.contains(timeZoneId) ? timeZoneId : 'Etc/UTC';
     final location = FocusTimeZones.location(zoneId);
     final sessions = await _getSessionsWithoutSettling();
     final pendingReviewSessions = sessions
@@ -830,11 +844,7 @@ class LocalFocusRepository implements FocusRepository {
     var totalSeconds = 0;
 
     for (final session in sessions) {
-      if ((session.status != FocusSessionStatus.completed &&
-              session.status != FocusSessionStatus.failed) ||
-          !session.reviewDisposition.contributesToFocusProgress) {
-        continue;
-      }
+      if (!_contributesToFocusProjection(session)) continue;
       final intervals = _effectiveIntervalsForProjection(session);
       final sessionSeconds = intervals.fold<int>(
         0,
@@ -885,6 +895,55 @@ class LocalFocusRepository implements FocusRepository {
         ...pendingReviewConfigurations.taskIds,
         for (final session in pendingClockReviewSessions) session.taskId,
       },
+    );
+  }
+
+  @override
+  Stream<FocusMonthMetrics> watchMonthMetrics({
+    required String timeZoneId,
+    required DateTime month,
+  }) => watchSessions().asyncMap(
+    (_) => getMonthMetrics(timeZoneId: timeZoneId, month: month),
+  );
+
+  @override
+  Future<FocusMonthMetrics> getMonthMetrics({
+    required String timeZoneId,
+    required DateTime month,
+  }) async {
+    await _settleDueSessions();
+    final zoneId = FocusTimeZones.contains(timeZoneId) ? timeZoneId : 'Etc/UTC';
+    final location = FocusTimeZones.location(zoneId);
+    final monthStart = DateTime.utc(month.year, month.month);
+    final secondsByDay = <String, int>{};
+    for (final session in await _getSessionsWithoutSettling()) {
+      if (!_contributesToFocusProjection(session)) continue;
+      for (final interval in _effectiveIntervalsForProjection(session)) {
+        _addIntervalByCalendarDay(interval, location, secondsByDay);
+      }
+    }
+
+    final dayCount = DateTime.utc(monthStart.year, monthStart.month + 1, 0).day;
+    final days = <FocusActivityDay>[];
+    var totalSeconds = 0;
+    var activeDayCount = 0;
+    for (var dayOfMonth = 1; dayOfMonth <= dayCount; dayOfMonth++) {
+      final date = DateTime.utc(monthStart.year, monthStart.month, dayOfMonth);
+      final seconds =
+          secondsByDay[_calendarDateKey(date.year, date.month, date.day)] ?? 0;
+      if (seconds > 0) {
+        totalSeconds += seconds;
+        activeDayCount++;
+      }
+      days.add(FocusActivityDay(date: date, activeSeconds: seconds));
+    }
+
+    return FocusMonthMetrics(
+      displayTimeZoneId: zoneId,
+      month: monthStart,
+      days: List.unmodifiable(days),
+      totalActiveSeconds: totalSeconds,
+      activeDayCount: activeDayCount,
     );
   }
 
@@ -3734,6 +3793,17 @@ class LocalFocusRepository implements FocusRepository {
       );
 }
 
+/// Sessions that may contribute effective focus time.
+///
+/// Shared by the dashboard and the month projection so both keep one acceptance
+/// rule: settled completed/failed sessions whose review disposition accepts the
+/// record. Pending, duplicate and clock-review-restricted time is filtered by
+/// the interval basis, not re-decided here.
+bool _contributesToFocusProjection(FocusSession session) =>
+    (session.status == FocusSessionStatus.completed ||
+        session.status == FocusSessionStatus.failed) &&
+    session.reviewDisposition.contributesToFocusProgress;
+
 List<FocusTimeInterval> _effectiveIntervalsForProjection(FocusSession session) {
   final closedIntervals = session.effectiveIntervals
       .where(
@@ -4839,6 +4909,24 @@ FocusDashboardMetrics _emptyDashboardMetrics(String timeZoneId) =>
       displayTimeZoneId: timeZoneId,
     );
 
+FocusMonthMetrics _emptyMonthMetrics(String timeZoneId, DateTime month) {
+  final monthStart = DateTime.utc(month.year, month.month);
+  final dayCount = DateTime.utc(monthStart.year, monthStart.month + 1, 0).day;
+  return FocusMonthMetrics(
+    displayTimeZoneId: timeZoneId,
+    month: monthStart,
+    days: List.unmodifiable([
+      for (var dayOfMonth = 1; dayOfMonth <= dayCount; dayOfMonth++)
+        FocusActivityDay(
+          date: DateTime.utc(monthStart.year, monthStart.month, dayOfMonth),
+          activeSeconds: 0,
+        ),
+    ]),
+    totalActiveSeconds: 0,
+    activeDayCount: 0,
+  );
+}
+
 class UnavailableFocusRepository implements FocusRepository {
   const UnavailableFocusRepository();
 
@@ -4889,6 +4977,18 @@ class UnavailableFocusRepository implements FocusRepository {
   Future<FocusDashboardMetrics> getDashboardMetrics({
     required String timeZoneId,
   }) async => _emptyDashboardMetrics(timeZoneId);
+
+  @override
+  Stream<FocusMonthMetrics> watchMonthMetrics({
+    required String timeZoneId,
+    required DateTime month,
+  }) => Stream.value(_emptyMonthMetrics(timeZoneId, month));
+
+  @override
+  Future<FocusMonthMetrics> getMonthMetrics({
+    required String timeZoneId,
+    required DateTime month,
+  }) async => _emptyMonthMetrics(timeZoneId, month);
 
   @override
   Future<List<FocusSession>> getSessions() async => const [];
