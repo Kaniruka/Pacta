@@ -172,6 +172,71 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('近期卡片的数字是近 7 天窗口，不是终身累计', (tester) async {
+    final focus = _ScriptedFocusRepository(
+      dashboard: FocusDashboardMetrics(
+        focusProgressSecondsByTask: const {},
+        recentActivity: [
+          FocusActivityDay(
+            date: DateTime.utc(2026, 11, 12),
+            activeSeconds: 780,
+          ),
+          for (var day = 13; day <= 18; day++)
+            FocusActivityDay(
+              date: DateTime.utc(2026, 11, day),
+              activeSeconds: 0,
+            ),
+        ],
+        // A lifetime total that must not be rendered under the 7-day label.
+        totalAcceptedFocusSeconds: 3600,
+        displayTimeZoneId: 'Asia/Shanghai',
+      ),
+    );
+    await tester.pumpWidget(
+      boardHost(
+        taskRepository: const UnavailableTaskRepository(),
+        focusRepository: focus,
+        profileRepository: _FixedProfileRepository('Asia/Shanghai'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
+    expect(find.textContaining('1小时00分00秒'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('账号时区解析前不查询投影，也不画兜底时区的数字', (tester) async {
+    final profile = _DeferredProfileRepository();
+    final focus = _RecordingFocusRepository();
+    addTearDown(profile.disposeController);
+    await tester.pumpWidget(
+      boardHost(
+        taskRepository: const UnavailableTaskRepository(),
+        focusRepository: focus,
+        profileRepository: profile,
+      ),
+    );
+    await tester.pump();
+
+    expect(focus.dashboardCalls, 0, reason: '时区未知时不应发起投影查询');
+    expect(
+      find.descendant(
+        of: find.byType(BoardPage),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsWidgets,
+    );
+
+    profile.emit('Asia/Shanghai');
+    await tester.pumpAndSettle();
+    expect(focus.dashboardCalls, 1);
+    expect(focus.dashboardZones, ['Asia/Shanghai']);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('投影读取失败时给出可见错误，重试只重建订阅', (tester) async {
     final focus = _FlakyFocusRepository();
     final tasks = _CountingTaskRepository();
@@ -317,6 +382,28 @@ class _RecordingFocusRepository extends UnavailableFocusRepository {
     monthRequests.add(month);
     return Stream.value(_emptyMonthMetrics(timeZoneId, month));
   }
+}
+
+class _DeferredProfileRepository extends UnavailableProfileRepository {
+  final _events = StreamController<String?>.broadcast();
+  String? _current;
+
+  void emit(String? timeZoneId) {
+    _current = timeZoneId;
+    _events.add(timeZoneId);
+  }
+
+  @override
+  Stream<ProfileAccount> watchProfile() => _events.stream.map(
+    (timeZoneId) =>
+        ProfileAccount(userId: 'user-a', displayTimeZoneId: timeZoneId),
+  );
+
+  @override
+  Future<ProfileAccount> getProfile() async =>
+      ProfileAccount(userId: 'user-a', displayTimeZoneId: _current);
+
+  void disposeController() => unawaited(_events.close());
 }
 
 class _MutableProfileRepository extends UnavailableProfileRepository {

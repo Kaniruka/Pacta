@@ -5,9 +5,13 @@ import '../schedules/schedule_repeat.dart';
 /// 通知本身由 06 负责；这里只约定"点开哪一个日历日/哪一条安排"，让 Plan
 /// 选中正确日期并停留在日历视图，不启动专注流程、不创建专注记录。
 ///
-/// 负载格式（06 用 [encodeDay] / [encodeItem] 生成，AppShell 路由）：
+/// 负载格式（[encodeDay] / [encodeItem] 生成，[tryParse] 解析）：
 /// - `plan-day:<YYYY-MM-DD>`：打开该日的计划日历。
 /// - `plan-item:<YYYY-MM-DD>:<scheduleId>`：打开该日并定位到这条安排。
+///
+/// 普通日程提醒另用 `ScheduleReminderRequest` 的 `schedule-reminder:` 负载：
+/// 通知必须带着所有者身份才能在跨账号点击时拒绝打开，因此那条路径不能只靠
+/// 日期与安排 id。两套负载都由 AppShell 路由，计划页只认 [PlanTarget]。
 ///
 /// `scheduleId` 在负载里按 URI 组件转义（[encodeItem] / [tryParse] 成对），
 /// 因此标识自身含 `:`、`%`、空格等字符时不会被第一个冒号截断，也不会被

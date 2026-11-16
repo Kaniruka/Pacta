@@ -5,6 +5,7 @@ import 'package:timezone/timezone.dart' as timezone;
 
 import '../profile/account_time_zone.dart';
 import 'focus_models.dart';
+import 'effective_duration_text.dart';
 import 'focus_repository.dart';
 import 'focus_time_zones.dart';
 
@@ -497,7 +498,7 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
     return Semantics(
       label:
           '${month.month}月$day日，'
-          '${hasActivity ? '有效投入 ${_formatDuration(seconds)}' : '无有效投入'}',
+          '${hasActivity ? '有效投入 ${formatEffectiveDuration(seconds)}' : '无有效投入'}',
       container: true,
       button: true,
       selected: selected,
@@ -631,7 +632,7 @@ class _MonthSummaryCard extends StatelessWidget {
               const SizedBox(height: 6),
               if (metrics.hasActivity) ...[
                 Text(
-                  _formatDuration(metrics.totalActiveSeconds),
+                  formatEffectiveDuration(metrics.totalActiveSeconds),
                   style: Theme.of(context).textTheme.headlineSmall,
                 ),
                 const SizedBox(height: 4),
@@ -656,7 +657,7 @@ class _MonthSummaryCard extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 daySeconds > 0
-                    ? '有效投入 ${_formatDuration(daySeconds)}'
+                    ? '有效投入 ${formatEffectiveDuration(daySeconds)}'
                     : '这一天没有有效投入。',
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
@@ -673,17 +674,6 @@ class _MonthSummaryCard extends StatelessWidget {
       ),
     );
   }
-}
-
-String _formatDuration(int seconds) {
-  final hours = seconds ~/ 3600;
-  final minutes = (seconds % 3600) ~/ 60;
-  final remainingSeconds = seconds % 60;
-  return [
-    if (hours > 0) '$hours 小时',
-    if (minutes > 0) '$minutes 分钟',
-    if (remainingSeconds > 0 || seconds == 0) '$remainingSeconds 秒',
-  ].join(' ');
 }
 
 /// 日期格的统一最小点击尺寸（宽和高）。

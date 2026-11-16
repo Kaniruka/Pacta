@@ -126,7 +126,7 @@ void main() {
       expect(
         find.descendant(
           of: _metric('精锐链', '累计专注'),
-          matching: find.text('25 分钟'),
+          matching: find.text('25分00秒'),
         ),
         findsOneWidget,
         reason: '专注链卡片的累计专注应为 25 分钟',
@@ -172,7 +172,7 @@ void main() {
       expect(
         find.descendant(
           of: _metric('精锐链', '累计专注'),
-          matching: find.text('25 分钟'),
+          matching: find.text('25分00秒'),
         ),
         findsOneWidget,
       );
@@ -213,7 +213,7 @@ void main() {
       expect(
         find.descendant(
           of: _metric('精锐链', '累计专注'),
-          matching: find.text('25 分钟'),
+          matching: find.text('25分00秒'),
         ),
         findsOneWidget,
         reason: '后台恢复结算后累计专注应为 25 分钟',
@@ -271,7 +271,7 @@ void main() {
       expect(
         find.descendant(
           of: _metric('精锐链', '累计专注'),
-          matching: find.text('20 分钟'),
+          matching: find.text('20分00秒'),
         ),
         findsOneWidget,
       );
@@ -317,7 +317,7 @@ void main() {
       expect(
         find.descendant(
           of: _metric('精锐链', '累计专注'),
-          matching: find.text('35 分钟'),
+          matching: find.text('35分00秒'),
         ),
         findsOneWidget,
         reason: '专注链卡片累计专注应为 35 分钟',

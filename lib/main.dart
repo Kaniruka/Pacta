@@ -22,6 +22,7 @@ import 'src/calendar/calendar_repository.dart';
 import 'src/schedules/schedule_models.dart';
 import 'src/schedules/schedule_repository.dart';
 import 'src/focus/focus_models.dart';
+import 'src/focus/effective_duration_text.dart';
 import 'src/focus/focus_month_page.dart';
 import 'src/focus/chain_signals_repository.dart';
 import 'src/focus/chain_signals_card.dart';
@@ -1904,6 +1905,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
       focusRepository: focusRepository,
       builder: (context, projection) => _BoardContent(
         displayTimeZoneId: projection.displayTimeZoneId,
+        now: ref.read(displayClockProvider),
         repository: taskRepository,
         focusRepository: focusRepository,
         nationalFocusRepository: nationalFocusRepository,
@@ -1984,12 +1986,19 @@ class _BoardProjectionScopeState extends State<_BoardProjectionScope> {
   bool _goalsFailed = false;
   bool _hasBuilt = false;
 
+  /// Whether the account profile produced its first value or error.
+  ///
+  /// Until then the display zone is unknown, and querying the projection with
+  /// the fallback zone would paint UTC-allocated bars before the account's own
+  /// zone arrives. The board waits instead of showing a number it cannot stand
+  /// behind.
+  bool _profileResolved = false;
+
   @override
   void initState() {
     super.initState();
     _subscribeProfile();
     _subscribeGoals();
-    _subscribeMetrics();
   }
 
   @override
@@ -2017,18 +2026,25 @@ class _BoardProjectionScopeState extends State<_BoardProjectionScope> {
           profile.displayTimeZoneId,
         );
         final zoneChanged = nextZone != _displayTimeZoneId;
+        final firstValue = !_profileResolved;
         _apply(() {
           _accountFailed = false;
+          _profileResolved = true;
           if (!zoneChanged) return;
           // 换时区先丢掉旧投影：新流首帧到达前屏上是加载态，不是旧数字。
           _displayTimeZoneId = nextZone;
           _metrics = null;
           _metricsFailed = false;
         });
-        if (zoneChanged) _subscribeMetrics();
+        if (zoneChanged || firstValue) _subscribeMetrics();
       },
       onError: (Object error, StackTrace stackTrace) {
-        _apply(() => _accountFailed = true);
+        final firstValue = !_profileResolved;
+        _apply(() {
+          _accountFailed = true;
+          _profileResolved = true;
+        });
+        if (firstValue) _subscribeMetrics();
       },
     );
   }
@@ -2121,6 +2137,7 @@ class _FocusMonthRoute extends ConsumerWidget {
 class _BoardContent extends StatelessWidget {
   const _BoardContent({
     required this.displayTimeZoneId,
+    required this.now,
     required this.repository,
     required this.focusRepository,
     required this.nationalFocusRepository,
@@ -2137,6 +2154,10 @@ class _BoardContent extends StatelessWidget {
   });
 
   final String displayTimeZoneId;
+
+  /// Shared display clock: the board's "today" must be the same day the Plan
+  /// calendar starts on, so an injected clock fixes both surfaces at once.
+  final DateTime Function() now;
   final TaskRepository repository;
   final FocusRepository focusRepository;
   final NationalFocusRepository nationalFocusRepository;
@@ -2183,6 +2204,7 @@ class _BoardContent extends StatelessWidget {
       _TodayArrangementsCard(
         repository: scheduleRepository,
         displayTimeZoneId: displayTimeZoneId,
+        now: now,
         onOpenPlan: onOpenPlan,
       ),
       const SizedBox(height: 8),
@@ -2255,16 +2277,18 @@ class _TodayArrangementsCard extends StatelessWidget {
   const _TodayArrangementsCard({
     required this.repository,
     required this.displayTimeZoneId,
+    required this.now,
     required this.onOpenPlan,
   });
 
   final ScheduleRepository repository;
   final String displayTimeZoneId;
+  final DateTime Function() now;
   final VoidCallback onOpenPlan;
 
   @override
   Widget build(BuildContext context) {
-    final today = scheduleToday(displayTimeZoneId);
+    final today = scheduleToday(displayTimeZoneId, now: now());
     final window = scheduleQueryWindow(today, displayTimeZoneId);
     return StreamBuilder<List<Schedule>>(
       stream: repository.watchSchedules(from: window.from, to: window.to),
@@ -2467,6 +2491,14 @@ class _RecentFocusActivityCard extends StatelessWidget {
     final value = metrics;
     final hasRecentActivity =
         value?.recentActivity.any((day) => day.activeSeconds > 0) ?? false;
+    // The label promises a seven-day window; the lifetime total is a different
+    // number and must not be shown under it.
+    final recentSeconds =
+        value?.recentActivity.fold<int>(
+          0,
+          (sum, day) => sum + day.activeSeconds,
+        ) ??
+        0;
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -2512,7 +2544,7 @@ class _RecentFocusActivityCard extends StatelessWidget {
             else ...[
               Text(
                 '近 7 天 · 累计有效专注 '
-                '${_formatDuration(value.totalAcceptedFocusSeconds)}',
+                '${formatEffectiveDuration(recentSeconds)}',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               if (value.hasPendingReview)
@@ -2575,7 +2607,7 @@ class _FocusActivityDayRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Semantics(
-        label: '$label，${_formatDuration(day.activeSeconds)}',
+        label: '$label，${formatEffectiveDuration(day.activeSeconds)}',
         child: LayoutBuilder(
           builder: (context, constraints) {
             final compact =
@@ -2594,7 +2626,7 @@ class _FocusActivityDayRow extends StatelessWidget {
                     runSpacing: 4,
                     children: [
                       Text(label),
-                      Text(_formatDuration(day.activeSeconds)),
+                      Text(formatEffectiveDuration(day.activeSeconds)),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -2610,7 +2642,7 @@ class _FocusActivityDayRow extends StatelessWidget {
                 SizedBox(
                   width: 68,
                   child: Text(
-                    _formatDuration(day.activeSeconds),
+                    formatEffectiveDuration(day.activeSeconds),
                     textAlign: TextAlign.end,
                   ),
                 ),
@@ -2921,7 +2953,7 @@ class _TaskTile extends ConsumerWidget {
                         Text('${task.estimatedMinutes} 分钟'),
                       if (task.focusProgressSeconds > 0)
                         Text(
-                          '已专注 ${_formatDuration(task.focusProgressSeconds)}',
+                          '已专注 ${formatEffectiveDuration(task.focusProgressSeconds)}',
                         ),
                       if (hasPendingReview) const Text('待核对（争议部分暂不计入专注统计）'),
                       if (deadline != null) Text(deadline),
@@ -3462,12 +3494,6 @@ String _formatDateTime(DateTime value) {
   String twoDigits(int number) => number.toString().padLeft(2, '0');
   return '${value.year}-${twoDigits(value.month)}-${twoDigits(value.day)} '
       '${twoDigits(value.hour)}:${twoDigits(value.minute)}';
-}
-
-String _formatDuration(int seconds) {
-  final minutes = seconds ~/ 60;
-  final remainingSeconds = seconds % 60;
-  return '$minutes分${remainingSeconds.toString().padLeft(2, '0')}秒';
 }
 
 class FocusChainPage extends ConsumerStatefulWidget {
@@ -4190,7 +4216,7 @@ class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
                           title: Text(task.title),
                           subtitle: Text(
                             '目标：${entry.goal.title} · ${task.classification.label} · '
-                            '预计时长：$estimate · 已专注 ${_formatDuration(task.focusProgressSeconds)}',
+                            '预计时长：$estimate · 已专注 ${formatEffectiveDuration(task.focusProgressSeconds)}',
                           ),
                           onTap: () => _showSetup(task),
                           trailing: Tooltip(
@@ -4430,10 +4456,10 @@ class _FocusHistoryList extends StatelessWidget {
               title: Text(taskTitles[session.taskId] ?? '原任务'),
               subtitle: Text(
                 session.isFailed
-                    ? '失败 · ${_formatDuration(session.effectiveSeconds)}\n原因：${session.failureReason ?? '未填写'}'
+                    ? '失败 · ${formatEffectiveDuration(session.effectiveSeconds)}\n原因：${session.failureReason ?? '未填写'}'
                     : session.isEarlyCompleted
-                    ? '获准提前完成 · ${_formatDuration(session.effectiveSeconds)}\n依据：${session.completionRuleText ?? '未记录'}'
-                    : '正常完成 · ${_formatDuration(session.effectiveSeconds)}',
+                    ? '获准提前完成 · ${formatEffectiveDuration(session.effectiveSeconds)}\n依据：${session.completionRuleText ?? '未记录'}'
+                    : '正常完成 · ${formatEffectiveDuration(session.effectiveSeconds)}',
               ),
               trailing: Wrap(
                 children: [

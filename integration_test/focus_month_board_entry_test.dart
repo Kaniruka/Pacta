@@ -258,7 +258,7 @@ void main() {
       await settle();
       expect(find.text('专注月历'), findsOneWidget);
       expect(find.text('2026年11月'), findsOneWidget);
-      expect(find.text('13 分钟'), findsOneWidget);
+      expect(find.text('13分00秒'), findsOneWidget);
       final day12 = find.byKey(const ValueKey('focus-month-day-12'));
       expect(day12, findsOneWidget);
       final daySize = tester.getSize(day12);
@@ -296,7 +296,7 @@ void main() {
       await tester.tap(find.text('打开月历'));
       await settle();
       expect(find.text('2026年11月'), findsOneWidget);
-      expect(find.text('13 分钟'), findsOneWidget);
+      expect(find.text('13分00秒'), findsOneWidget);
       expect(find.text('本月暂无有效投入。'), findsNothing);
       await shot('month-after-plan');
 

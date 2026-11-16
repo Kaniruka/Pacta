@@ -140,15 +140,15 @@ void main() {
       expect(find.text('专注月历'), findsOneWidget);
       expect(find.text('2026年11月'), findsOneWidget);
       expect(find.text('本月有效投入'), findsOneWidget);
-      expect(find.text('1 小时 30 分钟'), findsOneWidget);
+      expect(find.text('1小时30分00秒'), findsOneWidget);
       expect(find.text('有投入的天数 2 天'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('focus-month-day-12')));
       await tester.pumpAndSettle();
 
       expect(find.text('11月12日'), findsOneWidget);
-      expect(find.text('有效投入 45 分钟'), findsOneWidget);
-      expect(find.text('1 小时 30 分钟'), findsNothing);
+      expect(find.text('有效投入 45分00秒'), findsOneWidget);
+      expect(find.text('1小时30分00秒'), findsNothing);
     }),
   );
 
@@ -183,14 +183,14 @@ void main() {
         _monthMetrics(month: DateTime.utc(2026, 11), seconds: {3: 45 * 60}),
       );
       await tester.pumpAndSettle();
-      expect(find.textContaining('45 分钟'), findsOneWidget);
+      expect(find.textContaining('45分'), findsOneWidget);
 
       await tester.tap(find.byTooltip('下个月'));
       await tester.pump();
 
       expect(find.text('2026年12月'), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
-      expect(find.textContaining('45 分钟'), findsNothing);
+      expect(find.textContaining('45分'), findsNothing);
 
       repository.last.controller.add(
         _monthMetrics(month: DateTime.utc(2026, 12), seconds: {}),
@@ -215,7 +215,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('专注月历加载失败。'), findsNothing);
-      expect(find.text('10 分钟'), findsOneWidget);
+      expect(find.text('10分00秒'), findsOneWidget);
       expect(repository.calls, 2);
     }),
   );
@@ -241,7 +241,7 @@ void main() {
 
       zones.add('Etc/UTC');
       await tester.pumpAndSettle();
-      expect(find.text('2 小时'), findsOneWidget);
+      expect(find.text('2小时00分00秒'), findsOneWidget);
     }),
   );
 
@@ -281,7 +281,7 @@ void main() {
         _monthMetrics(month: DateTime.utc(2026, 11), seconds: {12: 45 * 60}),
       );
       await tester.pumpAndSettle();
-      expect(find.textContaining('45 分钟'), findsOneWidget);
+      expect(find.textContaining('45分'), findsOneWidget);
       expect(repository.requests, hasLength(1));
       expect(repository.last.timeZoneId, 'Asia/Shanghai');
 
@@ -292,7 +292,7 @@ void main() {
       await tester.pump();
 
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
-      expect(find.textContaining('45 分钟'), findsNothing);
+      expect(find.textContaining('45分'), findsNothing);
       expect(repository.requests, hasLength(1));
 
       // Month switching cannot bypass the pending source: both arrows are
@@ -311,7 +311,7 @@ void main() {
       );
       await tester.pump();
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
-      expect(find.textContaining('1 小时 30 分钟'), findsNothing);
+      expect(find.textContaining('1小时30分00秒'), findsNothing);
 
       zonesB.add('Etc/UTC');
       await tester.pump();
@@ -327,8 +327,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.textContaining('10 分钟'), findsOneWidget);
-      expect(find.textContaining('45 分钟'), findsNothing);
+      expect(find.textContaining('10分00秒'), findsOneWidget);
+      expect(find.textContaining('45分'), findsNothing);
     }),
   );
 
@@ -363,7 +363,7 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('专注月历加载失败。'), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsNothing);
-      expect(find.textContaining('45 分钟'), findsNothing);
+      expect(find.textContaining('45分'), findsNothing);
 
       // A failed source also blocks month switching: the error must not be
       // bypassed with a query against the previous zone.
@@ -387,7 +387,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('专注月历加载失败。'), findsNothing);
-      expect(find.textContaining('10 分钟'), findsOneWidget);
+      expect(find.textContaining('10分00秒'), findsOneWidget);
     }),
   );
 
@@ -431,7 +431,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('专注月历加载失败。'), findsNothing);
-      expect(find.textContaining('5 分钟'), findsOneWidget);
+      expect(find.textContaining('5分00秒'), findsOneWidget);
     }),
   );
 
@@ -460,7 +460,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('2026年11月'), findsOneWidget);
-      expect(find.textContaining('45 分钟'), findsOneWidget);
+      expect(find.textContaining('45分'), findsOneWidget);
 
       // Midnight passes in the account zone; a settled session arrives without
       // touching the month selector.
@@ -472,8 +472,8 @@ void main() {
 
       expect(find.text('2026年11月'), findsOneWidget);
       expect(find.text('2026年12月'), findsNothing);
-      expect(find.textContaining('1 小时'), findsOneWidget);
-      expect(find.textContaining('45 分钟'), findsNothing);
+      expect(find.textContaining('1小时'), findsOneWidget);
+      expect(find.textContaining('45分'), findsNothing);
       expect(repository.requests, hasLength(1));
 
       // The current-month label is the explicit way forward; it re-queries.
@@ -522,7 +522,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('2026年10月'), findsOneWidget);
-      expect(find.textContaining('30 分钟'), findsOneWidget);
+      expect(find.textContaining('30分00秒'), findsOneWidget);
       expect(find.text('回到本月'), findsOneWidget);
 
       rebuild(() => activeZoneStream = zonesB.stream);
@@ -606,7 +606,7 @@ void main() {
       expect(repository.last.timeZoneId, 'Etc/UTC');
       expect(repository.last.month, DateTime.utc(2026, 11));
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
-      expect(find.textContaining('45 分钟'), findsNothing);
+      expect(find.textContaining('45分'), findsNothing);
 
       repository.last.controller.add(
         _monthMetrics(
@@ -616,7 +616,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.textContaining('10 分钟'), findsOneWidget);
+      expect(find.textContaining('10分00秒'), findsOneWidget);
     }),
   );
 
@@ -674,7 +674,7 @@ void main() {
         _monthMetrics(month: DateTime.utc(2026, 11), seconds: {12: 10 * 60}),
       );
       await tester.pumpAndSettle();
-      expect(find.textContaining('10 分钟'), findsOneWidget);
+      expect(find.textContaining('10分00秒'), findsOneWidget);
     }),
   );
 
@@ -743,7 +743,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('专注月历加载失败。'), findsNothing);
-      expect(find.textContaining('20 分钟'), findsOneWidget);
+      expect(find.textContaining('20分00秒'), findsOneWidget);
     }),
   );
 
@@ -779,19 +779,19 @@ void main() {
         _monthMetrics(month: DateTime.utc(2026, 11), seconds: {12: 45 * 60}),
       );
       await tester.pumpAndSettle();
-      expect(find.textContaining('45 分钟'), findsOneWidget);
+      expect(find.textContaining('45分'), findsOneWidget);
 
       rebuild(() => current = repositoryB);
       await tester.pump();
 
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
-      expect(find.textContaining('45 分钟'), findsNothing);
+      expect(find.textContaining('45分'), findsNothing);
 
       repositoryB.last.controller.add(
         _monthMetrics(month: DateTime.utc(2026, 11), seconds: {12: 10 * 60}),
       );
       await tester.pumpAndSettle();
-      expect(find.textContaining('10 分钟'), findsOneWidget);
+      expect(find.textContaining('10分00秒'), findsOneWidget);
     }),
   );
 

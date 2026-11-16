@@ -41,7 +41,7 @@ void main() {
     expect(find.byKey(appointmentEditKey), findsOneWidget);
     expect(find.byType(IconButton), findsNWidgets(2));
     expect(find.text('12'), findsOneWidget);
-    expect(find.text('1 小时 30 分钟 1 秒'), findsOneWidget);
+    expect(find.text('1小时30分01秒'), findsOneWidget);
     expect(find.text('平均每次'), findsNWidgets(2));
     await _disposeWidget(tester);
   });
@@ -125,10 +125,10 @@ void main() {
     expect(find.text('12'), findsOneWidget);
     expect(find.text('5'), findsOneWidget);
     expect(find.text('记录待核对'), findsOneWidget);
-    expect(find.text('1 小时'), findsOneWidget);
-    expect(find.text('30 分钟'), findsOneWidget);
-    expect(find.text('2 分钟 5 秒'), findsOneWidget);
-    expect(find.text('1 分钟 3 秒'), findsOneWidget);
+    expect(find.text('1小时00分00秒'), findsOneWidget);
+    expect(find.text('30分00秒'), findsOneWidget);
+    expect(find.text('2分05秒'), findsOneWidget);
+    expect(find.text('1分03秒'), findsOneWidget);
     await _disposeWidget(tester);
   });
 
@@ -147,7 +147,7 @@ void main() {
             eliteTotalSeconds: 360000001,
           );
           expect(find.text(action), findsOneWidget);
-          expect(find.text('100000 小时 1 秒'), findsOneWidget);
+          expect(find.text('100000小时00分01秒'), findsOneWidget);
           expect(find.text('12'), findsOneWidget);
           await _openEditor(tester, markerEditKey);
           expect(find.widgetWithText(TextField, action), findsOneWidget);
@@ -202,7 +202,7 @@ void main() {
       expect(find.text('0'), findsNWidgets(6));
       expect(find.text('累计专注'), findsNWidgets(2));
       expect(find.text('平均每次'), findsNWidgets(2));
-      expect(find.text('0 秒'), findsNWidgets(4));
+      expect(find.text('0分00秒'), findsNWidgets(4));
       expect(find.text('尚未设置'), findsNWidgets(2));
       await _disposeWidget(tester);
     },

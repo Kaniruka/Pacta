@@ -130,7 +130,62 @@ void main() {
 
       expect(find.byType(FocusMonthPage), findsOneWidget);
       expect(find.text('2026年11月'), findsOneWidget);
-      expect(find.text('13 分钟'), findsOneWidget);
+      expect(find.text('13分00秒'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await schedules.dispose();
+      await focus.dispose();
+      await tasks.dispose();
+      await database.close();
+    }
+  });
+
+  testWidgets('看板“今天”与计划日历共用注入时钟', (tester) async {
+    final database = openTestDatabase();
+    final tasks = LocalTaskRepository(
+      database: database,
+      userId: 'user-a',
+      remote: InMemoryTaskRemote(),
+      now: () => now,
+    );
+    final focus = LocalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      remote: InMemoryFocusRemote(),
+      now: () => now,
+    );
+    final schedules = LocalScheduleRepository(
+      database: database,
+      userId: 'user-a',
+      now: () => now,
+    );
+    try {
+      // 2026-11-12T10:00Z is 18:00 in Asia/Shanghai; this arrangement is on
+      // that same account-local day and must count as today's.
+      await schedules.createSchedule(
+        ScheduleDraft(
+          title: '今天的取快递',
+          window: ScheduleWindow.timed(
+            startsAt: DateTime.utc(2026, 11, 12, 8),
+            endsAt: DateTime.utc(2026, 11, 12, 9),
+          ),
+        ),
+      );
+      await pumpApp(
+        tester,
+        appHost(
+          tasks: tasks,
+          focus: focus,
+          schedules: schedules,
+          profile: _FixedProfileRepository('Asia/Shanghai'),
+        ),
+        size: const Size(360, 800),
+      );
+
+      expect(find.text('今天 · 1 项安排'), findsOneWidget);
+      expect(find.text('今天的取快递'), findsOneWidget);
       expect(tester.takeException(), isNull);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
@@ -443,7 +498,12 @@ class _ZoneScriptedFocusRepository extends UnavailableFocusRepository {
     return Stream.value(
       FocusDashboardMetrics(
         focusProgressSecondsByTask: const {},
-        recentActivity: const [],
+        recentActivity: [
+          FocusActivityDay(
+            date: DateTime.utc(2026, 11, 12),
+            activeSeconds: 780,
+          ),
+        ],
         totalAcceptedFocusSeconds: 780,
         displayTimeZoneId: timeZoneId,
       ),
