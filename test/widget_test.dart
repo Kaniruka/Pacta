@@ -21,14 +21,20 @@ void main() {
     expect(find.text('示例任务'), findsNothing);
   });
 
-  testWidgets('登录后默认进入看板并可访问四个目的地', (tester) async {
+  testWidgets('登录后默认进入看板并可访问五个目的地', (tester) async {
     final repository = FakeAuthRepository()..signedInUser = 'user@example.com';
     await tester.pumpWidget(PactaApp(authRepository: repository));
     await tester.pumpAndSettle();
 
     expect(find.text('看板'), findsWidgets);
     expect(find.text('今天先做什么'), findsOneWidget);
-    expect(find.text('暂无任务'), findsOneWidget);
+    expect(find.text('今天还没有安排。'), findsOneWidget);
+    expect(find.text('还没有置顶目标'), findsOneWidget);
+
+    await tester.tap(find.text('计划'));
+    await tester.pumpAndSettle();
+    expect(find.text('目标与任务'), findsOneWidget);
+    expect(find.text('新建目标'), findsOneWidget);
 
     await tester.tap(find.text('国策树'));
     await tester.pumpAndSettle();
@@ -43,7 +49,7 @@ void main() {
     expect(find.text('user@example.com'), findsOneWidget);
   });
 
-  testWidgets('看板可以维护目标、任务并明确完成任务', (tester) async {
+  testWidgets('计划可以维护目标、任务并明确完成任务', (tester) async {
     final database = PactaDatabase(NativeDatabase.memory());
     addTearDown(database.close);
     final repository = LocalTaskRepository(
@@ -56,6 +62,8 @@ void main() {
     await tester.pumpWidget(
       PactaApp(authRepository: auth, taskRepositoryFactory: (_) => repository),
     );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('计划'));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('新建目标'));
@@ -115,6 +123,8 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await tester.tap(find.text('计划'));
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('删除目标'));
     await tester.pumpAndSettle();
     expect(find.text('删除目标和任务？'), findsOneWidget);
@@ -169,6 +179,8 @@ void main() {
     await tester.pumpWidget(
       PactaApp(authRepository: auth, taskRepositoryFactory: (_) => repository),
     );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('计划'));
     await tester.pumpAndSettle();
 
     String twoDigits(int number) => number.toString().padLeft(2, '0');

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' hide FocusNode;
 
 import '../tasks/task_repository.dart';
 import 'focus_models.dart';
+import 'effective_duration_text.dart';
 import 'focus_repository.dart';
 
 class FocusReconciliationPage extends StatefulWidget {
@@ -372,7 +373,7 @@ class _PendingReconciliationCardState
                           widget.taskTitles[entry.session.taskId] ?? '原任务',
                         ),
                         subtitle: Text(
-                          '${entry.session.mode.label} · ${_formatDuration(entry.session.effectiveSeconds)}有效时间 · ${_outcomeLabel(entry.session)}',
+                          '${entry.session.mode.label} · ${formatEffectiveDuration(entry.session.effectiveSeconds)}有效时间 · ${_outcomeLabel(entry.session)}',
                         ),
                         controlAffinity: ListTileControlAffinity.leading,
                       ),
@@ -442,7 +443,7 @@ class _SessionSourceChoices extends StatelessWidget {
               Text(taskTitle, style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 4),
               Text(
-                '${session.mode.label} · ${_formatDuration(session.effectiveSeconds)}有效时间 · ${_formatRange(session)}',
+                '${session.mode.label} · ${formatEffectiveDuration(session.effectiveSeconds)}有效时间 · ${_formatRange(session)}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               if (entry.requiresConfigurationChoice) ...[
@@ -488,7 +489,7 @@ class _SessionSourceChoices extends StatelessWidget {
                           contentPadding: EdgeInsets.zero,
                           value: option.sourceId,
                           title: Text(
-                            '${_outcomeLabel(option.session)} · ${_formatDuration(option.session.effectiveSeconds)}有效时间',
+                            '${_outcomeLabel(option.session)} · ${formatEffectiveDuration(option.session.effectiveSeconds)}有效时间',
                           ),
                           subtitle: Text(_sourceContext(option)),
                           controlAffinity: ListTileControlAffinity.leading,
@@ -550,7 +551,7 @@ class _ResolvedReconciliationCard extends StatelessWidget {
                     entry.session.reviewDisposition ==
                             FocusRecordDisposition.duplicate
                         ? '已标记重复 · 不计入进度、节点和专注链'
-                        : '已采用 · ${_formatDuration(entry.session.effectiveSeconds)}有效时间',
+                        : '已采用 · ${formatEffectiveDuration(entry.session.effectiveSeconds)}有效时间',
                     if (entry.selectedConfigurationSource != null)
                       '配置来源：${_sourceContext(entry.selectedConfigurationSource!)}',
                     if (entry.selectedOutcomeSource != null)
@@ -571,7 +572,7 @@ String _configurationLabel(
 ) {
   final session = option.session;
   final title = taskTitles[session.taskId] ?? '原任务';
-  return '$title · ${session.mode.label} · ${_formatDuration(session.durationSeconds)}';
+  return '$title · ${session.mode.label} · ${formatEffectiveDuration(session.durationSeconds)}';
 }
 
 String _sourceContext(FocusSessionSourceOption option) =>
@@ -583,14 +584,6 @@ String _outcomeLabel(FocusSession session) => switch (session.status) {
   FocusSessionStatus.paused => '已暂停',
   FocusSessionStatus.active => '进行中',
 };
-
-String _formatDuration(int seconds) {
-  final minutes = seconds ~/ 60;
-  final remainingSeconds = seconds % 60;
-  if (minutes == 0) return '$remainingSeconds秒';
-  if (remainingSeconds == 0) return '$minutes分钟';
-  return '$minutes分${remainingSeconds.toString().padLeft(2, '0')}秒';
-}
 
 String _formatRange(FocusSession session) {
   final end = session.completedAt ?? session.endsAt;

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'chain_signals_repository.dart';
 import 'focus_models.dart';
+import 'effective_duration_text.dart';
 import 'focus_statistics.dart';
 
 /// The two commitment actions the overview can edit.
@@ -385,21 +386,13 @@ class _DurationMetric extends StatelessWidget {
             color: colors.onSurfaceVariant,
           ),
         ),
-        Text(_formatDuration(seconds), style: theme.textTheme.bodySmall),
+        Text(
+          formatEffectiveDuration(seconds),
+          style: theme.textTheme.bodySmall,
+        ),
       ],
     );
   }
-}
-
-String _formatDuration(int seconds) {
-  final hours = seconds ~/ 3600;
-  final minutes = (seconds % 3600) ~/ 60;
-  final remainingSeconds = seconds % 60;
-  return [
-    if (hours > 0) '$hours 小时',
-    if (minutes > 0) '$minutes 分钟',
-    if (remainingSeconds > 0 || seconds == 0) '$remainingSeconds 秒',
-  ].join(' ');
 }
 
 Future<void> _editSignal(

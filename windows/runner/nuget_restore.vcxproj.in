@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Restore-only project for the runner's PackageReference items.
+
+  CMake's Visual Studio generator in this toolchain does not emit the automatic
+  NuGet Restore step, so the runner restores its packages during generation.
+  The generated props are written into the runner's obj directory, exactly where
+  the generated pacta.vcxproj imports them on the first build.
+-->
+<Project DefaultTargets="Restore" ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="@PACTA_CONFIGURATION@|x64">
+      <Configuration>@PACTA_CONFIGURATION@</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectName>pacta</ProjectName>
+    <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
+    <BaseIntermediateOutputPath>@PACTA_OBJ_DIR@</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>@PACTA_OBJ_DIR@</MSBuildProjectExtensionsPath>
+    <WindowsTargetPlatformVersion>@PACTA_WINDOWS_SDK_VERSION@</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>@PACTA_PLATFORM_TOOLSET@</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK.Base">
+      <Version>@PACTA_WINDOWSAPPSDK_VERSION@</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.WindowsAppSDK.Foundation">
+      <Version>@PACTA_WINDOWSAPPSDK_VERSION@</Version>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Windows.CppWinRT">
+      <Version>@PACTA_CPPWINRT_VERSION@</Version>
+    </PackageReference>
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

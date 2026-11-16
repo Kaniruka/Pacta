@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../notifications/device_permission_gateway.dart';
-import '../schedules/calendar_import_models.dart';
 import '../schedules/schedule_repository.dart';
 import 'calendar_models.dart';
 import 'calendar_repository.dart';
+import 'manual_calendar_import.dart';
 
 class CalendarAgendaCard extends StatelessWidget {
   const CalendarAgendaCard({super.key, required this.repository});
@@ -125,12 +125,16 @@ class CalendarSourcesPage extends StatefulWidget {
     super.key,
     required this.repository,
     required this.isAndroid,
+    required this.displayTimeZoneIdLoader,
     this.scheduleRepository,
     this.permissionGateway,
   });
 
   final CalendarRepository repository;
   final bool isAndroid;
+
+  /// 手动导入使用的账号显示时区；页面不读取设备时区。
+  final Future<String> Function() displayTimeZoneIdLoader;
 
   /// Owns the imported copies. When absent the page explains that the import
   /// destination is not wired instead of writing anything.
@@ -191,231 +195,32 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
     });
   }
 
-  /// Preview first, write only after confirmation. Cancelling either step
-  /// leaves the account untouched.
+  /// 与计划页共用同一个手动导入流程：账号时区、预览/确认、跳过与取消
+  /// 语义都只有一套实现。
   Future<void> _startImport() async {
+    final scheduleRepository = widget.scheduleRepository;
+    if (scheduleRepository == null) {
+      _finish('导入目标尚未就绪，日程管理仍可使用。');
+      return;
+    }
+    // 共享流程本身是模态的；不在这里放常驻进度圈，否则对话框打开时
+    // 页面仍有一层无限动画，测试与用户都会看到多余的忙碌状态。
     setState(() {
-      _working = true;
+      _working = false;
       _message = null;
     });
-    try {
-      var state = _state;
-      if (state?.permission != CalendarPermissionState.granted) {
-        state = await widget.repository.requestAccess();
-        if (!mounted) return;
-        setState(() => _state = state);
-      }
-      if (state == null) {
-        _finish('日历状态暂时无法读取，其他功能仍可使用。');
-        return;
-      }
-      if (state.permission == CalendarPermissionState.unknown) {
-        _finish('无法确认日历权限状态，请稍后重试。');
-        return;
-      }
-      if (state.permission != CalendarPermissionState.granted) {
-        _finish('未获得日历读取权限，其他功能仍可使用。');
-        return;
-      }
-      final sources = state.availableSources;
-      if (sources.isEmpty) {
-        _finish('设备中没有可读取的系统日历。');
-        return;
-      }
-      final scheduleRepository = widget.scheduleRepository;
-      if (scheduleRepository == null) {
-        _finish('导入目标尚未就绪，日程管理仍可使用。');
-        return;
-      }
-
-      // Stop the busy indicator before opening a dialog: an indeterminate
-      // spinner never settles while the user reads the preview.
-      setState(() => _working = false);
-      final selection = await _showImportDialog(sources);
-      if (selection == null || !mounted) {
-        if (mounted) _finish(null);
-        return;
-      }
-      setState(() => _working = true);
-
-      final occurrences = await widget.repository.readOccurrences(
-        sourceIds: selection.sourceIds,
-        from: selection.from,
-        to: selection.to,
-      );
-      final preview = await scheduleRepository.previewCalendarImport(
-        CalendarImportRequest(
-          sources: [
-            for (final source in sources)
-              if (selection.sourceIds.contains(source.id))
-                CalendarImportSource(
-                  id: source.id,
-                  displayName: source.displayName,
-                  localCalendarId: source.localCalendarId,
-                ),
-          ],
-          occurrences: occurrences,
-          from: selection.from,
-          to: selection.to,
-        ),
-      );
-      if (!mounted) return;
-      setState(() => _working = false);
-      final confirmed = await _showPreviewDialog(preview);
-      if (confirmed != true || !mounted) return;
-      if (!preview.hasPending && !preview.hasAliasUpdates) {
-        _finish(
-          preview.duplicateCount > 0
-              ? '所选范围内都是已存在的日程，跳过 ${preview.duplicateCount} 个。'
-              : '所选范围内没有可导入的日程。',
-        );
-        return;
-      }
-      setState(() {
-        _working = true;
-        _message = null;
-      });
-      final outcome = await scheduleRepository.confirmCalendarImport(preview);
-      _finish(
-        outcome.createdCount > 0
-            ? '已导入 ${outcome.createdCount} 个日程；跳过 '
-                  '${outcome.skippedDuplicates} 个已存在日程。'
-            : '已为 ${preview.pendingAliasUpdates.length} 个已导入日程记录新的来源身份，'
-                  '日程内容不变。',
-      );
-    } catch (_) {
-      _finish('日历读取未完成，其他功能仍可使用。');
-    }
-  }
-
-  Future<_CalendarImportSelection?> _showImportDialog(
-    List<CalendarSource> sources,
-  ) {
-    final selected = <String>{};
-    final today = DateTime.now();
-    var from = DateTime(today.year, today.month, today.day);
-    var to = from.add(const Duration(days: 7));
-    return showDialog<_CalendarImportSelection>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: const Text('导入系统日历'),
-          content: SizedBox(
-            width: 460,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('选择来源日历，并指定要导入的日期范围。'),
-                  const SizedBox(height: 8),
-                  for (final source in sources)
-                    CheckboxListTile(
-                      key: ValueKey('import-source-${source.id}'),
-                      value: selected.contains(source.id),
-                      title: Text(source.displayName),
-                      subtitle: Text(source.timeZoneId),
-                      controlAffinity: ListTileControlAffinity.leading,
-                      onChanged: (value) => setDialogState(() {
-                        if (value == true) {
-                          selected.add(source.id);
-                        } else {
-                          selected.remove(source.id);
-                        }
-                      }),
-                    ),
-                  ListTile(
-                    key: const Key('import-range'),
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(Icons.date_range_outlined),
-                    title: const Text('日期范围'),
-                    subtitle: Text('${_dateLabel(from)} 至 ${_dateLabel(to)}'),
-                    trailing: const Icon(Icons.edit_calendar_outlined),
-                    onTap: () async {
-                      final picked = await showDateRangePicker(
-                        context: context,
-                        firstDate: DateTime(today.year - 2),
-                        lastDate: DateTime(today.year + 3),
-                        initialDateRange: DateTimeRange(
-                          start: from,
-                          end: to.subtract(const Duration(days: 1)),
-                        ),
-                      );
-                      if (picked == null) return;
-                      setDialogState(() {
-                        from = picked.start;
-                        to = picked.end.add(const Duration(days: 1));
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              key: const Key('import-preview'),
-              onPressed: selected.isEmpty
-                  ? null
-                  : () => Navigator.of(context).pop(
-                      _CalendarImportSelection(
-                        sourceIds: Set<String>.of(selected),
-                        from: from,
-                        to: to,
-                      ),
-                    ),
-              child: const Text('预览'),
-            ),
-          ],
-        ),
-      ),
+    final displayTimeZoneId = await widget.displayTimeZoneIdLoader();
+    if (!mounted) return;
+    final message = await runManualCalendarImport(
+      context,
+      calendar: widget.repository,
+      schedules: scheduleRepository,
+      displayTimeZoneId: displayTimeZoneId,
+      now: DateTime.now(),
     );
-  }
-
-  Future<bool?> _showPreviewDialog(CalendarImportPreview preview) {
-    return showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('确认导入'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('将导入 ${preview.pending.length} 个日程'),
-            const SizedBox(height: 6),
-            Text('已存在将跳过 ${preview.duplicateCount} 个'),
-            if (preview.ignoredCount > 0) ...[
-              const SizedBox(height: 6),
-              Text('${preview.ignoredCount} 个活动无法作为日程导入'),
-            ],
-            if (preview.hasAliasUpdates) ...[
-              const SizedBox(height: 6),
-              Text('将为 ${preview.pendingAliasUpdates.length} 个已导入日程记录新的系统身份'),
-            ],
-            const SizedBox(height: 12),
-            const Text('导入后这些日程归 Pacta 管理；源日历不会被修改。'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            key: const Key('import-cancel'),
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            key: const Key('import-confirm'),
-            onPressed: preview.hasPending || preview.hasAliasUpdates
-                ? () => Navigator.of(context).pop(true)
-                : null,
-            child: const Text('确认导入'),
-          ),
-        ],
-      ),
-    );
+    if (!mounted) return;
+    _finish(message);
+    await _load();
   }
 
   @override
@@ -544,18 +349,6 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       ),
     );
   }
-}
-
-class _CalendarImportSelection {
-  const _CalendarImportSelection({
-    required this.sourceIds,
-    required this.from,
-    required this.to,
-  });
-
-  final Set<String> sourceIds;
-  final DateTime from;
-  final DateTime to;
 }
 
 String _formatTime(BuildContext context, DateTime value) =>

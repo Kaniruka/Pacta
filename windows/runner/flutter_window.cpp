@@ -83,6 +83,28 @@ bool ReadBool(const flutter::EncodableMap* values,
   return bool_value ? *bool_value : default_value;
 }
 
+// Dart sends ints through the standard codec as int32, int64 or double
+// depending on magnitude, so every numeric argument is read through one place.
+bool ReadInt64(const flutter::EncodableMap* values,
+               const char* key,
+               int64_t* out) {
+  const auto* value = FindValue(values, key);
+  if (value == nullptr || out == nullptr) return false;
+  if (const auto* int64_value = std::get_if<int64_t>(value)) {
+    *out = *int64_value;
+    return true;
+  }
+  if (const auto* int32_value = std::get_if<int32_t>(value)) {
+    *out = *int32_value;
+    return true;
+  }
+  if (const auto* double_value = std::get_if<double>(value)) {
+    *out = static_cast<int64_t>(*double_value);
+    return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
@@ -94,6 +116,24 @@ bool FlutterWindow::OnCreate() {
   if (!Win32Window::OnCreate()) {
     return false;
   }
+
+  // Registering the Windows App SDK identity happens before any Flutter work so
+  // a cold activation has a live COM registration as early as possible. A
+  // failure leaves the tray-only behaviour of the previous milestone intact.
+  std::string notification_error_code;
+  std::string notification_error_message;
+  int32_t notification_error_hresult = 0;
+  if (!windows_notifications_.Start(&notification_error_code,
+                                    &notification_error_message,
+                                    &notification_error_hresult)) {
+    OutputDebugStringA("Pacta: Windows notifications unavailable: ");
+    OutputDebugStringA(notification_error_code.c_str());
+    OutputDebugStringA("\n");
+  }
+  windows_notifications_.AttachWindow(
+      GetHandle(), [this](const std::string& payload) {
+        SendNotificationClicked(payload);
+      });
 
   RECT frame = GetClientArea();
 
@@ -146,6 +186,16 @@ bool FlutterWindow::OnCreate() {
         HandleProfileAvatarCall(call, std::move(result));
       });
 
+  windows_notifications_channel_ = std::make_unique<
+      flutter::MethodChannel<flutter::EncodableValue>>(
+      flutter_controller_->engine()->messenger(),
+      "com.pacta/windows_notifications",
+      &flutter::StandardMethodCodec::GetInstance());
+  windows_notifications_channel_->SetMethodCallHandler(
+      [this](const auto& call, auto result) {
+        HandleWindowsNotificationsCall(call, std::move(result));
+      });
+
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
   });
@@ -160,6 +210,11 @@ bool FlutterWindow::OnCreate() {
 
 void FlutterWindow::OnDestroy() {
   RemoveTrayIcon();
+  // Stop activation intake and revoke the SDK handler before the channel and
+  // the window go away; the schedule itself is deliberately left queued.
+  windows_notifications_.DetachWindow();
+  windows_notifications_.Stop();
+  windows_notifications_channel_.reset();
   focus_status_channel_.reset();
   source_device_info_channel_.reset();
   profile_avatar_channel_.reset();
@@ -174,6 +229,13 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  if (message == pacta::kNotificationActivationMessage) {
+    // The SDK raises NotificationInvoked on a COM worker thread; the queue is
+    // drained here so only this thread ever reaches Dart.
+    windows_notifications_.DrainPendingActivations();
+    return 0;
+  }
+
   if (message == kTrayCallbackMessage) {
     if (lparam == NIN_BALLOONUSERCLICK) {
       // A clicked reminder opens Pacta and forwards the payload so the app can
@@ -397,6 +459,143 @@ void FlutterWindow::NotifyReminderOpened() {
   if (!encoded) return;
   flutter_controller_->engine()->messenger()->Send(
       "com.pacta/focus_status", encoded->data(), encoded->size());
+}
+
+void FlutterWindow::SendNotificationClicked(const std::string& payload) {
+  if (!flutter_controller_ || payload.empty()) return;
+  const auto& codec = flutter::StandardMethodCodec::GetInstance();
+  auto encoded = codec.EncodeMethodCall(flutter::MethodCall<flutter::EncodableValue>(
+      "notificationClicked",
+      std::make_unique<flutter::EncodableValue>(payload)));
+  if (!encoded) return;
+  flutter_controller_->engine()->messenger()->Send(
+      "com.pacta/windows_notifications", encoded->data(), encoded->size());
+}
+
+void FlutterWindow::HandleWindowsNotificationsCall(
+    const flutter::MethodCall<flutter::EncodableValue>& call,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  const std::string& method = call.method_name();
+  const auto* arguments = std::get_if<flutter::EncodableMap>(call.arguments());
+
+  auto fail = [&result](const std::string& code, const std::string& message,
+                        int32_t hresult) {
+    flutter::EncodableMap details;
+    details[flutter::EncodableValue("hresult")] =
+        flutter::EncodableValue(static_cast<int64_t>(hresult));
+    result->Error(code, message, flutter::EncodableValue(details));
+  };
+
+  if (method == "initialize") {
+    // The identity belongs to the process: Dart may assert what it expects, but
+    // the bridge decides what was registered before the first Default().
+    const std::wstring expected = ReadWideString(arguments, "expectedAumid");
+    const std::wstring actual = windows_notifications_.app_user_model_id();
+    if (!expected.empty() && !actual.empty() && expected != actual) {
+      fail("aumid_mismatch",
+           "The requested notification identity is not this process's identity.",
+           0);
+      return;
+    }
+    windows_notifications_.SetDartReady(true);
+    flutter::EncodableMap reply;
+    reply[flutter::EncodableValue("ready")] =
+        flutter::EncodableValue(windows_notifications_.registered());
+    reply[flutter::EncodableValue("aumid")] =
+        flutter::EncodableValue(WideToUtf8(actual));
+    reply[flutter::EncodableValue("identitySource")] =
+        flutter::EncodableValue(windows_notifications_.identity_source());
+    result->Success(flutter::EncodableValue(reply));
+    return;
+  }
+
+  if (method == "schedule") {
+    int64_t id = 0;
+    int64_t due_unix_ms = 0;
+    if (!ReadInt64(arguments, "id", &id) ||
+        !ReadInt64(arguments, "dueUnixMs", &due_unix_ms)) {
+      fail("invalid_arguments", "id and dueUnixMs are required.", 0);
+      return;
+    }
+    std::string error_code;
+    std::string error_message;
+    int32_t error_hresult = 0;
+    if (!windows_notifications_.Schedule(
+            id, ReadWideString(arguments, "title"),
+            ReadWideString(arguments, "body"), due_unix_ms,
+            ReadWideString(arguments, "payload"), &error_code, &error_message,
+            &error_hresult)) {
+      fail(error_code, error_message, error_hresult);
+      return;
+    }
+    result->Success();
+    return;
+  }
+
+  if (method == "cancel") {
+    int64_t id = 0;
+    if (!ReadInt64(arguments, "id", &id)) {
+      fail("invalid_arguments", "id is required.", 0);
+      return;
+    }
+    std::string error_code;
+    std::string error_message;
+    int32_t error_hresult = 0;
+    if (!windows_notifications_.Cancel(id, &error_code, &error_message,
+                                       &error_hresult)) {
+      fail(error_code, error_message, error_hresult);
+      return;
+    }
+    result->Success();
+    return;
+  }
+
+  if (method == "pendingIds") {
+    std::vector<int64_t> ids;
+    std::string error_code;
+    std::string error_message;
+    int32_t error_hresult = 0;
+    if (!windows_notifications_.PendingIds(&ids, &error_code, &error_message,
+                                           &error_hresult)) {
+      fail(error_code, error_message, error_hresult);
+      return;
+    }
+    flutter::EncodableList list;
+    list.reserve(ids.size());
+    for (const int64_t id : ids) list.emplace_back(id);
+    result->Success(flutter::EncodableValue(list));
+    return;
+  }
+
+  if (method == "notificationsEnabled") {
+    bool enabled = true;
+    windows_notifications_.NotificationsEnabled(&enabled);
+    result->Success(flutter::EncodableValue(enabled));
+    return;
+  }
+
+  if (method == "dispose") {
+    // Detach Dart only: the registration outlives the Dart service so a later
+    // schedule in the same process still has a live manager.
+    windows_notifications_.SetDartReady(false);
+    result->Success();
+    return;
+  }
+
+  if (method == "unregisterAllForTestIdentity") {
+    std::string error_code;
+    std::string error_message;
+    int32_t error_hresult = 0;
+    if (!windows_notifications_.UnregisterAllForTestIdentity(
+            &error_code, &error_message, &error_hresult)) {
+      fail(error_code, error_message, error_hresult);
+      return;
+    }
+    result->Success();
+    return;
+  }
+
+  result->NotImplemented();
 }
 
 bool FlutterWindow::EnsureTrayIcon() {

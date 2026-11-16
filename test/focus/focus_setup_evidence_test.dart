@@ -69,7 +69,7 @@ void main() {
           );
           final h = _Fixture();
           await h.seed();
-          await h.mount(tester);
+          await h.mount(tester, plan: true);
           await tester.tap(find.byTooltip('开始专注'));
           await tester.pumpAndSettle();
           await _capture(
@@ -133,14 +133,14 @@ void main() {
     }
   }
 
-  for (final board in [true, false]) {
-    testWidgets('${board ? '看板' : '专注链'}入口返回与恢复保留唯一会话，结算返回文案符合真实落点', (
+  for (final planEntry in [true, false]) {
+    testWidgets('${planEntry ? '计划' : '专注链'}入口返回与恢复保留唯一会话，结算返回文案符合真实落点', (
       tester,
     ) async {
       final h = _Fixture();
       await h.seed();
-      await h.mount(tester);
-      if (!board) {
+      await h.mount(tester, plan: planEntry);
+      if (!planEntry) {
         await tester.tap(
           find.descendant(
             of: find.byType(NavigationBar),
@@ -158,15 +158,15 @@ void main() {
       await tester.tap(find.text('开始倒计时'));
       await tester.pumpAndSettle();
       final id = (await h.focus.getActiveSession())!.id;
-      await _capture(tester, '${board ? 'board' : 'focus'}-execution');
+      await _capture(tester, '${planEntry ? 'plan' : 'focus'}-execution');
       await tester.pageBack();
       await tester.pumpAndSettle();
       expect(
-        board ? find.byType(BoardPage) : find.text('选择任务'),
+        planEntry ? find.byType(PlanPage) : find.text('选择任务'),
         findsOneWidget,
       );
-      await _capture(tester, '${board ? 'board' : 'focus'}-returned');
-      await tester.tap(board ? find.byTooltip('开始专注') : find.text('选择任务'));
+      await _capture(tester, '${planEntry ? 'plan' : 'focus'}-returned');
+      await tester.tap(planEntry ? find.byTooltip('开始专注') : find.text('选择任务'));
       await tester.pumpAndSettle();
       expect(find.text('专注进行中'), findsOneWidget);
       expect((await h.focus.getActiveSession())!.id, id);
@@ -174,22 +174,22 @@ void main() {
       h.now = h.now.add(const Duration(minutes: 26));
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
-      await _capture(tester, '${board ? 'board' : 'focus'}-settled');
+      await _capture(tester, '${planEntry ? 'plan' : 'focus'}-settled');
       expect(find.text('返回上一页'), findsOneWidget);
       await tester.tap(find.text('返回上一页'));
       await tester.pumpAndSettle();
       expect(
-        board ? find.byType(BoardPage) : find.text('选择任务'),
+        planEntry ? find.byType(PlanPage) : find.text('选择任务'),
         findsOneWidget,
       );
       await h.close(tester);
     });
   }
 
-  testWidgets('看板开始准备后返回再进入恢复同一预约，不再打开设置', (tester) async {
+  testWidgets('计划开始准备后返回再进入恢复同一预约，不再打开设置', (tester) async {
     final h = _Fixture();
     await h.seed();
-    await h.mount(tester);
+    await h.mount(tester, plan: true);
     await tester.tap(find.byTooltip('开始专注'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('开始准备（15分钟）'));
@@ -199,7 +199,7 @@ void main() {
     expect(appointment.durationSeconds, 25 * 60);
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(find.byType(BoardPage), findsOneWidget);
+    expect(find.byType(PlanPage), findsOneWidget);
     await tester.tap(find.byTooltip('开始专注'));
     await tester.pumpAndSettle();
     expect(find.text('预约准备'), findsOneWidget);
@@ -207,7 +207,7 @@ void main() {
     expect((await h.focus.getActiveAppointment())?.id, appointment.id);
     expect(await h.focus.getAppointments(), hasLength(1));
     expect(await h.focus.getSessions(), isEmpty);
-    await _capture(tester, 'board-restored-appointment');
+    await _capture(tester, 'plan-restored-appointment');
     await h.close(tester);
   });
 }
@@ -255,7 +255,7 @@ class _Fixture {
     );
   }
 
-  Future<void> mount(WidgetTester tester) async {
+  Future<void> mount(WidgetTester tester, {bool plan = false}) async {
     await tester.pumpWidget(
       RepaintBoundary(
         key: const ValueKey('t78-root'),
@@ -269,6 +269,15 @@ class _Fixture {
       ),
     );
     await tester.pumpAndSettle();
+    if (plan) {
+      final navigation = find.byType(NavigationBar).evaluate().isNotEmpty
+          ? find.byType(NavigationBar)
+          : find.byType(NavigationRail);
+      await tester.tap(
+        find.descendant(of: navigation, matching: find.text('计划')),
+      );
+      await tester.pumpAndSettle();
+    }
   }
 
   Future<void> close(WidgetTester tester) async {

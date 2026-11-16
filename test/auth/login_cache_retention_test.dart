@@ -54,6 +54,8 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpWidget(app);
     await tester.pumpAndSettle();
+    await tester.tap(find.text('计划'));
+    await tester.pumpAndSettle();
 
     expect(find.text('Existing cached goal'), findsOneWidget);
   });

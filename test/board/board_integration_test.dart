@@ -12,6 +12,7 @@ import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 
 import '../support/fake_auth_repository.dart';
+import '../support/plan_navigation.dart';
 
 void main() {
   for (final activeDays in [0, 1, 7]) {
@@ -54,6 +55,8 @@ void main() {
           classification: TaskClassification.regular,
         ),
       );
+      // 看板只显示置顶目标摘要与下一项任务；完整列表在计划页。
+      await tasks.setGoalPinned(goal.id, isPinned: true);
       for (var day = 0; day < activeDays; day++) {
         final start = DateTime(2026, 11, 12 - day, 8);
         final end = start.add(const Duration(minutes: 13));
@@ -126,7 +129,9 @@ void main() {
           } else {
             expect(
               national.top,
-              greaterThan(tester.getRect(find.text('准备材料')).bottom),
+              greaterThan(
+                tester.getRect(find.textContaining('下一项：准备材料')).bottom,
+              ),
             );
           }
           expect(
@@ -143,7 +148,7 @@ void main() {
                   ? '累计有效专注 0分00秒'
                   : activeDays == 1
                   ? '累计有效专注 13分00秒'
-                  : '累计有效专注 91分00秒',
+                  : '累计有效专注 1小时31分00秒',
             ),
             findsOneWidget,
           );
@@ -178,7 +183,7 @@ void main() {
             }
           }
           await tester.scrollUntilVisible(
-            find.text('今日日历'),
+            find.textContaining('今天 · '),
             200,
             scrollable: find
                 .descendant(
@@ -187,7 +192,7 @@ void main() {
                 )
                 .first,
           );
-          expect(find.text('今天没有导入的安排。'), findsOneWidget);
+          expect(find.text('今天还没有安排。'), findsOneWidget);
           expect(tester.takeException(), isNull, reason: 'width=$width');
           await tester.scrollUntilVisible(
             find.text('今天先做什么'),
@@ -213,7 +218,7 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.text('准备材料'), findsOneWidget);
+        expect(find.textContaining('下一项：准备材料'), findsOneWidget);
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pumpAndSettle();
@@ -309,6 +314,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await openPlan(tester);
       for (final fact in [
         '120 分钟',
         '已专注 13分00秒',
@@ -340,7 +346,7 @@ void main() {
     }
   });
 
-  testWidgets('看板先显示真实任务进度并保留任务上下文进入专注设置和国策树', (tester) async {
+  testWidgets('看板保留国策与近期投入摘要，计划保留任务进度与专注入口', (tester) async {
     final database = PactaDatabase(NativeDatabase.memory());
     addTearDown(database.close);
     var now = DateTime.utc(2026, 9, 22, 8);
@@ -405,8 +411,6 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('整理发布材料'), findsOneWidget);
-    expect(find.textContaining('已专注 13分00秒'), findsOneWidget);
     expect(find.text('国策状态'), findsOneWidget);
     expect(find.textContaining('检查点'), findsNothing);
     expect(find.text('时区'), findsNothing);
@@ -414,6 +418,12 @@ void main() {
     expect(find.text('点亮 0 · 确认 1 · 熄灭 0'), findsOneWidget);
     await tester.ensureVisible(find.text('近期专注活动'));
     expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
+    // 完整任务列表与开始入口迁到计划：看板不再展开全部任务。
+    expect(find.text('整理发布材料'), findsNothing);
+
+    await openPlan(tester);
+    expect(find.text('整理发布材料'), findsOneWidget);
+    expect(find.textContaining('已专注 13分00秒'), findsOneWidget);
     await tester.ensureVisible(find.byTooltip('开始专注'));
     await tester.tap(find.byTooltip('开始专注'));
     await tester.pumpAndSettle();
@@ -428,7 +438,10 @@ void main() {
 
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
+    await openBoard(tester);
+    expect(find.byType(BoardPage), findsOneWidget);
     await tester.ensureVisible(find.text('打开国策树'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('打开国策树'));
     await tester.pumpAndSettle();
     expect(find.text('全部确认 (1)'), findsOneWidget);
@@ -440,7 +453,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1));
   });
 
-  testWidgets('看板可按目标收起任务，并限制长目标和任务名称的行数', (tester) async {
+  testWidgets('计划页可按目标收起任务，并限制长目标和任务名称的行数', (tester) async {
     tester.view.physicalSize = const Size(320, 800);
     tester.view.devicePixelRatio = 1;
     tester.platformDispatcher.textScaleFactorTestValue = 2;
@@ -499,9 +512,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    await openPlan(tester);
 
     expect(find.text(longTaskTitle), findsOneWidget);
-    expect(find.text('另一个任务'), findsOneWidget);
     final goalTitle = tester.widget<Text>(find.text(longGoalTitle));
     final taskTitle = tester.widget<Text>(find.text(longTaskTitle));
     expect(goalTitle.maxLines, 2);

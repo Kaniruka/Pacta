@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'focus_models.dart';
+import 'effective_duration_text.dart';
 import 'focus_repository.dart';
 
 /// User entry for clock-adjusted Focus Session intervals.
@@ -131,11 +132,13 @@ class _FocusClockReviewPageState extends State<FocusClockReviewPage> {
               ' → ${_formatDateTime(interval.observedEndedAt ?? interval.endedAt)}',
             ),
             const SizedBox(height: 4),
-            Text('跳变前已确认 ${_formatDuration(reviewCase.reliableSeconds)}'),
+            Text(
+              '跳变前已确认 ${formatEffectiveDuration(reviewCase.reliableSeconds)}',
+            ),
             Text(
               uncertainSeconds == null
                   ? '跳变期间缺少连续计时证据，这段时间暂不计入。'
-                  : '跳变期间连续计时约 ${_formatDuration(uncertainSeconds)}；原始时间仍待核对。',
+                  : '跳变期间连续计时约 ${formatEffectiveDuration(uncertainSeconds)}；原始时间仍待核对。',
             ),
             const SizedBox(height: 12),
             if (busy) const LinearProgressIndicator(),
@@ -185,13 +188,4 @@ String _formatDateTime(DateTime? value) {
   String twoDigits(int number) => number.toString().padLeft(2, '0');
   return '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)} '
       '${twoDigits(local.hour)}:${twoDigits(local.minute)}:${twoDigits(local.second)}';
-}
-
-String _formatDuration(int seconds) {
-  final clamped = seconds.clamp(0, 1 << 31);
-  final minutes = clamped ~/ 60;
-  final remainingSeconds = clamped % 60;
-  if (minutes == 0) return '$remainingSeconds秒';
-  if (remainingSeconds == 0) return '$minutes分';
-  return '$minutes分$remainingSeconds秒';
 }

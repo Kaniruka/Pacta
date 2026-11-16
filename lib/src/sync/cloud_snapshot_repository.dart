@@ -819,8 +819,13 @@ class CloudSnapshotRepository {
   /// explicit, validated conversion: documented missing columns are filled from
   /// the stored values and its calendar blocks are promoted into owned schedule
   /// copies before anything local is touched. Current writes always use
-  /// [cloudSnapshotSchemaVersion], which must carry both domains.
+  /// [cloudSnapshotSchemaVersion].
   static const _legacySnapshotSchemaVersion = 1;
+
+  /// Complete core version 2 (owned schedules + preparation seconds).
+  ///
+  /// Still accepted on read through the explicit goal-pin conversion below.
+  /// Any half-missing version 2 payload is rejected atomically instead.
 
   /// Keep this table list explicit. It excludes per-device preferences,
   /// lifecycle state, device identity, and the legacy upload queue.
@@ -1211,16 +1216,18 @@ class CloudSnapshotRepository {
     // 版本 3 是它的超集，同样必须携带这两个领域。
     if (!isLegacy) {
       if (rawTables['local_schedules'] is! List) {
-        throw StateError('版本 2 快照缺少日程表，已整体拒绝；请先升级本机再上传。');
+        throw StateError('版本 2 及以后快照缺少日程表，已整体拒绝；请先升级本机再上传。');
       }
       final appointmentRows = rawTables['focus_appointments'];
       if (appointmentRows is List) {
         for (final row in appointmentRows) {
           if (row is Map && !row.containsKey('preparation_seconds')) {
-            throw StateError('版本 2 快照缺少预约准备时长，已整体拒绝；请先升级本机再上传。');
+            throw StateError('版本 2 及以后快照缺少预约准备时长，已整体拒绝；请先升级本机再上传。');
           }
         }
       }
+      // 完整核心 2 若已经带上后来的列（例如目标置顶），这些列属于已知列：
+      // 迁移只补齐缺失的默认值，已存值原样保留，不整体拒绝（见集成契约）。
     }
     if (preRecurrence) {
       // v1/v2 没有规则表：显式转换成一个空集合，表示"这个账号还没有重复规则"，
@@ -1309,10 +1316,13 @@ class CloudSnapshotRepository {
     return result;
   }
 
-  /// 版本 1 的载荷缺少后来新增的列；只补这里列出的默认值，
+  /// 旧版本的载荷缺少后来新增的列；只补这里列出的默认值，
   /// 其余缺列、未知列、类型错误与用户归属仍按严格校验拒绝。
+  ///
+  /// 版本 1：日程表整体缺席（由旧日历副本提升），另缺描述与预约准备时长。
+  /// 版本 2：完整核心 2，只缺目标置顶标记与排序位。
   static const _legacySnapshotColumnDefaults = <String, Map<String, Object?>>{
-    'local_goals': {'description': ''},
+    'local_goals': {'description': '', 'is_pinned': 0, 'sort_order': null},
     'local_tasks': {'description': ''},
     'focus_appointments': {'preparation_seconds': null},
   };
@@ -1331,6 +1341,13 @@ class CloudSnapshotRepository {
     'is_recurrence_cancelled': 0,
   };
 
+  /// 07 的目标置顶与手动排序位同样晚于完整 core 2：v1/v2 缺列时补
+  /// "未置顶、无排序位"，已存值原样保留。
+  static const _goalPinColumnDefaults = <String, Object?>{
+    'is_pinned': 0,
+    'sort_order': null,
+  };
+
   Map<String, dynamic> _withOlderVersionDefaults(
     String table,
     Map<String, dynamic> row,
@@ -1342,6 +1359,8 @@ class CloudSnapshotRepository {
       // ticket 11：回顾字段晚于完整的 core 2。v1/v2 载荷缺这一列都表示未回顾，
       // 已写入的值原样保留（只补缺失键），随后仍要过完整类型校验。
       if (table == 'local_national_focus_failures') 'reviewed_at': null,
+      // ticket 07：置顶与排序位同样晚于 core 2。
+      if (table == 'local_goals') ..._goalPinColumnDefaults,
       if (table == 'local_schedules') ..._recurrenceColumnDefaults,
     };
     if (defaults.isEmpty) return row;
@@ -1615,6 +1634,18 @@ class CloudSnapshotRepository {
         ruleTaskId == null || taskIds.contains(ruleTaskId),
         'Schedule recurrence Task reference',
       );
+      // 规则模板的提醒偏移与普通实例共用同一契约：null 或 0..10080 分钟。
+      // 类型（小数/字符串）与缺键已由 SQLite 列类型和严格列集合提前拒绝；
+      // 这里补上范围，避免越界值在恢复后随懒展开扩散到实例。
+      final ruleReminder = row['reminder_minutes_before'];
+      if (ruleReminder != null) {
+        requireReference(
+          ruleReminder is int &&
+              ruleReminder >= 0 &&
+              ruleReminder <= maxScheduleReminderMinutesBefore,
+          'Schedule recurrence reminder offset',
+        );
+      }
       final allDay = row['all_day'];
       requireReference(
         allDay == 0 || allDay == 1,
