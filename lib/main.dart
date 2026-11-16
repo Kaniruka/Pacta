@@ -21,6 +21,7 @@ import 'src/calendar/calendar_provider.dart';
 import 'src/calendar/calendar_repository.dart';
 import 'src/schedules/schedule_repository.dart';
 import 'src/focus/focus_models.dart';
+import 'src/focus/focus_month_page.dart';
 import 'src/focus/chain_signals_repository.dart';
 import 'src/focus/chain_signals_card.dart';
 import 'src/focus/focus_statistics.dart';
@@ -1724,6 +1725,31 @@ class BoardPage extends ConsumerStatefulWidget {
 }
 
 class _BoardPageState extends ConsumerState<BoardPage> {
+  /// 重试只换订阅：递增代次让带 key 的 StreamBuilder 换元素，旧的读取随元素
+  /// 释放，重新订阅一次当前仓储与时区。它不写任何数据，也不改仓储实例。
+  var _projectionGeneration = 0;
+
+  void _retryProjection() {
+    if (!mounted) return;
+    setState(() => _projectionGeneration += 1);
+  }
+
+  /// 看板只提供入口：投影、时区门禁、错误重试都由月历页自己负责，
+  /// 这里不复制它的读取或写入路径。owner 与时钟在打开时绑定，
+  /// 账号变化由路由自己退出，避免显示上一个账号的月份。
+  void _openFocusMonth() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => _FocusMonthRoute(
+          ownerUserId: ref.read(authUserIdProvider),
+          repository: ref.read(focusRepositoryProvider),
+          profileRepository: ref.read(profileRepositoryProvider),
+          now: ref.read(displayClockProvider),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final taskRepository = ref.watch(taskRepositoryProvider);
@@ -1731,36 +1757,232 @@ class _BoardPageState extends ConsumerState<BoardPage> {
     final nationalFocusRepository = ref.watch(nationalFocusRepositoryProvider);
     final scheduleRepository = ref.watch(scheduleRepositoryProvider);
     final profileRepository = ref.watch(profileRepositoryProvider);
-    // 显示时区只来自账号资料。账号还没有有效值时用统一 fallback 常量，
-    // 不会退回本设备时区，因此两台设备显示同一份日分摊。
-    return StreamBuilder<ProfileAccount>(
-      stream: profileRepository.watchProfile(),
-      builder: (context, profileSnapshot) {
-        final accountTimeZoneId = AccountTimeZones.effectiveId(
-          profileSnapshot.data?.displayTimeZoneId,
+    // 看板是只读投影：一个（资料, 目标, 专注仓储 + 重试代次）对应一次显式订阅，
+    // 身份一变就换 key，旧状态连同订阅一起释放；因此上一账号/上一时区的数字
+    // 不会留在屏上，也不需要通用回放层。读取失败交给状态里可见的错误与重试。
+    return _BoardProjectionScope(
+      key: ValueKey<Object>((
+        'board-projection',
+        profileRepository,
+        taskRepository,
+        focusRepository,
+        _projectionGeneration,
+      )),
+      profileRepository: profileRepository,
+      taskRepository: taskRepository,
+      focusRepository: focusRepository,
+      builder: (context, projection) => _BoardContent(
+        displayTimeZoneId: projection.displayTimeZoneId,
+        repository: taskRepository,
+        focusRepository: focusRepository,
+        nationalFocusRepository: nationalFocusRepository,
+        scheduleRepository: scheduleRepository,
+        onOpenNationalFocus: widget.onOpenNationalFocus,
+        onOpenPlan: widget.onOpenPlan,
+        onOpenFocusMonth: _openFocusMonth,
+        goals: projection.goals,
+        metrics: projection.metrics,
+        accountFailed: projection.accountFailed,
+        metricsFailed: projection.metricsFailed,
+        goalsFailed: projection.goalsFailed,
+        onRetryProjection: _retryProjection,
+      ),
+    );
+  }
+}
+
+/// 看板一次读取的结果：账号时区、目标、近期投影与失败标记。
+class _BoardProjection {
+  const _BoardProjection({
+    required this.displayTimeZoneId,
+    required this.goals,
+    required this.metrics,
+    required this.accountFailed,
+    required this.metricsFailed,
+    required this.goalsFailed,
+  });
+
+  final String displayTimeZoneId;
+  final List<Goal> goals;
+  final FocusDashboardMetrics? metrics;
+
+  /// 账号资料读取失败：时区按统一兜底值显示，但屏幕必须说明这一点。
+  final bool accountFailed;
+
+  /// 近期投影读取失败：不再显示成"正在加载"。
+  final bool metricsFailed;
+
+  /// 目标列表读取失败：不能渲染成"还没有置顶目标"。
+  final bool goalsFailed;
+}
+
+/// 看板的只读订阅宿主。
+///
+/// 身份由外层 key 决定：仓储或重试代次一变就是新的 State，旧订阅随
+/// [dispose] 一起取消。这里不缓存旧快照——换时区时先清空投影再订阅，所以
+/// 屏上不会出现上一个账号/时区的数字，也不需要一层通用回放流；读取失败
+/// 以可见标记上报，重试只是换 key 重新订阅，不写任何数据。
+class _BoardProjectionScope extends StatefulWidget {
+  const _BoardProjectionScope({
+    super.key,
+    required this.profileRepository,
+    required this.taskRepository,
+    required this.focusRepository,
+    required this.builder,
+  });
+
+  final ProfileRepository profileRepository;
+  final TaskRepository taskRepository;
+  final FocusRepository focusRepository;
+  final Widget Function(BuildContext context, _BoardProjection projection)
+  builder;
+
+  @override
+  State<_BoardProjectionScope> createState() => _BoardProjectionScopeState();
+}
+
+class _BoardProjectionScopeState extends State<_BoardProjectionScope> {
+  StreamSubscription<ProfileAccount>? _profileSubscription;
+  StreamSubscription<FocusDashboardMetrics>? _metricsSubscription;
+  StreamSubscription<List<Goal>>? _goalsSubscription;
+  String _displayTimeZoneId = AccountTimeZones.fallbackId;
+  List<Goal> _goals = const [];
+  FocusDashboardMetrics? _metrics;
+  bool _accountFailed = false;
+  bool _metricsFailed = false;
+  bool _goalsFailed = false;
+  bool _hasBuilt = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribeProfile();
+    _subscribeGoals();
+    _subscribeMetrics();
+  }
+
+  @override
+  void dispose() {
+    unawaited(_profileSubscription?.cancel());
+    unawaited(_metricsSubscription?.cancel());
+    unawaited(_goalsSubscription?.cancel());
+    super.dispose();
+  }
+
+  /// 首帧之前的同步事件直接改字段，避免在挂载途中 setState。
+  void _apply(VoidCallback change) {
+    if (!mounted) return;
+    if (_hasBuilt) {
+      setState(change);
+    } else {
+      change();
+    }
+  }
+
+  void _subscribeProfile() {
+    _profileSubscription = widget.profileRepository.watchProfile().listen(
+      (profile) {
+        final nextZone = AccountTimeZones.effectiveId(
+          profile.displayTimeZoneId,
         );
-        return StreamBuilder<List<Goal>>(
-          stream: taskRepository.watchGoals(),
-          initialData: const [],
-          builder: (context, goalSnapshot) =>
-              StreamBuilder<FocusDashboardMetrics>(
-                stream: focusRepository.watchDashboardMetrics(
-                  timeZoneId: accountTimeZoneId,
-                ),
-                builder: (context, metricsSnapshot) => _BoardContent(
-                  displayTimeZoneId: accountTimeZoneId,
-                  repository: taskRepository,
-                  focusRepository: focusRepository,
-                  nationalFocusRepository: nationalFocusRepository,
-                  scheduleRepository: scheduleRepository,
-                  onOpenNationalFocus: widget.onOpenNationalFocus,
-                  onOpenPlan: widget.onOpenPlan,
-                  goals: goalSnapshot.data ?? const [],
-                  metrics: metricsSnapshot.data,
-                ),
-              ),
-        );
+        final zoneChanged = nextZone != _displayTimeZoneId;
+        _apply(() {
+          _accountFailed = false;
+          if (!zoneChanged) return;
+          // 换时区先丢掉旧投影：新流首帧到达前屏上是加载态，不是旧数字。
+          _displayTimeZoneId = nextZone;
+          _metrics = null;
+          _metricsFailed = false;
+        });
+        if (zoneChanged) _subscribeMetrics();
       },
+      onError: (Object error, StackTrace stackTrace) {
+        _apply(() => _accountFailed = true);
+      },
+    );
+  }
+
+  void _subscribeGoals() {
+    _goalsSubscription = widget.taskRepository.watchGoals().listen(
+      (goals) => _apply(() {
+        _goals = goals;
+        _goalsFailed = false;
+      }),
+      onError: (Object error, StackTrace stackTrace) {
+        _apply(() {
+          _goals = const [];
+          _goalsFailed = true;
+        });
+      },
+    );
+  }
+
+  void _subscribeMetrics() {
+    unawaited(_metricsSubscription?.cancel());
+    final timeZoneId = _displayTimeZoneId;
+    _metricsSubscription = widget.focusRepository
+        .watchDashboardMetrics(timeZoneId: timeZoneId)
+        .listen(
+          (metrics) => _apply(() {
+            _metrics = metrics;
+            _metricsFailed = false;
+          }),
+          onError: (Object error, StackTrace stackTrace) {
+            _apply(() {
+              _metrics = null;
+              _metricsFailed = true;
+            });
+          },
+        );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _hasBuilt = true;
+    return widget.builder(
+      context,
+      _BoardProjection(
+        displayTimeZoneId: _displayTimeZoneId,
+        goals: _goals,
+        metrics: _metrics,
+        accountFailed: _accountFailed,
+        metricsFailed: _metricsFailed,
+        goalsFailed: _goalsFailed,
+      ),
+    );
+  }
+}
+
+/// 只读月历路由：owner 变化时退出，不把上一个账号的投影留在屏幕上。
+class _FocusMonthRoute extends ConsumerWidget {
+  const _FocusMonthRoute({
+    required this.ownerUserId,
+    required this.repository,
+    required this.profileRepository,
+    required this.now,
+  });
+
+  final String? ownerUserId;
+  final FocusRepository repository;
+  final ProfileRepository profileRepository;
+  final DateTime Function() now;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(authUserIdProvider) != ownerUserId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
+      });
+      return const SizedBox.shrink();
+    }
+    return FocusMonthPage(
+      repository: repository,
+      accountTimeZoneIds: () => profileRepository.watchProfile().map(
+        (profile) => profile.displayTimeZoneId,
+      ),
+      now: now,
     );
   }
 }
@@ -1774,8 +1996,13 @@ class _BoardContent extends StatelessWidget {
     required this.scheduleRepository,
     required this.onOpenNationalFocus,
     required this.onOpenPlan,
+    required this.onOpenFocusMonth,
     required this.goals,
     required this.metrics,
+    required this.accountFailed,
+    required this.metricsFailed,
+    required this.goalsFailed,
+    required this.onRetryProjection,
   });
 
   final String displayTimeZoneId;
@@ -1785,8 +2012,20 @@ class _BoardContent extends StatelessWidget {
   final ScheduleRepository scheduleRepository;
   final VoidCallback onOpenNationalFocus;
   final VoidCallback onOpenPlan;
+  final VoidCallback onOpenFocusMonth;
   final List<Goal> goals;
   final FocusDashboardMetrics? metrics;
+
+  /// 账号资料读取失败：时区退回统一兜底值，卡片里要说明这一点。
+  final bool accountFailed;
+
+  /// 近期投影读取失败。失败不能被当成"暂无数据"渲染；
+  /// 卡片给出可见说明和只读重试。
+  final bool metricsFailed;
+
+  /// 目标列表读取失败；同样不能静默显示成"没有置顶目标"。
+  final bool goalsFailed;
+  final VoidCallback onRetryProjection;
 
   @override
   Widget build(BuildContext context) {
@@ -1826,7 +2065,12 @@ class _BoardContent extends StatelessWidget {
         displayTimeZoneId: displayTimeZoneId,
       ),
       const SizedBox(height: 8),
-      _PinnedGoalSummarySection(goals: pinned, onOpenPlan: onOpenPlan),
+      _PinnedGoalSummarySection(
+        goals: pinned,
+        onOpenPlan: onOpenPlan,
+        failed: goalsFailed,
+        onRetry: onRetryProjection,
+      ),
     ];
     final secondary = <Widget>[
       NationalFocusSummaryCard(
@@ -1834,7 +2078,13 @@ class _BoardContent extends StatelessWidget {
         onOpenTree: onOpenNationalFocus,
       ),
       const SizedBox(height: 12),
-      _RecentFocusActivityCard(metrics: metrics),
+      _RecentFocusActivityCard(
+        metrics: metrics,
+        failed: metricsFailed,
+        accountFailed: accountFailed,
+        onRetry: onRetryProjection,
+        onOpenFocusMonth: onOpenFocusMonth,
+      ),
     ];
     return LayoutBuilder(
       builder: (context, constraints) => ListView(
@@ -1971,10 +2221,16 @@ class _PinnedGoalSummarySection extends StatelessWidget {
   const _PinnedGoalSummarySection({
     required this.goals,
     required this.onOpenPlan,
+    required this.failed,
+    required this.onRetry,
   });
 
   final List<Goal> goals;
   final VoidCallback onOpenPlan;
+
+  /// 目标列表读取失败时不能渲染成"还没有置顶目标"。
+  final bool failed;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -1992,7 +2248,9 @@ class _PinnedGoalSummarySection extends StatelessWidget {
             TextButton(onPressed: onOpenPlan, child: const Text('管理')),
           ],
         ),
-        if (goals.isEmpty)
+        if (failed)
+          _BoardReadFailure(message: '暂时不能读取目标列表。', onRetry: onRetry)
+        else if (goals.isEmpty)
           Card(
             margin: EdgeInsets.zero,
             child: ListTile(
@@ -2030,10 +2288,48 @@ class _PinnedGoalSummarySection extends StatelessWidget {
   }
 }
 
+/// 看板可读失败的最小呈现：说明 + 只读重试（只重新订阅，不写数据）。
+class _BoardReadFailure extends StatelessWidget {
+  const _BoardReadFailure({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: Text(message)),
+          const SizedBox(width: 8),
+          OutlinedButton(onPressed: onRetry, child: const Text('重试')),
+        ],
+      ),
+    );
+  }
+}
+
 class _RecentFocusActivityCard extends StatelessWidget {
-  const _RecentFocusActivityCard({required this.metrics});
+  const _RecentFocusActivityCard({
+    required this.metrics,
+    required this.failed,
+    required this.accountFailed,
+    required this.onRetry,
+    required this.onOpenFocusMonth,
+  });
 
   final FocusDashboardMetrics? metrics;
+
+  /// 读取失败且没有可用值时，显示可见错误而不是一直转圈；重试只换订阅。
+  final bool failed;
+
+  /// 账号时区没有读到：数字仍按统一兜底时区显示，但必须说明来源。
+  final bool accountFailed;
+  final VoidCallback onRetry;
+  final VoidCallback onOpenFocusMonth;
 
   @override
   Widget build(BuildContext context) {
@@ -2047,13 +2343,41 @@ class _RecentFocusActivityCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('近期专注活动', style: Theme.of(context).textTheme.titleMedium),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '近期专注活动',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: onOpenFocusMonth,
+                  icon: const Icon(Icons.calendar_month_outlined),
+                  label: const Text('打开月历'),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
-            if (value == null)
+            if (accountFailed)
               const Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: Center(child: CircularProgressIndicator()),
-              )
+                padding: EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, size: 18),
+                    SizedBox(width: 8),
+                    Expanded(child: Text('暂时不能确认账号时区，以下按 UTC 显示。')),
+                  ],
+                ),
+              ),
+            if (value == null)
+              if (failed)
+                _BoardReadFailure(message: '暂时不能读取专注投影。', onRetry: onRetry)
+              else
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(child: CircularProgressIndicator()),
+                )
             else ...[
               Text(
                 '近 7 天 · 累计有效专注 '
