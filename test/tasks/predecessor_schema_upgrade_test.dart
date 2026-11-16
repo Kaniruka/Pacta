@@ -636,10 +636,16 @@ Future<void> _expectRetention(
         : isNull,
   );
 
+  // The fixture appointment ends at 2026-11-16T02:00Z. Reading it with the real
+  // clock let the due-appointment settlement turn it into 'succeeded' once that
+  // instant passed, which made this retention check date-dependent. The clock is
+  // pinned before the fixture window: this test is about retained rows, not about
+  // when the app settles them.
   final appointments = await LocalFocusRepository(
     database: database,
     userId: 'user-a',
     remote: const UnavailableFocusRemoteDataSource(),
+    now: () => DateTime.utc(2026, 11, 15, 12),
   ).getAppointments();
   expect(appointments.single.id, 'appointment-a');
   expect(appointments.single.taskId, 'task-a');
