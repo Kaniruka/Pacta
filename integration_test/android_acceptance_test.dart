@@ -65,6 +65,9 @@ void main() {
 
     Future<void> shot(String name) async {
       if (!Platform.isAndroid) return;
+      // Screen captures read the rendered surface, which can trail the frame
+      // that first showed the new route; give it one settled frame.
+      await tester.pump(const Duration(milliseconds: 300));
       await binding.takeScreenshot('android-$name');
     }
 
