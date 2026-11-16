@@ -1,5 +1,9 @@
 # Project-level configuration.
-cmake_minimum_required(VERSION 3.14)
+#
+# 3.23 is required so a Visual Studio generated project restores its
+# PackageReference items (Windows App SDK for the notification bridge) before
+# the build compiles the runner.
+cmake_minimum_required(VERSION 3.23)
 project(pacta LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
@@ -9,6 +13,11 @@ set(BINARY_NAME "pacta")
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
 cmake_policy(VERSION 3.14...3.25)
+
+# The runner's PackageReference items (Windows App SDK for notifications) must
+# be restored before the build; keep the generated Restore step enabled even for
+# configurations that build a single target.
+set(CMAKE_VS_NUGET_PACKAGE_RESTORE ON)
 
 # Define build configuration option.
 get_property(IS_MULTICONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)

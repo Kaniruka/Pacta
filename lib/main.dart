@@ -19,6 +19,7 @@ import 'src/board/national_focus_summary_card.dart';
 import 'src/calendar/calendar_page.dart';
 import 'src/calendar/calendar_provider.dart';
 import 'src/calendar/calendar_repository.dart';
+import 'src/schedules/schedule_models.dart';
 import 'src/schedules/schedule_repository.dart';
 import 'src/focus/focus_models.dart';
 import 'src/focus/chain_signals_repository.dart';
@@ -35,6 +36,8 @@ import 'src/national_focus/national_focus_ai_access.dart';
 import 'src/national_focus/national_focus_ai_analysis_page.dart';
 import 'src/national_focus/national_focus_tree_page.dart';
 import 'src/notifications/focus_notification_service.dart';
+import 'src/notifications/schedule_reminder_plan.dart';
+import 'src/notifications/schedule_reminder_sync.dart';
 import 'src/profile/account_time_zone.dart';
 import 'src/profile/avatar_picker.dart';
 import 'src/profile/profile_card.dart';
@@ -45,7 +48,6 @@ import 'src/profile/profile_repository.dart';
 import 'src/notifications/focus_notification_settings_page.dart';
 import 'src/plan/plan_calendar_view.dart';
 import 'src/plan/plan_target.dart';
-import 'src/schedules/schedule_models.dart';
 import 'src/tasks/task_database.dart' show PactaDatabase;
 import 'src/tasks/task_models.dart';
 import 'src/tasks/task_repository.dart';
@@ -198,6 +200,7 @@ class PactaApp extends StatelessWidget {
     this.nationalFocusRepositoryFactory,
     this.calendarRepositoryFactory,
     this.scheduleRepositoryFactory,
+    this.scheduleReminderOpenHandler,
     this.userLifecycleRepositoryFactory,
     this.cloudSnapshotRepositoryFactory,
     this.cloudCheckClock = DateTime.now,
@@ -237,6 +240,10 @@ class PactaApp extends StatelessWidget {
   nationalFocusRepositoryFactory;
   final CalendarRepository Function(String userId)? calendarRepositoryFactory;
   final ScheduleRepository Function(String userId)? scheduleRepositoryFactory;
+
+  /// Opens an ordinary schedule reminder once the Plan destination is wired.
+  final Future<void> Function(ScheduleReminderRequest)?
+  scheduleReminderOpenHandler;
   final UserLifecycleStatusRepository Function(String userId)?
   userLifecycleRepositoryFactory;
 
@@ -286,6 +293,9 @@ class PactaApp extends StatelessWidget {
         scheduleRepositoryFactoryProvider.overrideWithValue(
           scheduleRepositoryFactory ??
               (_) => const UnavailableScheduleRepository(),
+        ),
+        scheduleReminderOpenHandlerProvider.overrideWithValue(
+          scheduleReminderOpenHandler,
         ),
         userLifecycleRepositoryFactoryProvider.overrideWithValue(
           userLifecycleRepositoryFactory ??
@@ -554,6 +564,13 @@ final focusNotificationServiceProvider = Provider<FocusNotificationService>((
 ) {
   return DisabledFocusNotificationService();
 });
+
+/// Opens one ordinary schedule reminder.
+///
+/// The Plan destination owns this navigation; the provider only exists so a
+/// fixture or a test can observe the request instead of driving the real page.
+final scheduleReminderOpenHandlerProvider =
+    Provider<Future<void> Function(ScheduleReminderRequest)?>((ref) => null);
 
 final taskRepositoryFactoryProvider =
     Provider<TaskRepository Function(String userId)>((ref) {
@@ -875,6 +892,11 @@ class _AppShellState extends ConsumerState<AppShell>
   late final StreamSubscription<List<ConnectivityResult>>
   _connectivitySubscription;
   late final StreamSubscription<String> _notificationOpenSubscription;
+  late final StreamSubscription<ScheduleReminderRequest>
+  _scheduleOpenSubscription;
+  late final ScheduleReminderSync _scheduleReminderSync;
+  StreamSubscription<ProfileAccount>? _profileReminderSubscription;
+  String? _reminderTimeZoneId;
   late StreamSubscription<List<NationalFocusCard>>
   _nationalFocusReminderSubscription;
   late final NationalFocusCheckpointScheduler _nationalFocusCheckpointScheduler;
@@ -916,6 +938,15 @@ class _AppShellState extends ConsumerState<AppShell>
           _focusNotificationService.takePendingOpenRequest();
           unawaited(_openFocusFlow(payload));
         });
+    _scheduleReminderSync = ScheduleReminderSync(
+      notificationService: _focusNotificationService,
+      accountTimeZoneId: () async {
+        final profile = await ref.read(profileRepositoryProvider).getProfile();
+        return AccountTimeZones.effectiveId(profile.displayTimeZoneId);
+      },
+    );
+    _scheduleOpenSubscription = _focusNotificationService.openScheduleRequests
+        .listen((request) => unawaited(_openScheduleReminder(request)));
     _nationalFocusReminderSubscription = ref
         .read(nationalFocusRepositoryProvider)
         .watchTreeCards()
@@ -932,6 +963,17 @@ class _AppShellState extends ConsumerState<AppShell>
       unawaited(_focusNotificationService.syncDailyOpenReminder());
       final request = _focusNotificationService.takePendingOpenRequest();
       if (request != null) unawaited(_openFocusFlow(request));
+      unawaited(
+        _scheduleReminderSync.attach(ref.read(scheduleRepositoryProvider)),
+      );
+      _watchProfileTimeZone();
+      // A cold-start reminder activation must be drained once the shell is
+      // ready; the stream only covers clicks that arrive while it is listening.
+      final scheduleRequest = _focusNotificationService
+          .takePendingScheduleRequest();
+      if (scheduleRequest != null) {
+        unawaited(_openScheduleReminder(scheduleRequest));
+      }
     });
   }
 
@@ -939,6 +981,8 @@ class _AppShellState extends ConsumerState<AppShell>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_refreshLocalState(checkCloud: true));
+      // A resume can cross the bounded window; reconcile without replaying.
+      unawaited(_scheduleReminderSync.reconcileOnce());
     }
   }
 
@@ -1028,6 +1072,71 @@ class _AppShellState extends ConsumerState<AppShell>
     }
   }
 
+  /// Watches the account time zone so all-day reminders follow a change.
+  ///
+  /// The profile stream is the only notification a time zone edit produces, so
+  /// an existing plan must be rebuilt without waiting for a schedule edit.
+  void _watchProfileTimeZone() {
+    unawaited(_profileReminderSubscription?.cancel());
+    _profileReminderSubscription = ref
+        .read(profileRepositoryProvider)
+        .watchProfile()
+        .listen(
+          (profile) {
+            final zone = AccountTimeZones.effectiveId(
+              profile.displayTimeZoneId,
+            );
+            final previous = _reminderTimeZoneId;
+            _reminderTimeZoneId = zone;
+            if (previous != null && previous != zone) {
+              unawaited(_scheduleReminderSync.reconcileOnce());
+            }
+          },
+          onError: (Object _) {
+            // An unreadable profile keeps the current plan; the next edit or
+            // resume reconciles again.
+          },
+        );
+  }
+
+  Future<void> _openScheduleReminder(ScheduleReminderRequest request) async {
+    if (!mounted) return;
+    _focusNotificationService.takePendingScheduleRequest();
+    final userId = ref.read(authRepositoryProvider).currentUserId;
+    // A notification shown before an account switch must never open the next
+    // account's data: the payload carries the owner that registered it.
+    if (userId == null || request.ownerId != userId) return;
+    final repository = ref.read(scheduleRepositoryProvider);
+    final date = DateTime.tryParse(request.dateKey);
+    if (date == null) return;
+    List<Schedule> rows;
+    try {
+      rows = await repository.getSchedules(
+        from: date.subtract(const Duration(days: 1)),
+        to: date.add(const Duration(days: 2)),
+      );
+    } catch (_) {
+      // A reminder whose rows cannot be read must not navigate to a guess.
+      return;
+    }
+    final owned = rows.any(
+      (row) => row.id == request.scheduleId && !row.isRecurrenceCancelled,
+    );
+    if (!owned) return;
+    if (!mounted) return;
+    final handler = ref.read(scheduleReminderOpenHandlerProvider);
+    if (handler != null) {
+      await handler(request);
+      return;
+    }
+    // 计划目的地已集成：按真正的日历日与已拥有安排定位，不进入专注流程。
+    final day = DateTime(date.year, date.month, date.day);
+    setState(() {
+      _index = _planIndex;
+      _planTarget = PlanTarget(day: day, scheduleId: request.scheduleId);
+    });
+  }
+
   Future<void> _openFocusFlow(String payload) async {
     if (!mounted) return;
     // 普通安排提醒只打开计划页的日历日/安排，不进入专注流程。
@@ -1110,9 +1219,13 @@ class _AppShellState extends ConsumerState<AppShell>
     WidgetsBinding.instance.removeObserver(this);
     _connectivitySubscription.cancel();
     _notificationOpenSubscription.cancel();
+    _scheduleOpenSubscription.cancel();
+    unawaited(_profileReminderSubscription?.cancel());
     _nationalFocusReminderSubscription.cancel();
     _nationalFocusCheckpointScheduler.dispose();
-    unawaited(_focusNotificationService.releaseUser(_reminderOwnerUserId));
+    unawaited(_scheduleReminderSync.detach());
+    // 正常退出只停止本进程监听，未来 OS 提醒继续排队；登出/切号走 releaseUser。
+    unawaited(_focusNotificationService.detachForProcessExit());
     super.dispose();
   }
 
@@ -1128,10 +1241,20 @@ class _AppShellState extends ConsumerState<AppShell>
     ref.listen(focusRepositoryProvider, (previous, next) {
       unawaited(_syncFocusStatus());
     });
+    ref.watch(scheduleRepositoryProvider);
+    ref.listen(scheduleRepositoryProvider, (previous, next) {
+      unawaited(_scheduleReminderSync.attach(next));
+    });
+    ref.watch(profileRepositoryProvider);
+    ref.listen(profileRepositoryProvider, (previous, next) {
+      _watchProfileTimeZone();
+    });
     ref.listen(authUserIdProvider, (previous, next) {
       if (previous != null && previous != next) {
         // 切换账号作废旧用户的待上传请求，避免随后按错误身份继续。
         unawaited(ref.read(cloudAutoUploadQueueStoreProvider).clear(previous));
+        // 登出/切号时取消旧账号已登记的提醒；正常退出不会走到这里。
+        unawaited(_focusNotificationService.releaseUser(previous));
       }
     });
     ref.watch(cloudVersionCheckProvider);
@@ -5503,7 +5626,14 @@ class _MyPageState extends ConsumerState<MyPage> {
         ),
         const SizedBox(height: 12),
         OutlinedButton.icon(
-          onPressed: () => ref.read(authRepositoryProvider).signOut(),
+          onPressed: () async {
+            final userId = ref.read(authRepositoryProvider).currentUserId;
+            // 明确登出才取消已登记的提醒；正常关应用保留未来项。
+            await ref
+                .read(focusNotificationServiceProvider)
+                .releaseUser(userId);
+            await ref.read(authRepositoryProvider).signOut();
+          },
           icon: const Icon(Icons.logout),
           label: const Text('退出登录'),
         ),
