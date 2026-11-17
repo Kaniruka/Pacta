@@ -94,7 +94,8 @@ void main() {
 
       // 导入不可用不影响自有安排的创建入口。
       expect(find.text('新建安排'), findsOneWidget);
-      expect(find.text('添加事项'), findsOneWidget);
+      expect(find.text('新建安排'), findsOneWidget);
+      expect(find.text('添加事项'), findsNothing);
       expect(await harness.schedules.getSchedules(), isEmpty);
     } finally {
       await harness.dispose(tester);

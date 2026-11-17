@@ -143,9 +143,9 @@ Future<void> _createSchedule(
   String? task,
   String? reminder,
 }) async {
-  await tester.ensureVisible(find.text('添加事项'));
+  await tester.ensureVisible(find.text('新建安排'));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('添加事项'));
+  await tester.tap(find.text('新建安排'));
   await tester.pumpAndSettle();
   await tester.enterText(_field('名称'), title);
   if (task != null) {
@@ -207,7 +207,7 @@ void main() {
       await tester.tap(find.text('日历'));
       await tester.pumpAndSettle();
       expect(find.text('新建安排'), findsOneWidget);
-      expect(find.text('添加事项'), findsOneWidget);
+      expect(find.text('添加事项'), findsNothing);
 
       await _switchDestination(tester, '国策树');
       expect(find.byType(NationalFocusTreePage), findsOneWidget);

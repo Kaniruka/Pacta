@@ -109,7 +109,7 @@ void main() {
     expect(find.byKey(const ValueKey('plan-schedules-error')), findsOneWidget);
     expect(find.text('暂时不能读取安排。'), findsOneWidget);
     expect(find.textContaining('读取失败'), findsOneWidget);
-    expect(find.text('这一天还没有安排。'), findsNothing, reason: '失败不是空内容');
+    expect(find.text('这一天还没有安排。用上方「新建安排」添加。'), findsNothing, reason: '失败不是空内容');
     expect(find.textContaining('0 项安排'), findsNothing);
     expect(repository.subscriptions, 1);
 
@@ -128,7 +128,7 @@ void main() {
     ]);
     await tester.pumpWidget(_calendar(repository));
     await tester.pumpAndSettle();
-    expect(find.text('这一天还没有安排。'), findsOneWidget);
+    expect(find.text('这一天还没有安排。用上方「新建安排」添加。'), findsOneWidget);
     expect(find.textContaining('0 项安排'), findsOneWidget);
     expect(find.text('暂时不能读取安排。'), findsNothing);
   });

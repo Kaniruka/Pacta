@@ -518,7 +518,7 @@ Future<void> runUnsupportedCalendarScenario(
   expect(unsupportedPrompt, findsNothing, reason: '提示按时退场，不残留');
 
   // 自有安排：新增 → 编辑标题 → 落库与页面同时更新。
-  await tester.tap(find.text('添加事项'));
+  await tester.tap(find.text('新建安排'));
   await fixture.settle(tester);
   await tester.enterText(planFormField('名称'), '离线整理');
   await tester.tap(find.text('保存'));

@@ -521,21 +521,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                summary,
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-            ),
-            TextButton.icon(
-              onPressed: () => _createSchedule(day: _selectedDay),
-              icon: const Icon(Icons.add),
-              label: const Text('添加事项'),
-            ),
-          ],
-        ),
+        Text(summary, style: Theme.of(context).textTheme.titleSmall),
         if (_schedulesError != null)
           _buildSchedulesError(context)
         else if (_loadingSchedules)
@@ -544,7 +530,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: Text(
-              '这一天还没有安排。',
+              '这一天还没有安排。用上方「新建安排」添加。',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),

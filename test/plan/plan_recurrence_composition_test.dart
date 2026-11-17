@@ -77,7 +77,7 @@ Finder _field(String label) => find.byWidgetPredicate(
 );
 
 Future<void> _openCreateDialog(WidgetTester tester) async {
-  await tester.tap(find.text('添加事项'));
+  await tester.tap(find.text('新建安排'));
   await tester.pumpAndSettle();
 }
 
