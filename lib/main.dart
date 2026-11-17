@@ -3854,43 +3854,29 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
             : count == null
             ? '读取中…'
             : '$count 条持续许可';
-        return Container(
+        return Card(
           key: const ValueKey('focus-allowance-entry'),
-          padding: const EdgeInsets.only(top: 8),
-          decoration: BoxDecoration(
-            border: Border(top: BorderSide(color: colors.outlineVariant)),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '下必为例',
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
+          margin: EdgeInsets.zero,
+          elevation: 0,
+          color: colors.surfaceContainerLow,
+          child: ListTile(
+            contentPadding: const EdgeInsets.only(left: 14, right: 6),
+            title: Text('下必为例', style: theme.textTheme.titleSmall),
+            subtitle: Text(
+              subtitle,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
               ),
-              TextButton.icon(
-                key: const ValueKey('focus-allowance-manage'),
-                style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
-                onPressed: _openPrecedentRules,
-                iconAlignment: IconAlignment.end,
-                icon: const Icon(Icons.chevron_right, size: 18),
-                label: const Text('管理'),
-              ),
-            ],
+            ),
+            onTap: _openPrecedentRules,
+            trailing: TextButton.icon(
+              key: const ValueKey('focus-allowance-manage'),
+              style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
+              onPressed: _openPrecedentRules,
+              iconAlignment: IconAlignment.end,
+              icon: const Icon(Icons.chevron_right, size: 18),
+              label: const Text('管理'),
+            ),
           ),
         );
       },
@@ -4190,11 +4176,8 @@ class _FocusStartBar extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Container(
-      decoration: BoxDecoration(
-        color: colors.surface,
-        border: Border(top: BorderSide(color: colors.outlineVariant)),
-      ),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+      decoration: BoxDecoration(color: colors.surfaceContainerLow),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
@@ -4205,12 +4188,7 @@ class _FocusStartBar extends StatelessWidget {
             spacing: 8,
             runSpacing: 2,
             children: [
-              Text(
-                '开始一次专注',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              Text('开始一次专注', style: theme.textTheme.titleMedium),
               Text(
                 '可选任务 $taskCount 个',
                 style: theme.textTheme.bodySmall?.copyWith(

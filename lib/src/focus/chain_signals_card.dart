@@ -89,10 +89,6 @@ class FocusChainOverview extends StatelessWidget {
           margin: EdgeInsets.zero,
           elevation: 0,
           color: colors.surfaceContainerLow,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: colors.outlineVariant),
-          ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
             child: Column(
@@ -150,10 +146,6 @@ class FocusChainOverview extends StatelessWidget {
           margin: EdgeInsets.zero,
           elevation: 0,
           color: colors.surfaceContainerLow,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: colors.outlineVariant),
-          ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(14, 4, 10, 4),
             child: Column(
@@ -173,7 +165,7 @@ class FocusChainOverview extends StatelessWidget {
                     ),
                   ),
                 ),
-                Divider(height: 1, color: colors.outlineVariant),
+                const SizedBox(height: 8),
                 _SignalAction(
                   target: _SignalTarget.appointment,
                   texts: texts,
@@ -223,7 +215,6 @@ class _ChainTableRow extends StatelessWidget {
       color: colors.onSurfaceVariant,
     );
     final valueStyle = theme.textTheme.titleMedium?.copyWith(
-      fontWeight: FontWeight.w600,
       fontFeatures: const [ui.FontFeature.tabularFigures()],
     );
     final currentValue = current ?? record?.currentConsecutive ?? 0;
@@ -306,7 +297,6 @@ class _ChainTableRow extends StatelessWidget {
             children: footnotes,
           ),
         ),
-        if (!isLast) Divider(height: 1, color: colors.outlineVariant),
       ],
     );
   }
@@ -329,24 +319,27 @@ class _SignalAction extends StatelessWidget {
     final colors = theme.colorScheme;
     final action = target.text(texts);
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        SizedBox(
+          width: 76,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              target.label,
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                target.label,
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                action.isEmpty ? '尚未设置' : action,
-                style: theme.textTheme.bodyMedium,
-              ),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              action.isEmpty ? '尚未设置' : action,
+              style: theme.textTheme.bodyMedium,
+            ),
           ),
         ),
         if (repository != null)
