@@ -1252,6 +1252,8 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
   int? _reminderMinutesBefore;
   late ScheduleRepeatSelection _repeat;
   var _scope = ScheduleRepeatScope.onlyThis;
+  final ScrollController _scrollController = ScrollController();
+  double _lastViewInsetBottom = 0;
 
   bool get _isExistingRecurring => widget.initial?.isRecurring ?? false;
 
@@ -1286,9 +1288,25 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 键盘弹出/收起都会改变 viewInsets：内容视口随之缩放，滚动位置若原样保留，
+    // 首字段的浮动标签就会被推到视口上沿之外。这里在每次 inset 变化后把滚动
+    // 复位到顶部，配合内容顶部内边距，保证标签始终完整可见。
+    final insetBottom = MediaQuery.viewInsetsOf(context).bottom;
+    if (insetBottom == _lastViewInsetBottom) return;
+    _lastViewInsetBottom = insetBottom;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      if (_scrollController.offset != 0) _scrollController.jumpTo(0);
+    });
+  }
+
+  @override
   void dispose() {
     _title.dispose();
     _notes.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -1369,6 +1387,10 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
     return AlertDialog(
       title: Text(widget.initial == null ? '新建安排' : '编辑安排'),
       content: SingleChildScrollView(
+        controller: _scrollController,
+        // 浮动标签画在字段上沿之外，顶部至少要留出一行标签的高度，
+        // 否则滚动到顶时标签上半会被视口裁掉。
+        padding: const EdgeInsets.only(top: 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
