@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:timezone/timezone.dart' as timezone;
 
 import '../calendar/calendar_repository.dart';
+import 'calendar_almanac.dart';
 import '../calendar/manual_calendar_import.dart';
 import '../focus/focus_time_zones.dart';
 import '../schedules/schedule_models.dart';
@@ -28,6 +29,7 @@ class PlanCalendarView extends StatefulWidget {
     this.calendarRepository,
     this.initialDay,
     this.highlightScheduleId,
+    this.almanac,
   });
 
   final ScheduleRepository repository;
@@ -44,6 +46,9 @@ class PlanCalendarView extends StatefulWidget {
   /// 通知要定位的已拥有安排；只在当前账号的日程流里命中时才强调，
   /// 不存在（已删除或不属于本账号）就只停留在 [initialDay]，不建专注。
   final String? highlightScheduleId;
+
+  /// 旧历/节气/休班知识；为 null 时由页面自己从 assets 加载。
+  final CalendarAlmanac? almanac;
 
   @override
   State<PlanCalendarView> createState() => _PlanCalendarViewState();
@@ -76,6 +81,9 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
   /// 订阅代次：旧源/旧订阅的迟到事件一律丢弃。
   int _sourceGeneration = 0;
 
+  /// 旧历/节气/休班知识；加载完成前只显示公历日期，不阻塞日历。
+  CalendarAlmanac? _almanac;
+
   StreamSubscription<List<Schedule>>? _scheduleSubscription;
 
   timezone.Location get _location =>
@@ -94,7 +102,15 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     _visibleMonth = DateTime(initial.year, initial.month);
     _selectedDay = DateTime(initial.year, initial.month, initial.day);
     _highlightedScheduleId = widget.highlightScheduleId;
+    _almanac = widget.almanac;
+    if (_almanac == null) unawaited(_loadAlmanac());
     unawaited(_resolveHighlightedSchedule());
+  }
+
+  Future<void> _loadAlmanac() async {
+    final almanac = await loadCalendarAlmanac();
+    if (!mounted || almanac.isEmpty) return;
+    setState(() => _almanac = almanac);
   }
 
   @override
@@ -452,10 +468,17 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     final selected = day == _selectedDay;
     final today = day == _todayKey();
     final colorScheme = theme.colorScheme;
+    final info = _almanac?.describe(day);
+    final labelColor = selected
+        ? colorScheme.onPrimaryContainer
+        : info?.kind == CalendarDayKind.holiday
+        ? colorScheme.primary
+        : colorScheme.onSurfaceVariant;
     return Semantics(
       button: true,
       selected: selected,
-      label: '${day.month}月${day.day}日',
+      label:
+          '${day.month}月${day.day}日${info == null ? '' : ' ${info.shortLabel}'}',
       child: InkWell(
         key: ValueKey(
           'plan-day-${day.year.toString().padLeft(4, '0')}-'
@@ -469,7 +492,8 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
           _clearHighlightedSchedule();
         }),
         child: Container(
-          constraints: const BoxConstraints(minHeight: 48),
+          // 定案：日期格第二行 48→64dp，短标签最多 4 字。
+          constraints: const BoxConstraints(minHeight: 64),
           margin: const EdgeInsets.all(2),
           decoration: BoxDecoration(
             color: selected ? colorScheme.primaryContainer : Colors.transparent,
@@ -483,16 +507,37 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
             children: [
               Text('${day.day}', style: theme.textTheme.bodyMedium),
               const SizedBox(height: 2),
-              Container(
-                width: 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: marked
-                      ? (selected
-                            ? colorScheme.onPrimaryContainer
-                            : colorScheme.primary)
-                      : Colors.transparent,
+              SizedBox(
+                height: 14,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    if (marked)
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: selected
+                              ? colorScheme.onPrimaryContainer
+                              : colorScheme.primary,
+                        ),
+                      ),
+                    if (marked && info != null) const SizedBox(width: 3),
+                    if (info != null)
+                      Flexible(
+                        child: Text(
+                          info.shortLabel,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.clip,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: labelColor,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
@@ -522,6 +567,16 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(summary, style: Theme.of(context).textTheme.titleSmall),
+        if (_almanac != null && _schedulesError == null && !_loadingSchedules)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              _almanac!.describe(_selectedDay).detail,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
         if (_schedulesError != null)
           _buildSchedulesError(context)
         else if (_loadingSchedules)

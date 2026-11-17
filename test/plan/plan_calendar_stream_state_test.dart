@@ -113,6 +113,10 @@ void main() {
     expect(find.textContaining('0 项安排'), findsNothing);
     expect(repository.subscriptions, 1);
 
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('plan-schedules-retry')),
+    );
+    await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('plan-schedules-retry')));
     await tester.pumpAndSettle();
     expect(repository.subscriptions, 2, reason: '重试只重新订阅');

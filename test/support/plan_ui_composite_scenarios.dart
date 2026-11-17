@@ -499,10 +499,10 @@ Future<void> runUnsupportedCalendarScenario(
   expect(find.text('新建安排'), findsOneWidget);
   await tester.tap(find.byKey(const ValueKey('plan-day-2026-11-16')));
   await fixture.settle(tester);
-  expect(find.textContaining('11月16日'), findsOneWidget, reason: '真实触摸换日');
+  expect(find.textContaining('11月16日'), findsWidgets, reason: '真实触摸换日');
   await tester.tap(today);
   await fixture.settle(tester);
-  expect(find.textContaining('11月15日'), findsOneWidget);
+  expect(find.textContaining('11月15日'), findsWidgets);
 
   // 导入入口：提示先真实可见，再截图——先等 5 秒会让 SnackBar 自己退场，
   // 截出来只是一张空日历。

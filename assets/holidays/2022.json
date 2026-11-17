@@ -1,0 +1,200 @@
+{
+  "year": 2022,
+  "days": [
+    {
+      "date": "2022-01-01",
+      "kind": "holiday",
+      "name": "元旦"
+    },
+    {
+      "date": "2022-01-02",
+      "kind": "holiday",
+      "name": "元旦"
+    },
+    {
+      "date": "2022-01-03",
+      "kind": "holiday",
+      "name": "元旦"
+    },
+    {
+      "date": "2022-01-29",
+      "kind": "workday",
+      "name": "春节"
+    },
+    {
+      "date": "2022-01-30",
+      "kind": "workday",
+      "name": "春节"
+    },
+    {
+      "date": "2022-01-31",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2022-02-01",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2022-02-02",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2022-02-03",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2022-02-04",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2022-02-05",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2022-02-06",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2022-04-02",
+      "kind": "workday",
+      "name": "清明"
+    },
+    {
+      "date": "2022-04-03",
+      "kind": "holiday",
+      "name": "清明"
+    },
+    {
+      "date": "2022-04-04",
+      "kind": "holiday",
+      "name": "清明"
+    },
+    {
+      "date": "2022-04-05",
+      "kind": "holiday",
+      "name": "清明"
+    },
+    {
+      "date": "2022-04-24",
+      "kind": "workday",
+      "name": "劳动"
+    },
+    {
+      "date": "2022-04-30",
+      "kind": "holiday",
+      "name": "劳动"
+    },
+    {
+      "date": "2022-05-01",
+      "kind": "holiday",
+      "name": "劳动"
+    },
+    {
+      "date": "2022-05-02",
+      "kind": "holiday",
+      "name": "劳动"
+    },
+    {
+      "date": "2022-05-03",
+      "kind": "holiday",
+      "name": "劳动"
+    },
+    {
+      "date": "2022-05-04",
+      "kind": "holiday",
+      "name": "劳动"
+    },
+    {
+      "date": "2022-05-07",
+      "kind": "workday",
+      "name": "劳动"
+    },
+    {
+      "date": "2022-06-03",
+      "kind": "holiday",
+      "name": "端午"
+    },
+    {
+      "date": "2022-06-04",
+      "kind": "holiday",
+      "name": "端午"
+    },
+    {
+      "date": "2022-06-05",
+      "kind": "holiday",
+      "name": "端午"
+    },
+    {
+      "date": "2022-09-10",
+      "kind": "holiday",
+      "name": "中秋"
+    },
+    {
+      "date": "2022-09-11",
+      "kind": "holiday",
+      "name": "中秋"
+    },
+    {
+      "date": "2022-09-12",
+      "kind": "holiday",
+      "name": "中秋"
+    },
+    {
+      "date": "2022-10-01",
+      "kind": "holiday",
+      "name": "国庆"
+    },
+    {
+      "date": "2022-10-02",
+      "kind": "holiday",
+      "name": "国庆"
+    },
+    {
+      "date": "2022-10-03",
+      "kind": "holiday",
+      "name": "国庆"
+    },
+    {
+      "date": "2022-10-04",
+      "kind": "holiday",
+      "name": "国庆"
+    },
+    {
+      "date": "2022-10-05",
+      "kind": "holiday",
+      "name": "国庆"
+    },
+    {
+      "date": "2022-10-06",
+      "kind": "holiday",
+      "name": "国庆"
+    },
+    {
+      "date": "2022-10-07",
+      "kind": "holiday",
+      "name": "国庆"
+    },
+    {
+      "date": "2022-10-08",
+      "kind": "workday",
+      "name": "国庆"
+    },
+    {
+      "date": "2022-10-09",
+      "kind": "workday",
+      "name": "国庆"
+    },
+    {
+      "date": "2022-12-31",
+      "kind": "holiday",
+      "name": "元旦"
+    }
+  ]
+}

@@ -1,0 +1,170 @@
+{
+  "year": 2025,
+  "days": [
+    {
+      "date": "2025-01-01",
+      "kind": "holiday",
+      "name": "元旦"
+    },
+    {
+      "date": "2025-01-26",
+      "kind": "workday",
+      "name": "春节"
+    },
+    {
+      "date": "2025-01-28",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2025-01-29",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2025-01-30",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2025-01-31",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2025-02-01",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2025-02-02",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2025-02-03",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2025-02-04",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2025-02-08",
+      "kind": "workday",
+      "name": "春节"
+    },
+    {
+      "date": "2025-04-04",
+      "kind": "holiday",
+      "name": "清明"
+    },
+    {
+      "date": "2025-04-05",
+      "kind": "holiday",
+      "name": "清明"
+    },
+    {
+      "date": "2025-04-06",
+      "kind": "holiday",
+      "name": "清明"
+    },
+    {
+      "date": "2025-04-27",
+      "kind": "workday",
+      "name": "劳动"
+    },
+    {
+      "date": "2025-05-01",
+      "kind": "holiday",
+      "name": "劳动"
+    },
+    {
+      "date": "2025-05-02",
+      "kind": "holiday",
+      "name": "劳动"
+    },
+    {
+      "date": "2025-05-03",
+      "kind": "holiday",
+      "name": "劳动"
+    },
+    {
+      "date": "2025-05-04",
+      "kind": "holiday",
+      "name": "劳动"
+    },
+    {
+      "date": "2025-05-05",
+      "kind": "holiday",
+      "name": "劳动"
+    },
+    {
+      "date": "2025-05-31",
+      "kind": "holiday",
+      "name": "端午"
+    },
+    {
+      "date": "2025-06-01",
+      "kind": "holiday",
+      "name": "端午"
+    },
+    {
+      "date": "2025-06-02",
+      "kind": "holiday",
+      "name": "端午"
+    },
+    {
+      "date": "2025-09-28",
+      "kind": "workday",
+      "name": "国庆中秋"
+    },
+    {
+      "date": "2025-10-01",
+      "kind": "holiday",
+      "name": "国庆中秋"
+    },
+    {
+      "date": "2025-10-02",
+      "kind": "holiday",
+      "name": "国庆中秋"
+    },
+    {
+      "date": "2025-10-03",
+      "kind": "holiday",
+      "name": "国庆中秋"
+    },
+    {
+      "date": "2025-10-04",
+      "kind": "holiday",
+      "name": "国庆中秋"
+    },
+    {
+      "date": "2025-10-05",
+      "kind": "holiday",
+      "name": "国庆中秋"
+    },
+    {
+      "date": "2025-10-06",
+      "kind": "holiday",
+      "name": "国庆中秋"
+    },
+    {
+      "date": "2025-10-07",
+      "kind": "holiday",
+      "name": "国庆中秋"
+    },
+    {
+      "date": "2025-10-08",
+      "kind": "holiday",
+      "name": "国庆中秋"
+    },
+    {
+      "date": "2025-10-11",
+      "kind": "workday",
+      "name": "国庆中秋"
+    }
+  ]
+}

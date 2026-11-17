@@ -1,0 +1,195 @@
+{
+  "year": 2024,
+  "days": [
+    {
+      "date": "2024-01-01",
+      "kind": "holiday",
+      "name": "元旦"
+    },
+    {
+      "date": "2024-02-04",
+      "kind": "workday",
+      "name": "春节"
+    },
+    {
+      "date": "2024-02-10",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2024-02-11",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2024-02-12",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2024-02-13",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2024-02-14",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2024-02-15",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2024-02-16",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2024-02-17",
+      "kind": "holiday",
+      "name": "春节"
+    },
+    {
+      "date": "2024-02-18",
+      "kind": "workday",
+      "name": "春节"
+    },
+    {
+      "date": "2024-04-04",
+      "kind": "holiday",
+      "name": "清明"
+    },
+    {
+      "date": "2024-04-05",
+      "kind": "holiday",
+      "name": "清明"
+    },
+    {
+      "date": "2024-04-06",
+      "kind": "holiday",
+      "name": "清明"
+    },
+    {
+      "date": "2024-04-07",
+      "kind": "workday",
+      "name": "清明"
+    },
+    {
+      "date": "2024-04-28",
+      "kind": "workday",
+      "name": "劳动"
+    },
+    {
+      "date": "2024-05-01",
+      "kind": "holiday",
+      "name": "劳动"
+    },
+    {
+      "date": "2024-05-02",
+      "kind": "holiday",
+      "name": "劳动"
+    },
+    {
+      "date": "2024-05-03",
+      "kind": "holiday",
+      "name": "劳动"
+    },
+    {
+      "date": "2024-05-04",
+      "kind": "holiday",
+      "name": "劳动"
+    },
+    {
+      "date": "2024-05-05",
+      "kind": "holiday",
+      "name": "劳动"
+    },
+    {
+      "date": "2024-05-11",
+      "kind": "workday",
+      "name": "劳动"
+    },
+    {
+      "date": "2024-06-08",
+      "kind": "holiday",
+      "name": "端午"
+    },
+    {
+      "date": "2024-06-09",
+      "kind": "holiday",
+      "name": "端午"
+    },
+    {
+      "date": "2024-06-10",
+      "kind": "holiday",
+      "name": "端午"
+    },
+    {
+      "date": "2024-09-14",
+      "kind": "workday",
+      "name": "中秋"
+    },
+    {
+      "date": "2024-09-15",
+      "kind": "holiday",
+      "name": "中秋"
+    },
+    {
+      "date": "2024-09-16",
+      "kind": "holiday",
+      "name": "中秋"
+    },
+    {
+      "date": "2024-09-17",
+      "kind": "holiday",
+      "name": "中秋"
+    },
+    {
+      "date": "2024-09-29",
+      "kind": "workday",
+      "name": "国庆"
+    },
+    {
+      "date": "2024-10-01",
+      "kind": "holiday",
+      "name": "国庆"
+    },
+    {
+      "date": "2024-10-02",
+      "kind": "holiday",
+      "name": "国庆"
+    },
+    {
+      "date": "2024-10-03",
+      "kind": "holiday",
+      "name": "国庆"
+    },
+    {
+      "date": "2024-10-04",
+      "kind": "holiday",
+      "name": "国庆"
+    },
+    {
+      "date": "2024-10-05",
+      "kind": "holiday",
+      "name": "国庆"
+    },
+    {
+      "date": "2024-10-06",
+      "kind": "holiday",
+      "name": "国庆"
+    },
+    {
+      "date": "2024-10-07",
+      "kind": "holiday",
+      "name": "国庆"
+    },
+    {
+      "date": "2024-10-12",
+      "kind": "workday",
+      "name": "国庆"
+    }
+  ]
+}
