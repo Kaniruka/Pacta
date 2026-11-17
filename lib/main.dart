@@ -1522,6 +1522,30 @@ class _PlanPageState extends ConsumerState<PlanPage> {
   late final Future<String> _fallbackDisplayTimeZoneId = widget
       .displayTimeZoneLoader();
 
+  /// 内容区左右滑动与分段按钮共用同一个页码。
+  late final PageController _pageController = PageController(
+    initialPage: _view.index,
+  );
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  void _selectView(_PlanView next) {
+    if (_view == next) return;
+    setState(() => _view = next);
+    if (!_pageController.hasClients) return;
+    final current = _pageController.page?.round();
+    if (current == next.index) return;
+    _pageController.animateToPage(
+      next.index,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   @override
   void didUpdateWidget(PlanPage oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -1529,7 +1553,7 @@ class _PlanPageState extends ConsumerState<PlanPage> {
         widget.navigationTarget == oldWidget.navigationTarget) {
       return;
     }
-    setState(() => _view = _PlanView.calendar);
+    _selectView(_PlanView.calendar);
   }
 
   @override
@@ -1559,57 +1583,78 @@ class _PlanPageState extends ConsumerState<PlanPage> {
               // 一样从 16 起排，视觉左边界不变。
               final calendar = _view == _PlanView.calendar;
               final horizontal = calendar ? 12.0 : 16.0;
-              return ListView(
-                padding: EdgeInsets.fromLTRB(horizontal, 20, horizontal, 28),
+              return Column(
                 children: [
                   Padding(
-                    padding: EdgeInsets.symmetric(horizontal: calendar ? 4 : 0),
-                    child: Wrap(
-                      alignment: WrapAlignment.spaceBetween,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 16,
-                      runSpacing: 12,
+                    padding: EdgeInsets.fromLTRB(horizontal, 20, horizontal, 0),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: calendar ? 4 : 0,
+                      ),
+                      child: Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 16,
+                        runSpacing: 12,
+                        children: [
+                          Text(
+                            '计划',
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                          SegmentedButton<_PlanView>(
+                            segments: const [
+                              ButtonSegment(
+                                value: _PlanView.goals,
+                                icon: Icon(Icons.flag_outlined),
+                                label: Text('目标'),
+                              ),
+                              ButtonSegment(
+                                value: _PlanView.calendar,
+                                icon: Icon(Icons.calendar_month_outlined),
+                                label: Text('日历'),
+                              ),
+                            ],
+                            selected: {_view},
+                            onSelectionChanged: (selection) =>
+                                _selectView(selection.first),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // 头部留在滑动区之外：分段控件与标题不随页面移动。
+                  Expanded(
+                    child: PageView(
+                      controller: _pageController,
+                      // 手势只在内容区：页面本身的水平拖动与两条分页边界由
+                      // PageView 负责，两端停住不循环。
+                      onPageChanged: (index) =>
+                          setState(() => _view = _PlanView.values[index]),
                       children: [
-                        Text(
-                          '计划',
-                          style: Theme.of(context).textTheme.headlineSmall,
+                        ListView(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+                          children: _buildGoals(
+                            context,
+                            taskRepository,
+                            goals,
+                            displayTimeZoneId,
+                          ),
                         ),
-                        SegmentedButton<_PlanView>(
-                          segments: const [
-                            ButtonSegment(
-                              value: _PlanView.goals,
-                              icon: Icon(Icons.flag_outlined),
-                              label: Text('目标'),
-                            ),
-                            ButtonSegment(
-                              value: _PlanView.calendar,
-                              icon: Icon(Icons.calendar_month_outlined),
-                              label: Text('日历'),
+                        ListView(
+                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
+                          children: [
+                            _buildCalendar(
+                              context,
+                              taskRepository,
+                              scheduleRepository,
+                              goals,
+                              displayTimeZoneId,
                             ),
                           ],
-                          selected: {_view},
-                          onSelectionChanged: (selection) =>
-                              setState(() => _view = selection.first),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  if (_view == _PlanView.goals)
-                    ..._buildGoals(
-                      context,
-                      taskRepository,
-                      goals,
-                      displayTimeZoneId,
-                    )
-                  else
-                    _buildCalendar(
-                      context,
-                      taskRepository,
-                      scheduleRepository,
-                      goals,
-                      displayTimeZoneId,
-                    ),
                 ],
               );
             },
