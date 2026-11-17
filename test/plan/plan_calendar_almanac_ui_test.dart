@@ -110,6 +110,48 @@ void main() {
     }
   });
 
+  testWidgets('放假日用格背景突出（休），普通日与补班日不着色', (tester) async {
+    final host = _Host.create();
+    try {
+      await host.pump(
+        tester,
+        DateTime(2026, 2, 17),
+        size: const Size(411, 731),
+      );
+
+      Color? cellColor(String ymd) {
+        final container = tester.widget<Container>(
+          find
+              .descendant(
+                of: find.byKey(ValueKey('plan-day-$ymd')),
+                matching: find.byType(Container),
+              )
+              .first,
+        );
+        return (container.decoration as BoxDecoration?)?.color;
+      }
+
+      // 02-18 放假但非选中日、02-14 补班、02-25 普通日（选中日是 02-17）。
+      expect(
+        cellColor('2026-02-18'),
+        isNot(anyOf(isNull, Colors.transparent)),
+        reason: '放假日要有底色',
+      );
+      expect(
+        cellColor('2026-02-14'),
+        anyOf(isNull, Colors.transparent),
+        reason: '补班日不按放假日着色',
+      );
+      expect(
+        cellColor('2026-02-25'),
+        anyOf(isNull, Colors.transparent),
+        reason: '普通日不着色',
+      );
+    } finally {
+      await host.dispose(tester);
+    }
+  });
+
   testWidgets('窄屏 360 宽不溢出，节日标签可读', (tester) async {
     final host = _Host.create();
     try {

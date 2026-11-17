@@ -469,6 +469,11 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     final today = day == _todayKey();
     final colorScheme = theme.colorScheme;
     final info = _almanac?.describe(day);
+    // 放假日用底色提示（今年已定案：休/班不占第二行文字）。
+    // 选中日有自己的实心底色，不再叠加，避免两次着色。
+    final holidayTint = selected || info?.kind != CalendarDayKind.holiday
+        ? null
+        : colorScheme.primaryContainer.withValues(alpha: 0.30);
     final labelColor = selected
         ? colorScheme.onPrimaryContainer
         : info?.kind == CalendarDayKind.holiday
@@ -496,7 +501,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
           constraints: const BoxConstraints(minHeight: 64),
           margin: const EdgeInsets.all(2),
           decoration: BoxDecoration(
-            color: selected ? colorScheme.primaryContainer : Colors.transparent,
+            color: selected ? colorScheme.primaryContainer : holidayTint,
             borderRadius: BorderRadius.circular(12),
             border: today && !selected
                 ? Border.all(color: colorScheme.primary)
