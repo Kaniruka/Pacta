@@ -8,13 +8,13 @@ import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/plan/plan_calendar_view.dart';
 import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
-import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 
 import '../support/fake_auth_repository.dart';
 import '../support/plan_navigation.dart';
 
 /// T2：目标/日历左右滑动，与分段按钮双向同步，两端不循环。
+/// 手势门槛按定案：水平位移 >24dp 且 |dx| > 1.5|dy| 才翻页。
 const _user = 'plan-swipe-pages';
 
 class _Harness {
@@ -76,6 +76,18 @@ class _Harness {
 bool _calendarOnScreen(WidgetTester tester) =>
     find.byType(PlanCalendarView).evaluate().isNotEmpty;
 
+Future<void> _drag(WidgetTester tester, Offset delta) async {
+  await tester.drag(find.byType(PageView), delta);
+  await tester.pumpAndSettle();
+}
+
+Object? _selectedSegment(WidgetTester tester) {
+  final widget = tester.widget(
+    find.byWidgetPredicate((w) => w is SegmentedButton),
+  );
+  return (widget as dynamic).selected;
+}
+
 void main() {
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -99,34 +111,60 @@ void main() {
       await openPlan(tester);
       expect(_calendarOnScreen(tester), isFalse, reason: '初始是目标页');
 
-      await tester.fling(find.byType(PageView), const Offset(-320, 0), 900);
-      await tester.pumpAndSettle();
+      await _drag(tester, const Offset(-260, 0));
       expect(_calendarOnScreen(tester), isTrue, reason: '左滑进日历');
+      expect(
+        _selectedSegment(tester).toString(),
+        contains('calendar'),
+        reason: '滑动后分段按钮同步到日历',
+      );
 
-      // 分段按钮同步：此时点「目标」应能回到目标页（同一份状态）。
-      await tester.tap(find.text('目标'));
-      await tester.pumpAndSettle();
-      expect(_calendarOnScreen(tester), isFalse, reason: '分段按钮与页面同步');
-      await tester.fling(find.byType(PageView), const Offset(-320, 0), 900);
-      await tester.pumpAndSettle();
-
-      await tester.fling(find.byType(PageView), const Offset(320, 0), 900);
-      await tester.pumpAndSettle();
+      await _drag(tester, const Offset(260, 0));
       expect(_calendarOnScreen(tester), isFalse, reason: '右滑回目标');
     } finally {
       await harness.dispose(tester);
     }
   });
 
-  testWidgets('两端停住：目标页继续右滑不会循环到日历', (tester) async {
+  testWidgets('斜滑不翻页：|dx| 未超过 1.5|dy|', (tester) async {
     final harness = _Harness(PactaDatabase(NativeDatabase.memory()));
     try {
       await harness.pump(tester);
       await openPlan(tester);
 
-      await tester.fling(find.byType(PageView), const Offset(320, 0), 900);
-      await tester.pumpAndSettle();
+      await _drag(tester, const Offset(-200, 180));
+      expect(_calendarOnScreen(tester), isFalse, reason: '斜向拖动保留在原页');
+    } finally {
+      await harness.dispose(tester);
+    }
+  });
+
+  testWidgets('短拖不翻页：水平位移不超过 24dp', (tester) async {
+    final harness = _Harness(PactaDatabase(NativeDatabase.memory()));
+    try {
+      await harness.pump(tester);
+      await openPlan(tester);
+
+      await _drag(tester, const Offset(-20, 0));
+      expect(_calendarOnScreen(tester), isFalse, reason: '门槛以下不翻页');
+    } finally {
+      await harness.dispose(tester);
+    }
+  });
+
+  testWidgets('两端停住：首端右滑、末端左滑都不循环', (tester) async {
+    final harness = _Harness(PactaDatabase(NativeDatabase.memory()));
+    try {
+      await harness.pump(tester);
+      await openPlan(tester);
+
+      await _drag(tester, const Offset(260, 0));
       expect(_calendarOnScreen(tester), isFalse, reason: '首端不回绕');
+
+      await _drag(tester, const Offset(-260, 0));
+      expect(_calendarOnScreen(tester), isTrue);
+      await _drag(tester, const Offset(-260, 0));
+      expect(_calendarOnScreen(tester), isTrue, reason: '末端不回绕');
     } finally {
       await harness.dispose(tester);
     }
@@ -142,13 +180,22 @@ void main() {
       await tester.pumpAndSettle();
       expect(_calendarOnScreen(tester), isTrue, reason: '分段按钮切到日历');
 
-      final cell = find.byKey(const ValueKey('plan-day-2026-11-16'));
-      expect(cell, findsOneWidget);
+      final monthLabel = tester
+          .widget<Text>(find.byKey(const ValueKey('plan-month-label')))
+          .data!;
+      final match = RegExp(r'(\d{4})年(\d{1,2})月').firstMatch(monthLabel)!;
+      final ymd = '${match[1]}-${match[2]!.padLeft(2, '0')}-16';
+      final cell = find.byKey(ValueKey('plan-day-$ymd'));
+      expect(cell, findsOneWidget, reason: '当月 16 日必须在网格里（$monthLabel）');
       await tester.tap(cell);
       await tester.pumpAndSettle();
 
       expect(_calendarOnScreen(tester), isTrue, reason: '点按日期格不翻页');
-      expect(find.textContaining('11月16日'), findsWidgets, reason: '选中日生效');
+      expect(
+        find.textContaining('${match[2]}月16日'),
+        findsWidgets,
+        reason: '选中日生效',
+      );
     } finally {
       await harness.dispose(tester);
     }

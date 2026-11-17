@@ -1524,7 +1524,7 @@ class _PlanPageState extends ConsumerState<PlanPage> {
 
   /// 内容区左右滑动与分段按钮共用同一个页码。
   late final PageController _pageController = PageController(
-    initialPage: _view.index,
+    initialPage: _pageOf(_view),
   );
 
   @override
@@ -1533,14 +1533,58 @@ class _PlanPageState extends ConsumerState<PlanPage> {
     super.dispose();
   }
 
+  /// 页序显式映射：不把枚举序号当页码，改枚举顺序不会静默错位。
+  static int _pageOf(_PlanView view) => switch (view) {
+    _PlanView.goals => 0,
+    _PlanView.calendar => 1,
+  };
+
+  static _PlanView _viewOfPage(int page) => switch (page) {
+    0 => _PlanView.goals,
+    _ => _PlanView.calendar,
+  };
+
+  /// 内容区横向拖动累计量（dp）：判定阈值用，不做跟手位移。
+  double _dragDx = 0;
+  double _dragDy = 0;
+
+  int get _currentPage => _pageController.hasClients
+      ? (_pageController.page?.round() ?? _pageOf(_view))
+      : _pageOf(_view);
+
+  /// 原始指针位移：水平识别器只上报 dx，斜率判定必须自己累计 dy。
+  void _onPointerDown(PointerDownEvent event) {
+    _dragDx = 0;
+    _dragDy = 0;
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    _dragDx += event.delta.dx;
+    _dragDy += event.delta.dy;
+  }
+
+  /// 定案门槛：水平位移 >24dp 且 |dx| > 1.5|dy| 才翻页。
+  /// 斜滑、短拖、以及点按造成的微小位移都停在原页。
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    final dx = _dragDx;
+    final dy = _dragDy.abs();
+    _dragDx = 0;
+    _dragDy = 0;
+    if (dx.abs() <= 24 || dx.abs() <= dy * 1.5) return;
+    final target = dx < 0 ? _currentPage + 1 : _currentPage - 1;
+    if (target < 0 || target > 1) return;
+    _selectView(_viewOfPage(target));
+  }
+
   void _selectView(_PlanView next) {
     if (_view == next) return;
     setState(() => _view = next);
     if (!_pageController.hasClients) return;
+    final target = _pageOf(next);
     final current = _pageController.page?.round();
-    if (current == next.index) return;
+    if (current == target) return;
     _pageController.animateToPage(
-      next.index,
+      target,
       duration: const Duration(milliseconds: 240),
       curve: Curves.easeOutCubic,
     );
@@ -1553,7 +1597,11 @@ class _PlanPageState extends ConsumerState<PlanPage> {
         widget.navigationTarget == oldWidget.navigationTarget) {
       return;
     }
-    _selectView(_PlanView.calendar);
+    setState(() => _view = _PlanView.calendar);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_pageController.hasClients) return;
+      _pageController.jumpToPage(_pageOf(_PlanView.calendar));
+    });
   }
 
   @override
@@ -1578,81 +1626,92 @@ class _PlanPageState extends ConsumerState<PlanPage> {
             initialData: const [],
             builder: (context, snapshot) {
               final goals = snapshot.data ?? const <Goal>[];
-              // 日历视图左右内边距收到 12：360 宽下 7 列日期仍保有 ≥48×48
-              // 的命中区（(360-24)/7 = 48）。标题行补回 4，和其他目的地
-              // 一样从 16 起排，视觉左边界不变。
-              final calendar = _view == _PlanView.calendar;
-              final horizontal = calendar ? 12.0 : 16.0;
+              // 页头始终从 16 起排，与其它目的地一致；日历页自己的左右
+              // 内边距收到 12，360 宽下 7 列仍保有 ≥48×48 的命中区
+              // （(360-24)/7 = 48）。头部不参与横向滑动。
               return Column(
                 children: [
                   Padding(
-                    padding: EdgeInsets.fromLTRB(horizontal, 20, horizontal, 0),
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: calendar ? 4 : 0,
-                      ),
-                      child: Wrap(
-                        alignment: WrapAlignment.spaceBetween,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 16,
-                        runSpacing: 12,
-                        children: [
-                          Text(
-                            '计划',
-                            style: Theme.of(context).textTheme.headlineSmall,
-                          ),
-                          SegmentedButton<_PlanView>(
-                            segments: const [
-                              ButtonSegment(
-                                value: _PlanView.goals,
-                                icon: Icon(Icons.flag_outlined),
-                                label: Text('目标'),
-                              ),
-                              ButtonSegment(
-                                value: _PlanView.calendar,
-                                icon: Icon(Icons.calendar_month_outlined),
-                                label: Text('日历'),
-                              ),
-                            ],
-                            selected: {_view},
-                            onSelectionChanged: (selection) =>
-                                _selectView(selection.first),
-                          ),
-                        ],
-                      ),
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                    child: Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 16,
+                      runSpacing: 12,
+                      children: [
+                        Text(
+                          '计划',
+                          style: Theme.of(context).textTheme.headlineSmall,
+                        ),
+                        SegmentedButton<_PlanView>(
+                          segments: const [
+                            ButtonSegment(
+                              value: _PlanView.goals,
+                              icon: Icon(Icons.flag_outlined),
+                              label: Text('目标'),
+                            ),
+                            ButtonSegment(
+                              value: _PlanView.calendar,
+                              icon: Icon(Icons.calendar_month_outlined),
+                              label: Text('日历'),
+                            ),
+                          ],
+                          selected: {_view},
+                          onSelectionChanged: (selection) =>
+                              _selectView(selection.first),
+                        ),
+                      ],
                     ),
                   ),
                   // 头部留在滑动区之外：分段控件与标题不随页面移动。
                   Expanded(
-                    child: PageView(
-                      controller: _pageController,
-                      // 手势只在内容区：页面本身的水平拖动与两条分页边界由
-                      // PageView 负责，两端停住不循环。
-                      onPageChanged: (index) =>
-                          setState(() => _view = _PlanView.values[index]),
-                      children: [
-                        ListView(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-                          children: _buildGoals(
-                            context,
-                            taskRepository,
-                            goals,
-                            displayTimeZoneId,
-                          ),
+                    // 手势只在这一层：拖动累计到阈值才翻页，点按仍落到格子和按钮上。
+                    child: Listener(
+                      onPointerDown: _onPointerDown,
+                      onPointerMove: _onPointerMove,
+                      child: GestureDetector(
+                        onHorizontalDragEnd: _onHorizontalDragEnd,
+                        child: PageView.builder(
+                          controller: _pageController,
+                          // 拖动由上面的门槛接管；这里只保留页码吸附与程序化跳转。
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: 2,
+                          onPageChanged: (page) =>
+                              setState(() => _view = _viewOfPage(page)),
+                          itemBuilder: (context, page) => page == 0
+                              ? ListView(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    12,
+                                    16,
+                                    28,
+                                  ),
+                                  children: _buildGoals(
+                                    context,
+                                    taskRepository,
+                                    goals,
+                                    displayTimeZoneId,
+                                  ),
+                                )
+                              : ListView(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    12,
+                                    12,
+                                    12,
+                                    28,
+                                  ),
+                                  children: [
+                                    _buildCalendar(
+                                      context,
+                                      taskRepository,
+                                      scheduleRepository,
+                                      goals,
+                                      displayTimeZoneId,
+                                    ),
+                                  ],
+                                ),
                         ),
-                        ListView(
-                          padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
-                          children: [
-                            _buildCalendar(
-                              context,
-                              taskRepository,
-                              scheduleRepository,
-                              goals,
-                              displayTimeZoneId,
-                            ),
-                          ],
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ],
