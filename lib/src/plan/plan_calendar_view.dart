@@ -1241,6 +1241,9 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
   final ScrollController _scrollController = ScrollController();
   double _lastViewInsetBottom = 0;
 
+  /// 浮动标签画在字段上沿之外，内容顶部至少留一行标签的高度。
+  static const double _dialogContentTopInset = 12;
+
   bool get _isExistingRecurring => widget.initial?.isRecurring ?? false;
 
   @override
@@ -1276,12 +1279,13 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // 键盘弹出/收起都会改变 viewInsets：内容视口随之缩放，滚动位置若原样保留，
-    // 首字段的浮动标签就会被推到视口上沿之外。这里在每次 inset 变化后把滚动
-    // 复位到顶部，配合内容顶部内边距，保证标签始终完整可见。
     final insetBottom = MediaQuery.viewInsetsOf(context).bottom;
-    if (insetBottom == _lastViewInsetBottom) return;
+    // 只在键盘**收起**时复位：收起后视口恢复，滚动位置若原样保留，首字段的
+    // 浮动标签会被推到视口上沿之外。弹出方向不复位——那会把用户正滚动到
+    // 下方字段的位置抢回顶部。
+    final closing = insetBottom == 0 && _lastViewInsetBottom > 0;
     _lastViewInsetBottom = insetBottom;
+    if (!closing) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
       if (_scrollController.offset != 0) _scrollController.jumpTo(0);
@@ -1376,7 +1380,7 @@ class _ScheduleEditorDialogState extends State<_ScheduleEditorDialog> {
         controller: _scrollController,
         // 浮动标签画在字段上沿之外，顶部至少要留出一行标签的高度，
         // 否则滚动到顶时标签上半会被视口裁掉。
-        padding: const EdgeInsets.only(top: 12),
+        padding: const EdgeInsets.only(top: _dialogContentTopInset),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
