@@ -94,7 +94,7 @@ void main() {
     }
   });
 
-  testWidgets('补班日在格内标「班」，详情说明调休归属', (tester) async {
+  testWidgets('补班日只在详情说明调休归属，日期格保持旧历', (tester) async {
     final host = _Host.create();
     try {
       await host.pump(
@@ -103,7 +103,7 @@ void main() {
         size: const Size(411, 731),
       );
 
-      expect(find.text('班'), findsWidgets);
+      expect(find.text('班'), findsNothing, reason: '休/班不进第二行（定案三档）');
       expect(find.textContaining('补班'), findsOneWidget);
     } finally {
       await host.dispose(tester);

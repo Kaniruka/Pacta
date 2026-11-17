@@ -5,7 +5,6 @@ import 'package:flutter/scheduler.dart';
 import 'package:timezone/timezone.dart' as timezone;
 
 import '../calendar/calendar_repository.dart';
-import 'calendar_almanac.dart';
 import '../calendar/manual_calendar_import.dart';
 import '../focus/focus_time_zones.dart';
 import '../schedules/schedule_models.dart';
@@ -13,6 +12,7 @@ import '../schedules/schedule_repeat.dart';
 import '../schedules/schedule_repeat_editor.dart';
 import '../schedules/schedule_repository.dart';
 import '../tasks/task_models.dart';
+import 'calendar_almanac.dart';
 
 /// 计划日历：按账号显示时区呈现 Pacta 自有日程。
 ///
@@ -567,7 +567,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(summary, style: Theme.of(context).textTheme.titleSmall),
-        if (_almanac != null && _schedulesError == null && !_loadingSchedules)
+        if (_almanac != null)
           Padding(
             padding: const EdgeInsets.only(top: 2),
             child: Text(
