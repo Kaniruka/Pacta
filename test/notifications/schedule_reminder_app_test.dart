@@ -104,6 +104,7 @@ void main() {
       await tester.pumpWidget(
         PactaApp(
           authRepository: FakeAuthRepository()..signedInUser = 'schedule-user',
+          displayClock: () => now,
           focusNotificationService: service,
           scheduleRepositoryFactory: (_) => repository,
           scheduleReminderOpenHandler: (request) async => opened.add(request),
@@ -169,6 +170,7 @@ void main() {
       await tester.pumpWidget(
         PactaApp(
           authRepository: FakeAuthRepository()..signedInUser = 'schedule-user',
+          displayClock: () => now,
           focusNotificationService: service,
           scheduleRepositoryFactory: (_) => repository,
           scheduleReminderOpenHandler: (request) async => opened.add(request),
@@ -196,6 +198,7 @@ void main() {
       await tester.pumpWidget(
         PactaApp(
           authRepository: FakeAuthRepository()..signedInUser = 'schedule-user',
+          displayClock: () => now,
           focusNotificationService: service,
           scheduleRepositoryFactory: (_) => repository,
         ),

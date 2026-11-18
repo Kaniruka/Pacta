@@ -1009,6 +1009,10 @@ class _AppShellState extends ConsumerState<AppShell>
         final profile = await ref.read(profileRepositoryProvider).getProfile();
         return AccountTimeZones.effectiveId(profile.displayTimeZoneId);
       },
+      // The reminder query window is anchored to the same injected clock the
+      // calendar uses, so the system clock cannot drift the window past a
+      // schedule that the display clock still considers upcoming.
+      now: ref.read(displayClockProvider),
     );
     _scheduleOpenSubscription = _focusNotificationService.openScheduleRequests
         .listen((request) => unawaited(_openScheduleReminder(request)));
