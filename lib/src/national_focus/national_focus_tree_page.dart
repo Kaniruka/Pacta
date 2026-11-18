@@ -8,8 +8,10 @@ import 'package:flutter/services.dart';
 import 'package:timezone/timezone.dart' as timezone;
 
 import '../focus/focus_time_zones.dart';
+import '../theme/pacta_spacing.dart';
 import '../theme/pacta_status_colors.dart';
 import '../ui/pacta_disclosure_section.dart';
+import '../ui/pacta_page_header.dart';
 import 'national_focus_checkpoints.dart';
 import 'national_focus_models.dart';
 import 'national_focus_reconciliation_page.dart';
@@ -1975,79 +1977,85 @@ class _TreePageHeader extends StatelessWidget {
   final VoidCallback? onOpenAiAnalysis;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Wrap(
-          alignment: WrapAlignment.spaceBetween,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 4,
-          runSpacing: 4,
-          children: [
-            Text('国策树', style: Theme.of(context).textTheme.headlineSmall),
-            TextButton.icon(
+  Widget build(BuildContext context) {
+    final gutter = PactaSpacing.gutterFor(MediaQuery.sizeOf(context).width);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        gutter,
+        PactaSpacing.lg,
+        gutter,
+        PactaSpacing.sm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          PactaPageHeader(
+            title: '国策树',
+            bottomSpacing: PactaSpacing.xs,
+            trailing: TextButton.icon(
               onPressed: pendingCount == 0 || confirming ? null : onConfirm,
               icon: const Icon(Icons.done_all),
               label: Text('全部确认 ($pendingCount)'),
             ),
-          ],
-        ),
-        Wrap(
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: 8,
-          children: [
-            PopupMenuButton<bool>(
-              enabled: onViewSelected != null,
-              onSelected: onViewSelected,
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: false, child: Text('简洁视图')),
-                PopupMenuItem(value: true, child: Text('详细视图')),
-              ],
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(detailed ? '详细视图' : '简洁视图'),
-                      const Icon(Icons.arrow_drop_down),
-                    ],
+          ),
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            children: [
+              PopupMenuButton<bool>(
+                enabled: onViewSelected != null,
+                onSelected: onViewSelected,
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: false, child: Text('简洁视图')),
+                  PopupMenuItem(value: true, child: Text('详细视图')),
+                ],
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minWidth: 48,
+                    minHeight: 48,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(detailed ? '详细视图' : '简洁视图'),
+                        const Icon(Icons.arrow_drop_down),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            Tooltip(
-              message: '卡片库',
-              child: TextButton.icon(
-                onPressed: onLibrary,
-                icon: const Icon(Icons.library_books_outlined),
-                label: const Text('卡片库'),
+              Tooltip(
+                message: '卡片库',
+                child: TextButton.icon(
+                  onPressed: onLibrary,
+                  icon: const Icon(Icons.library_books_outlined),
+                  label: const Text('卡片库'),
+                ),
               ),
-            ),
-            PopupMenuButton<String>(
-              tooltip: '更多',
-              icon: const Icon(Icons.more_vert),
-              onSelected: (value) {
-                if (value == 'ai') {
-                  onOpenAiAnalysis?.call();
-                } else if (value == 'records') {
-                  onOpenFailureRecords();
-                }
-              },
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: 'records', child: Text('失败记录')),
-                if (onOpenAiAnalysis != null)
-                  const PopupMenuItem(value: 'ai', child: Text('国策 AI 分析')),
-              ],
-            ),
-          ],
-        ),
-      ],
-    ),
-  );
+              PopupMenuButton<String>(
+                tooltip: '更多',
+                icon: const Icon(Icons.more_vert),
+                onSelected: (value) {
+                  if (value == 'ai') {
+                    onOpenAiAnalysis?.call();
+                  } else if (value == 'records') {
+                    onOpenFailureRecords();
+                  }
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'records', child: Text('失败记录')),
+                  if (onOpenAiAnalysis != null)
+                    const PopupMenuItem(value: 'ai', child: Text('国策 AI 分析')),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _NodeActionsSheet extends StatelessWidget {

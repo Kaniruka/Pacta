@@ -471,9 +471,13 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     final info = _almanac?.describe(day);
     // 放假日用底色提示（今年已定案：休/班不占第二行文字）。
     // 选中日有自己的实心底色，不再叠加，避免两次着色。
+    // 亮色主题里 30% 几乎看不出底色，抬到 45%；暗色主题下 45% 会与选中态
+    // 的实心底色撞在一起，保留 30%。
     final holidayTint = selected || info?.kind != CalendarDayKind.holiday
         ? null
-        : colorScheme.primaryContainer.withValues(alpha: 0.30);
+        : colorScheme.primaryContainer.withValues(
+            alpha: theme.brightness == Brightness.dark ? 0.30 : 0.45,
+          );
     final labelColor = selected
         ? colorScheme.onPrimaryContainer
         : info?.kind == CalendarDayKind.holiday

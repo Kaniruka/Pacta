@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../theme/pacta_spacing.dart';
 import 'chain_signals_repository.dart';
 import 'focus_models.dart';
 import 'effective_duration_text.dart';
@@ -12,18 +13,27 @@ import 'focus_statistics.dart';
 /// The Focus Marker is shared by both Focus Chains, so it has one entry point;
 /// the Appointment Chain keeps its own Trigger Signal.
 enum _SignalTarget {
-  marker(label: '专注标志', dialogTitle: '专注标志（精锐链与普通链共用）', tooltip: '编辑专注标志'),
-  appointment(label: '触发信号', dialogTitle: '预约链触发信号', tooltip: '编辑预约链触发信号');
+  marker(
+    label: '专注标志',
+    dialogTitle: '专注标志',
+    tooltip: '编辑专注标志',
+    helper: '精锐链与普通链共用，连续记录各自独立。',
+  ),
+  appointment(label: '触发信号', dialogTitle: '触发信号', tooltip: '编辑预约链触发信号');
 
   const _SignalTarget({
     required this.label,
     required this.dialogTitle,
     required this.tooltip,
+    this.helper,
   });
 
   final String label;
   final String dialogTitle;
   final String tooltip;
+
+  /// 行下方的说明；只有共用关系的动作需要。
+  final String? helper;
 
   String text(ChainSignalTexts texts) => switch (this) {
     marker => texts.focusMarker,
@@ -58,7 +68,7 @@ class FocusChainOverview extends StatelessWidget {
         children: [
           if (snapshot.hasError)
             const Padding(
-              padding: EdgeInsets.only(bottom: 12),
+              padding: EdgeInsets.only(bottom: PactaSpacing.md),
               child: Text('动作设置读取失败，请稍后重试。'),
             ),
           _content(context, snapshot.data ?? const ChainSignalTexts()),
@@ -81,225 +91,205 @@ class FocusChainOverview extends StatelessWidget {
     final columnLabel = theme.textTheme.labelMedium?.copyWith(
       color: colors.onSurfaceVariant,
     );
+    Widget header(String text) =>
+        Text(text, textAlign: TextAlign.right, style: columnLabel);
+    final elite = _recordFor(FocusChainMode.elite);
+    final regular = _recordFor(FocusChainMode.regular);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Card(
           key: const ValueKey('focus-chain-table'),
-          margin: EdgeInsets.zero,
-          elevation: 0,
-          color: colors.surfaceContainerLow,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
+            padding: const EdgeInsets.fromLTRB(
+              PactaSpacing.md,
+              6,
+              PactaSpacing.md,
+              6,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Row(
-                  children: [
-                    const Spacer(flex: 3),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        '当前连续',
-                        textAlign: TextAlign.right,
-                        style: columnLabel,
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        '历史最高',
-                        textAlign: TextAlign.right,
-                        style: columnLabel,
-                      ),
-                    ),
-                  ],
+                // 表头与数据行共用同一行结构与同一组 flex，
+                // 右对齐边界由布局本身保证，不靠各处比例碰巧一致。
+                _metricRow(
+                  leading: const SizedBox.shrink(),
+                  current: header('当前连续'),
+                  best: header('历史最高'),
                 ),
-                _ChainTableRow(
+                _chainBlock(
+                  context,
                   label: FocusChainMode.elite.label,
                   icon: Icons.shield_outlined,
-                  record: _recordFor(FocusChainMode.elite),
+                  record: elite,
                   statistics: statistics[FocusChainMode.elite],
                 ),
-                _ChainTableRow(
+                _chainBlock(
+                  context,
                   label: FocusChainMode.regular.label,
                   icon: Icons.all_inclusive,
-                  record: _recordFor(FocusChainMode.regular),
+                  record: regular,
                   statistics: statistics[FocusChainMode.regular],
                 ),
-                _ChainTableRow(
+                _chainBlock(
+                  context,
                   label: '预约链',
                   icon: Icons.schedule_outlined,
-                  current: appointmentRecord?.currentConsecutive ?? 0,
-                  best: appointmentRecord?.bestConsecutive ?? 0,
-                  pendingReview: appointmentRecord?.hasPendingReview ?? false,
+                  appointment: appointmentRecord,
                   isAppointment: true,
-                  isLast: true,
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Card(
-          key: const ValueKey('focus-chain-signals'),
-          margin: EdgeInsets.zero,
-          elevation: 0,
-          color: colors.surfaceContainerLow,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(14, 4, 10, 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _SignalAction(
-                  target: _SignalTarget.marker,
-                  texts: texts,
-                  repository: repository,
                 ),
                 Padding(
-                  padding: const EdgeInsets.only(left: 2, bottom: 2),
+                  padding: const EdgeInsets.only(left: 2, top: 2),
                   child: Text(
-                    '精锐链与普通链共用这一动作，两条链的连续记录仍各自独立。',
+                    '累计与平均包含失败专注的有效时间，不含暂停。',
+                    key: const ValueKey('focus-chain-footnote'),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: colors.onSurfaceVariant,
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
-                _SignalAction(
-                  target: _SignalTarget.appointment,
-                  texts: texts,
-                  repository: repository,
-                ),
               ],
             ),
+          ),
+        ),
+        const SizedBox(height: PactaSpacing.md),
+        Card(
+          key: const ValueKey('focus-chain-signals'),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _SignalAction(
+                target: _SignalTarget.marker,
+                texts: texts,
+                repository: repository,
+              ),
+              _SignalAction(
+                target: _SignalTarget.appointment,
+                texts: texts,
+                repository: repository,
+              ),
+            ],
           ),
         ),
       ],
     );
   }
-}
 
-/// One aligned chain row: name, current streak, best streak, and its footnote.
-///
-/// Elite and Regular rows carry the accumulated and average effective focus
-/// time; the Appointment row states how it is entered instead.
-class _ChainTableRow extends StatelessWidget {
-  const _ChainTableRow({
-    required this.label,
-    required this.icon,
-    this.record,
-    this.current,
-    this.best,
-    this.pendingReview,
-    this.statistics,
-    this.isAppointment = false,
-    this.isLast = false,
-  });
+  /// 三条链共用的列：名称 3 份、当前连续 2 份、历史最高 2 份。
+  Widget _metricRow({
+    required Widget leading,
+    required Widget current,
+    required Widget best,
+  }) => Row(
+    children: [
+      Expanded(flex: 3, child: leading),
+      Expanded(flex: 2, child: current),
+      Expanded(flex: 2, child: best),
+    ],
+  );
 
-  final String label;
-  final IconData icon;
-  final FocusChainRecord? record;
-  final int? current;
-  final int? best;
-  final bool? pendingReview;
-  final FocusSessionStatistics? statistics;
-  final bool isAppointment;
-  final bool isLast;
-
-  @override
-  Widget build(BuildContext context) {
+  /// One aligned chain row: name on the left, current and best streak on the
+  /// right, and its footnote on a wrapped line underneath.
+  Widget _chainBlock(
+    BuildContext context, {
+    required String label,
+    required IconData icon,
+    FocusChainRecord? record,
+    FocusSessionStatistics? statistics,
+    AppointmentChainRecord? appointment,
+    bool isAppointment = false,
+  }) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final labelStyle = theme.textTheme.bodySmall?.copyWith(
+    final footnoteStyle = theme.textTheme.bodySmall?.copyWith(
       color: colors.onSurfaceVariant,
     );
     final valueStyle = theme.textTheme.titleMedium?.copyWith(
       fontFeatures: const [ui.FontFeature.tabularFigures()],
     );
-    final currentValue = current ?? record?.currentConsecutive ?? 0;
-    final bestValue = best ?? record?.bestConsecutive ?? 0;
-    final pendingValue = pendingReview ?? record?.hasPendingReview ?? false;
-    final appointment = isAppointment;
-    final footnotes = <Widget>[
-      if (pendingValue) Text('记录待核对', style: labelStyle),
-      if (appointment && !pendingValue) Text('主动预约后进入准备', style: labelStyle),
-      if (!appointment) ...[
-        _DurationMetric(
-          key: ValueKey('focus-chain-stat-$label-累计专注'),
-          label: '累计专注',
-          seconds: statistics?.totalDurationSeconds ?? 0,
-        ),
-        _DurationMetric(
-          key: ValueKey('focus-chain-stat-$label-平均每次'),
-          label: '平均每次',
-          seconds: statistics?.averageDurationSeconds.round() ?? 0,
-        ),
-      ],
-    ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 6),
-          child: Row(
-            children: [
-              Expanded(
-                flex: 3,
-                child: Row(
-                  children: [
-                    Icon(icon, size: 18, color: colors.primary),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        label,
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+    final current =
+        appointment?.currentConsecutive ?? record?.currentConsecutive ?? 0;
+    final best = appointment?.bestConsecutive ?? record?.bestConsecutive ?? 0;
+    final pending =
+        appointment?.hasPendingReview ?? record?.hasPendingReview ?? false;
+    return Padding(
+      padding: const EdgeInsets.only(top: PactaSpacing.xs),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _metricRow(
+            leading: Row(
+              children: [
+                Icon(icon, size: 18, color: colors.primary),
+                const SizedBox(width: PactaSpacing.sm),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
                     ),
-                  ],
-                ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Semantics(
-                  label: '$label当前连续 $currentValue 次',
-                  excludeSemantics: true,
-                  child: Text(
-                    '$currentValue',
-                    textAlign: TextAlign.right,
-                    style: valueStyle,
                   ),
                 ),
-              ),
-              Expanded(
-                flex: 2,
-                child: Semantics(
-                  label: '$label历史最高 $bestValue 次',
-                  excludeSemantics: true,
-                  child: Text(
-                    '$bestValue',
-                    textAlign: TextAlign.right,
-                    style: valueStyle,
+              ],
+            ),
+            current: _metricValue(
+              context,
+              '$current',
+              valueStyle,
+              '$label当前连续 $current 次',
+            ),
+            best: _metricValue(
+              context,
+              '$best',
+              valueStyle,
+              '$label历史最高 $best 次',
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Wrap(
+              spacing: PactaSpacing.sm,
+              runSpacing: 2,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (pending)
+                  Text('记录待核对', style: footnoteStyle)
+                else if (isAppointment)
+                  Text('主动预约后进入准备', style: footnoteStyle),
+                // 普通链即使还没有统计也要显示 0，不能因为缺省数据少一行。
+                if (!isAppointment) ...[
+                  _DurationMetric(
+                    key: ValueKey('focus-chain-stat-$label-累计专注'),
+                    label: '累计专注',
+                    seconds: statistics?.totalDurationSeconds ?? 0,
                   ),
-                ),
-              ),
-            ],
+                  _DurationMetric(
+                    key: ValueKey('focus-chain-stat-$label-平均每次'),
+                    label: '平均每次',
+                    seconds: statistics?.averageDurationSeconds.round() ?? 0,
+                  ),
+                ],
+              ],
+            ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(top: 2, bottom: 6),
-          child: Wrap(
-            spacing: 6,
-            runSpacing: 2,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: footnotes,
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
+
+  Widget _metricValue(
+    BuildContext context,
+    String value,
+    TextStyle? style,
+    String semanticsLabel,
+  ) => Padding(
+    padding: const EdgeInsets.only(left: PactaSpacing.sm),
+    child: Semantics(
+      label: semanticsLabel,
+      excludeSemantics: true,
+      child: Text(value, textAlign: TextAlign.right, style: style),
+    ),
+  );
 }
 
 class _SignalAction extends StatelessWidget {
@@ -318,39 +308,55 @@ class _SignalAction extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final action = target.text(texts);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 76,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Text(
-              target.label,
-              style: theme.textTheme.labelLarge?.copyWith(
-                color: colors.onSurfaceVariant,
-              ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        PactaSpacing.lg,
+        4,
+        PactaSpacing.sm,
+        4,
+      ),
+      // 尾部图标按行内容垂直居中，不再落在文字基线下方。
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  target.label,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  action.isEmpty ? '尚未设置' : action,
+                  style: theme.textTheme.bodyMedium,
+                ),
+                if (target.helper case final helper?) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    helper,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
-        ),
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Text(
-              action.isEmpty ? '尚未设置' : action,
-              style: theme.textTheme.bodyMedium,
+          if (repository != null)
+            IconButton(
+              key: target.editKey,
+              tooltip: target.tooltip,
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              onPressed: () => _editSignal(context, repository!, target, texts),
+              icon: const Icon(Icons.edit_outlined, size: 20),
             ),
-          ),
-        ),
-        if (repository != null)
-          IconButton(
-            key: target.editKey,
-            tooltip: target.tooltip,
-            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-            onPressed: () => _editSignal(context, repository!, target),
-            icon: const Icon(Icons.edit_outlined, size: 20),
-          ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -369,7 +375,7 @@ class _DurationMetric extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Wrap(
-      spacing: 4,
+      spacing: PactaSpacing.xs,
       runSpacing: 2,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
@@ -392,15 +398,12 @@ Future<void> _editSignal(
   BuildContext context,
   ChainSignalsRepository repository,
   _SignalTarget target,
-) async {
-  final texts = await repository.get();
-  if (!context.mounted) return;
-  await showDialog<void>(
-    context: context,
-    builder: (_) =>
-        _SignalEditor(repository: repository, texts: texts, target: target),
-  );
-}
+  ChainSignalTexts texts,
+) => showDialog<void>(
+  context: context,
+  builder: (_) =>
+      _SignalEditor(repository: repository, texts: texts, target: target),
+);
 
 class ChainSignalInstructions extends StatelessWidget {
   const ChainSignalInstructions({
@@ -426,7 +429,7 @@ class ChainSignalInstructions extends StatelessWidget {
           Text(
             '预约触发信号：${texts.appointmentTriggerSignal.isEmpty ? '尚未设置' : texts.appointmentTriggerSignal}',
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: PactaSpacing.sm),
           Text(
             '${mode.label}专注标志：${texts.focusMarker.isEmpty ? '尚未设置' : texts.focusMarker}',
           ),
@@ -499,6 +502,7 @@ class _SignalEditorState extends State<_SignalEditor> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           TextField(
+            key: const ValueKey('focus-signal-field'),
             controller: _controller,
             autofocus: true,
             enabled: !_busy,
@@ -507,14 +511,27 @@ class _SignalEditorState extends State<_SignalEditor> {
             decoration: const InputDecoration(
               labelText: '承诺动作',
               hintText: '例如：戴上指定耳机',
-              helperText: '留空可清除设置，不影响已有记录。',
-              helperMaxLines: 3,
+            ),
+          ),
+          // 说明不放进 InputDecoration.helperText：光标水滴会压在它上面。
+          Padding(
+            padding: const EdgeInsets.only(top: PactaSpacing.md),
+            child: Text(
+              widget.target == _SignalTarget.marker
+                  ? '精锐链与普通链共用这一动作，两条链的连续记录仍各自独立。留空可清除设置，不影响已有记录。'
+                  : '留空可清除设置，不影响已有记录。',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ),
           if (_error != null)
-            Text(
-              _error!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            Padding(
+              padding: const EdgeInsets.only(top: PactaSpacing.sm),
+              child: Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             ),
         ],
       ),

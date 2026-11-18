@@ -60,7 +60,10 @@ import 'src/sync/cloud_snapshot_repository.dart';
 import 'src/sync/source_device_info.dart';
 import 'src/sync/cloud_sync_card.dart';
 import 'src/sync/cloud_version_check.dart';
+import 'src/theme/pacta_spacing.dart';
 import 'src/theme/pacta_status_colors.dart';
+import 'src/theme/pacta_surfaces.dart';
+import 'src/ui/pacta_page_header.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -350,41 +353,66 @@ ThemeData pactaTheme(Brightness brightness) {
         outline: Color(dark ? 0xff8e918f : 0xff747775),
         outlineVariant: Color(dark ? 0xff444746 : 0xffc4c7c5),
       );
-  return ThemeData(
+  final surfaces = dark ? PactaSurfaces.dark : PactaSurfaces.light;
+  final base = ThemeData(
     fontFamily: 'MiSans',
     colorScheme: colors,
     useMaterial3: true,
-    extensions: [dark ? PactaStatusColors.dark : PactaStatusColors.light],
-    scaffoldBackgroundColor: colors.surface,
-    appBarTheme: const AppBarTheme(centerTitle: false),
+  );
+  final textTheme = base.textTheme;
+  return base.copyWith(
+    extensions: [
+      dark ? PactaStatusColors.dark : PactaStatusColors.light,
+      surfaces,
+    ],
+    scaffoldBackgroundColor: surfaces.page,
+    // 页面层级：页面 surface → 卡片抬起一档 → 底部固定操作区再抬一档。
+    // 卡片不使用描边表达边界，亮色用极浅投影、暗色用色阶区分。
     cardTheme: CardThemeData(
-      elevation: 0,
-      color: colors.surfaceContainerLowest,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      margin: const EdgeInsets.symmetric(vertical: 4),
+      elevation: 1,
+      shadowColor: surfaces.cardShadow,
+      surfaceTintColor: Colors.transparent,
+      color: surfaces.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(PactaSpacing.cardRadius),
+      ),
+      margin: EdgeInsets.zero,
+    ),
+    appBarTheme: AppBarTheme(
+      centerTitle: false,
+      backgroundColor: surfaces.page,
+      surfaceTintColor: Colors.transparent,
+      scrolledUnderElevation: 0,
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: surfaces.card,
+      surfaceTintColor: Colors.transparent,
+      // 中文弹窗标题折行时标题级别过重会压住输入区，统一到 titleLarge。
+      titleTextStyle: textTheme.titleLarge?.copyWith(
+        fontWeight: FontWeight.w600,
+        color: colors.onSurface,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
     ),
     navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: colors.surfaceContainerLow,
+      backgroundColor: surfaces.actionBar,
       indicatorColor: colors.primaryContainer,
-      elevation: 0,
+      elevation: 3,
+      shadowColor: surfaces.actionBarShadow,
     ),
     navigationRailTheme: NavigationRailThemeData(
-      backgroundColor: colors.surfaceContainerLow,
+      backgroundColor: surfaces.card,
       indicatorColor: colors.primaryContainer,
     ),
     bottomSheetTheme: BottomSheetThemeData(
-      backgroundColor: colors.surfaceContainerLowest,
+      backgroundColor: surfaces.card,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
     ),
-    dialogTheme: DialogThemeData(
-      backgroundColor: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-    ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: colors.surfaceContainerLowest,
+      fillColor: colors.surfaceContainerLow,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
     ),
   );
@@ -1629,38 +1657,44 @@ class _PlanPageState extends ConsumerState<PlanPage> {
               // 页头始终从 16 起排，与其它目的地一致；日历页自己的左右
               // 内边距收到 12，360 宽下 7 列仍保有 ≥48×48 的命中区
               // （(360-24)/7 = 48）。头部不参与横向滑动。
+              final width = MediaQuery.sizeOf(context).width;
+              final gutter = PactaSpacing.gutterFor(width);
+              // 日历在窄屏收到 12：360 宽下 7 列仍保有 ≥48 的命中区
+              // （(360-24)/7 = 48），宽屏回到统一页边距。
+              final calendarGutter = PactaSpacing.isWide(width)
+                  ? gutter
+                  : PactaSpacing.md;
               return Column(
+                // 宽屏下让页头铺满内容宽度，标题才与其它目的地一样靠左。
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-                    child: Wrap(
-                      alignment: WrapAlignment.spaceBetween,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 16,
-                      runSpacing: 12,
-                      children: [
-                        Text(
-                          '计划',
-                          style: Theme.of(context).textTheme.headlineSmall,
-                        ),
-                        SegmentedButton<_PlanView>(
-                          segments: const [
-                            ButtonSegment(
-                              value: _PlanView.goals,
-                              icon: Icon(Icons.flag_outlined),
-                              label: Text('目标'),
-                            ),
-                            ButtonSegment(
-                              value: _PlanView.calendar,
-                              icon: Icon(Icons.calendar_month_outlined),
-                              label: Text('日历'),
-                            ),
-                          ],
-                          selected: {_view},
-                          onSelectionChanged: (selection) =>
-                              _selectView(selection.first),
-                        ),
-                      ],
+                    padding: EdgeInsets.fromLTRB(
+                      gutter,
+                      PactaSpacing.lg,
+                      gutter,
+                      0,
+                    ),
+                    child: PactaPageHeader(
+                      title: '计划',
+                      bottomSpacing: PactaSpacing.md,
+                      trailing: SegmentedButton<_PlanView>(
+                        segments: const [
+                          ButtonSegment(
+                            value: _PlanView.goals,
+                            icon: Icon(Icons.flag_outlined),
+                            label: Text('目标'),
+                          ),
+                          ButtonSegment(
+                            value: _PlanView.calendar,
+                            icon: Icon(Icons.calendar_month_outlined),
+                            label: Text('日历'),
+                          ),
+                        ],
+                        selected: {_view},
+                        onSelectionChanged: (selection) =>
+                            _selectView(selection.first),
+                      ),
                     ),
                   ),
                   // 头部留在滑动区之外：分段控件与标题不随页面移动。
@@ -1680,11 +1714,11 @@ class _PlanPageState extends ConsumerState<PlanPage> {
                               setState(() => _view = _viewOfPage(page)),
                           itemBuilder: (context, page) => page == 0
                               ? ListView(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    12,
-                                    16,
-                                    28,
+                                  padding: EdgeInsets.fromLTRB(
+                                    gutter,
+                                    PactaSpacing.md,
+                                    gutter,
+                                    PactaSpacing.xl,
                                   ),
                                   children: _buildGoals(
                                     context,
@@ -1693,22 +1727,32 @@ class _PlanPageState extends ConsumerState<PlanPage> {
                                     displayTimeZoneId,
                                   ),
                                 )
-                              : ListView(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    12,
-                                    12,
-                                    12,
-                                    28,
-                                  ),
-                                  children: [
-                                    _buildCalendar(
-                                      context,
-                                      taskRepository,
-                                      scheduleRepository,
-                                      goals,
-                                      displayTimeZoneId,
+                              // 宽屏下日历不跟着铺满 960：格宽过大时日期反而
+                              // 更难扫读，内容收在 720 以内并居中。
+                              : Align(
+                                  alignment: Alignment.topCenter,
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 720,
                                     ),
-                                  ],
+                                    child: ListView(
+                                      padding: EdgeInsets.fromLTRB(
+                                        calendarGutter,
+                                        PactaSpacing.md,
+                                        calendarGutter,
+                                        PactaSpacing.xl,
+                                      ),
+                                      children: [
+                                        _buildCalendar(
+                                          context,
+                                          taskRepository,
+                                          scheduleRepository,
+                                          goals,
+                                          displayTimeZoneId,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                         ),
                       ),
@@ -3639,7 +3683,6 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final taskRepository = ref.watch(taskRepositoryProvider);
     final focusRepository = ref.watch(focusRepositoryProvider);
     final signalsRepository = ref.watch(chainSignalsRepositoryProvider);
@@ -3677,39 +3720,36 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                       .firstOrNull;
             return Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 960),
+                constraints: const BoxConstraints(
+                  maxWidth: PactaSpacing.maxContentWidth,
+                ),
                 child: Column(
                   children: [
                     Expanded(
                       child: ListView(
                         key: const ValueKey('focus-chain-list'),
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                        padding: PactaSpacing.pageInsets(
+                          context,
+                          top: PactaSpacing.sm,
+                          bottom: PactaSpacing.xs,
+                        ),
                         children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  '专注链',
-                                  style: theme.textTheme.headlineSmall
-                                      ?.copyWith(fontWeight: FontWeight.w600),
+                          PactaPageHeader(
+                            title: '专注链',
+                            bottomSpacing: PactaSpacing.xs,
+                            trailing: TextButton.icon(
+                              key: const ValueKey('focus-history-entry'),
+                              style: TextButton.styleFrom(
+                                minimumSize: const Size(64, 48),
+                              ),
+                              icon: const Icon(Icons.history, size: 20),
+                              label: const Text('历史'),
+                              onPressed: () => Navigator.of(context).push<void>(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => const FocusHistoryPage(),
                                 ),
                               ),
-                              TextButton.icon(
-                                key: const ValueKey('focus-history-entry'),
-                                style: TextButton.styleFrom(
-                                  minimumSize: const Size(64, 48),
-                                ),
-                                icon: const Icon(Icons.history, size: 20),
-                                label: const Text('历史'),
-                                onPressed: () => Navigator.of(context)
-                                    .push<void>(
-                                      MaterialPageRoute<void>(
-                                        builder: (_) =>
-                                            const FocusHistoryPage(),
-                                      ),
-                                    ),
-                              ),
-                            ],
+                            ),
                           ),
                           if (active != null)
                             _FocusRecoveryStrip(
@@ -3784,7 +3824,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                               );
                             },
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: PactaSpacing.xs),
                           FutureBuilder<List<FocusChainRecord>>(
                             future: _chainRecordsFuture,
                             builder: (context, recordSnapshot) {
@@ -3813,16 +3853,8 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                               );
                             },
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: PactaSpacing.sm),
                           _allowanceEntry(context),
-                          const SizedBox(height: 4),
-                          Text(
-                            '累计与平均包含失败专注的有效时间，不含暂停。',
-                            key: const ValueKey('focus-chain-footnote'),
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -3841,7 +3873,9 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
     );
   }
 
-  /// The 下必为例 entry point: the first screen only links to the full manager.
+  /// 下必为例入口：首屏只负责进入完整管理页。
+  ///
+  /// 整张卡只有一个点击目标（行本身），不再让行内按钮重复一次同样的动作。
   Widget _allowanceEntry(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
@@ -3856,27 +3890,27 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
             : '$count 条持续许可';
         return Card(
           key: const ValueKey('focus-allowance-entry'),
-          margin: EdgeInsets.zero,
-          elevation: 0,
-          color: colors.surfaceContainerLow,
+          clipBehavior: Clip.antiAlias,
           child: ListTile(
-            contentPadding: const EdgeInsets.only(left: 14, right: 6),
-            title: Text('下必为例', style: theme.textTheme.titleSmall),
+            key: const ValueKey('focus-allowance-manage'),
+            contentPadding: const EdgeInsets.only(
+              left: PactaSpacing.lg,
+              right: PactaSpacing.sm,
+            ),
+            title: Text(
+              '下必为例',
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             subtitle: Text(
               subtitle,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: colors.onSurfaceVariant,
               ),
             ),
+            trailing: Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
             onTap: _openPrecedentRules,
-            trailing: TextButton.icon(
-              key: const ValueKey('focus-allowance-manage'),
-              style: TextButton.styleFrom(minimumSize: const Size(64, 48)),
-              onPressed: _openPrecedentRules,
-              iconAlignment: IconAlignment.end,
-              icon: const Icon(Icons.chevron_right, size: 18),
-              label: const Text('管理'),
-            ),
           ),
         );
       },
@@ -4084,8 +4118,13 @@ class _FocusRecoveryStrip extends StatelessWidget {
         ? colors.onPrimaryContainer
         : colors.onSecondaryContainer;
     return Container(
-      margin: const EdgeInsets.only(top: 6),
-      padding: const EdgeInsets.fromLTRB(10, 6, 10, 6),
+      margin: const EdgeInsets.only(top: PactaSpacing.xs),
+      padding: const EdgeInsets.fromLTRB(
+        PactaSpacing.md,
+        PactaSpacing.sm,
+        PactaSpacing.sm,
+        PactaSpacing.sm,
+      ),
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(12),
@@ -4099,43 +4138,41 @@ class _FocusRecoveryStrip extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
+          // 标题与任务名同一行，恢复条在 360 宽下不再吃掉两行文字高度。
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: PactaSpacing.sm,
+            runSpacing: 2,
             children: [
-              Icon(icon, size: 20, color: foreground),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        color: foreground,
-                      ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 20, color: foreground),
+                  const SizedBox(width: PactaSpacing.sm),
+                  Text(
+                    title,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: foreground,
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: foreground.withValues(alpha: .85),
-                      ),
-                    ),
-                  ],
+                  ),
+                ],
+              ),
+              Text(
+                subtitle,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: foreground.withValues(alpha: .85),
                 ),
               ),
-              if (trailing case final action?) ...[
-                const SizedBox(width: 8),
-                action,
-              ],
+              ?trailing,
             ],
           ),
           if (actions.isNotEmpty) ...[
             const SizedBox(height: 2),
             Wrap(
               alignment: WrapAlignment.end,
-              spacing: 4,
-              runSpacing: 4,
+              spacing: PactaSpacing.xs,
+              runSpacing: PactaSpacing.xs,
               children: actions,
             ),
           ],
@@ -4175,39 +4212,55 @@ class _FocusStartBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    return Container(
-      decoration: BoxDecoration(color: colors.surfaceContainerLow),
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
-            runSpacing: 2,
-            children: [
-              Text('开始一次专注', style: theme.textTheme.titleMedium),
-              Text(
-                '可选任务 $taskCount 个',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colors.onSurfaceVariant,
+    final surfaces = PactaSurfaces.of(context);
+    final gutter = PactaSpacing.gutterFor(MediaQuery.sizeOf(context).width);
+    return Material(
+      // 底部固定操作区比页面与卡片各抬一档，并用投影与滚动内容分开。
+      color: surfaces.actionBar,
+      elevation: 3,
+      shadowColor: surfaces.actionBarShadow,
+      borderRadius: const BorderRadius.vertical(
+        top: Radius.circular(PactaSpacing.actionBarRadius),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(gutter, PactaSpacing.sm, gutter, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: PactaSpacing.sm,
+              runSpacing: PactaSpacing.xs,
+              children: [
+                Text(
+                  '开始一次专注',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          FilledButton.icon(
-            key: const ValueKey('focus-task-picker-entry'),
-            style: FilledButton.styleFrom(
-              minimumSize: const Size.fromHeight(48),
+                Text(
+                  '可选任务 $taskCount 个',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
-            onPressed: busy ? null : onPressed,
-            icon: const Icon(Icons.playlist_play),
-            label: const Text('选择任务'),
-          ),
-        ],
+            const SizedBox(height: 6),
+            FilledButton.icon(
+              key: const ValueKey('focus-task-picker-entry'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+              ),
+              onPressed: busy ? null : onPressed,
+              icon: const Icon(Icons.playlist_play),
+              label: const Text('选择任务'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -5446,7 +5499,7 @@ class _AppointmentPreparationPageState
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
           child: ListView(
-            padding: const EdgeInsets.all(20),
+            padding: PactaSpacing.pageInsets(context),
             children: [
               Text(
                 _taskTitle(appointment.taskId),
@@ -5962,10 +6015,9 @@ class _MyPageState extends ConsumerState<MyPage> {
     final calendarRepository = ref.watch(calendarRepositoryProvider);
     final scheduleRepository = ref.watch(scheduleRepositoryProvider);
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: PactaSpacing.pageInsets(context),
       children: [
-        Text('我的', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 16),
+        const PactaPageHeader(title: '我的', bottomSpacing: PactaSpacing.lg),
         MyProfileCard(
           repository: ref.watch(profileRepositoryProvider),
           overview: ref.watch(profileOverviewSourceProvider),
@@ -6487,7 +6539,7 @@ void _openAiManualSync(BuildContext context, WidgetRef ref) {
         appBar: AppBar(title: const Text('手动同步')),
         body: SafeArea(
           child: ListView(
-            padding: const EdgeInsets.all(20),
+            padding: PactaSpacing.pageInsets(context),
             children: [
               const Text('选择上传本机，并在现有预览中核对整份覆盖范围。仅进入本页不会上传或下载。'),
               const SizedBox(height: 12),
