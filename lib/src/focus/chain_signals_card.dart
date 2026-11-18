@@ -14,8 +14,23 @@ const _infoGlyphSize = 12.0;
 /// 时长统计口径：指标卡提示、设备测试与文案测试共用这一句，避免各写一份。
 const focusDurationRule = '累计与平均包含失败专注的有效时间，不含暂停。';
 
-/// 共用动作的完整规则句：信号卡提示、编辑弹窗说明与测试共用一份。
+/// 共用动作的完整规则句：信号卡提示与测试共用一份。
 const sharedFocusMarkerRule = '精锐链与普通链共用这一动作，两条链的连续记录仍各自独立。';
+
+/// 预约链的入口说明：挂在链名所在行，说明预约成立后的下一步。
+const appointmentEntryRule = '主动预约后进入准备';
+
+/// 编辑弹窗里的共用动作说明：既说清共用关系，也说清留空的结果。
+const sharedSignalHelperText = '精锐链与普通链共用，连续记录各自独立。留空即清除，已有记录不变。';
+
+/// 非共用动作的弹窗说明：只说明留空的结果。
+const singleSignalHelperText = '留空即清除，已有记录不变。';
+
+/// 累计与平均口径提示的键：卡片与测试共用。
+const focusChainNoteKey = ValueKey('focus-chain-note');
+
+/// 预约链入口提示的键：卡片与测试共用。
+const appointmentNoteKey = ValueKey('focus-chain-appointment-note');
 
 /// The two commitment actions the overview can edit.
 ///
@@ -41,7 +56,7 @@ enum _SignalTarget {
   final String dialogTitle;
   final String tooltip;
 
-  /// 折进叹号提示的规则句；只有共用关系的动作需要。
+  /// 作为行内提示展示的规则句；只有共用关系的动作需要。
   final String? note;
 
   String text(ChainSignalTexts texts) => switch (this) {
@@ -104,6 +119,7 @@ class FocusChainOverview extends StatelessWidget {
         Text(text, textAlign: TextAlign.right, style: columnLabel);
     final elite = _recordFor(FocusChainMode.elite);
     final regular = _recordFor(FocusChainMode.regular);
+    final appointmentPending = appointmentRecord?.hasPendingReview ?? false;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -133,7 +149,8 @@ class FocusChainOverview extends StatelessWidget {
                   record: elite,
                   statistics: statistics[FocusChainMode.elite],
                   // 口径说明只挂在第一组「累计/平均」上：说明的正是这一行数字。
-                  note: focusDurationRule,
+                  footnoteNote: focusDurationRule,
+                  footnoteNoteKey: focusChainNoteKey,
                 ),
                 _chainBlock(
                   context,
@@ -148,6 +165,9 @@ class FocusChainOverview extends StatelessWidget {
                   icon: Icons.schedule_outlined,
                   appointment: appointmentRecord,
                   isAppointment: true,
+                  // 待核对时优先呈现核对状态，入口说明让位。
+                  titleNote: appointmentPending ? null : appointmentEntryRule,
+                  titleNoteKey: appointmentNoteKey,
                 ),
               ],
             ),
@@ -189,9 +209,8 @@ class FocusChainOverview extends StatelessWidget {
     ],
   );
 
-  /// One aligned chain row: name on the left, current and best streak on the
-  /// right, and its duration/state line underneath (the table-wide rule note is
-  /// folded into the info affordance at the end of the card).
+  /// One aligned chain row: name and streak values on one line, optional
+  /// detail underneath, with each explanation attached to the row it describes.
   Widget _chainBlock(
     BuildContext context, {
     required String label,
@@ -200,7 +219,10 @@ class FocusChainOverview extends StatelessWidget {
     FocusSessionStatistics? statistics,
     AppointmentChainRecord? appointment,
     bool isAppointment = false,
-    String? note,
+    String? footnoteNote,
+    Key? footnoteNoteKey,
+    String? titleNote,
+    Key? titleNoteKey,
   }) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
@@ -215,82 +237,107 @@ class FocusChainOverview extends StatelessWidget {
     final best = appointment?.bestConsecutive ?? record?.bestConsecutive ?? 0;
     final pending =
         appointment?.hasPendingReview ?? record?.hasPendingReview ?? false;
+    final footnotes = _footnoteChildren(
+      label: label,
+      pending: pending,
+      isAppointment: isAppointment,
+      statistics: statistics,
+      style: footnoteStyle,
+    );
+    final chainRow = _metricRow(
+      leading: Row(
+        children: [
+          Icon(icon, size: 18, color: colors.primary),
+          const SizedBox(width: PactaSpacing.sm),
+          Flexible(
+            child: Text(
+              label,
+              // 与右侧数值同档，靠字重而不是字号拉开层级。
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          // 提示挂在整行上，图标紧跟链名，与信号卡的标签行同构。
+          if (titleNote != null) ...[
+            const SizedBox(width: PactaSpacing.xs),
+            _infoGlyph(context),
+          ],
+        ],
+      ),
+      current: _metricValue('$current', valueStyle, '$label当前连续 $current 次'),
+      best: _metricValue('$best', valueStyle, '$label历史最高 $best 次'),
+    );
     return Padding(
       padding: const EdgeInsets.only(top: PactaSpacing.xs),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _metricRow(
-            leading: Row(
-              children: [
-                Icon(icon, size: 18, color: colors.primary),
-                const SizedBox(width: PactaSpacing.sm),
-                Flexible(
-                  child: Text(
-                    label,
-                    // 与右侧数值同档，靠字重而不是字号拉开层级。
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            current: _metricValue(
-              '$current',
-              valueStyle,
-              '$label当前连续 $current 次',
-            ),
-            best: _metricValue('$best', valueStyle, '$label历史最高 $best 次'),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: PactaSpacing.xxs),
-            child: _withNote(
-              context,
-              note: note,
-              child: Wrap(
-                spacing: PactaSpacing.sm,
-                runSpacing: PactaSpacing.xxs,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  ..._footnoteChildren(
-                    label: label,
-                    pending: pending,
-                    isAppointment: isAppointment,
-                    statistics: statistics,
-                    style: footnoteStyle,
-                  ),
-                ],
+          if (titleNote case final note?)
+            _explained(noteKey: titleNoteKey, note: note, child: chainRow)
+          else
+            chainRow,
+          if (footnoteNote != null || footnotes.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: PactaSpacing.xxs),
+              child: _withNote(
+                context,
+                noteKey: footnoteNoteKey,
+                note: footnoteNote,
+                child: footnotes.isEmpty
+                    ? null
+                    : Wrap(
+                        spacing: PactaSpacing.sm,
+                        runSpacing: PactaSpacing.xxs,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: footnotes,
+                      ),
               ),
             ),
-          ),
         ],
       ),
     );
   }
 
-  /// 说明与它解释的那一行绑在一起：点按整行显示提示，不在卡片里另开一行。
+  /// 说明与它解释的那一行绑在一起：点按整行显示提示。
   Widget _withNote(
     BuildContext context, {
+    Key? noteKey,
     required String? note,
-    required Widget child,
+    Widget? child,
   }) {
-    if (note == null) return child;
-    return Tooltip(
-      key: const ValueKey('focus-chain-note'),
-      message: note,
-      triggerMode: TooltipTriggerMode.tap,
-      showDuration: const Duration(seconds: 8),
+    if (note == null) return child ?? const SizedBox.shrink();
+    return _explained(
+      noteKey: noteKey,
+      note: note,
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Flexible(child: child),
-          const SizedBox(width: PactaSpacing.xs),
+          if (child case final content?) ...[
+            Flexible(child: content),
+            const SizedBox(width: PactaSpacing.xs),
+          ],
           _infoGlyph(context),
         ],
       ),
     );
   }
+
+  /// 提示自带独立语义节点：同一容器内的多条提示会并成一个节点，只有一条能被读出。
+  Widget _explained({
+    Key? noteKey,
+    required String note,
+    required Widget child,
+  }) => Semantics(
+    container: true,
+    child: Tooltip(
+      key: noteKey,
+      message: note,
+      triggerMode: TooltipTriggerMode.tap,
+      showDuration: const Duration(seconds: 8),
+      child: child,
+    ),
+  );
 
   Icon _infoGlyph(BuildContext context) => Icon(
     Icons.info_outline,
@@ -307,7 +354,6 @@ class FocusChainOverview extends StatelessWidget {
   }) {
     return [
       if (pending) Text('记录待核对', style: style),
-      if (isAppointment && !pending) Text('主动预约后进入准备', style: style),
       if (!isAppointment) ...[
         _DurationMetric(
           key: ValueKey('focus-chain-stat-$label-累计'),
@@ -381,7 +427,7 @@ class _SignalAction extends StatelessWidget {
         PactaSpacing.sm,
         PactaSpacing.xs,
       ),
-      // 尾部图标按行内容垂直居中，不再落在文字基线下方。
+      // 尾部图标按行内容垂直居中，与文字中线对齐。
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -580,8 +626,8 @@ class _SignalEditorState extends State<_SignalEditor> {
             padding: const EdgeInsets.only(top: PactaSpacing.md),
             child: Text(
               widget.target == _SignalTarget.marker
-                  ? '$sharedFocusMarkerRule留空可清除设置，不影响已有记录。'
-                  : '留空可清除设置，不影响已有记录。',
+                  ? sharedSignalHelperText
+                  : singleSignalHelperText,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),

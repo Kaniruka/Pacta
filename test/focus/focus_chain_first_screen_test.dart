@@ -5,7 +5,12 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
-import 'package:pacta/src/focus/chain_signals_card.dart' show focusDurationRule;
+import 'package:pacta/src/focus/chain_signals_card.dart'
+    show
+        appointmentEntryRule,
+        appointmentNoteKey,
+        focusChainNoteKey,
+        focusDurationRule;
 import 'package:pacta/src/focus/chain_signals_repository.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
@@ -23,7 +28,6 @@ const chainTable = ValueKey('focus-chain-table');
 const signalsSurface = ValueKey('focus-chain-signals');
 const allowanceEntry = ValueKey('focus-allowance-entry');
 const allowanceManage = ValueKey('focus-allowance-manage');
-const chainNote = ValueKey('focus-chain-note');
 const taskPickerEntry = ValueKey('focus-task-picker-entry');
 
 const orderRule = '允许短暂起身接水';
@@ -48,7 +52,7 @@ void main() {
       chainTable,
       signalsSurface,
       allowanceEntry,
-      chainNote,
+      focusChainNoteKey,
       taskPickerEntry,
       historyEntry,
     ]) {
@@ -56,7 +60,7 @@ void main() {
     }
     // 说明折成提示后，首屏仍要能点开读到原句（不只是图标存在）。
     expect(find.text(focusDurationRule), findsNothing);
-    await tester.tap(find.byKey(chainNote));
+    await tester.tap(find.byKey(focusChainNoteKey));
     await tester.pumpAndSettle();
     expect(find.text(focusDurationRule), findsOneWidget);
     Tooltip.dismissAllToolTips();
@@ -141,6 +145,9 @@ void main() {
       await _pumpApp(tester, fixture, width: size.width, height: size.height);
       await _openFocusChain(tester);
       expect(find.text('已有预约准备'), findsOneWidget);
+      // 入口句不占正文，提示挂在预约链标题行并留在首屏；展开交互由组件测试覆盖。
+      expect(find.text(appointmentEntryRule), findsNothing);
+      expect(find.byKey(appointmentNoteKey), findsOneWidget);
       _expectAllInformationVisible(tester, _sizeLabel(size));
       await _disposeWidget(tester);
       await fixture.dispose();
@@ -214,7 +221,7 @@ void main() {
       'table': chainTable,
       'signals': signalsSurface,
       'allowance': allowanceEntry,
-      'note': chainNote,
+      'note': focusChainNoteKey,
       'start': taskPickerEntry,
     };
     final blocks = <String, Object?>{};
@@ -268,7 +275,7 @@ void _expectAllInformationVisible(WidgetTester tester, String viewport) {
     chainTable,
     signalsSurface,
     allowanceEntry,
-    chainNote,
+    focusChainNoteKey,
   ]) {
     final rect = tester.getRect(find.byKey(key));
     expect(
@@ -365,7 +372,7 @@ void _printBounds(WidgetTester tester, String viewport) {
     'table': chainTable,
     'signals': signalsSurface,
     'allowance': allowanceEntry,
-    'note': chainNote,
+    'note': focusChainNoteKey,
     'start': taskPickerEntry,
   };
   final inventory = <String, Object?>{
