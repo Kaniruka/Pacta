@@ -38,6 +38,9 @@ const _viewName = String.fromEnvironment(
 
 const _lightMode = bool.fromEnvironment('FOCUS_PILOT_LIGHT');
 
+/// 显式深色：设备处于浅色系统主题时，只靠“不传 light”并不能得到深色证据。
+const _darkMode = bool.fromEnvironment('FOCUS_PILOT_DARK');
+
 /// >0 时在首屏保持，供 Computer Use 做真实鼠标/窗口操作。
 const _holdSeconds = int.fromEnvironment(
   'FOCUS_PILOT_HOLD_SECONDS',
@@ -206,6 +209,8 @@ void main() {
     }
     if (_lightMode) {
       tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
+    } else if (_darkMode) {
+      tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
     }
     final boundaryKey = GlobalKey();
     var androidSurfaceReady = false;

@@ -356,6 +356,9 @@ def main(argv=None):
         command.append('--dart-define=BOARD_PILOT_MODE=true')
     if args.theme == 'light':
         command.append('--dart-define=FOCUS_PILOT_LIGHT=true')
+    elif args.theme == 'dark':
+        # 设备系统主题是浅色时，“不传 light”只会拍到浅色：显式要求深色。
+        command.append('--dart-define=FOCUS_PILOT_DARK=true')
     if args.manual_hold:
         command.append(f'--dart-define=FOCUS_PILOT_HOLD_SECONDS={args.manual_hold}')
     if snapshot_only:
