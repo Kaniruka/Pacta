@@ -15,6 +15,7 @@ are never reused; a repeated run id is refused.
 import argparse
 import hashlib
 import json
+import os
 import re
 import shlex
 import shutil
@@ -115,9 +116,10 @@ def main(argv=None):
     }
     head_start = git('rev-parse', 'HEAD')
     status_start = (git('status', '--porcelain') or '').splitlines()
-    started = time.strftime('%Y-%m-%dT%H:%M:%S')
+    started_epoch = time.time()
+    started = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(started_epoch))
 
-    env = dict(**__import__('os').environ)
+    env = dict(os.environ)
     env['UI_EVIDENCE_SUBDIR'] = subdir
     log_path = out_dir / 'run.log'
     with open(log_path, 'w', encoding='utf-8') as log:
@@ -142,9 +144,7 @@ def main(argv=None):
         'command': command,
         'evidence_subdir': subdir,
         'started_at': started,
-        'duration_seconds': round(time.time() - time.mktime(
-            time.strptime(started, '%Y-%m-%dT%H:%M:%S')
-        ), 1),
+        'duration_seconds': round(time.time() - started_epoch, 1),
         'head_start': head_start,
         'head': git('rev-parse', 'HEAD'),
         'git_status_start': status_start,

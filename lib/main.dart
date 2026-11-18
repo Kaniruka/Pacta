@@ -4142,7 +4142,7 @@ class _FocusRecoveryStrip extends StatelessWidget {
           Wrap(
             crossAxisAlignment: WrapCrossAlignment.center,
             spacing: PactaSpacing.sm,
-            runSpacing: 2,
+            runSpacing: PactaSpacing.xxs,
             children: [
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -4168,7 +4168,7 @@ class _FocusRecoveryStrip extends StatelessWidget {
             ],
           ),
           if (actions.isNotEmpty) ...[
-            const SizedBox(height: 2),
+            const SizedBox(height: PactaSpacing.xxs),
             Wrap(
               alignment: WrapAlignment.end,
               spacing: PactaSpacing.xs,
@@ -4224,7 +4224,12 @@ class _FocusStartBar extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: EdgeInsets.fromLTRB(gutter, PactaSpacing.sm, gutter, 10),
+        padding: EdgeInsets.fromLTRB(
+          gutter,
+          PactaSpacing.sm,
+          gutter,
+          PactaSpacing.sm,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
@@ -4249,7 +4254,7 @@ class _FocusStartBar extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: PactaSpacing.xs),
             FilledButton.icon(
               key: const ValueKey('focus-task-picker-entry'),
               style: FilledButton.styleFrom(

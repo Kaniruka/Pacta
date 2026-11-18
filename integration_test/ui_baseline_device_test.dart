@@ -177,6 +177,18 @@ void main() {
 
     Future<void> captureAll(String suffix) async {
       final wanted = _pages.split(',').map((page) => page.trim()).toSet();
+      const known = {
+        'focus',
+        'plan-goals',
+        'plan-calendar',
+        'my',
+        'national',
+        'board',
+      };
+      final unknown = wanted.difference(known);
+      if (unknown.isNotEmpty) {
+        fail('UI_BASELINE_PAGES 含未知页面：${unknown.join(', ')}');
+      }
       if (wanted.contains('focus')) {
         await openDestination('专注链');
         await shot('focus-$suffix');

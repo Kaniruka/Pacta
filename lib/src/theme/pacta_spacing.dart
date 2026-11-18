@@ -5,6 +5,9 @@ import 'package:flutter/widgets.dart';
 /// 页面、卡片与底部固定操作区都从这里取边距，页面里不再写 14/20 之类的
 /// 字面量：窄屏与宽屏的差别只在这一处决定。
 abstract final class PactaSpacing {
+  /// 仅用于同一行内的标签/数值/说明之间的字距缝隙，不用于区块间距。
+  static const double xxs = 2;
+
   static const double xs = 4;
   static const double sm = 8;
   static const double md = 12;

@@ -103,9 +103,9 @@ class FocusChainOverview extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(
               PactaSpacing.md,
-              6,
+              PactaSpacing.sm,
               PactaSpacing.md,
-              6,
+              PactaSpacing.sm,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -139,7 +139,10 @@ class FocusChainOverview extends StatelessWidget {
                   isAppointment: true,
                 ),
                 Padding(
-                  padding: const EdgeInsets.only(left: 2, top: 2),
+                  padding: const EdgeInsets.only(
+                    left: PactaSpacing.xxs,
+                    top: PactaSpacing.xxs,
+                  ),
                   child: Text(
                     '累计与平均包含失败专注的有效时间，不含暂停。',
                     key: const ValueKey('focus-chain-footnote'),
@@ -233,23 +236,17 @@ class FocusChainOverview extends StatelessWidget {
               ],
             ),
             current: _metricValue(
-              context,
               '$current',
               valueStyle,
               '$label当前连续 $current 次',
             ),
-            best: _metricValue(
-              context,
-              '$best',
-              valueStyle,
-              '$label历史最高 $best 次',
-            ),
+            best: _metricValue('$best', valueStyle, '$label历史最高 $best 次'),
           ),
           Padding(
-            padding: const EdgeInsets.only(top: 2),
+            padding: const EdgeInsets.only(top: PactaSpacing.xxs),
             child: Wrap(
               spacing: PactaSpacing.sm,
-              runSpacing: 2,
+              runSpacing: PactaSpacing.xxs,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 if (pending)
@@ -277,19 +274,15 @@ class FocusChainOverview extends StatelessWidget {
     );
   }
 
-  Widget _metricValue(
-    BuildContext context,
-    String value,
-    TextStyle? style,
-    String semanticsLabel,
-  ) => Padding(
-    padding: const EdgeInsets.only(left: PactaSpacing.sm),
-    child: Semantics(
-      label: semanticsLabel,
-      excludeSemantics: true,
-      child: Text(value, textAlign: TextAlign.right, style: style),
-    ),
-  );
+  Widget _metricValue(String value, TextStyle? style, String semanticsLabel) =>
+      Padding(
+        padding: const EdgeInsets.only(left: PactaSpacing.sm),
+        child: Semantics(
+          label: semanticsLabel,
+          excludeSemantics: true,
+          child: Text(value, textAlign: TextAlign.right, style: style),
+        ),
+      );
 }
 
 class _SignalAction extends StatelessWidget {
@@ -311,9 +304,9 @@ class _SignalAction extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         PactaSpacing.lg,
-        4,
+        PactaSpacing.xs,
         PactaSpacing.sm,
-        4,
+        PactaSpacing.xs,
       ),
       // 尾部图标按行内容垂直居中，不再落在文字基线下方。
       child: Row(
@@ -330,13 +323,13 @@ class _SignalAction extends StatelessWidget {
                     color: colors.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: PactaSpacing.xxs),
                 Text(
                   action.isEmpty ? '尚未设置' : action,
                   style: theme.textTheme.bodyMedium,
                 ),
                 if (target.helper case final helper?) ...[
-                  const SizedBox(height: 2),
+                  const SizedBox(height: PactaSpacing.xxs),
                   Text(
                     helper,
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -376,7 +369,7 @@ class _DurationMetric extends StatelessWidget {
     final colors = theme.colorScheme;
     return Wrap(
       spacing: PactaSpacing.xs,
-      runSpacing: 2,
+      runSpacing: PactaSpacing.xxs,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Text(
