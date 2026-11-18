@@ -17,7 +17,9 @@ Future<void> main() => integrationDriver(
     await directory.create(recursive: true);
     final file = File('${directory.path}/$name.png');
     if (await file.exists()) {
-      throw StateError('refusing to overwrite existing screenshot: ${file.path}');
+      throw StateError(
+        'refusing to overwrite existing screenshot: ${file.path}',
+      );
     }
     await file.writeAsBytes(bytes);
     print('[ui-layout-evidence] ${file.absolute.path}');
