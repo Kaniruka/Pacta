@@ -30,7 +30,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('窄屏大字可访问四个入口且页面不溢出', (tester) async {
+  testWidgets('窄屏大字可访问五个入口且页面不溢出', (tester) async {
     tester.view.physicalSize = const Size(320, 800);
     tester.view.devicePixelRatio = 1;
     tester.platformDispatcher.textScaleFactorTestValue = 2;
@@ -40,7 +40,7 @@ void main() {
     final auth = FakeAuthRepository()..signedInUser = 'layout-user';
     await tester.pumpWidget(PactaApp(authRepository: auth));
     await tester.pumpAndSettle();
-    for (final label in ['看板', '专注链', '我的', '国策树']) {
+    for (final label in ['看板', '计划', '国策树', '专注链', '我的']) {
       await tester.tap(
         find.descendant(
           of: find.byType(NavigationBar),

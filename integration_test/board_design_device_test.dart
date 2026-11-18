@@ -33,7 +33,7 @@ void main() {
     return;
   }
 
-  testWidgets('看板层级、目标折叠、我的设置入口与日历访问', (tester) async {
+  testWidgets('看板摘要层级、计划页目标折叠与键盘、我的设置入口', (tester) async {
     const userId = 'board-design-offline-fixture';
     final database = PactaDatabase(NativeDatabase.memory());
     var now = DateTime.now().subtract(const Duration(minutes: 13));
@@ -111,6 +111,8 @@ void main() {
           classification: TaskClassification.regular,
         ),
       );
+      // 07/12：看板只保留置顶目标摘要与下一项；目标的完整管理在计划页。
+      await tasks.setGoalPinned(goal.id, isPinned: true);
       final session = await focus.startSession(
         taskId: task.id,
         mode: FocusChainMode.regular,
@@ -149,10 +151,75 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+
+      Finder navigation() => find.byWidgetPredicate(
+        (widget) => widget is NavigationBar || widget is NavigationRail,
+      );
+      Future<void> openDestination(String label) async {
+        await tester.tap(
+          find.descendant(of: navigation(), matching: find.text(label)),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      Finder boardScrollable() => find
+          .descendant(
+            of: find.byType(BoardPage),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+
+      // 1. 看板是只读摘要：置顶目标 + 下一项，不再渲染完整目标卡与任务列。
+      expect(find.byType(BoardPage), findsOneWidget);
       expect(find.text('今天先做什么'), findsOneWidget);
-      expect(find.text('整理发布材料'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('下一项：整理发布材料'),
+        250,
+        scrollable: boardScrollable(),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('季度规划'), findsOneWidget);
+      expect(find.text('下一项：整理发布材料'), findsOneWidget);
+      expect(find.text('整理发布材料'), findsNothing);
+      expect(find.text('先核对发布清单'), findsNothing);
+      expect(find.textContaining('项任务'), findsNothing);
+      expect(find.text('添加任务'), findsNothing);
+      expect(find.byKey(ValueKey('goal-header-${goal.id}')), findsNothing);
+      expect(find.text('设计评审'), findsNothing);
+      expect(find.text('日历块'), findsNothing);
+      expect(find.text('显示时区'), findsNothing);
+      expect(find.textContaining('检查点'), findsNothing);
+      expect(find.textContaining('固定规则为北京时间'), findsNothing);
+
+      // 近 7 天活动与国策摘要仍留在看板。
+      await tester.scrollUntilVisible(
+        find.text('近期专注活动'),
+        250,
+        scrollable: boardScrollable(),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('近期专注活动'), findsOneWidget);
+      expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
+      expect(find.text('打开月历'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('国策状态'),
+        -250,
+        scrollable: boardScrollable(),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('国策状态'), findsOneWidget);
+      expect(find.text('打开国策树'), findsOneWidget);
+
+      // 2. 计划页承担目标与任务的完整管理：折叠、语义与键盘。
+      await openDestination('计划');
+      expect(find.byType(PlanPage), findsOneWidget);
+      await tester.ensureVisible(find.text('季度规划'));
+      await tester.pumpAndSettle();
+      expect(find.text('置顶目标 · 手动顺序'), findsOneWidget);
       expect(find.text('每周回顾并调整计划'), findsOneWidget);
+      expect(find.text('整理发布材料'), findsOneWidget);
       expect(find.text('先核对发布清单'), findsOneWidget);
+      expect(find.textContaining('1 项任务'), findsOneWidget);
       final goalCard = find.ancestor(
         of: find.text('季度规划'),
         matching: find.byType(Card),
@@ -179,7 +246,7 @@ void main() {
       );
       for (
         var i = 0;
-        i < 40 &&
+        i < 80 &&
             tester.getSemantics(header).flagsCollection.isFocused !=
                 Tristate.isTrue;
         i++
@@ -194,20 +261,19 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
       expect(find.text('整理发布材料'), findsOneWidget);
+      expect(
+        find.descendant(of: goalCard, matching: find.text('添加任务')),
+        findsOneWidget,
+      );
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       await tester.pumpAndSettle();
       expect(find.text('整理发布材料'), findsNothing);
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
       expect(find.text('整理发布材料'), findsOneWidget);
-      expect(
-        tester.getCenter(find.text('打开国策树')).dy,
-        closeTo(tester.getCenter(find.text('国策状态')).dy, 1),
-      );
-      expect(find.textContaining('检查点'), findsNothing);
-      expect(find.textContaining('固定规则为北京时间'), findsNothing);
-      expect(find.text('日历块'), findsNothing);
-      expect(find.text('显示时区'), findsNothing);
+
+      // 3. 回看板：大字窄屏下摘要与近 7 天活动仍可读，且不夹带旧日历块。
+      await openDestination('看板');
       {
         final devicePixelRatio = tester.view.devicePixelRatio;
         tester.view.physicalSize = Size(
@@ -220,42 +286,26 @@ void main() {
         await tester.scrollUntilVisible(
           find.text('近期专注活动'),
           250,
-          scrollable: find.byType(Scrollable).first,
+          scrollable: boardScrollable(),
         );
+        await tester.pumpAndSettle();
         expect(find.text('近期专注活动'), findsOneWidget);
         expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
         expect(find.textContaining('检查点'), findsNothing);
         expect(find.textContaining('固定规则为北京时间'), findsNothing);
         expect(find.text('日历块'), findsNothing);
         expect(find.text('显示时区'), findsNothing);
+        expect(find.text('设计评审'), findsNothing);
         await tester.scrollUntilVisible(
-          find.text('设计评审'),
-          250,
-          scrollable: find.byType(Scrollable).first,
-        );
-        expect(find.text('设计评审'), findsOneWidget);
-        await tester.scrollUntilVisible(
-          header,
+          find.text('季度规划'),
           -250,
-          scrollable: find.byType(Scrollable).first,
+          scrollable: boardScrollable(),
         );
         await tester.pumpAndSettle();
-        await tester.tap(header);
-        await tester.pumpAndSettle();
-        expect(find.text('整理发布材料'), findsNothing);
-        expect(find.text('每周回顾并调整计划'), findsOneWidget);
-        await tester.tap(header);
-        await tester.pumpAndSettle();
-        expect(find.text('整理发布材料'), findsOneWidget);
-        await tester.scrollUntilVisible(
-          find.text('待规划目标'),
-          250,
-          scrollable: find.byType(Scrollable).first,
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('待规划目标'));
-        await tester.pumpAndSettle();
-        expect(find.text('暂无任务，先添加一个可执行的下一步。'), findsNothing);
+        expect(find.text('季度规划'), findsOneWidget);
+        expect(find.text('下一项：整理发布材料'), findsOneWidget);
+        expect(find.text('添加任务'), findsNothing);
+        expect(find.byKey(ValueKey('goal-header-${goal.id}')), findsNothing);
       }
       expect(tester.takeException(), isNull);
       const pause = int.fromEnvironment('BOARD_INSPECTION_SECONDS');
@@ -265,7 +315,7 @@ void main() {
         await tester.scrollUntilVisible(
           find.text('季度规划'),
           -250,
-          scrollable: find.byType(Scrollable).first,
+          scrollable: boardScrollable(),
         );
         binding.framePolicy =
             LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
@@ -284,28 +334,30 @@ void main() {
       tester.view.resetPhysicalSize();
       await tester.pumpAndSettle();
 
-      final navigation = find.byWidgetPredicate(
-        (widget) => widget is NavigationBar || widget is NavigationRail,
+      // 4. 我的：一级入口仍在；系统日历入口可进入。账号显示时区已迁到
+      // 资料编辑页（只读夹具不触碰真实资料），这里只核对可读入口。
+      await openDestination('我的');
+      expect(find.byType(MyPage), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('日历块'),
+        200,
+        scrollable: find
+            .descendant(
+              of: find.byType(MyPage),
+              matching: find.byType(Scrollable),
+            )
+            .first,
       );
-      await tester.tap(
-        find.descendant(of: navigation, matching: find.text('我的')),
-      );
       await tester.pumpAndSettle();
-      expect(find.text('显示时区'), findsOneWidget);
-      await tester.tap(find.text('显示时区'));
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byType(TextField).last,
-        'America/Los_Angeles',
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('America/Los_Angeles').last);
-      await tester.pumpAndSettle();
-      expect(find.textContaining('America/Los_Angeles'), findsOneWidget);
-
+      expect(find.text('日历块'), findsOneWidget);
       await tester.tap(find.text('日历块'));
       await tester.pumpAndSettle();
-      expect(find.text('工作日历'), findsOneWidget);
+      expect(find.text('系统日历导入'), findsOneWidget);
+      if (Platform.isAndroid) {
+        expect(find.text('已允许读取日历'), findsOneWidget);
+      } else {
+        expect(find.text('Windows 暂不支持读取系统日历'), findsOneWidget);
+      }
       expect(tester.takeException(), isNull);
       await tester.pageBack();
       await tester.pumpAndSettle();
@@ -437,6 +489,8 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
             classification: TaskClassification.both,
           ),
         );
+        // 看板只显示置顶摘要：让长标题以「下一项」形式进入摘要。
+        await tasks.setGoalPinned(goal.id, isPinned: true);
         if (scenario != 'few') {
           final done = await tasks.createTask(
             goal.id,
@@ -601,77 +655,86 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
             LiveTestWidgetsFlutterBindingFramePolicy.fadePointers;
       }
       if (const bool.fromEnvironment('FOCUS_DESIGN_SNAPSHOT_ONLY')) return;
-      if (support || scenario == 'zero') {
-        await tester.scrollUntilVisible(
-          find.text('今日日历'),
-          200,
-          scrollable: find
-              .descendant(
-                of: find.byType(BoardPage),
-                matching: find.byType(Scrollable),
-              )
-              .first,
-        );
-        await tester.pumpAndSettle();
-        await shot('support');
-        expect(find.text('今天没有导入的安排。'), findsOneWidget);
-        await click(find.text('打开国策树'));
-        expect(find.byTooltip('更多'), findsOneWidget);
-        final navigation = find.byType(NavigationRail).evaluate().isNotEmpty
-            ? find.byType(NavigationRail)
-            : find.byType(NavigationBar);
-        await click(find.descendant(of: navigation, matching: find.text('看板')));
-        await tester.scrollUntilVisible(
-          find.text('今天先做什么'),
-          -250,
-          scrollable: find
-              .descendant(
-                of: find.byType(BoardPage),
-                matching: find.byType(Scrollable),
-              )
-              .first,
-        );
-        await tester.pumpAndSettle();
-        expect(find.text('今天先做什么'), findsOneWidget);
+      // 看板只保留摘要：今日安排、置顶目标、国策与近 7 天活动。
+      final boardScrollable = find
+          .descendant(
+            of: find.byType(BoardPage),
+            matching: find.byType(Scrollable),
+          )
+          .first;
+      await tester.scrollUntilVisible(
+        find.text('近期专注活动'),
+        200,
+        scrollable: boardScrollable,
+      );
+      await tester.pumpAndSettle();
+      await shot('support');
+      expect(find.textContaining('累计有效专注'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('置顶目标'),
+        -250,
+        scrollable: boardScrollable,
+      );
+      await tester.pumpAndSettle();
+      if (scenario == 'zero') {
+        expect(find.text('还没有置顶目标'), findsOneWidget);
       } else {
-        expect(find.text(taskTitle), findsOneWidget);
-        expect(find.textContaining('待核对'), findsWidgets);
-        await click(find.text(goalTitle));
-        expect(find.text(taskTitle), findsNothing);
-        expect(find.text(description), findsOneWidget);
-        await shot('collapsed');
-        await click(find.byTooltip('编辑目标').first);
-        await click(find.text('取消'));
-        expect(find.text(taskTitle), findsNothing);
-        await click(find.byTooltip('删除目标').first);
-        expect(find.textContaining('且不能恢复'), findsOneWidget);
-        await click(find.text('取消'));
-        expect(find.text(taskTitle), findsNothing);
-        await click(find.text(goalTitle));
-        await click(find.text(taskTitle));
-        final titleField = find.byWidgetPredicate(
-          (w) => w is TextField && w.decoration?.labelText == '任务名称',
-        );
-        // Existing editor labels are verified by the public visible field value.
-        final field = titleField.evaluate().isNotEmpty
-            ? titleField
-            : find.byType(TextField).first;
-        await tester.enterText(field, '取消时不保存');
-        await click(find.text('取消'));
-        expect(find.text(taskTitle), findsOneWidget);
-        await click(find.text(taskTitle));
-        await tester.enterText(find.byType(TextField).first, '已保存的任务修改');
-        await click(find.text('保存'));
-        expect(find.text('已保存的任务修改'), findsOneWidget);
-        await click(find.text('已保存的任务修改'));
-        await tester.enterText(find.byType(TextField).first, taskTitle);
-        await click(find.text('保存'));
-        await click(find.byTooltip('开始专注').first);
-        expect(find.text('开始专注'), findsOneWidget);
-        await click(find.text('取消'));
-        expect(find.text(taskTitle), findsOneWidget);
-        await shot('restored');
+        expect(find.textContaining('下一项：'), findsOneWidget);
       }
+      await tester.scrollUntilVisible(
+        find.text('打开国策树'),
+        250,
+        scrollable: boardScrollable,
+      );
+      await click(find.text('打开国策树'));
+      expect(find.byTooltip('更多'), findsOneWidget);
+      final navigation = find.byType(NavigationRail).evaluate().isNotEmpty
+          ? find.byType(NavigationRail)
+          : find.byType(NavigationBar);
+      await click(find.descendant(of: navigation, matching: find.text('看板')));
+      await tester.scrollUntilVisible(
+        find.text('今天先做什么'),
+        -250,
+        scrollable: boardScrollable,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('今天先做什么'), findsOneWidget);
+      if (scenario == 'zero') return;
+      // 目标的完整管理在计划页：复核长标题、折叠与取消路径。
+      await click(find.text('打开计划'));
+      expect(find.byType(PlanPage), findsOneWidget);
+      await tester.ensureVisible(find.text(goalTitle));
+      await tester.pumpAndSettle();
+      expect(find.text(goalTitle), findsOneWidget);
+      expect(find.text(taskTitle), findsOneWidget);
+      await click(
+        find
+            .descendant(
+              of: find.byType(PlanPage),
+              matching: find.byTooltip('编辑目标'),
+            )
+            .first,
+      );
+      await click(find.text('取消'));
+      await click(find.text(goalTitle));
+      expect(find.text(taskTitle), findsNothing);
+      await shot('collapsed');
+      await click(find.text(goalTitle));
+      await tester.ensureVisible(find.text(taskTitle));
+      await tester.pumpAndSettle();
+      expect(find.text(taskTitle), findsOneWidget);
+      await click(find.text(taskTitle));
+      await tester.enterText(find.byType(TextField).first, '已保存的任务修改');
+      await click(find.text('保存'));
+      expect(find.text('已保存的任务修改'), findsOneWidget);
+      await click(find.text('已保存的任务修改'));
+      await tester.enterText(find.byType(TextField).first, taskTitle);
+      await click(find.text('保存'));
+      await click(find.byTooltip('开始专注').first);
+      expect(find.text('开始专注'), findsOneWidget);
+      await click(find.text('取消'));
+      expect(find.text(taskTitle), findsOneWidget);
+      await shot('restored');
       expect(tester.takeException(), isNull);
     } finally {
       tester.view.resetPhysicalSize();

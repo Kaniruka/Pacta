@@ -640,8 +640,6 @@ Future<List<String>> _runScenario({
   await tapVisible(find.text('日历'), preferTop: true);
   await reveal(find.text('新建安排'), preferTop: true);
   expect(find.text('新建安排'), findsOneWidget);
-  await reveal(find.text('添加事项'), preferTop: true);
-  expect(find.text('添加事项'), findsOneWidget);
   await shot('15-calendar', marker: pageText(PlanPage, '新建安排'), about: '计划日历');
 
   Future<void> createArrangement(
@@ -649,7 +647,7 @@ Future<List<String>> _runScenario({
     String? task,
     String? reminder,
   }) async {
-    await tapVisible(find.text('添加事项'));
+    await tapVisible(find.text('新建安排'), preferTop: true);
     expectOnScreen(_field('名称'), reason: '安排名称输入框应在视口内');
     await tester.enterText(_field('名称'), title);
     if (task != null) await chooseDropdown('关联任务（可选）', task);
