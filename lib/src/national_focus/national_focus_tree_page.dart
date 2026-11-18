@@ -672,23 +672,34 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                   SliverToBoxAdapter(
                     child: Column(
                       children: [
-                        _TreePageHeader(
-                          pendingCount: pendingCount,
-                          confirming: _confirming,
-                          onConfirm: _placementCard == null
-                              ? _confirmToday
-                              : null,
-                          onLibrary: _placementCard == null
-                              ? () => _openLibrary()
-                              : null,
-                          onOpenFailureRecords: _openFailureRecords,
-                          onOpenAiAnalysis: _placementCard == null
-                              ? widget.onOpenAiAnalysis
-                              : null,
-                          detailed: _detailed,
-                          onViewSelected: _placementCard == null && !_viewBusy
-                              ? _saveView
-                              : null,
+                        // 画布保留全宽，页头与其它目的地共用 960 内容列：
+                        // 宽屏切换目的地时标题左边距不跳。
+                        Align(
+                          alignment: Alignment.topCenter,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              maxWidth: PactaSpacing.maxContentWidth,
+                            ),
+                            child: _TreePageHeader(
+                              pendingCount: pendingCount,
+                              confirming: _confirming,
+                              onConfirm: _placementCard == null
+                                  ? _confirmToday
+                                  : null,
+                              onLibrary: _placementCard == null
+                                  ? () => _openLibrary()
+                                  : null,
+                              onOpenFailureRecords: _openFailureRecords,
+                              onOpenAiAnalysis: _placementCard == null
+                                  ? widget.onOpenAiAnalysis
+                                  : null,
+                              detailed: _detailed,
+                              onViewSelected:
+                                  _placementCard == null && !_viewBusy
+                                  ? _saveView
+                                  : null,
+                            ),
+                          ),
                         ),
                         if (_viewBusy)
                           const Padding(
@@ -1991,7 +2002,6 @@ class _TreePageHeader extends StatelessWidget {
         children: [
           PactaPageHeader(
             title: '国策树',
-            bottomSpacing: PactaSpacing.xs,
             trailing: TextButton.icon(
               onPressed: pendingCount == 0 || confirming ? null : onConfirm,
               icon: const Icon(Icons.done_all),

@@ -60,9 +60,12 @@ import 'src/sync/cloud_snapshot_repository.dart';
 import 'src/sync/source_device_info.dart';
 import 'src/sync/cloud_sync_card.dart';
 import 'src/sync/cloud_version_check.dart';
+import 'src/theme/pacta_calendar_colors.dart';
+import 'src/theme/pacta_fonts.dart';
 import 'src/theme/pacta_spacing.dart';
 import 'src/theme/pacta_status_colors.dart';
 import 'src/theme/pacta_surfaces.dart';
+import 'src/ui/pacta_check_circle.dart';
 import 'src/ui/pacta_page_header.dart';
 
 Future<void> main() async {
@@ -321,6 +324,28 @@ class PactaApp extends StatelessWidget {
   }
 }
 
+TextTheme _pactaTextTheme(TextTheme theme) {
+  TextStyle? weight(TextStyle? style, FontWeight value) =>
+      style?.copyWith(fontWeight: value);
+  return theme.copyWith(
+    displayLarge: weight(theme.displayLarge, PactaFonts.regular),
+    displayMedium: weight(theme.displayMedium, PactaFonts.regular),
+    displaySmall: weight(theme.displaySmall, PactaFonts.regular),
+    headlineLarge: weight(theme.headlineLarge, PactaFonts.regular),
+    headlineMedium: weight(theme.headlineMedium, PactaFonts.regular),
+    headlineSmall: weight(theme.headlineSmall, PactaFonts.regular),
+    titleLarge: weight(theme.titleLarge, PactaFonts.medium),
+    titleMedium: weight(theme.titleMedium, PactaFonts.medium),
+    titleSmall: weight(theme.titleSmall, PactaFonts.medium),
+    bodyLarge: weight(theme.bodyLarge, PactaFonts.regular),
+    bodyMedium: weight(theme.bodyMedium, PactaFonts.regular),
+    bodySmall: weight(theme.bodySmall, PactaFonts.regular),
+    labelLarge: weight(theme.labelLarge, PactaFonts.medium),
+    labelMedium: weight(theme.labelMedium, PactaFonts.medium),
+    labelSmall: weight(theme.labelSmall, PactaFonts.medium),
+  );
+}
+
 /// The app theme, shared with offline layout fixtures so evidence never
 /// invents a second visual language.
 ThemeData pactaTheme(Brightness brightness) {
@@ -355,14 +380,24 @@ ThemeData pactaTheme(Brightness brightness) {
       );
   final surfaces = dark ? PactaSurfaces.dark : PactaSurfaces.light;
   final base = ThemeData(
-    fontFamily: 'MiSans',
+    fontFamily: PactaFonts.family,
     colorScheme: colors,
     useMaterial3: true,
   );
-  final textTheme = base.textTheme;
+  // 主题是字体的唯一入口：所有语义字号（含 label 系列和 primary）都显式
+  // 收敛到 MiSans，页面/组件不得再声明第二个字体族。
+  final textTheme = _pactaTextTheme(
+    base.textTheme.apply(fontFamily: PactaFonts.family),
+  );
+  final primaryTextTheme = _pactaTextTheme(
+    base.primaryTextTheme.apply(fontFamily: PactaFonts.family),
+  );
   return base.copyWith(
+    textTheme: textTheme,
+    primaryTextTheme: primaryTextTheme,
     extensions: [
       dark ? PactaStatusColors.dark : PactaStatusColors.light,
+      dark ? PactaCalendarColors.dark : PactaCalendarColors.light,
       surfaces,
     ],
     scaffoldBackgroundColor: surfaces.page,
@@ -389,7 +424,7 @@ ThemeData pactaTheme(Brightness brightness) {
       surfaceTintColor: Colors.transparent,
       // 中文弹窗标题折行时标题级别过重会压住输入区，统一到 titleLarge。
       titleTextStyle: textTheme.titleLarge?.copyWith(
-        fontWeight: FontWeight.w600,
+        fontWeight: PactaFonts.semibold,
         color: colors.onSurface,
       ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
@@ -1393,7 +1428,7 @@ class _AppShellState extends ConsumerState<AppShell>
                 constraints: BoxConstraints(
                   maxWidth: _index == _nationalFocusIndex
                       ? double.infinity
-                      : 960,
+                      : PactaSpacing.maxContentWidth,
                 ),
                 child: content,
               ),
@@ -1677,7 +1712,6 @@ class _PlanPageState extends ConsumerState<PlanPage> {
                     ),
                     child: PactaPageHeader(
                       title: '计划',
-                      bottomSpacing: PactaSpacing.md,
                       trailing: SegmentedButton<_PlanView>(
                         segments: const [
                           ButtonSegment(
@@ -2333,22 +2367,16 @@ class _BoardContent extends StatelessWidget {
       for (final goal in goals)
         if (goal.isPinned) goal,
     ];
-    final primary = <Widget>[
-      Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 16,
-        runSpacing: 12,
-        children: [
-          Text('今天先做什么', style: Theme.of(context).textTheme.headlineSmall),
-          TextButton.icon(
-            onPressed: onOpenPlan,
-            icon: const Icon(Icons.event_note_outlined),
-            label: const Text('打开计划'),
-          ),
-        ],
+    final gutter = PactaSpacing.gutterFor(MediaQuery.sizeOf(context).width);
+    final header = PactaPageHeader(
+      title: '今天先做什么',
+      trailing: TextButton.icon(
+        onPressed: onOpenPlan,
+        icon: const Icon(Icons.event_note_outlined),
+        label: const Text('打开计划'),
       ),
-      const SizedBox(height: 8),
+    );
+    final primary = <Widget>[
       _TodayArrangementsCard(
         repository: scheduleRepository,
         displayTimeZoneId: displayTimeZoneId,
@@ -2388,34 +2416,44 @@ class _BoardContent extends StatelessWidget {
       ),
     ];
     return LayoutBuilder(
-      builder: (context, constraints) => ListView(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
-        children:
+      builder: (context, constraints) {
+        final twoColumn =
             constraints.maxWidth >= 960 &&
-                MediaQuery.textScalerOf(context).scale(1) < 1.6
-            ? [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: primary,
-                      ),
+            MediaQuery.textScalerOf(context).scale(1) < 1.6;
+        return ListView(
+          padding: EdgeInsets.fromLTRB(gutter, PactaSpacing.lg, gutter, 28),
+          children: [
+            // 页头横跨整个目的地宽度：宽屏两栏时尾部操作仍在页面右缘，
+            // 与计划/专注链/国策/我的保持同一条标题行。
+            header,
+            if (twoColumn)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: primary,
                     ),
-                    const SizedBox(width: 24),
-                    SizedBox(
-                      width: 320,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: secondary,
-                      ),
+                  ),
+                  const SizedBox(width: 24),
+                  SizedBox(
+                    width: 320,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: secondary,
                     ),
-                  ],
-                ),
-              ]
-            : [...primary, const SizedBox(height: 20), ...secondary],
-      ),
+                  ),
+                ],
+              )
+            else ...[
+              ...primary,
+              const SizedBox(height: 20),
+              ...secondary,
+            ],
+          ],
+        );
+      },
     );
   }
 }
@@ -2478,16 +2516,11 @@ class _TodayArrangementsCard extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 2),
                       child: Row(
                         children: [
-                          Icon(
-                            schedule.isCompleted
-                                ? Icons.check_circle
-                                : Icons.radio_button_unchecked,
-                            size: 18,
-                            color: schedule.isCompleted
-                                ? Theme.of(context).colorScheme.primary
-                                : Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
+                          PactaCheckCircle(
+                            value: schedule.isCompleted,
+                            onChanged: null,
+                            compact: true,
+                            semanticLabel: schedule.isCompleted ? '已完成' : '未完成',
                           ),
                           const SizedBox(width: 8),
                           Expanded(
@@ -3067,23 +3100,31 @@ class _TaskTile extends ConsumerWidget {
         hasPendingReview ||
         deadline != null;
     final hasDescription = task.description.isNotEmpty;
+    final hasSubtitle = hasMeta || hasDescription;
     return ListTile(
       isThreeLine: hasMeta && hasDescription,
       contentPadding: EdgeInsets.zero,
-      leading: Checkbox(
+      titleAlignment: hasSubtitle
+          ? ListTileTitleAlignment.top
+          : ListTileTitleAlignment.center,
+      leading: PactaCheckCircle(
         value: task.isComplete,
-        onChanged: (value) {
-          if (value != null) {
-            repository.setTaskCompletion(task.id, isComplete: value);
-          }
-        },
+        semanticLabel: completionActionLabel(
+          task.title,
+          isCompleted: task.isComplete,
+        ),
+        onChanged: (value) =>
+            repository.setTaskCompletion(task.id, isComplete: value),
       ),
       title: Text(
         task.title,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: task.isComplete
-            ? const TextStyle(decoration: TextDecoration.lineThrough)
+            ? TextStyle(
+                decoration: TextDecoration.lineThrough,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              )
             : null,
       ),
       subtitle: !hasMeta && !hasDescription
@@ -3730,13 +3771,12 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                         key: const ValueKey('focus-chain-list'),
                         padding: PactaSpacing.pageInsets(
                           context,
-                          top: PactaSpacing.sm,
+                          top: PactaSpacing.lg,
                           bottom: PactaSpacing.xs,
                         ),
                         children: [
                           PactaPageHeader(
                             title: '专注链',
-                            bottomSpacing: PactaSpacing.xs,
                             trailing: TextButton.icon(
                               key: const ValueKey('focus-history-entry'),
                               style: TextButton.styleFrom(
@@ -3897,12 +3937,9 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
               left: PactaSpacing.lg,
               right: PactaSpacing.sm,
             ),
-            title: Text(
-              '下必为例',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            // 卡片标题保持 titleMedium；下方说明用 bodySmall，
+            // 层级由字号与前景色区分。
+            title: Text('下必为例', style: theme.textTheme.titleMedium),
             subtitle: Text(
               subtitle,
               style: theme.textTheme.bodySmall?.copyWith(
@@ -4138,7 +4175,7 @@ class _FocusRecoveryStrip extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 标题与任务名同一行，恢复条在 360 宽下不再吃掉两行文字高度。
+          // 标题与任务名同处一行，窄屏可换行；恢复条不再额外增加整行高度。
           Wrap(
             crossAxisAlignment: WrapCrossAlignment.center,
             spacing: PactaSpacing.sm,
@@ -4151,8 +4188,8 @@ class _FocusRecoveryStrip extends StatelessWidget {
                   const SizedBox(width: PactaSpacing.sm),
                   Text(
                     title,
+                    // 恢复条标题使用 titleSmall 与前景色；背景色区分恢复条与页面。
                     style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
                       color: foreground,
                     ),
                   ),
@@ -4240,12 +4277,8 @@ class _FocusStartBar extends StatelessWidget {
               spacing: PactaSpacing.sm,
               runSpacing: PactaSpacing.xs,
               children: [
-                Text(
-                  '开始一次专注',
-                  style: theme.textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                // 操作区标题保持 titleMedium；主操作由下方 48dp 按钮承担。
+                Text('开始一次专注', style: theme.textTheme.titleMedium),
                 Text(
                   '可选任务 $taskCount 个',
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -6022,7 +6055,7 @@ class _MyPageState extends ConsumerState<MyPage> {
     return ListView(
       padding: PactaSpacing.pageInsets(context),
       children: [
-        const PactaPageHeader(title: '我的', bottomSpacing: PactaSpacing.lg),
+        const PactaPageHeader(title: '我的'),
         MyProfileCard(
           repository: ref.watch(profileRepositoryProvider),
           overview: ref.watch(profileOverviewSourceProvider),

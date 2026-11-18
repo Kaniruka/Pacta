@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
+import 'package:pacta/src/ui/pacta_check_circle.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
@@ -255,7 +256,7 @@ void main() {
       await tester.tap(
         find.descendant(
           of: _taskTile('写提纲（修订）'),
-          matching: find.byType(Checkbox),
+          matching: find.byType(PactaCheckCircle),
         ),
       );
       await tester.pumpAndSettle();
@@ -391,7 +392,7 @@ void main() {
       await tester.tap(
         find.descendant(
           of: _scheduleTile('下午复核'),
-          matching: find.byType(Checkbox),
+          matching: find.byType(PactaCheckCircle),
         ),
       );
       await tester.pumpAndSettle();
@@ -448,7 +449,7 @@ void main() {
       await tester.tap(
         find.descendant(
           of: _scheduleTile('取快递并寄件'),
-          matching: find.byType(Checkbox),
+          matching: find.byType(PactaCheckCircle),
         ),
       );
       await tester.pumpAndSettle();

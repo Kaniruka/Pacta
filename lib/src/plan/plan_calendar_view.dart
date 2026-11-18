@@ -12,7 +12,17 @@ import '../schedules/schedule_repeat.dart';
 import '../schedules/schedule_repeat_editor.dart';
 import '../schedules/schedule_repository.dart';
 import '../tasks/task_models.dart';
+import '../theme/pacta_calendar_colors.dart';
+import '../ui/pacta_check_circle.dart';
 import 'calendar_almanac.dart';
+
+/// 日期格的三档安排状态：无安排 / 仍有未完成 / 当天全部完成。
+enum _DayScheduleState { none, hasIncomplete, allComplete }
+
+String _dayStorageKey(DateTime day) =>
+    '${day.year.toString().padLeft(4, '0')}-'
+    '${day.month.toString().padLeft(2, '0')}-'
+    '${day.day.toString().padLeft(2, '0')}';
 
 /// 计划日历：按账号显示时区呈现 Pacta 自有日程。
 ///
@@ -395,8 +405,9 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
         return Row(
           children: [
             previous,
-            Expanded(child: monthLabel),
+            monthLabel,
             next,
+            const Spacer(),
             ?import,
             const SizedBox(width: 8),
             create,
@@ -407,7 +418,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
   }
 
   Widget _buildMonthGrid(BuildContext context, List<Schedule> schedules) {
-    final marked = _markedDays(schedules);
+    final dayStates = _dayStates(schedules);
     final firstWeekday = DateTime(
       _visibleMonth.year,
       _visibleMonth.month,
@@ -443,7 +454,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
         _visibleMonth.month,
         index - leading + 1,
       );
-      cells.add(_buildDayCell(context, day, marked.contains(day)));
+      cells.add(_buildDayCell(context, day, dayStates[day]));
     }
     final rows = <Widget>[];
     for (var start = 0; start < cells.length; start += 7) {
@@ -463,37 +474,72 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     return Column(children: rows);
   }
 
-  Widget _buildDayCell(BuildContext context, DateTime day, bool marked) {
+  Widget _buildDayCell(
+    BuildContext context,
+    DateTime day,
+    _DayScheduleState? dayState,
+  ) {
     final theme = Theme.of(context);
     final selected = day == _selectedDay;
     final today = day == _todayKey();
     final colorScheme = theme.colorScheme;
+    final calendarColors = PactaCalendarColors.of(context);
     final info = _almanac?.describe(day);
-    // 放假日用底色提示（今年已定案：休/班不占第二行文字）。
-    // 选中日有自己的实心底色，不再叠加，避免两次着色。
-    // 亮色主题里 30% 几乎看不出底色，抬到 45%；暗色主题下 45% 会与选中态
-    // 的实心底色撞在一起，保留 30%。
-    final holidayTint = selected || info?.kind != CalendarDayKind.holiday
-        ? null
-        : colorScheme.primaryContainer.withValues(
-            alpha: theme.brightness == Brightness.dark ? 0.30 : 0.45,
-          );
-    final labelColor = selected
-        ? colorScheme.onPrimaryContainer
-        : info?.kind == CalendarDayKind.holiday
-        ? colorScheme.primary
-        : colorScheme.onSurfaceVariant;
+    final holiday = info?.kind == CalendarDayKind.holiday;
+    final state = dayState ?? _DayScheduleState.none;
+    final hasPlans = state != _DayScheduleState.none;
+    final allComplete = state == _DayScheduleState.allComplete;
+    final hasIncomplete = state == _DayScheduleState.hasIncomplete;
+    // 背景色的唯一优先级：选中 > 当日安排全部完成 > 有安排 > 放假日兜底。
+    final Color? background;
+    final Color foreground;
+    if (selected) {
+      background = calendarColors.selectedBackground;
+      foreground = calendarColors.selectedForeground;
+    } else if (allComplete) {
+      background = calendarColors.allCompleteBackground;
+      foreground = calendarColors.allCompleteForeground;
+    } else if (hasPlans) {
+      background = calendarColors.hasPlansBackground;
+      foreground = calendarColors.hasPlansForeground;
+    } else if (holiday) {
+      background = calendarColors.holidayBackground;
+      foreground = calendarColors.holidayForeground;
+    } else {
+      background = null;
+      foreground = colorScheme.onSurfaceVariant;
+    }
+    final almanacColor = selected
+        ? calendarColors.selectedForeground
+        : holiday
+        ? calendarColors.holidayForeground
+        : foreground;
+    final markerColor = selected
+        ? calendarColors.selectedForeground
+        : foreground;
+    // 今天用中性外框；选中且今天时外框保留今天，内嵌主蓝环让两种状态
+    // 同时可见。其它情况只画一条 1.5dp 外框。
+    final outerBorderColor = selected && today
+        ? calendarColors.todayBorder
+        : selected
+        ? calendarColors.selectedBorder
+        : today
+        ? calendarColors.todayBorder
+        : null;
+    final stateLabel = switch (state) {
+      _DayScheduleState.none => '',
+      _DayScheduleState.hasIncomplete => '，有安排',
+      _DayScheduleState.allComplete => '，安排已全部完成',
+    };
+    final todayLabel = today ? '，今天' : '';
+    final storageKey = _dayStorageKey(day);
     return Semantics(
       button: true,
       selected: selected,
       label:
-          '${day.month}月${day.day}日${info == null ? '' : ' ${info.shortLabel}'}',
+          '${day.month}月${day.day}日${info == null ? '' : ' ${info.shortLabel}'}$stateLabel$todayLabel',
       child: InkWell(
-        key: ValueKey(
-          'plan-day-${day.year.toString().padLeft(4, '0')}-'
-          '${day.month.toString().padLeft(2, '0')}-'
-          '${day.day.toString().padLeft(2, '0')}',
-        ),
+        key: ValueKey('plan-day-$storageKey'),
         borderRadius: BorderRadius.circular(12),
         onTap: () => setState(() {
           _selectedDay = day;
@@ -505,50 +551,96 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
           constraints: const BoxConstraints(minHeight: 64),
           margin: const EdgeInsets.all(2),
           decoration: BoxDecoration(
-            color: selected ? colorScheme.primaryContainer : holidayTint,
+            color: background,
             borderRadius: BorderRadius.circular(12),
-            border: today && !selected
-                ? Border.all(color: colorScheme.primary)
-                : null,
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text('${day.day}', style: theme.textTheme.bodyMedium),
-              const SizedBox(height: 2),
-              SizedBox(
-                height: 14,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    if (marked)
-                      Container(
-                        width: 6,
-                        height: 6,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: selected
-                              ? colorScheme.onPrimaryContainer
-                              : colorScheme.primary,
-                        ),
-                      ),
-                    if (marked && info != null) const SizedBox(width: 3),
-                    if (info != null)
-                      Flexible(
-                        child: Text(
-                          info.shortLabel,
-                          maxLines: 1,
-                          softWrap: false,
-                          overflow: TextOverflow.clip,
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: labelColor,
-                          ),
-                        ),
-                      ),
-                  ],
+          foregroundDecoration: outerBorderColor == null
+              ? null
+              : BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: outerBorderColor, width: 1.5),
                 ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '${day.day}',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: foreground,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  SizedBox(
+                    height: 16,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        if (info != null)
+                          Flexible(
+                            child: Text(
+                              info.shortLabel,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                color: almanacColor,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
+              if (selected && today)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Container(
+                      key: ValueKey('plan-day-selected-ring-$storageKey'),
+                      margin: const EdgeInsets.all(3),
+                      foregroundDecoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(9),
+                        border: Border.all(
+                          color: calendarColors.selectedBorder,
+                          width: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              if (hasIncomplete)
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: ExcludeSemantics(
+                    child: Container(
+                      key: ValueKey('plan-day-dot-$storageKey'),
+                      width: 5,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: markerColor,
+                      ),
+                    ),
+                  ),
+                ),
+              if (allComplete)
+                Positioned(
+                  top: 2,
+                  right: 2,
+                  child: ExcludeSemantics(
+                    child: Icon(
+                      Icons.check,
+                      key: ValueKey('plan-day-check-$storageKey'),
+                      size: 10,
+                      color: markerColor,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -702,10 +794,22 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     return '已删除的任务';
   }
 
-  Set<DateTime> _markedDays(List<Schedule> schedules) => {
-    for (final schedule in schedules)
-      for (final day in scheduleDays(schedule, widget.displayTimeZoneId)) day,
-  };
+  /// 每天只保留三档事实：无安排、仍有未完成、当天全部完成。
+  /// 背景色、微标识与 Semantics 都从这一份投影出，避免每个日期格各自重算。
+  Map<DateTime, _DayScheduleState> _dayStates(List<Schedule> schedules) {
+    final states = <DateTime, _DayScheduleState>{};
+    for (final schedule in schedules) {
+      for (final day in scheduleDays(schedule, widget.displayTimeZoneId)) {
+        final previous = states[day] ?? _DayScheduleState.none;
+        final completed =
+            previous != _DayScheduleState.hasIncomplete && schedule.isCompleted;
+        states[day] = completed
+            ? _DayScheduleState.allComplete
+            : _DayScheduleState.hasIncomplete;
+      }
+    }
+    return states;
+  }
 
   Future<void> _importFromCalendar() async {
     final calendar = widget.calendarRepository;
@@ -959,18 +1063,24 @@ class _ScheduleTile extends StatelessWidget {
             horizontal: 12,
             vertical: 4,
           ),
-          leading: Checkbox(
+          titleAlignment: ListTileTitleAlignment.top,
+          leading: PactaCheckCircle(
             value: schedule.isCompleted,
-            onChanged: (value) {
-              if (value != null) onToggleCompletion(value);
-            },
+            semanticLabel: completionActionLabel(
+              schedule.title,
+              isCompleted: schedule.isCompleted,
+            ),
+            onChanged: onToggleCompletion,
           ),
           title: Text(
             schedule.title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: schedule.isCompleted
-                ? const TextStyle(decoration: TextDecoration.lineThrough)
+                ? TextStyle(
+                    decoration: TextDecoration.lineThrough,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  )
                 : null,
           ),
           subtitle: Column(

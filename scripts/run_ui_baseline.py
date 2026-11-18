@@ -9,7 +9,9 @@ Usage (repo root, Windows):
 Each run writes `build/ui-layout-evidence/ui-baseline/runs/<run-id>/` with the
 images, `run.log`, `run.rc` and a `manifest.json` that records the command,
 HEAD, working-tree status and the SHA-256 of every rendering input. Directories
-are never reused; a repeated run id is refused.
+are never reused; a repeated run id is refused. Missing rendering inputs fail
+before evidence is collected; a source removed during the run is recorded as a
+missing-source drift instead of silently comparing (None, None).
 """
 
 import argparse
@@ -40,20 +42,44 @@ SOURCE_FILES = (
     'lib/src/profile/profile_card.dart',
     'lib/src/sync/cloud_sync_card.dart',
     'lib/src/national_focus/national_focus_tree_page.dart',
+    'lib/src/theme/pacta_calendar_colors.dart',
+    'lib/src/theme/pacta_fonts.dart',
     'lib/src/theme/pacta_spacing.dart',
     'lib/src/theme/pacta_surfaces.dart',
+    'lib/src/ui/pacta_check_circle.dart',
     'lib/src/ui/pacta_page_header.dart',
 )
 
 RUN_ID_PATTERN = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$')
 
+MISSING_SOURCE = '<missing>'
+
 
 def sha256(path):
+    path = Path(path)
+    if not path.is_file():
+        raise FileNotFoundError('missing source file: %s' % path)
     digest = hashlib.sha256()
     with open(path, 'rb') as handle:
         for chunk in iter(lambda: handle.read(1 << 20), b''):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def source_snapshot(strict=True):
+    missing = [path for path in SOURCE_FILES if not (REPO / path).is_file()]
+    if missing and strict:
+        raise FileNotFoundError(
+            'missing source files: %s' % ', '.join(sorted(missing))
+        )
+    return {
+        path: (
+            sha256(REPO / path)
+            if (REPO / path).is_file()
+            else MISSING_SOURCE
+        )
+        for path in SOURCE_FILES
+    }
 
 
 def git(*args):
@@ -110,10 +136,11 @@ def main(argv=None):
         '--dart-define=UI_BASELINE_PAGES=%s' % args.pages,
     ]
 
-    sources = {
-        path: (sha256(REPO / path) if (REPO / path).is_file() else None)
-        for path in SOURCE_FILES
-    }
+    try:
+        sources = source_snapshot()
+    except FileNotFoundError as error:
+        print(str(error), file=sys.stderr)
+        return 2
     head_start = git('rev-parse', 'HEAD')
     status_start = (git('status', '--porcelain') or '').splitlines()
     started_epoch = time.time()
@@ -130,10 +157,7 @@ def main(argv=None):
         )
     (out_dir / 'run.rc').write_text(str(process.returncode) + '\n', encoding='utf-8')
 
-    sources_end = {
-        path: (sha256(REPO / path) if (REPO / path).is_file() else None)
-        for path in SOURCE_FILES
-    }
+    sources_end = source_snapshot(strict=False)
     manifest = {
         'run_id': run_id,
         'status': 'passed' if process.returncode == 0 else 'failed',

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
+import 'package:pacta/src/ui/pacta_check_circle.dart';
 import 'package:pacta/src/auth/auth_repository.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_month_page.dart';
@@ -244,7 +245,7 @@ void main() {
       final card = find.byKey(ValueKey('schedule-card-${schedule.id}'));
       expect(card, findsOneWidget);
       await tester.tap(
-        find.descendant(of: card, matching: find.byType(Checkbox)),
+        find.descendant(of: card, matching: find.byType(PactaCheckCircle)),
       );
       await tester.pumpAndSettle();
 

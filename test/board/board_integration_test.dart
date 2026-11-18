@@ -124,8 +124,19 @@ void main() {
           final title = tester.getRect(find.text('今天先做什么'));
           final national = tester.getRect(find.text('国策状态'));
           if (tester.getSize(find.byType(BoardPage)).width >= 960) {
-            expect(national.left, greaterThan(title.right));
-            expect(national.top, lessThan(title.bottom));
+            // 一级页头横跨整页；两栏内容从页头下方开始且顶部对齐。
+            expect(
+              national.left,
+              greaterThan(
+                tester.getRect(find.textContaining('今天 · ').first).right,
+              ),
+            );
+            expect(national.top, greaterThan(title.bottom));
+            expect(
+              tester.getRect(find.textContaining('今天 · ')).top,
+              moreOrLessEquals(national.top, epsilon: 0.5),
+              reason: '宽屏两栏顶部对齐',
+            );
           } else {
             expect(
               national.top,

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
+import 'package:pacta/src/ui/pacta_check_circle.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart' show PactaDatabase;
@@ -80,7 +81,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('检查构建'), findsOneWidget);
 
-    await tester.tap(find.byType(Checkbox).first);
+    await tester.tap(find.byType(PactaCheckCircle).first);
     await tester.pumpAndSettle();
     expect(find.textContaining('已完成'), findsOneWidget);
   });

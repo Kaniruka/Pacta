@@ -19,6 +19,8 @@ import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:pacta/src/ui/pacta_check_circle.dart';
+import 'package:pacta/src/ui/pacta_page_header.dart';
 
 import '../test/support/fake_auth_repository.dart';
 
@@ -34,6 +36,8 @@ const _mode = String.fromEnvironment(
   'UI_BASELINE_MODE',
   defaultValue: 'device',
 );
+
+const _seedTaskTitle = '阅读一章，留下三个要点';
 
 const _pages = String.fromEnvironment(
   'UI_BASELINE_PAGES',
@@ -94,7 +98,7 @@ void main() {
     final task = await tasks.createTask(
       goal.id,
       const TaskDraft(
-        title: '阅读一章，留下三个要点',
+        title: _seedTaskTitle,
         classification: TaskClassification.both,
         estimatedMinutes: 30,
       ),
@@ -118,7 +122,7 @@ void main() {
         await focus.settleDueSessions();
       }
     }
-    await schedules.createSchedule(
+    final todaySchedule = await schedules.createSchedule(
       ScheduleDraft(
         title: '与设计评审对齐专注链层级',
         window: ScheduleWindow.timed(
@@ -127,6 +131,28 @@ void main() {
         ),
         taskId: task.id,
       ),
+    );
+    await schedules.createSchedule(
+      ScheduleDraft(
+        title: '明天下午的复盘',
+        window: ScheduleWindow.timed(
+          startsAt: DateTime(2026, 11, 19, 10),
+          endsAt: DateTime(2026, 11, 19, 11),
+        ),
+      ),
+    );
+    final completedSchedule = await schedules.createSchedule(
+      ScheduleDraft(
+        title: '已经完成的整理',
+        window: ScheduleWindow.timed(
+          startsAt: DateTime(2026, 11, 16, 10),
+          endsAt: DateTime(2026, 11, 16, 11),
+        ),
+      ),
+    );
+    await schedules.setScheduleCompletion(
+      completedSchedule.id,
+      isCompleted: true,
     );
 
     final boundaryKey = GlobalKey();
@@ -175,6 +201,26 @@ void main() {
       await settle();
     }
 
+    /// 零时长滚动到目标：不等待动画帧，避免桌面窗口被遮挡时 pump 卡住。
+    Future<void> reveal(Finder finder) async {
+      await Scrollable.ensureVisible(
+        tester.element(finder),
+        duration: Duration.zero,
+      );
+      await settle();
+    }
+
+    Future<void> tapDay(String ymd) async {
+      final finder = find.byKey(ValueKey('plan-day-$ymd'));
+      await reveal(finder);
+      await tester.tap(finder);
+      await settle();
+    }
+
+    Future<void> resetCalendarScroll() async {
+      await reveal(find.byKey(const ValueKey('plan-month-label')));
+    }
+
     Future<void> captureAll(String suffix) async {
       final wanted = _pages.split(',').map((page) => page.trim()).toSet();
       const known = {
@@ -197,31 +243,68 @@ void main() {
         await openDestination('计划');
         if (wanted.contains('plan-goals')) {
           await shot('plan-goals-$suffix');
+          final taskTile = find
+              .ancestor(
+                of: find.text(_seedTaskTitle),
+                matching: find.byType(ListTile),
+              )
+              .first;
+          final taskCheck = find.descendant(
+            of: taskTile,
+            matching: find.byType(PactaCheckCircle),
+          );
+          await reveal(taskCheck);
+          await tester.tap(taskCheck);
+          await settle();
+          await shot('plan-goals-checked-$suffix');
+          await tester.tap(taskCheck);
+          await settle();
+          await reveal(find.byType(PactaPageHeader));
         }
         if (wanted.contains('plan-calendar')) {
           await tester.tap(find.text('日历'));
           await settle();
           await shot('plan-calendar-$suffix');
-          // 选中态移开后，今日只剩描边：两种状态必须仍可分辨。
-          final now = DateTime.now();
-          final otherDay = now.day == 1 ? 2 : 1;
-          await tester.tap(
-            find.byKey(
-              ValueKey(
-                'plan-day-${now.year.toString().padLeft(4, '0')}-'
-                '${now.month.toString().padLeft(2, '0')}-'
-                '${otherDay.toString().padLeft(2, '0')}',
-              ),
-            ),
+          final scheduleTile = find.byKey(
+            ValueKey('schedule-${todaySchedule.id}'),
           );
+          expect(
+            scheduleTile,
+            findsOneWidget,
+            reason: '计划日历应显示今日种子安排，截图不得静默跳过',
+          );
+          final scheduleCheck = find.descendant(
+            of: scheduleTile,
+            matching: find.byType(PactaCheckCircle),
+          );
+          await reveal(scheduleCheck);
+          await shot('plan-calendar-schedule-unchecked-$suffix');
+          await tester.tap(scheduleCheck);
           await settle();
+          await shot('plan-calendar-schedule-checked-$suffix');
+          await tester.tap(scheduleCheck);
+          await settle();
+          // 有安排=黄、全部完成=绿、选中=蓝；选中日 20 无安排，让 16/18/19
+          // 的状态同时出现。
+          await tapDay('2026-11-20');
+          await shot('plan-calendar-day-states-$suffix');
+          await tapDay('2026-11-19');
+          await shot('plan-calendar-selected-plan-$suffix');
+          await tapDay('2026-11-21');
+          await shot('plan-calendar-no-plans-$suffix');
+          // 选中态移开后，今日只剩描边：两种状态必须仍可分辨。
+          await tapDay('2026-11-01');
           await shot('plan-calendar-today-outline-$suffix');
           // 上一个月：10 月是法定节假日最密集的一个月，放假日底色要能判读。
+          await reveal(find.byIcon(Icons.chevron_left));
           await tester.tap(find.byIcon(Icons.chevron_left));
           await settle();
-          await shot('plan-calendar-prev-month-$suffix');
+          await shot('plan-calendar-holiday-$suffix');
+          await reveal(find.byIcon(Icons.chevron_right));
           await tester.tap(find.byIcon(Icons.chevron_right));
           await settle();
+          await tapDay('2026-11-18');
+          await resetCalendarScroll();
           await tester.tap(find.text('目标'));
           await settle();
         }
@@ -246,6 +329,7 @@ void main() {
           key: boundaryKey,
           child: PactaApp(
             authRepository: FakeAuthRepository()..signedInUser = userId,
+            displayClock: () => DateTime(2026, 11, 18, 9),
             taskRepositoryFactory: (_) => tasks,
             focusRepositoryFactory: (_) => focus,
             nationalFocusRepositoryFactory: (_) => tree,

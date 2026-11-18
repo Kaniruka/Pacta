@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../theme/pacta_fonts.dart';
 import '../theme/pacta_spacing.dart';
 import 'chain_signals_repository.dart';
 import 'focus_models.dart';
@@ -231,6 +232,7 @@ class FocusChainOverview extends StatelessWidget {
     );
     final valueStyle = theme.textTheme.titleMedium?.copyWith(
       fontFeatures: const [ui.FontFeature.tabularFigures()],
+      fontWeight: PactaFonts.semibold,
     );
     final current =
         appointment?.currentConsecutive ?? record?.currentConsecutive ?? 0;
@@ -252,10 +254,9 @@ class FocusChainOverview extends StatelessWidget {
           Flexible(
             child: Text(
               label,
-              // 与右侧数值同档，靠字重而不是字号拉开层级。
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+              // 链名保持 titleMedium 的 medium；右侧 6 个关键数值用
+              // semibold 单独强调，层级不再靠整行加粗。
+              style: theme.textTheme.titleMedium,
             ),
           ),
           // 提示挂在整行上，图标紧跟链名，与信号卡的标签行同构。

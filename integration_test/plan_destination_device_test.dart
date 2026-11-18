@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:pacta/main.dart';
+import 'package:pacta/src/ui/pacta_check_circle.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/schedules/schedule_models.dart';
@@ -508,7 +509,7 @@ Future<List<String>> _runScenario({
         of: find.text('写提纲（修订）'),
         matching: find.byType(ListTile),
       ),
-      matching: find.byType(Checkbox),
+      matching: find.byType(PactaCheckCircle),
     ),
   );
   expect(find.text('1 项任务 · 已完成'), findsOneWidget);
@@ -699,15 +700,15 @@ Future<List<String>> _runScenario({
   await tapVisible(
     find.descendant(
       of: _scheduleTile('取快递并寄件'),
-      matching: find.byType(Checkbox),
+      matching: find.byType(PactaCheckCircle),
     ),
   );
   expect(
     tester
-        .widget<Checkbox>(
+        .widget<PactaCheckCircle>(
           find.descendant(
             of: _scheduleTile('取快递并寄件'),
-            matching: find.byType(Checkbox),
+            matching: find.byType(PactaCheckCircle),
           ),
         )
         .value,

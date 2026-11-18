@@ -415,13 +415,16 @@ void main() {
           classification: TaskClassification.regular,
         ),
       );
-      final today = DateTime.now();
+      // 账号时区 fallback 是 UTC：种子时间也按 UTC 日构造，避免午夜后
+      // 本地日与 UTC 日不同导致选中日看不到安排。
+      final today = DateTime.now().toUtc();
+      final day = DateTime(today.year, today.month, today.day);
       await fixture.schedules.createSchedule(
         ScheduleDraft(
           title: '上午整理',
           window: ScheduleWindow.timed(
-            startsAt: DateTime(today.year, today.month, today.day, 9),
-            endsAt: DateTime(today.year, today.month, today.day, 10),
+            startsAt: DateTime.utc(day.year, day.month, day.day, 9),
+            endsAt: DateTime.utc(day.year, day.month, day.day, 10),
           ),
           taskId: task.id,
         ),
@@ -439,6 +442,7 @@ void main() {
           focusRepositoryFactory: (_) => fixture.focus,
           nationalFocusRepositoryFactory: (_) => fixture.tree,
           scheduleRepositoryFactory: (_) => fixture.schedules,
+          displayClock: () => today,
         ),
       );
       await tester.pumpAndSettle();

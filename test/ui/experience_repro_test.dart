@@ -2,6 +2,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
+import 'package:pacta/src/ui/pacta_check_circle.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
@@ -235,8 +236,8 @@ void main() {
       final emptyRect = tester.getRect(emptyTile);
       final filledRect = tester.getRect(filledTile);
       final emptyTitle = tester.getRect(find.text('整理素材'));
-      final emptyCheckbox = tester.getRect(
-        find.descendant(of: emptyTile, matching: find.byType(Checkbox)),
+      final emptyCheck = tester.getRect(
+        find.descendant(of: emptyTile, matching: find.byType(PactaCheckCircle)),
       );
       expect(tester.widget<ListTile>(emptyTile).subtitle, isNull);
       expect(tester.widget<ListTile>(emptyTile).isThreeLine, isFalse);
@@ -251,10 +252,7 @@ void main() {
         lessThan(1),
         reason: '只有标题时文字垂直居中，不留偏下的空白',
       );
-      expect(
-        (emptyCheckbox.center.dy - emptyRect.center.dy).abs(),
-        lessThan(1),
-      );
+      expect((emptyCheck.center.dy - emptyRect.center.dy).abs(), lessThan(1));
       expect(tester.widget<ListTile>(filledTile).subtitle, isNotNull);
     } finally {
       await _unmountAndSettle(tester);
