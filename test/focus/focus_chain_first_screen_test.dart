@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
+import 'package:pacta/src/focus/chain_signals_card.dart' show focusDurationRule;
 import 'package:pacta/src/focus/chain_signals_repository.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
@@ -22,7 +23,7 @@ const chainTable = ValueKey('focus-chain-table');
 const signalsSurface = ValueKey('focus-chain-signals');
 const allowanceEntry = ValueKey('focus-allowance-entry');
 const allowanceManage = ValueKey('focus-allowance-manage');
-const chainFootnote = ValueKey('focus-chain-footnote');
+const chainNote = ValueKey('focus-chain-note');
 const taskPickerEntry = ValueKey('focus-task-picker-entry');
 
 const orderRule = '允许短暂起身接水';
@@ -47,12 +48,19 @@ void main() {
       chainTable,
       signalsSurface,
       allowanceEntry,
-      chainFootnote,
+      chainNote,
       taskPickerEntry,
       historyEntry,
     ]) {
       expect(find.byKey(key), findsOneWidget, reason: '$key 应保留在首屏');
     }
+    // 说明折成提示后，首屏仍要能点开读到原句（不只是图标存在）。
+    expect(find.text(focusDurationRule), findsNothing);
+    await tester.tap(find.byKey(chainNote));
+    await tester.pumpAndSettle();
+    expect(find.text(focusDurationRule), findsOneWidget);
+    Tooltip.dismissAllToolTips();
+    await tester.pumpAndSettle();
     expect(find.text('当前连续'), findsOneWidget);
     expect(find.text('历史最高'), findsOneWidget);
     for (final chain in ['精锐链', '普通链', '预约链']) {
@@ -206,7 +214,7 @@ void main() {
       'table': chainTable,
       'signals': signalsSurface,
       'allowance': allowanceEntry,
-      'footnote': chainFootnote,
+      'note': chainNote,
       'start': taskPickerEntry,
     };
     final blocks = <String, Object?>{};
@@ -260,7 +268,7 @@ void _expectAllInformationVisible(WidgetTester tester, String viewport) {
     chainTable,
     signalsSurface,
     allowanceEntry,
-    chainFootnote,
+    chainNote,
   ]) {
     final rect = tester.getRect(find.byKey(key));
     expect(
@@ -357,7 +365,7 @@ void _printBounds(WidgetTester tester, String viewport) {
     'table': chainTable,
     'signals': signalsSurface,
     'allowance': allowanceEntry,
-    'footnote': chainFootnote,
+    'note': chainNote,
     'start': taskPickerEntry,
   };
   final inventory = <String, Object?>{

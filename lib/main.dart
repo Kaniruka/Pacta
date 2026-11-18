@@ -3899,7 +3899,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
             ),
             title: Text(
               '下必为例',
-              style: theme.textTheme.titleSmall?.copyWith(
+              style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -4160,7 +4160,7 @@ class _FocusRecoveryStrip extends StatelessWidget {
               ),
               Text(
                 subtitle,
-                style: theme.textTheme.bodySmall?.copyWith(
+                style: theme.textTheme.bodyMedium?.copyWith(
                   color: foreground.withValues(alpha: .85),
                 ),
               ),

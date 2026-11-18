@@ -168,7 +168,7 @@ void _expectFirstScreenGeometry(
     'focus-chain-table',
     'focus-chain-signals',
     'focus-allowance-entry',
-    'focus-chain-footnote',
+    'focus-chain-note',
   ]) {
     final rect = tester.getRect(find.byKey(ValueKey(key)));
     expect(
@@ -281,7 +281,7 @@ void main() {
         'focus-chain-table',
         'focus-chain-signals',
         'focus-allowance-entry',
-        'focus-chain-footnote',
+        'focus-chain-note',
         'focus-task-picker-entry',
         'focus-history-entry',
       ]) {

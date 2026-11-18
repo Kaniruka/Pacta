@@ -1,7 +1,12 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pacta/src/focus/chain_signals_card.dart';
+import 'package:pacta/src/focus/chain_signals_card.dart'
+    show
+        ChainSignalInstructions,
+        FocusChainOverview,
+        focusDurationRule,
+        sharedFocusMarkerRule;
 import 'package:pacta/src/focus/chain_signals_repository.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_statistics.dart';
@@ -207,6 +212,42 @@ void main() {
       await _disposeWidget(tester);
     },
   );
+
+  testWidgets('规则说明折进信息提示：折叠时不占正文，点开才出现', (tester) async {
+    await _pumpOverview(tester, repository);
+    expect(find.text(focusDurationRule), findsNothing);
+    expect(find.text(sharedFocusMarkerRule), findsNothing);
+
+    // 说明挂在「累计/平均」那一行，而不是表头或卡片外。
+    expect(find.byKey(const ValueKey('focus-chain-note')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('focus-chain-note')));
+    await tester.pumpAndSettle();
+    expect(find.text(focusDurationRule), findsOneWidget);
+
+    Tooltip.dismissAllToolTips();
+    await tester.pumpAndSettle();
+    expect(find.text(focusDurationRule), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('focus-signal-note-marker')));
+    await tester.pumpAndSettle();
+    expect(find.text(sharedFocusMarkerRule), findsOneWidget);
+    // 触发信号没有共用关系，不挂提示。
+    expect(
+      find.byKey(const ValueKey('focus-signal-note-appointment')),
+      findsNothing,
+    );
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('说明图标不高于正文：12dp 图标，提示用悬停/点按', (tester) async {
+    await _pumpOverview(tester, repository);
+    final glyphs = tester.widgetList<Icon>(find.byIcon(Icons.info_outline));
+    expect(glyphs, isNotEmpty);
+    for (final glyph in glyphs) {
+      expect(glyph.size, 12, reason: '说明图标应与辅助文本同级，不抢标题的视觉重量');
+    }
+    await _disposeWidget(tester);
+  });
 
   testWidgets('instructions show the shared marker in both chain flows', (
     tester,
