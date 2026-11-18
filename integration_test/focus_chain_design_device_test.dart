@@ -104,6 +104,20 @@ Future<void> _openFocusChain(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// 编辑弹窗的字段时间：动作设置同步读取后弹窗才出现，等字段而不是猜帧数。
+Future<void> _waitForSignalField(WidgetTester tester) async {
+  final field = find.byKey(const ValueKey('focus-signal-field'));
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (field.evaluate().isEmpty && DateTime.now().isBefore(deadline)) {
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 20)),
+    );
+  }
+  await tester.pumpAndSettle();
+  expect(field, findsOneWidget, reason: '编辑弹窗应出现可输入的承诺动作字段');
+}
+
 /// Offline UI evidence: no credentials, persistent database, or cloud writes.
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -272,7 +286,11 @@ void main() {
         await tester.tap(markerEdit);
         await tester.pumpAndSettle();
         await shot('edit-dialog');
-        await tester.enterText(find.byType(TextField).first, '取消不应保存');
+        await _waitForSignalField(tester);
+        await tester.enterText(
+          find.byKey(const ValueKey('focus-signal-field')),
+          '取消不应保存',
+        );
         await tester.tap(find.text('取消'));
         await tester.pumpAndSettle();
         final afterCancel = await signals.get();
@@ -280,8 +298,12 @@ void main() {
         await shot('edit-cancel');
         await tester.tap(markerEdit);
         await tester.pumpAndSettle();
+        await _waitForSignalField(tester);
         final saved = longScenario ? _longAction : '戴上耳机，坐到书桌前并开始';
-        await tester.enterText(find.byType(TextField).first, saved);
+        await tester.enterText(
+          find.byKey(const ValueKey('focus-signal-field')),
+          saved,
+        );
         await tester.tap(find.text('保存'));
         await tester.pumpAndSettle();
         expect((await signals.get()).focusMarker, saved);
