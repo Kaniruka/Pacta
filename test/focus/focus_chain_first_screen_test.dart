@@ -58,8 +58,8 @@ void main() {
     for (final chain in ['精锐链', '普通链', '预约链']) {
       expect(find.text(chain), findsOneWidget);
     }
-    expect(find.text('累计专注'), findsNWidgets(2));
-    expect(find.text('平均每次'), findsNWidgets(2));
+    expect(find.text('累计'), findsNWidgets(2));
+    expect(find.text('平均'), findsNWidgets(2));
     expect(find.text('选择任务'), findsOneWidget);
     expect(find.text('可选任务 2 个'), findsOneWidget);
 

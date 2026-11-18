@@ -256,13 +256,13 @@ class FocusChainOverview extends StatelessWidget {
                 // 普通链即使还没有统计也要显示 0，不能因为缺省数据少一行。
                 if (!isAppointment) ...[
                   _DurationMetric(
-                    key: ValueKey('focus-chain-stat-$label-累计专注'),
-                    label: '累计专注',
+                    key: ValueKey('focus-chain-stat-$label-累计'),
+                    label: '累计',
                     seconds: statistics?.totalDurationSeconds ?? 0,
                   ),
                   _DurationMetric(
-                    key: ValueKey('focus-chain-stat-$label-平均每次'),
-                    label: '平均每次',
+                    key: ValueKey('focus-chain-stat-$label-平均'),
+                    label: '平均',
                     seconds: statistics?.averageDurationSeconds.round() ?? 0,
                   ),
                 ],

@@ -125,11 +125,11 @@ void main() {
       expect(find.text('1'), findsWidgets, reason: '专注链次数应加 1');
       expect(
         find.descendant(
-          of: _metric('精锐链', '累计专注'),
+          of: _metric('精锐链', '累计'),
           matching: find.text('25分00秒'),
         ),
         findsOneWidget,
-        reason: '专注链卡片的累计专注应为 25 分钟',
+        reason: '专注链卡片的累计应为 25 分钟',
       );
     } finally {
       await h.teardown(tester);
@@ -171,7 +171,7 @@ void main() {
       await h.openTab(tester, '专注链');
       expect(
         find.descendant(
-          of: _metric('精锐链', '累计专注'),
+          of: _metric('精锐链', '累计'),
           matching: find.text('25分00秒'),
         ),
         findsOneWidget,
@@ -212,11 +212,11 @@ void main() {
       await h.openTab(tester, '专注链');
       expect(
         find.descendant(
-          of: _metric('精锐链', '累计专注'),
+          of: _metric('精锐链', '累计'),
           matching: find.text('25分00秒'),
         ),
         findsOneWidget,
-        reason: '后台恢复结算后累计专注应为 25 分钟',
+        reason: '后台恢复结算后累计应为 25 分钟',
       );
       expect(find.text('1'), findsWidgets);
     } finally {
@@ -270,7 +270,7 @@ void main() {
       await h.openTab(tester, '专注链');
       expect(
         find.descendant(
-          of: _metric('精锐链', '累计专注'),
+          of: _metric('精锐链', '累计'),
           matching: find.text('20分00秒'),
         ),
         findsOneWidget,
@@ -316,11 +316,11 @@ void main() {
       await h.openTab(tester, '专注链');
       expect(
         find.descendant(
-          of: _metric('精锐链', '累计专注'),
+          of: _metric('精锐链', '累计'),
           matching: find.text('35分00秒'),
         ),
         findsOneWidget,
-        reason: '专注链卡片累计专注应为 35 分钟',
+        reason: '专注链卡片累计应为 35 分钟',
       );
       expect(find.text('2'), findsWidgets, reason: '第二次完成后连续次数为 2');
     } finally {
@@ -397,7 +397,7 @@ void main() {
   });
 }
 
-/// 链表中指定链的指标（如"精锐链"的"累计专注"）所在格。
+/// 链表中指定链的指标（如"精锐链"的"累计"）所在格。
 Finder _metric(String chainTitle, String label) =>
     find.byKey(ValueKey('focus-chain-stat-$chainTitle-$label'));
 

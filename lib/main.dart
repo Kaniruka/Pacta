@@ -4214,8 +4214,8 @@ class _FocusStartBar extends StatelessWidget {
     final colors = theme.colorScheme;
     final surfaces = PactaSurfaces.of(context);
     final gutter = PactaSpacing.gutterFor(MediaQuery.sizeOf(context).width);
+    // 定稿方案 A：全宽固定操作区，比页面与卡片各抬一档，顶部圆角 + 投影。
     return Material(
-      // 底部固定操作区比页面与卡片各抬一档，并用投影与滚动内容分开。
       color: surfaces.actionBar,
       elevation: 3,
       shadowColor: surfaces.actionBarShadow,

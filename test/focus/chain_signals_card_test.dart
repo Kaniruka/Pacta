@@ -42,7 +42,7 @@ void main() {
     expect(find.byType(IconButton), findsNWidgets(2));
     expect(find.text('12'), findsOneWidget);
     expect(find.text('1小时30分01秒'), findsOneWidget);
-    expect(find.text('平均每次'), findsNWidgets(2));
+    expect(find.text('平均'), findsNWidgets(2));
     await _disposeWidget(tester);
   });
 
@@ -200,8 +200,8 @@ void main() {
         expect(find.text(title), findsOneWidget);
       }
       expect(find.text('0'), findsNWidgets(6));
-      expect(find.text('累计专注'), findsNWidgets(2));
-      expect(find.text('平均每次'), findsNWidgets(2));
+      expect(find.text('累计'), findsNWidgets(2));
+      expect(find.text('平均'), findsNWidgets(2));
       expect(find.text('0分00秒'), findsNWidgets(4));
       expect(find.text('尚未设置'), findsNWidgets(2));
       await _disposeWidget(tester);
