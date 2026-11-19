@@ -83,6 +83,8 @@ flutter build windows --dart-define-from-file=.env
 
 Android APK 输出位于 `build/app/outputs/flutter-apk/`。**当前 `android/app/build.gradle.kts` 的 release 配置仍使用调试签名**；对外发布前，须按 [Flutter Android 发布文档](https://docs.flutter.dev/deployment/android)设置正式签名、核对应用 ID 与版本。Windows 构建产物位于 `build/windows/<架构>/runner/Release/`；分发时需要整个 Release 目录及相应 Visual C++ 运行库，详见 [Flutter Windows 分发文档](https://docs.flutter.dev/platform-integration/windows/building)。本仓库尚未提供安装包制作或自动发布流水线。
 
+版本迭代以 `pubspec.yaml` 中的 `version: MAJOR.MINOR.PATCH+BUILD` 为准，并同步更新 `windows/runner/Runner.rc` 的回退版本宏：破坏性不兼容变更升 `MAJOR`，新增/重构一级功能或升级本地/云端数据结构（如 Drift / Snapshot schema）升 `MINOR`（`PATCH` 归零），缺陷修复与体验微调升 `PATCH`；每次版本变更或分发构建时 `+BUILD` 单调递增且永不归零。正式发布仅在 `master` 节点使用 `vMAJOR.MINOR.PATCH` 格式的 Annotated Tag（特性分支合入后及时清理，日常仅保留 `master`）。
+
 ## 相关资料
 
 - 开发环境与本机配置：本机 `docs/development-environment.md`（本地档案）
