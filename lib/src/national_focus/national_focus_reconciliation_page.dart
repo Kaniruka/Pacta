@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../ui/pacta_disclosure_section.dart';
 import 'national_focus_models.dart';
 import 'national_focus_repository.dart';
 
@@ -295,7 +296,7 @@ class _NationalFocusReconciliationPageState
                   padding: const EdgeInsets.only(bottom: 4),
                   child: Text(_effectLabel(effect, review.cardNames)),
                 ),
-              ExpansionTile(
+              PactaDisclosureSection(
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: const EdgeInsets.only(bottom: 8),
                 title: const Text('查看完整来源操作'),

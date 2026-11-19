@@ -70,7 +70,7 @@ void main() {
       ),
     );
     await _pumpFrames(tester);
-    expect(_selectedDestination(tester), 1);
+    expect(_selectedDestination(tester), 2);
 
     service.handleNotificationResponse(
       const NotificationResponse(

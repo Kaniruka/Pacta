@@ -232,7 +232,6 @@ class FocusDashboardMetrics {
     required this.recentActivity,
     required this.totalAcceptedFocusSeconds,
     required this.displayTimeZoneId,
-    required this.followsDeviceTimeZone,
     this.hasPendingReview = false,
     this.pendingReviewTaskIds = const {},
   });
@@ -240,10 +239,98 @@ class FocusDashboardMetrics {
   final Map<String, int> focusProgressSecondsByTask;
   final List<FocusActivityDay> recentActivity;
   final int totalAcceptedFocusSeconds;
+
+  /// 账号资料里的显示时区；日分摊按它计算。没有设备级分支。
   final String displayTimeZoneId;
-  final bool followsDeviceTimeZone;
   final bool hasPendingReview;
   final Set<String> pendingReviewTaskIds;
+}
+
+/// Effective focus time of one visible month, allocated by the account display
+/// time zone.
+///
+/// [days] covers every calendar day of [month] in order, including days without
+/// accepted time; a zero day means "no effective effort", never a failure, a
+/// broken chain or an unmet daily target. [totalActiveSeconds] is the month's
+/// own sum, not the lifetime total and not the fixed recent-activity window.
+class FocusMonthMetrics {
+  const FocusMonthMetrics({
+    required this.displayTimeZoneId,
+    required this.month,
+    required this.days,
+    required this.totalActiveSeconds,
+    required this.activeDayCount,
+  });
+
+  /// Account display time zone the allocation was computed in.
+  final String displayTimeZoneId;
+
+  /// First day of the projected month as a UTC date-only value.
+  final DateTime month;
+
+  /// Every day of the month, UTC date-only, zero-filled.
+  final List<FocusActivityDay> days;
+
+  /// Sum of [days] restricted to this month.
+  final int totalActiveSeconds;
+
+  /// How many days carry accepted effective time.
+  final int activeDayCount;
+
+  bool get hasActivity => totalActiveSeconds > 0;
+
+  /// Accepted effective seconds on one calendar day of [days].
+  ///
+  /// Compares calendar components only: callers may pass a local or a UTC
+  /// date-only value and get the same day.
+  int activeSecondsOn(DateTime date) {
+    for (final day in days) {
+      if (day.date.year == date.year &&
+          day.date.month == date.month &&
+          day.date.day == date.day) {
+        return day.activeSeconds;
+      }
+    }
+    return 0;
+  }
+}
+
+/// 每场预约准备时长：5 / 10 / 15 分钟预设，或 1–60 分钟的整分钟自定义值。
+///
+/// 1–60 是本票选定的技术输入边界，不是从产品规则推导的结论：分钟是本模块唯一的
+/// 整数时长单位，0 与不足一分钟不构成延迟启动；通知与状态栏按 `mm:ss` 呈现且
+/// 分钟字段为两位，上界保持在两位分钟数内，使整段准备倒计时在既有展示中完整可见、
+/// 永不触发静默截断。非法值一律抛 [ArgumentError]，从不截断。
+abstract final class AppointmentPreparationDuration {
+  static const int minimumMinutes = 1;
+  static const int maximumMinutes = 60;
+  static const int defaultMinutes = 15;
+  static const List<int> presets = <int>[5, 10, 15];
+  static const Duration defaultDuration = Duration(minutes: defaultMinutes);
+
+  static const String invalidMessage = '准备时长需为 1–60 分钟的整数。';
+
+  /// 校验整分钟输入；越界或非整数抛出 [ArgumentError]。
+  static Duration validateMinutes(int minutes) {
+    if (minutes < minimumMinutes || minutes > maximumMinutes) {
+      throw ArgumentError.value(minutes, 'minutes', invalidMessage);
+    }
+    return Duration(minutes: minutes);
+  }
+
+  /// 校验准备时长；非整分钟、0、负数与越界值都被拒绝。
+  /// 用微秒判断整分钟，避免 `inSeconds` 截断把 1 分 0.5 秒当成合法值。
+  static Duration validate(Duration value) {
+    if (value.inMicroseconds % Duration.microsecondsPerMinute != 0) {
+      throw ArgumentError.value(value, 'preparation', invalidMessage);
+    }
+    return validateMinutes(
+      value.inMicroseconds ~/ Duration.microsecondsPerMinute,
+    );
+  }
+
+  static String describe(int seconds) =>
+      '${(seconds / Duration.secondsPerMinute).ceil()} 分钟';
 }
 
 enum AppointmentPreparationStatus {
@@ -480,6 +567,7 @@ class AppointmentPreparation {
     this.reviewDisposition = FocusRecordDisposition.accepted,
     this.reviewDispositionUpdatedAt,
     this.configurationBasisSourceId,
+    this.preparationSeconds,
   });
 
   final String id;
@@ -496,6 +584,20 @@ class AppointmentPreparation {
   final FocusRecordDisposition reviewDisposition;
   final DateTime? reviewDispositionUpdatedAt;
   final String? configurationBasisSourceId;
+
+  /// 本场显式存储的准备时长；仅旧记录为 `null`。
+  final int? preparationSeconds;
+
+  /// 读取口径的准备时长：显式值优先；旧记录沿用已存起止时刻，
+  /// 仅当该边界不是正数时才回到旧的 15 分钟规则。
+  int get effectivePreparationSeconds {
+    final stored = preparationSeconds;
+    if (stored != null && stored > 0) return stored;
+    final retained = endsAt.difference(startedAt).inSeconds;
+    return retained > 0
+        ? retained
+        : AppointmentPreparationDuration.defaultDuration.inSeconds;
+  }
 
   bool get isActive => status.isActive;
   bool get isSucceeded => status == AppointmentPreparationStatus.succeeded;
@@ -521,6 +623,7 @@ class AppointmentPreparation {
     reviewDisposition: disposition,
     reviewDispositionUpdatedAt: reviewedAt,
     configurationBasisSourceId: configurationBasisSourceId,
+    preparationSeconds: preparationSeconds,
   );
 
   AppointmentPreparation copyWithConfiguration({
@@ -544,6 +647,7 @@ class AppointmentPreparation {
     reviewDisposition: reviewDisposition,
     reviewDispositionUpdatedAt: reviewDispositionUpdatedAt,
     configurationBasisSourceId: sourceId,
+    preparationSeconds: preparationSeconds,
   );
 }
 

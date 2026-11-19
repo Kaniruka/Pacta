@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
+import 'package:pacta/src/ui/pacta_page_header.dart';
 import 'package:pacta/src/focus/focus_models.dart' as focus;
 import 'package:pacta/src/focus/focus_repository.dart';
 
@@ -29,7 +30,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('窄屏大字可访问四个入口且页面不溢出', (tester) async {
+  testWidgets('窄屏大字可访问五个入口且页面不溢出', (tester) async {
     tester.view.physicalSize = const Size(320, 800);
     tester.view.devicePixelRatio = 1;
     tester.platformDispatcher.textScaleFactorTestValue = 2;
@@ -39,7 +40,7 @@ void main() {
     final auth = FakeAuthRepository()..signedInUser = 'layout-user';
     await tester.pumpWidget(PactaApp(authRepository: auth));
     await tester.pumpAndSettle();
-    for (final label in ['看板', '专注链', '我的', '国策树']) {
+    for (final label in ['看板', '计划', '国策树', '专注链', '我的']) {
       await tester.tap(
         find.descendant(
           of: find.byType(NavigationBar),
@@ -173,6 +174,74 @@ void main() {
     );
     expect(focusRepository.note, '更新后的备注');
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('一级页面页头行高与标题 y 坐标在同一视口下完全一致', (tester) async {
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final auth = FakeAuthRepository()..signedInUser = 'layout-user';
+    const destinations = [
+      ('看板', '今天先做什么'),
+      ('计划', '计划'),
+      ('国策树', '国策树'),
+      ('专注链', '专注链'),
+      ('我的', '我的'),
+    ];
+    for (final size in [const Size(360, 800), const Size(1280, 800)]) {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      await tester.pumpWidget(PactaApp(authRepository: auth));
+      await tester.pumpAndSettle();
+      final measured =
+          <String, ({double height, double titleY, double titleX})>{};
+      for (final (label, title) in destinations) {
+        final host = find.byType(NavigationBar).evaluate().isNotEmpty
+            ? find.byType(NavigationBar)
+            : find.byType(NavigationRail);
+        await tester.tap(find.descendant(of: host, matching: find.text(label)));
+        await tester.pumpAndSettle();
+        final header = find.byType(PactaPageHeader);
+        expect(header, findsOneWidget, reason: '$label 应只有一个页头');
+        final headerRect = tester.getRect(header);
+        final titleRect = tester.getRect(
+          find.descendant(of: header, matching: find.text(title)),
+        );
+        measured[label] = (
+          height: headerRect.height,
+          titleY: titleRect.top,
+          titleX: titleRect.left,
+        );
+      }
+      final first = measured.values.first;
+      for (final entry in measured.entries) {
+        expect(
+          entry.value.height,
+          moreOrLessEquals(first.height, epsilon: 0.01),
+          reason: '${size.width} 宽 ${entry.key} 页头高度一致',
+        );
+        expect(
+          entry.value.titleY,
+          moreOrLessEquals(first.titleY, epsilon: 0.01),
+          reason: '${size.width} 宽 ${entry.key} 标题 y 坐标一致',
+        );
+        expect(
+          entry.value.titleX,
+          moreOrLessEquals(first.titleX, epsilon: 0.01),
+          reason: '${size.width} 宽 ${entry.key} 标题左边距一致',
+        );
+      }
+      expect(first.height, 56, reason: '48dp 标题行 + 8dp 固定下间距');
+      expect(
+        first.titleY,
+        moreOrLessEquals(24, epsilon: 0.1),
+        reason: '16dp 页顶 + 48dp 行内居中',
+      );
+      if (size.width < 720) {
+        expect(first.titleX, 16, reason: '移动页边距 16');
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    }
   });
 }
 

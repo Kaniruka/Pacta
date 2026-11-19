@@ -291,10 +291,10 @@ void main() {
     await openNode(tester, pending);
 
     expect(inSheet(find.text('请先完成核对后再操作。')), findsOneWidget);
-    final firstAction = tester.widget<ListTile>(
-      inSheet(find.byType(ListTile)).first,
+    final firstAction = tester.widget<FilledButton>(
+      inSheet(find.byType(FilledButton)).first,
     );
-    expect(firstAction.enabled, isFalse);
+    expect(firstAction.onPressed, isNull);
 
     await tester.tap(inSheet(find.text('查看详情')));
     await tester.pumpAndSettle();

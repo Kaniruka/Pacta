@@ -436,6 +436,59 @@ void main() {
     expect(snapshot.name, card.name);
   });
 
+  test('读取失败历史保留冻结快照且不改写当前树与记录', () async {
+    final first = await repository.createCard(draft('开始工作前', '打开计划'));
+    final second = await repository.createCard(draft('午饭后', '读十分钟'));
+    for (final card in [first, second]) {
+      await repository.placeCard(cardId: card.id, parentId: null);
+      await repository.lightCard(card.id);
+    }
+    now = DateTime.utc(2026, 9, 25, 20);
+    await repository.settleDueCheckpoints();
+    now = DateTime.utc(2026, 9, 26, 20);
+    await repository.settleDueCheckpoints();
+
+    await repository.updateCard(
+      cardId: first.id,
+      draft: const NationalFocusCardDraft(
+        name: '改过的名称',
+        triggerCondition: '改过的条件',
+        action: '改过的行动',
+      ),
+    );
+    final currentBefore = await repository.getTreeCards();
+    final failureCountBefore = (await repository.getFailures()).length;
+
+    final failures = await repository.getFailures();
+    expect(failures, hasLength(2));
+    expect(failures.map((failure) => failure.batchId).toSet(), hasLength(1));
+    final failure = failures.singleWhere(
+      (failure) => failure.cardId == first.id,
+    );
+    expect(
+      failure.checkpointAt.isAtSameMomentAs(DateTime.utc(2026, 9, 26, 20)),
+      isTrue,
+    );
+    expect(failure.cause, NationalFocusFailureCause.missedConfirmation);
+    expect(failure.treeSnapshot, hasLength(2));
+    final frozenFirst = failure.treeSnapshot.singleWhere(
+      (snapshot) => snapshot.id == first.id,
+    );
+    expect(frozenFirst.name, '开始工作前');
+    expect(frozenFirst.effectiveTriggerCondition, '开始工作前');
+    expect(frozenFirst.effectiveAction, '打开计划');
+    expect(frozenFirst.state, NationalFocusCardState.pendingTodayConfirmation);
+
+    // Reading history is read-only: the current tree and recorded failures
+    // stay exactly as they were before the read.
+    final currentAfter = await repository.getTreeCards();
+    expect(
+      currentAfter.map((card) => '${card.id}|${card.name}|${card.state}'),
+      currentBefore.map((card) => '${card.id}|${card.name}|${card.state}'),
+    );
+    expect(await repository.getFailures(), hasLength(failureCountBefore));
+  });
+
   test('拒绝把自己或自己的后代设为父节点', () async {
     final root = await repository.createCard(draft('到办公室后', '打开计划'));
     final child = await repository.createCard(draft('计划打开后', '先做第一项'));

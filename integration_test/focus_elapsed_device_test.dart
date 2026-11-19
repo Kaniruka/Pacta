@@ -101,7 +101,7 @@ void main() {
       );
       await tester.tap(find.text('专注链'));
       await tester.pumpAndSettle();
-      expect(find.text('累计专注'), findsNWidgets(2));
+      expect(find.text('累计'), findsNWidgets(2));
       expect(
         find.byWidgetPredicate(
           (widget) =>

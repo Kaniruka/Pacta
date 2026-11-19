@@ -293,9 +293,13 @@ void main() {
       );
       expect((await signals.get()).appointmentTriggerSignal, '戴耳机');
       expect((await signals.get()).focusMarker, '坐下');
-      final legacy = Map<String, dynamic>.from(captured.payload);
+      // A version 1 payload predates both the signal table and the owned
+      // schedule table; mark it as such instead of hand-editing a current one.
+      final legacy = Map<String, dynamic>.from(captured.payload)
+        ..['schemaVersion'] = 1;
       legacy['tables'] = Map<String, dynamic>.from(legacy['tables'] as Map)
-        ..remove('chain_signals');
+        ..remove('chain_signals')
+        ..remove('local_schedules');
       await remote.upload(
         userId: 'user-a',
         expectedRevision: 1,
@@ -897,9 +901,12 @@ void main() {
               ..['title'] = table == 'local_goals' ? '云端旧目标' : '云端旧任务',
         ];
       }
+      // Version 1 payloads predate the owned schedule table, so the legacy
+      // read is marked as such instead of editing a current payload in place.
       final oldPayload = <String, dynamic>{
         ...oldCloudState.payload,
-        'tables': tables,
+        'schemaVersion': 1,
+        'tables': tables..remove('local_schedules'),
       };
       await remote.upload(
         userId: 'user-a',
@@ -1102,6 +1109,302 @@ void main() {
       await tasks.dispose();
     },
   );
+
+  test('exports the current schema version and reads version 1 appointments by their retained boundary', () async {
+    final tasks = LocalTaskRepository(
+      database: database,
+      userId: 'user-a',
+      remote: const UnavailableTaskRemoteDataSource(),
+      cloudSyncEnabled: false,
+    );
+    var clock = DateTime.utc(2026, 11, 15, 8);
+    final focus = LocalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      remote: InMemoryFocusRemote(),
+      cloudSyncEnabled: false,
+      now: () => clock,
+    );
+    final goal = await tasks.createGoal(
+      const GoalDraft(
+        title: '准备时长目标',
+        classification: TaskClassification.regular,
+      ),
+    );
+    final task = await tasks.createTask(
+      goal.id,
+      const TaskDraft(
+        title: '准备时长任务',
+        classification: TaskClassification.regular,
+      ),
+    );
+    final appointment = await focus.startAppointment(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+      preparation: const Duration(minutes: 37),
+    );
+    await focus.cancelAppointment(
+      appointmentId: appointment.id,
+      failureReason: '快照往返准备',
+    );
+    final settled = (await focus.getAppointment(appointment.id))!;
+
+    final local = await repository.captureLocalState();
+    expect(local.payload['schemaVersion'], cloudSnapshotSchemaVersion);
+    final localTables = Map<String, dynamic>.from(
+      local.payload['tables'] as Map,
+    );
+    expect(
+      (localTables['focus_appointments'] as List).single,
+      containsPair('preparation_seconds', 37 * 60),
+    );
+
+    // 版本 1 的云端备份既没有显式准备时长，也没有自有日程表：读取后沿用已存
+    // 起止时刻，日程只从旧日历块提升。
+    final legacyTables = Map<String, dynamic>.from(localTables)
+      ..remove('local_schedules');
+    legacyTables['focus_appointments'] = [
+      for (final rawRow in localTables['focus_appointments'] as List)
+        Map<String, dynamic>.from(rawRow as Map)..remove('preparation_seconds'),
+    ];
+    final legacyPayload = <String, dynamic>{
+      ...local.payload,
+      'schemaVersion': 1,
+      'tables': legacyTables,
+    };
+    await remote.upload(
+      userId: 'user-a',
+      expectedRevision: 0,
+      payload: legacyPayload,
+      deviceId: 'legacy-device',
+      deviceName: 'Legacy device',
+      dataUpdatedAt: local.dataUpdatedAt,
+      rowCount: local.rowCount,
+    );
+
+    await repository.downloadCloud(
+      expectedRevision: 1,
+      expectedFingerprint: local.fingerprint,
+    );
+
+    final restored = (await focus.getAppointment(appointment.id))!;
+    expect(restored.status, AppointmentPreparationStatus.failed);
+    expect(restored.startedAt.isAtSameMomentAs(settled.startedAt), isTrue);
+    expect(restored.endsAt.isAtSameMomentAs(settled.endsAt), isTrue);
+    expect(restored.settledAt!.isAtSameMomentAs(settled.settledAt!), isTrue);
+    expect(restored.preparationSeconds, isNull);
+    expect(restored.effectivePreparationSeconds, 37 * 60);
+    await focus.dispose();
+    await tasks.dispose();
+  });
+
+  test(
+    'rejects a version 2 snapshot that drops the stored preparation length',
+    () async {
+      final tasks = LocalTaskRepository(
+        database: database,
+        userId: 'user-a',
+        remote: const UnavailableTaskRemoteDataSource(),
+        cloudSyncEnabled: false,
+      );
+      final focus = LocalFocusRepository(
+        database: database,
+        userId: 'user-a',
+        remote: InMemoryFocusRemote(),
+        cloudSyncEnabled: false,
+        now: () => DateTime.utc(2026, 11, 15, 8),
+      );
+      final goal = await tasks.createGoal(
+        const GoalDraft(
+          title: '版本二严格目标',
+          classification: TaskClassification.regular,
+        ),
+      );
+      final task = await tasks.createTask(
+        goal.id,
+        const TaskDraft(
+          title: '版本二严格任务',
+          classification: TaskClassification.regular,
+        ),
+      );
+      final appointment = await focus.startAppointment(
+        taskId: task.id,
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 25),
+        preparation: const Duration(minutes: 10),
+      );
+      await focus.cancelAppointment(
+        appointmentId: appointment.id,
+        failureReason: '版本二严格校验',
+      );
+      final local = await repository.captureLocalState();
+      final tables = Map<String, dynamic>.from(local.payload['tables'] as Map);
+      tables['focus_appointments'] = [
+        for (final rawRow in tables['focus_appointments'] as List)
+          Map<String, dynamic>.from(rawRow as Map)
+            ..remove('preparation_seconds'),
+      ];
+      await remote.upload(
+        userId: 'user-a',
+        expectedRevision: 0,
+        payload: <String, dynamic>{...local.payload, 'tables': tables},
+        deviceId: 'device-b',
+        deviceName: 'Tablet B',
+        dataUpdatedAt: local.dataUpdatedAt,
+        rowCount: local.rowCount,
+      );
+
+      await expectLater(
+        repository.downloadCloud(
+          expectedRevision: 1,
+          expectedFingerprint: local.fingerprint,
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      final preserved = (await focus.getAppointment(appointment.id))!;
+      expect(preserved.preparationSeconds, 10 * 60);
+      await focus.dispose();
+      await tasks.dispose();
+    },
+  );
+
+  test('rejects an unsupported snapshot schema version', () async {
+    final local = await repository.captureLocalState();
+    await remote.upload(
+      userId: 'user-a',
+      expectedRevision: 0,
+      payload: <String, dynamic>{
+        ...local.payload,
+        'schemaVersion': cloudSnapshotSchemaVersion + 1,
+      },
+      deviceId: 'device-b',
+      deviceName: 'Tablet B',
+      dataUpdatedAt: local.dataUpdatedAt,
+      rowCount: local.rowCount,
+    );
+
+    await expectLater(
+      repository.downloadCloud(
+        expectedRevision: 1,
+        expectedFingerprint: local.fingerprint,
+      ),
+      throwsA(isA<StateError>()),
+    );
+  });
+
+  test('rejects a version 2 payload that lost the owned schedules', () async {
+    final local = await repository.captureLocalState();
+    final tables = Map<String, dynamic>.from(local.payload['tables'] as Map)
+      ..remove('local_schedules');
+    await remote.upload(
+      userId: 'user-a',
+      expectedRevision: 0,
+      payload: <String, dynamic>{...local.payload, 'tables': tables},
+      deviceId: 'device-b',
+      deviceName: 'Tablet B',
+      dataUpdatedAt: local.dataUpdatedAt,
+      rowCount: local.rowCount,
+    );
+
+    await expectLater(
+      repository.downloadCloud(
+        expectedRevision: 1,
+        expectedFingerprint: local.fingerprint,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('日程表'),
+        ),
+      ),
+    );
+  });
+
+  test('rejects a version 2 payload whose appointments lost the preparation duration', () async {
+    final tasks = LocalTaskRepository(
+      database: database,
+      userId: 'user-a',
+      remote: const UnavailableTaskRemoteDataSource(),
+      cloudSyncEnabled: false,
+    );
+    final focus = LocalFocusRepository(
+      database: database,
+      userId: 'user-a',
+      remote: InMemoryFocusRemote(),
+      cloudSyncEnabled: false,
+      now: () => DateTime.utc(2026, 11, 15, 8),
+    );
+    final goal = await tasks.createGoal(
+      const GoalDraft(
+        title: '缺列目标',
+        classification: TaskClassification.regular,
+      ),
+    );
+    final task = await tasks.createTask(
+      goal.id,
+      const TaskDraft(
+        title: '缺列任务',
+        classification: TaskClassification.regular,
+      ),
+    );
+    final appointment = await focus.startAppointment(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+      preparation: const Duration(minutes: 10),
+    );
+    // 结束在途流程，否则下载会被“预约尚未结束”守卫挡在校验之前。
+    await focus.cancelAppointment(
+      appointmentId: appointment.id,
+      failureReason: '缺列校验',
+    );
+    final local = await repository.captureLocalState();
+    final tables = Map<String, dynamic>.from(local.payload['tables'] as Map);
+    expect(
+      (tables['focus_appointments'] as List)
+          .cast<Map<String, dynamic>>()
+          .firstWhere((row) => row['id'] == appointment.id),
+      containsPair('preparation_seconds', 10 * 60),
+    );
+    tables['focus_appointments'] = [
+      for (final rawRow in tables['focus_appointments'] as List)
+        Map<String, dynamic>.from(rawRow as Map)..remove('preparation_seconds'),
+    ];
+    expect(
+      (tables['focus_appointments'] as List).cast<Map>().every(
+        (row) => !row.containsKey('preparation_seconds'),
+      ),
+      isTrue,
+    );
+    await remote.upload(
+      userId: 'user-a',
+      expectedRevision: 0,
+      payload: <String, dynamic>{...local.payload, 'tables': tables},
+      deviceId: 'device-b',
+      deviceName: 'Tablet B',
+      dataUpdatedAt: local.dataUpdatedAt,
+      rowCount: local.rowCount,
+    );
+
+    await expectLater(
+      repository.downloadCloud(
+        expectedRevision: 1,
+        expectedFingerprint: local.fingerprint,
+      ),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('准备时长'),
+        ),
+      ),
+    );
+    await focus.dispose();
+    await tasks.dispose();
+  });
 
   test('rejects another users rows before any local replacement', () async {
     final tasks = LocalTaskRepository(

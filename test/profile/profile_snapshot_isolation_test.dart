@@ -26,14 +26,28 @@ class _FakeProfileRemote implements ProfileRemote {
     required String displayName,
     required ProfileAvatar? avatar,
     required DateTime updatedAt,
+    String? displayTimeZoneId,
+    int? timeZoneRevision,
   }) async {
     stored = RemoteProfile(
       displayName: displayName,
       avatar: avatar,
       updatedAt: updatedAt,
+      displayTimeZoneId: displayTimeZoneId ?? stored?.displayTimeZoneId,
     );
     return stored!;
   }
+
+  @override
+  Future<RemoteProfile?> initializeTimeZone({
+    required String userId,
+    required String displayTimeZoneId,
+  }) async => stored ??= RemoteProfile(
+    displayName: '',
+    avatar: null,
+    updatedAt: DateTime.now().toUtc(),
+    displayTimeZoneId: displayTimeZoneId,
+  );
 }
 
 Future<void> _addGoal(

@@ -197,6 +197,14 @@ class RunFocusPilotTest(unittest.TestCase):
         self.assertIn('--dart-define=FOCUS_PILOT_HOLD_SECONDS=300', record['argv'])
         self.assertIn('--dart-define=FOCUS_DESIGN_SNAPSHOT_ONLY=true', record['argv'])
 
+    def test_dark_theme_forces_dark_define(self):
+        rc = self.module.main(['--flutter', self.flutter, '--run-id', 'dk',
+                               '--theme', 'dark'])
+        self.assertEqual(rc, 0)
+        record = json.loads(self.record.read_text(encoding='utf-8'))
+        self.assertIn('--dart-define=FOCUS_PILOT_DARK=true', record['argv'])
+        self.assertNotIn('--dart-define=FOCUS_PILOT_LIGHT=true', record['argv'])
+
     def test_rejects_bad_arguments(self):
         for argv in (
             ['--scenario', 'defualt', '--flutter', self.flutter],

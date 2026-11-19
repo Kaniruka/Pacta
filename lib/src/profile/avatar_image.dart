@@ -113,34 +113,61 @@ Future<ProfileAvatar> prepareAvatarForUpload(Uint8List bytes) async {
   );
 }
 
+/// Reads metadata first and bounds decoded raster allocation.
+Future<ui.Image> decodeAvatarForCrop(Uint8List bytes) async {
+  validateAvatarSelection(bytes);
+  final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+  ui.ImageDescriptor? descriptor;
+  ui.Codec? codec;
+  try {
+    descriptor = await ui.ImageDescriptor.encoded(buffer);
+    if (descriptor.width > 32768 ||
+        descriptor.height > 32768 ||
+        descriptor.width * descriptor.height > 100000000) {
+      throw const AvatarValidationException('图片尺寸过大，请选择较小的图片。');
+    }
+    final longest = descriptor.width > descriptor.height
+        ? descriptor.width
+        : descriptor.height;
+    final ratio = longest > 2048 ? 2048 / longest : 1.0;
+    codec = await descriptor.instantiateCodec(
+      targetWidth: (descriptor.width * ratio).round().clamp(1, 2048),
+      targetHeight: (descriptor.height * ratio).round().clamp(1, 2048),
+    );
+    return (await codec.getNextFrame()).image;
+  } finally {
+    codec?.dispose();
+    descriptor?.dispose();
+    buffer.dispose();
+  }
+}
+
 Future<Uint8List> _encodePng(Uint8List bytes, int maxEdge) async {
-  final probe = await ui.instantiateImageCodec(bytes);
-  final probeFrame = await probe.getNextFrame();
-  final width = probeFrame.image.width;
-  final height = probeFrame.image.height;
-  probeFrame.image.dispose();
-
-  var targetWidth = width;
-  var targetHeight = height;
-  final longest = width > height ? width : height;
-  if (longest > maxEdge) {
-    final scale = maxEdge / longest;
-    targetWidth = (width * scale).round().clamp(1, maxEdge);
-    targetHeight = (height * scale).round().clamp(1, maxEdge);
+  final image = await decodeAvatarForCrop(bytes);
+  ui.Image? output;
+  ui.Picture? picture;
+  try {
+    final longest = image.width > image.height ? image.width : image.height;
+    final ratio = longest > maxEdge ? maxEdge / longest : 1.0;
+    final width = (image.width * ratio).round().clamp(1, maxEdge);
+    final height = (image.height * ratio).round().clamp(1, maxEdge);
+    final recorder = ui.PictureRecorder();
+    ui.Canvas(recorder).drawImageRect(
+      image,
+      ui.Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+      ui.Rect.fromLTWH(0, 0, width.toDouble(), height.toDouble()),
+      ui.Paint()..filterQuality = ui.FilterQuality.high,
+    );
+    picture = recorder.endRecording();
+    output = await picture.toImage(width, height);
+    final data = await output.toByteData(format: ui.ImageByteFormat.png);
+    if (data == null) throw const AvatarValidationException('这张图片无法转换，请换一张。');
+    return data.buffer.asUint8List();
+  } finally {
+    output?.dispose();
+    picture?.dispose();
+    image.dispose();
   }
-
-  final codec = await ui.instantiateImageCodec(
-    bytes,
-    targetWidth: targetWidth,
-    targetHeight: targetHeight,
-  );
-  final frame = await codec.getNextFrame();
-  final data = await frame.image.toByteData(format: ui.ImageByteFormat.png);
-  frame.image.dispose();
-  if (data == null) {
-    throw const AvatarValidationException('这张图片无法转换，请换一张。');
-  }
-  return data.buffer.asUint8List();
 }
 
 String normalizeDisplayName(String value) => value.trim();

@@ -6,7 +6,7 @@ Write tools and arbitrary SQL/table access are not available.
 Neither connecting nor reading performs a manual upload/download or settlement.
 
 Deployment, matching App configuration and skill ZIP distribution are described
-in [the release runbook](../../../docs/issue-62-deployment.md).
+in the release runbook, which is part of the local-only docs tree (`docs/issue-62-deployment.md`) and is not published with the repository.
 
 ## Deploy
 
@@ -178,7 +178,8 @@ object rows owned by this User, and nonempty standalone card names.
 Card details require `expected_revision` and return the same metadata/version
 context. History pagination preserves this revision constraint. No historical cloud snapshots are retained by MCP.
 The installable analysis skill supports structure analysis and failure review;
-see [installation and usage](../../../docs/issue-60-skill.md).
+see the installation and usage notes in the local-only docs tree (`docs/issue-60-skill.md`).
+The skill ZIP is reproducible from this repository alone: `python scripts/package_national_focus_skill.py` writes `build/skills/pacta-national-focus-analysis.zip` with a sibling `.zip.sha256` (fixed allowlist `SKILL.md`, `references/contract.md`, `evals/README.md`, `evals/cases.json`; `--output` overrides the directory).
 Current tree/library/card tools are available in T2 (#58).
 
 ## Verify

@@ -19,7 +19,11 @@ import 'src/board/national_focus_summary_card.dart';
 import 'src/calendar/calendar_page.dart';
 import 'src/calendar/calendar_provider.dart';
 import 'src/calendar/calendar_repository.dart';
+import 'src/schedules/schedule_models.dart';
+import 'src/schedules/schedule_repository.dart';
 import 'src/focus/focus_models.dart';
+import 'src/focus/effective_duration_text.dart';
+import 'src/focus/focus_month_page.dart';
 import 'src/focus/chain_signals_repository.dart';
 import 'src/focus/chain_signals_card.dart';
 import 'src/focus/focus_statistics.dart';
@@ -34,12 +38,18 @@ import 'src/national_focus/national_focus_ai_access.dart';
 import 'src/national_focus/national_focus_ai_analysis_page.dart';
 import 'src/national_focus/national_focus_tree_page.dart';
 import 'src/notifications/focus_notification_service.dart';
+import 'src/notifications/schedule_reminder_plan.dart';
+import 'src/notifications/schedule_reminder_sync.dart';
+import 'src/profile/account_time_zone.dart';
 import 'src/profile/avatar_picker.dart';
 import 'src/profile/profile_card.dart';
+import 'src/profile/profile_models.dart';
 import 'src/profile/profile_overview.dart';
 import 'src/profile/profile_remote.dart';
 import 'src/profile/profile_repository.dart';
 import 'src/notifications/focus_notification_settings_page.dart';
+import 'src/plan/plan_calendar_view.dart';
+import 'src/plan/plan_target.dart';
 import 'src/tasks/task_database.dart' show PactaDatabase;
 import 'src/tasks/task_models.dart';
 import 'src/tasks/task_repository.dart';
@@ -50,7 +60,13 @@ import 'src/sync/cloud_snapshot_repository.dart';
 import 'src/sync/source_device_info.dart';
 import 'src/sync/cloud_sync_card.dart';
 import 'src/sync/cloud_version_check.dart';
+import 'src/theme/pacta_calendar_colors.dart';
+import 'src/theme/pacta_fonts.dart';
+import 'src/theme/pacta_spacing.dart';
 import 'src/theme/pacta_status_colors.dart';
+import 'src/theme/pacta_surfaces.dart';
+import 'src/ui/pacta_check_circle.dart';
+import 'src/ui/pacta_page_header.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -131,6 +147,14 @@ Future<void> main() async {
           userId: userId,
         ),
       ),
+      scheduleRepositoryFactory: (userId) => LocalScheduleRepository(
+        database: database,
+        userId: userId,
+        lifecycleAccess: LocalUserLifecycleAccess(
+          database: database,
+          userId: userId,
+        ),
+      ),
       chainSignalsRepositoryFactory: (userId) => ChainSignalsRepository(
         database: database,
         userId: userId,
@@ -183,14 +207,22 @@ class PactaApp extends StatelessWidget {
     this.focusRepositoryFactory,
     this.nationalFocusRepositoryFactory,
     this.calendarRepositoryFactory,
+    this.scheduleRepositoryFactory,
+    this.scheduleReminderOpenHandler,
     this.userLifecycleRepositoryFactory,
     this.cloudSnapshotRepositoryFactory,
     this.cloudCheckClock = DateTime.now,
+    this.displayClock = DateTime.now,
     this.chainSignalsRepositoryFactory,
     this.profileRepositoryFactory,
+    this.deviceTimeZoneIdReader = readDeviceTimeZoneId,
   });
 
   final ProfileRepository Function(String userId)? profileRepositoryFactory;
+
+  /// Reads this device's IANA zone. It is only a one-time migration input for
+  /// the account display time zone, never a display value.
+  final Future<String?> Function() deviceTimeZoneIdReader;
 
   final CloudSnapshotRepository Function(String userId)?
   cloudSnapshotRepositoryFactory;
@@ -199,6 +231,10 @@ class PactaApp extends StatelessWidget {
   chainSignalsRepositoryFactory;
 
   final DateTime Function() cloudCheckClock;
+
+  /// Wall clock used by countdown surfaces; tests pass the same mutable clock
+  /// as their repository so display and persistence agree.
+  final DateTime Function() displayClock;
 
   final AuthRepository authRepository;
   final String? nationalFocusMcpUrl;
@@ -211,6 +247,11 @@ class PactaApp extends StatelessWidget {
   final NationalFocusRepository Function(String userId)?
   nationalFocusRepositoryFactory;
   final CalendarRepository Function(String userId)? calendarRepositoryFactory;
+  final ScheduleRepository Function(String userId)? scheduleRepositoryFactory;
+
+  /// Opens an ordinary schedule reminder once the Plan destination is wired.
+  final Future<void> Function(ScheduleReminderRequest)?
+  scheduleReminderOpenHandler;
   final UserLifecycleStatusRepository Function(String userId)?
   userLifecycleRepositoryFactory;
 
@@ -219,11 +260,15 @@ class PactaApp extends StatelessWidget {
     return ProviderScope(
       overrides: [
         cloudCheckClockProvider.overrideWithValue(cloudCheckClock),
+        displayClockProvider.overrideWithValue(displayClock),
         chainSignalsRepositoryFactoryProvider.overrideWithValue(
           chainSignalsRepositoryFactory,
         ),
         profileRepositoryFactoryProvider.overrideWithValue(
           profileRepositoryFactory,
+        ),
+        deviceTimeZoneIdReaderProvider.overrideWithValue(
+          deviceTimeZoneIdReader,
         ),
         cloudSnapshotRepositoryFactoryProvider.overrideWithValue(
           cloudSnapshotRepositoryFactory,
@@ -253,6 +298,13 @@ class PactaApp extends StatelessWidget {
           calendarRepositoryFactory ??
               (_) => const UnavailableCalendarRepository(),
         ),
+        scheduleRepositoryFactoryProvider.overrideWithValue(
+          scheduleRepositoryFactory ??
+              (_) => const UnavailableScheduleRepository(),
+        ),
+        scheduleReminderOpenHandlerProvider.overrideWithValue(
+          scheduleReminderOpenHandler,
+        ),
         userLifecycleRepositoryFactoryProvider.overrideWithValue(
           userLifecycleRepositoryFactory ??
               (_) => const UnavailableUserLifecycleStatusRepository(),
@@ -270,6 +322,28 @@ class PactaApp extends StatelessWidget {
       ),
     );
   }
+}
+
+TextTheme _pactaTextTheme(TextTheme theme) {
+  TextStyle? weight(TextStyle? style, FontWeight value) =>
+      style?.copyWith(fontWeight: value);
+  return theme.copyWith(
+    displayLarge: weight(theme.displayLarge, PactaFonts.regular),
+    displayMedium: weight(theme.displayMedium, PactaFonts.regular),
+    displaySmall: weight(theme.displaySmall, PactaFonts.regular),
+    headlineLarge: weight(theme.headlineLarge, PactaFonts.regular),
+    headlineMedium: weight(theme.headlineMedium, PactaFonts.regular),
+    headlineSmall: weight(theme.headlineSmall, PactaFonts.regular),
+    titleLarge: weight(theme.titleLarge, PactaFonts.medium),
+    titleMedium: weight(theme.titleMedium, PactaFonts.medium),
+    titleSmall: weight(theme.titleSmall, PactaFonts.medium),
+    bodyLarge: weight(theme.bodyLarge, PactaFonts.regular),
+    bodyMedium: weight(theme.bodyMedium, PactaFonts.regular),
+    bodySmall: weight(theme.bodySmall, PactaFonts.regular),
+    labelLarge: weight(theme.labelLarge, PactaFonts.medium),
+    labelMedium: weight(theme.labelMedium, PactaFonts.medium),
+    labelSmall: weight(theme.labelSmall, PactaFonts.medium),
+  );
 }
 
 /// The app theme, shared with offline layout fixtures so evidence never
@@ -304,41 +378,76 @@ ThemeData pactaTheme(Brightness brightness) {
         outline: Color(dark ? 0xff8e918f : 0xff747775),
         outlineVariant: Color(dark ? 0xff444746 : 0xffc4c7c5),
       );
-  return ThemeData(
-    fontFamily: 'MiSans',
+  final surfaces = dark ? PactaSurfaces.dark : PactaSurfaces.light;
+  final base = ThemeData(
+    fontFamily: PactaFonts.family,
     colorScheme: colors,
     useMaterial3: true,
-    extensions: [dark ? PactaStatusColors.dark : PactaStatusColors.light],
-    scaffoldBackgroundColor: colors.surface,
-    appBarTheme: const AppBarTheme(centerTitle: false),
+  );
+  // 主题是字体的唯一入口：所有语义字号（含 label 系列和 primary）都显式
+  // 收敛到 MiSans，页面/组件不得再声明第二个字体族。
+  final textTheme = _pactaTextTheme(
+    base.textTheme.apply(fontFamily: PactaFonts.family),
+  );
+  final primaryTextTheme = _pactaTextTheme(
+    base.primaryTextTheme.apply(fontFamily: PactaFonts.family),
+  );
+  return base.copyWith(
+    textTheme: textTheme,
+    primaryTextTheme: primaryTextTheme,
+    extensions: [
+      dark ? PactaStatusColors.dark : PactaStatusColors.light,
+      dark ? PactaCalendarColors.dark : PactaCalendarColors.light,
+      surfaces,
+    ],
+    scaffoldBackgroundColor: surfaces.page,
+    // 页面层级：页面 surface → 卡片抬起一档 → 底部固定操作区再抬一档。
+    // 卡片不使用描边表达边界，亮色用极浅投影、暗色用色阶区分。
     cardTheme: CardThemeData(
-      elevation: 0,
-      color: colors.surfaceContainerLowest,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      margin: const EdgeInsets.symmetric(vertical: 4),
+      elevation: 1,
+      shadowColor: surfaces.cardShadow,
+      surfaceTintColor: Colors.transparent,
+      color: surfaces.card,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(PactaSpacing.cardRadius),
+      ),
+      margin: EdgeInsets.zero,
+    ),
+    appBarTheme: AppBarTheme(
+      centerTitle: false,
+      backgroundColor: surfaces.page,
+      surfaceTintColor: Colors.transparent,
+      scrolledUnderElevation: 0,
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: surfaces.card,
+      surfaceTintColor: Colors.transparent,
+      // 中文弹窗标题折行时标题级别过重会压住输入区，统一到 titleLarge。
+      titleTextStyle: textTheme.titleLarge?.copyWith(
+        fontWeight: PactaFonts.semibold,
+        color: colors.onSurface,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
     ),
     navigationBarTheme: NavigationBarThemeData(
-      backgroundColor: colors.surfaceContainerLow,
+      backgroundColor: surfaces.actionBar,
       indicatorColor: colors.primaryContainer,
-      elevation: 0,
+      elevation: 3,
+      shadowColor: surfaces.actionBarShadow,
     ),
     navigationRailTheme: NavigationRailThemeData(
-      backgroundColor: colors.surfaceContainerLow,
+      backgroundColor: surfaces.card,
       indicatorColor: colors.primaryContainer,
     ),
     bottomSheetTheme: BottomSheetThemeData(
-      backgroundColor: colors.surfaceContainerLowest,
+      backgroundColor: surfaces.card,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
     ),
-    dialogTheme: DialogThemeData(
-      backgroundColor: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-    ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: colors.surfaceContainerLowest,
+      fillColor: colors.surfaceContainerLow,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
     ),
   );
@@ -370,6 +479,12 @@ final cloudSnapshotRepositoryProvider =
     });
 
 final cloudCheckClockProvider = Provider<DateTime Function()>(
+  (ref) => DateTime.now,
+);
+
+/// Wall clock used by countdown surfaces. Production defaults to the system
+/// clock; tests override it with the same mutable clock as their repository.
+final displayClockProvider = Provider<DateTime Function()>(
   (ref) => DateTime.now,
 );
 final cloudVersionCheckProvider = Provider.autoDispose<CloudVersionCheck?>((
@@ -465,6 +580,24 @@ final profileRepositoryProvider = Provider.autoDispose<ProfileRepository>((
   return repository;
 });
 
+/// 设备 IANA 时区，只作为账号显示时区的一次性迁移输入。
+///
+/// 显示路径不读它：账号没有值时用 [AccountTimeZones.fallbackId]，切换设备或
+/// 设备时区变化都不会改变已有账号值的显示。
+final deviceTimeZoneIdReaderProvider = Provider<Future<String?> Function()>(
+  (ref) => readDeviceTimeZoneId,
+);
+
+/// 读取设备时区；读不到时返回 null（本次不迁移，稍后重试）。
+Future<String?> readDeviceTimeZoneId() async {
+  try {
+    final zone = await FlutterTimezone.getLocalTimezone();
+    return FocusTimeZones.contains(zone.identifier) ? zone.identifier : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 final avatarPickerProvider = Provider<AvatarPicker>(
   (ref) => const SystemAvatarPicker(),
 );
@@ -496,6 +629,13 @@ final focusNotificationServiceProvider = Provider<FocusNotificationService>((
 ) {
   return DisabledFocusNotificationService();
 });
+
+/// Opens one ordinary schedule reminder.
+///
+/// The Plan destination owns this navigation; the provider only exists so a
+/// fixture or a test can observe the request instead of driving the real page.
+final scheduleReminderOpenHandlerProvider =
+    Provider<Future<void> Function(ScheduleReminderRequest)?>((ref) => null);
 
 final taskRepositoryFactoryProvider =
     Provider<TaskRepository Function(String userId)>((ref) {
@@ -550,6 +690,21 @@ final calendarRepositoryProvider = Provider.autoDispose<CalendarRepository>((
   final userId = ref.watch(authUserIdProvider);
   if (userId == null) return const UnavailableCalendarRepository();
   final repository = ref.watch(calendarRepositoryFactoryProvider)(userId);
+  ref.onDispose(repository.dispose);
+  return repository;
+});
+
+final scheduleRepositoryFactoryProvider =
+    Provider<ScheduleRepository Function(String userId)>((ref) {
+      return (_) => const UnavailableScheduleRepository();
+    });
+
+final scheduleRepositoryProvider = Provider.autoDispose<ScheduleRepository>((
+  ref,
+) {
+  final userId = ref.watch(authUserIdProvider);
+  if (userId == null) return const UnavailableScheduleRepository();
+  final repository = ref.watch(scheduleRepositoryFactoryProvider)(userId);
   ref.onDispose(repository.dispose);
   return repository;
 });
@@ -796,21 +951,33 @@ class AppShell extends ConsumerStatefulWidget {
 class _AppShellState extends ConsumerState<AppShell>
     with WidgetsBindingObserver {
   int _index = 0;
+  PlanTarget? _planTarget;
   late final FocusNotificationService _focusNotificationService;
   late final String? _reminderOwnerUserId;
   late final StreamSubscription<List<ConnectivityResult>>
   _connectivitySubscription;
   late final StreamSubscription<String> _notificationOpenSubscription;
+  late final StreamSubscription<ScheduleReminderRequest>
+  _scheduleOpenSubscription;
+  late final ScheduleReminderSync _scheduleReminderSync;
+  StreamSubscription<ProfileAccount>? _profileReminderSubscription;
+  String? _reminderTimeZoneId;
   late StreamSubscription<List<NationalFocusCard>>
   _nationalFocusReminderSubscription;
   late final NationalFocusCheckpointScheduler _nationalFocusCheckpointScheduler;
 
   static const _destinations = [
     _Destination('看板', Icons.dashboard_outlined, Icons.dashboard),
+    _Destination('计划', Icons.event_note_outlined, Icons.event_note),
     _Destination('国策树', Icons.account_tree_outlined, Icons.account_tree),
     _Destination('专注链', Icons.bolt_outlined, Icons.bolt),
     _Destination('我的', Icons.person_outline, Icons.person),
   ];
+
+  /// 目的地下标：新增计划后所有跳转都按名字固定，避免再散落魔法数字。
+  static const _boardIndex = 0;
+  static const _planIndex = 1;
+  static const _nationalFocusIndex = 2;
 
   @override
   void initState() {
@@ -836,6 +1003,19 @@ class _AppShellState extends ConsumerState<AppShell>
           _focusNotificationService.takePendingOpenRequest();
           unawaited(_openFocusFlow(payload));
         });
+    _scheduleReminderSync = ScheduleReminderSync(
+      notificationService: _focusNotificationService,
+      accountTimeZoneId: () async {
+        final profile = await ref.read(profileRepositoryProvider).getProfile();
+        return AccountTimeZones.effectiveId(profile.displayTimeZoneId);
+      },
+      // The reminder query window is anchored to the same injected clock the
+      // calendar uses, so the system clock cannot drift the window past a
+      // schedule that the display clock still considers upcoming.
+      now: ref.read(displayClockProvider),
+    );
+    _scheduleOpenSubscription = _focusNotificationService.openScheduleRequests
+        .listen((request) => unawaited(_openScheduleReminder(request)));
     _nationalFocusReminderSubscription = ref
         .read(nationalFocusRepositoryProvider)
         .watchTreeCards()
@@ -852,6 +1032,17 @@ class _AppShellState extends ConsumerState<AppShell>
       unawaited(_focusNotificationService.syncDailyOpenReminder());
       final request = _focusNotificationService.takePendingOpenRequest();
       if (request != null) unawaited(_openFocusFlow(request));
+      unawaited(
+        _scheduleReminderSync.attach(ref.read(scheduleRepositoryProvider)),
+      );
+      _watchProfileTimeZone();
+      // A cold-start reminder activation must be drained once the shell is
+      // ready; the stream only covers clicks that arrive while it is listening.
+      final scheduleRequest = _focusNotificationService
+          .takePendingScheduleRequest();
+      if (scheduleRequest != null) {
+        unawaited(_openScheduleReminder(scheduleRequest));
+      }
     });
   }
 
@@ -859,6 +1050,8 @@ class _AppShellState extends ConsumerState<AppShell>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       unawaited(_refreshLocalState(checkCloud: true));
+      // A resume can cross the bounded window; reconcile without replaying.
+      unawaited(_scheduleReminderSync.reconcileOnce());
     }
   }
 
@@ -890,9 +1083,28 @@ class _AppShellState extends ConsumerState<AppShell>
       // Local recovery can be retried without uploading or discarding records.
     }
     await _syncFocusStatus();
+    // 账号时区迁移：已有账号值优先；没有时由本轮启动只写入一次原子初始化，
+    // 失败就保持统一 fallback 并在下次启动/恢复重试。
+    await _ensureAccountDisplayTimeZone();
     // A resume can cross midnight or a device time zone change; the reminder is
     // replanned from the current local wall clock without replaying old days.
     unawaited(_focusNotificationService.syncDailyOpenReminder());
+  }
+
+  Future<void> _ensureAccountDisplayTimeZone() async {
+    final userId = ref.read(authRepositoryProvider).currentUserId;
+    try {
+      final deviceTimeZoneId = await ref.read(deviceTimeZoneIdReaderProvider)();
+      if (!mounted ||
+          ref.read(authRepositoryProvider).currentUserId != userId) {
+        return;
+      }
+      await ref
+          .read(profileRepositoryProvider)
+          .ensureDisplayTimeZone(deviceTimeZoneId: deviceTimeZoneId);
+    } catch (_) {
+      // 迁移失败不阻塞启动：显示使用统一 fallback，稍后重试同一条路径。
+    }
   }
 
   Future<void> _syncFocusStatus() async {
@@ -929,14 +1141,88 @@ class _AppShellState extends ConsumerState<AppShell>
     }
   }
 
+  /// Watches the account time zone so all-day reminders follow a change.
+  ///
+  /// The profile stream is the only notification a time zone edit produces, so
+  /// an existing plan must be rebuilt without waiting for a schedule edit.
+  void _watchProfileTimeZone() {
+    unawaited(_profileReminderSubscription?.cancel());
+    _profileReminderSubscription = ref
+        .read(profileRepositoryProvider)
+        .watchProfile()
+        .listen(
+          (profile) {
+            final zone = AccountTimeZones.effectiveId(
+              profile.displayTimeZoneId,
+            );
+            final previous = _reminderTimeZoneId;
+            _reminderTimeZoneId = zone;
+            if (previous != null && previous != zone) {
+              unawaited(_scheduleReminderSync.reconcileOnce());
+            }
+          },
+          onError: (Object _) {
+            // An unreadable profile keeps the current plan; the next edit or
+            // resume reconciles again.
+          },
+        );
+  }
+
+  Future<void> _openScheduleReminder(ScheduleReminderRequest request) async {
+    if (!mounted) return;
+    _focusNotificationService.takePendingScheduleRequest();
+    final userId = ref.read(authRepositoryProvider).currentUserId;
+    // A notification shown before an account switch must never open the next
+    // account's data: the payload carries the owner that registered it.
+    if (userId == null || request.ownerId != userId) return;
+    final repository = ref.read(scheduleRepositoryProvider);
+    final date = DateTime.tryParse(request.dateKey);
+    if (date == null) return;
+    List<Schedule> rows;
+    try {
+      rows = await repository.getSchedules(
+        from: date.subtract(const Duration(days: 1)),
+        to: date.add(const Duration(days: 2)),
+      );
+    } catch (_) {
+      // A reminder whose rows cannot be read must not navigate to a guess.
+      return;
+    }
+    final owned = rows.any(
+      (row) => row.id == request.scheduleId && !row.isRecurrenceCancelled,
+    );
+    if (!owned) return;
+    if (!mounted) return;
+    final handler = ref.read(scheduleReminderOpenHandlerProvider);
+    if (handler != null) {
+      await handler(request);
+      return;
+    }
+    // 计划目的地已集成：按真正的日历日与已拥有安排定位，不进入专注流程。
+    final day = DateTime(date.year, date.month, date.day);
+    setState(() {
+      _index = _planIndex;
+      _planTarget = PlanTarget(day: day, scheduleId: request.scheduleId);
+    });
+  }
+
   Future<void> _openFocusFlow(String payload) async {
     if (!mounted) return;
+    // 普通安排提醒只打开计划页的日历日/安排，不进入专注流程。
+    final planTarget = PlanTarget.tryParse(payload);
+    if (planTarget != null) {
+      setState(() {
+        _index = _planIndex;
+        _planTarget = planTarget;
+      });
+      return;
+    }
     if (payload.startsWith('daily-open-reminder:')) {
-      setState(() => _index = 0);
+      setState(() => _index = _boardIndex);
       return;
     }
     if (payload.startsWith('national-focus-reminder:')) {
-      setState(() => _index = 1);
+      setState(() => _index = _nationalFocusIndex);
       return;
     }
     final separator = payload.indexOf(':');
@@ -1002,9 +1288,13 @@ class _AppShellState extends ConsumerState<AppShell>
     WidgetsBinding.instance.removeObserver(this);
     _connectivitySubscription.cancel();
     _notificationOpenSubscription.cancel();
+    _scheduleOpenSubscription.cancel();
+    unawaited(_profileReminderSubscription?.cancel());
     _nationalFocusReminderSubscription.cancel();
     _nationalFocusCheckpointScheduler.dispose();
-    unawaited(_focusNotificationService.releaseUser(_reminderOwnerUserId));
+    unawaited(_scheduleReminderSync.detach());
+    // 正常退出只停止本进程监听，未来 OS 提醒继续排队；登出/切号走 releaseUser。
+    unawaited(_focusNotificationService.detachForProcessExit());
     super.dispose();
   }
 
@@ -1020,21 +1310,39 @@ class _AppShellState extends ConsumerState<AppShell>
     ref.listen(focusRepositoryProvider, (previous, next) {
       unawaited(_syncFocusStatus());
     });
+    ref.watch(scheduleRepositoryProvider);
+    ref.listen(scheduleRepositoryProvider, (previous, next) {
+      unawaited(_scheduleReminderSync.attach(next));
+    });
+    ref.watch(profileRepositoryProvider);
+    ref.listen(profileRepositoryProvider, (previous, next) {
+      _watchProfileTimeZone();
+    });
     ref.listen(authUserIdProvider, (previous, next) {
       if (previous != null && previous != next) {
         // 切换账号作废旧用户的待上传请求，避免随后按错误身份继续。
         unawaited(ref.read(cloudAutoUploadQueueStoreProvider).clear(previous));
+        // 登出/切号时取消旧账号已登记的提醒；正常退出不会走到这里。
+        unawaited(_focusNotificationService.releaseUser(previous));
       }
     });
     ref.watch(cloudVersionCheckProvider);
     final autoUpload = ref.watch(cloudAutoUploadCoordinatorProvider);
     final nationalFocusRepository = ref.watch(nationalFocusRepositoryProvider);
-    final focusRepository = ref.watch(focusRepositoryProvider);
     final lifecycleStatusRepository = ref.watch(
       userLifecycleStatusRepositoryProvider,
     );
     final pages = [
-      BoardPage(onOpenNationalFocus: () => setState(() => _index = 1)),
+      BoardPage(
+        onOpenNationalFocus: () => setState(() => _index = _nationalFocusIndex),
+        onOpenPlan: () => setState(() => _index = _planIndex),
+      ),
+      PlanPage(
+        displayTimeZoneLoader: () => resolveAccountDisplayTimeZoneId(
+          ref.read(profileRepositoryProvider),
+        ),
+        navigationTarget: _planTarget,
+      ),
       NationalFocusTreePage(
         key: ValueKey(ref.watch(authRepositoryProvider).currentUserId),
         userId: ref.watch(authRepositoryProvider).currentUserId,
@@ -1044,12 +1352,12 @@ class _AppShellState extends ConsumerState<AppShell>
         onNotificationCapabilityUse: () => unawaited(
           _focusNotificationService.ensureNotificationPermissionForUse(),
         ),
+        // 检查点本身固定北京时间 04:00；这里只决定显示用的账号时区。
         displayTimeZoneLoader: () async {
-          final deviceZone = await FlutterTimezone.getLocalTimezone();
-          final dashboard = await focusRepository.getDashboardMetrics(
-            deviceTimeZoneId: deviceZone.identifier,
-          );
-          return dashboard.displayTimeZoneId;
+          final profile = await ref
+              .read(profileRepositoryProvider)
+              .getProfile();
+          return AccountTimeZones.effectiveId(profile.displayTimeZoneId);
         },
       ),
       const FocusChainPage(),
@@ -1122,7 +1430,9 @@ class _AppShellState extends ConsumerState<AppShell>
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxWidth: _index == 1 ? double.infinity : 960,
+                  maxWidth: _index == _nationalFocusIndex
+                      ? double.infinity
+                      : PactaSpacing.maxContentWidth,
                 ),
                 child: content,
               ),
@@ -1237,108 +1547,294 @@ class _FocusClockReviewPrompt extends StatelessWidget {
   }
 }
 
-class BoardPage extends ConsumerStatefulWidget {
-  const BoardPage({super.key, required this.onOpenNationalFocus});
+enum _PlanView { goals, calendar }
 
-  final VoidCallback onOpenNationalFocus;
-
-  @override
-  ConsumerState<BoardPage> createState() => _BoardPageState();
+/// 计划目的地：目标与日历两个视图，承载既有目标/任务管理与自有日程。
+///
+/// 显示时区由调用方以账号值解析后传入（02 合并前是适配器），本页不读取
+/// 设备级显示偏好；目标/任务的创建、编辑、完成、删除都在这里完成。
+/// 账号显示时区（02 合并前的窄适配器）。
+///
+/// 账号显示时区（02 合入后由账号资料提供）。
+///
+/// 保留这个窄入口：计划页只关心"显示用哪个时区"，不必知道来源。账号还没有
+/// 有效值时用统一 fallback 常量，不退回本设备时区，也不写入任何偏好。
+Future<String> resolveAccountDisplayTimeZoneId(
+  ProfileRepository profileRepository,
+) async {
+  final profile = await profileRepository.getProfile();
+  return AccountTimeZones.effectiveId(profile.displayTimeZoneId);
 }
 
-class _BoardPageState extends ConsumerState<BoardPage> {
-  late final Future<String> _deviceTimeZoneId;
+class PlanPage extends ConsumerStatefulWidget {
+  const PlanPage({
+    super.key,
+    required this.displayTimeZoneLoader,
+    this.navigationTarget,
+  });
+
+  final Future<String> Function() displayTimeZoneLoader;
+
+  /// 普通安排提醒点开的目标（06 通知）；null 表示正常进入计划页。
+  final PlanTarget? navigationTarget;
 
   @override
-  void initState() {
-    super.initState();
-    _deviceTimeZoneId = _loadDeviceTimeZoneId();
+  ConsumerState<PlanPage> createState() => _PlanPageState();
+}
+
+class _PlanPageState extends ConsumerState<PlanPage> {
+  late var _view = widget.navigationTarget == null
+      ? _PlanView.goals
+      : _PlanView.calendar;
+  late final Future<String> _fallbackDisplayTimeZoneId = widget
+      .displayTimeZoneLoader();
+
+  /// 内容区左右滑动与分段按钮共用同一个页码。
+  late final PageController _pageController = PageController(
+    initialPage: _pageOf(_view),
+  );
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
-  Future<String> _loadDeviceTimeZoneId() async {
-    final timeZone = await FlutterTimezone.getLocalTimezone();
-    if (!FocusTimeZones.contains(timeZone.identifier)) {
-      throw StateError('设备返回了无法识别的 IANA 时区。');
+  /// 页序显式映射：不把枚举序号当页码，改枚举顺序不会静默错位。
+  static int _pageOf(_PlanView view) => switch (view) {
+    _PlanView.goals => 0,
+    _PlanView.calendar => 1,
+  };
+
+  static _PlanView _viewOfPage(int page) => switch (page) {
+    0 => _PlanView.goals,
+    _ => _PlanView.calendar,
+  };
+
+  /// 内容区横向拖动累计量（dp）：判定阈值用，不做跟手位移。
+  double _dragDx = 0;
+  double _dragDy = 0;
+
+  int get _currentPage => _pageController.hasClients
+      ? (_pageController.page?.round() ?? _pageOf(_view))
+      : _pageOf(_view);
+
+  /// 原始指针位移：水平识别器只上报 dx，斜率判定必须自己累计 dy。
+  void _onPointerDown(PointerDownEvent event) {
+    _dragDx = 0;
+    _dragDy = 0;
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    _dragDx += event.delta.dx;
+    _dragDy += event.delta.dy;
+  }
+
+  /// 定案门槛：水平位移 >24dp 且 |dx| > 1.5|dy| 才翻页。
+  /// 斜滑、短拖、以及点按造成的微小位移都停在原页。
+  void _onHorizontalDragEnd(DragEndDetails details) {
+    final dx = _dragDx;
+    final dy = _dragDy.abs();
+    _dragDx = 0;
+    _dragDy = 0;
+    if (dx.abs() <= 24 || dx.abs() <= dy * 1.5) return;
+    final target = dx < 0 ? _currentPage + 1 : _currentPage - 1;
+    if (target < 0 || target > 1) return;
+    _selectView(_viewOfPage(target));
+  }
+
+  void _selectView(_PlanView next) {
+    if (_view == next) return;
+    setState(() => _view = next);
+    if (!_pageController.hasClients) return;
+    final target = _pageOf(next);
+    final current = _pageController.page?.round();
+    if (current == target) return;
+    _pageController.animateToPage(
+      target,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  void didUpdateWidget(PlanPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.navigationTarget == null ||
+        widget.navigationTarget == oldWidget.navigationTarget) {
+      return;
     }
-    return timeZone.identifier;
+    setState(() => _view = _PlanView.calendar);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_pageController.hasClients) return;
+      _pageController.jumpToPage(_pageOf(_PlanView.calendar));
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final taskRepository = ref.watch(taskRepositoryProvider);
-    final focusRepository = ref.watch(focusRepositoryProvider);
-    final nationalFocusRepository = ref.watch(nationalFocusRepositoryProvider);
-    final calendarRepository = ref.watch(calendarRepositoryProvider);
+    final scheduleRepository = ref.watch(scheduleRepositoryProvider);
+    final profileRepository = ref.watch(profileRepositoryProvider);
+    // 账号时区是页面唯一的显示来源：资料流更新（含另一台设备写入）后
+    // 日历与目标卡立即按新时区重建；设备时区只在资料为空时提供固定 fallback。
     return FutureBuilder<String>(
-      future: _deviceTimeZoneId,
-      builder: (context, timeZoneSnapshot) {
-        final deviceTimeZoneId = timeZoneSnapshot.data ?? 'Etc/UTC';
-        return StreamBuilder<List<Goal>>(
-          stream: taskRepository.watchGoals(),
-          initialData: const [],
-          builder: (context, goalSnapshot) =>
-              StreamBuilder<FocusDashboardMetrics>(
-                stream: focusRepository.watchDashboardMetrics(
-                  deviceTimeZoneId: deviceTimeZoneId,
-                ),
-                builder: (context, metricsSnapshot) => _BoardContent(
-                  repository: taskRepository,
-                  focusRepository: focusRepository,
-                  nationalFocusRepository: nationalFocusRepository,
-                  calendarRepository: calendarRepository,
-                  onOpenNationalFocus: widget.onOpenNationalFocus,
-                  goals: goalSnapshot.data ?? const [],
-                  metrics: metricsSnapshot.data,
-                ),
-              ),
-        );
-      },
+      future: _fallbackDisplayTimeZoneId,
+      builder: (context, fallbackSnapshot) => StreamBuilder<ProfileAccount>(
+        stream: profileRepository.watchProfile(),
+        builder: (context, profileSnapshot) {
+          final displayTimeZoneId = profileSnapshot.hasData
+              ? AccountTimeZones.effectiveId(
+                  profileSnapshot.data!.displayTimeZoneId,
+                )
+              : (fallbackSnapshot.data ?? 'Etc/UTC');
+          return StreamBuilder<List<Goal>>(
+            stream: taskRepository.watchGoals(),
+            initialData: const [],
+            builder: (context, snapshot) {
+              final goals = snapshot.data ?? const <Goal>[];
+              // 页头始终从 16 起排，与其它目的地一致；日历页自己的左右
+              // 内边距收到 12，360 宽下 7 列仍保有 ≥48×48 的命中区
+              // （(360-24)/7 = 48）。头部不参与横向滑动。
+              final width = MediaQuery.sizeOf(context).width;
+              final gutter = PactaSpacing.gutterFor(width);
+              // 日历在窄屏收到 12：360 宽下 7 列仍保有 ≥48 的命中区
+              // （(360-24)/7 = 48），宽屏回到统一页边距。
+              final calendarGutter = PactaSpacing.isWide(width)
+                  ? gutter
+                  : PactaSpacing.md;
+              return Column(
+                // 宽屏下让页头铺满内容宽度，标题才与其它目的地一样靠左。
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      gutter,
+                      PactaSpacing.lg,
+                      gutter,
+                      0,
+                    ),
+                    child: PactaPageHeader(
+                      title: '计划',
+                      trailing: SegmentedButton<_PlanView>(
+                        segments: const [
+                          ButtonSegment(
+                            value: _PlanView.goals,
+                            icon: Icon(Icons.flag_outlined),
+                            label: Text('目标'),
+                          ),
+                          ButtonSegment(
+                            value: _PlanView.calendar,
+                            icon: Icon(Icons.calendar_month_outlined),
+                            label: Text('日历'),
+                          ),
+                        ],
+                        selected: {_view},
+                        onSelectionChanged: (selection) =>
+                            _selectView(selection.first),
+                      ),
+                    ),
+                  ),
+                  // 头部留在滑动区之外：分段控件与标题不随页面移动。
+                  Expanded(
+                    // 手势只在这一层：拖动累计到阈值才翻页，点按仍落到格子和按钮上。
+                    child: Listener(
+                      onPointerDown: _onPointerDown,
+                      onPointerMove: _onPointerMove,
+                      child: GestureDetector(
+                        onHorizontalDragEnd: _onHorizontalDragEnd,
+                        child: PageView.builder(
+                          controller: _pageController,
+                          // 拖动由上面的门槛接管；这里只保留页码吸附与程序化跳转。
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: 2,
+                          onPageChanged: (page) =>
+                              setState(() => _view = _viewOfPage(page)),
+                          itemBuilder: (context, page) => page == 0
+                              ? ListView(
+                                  padding: EdgeInsets.fromLTRB(
+                                    gutter,
+                                    PactaSpacing.md,
+                                    gutter,
+                                    PactaSpacing.xl,
+                                  ),
+                                  children: _buildGoals(
+                                    context,
+                                    taskRepository,
+                                    goals,
+                                    displayTimeZoneId,
+                                  ),
+                                )
+                              // 宽屏下日历不跟着铺满 960：格宽过大时日期反而
+                              // 更难扫读，内容收在 720 以内并居中。
+                              : Align(
+                                  alignment: Alignment.topCenter,
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      maxWidth: 720,
+                                    ),
+                                    child: ListView(
+                                      padding: EdgeInsets.fromLTRB(
+                                        calendarGutter,
+                                        PactaSpacing.md,
+                                        calendarGutter,
+                                        PactaSpacing.xl,
+                                      ),
+                                      children: [
+                                        _buildCalendar(
+                                          context,
+                                          taskRepository,
+                                          scheduleRepository,
+                                          goals,
+                                          displayTimeZoneId,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
     );
   }
-}
 
-class _BoardContent extends StatelessWidget {
-  const _BoardContent({
-    required this.repository,
-    required this.focusRepository,
-    required this.nationalFocusRepository,
-    required this.calendarRepository,
-    required this.onOpenNationalFocus,
-    required this.goals,
-    required this.metrics,
-  });
-
-  final TaskRepository repository;
-  final FocusRepository focusRepository;
-  final NationalFocusRepository nationalFocusRepository;
-  final CalendarRepository calendarRepository;
-  final VoidCallback onOpenNationalFocus;
-  final List<Goal> goals;
-  final FocusDashboardMetrics? metrics;
-
-  @override
-  Widget build(BuildContext context) {
-    final primary = <Widget>[
-      Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 16,
-        runSpacing: 12,
+  List<Widget> _buildGoals(
+    BuildContext context,
+    TaskRepository taskRepository,
+    List<Goal> goals,
+    String displayTimeZoneId,
+  ) {
+    final pinned = [
+      for (final goal in goals)
+        if (goal.isPinned) goal,
+    ];
+    final others = [
+      for (final goal in goals)
+        if (!goal.isPinned) goal,
+    ];
+    return [
+      Row(
         children: [
-          Text('今天先做什么', style: Theme.of(context).textTheme.headlineSmall),
+          Expanded(
+            child: Text(
+              '目标与任务',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
           FilledButton.icon(
-            onPressed: () => _createGoal(context),
+            onPressed: () => _createGoal(context, taskRepository),
             icon: const Icon(Icons.add),
             label: const Text('新建目标'),
           ),
         ],
       ),
-      const SizedBox(height: 8),
-      _FocusReconciliationPrompt(
-        focusRepository: focusRepository,
-        taskRepository: repository,
-      ),
-      _FocusClockReviewPrompt(repository: focusRepository),
       if (goals.isEmpty)
         Card(
           child: Padding(
@@ -1347,22 +1843,567 @@ class _BoardContent extends StatelessWidget {
               children: [
                 const Icon(Icons.inbox_outlined, size: 48),
                 const SizedBox(height: 12),
-                Text('暂无任务', style: Theme.of(context).textTheme.titleMedium),
+                Text('还没有目标', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
-                const Text('创建目标和任务后，它们会优先出现在这里。'),
+                const Text('新建目标后在这里管理任务；看板只显示置顶目标摘要。'),
               ],
             ),
           ),
-        )
-      else
-        for (final goal in goals)
-          _GoalCard(
-            key: ValueKey(goal.id),
-            repository: repository,
-            goal: goal,
-            focusProgressSecondsByTask: metrics?.focusProgressSecondsByTask,
-            pendingReviewTaskIds: metrics?.pendingReviewTaskIds ?? const {},
+        ),
+      if (pinned.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        Text(
+          '置顶目标 · 手动顺序',
+          style: Theme.of(context).textTheme.labelLarge
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+        ),
+        for (var index = 0; index < pinned.length; index++)
+          _goalCard(
+            taskRepository,
+            pinned[index],
+            displayTimeZoneId: displayTimeZoneId,
+            canMoveUp: index > 0,
+            canMoveDown: index < pinned.length - 1,
+            onMoveUp: () => _movePinned(taskRepository, pinned, index, -1),
+            onMoveDown: () => _movePinned(taskRepository, pinned, index, 1),
           ),
+      ],
+      if (others.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        Text(
+          pinned.isEmpty ? '全部目标' : '其他目标',
+          style: Theme.of(context).textTheme.labelLarge
+              ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+        ),
+        for (final goal in others)
+          _goalCard(taskRepository, goal, displayTimeZoneId: displayTimeZoneId),
+      ],
+    ];
+  }
+
+  Widget _goalCard(
+    TaskRepository taskRepository,
+    Goal goal, {
+    required String displayTimeZoneId,
+    bool canMoveUp = false,
+    bool canMoveDown = false,
+    VoidCallback? onMoveUp,
+    VoidCallback? onMoveDown,
+  }) {
+    final focusRepository = ref.watch(focusRepositoryProvider);
+    return StreamBuilder<FocusDashboardMetrics>(
+      stream: focusRepository.watchDashboardMetrics(
+        timeZoneId: displayTimeZoneId,
+      ),
+      builder: (context, metricsSnapshot) {
+        final metrics = metricsSnapshot.data;
+        return _GoalCard(
+          key: ValueKey(goal.id),
+          repository: taskRepository,
+          goal: goal,
+          showPinControls: true,
+          canMoveUp: canMoveUp,
+          canMoveDown: canMoveDown,
+          onTogglePin: () =>
+              taskRepository.setGoalPinned(goal.id, isPinned: !goal.isPinned),
+          onMoveUp: onMoveUp,
+          onMoveDown: onMoveDown,
+          focusProgressSecondsByTask: metrics?.focusProgressSecondsByTask,
+          pendingReviewTaskIds:
+              metrics?.pendingReviewTaskIds ?? const <String>{},
+        );
+      },
+    );
+  }
+
+  /// 日历要能读出"已删除的任务"名称：按普通目标列表变化时刷新一次带墓碑的读取。
+  List<Goal>? _calendarGoalsSource;
+  Future<List<Goal>>? _calendarGoalsFuture;
+
+  Future<List<Goal>> _calendarGoals(
+    TaskRepository repository,
+    List<Goal> goals,
+  ) {
+    if (!identical(_calendarGoalsSource, goals)) {
+      _calendarGoalsSource = goals;
+      _calendarGoalsFuture = repository.getGoals(includeDeleted: true);
+    }
+    return _calendarGoalsFuture!;
+  }
+
+  Widget _buildCalendar(
+    BuildContext context,
+    TaskRepository taskRepository,
+    ScheduleRepository scheduleRepository,
+    List<Goal> goals,
+    String displayTimeZoneId,
+  ) {
+    return FutureBuilder<List<Goal>>(
+      future: _calendarGoals(taskRepository, goals),
+      builder: (context, goalSnapshot) => PlanCalendarView(
+        repository: scheduleRepository,
+        goals: goalSnapshot.data ?? goals,
+        displayTimeZoneId: displayTimeZoneId,
+        calendarRepository: ref.watch(calendarRepositoryProvider),
+        initialDay: widget.navigationTarget?.day,
+        highlightScheduleId: widget.navigationTarget?.scheduleId,
+        // 与专注倒计时共用同一个注入时钟：日期、今天标记和月视图都能
+        // 在同一份 fixture 里被固定，页面不各自读取系统时间。
+        now: ref.watch(displayClockProvider),
+      ),
+    );
+  }
+
+  Future<void> _createGoal(
+    BuildContext context,
+    TaskRepository taskRepository,
+  ) async {
+    final draft = await _showGoalDialog(context);
+    if (draft != null) await taskRepository.createGoal(draft);
+  }
+
+  Future<void> _movePinned(
+    TaskRepository taskRepository,
+    List<Goal> pinned,
+    int index,
+    int delta,
+  ) async {
+    final target = index + delta;
+    if (target < 0 || target >= pinned.length) return;
+    final ids = [for (final goal in pinned) goal.id];
+    final moved = ids.removeAt(index);
+    ids.insert(target, moved);
+    await taskRepository.reorderPinnedGoals(ids);
+  }
+}
+
+/// Ticket 11：看板对未回顾失败记录的提示入口。
+///
+/// 提示只负责把用户带到国策树里的失败记录页（10 号已有的入口），
+/// 标记回顾不会介入专注、预约或结算。
+class _FailureReviewPrompt extends StatelessWidget {
+  const _FailureReviewPrompt({
+    required this.repository,
+    required this.displayTimeZoneId,
+  });
+
+  final NationalFocusRepository repository;
+  final String displayTimeZoneId;
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<NationalFocusFailure>>(
+      stream: repository.watchFailures(),
+      builder: (context, snapshot) {
+        final pendingBatches = <String>{
+          for (final failure in snapshot.data ?? const <NationalFocusFailure>[])
+            if (failure.needsReflection) failure.batchId,
+        };
+        if (pendingBatches.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Card(
+            color: Theme.of(context).colorScheme.tertiaryContainer,
+            child: ListTile(
+              key: const ValueKey('board-failure-review-hint'),
+              leading: const Icon(Icons.history_toggle_off),
+              title: Text('${pendingBatches.length} 组国策失败待回顾'),
+              subtitle: const Text('稍后再看也可以；回顾只做标记，不改动当时的失败结果。'),
+              trailing: const Icon(Icons.chevron_right),
+              // 直达 10 号已有的失败记录页，而不是只切换主导航；
+              // 完整回顾仍在那一页里进入冻结树二级页。
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => NationalFocusFailureHistoryPage(
+                    repository: repository,
+                    displayTimeZoneId: displayTimeZoneId,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class BoardPage extends ConsumerStatefulWidget {
+  const BoardPage({
+    super.key,
+    required this.onOpenNationalFocus,
+    required this.onOpenPlan,
+  });
+
+  final VoidCallback onOpenNationalFocus;
+  final VoidCallback onOpenPlan;
+
+  @override
+  ConsumerState<BoardPage> createState() => _BoardPageState();
+}
+
+class _BoardPageState extends ConsumerState<BoardPage> {
+  /// 重试只换订阅：递增代次让带 key 的 StreamBuilder 换元素，旧的读取随元素
+  /// 释放，重新订阅一次当前仓储与时区。它不写任何数据，也不改仓储实例。
+  var _projectionGeneration = 0;
+
+  void _retryProjection() {
+    if (!mounted) return;
+    setState(() => _projectionGeneration += 1);
+  }
+
+  /// 看板只提供入口：投影、时区门禁、错误重试都由月历页自己负责，
+  /// 这里不复制它的读取或写入路径。owner 与时钟在打开时绑定，
+  /// 账号变化由路由自己退出，避免显示上一个账号的月份。
+  void _openFocusMonth() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => _FocusMonthRoute(
+          ownerUserId: ref.read(authUserIdProvider),
+          repository: ref.read(focusRepositoryProvider),
+          profileRepository: ref.read(profileRepositoryProvider),
+          now: ref.read(displayClockProvider),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final taskRepository = ref.watch(taskRepositoryProvider);
+    final focusRepository = ref.watch(focusRepositoryProvider);
+    final nationalFocusRepository = ref.watch(nationalFocusRepositoryProvider);
+    final scheduleRepository = ref.watch(scheduleRepositoryProvider);
+    final profileRepository = ref.watch(profileRepositoryProvider);
+    // 看板是只读投影：一个（资料, 目标, 专注仓储 + 重试代次）对应一次显式订阅，
+    // 身份一变就换 key，旧状态连同订阅一起释放；因此上一账号/上一时区的数字
+    // 不会留在屏上，也不需要通用回放层。读取失败交给状态里可见的错误与重试。
+    return _BoardProjectionScope(
+      key: ValueKey<Object>((
+        'board-projection',
+        profileRepository,
+        taskRepository,
+        focusRepository,
+        _projectionGeneration,
+      )),
+      profileRepository: profileRepository,
+      taskRepository: taskRepository,
+      focusRepository: focusRepository,
+      builder: (context, projection) => _BoardContent(
+        displayTimeZoneId: projection.displayTimeZoneId,
+        now: ref.read(displayClockProvider),
+        repository: taskRepository,
+        focusRepository: focusRepository,
+        nationalFocusRepository: nationalFocusRepository,
+        scheduleRepository: scheduleRepository,
+        onOpenNationalFocus: widget.onOpenNationalFocus,
+        onOpenPlan: widget.onOpenPlan,
+        onOpenFocusMonth: _openFocusMonth,
+        goals: projection.goals,
+        metrics: projection.metrics,
+        accountFailed: projection.accountFailed,
+        metricsFailed: projection.metricsFailed,
+        goalsFailed: projection.goalsFailed,
+        onRetryProjection: _retryProjection,
+      ),
+    );
+  }
+}
+
+/// 看板一次读取的结果：账号时区、目标、近期投影与失败标记。
+class _BoardProjection {
+  const _BoardProjection({
+    required this.displayTimeZoneId,
+    required this.goals,
+    required this.metrics,
+    required this.accountFailed,
+    required this.metricsFailed,
+    required this.goalsFailed,
+  });
+
+  final String displayTimeZoneId;
+  final List<Goal> goals;
+  final FocusDashboardMetrics? metrics;
+
+  /// 账号资料读取失败：时区按统一兜底值显示，但屏幕必须说明这一点。
+  final bool accountFailed;
+
+  /// 近期投影读取失败：不再显示成"正在加载"。
+  final bool metricsFailed;
+
+  /// 目标列表读取失败：不能渲染成"还没有置顶目标"。
+  final bool goalsFailed;
+}
+
+/// 看板的只读订阅宿主。
+///
+/// 身份由外层 key 决定：仓储或重试代次一变就是新的 State，旧订阅随
+/// [dispose] 一起取消。这里不缓存旧快照——换时区时先清空投影再订阅，所以
+/// 屏上不会出现上一个账号/时区的数字，也不需要一层通用回放流；读取失败
+/// 以可见标记上报，重试只是换 key 重新订阅，不写任何数据。
+class _BoardProjectionScope extends StatefulWidget {
+  const _BoardProjectionScope({
+    super.key,
+    required this.profileRepository,
+    required this.taskRepository,
+    required this.focusRepository,
+    required this.builder,
+  });
+
+  final ProfileRepository profileRepository;
+  final TaskRepository taskRepository;
+  final FocusRepository focusRepository;
+  final Widget Function(BuildContext context, _BoardProjection projection)
+  builder;
+
+  @override
+  State<_BoardProjectionScope> createState() => _BoardProjectionScopeState();
+}
+
+class _BoardProjectionScopeState extends State<_BoardProjectionScope> {
+  StreamSubscription<ProfileAccount>? _profileSubscription;
+  StreamSubscription<FocusDashboardMetrics>? _metricsSubscription;
+  StreamSubscription<List<Goal>>? _goalsSubscription;
+  String _displayTimeZoneId = AccountTimeZones.fallbackId;
+  List<Goal> _goals = const [];
+  FocusDashboardMetrics? _metrics;
+  bool _accountFailed = false;
+  bool _metricsFailed = false;
+  bool _goalsFailed = false;
+  bool _hasBuilt = false;
+
+  /// Whether the account profile produced its first value or error.
+  ///
+  /// Until then the display zone is unknown, and querying the projection with
+  /// the fallback zone would paint UTC-allocated bars before the account's own
+  /// zone arrives. The board waits instead of showing a number it cannot stand
+  /// behind.
+  bool _profileResolved = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscribeProfile();
+    _subscribeGoals();
+  }
+
+  @override
+  void dispose() {
+    unawaited(_profileSubscription?.cancel());
+    unawaited(_metricsSubscription?.cancel());
+    unawaited(_goalsSubscription?.cancel());
+    super.dispose();
+  }
+
+  /// 首帧之前的同步事件直接改字段，避免在挂载途中 setState。
+  void _apply(VoidCallback change) {
+    if (!mounted) return;
+    if (_hasBuilt) {
+      setState(change);
+    } else {
+      change();
+    }
+  }
+
+  void _subscribeProfile() {
+    _profileSubscription = widget.profileRepository.watchProfile().listen(
+      (profile) {
+        final nextZone = AccountTimeZones.effectiveId(
+          profile.displayTimeZoneId,
+        );
+        final zoneChanged = nextZone != _displayTimeZoneId;
+        final firstValue = !_profileResolved;
+        _apply(() {
+          _accountFailed = false;
+          _profileResolved = true;
+          if (!zoneChanged) return;
+          // 换时区先丢掉旧投影：新流首帧到达前屏上是加载态，不是旧数字。
+          _displayTimeZoneId = nextZone;
+          _metrics = null;
+          _metricsFailed = false;
+        });
+        if (zoneChanged || firstValue) _subscribeMetrics();
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        final firstValue = !_profileResolved;
+        _apply(() {
+          _accountFailed = true;
+          _profileResolved = true;
+        });
+        if (firstValue) _subscribeMetrics();
+      },
+    );
+  }
+
+  void _subscribeGoals() {
+    _goalsSubscription = widget.taskRepository.watchGoals().listen(
+      (goals) => _apply(() {
+        _goals = goals;
+        _goalsFailed = false;
+      }),
+      onError: (Object error, StackTrace stackTrace) {
+        _apply(() {
+          _goals = const [];
+          _goalsFailed = true;
+        });
+      },
+    );
+  }
+
+  void _subscribeMetrics() {
+    unawaited(_metricsSubscription?.cancel());
+    final timeZoneId = _displayTimeZoneId;
+    _metricsSubscription = widget.focusRepository
+        .watchDashboardMetrics(timeZoneId: timeZoneId)
+        .listen(
+          (metrics) => _apply(() {
+            _metrics = metrics;
+            _metricsFailed = false;
+          }),
+          onError: (Object error, StackTrace stackTrace) {
+            _apply(() {
+              _metrics = null;
+              _metricsFailed = true;
+            });
+          },
+        );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _hasBuilt = true;
+    return widget.builder(
+      context,
+      _BoardProjection(
+        displayTimeZoneId: _displayTimeZoneId,
+        goals: _goals,
+        metrics: _metrics,
+        accountFailed: _accountFailed,
+        metricsFailed: _metricsFailed,
+        goalsFailed: _goalsFailed,
+      ),
+    );
+  }
+}
+
+/// 只读月历路由：owner 变化时退出，不把上一个账号的投影留在屏幕上。
+class _FocusMonthRoute extends ConsumerWidget {
+  const _FocusMonthRoute({
+    required this.ownerUserId,
+    required this.repository,
+    required this.profileRepository,
+    required this.now,
+  });
+
+  final String? ownerUserId;
+  final FocusRepository repository;
+  final ProfileRepository profileRepository;
+  final DateTime Function() now;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(authUserIdProvider) != ownerUserId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
+      });
+      return const SizedBox.shrink();
+    }
+    return FocusMonthPage(
+      repository: repository,
+      accountTimeZoneIds: () => profileRepository.watchProfile().map(
+        (profile) => profile.displayTimeZoneId,
+      ),
+      now: now,
+    );
+  }
+}
+
+class _BoardContent extends StatelessWidget {
+  const _BoardContent({
+    required this.displayTimeZoneId,
+    required this.now,
+    required this.repository,
+    required this.focusRepository,
+    required this.nationalFocusRepository,
+    required this.scheduleRepository,
+    required this.onOpenNationalFocus,
+    required this.onOpenPlan,
+    required this.onOpenFocusMonth,
+    required this.goals,
+    required this.metrics,
+    required this.accountFailed,
+    required this.metricsFailed,
+    required this.goalsFailed,
+    required this.onRetryProjection,
+  });
+
+  final String displayTimeZoneId;
+
+  /// Shared display clock: the board's "today" must be the same day the Plan
+  /// calendar starts on, so an injected clock fixes both surfaces at once.
+  final DateTime Function() now;
+  final TaskRepository repository;
+  final FocusRepository focusRepository;
+  final NationalFocusRepository nationalFocusRepository;
+  final ScheduleRepository scheduleRepository;
+  final VoidCallback onOpenNationalFocus;
+  final VoidCallback onOpenPlan;
+  final VoidCallback onOpenFocusMonth;
+  final List<Goal> goals;
+  final FocusDashboardMetrics? metrics;
+
+  /// 账号资料读取失败：时区退回统一兜底值，卡片里要说明这一点。
+  final bool accountFailed;
+
+  /// 近期投影读取失败。失败不能被当成"暂无数据"渲染；
+  /// 卡片给出可见说明和只读重试。
+  final bool metricsFailed;
+
+  /// 目标列表读取失败；同样不能静默显示成"没有置顶目标"。
+  final bool goalsFailed;
+  final VoidCallback onRetryProjection;
+
+  @override
+  Widget build(BuildContext context) {
+    final pinned = [
+      for (final goal in goals)
+        if (goal.isPinned) goal,
+    ];
+    final gutter = PactaSpacing.gutterFor(MediaQuery.sizeOf(context).width);
+    final header = PactaPageHeader(
+      title: '今天先做什么',
+      trailing: TextButton.icon(
+        onPressed: onOpenPlan,
+        icon: const Icon(Icons.event_note_outlined),
+        label: const Text('打开计划'),
+      ),
+    );
+    final primary = <Widget>[
+      _TodayArrangementsCard(
+        repository: scheduleRepository,
+        displayTimeZoneId: displayTimeZoneId,
+        now: now,
+        onOpenPlan: onOpenPlan,
+      ),
+      const SizedBox(height: 8),
+      _FocusReconciliationPrompt(
+        focusRepository: focusRepository,
+        taskRepository: repository,
+      ),
+      _FocusClockReviewPrompt(repository: focusRepository),
+      _FailureReviewPrompt(
+        repository: nationalFocusRepository,
+        displayTimeZoneId: displayTimeZoneId,
+      ),
+      const SizedBox(height: 8),
+      _PinnedGoalSummarySection(
+        goals: pinned,
+        onOpenPlan: onOpenPlan,
+        failed: goalsFailed,
+        onRetry: onRetryProjection,
+      ),
     ];
     final secondary = <Widget>[
       NationalFocusSummaryCard(
@@ -1370,58 +2411,279 @@ class _BoardContent extends StatelessWidget {
         onOpenTree: onOpenNationalFocus,
       ),
       const SizedBox(height: 12),
-      _RecentFocusActivityCard(metrics: metrics),
-      const SizedBox(height: 12),
-      CalendarAgendaCard(repository: calendarRepository),
+      _RecentFocusActivityCard(
+        metrics: metrics,
+        failed: metricsFailed,
+        accountFailed: accountFailed,
+        onRetry: onRetryProjection,
+        onOpenFocusMonth: onOpenFocusMonth,
+      ),
     ];
     return LayoutBuilder(
-      builder: (context, constraints) => ListView(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
-        children:
+      builder: (context, constraints) {
+        final twoColumn =
             constraints.maxWidth >= 960 &&
-                MediaQuery.textScalerOf(context).scale(1) < 1.6
-            ? [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: primary,
-                      ),
+            MediaQuery.textScalerOf(context).scale(1) < 1.6;
+        return ListView(
+          padding: EdgeInsets.fromLTRB(gutter, PactaSpacing.lg, gutter, 28),
+          children: [
+            // 页头横跨整个目的地宽度：宽屏两栏时尾部操作仍在页面右缘，
+            // 与计划/专注链/国策/我的保持同一条标题行。
+            header,
+            if (twoColumn)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: primary,
                     ),
-                    const SizedBox(width: 24),
-                    SizedBox(
-                      width: 320,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: secondary,
-                      ),
+                  ),
+                  const SizedBox(width: 24),
+                  SizedBox(
+                    width: 320,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: secondary,
                     ),
-                  ],
-                ),
-              ]
-            : [...primary, const SizedBox(height: 20), ...secondary],
-      ),
+                  ),
+                ],
+              )
+            else ...[
+              ...primary,
+              const SizedBox(height: 20),
+              ...secondary,
+            ],
+          ],
+        );
+      },
     );
   }
+}
 
-  Future<void> _createGoal(BuildContext context) async {
-    final draft = await _showGoalDialog(context);
-    if (draft != null) await repository.createGoal(draft);
+/// 看板今日安排：只读摘要，安排的管理动作全部在计划页。
+class _TodayArrangementsCard extends StatelessWidget {
+  const _TodayArrangementsCard({
+    required this.repository,
+    required this.displayTimeZoneId,
+    required this.now,
+    required this.onOpenPlan,
+  });
+
+  final ScheduleRepository repository;
+  final String displayTimeZoneId;
+  final DateTime Function() now;
+  final VoidCallback onOpenPlan;
+
+  @override
+  Widget build(BuildContext context) {
+    final today = scheduleToday(displayTimeZoneId, now: now());
+    final window = scheduleQueryWindow(today, displayTimeZoneId);
+    return StreamBuilder<List<Schedule>>(
+      stream: repository.watchSchedules(from: window.from, to: window.to),
+      builder: (context, snapshot) {
+        final todays = schedulesOnDay(
+          snapshot.data ?? const <Schedule>[],
+          today,
+          displayTimeZoneId,
+        );
+        return Card(
+          margin: EdgeInsets.zero,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '今天 · ${todays.length} 项安排',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    TextButton(onPressed: onOpenPlan, child: const Text('安排')),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                if (todays.isEmpty)
+                  Text(
+                    '今天还没有安排。',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  )
+                else
+                  for (final schedule in todays)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          PactaCheckCircle(
+                            value: schedule.isCompleted,
+                            onChanged: null,
+                            compact: true,
+                            semanticLabel: schedule.isCompleted ? '已完成' : '未完成',
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              schedule.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: schedule.isCompleted
+                                  ? const TextStyle(
+                                      decoration: TextDecoration.lineThrough,
+                                    )
+                                  : null,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            scheduleTimeLabel(schedule, displayTimeZoneId),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 置顶目标摘要：标题 + 下一项任务；无任务时显示空态，不伪造占位任务。
+class _PinnedGoalSummarySection extends StatelessWidget {
+  const _PinnedGoalSummarySection({
+    required this.goals,
+    required this.onOpenPlan,
+    required this.failed,
+    required this.onRetry,
+  });
+
+  final List<Goal> goals;
+  final VoidCallback onOpenPlan;
+
+  /// 目标列表读取失败时不能渲染成"还没有置顶目标"。
+  final bool failed;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '置顶目标',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            TextButton(onPressed: onOpenPlan, child: const Text('管理')),
+          ],
+        ),
+        if (failed)
+          _BoardReadFailure(message: '暂时不能读取目标列表。', onRetry: onRetry)
+        else if (goals.isEmpty)
+          Card(
+            margin: EdgeInsets.zero,
+            child: ListTile(
+              leading: const Icon(Icons.push_pin_outlined),
+              title: const Text('还没有置顶目标'),
+              subtitle: const Text('在计划里置顶多个目标并手动排序，这里只显示摘要与下一项任务。'),
+              trailing: TextButton(
+                onPressed: onOpenPlan,
+                child: const Text('去计划'),
+              ),
+            ),
+          )
+        else
+          for (final goal in goals)
+            Card(
+              margin: const EdgeInsets.only(top: 8),
+              child: ListTile(
+                leading: const Icon(Icons.push_pin, size: 20),
+                title: Text(
+                  goal.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(
+                  goal.nextTask == null
+                      ? '暂无任务'
+                      : '下一项：${goal.nextTask!.title}',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+      ],
+    );
+  }
+}
+
+/// 看板可读失败的最小呈现：说明 + 只读重试（只重新订阅，不写数据）。
+class _BoardReadFailure extends StatelessWidget {
+  const _BoardReadFailure({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, size: 20),
+          const SizedBox(width: 10),
+          Expanded(child: Text(message)),
+          const SizedBox(width: 8),
+          OutlinedButton(onPressed: onRetry, child: const Text('重试')),
+        ],
+      ),
+    );
   }
 }
 
 class _RecentFocusActivityCard extends StatelessWidget {
-  const _RecentFocusActivityCard({required this.metrics});
+  const _RecentFocusActivityCard({
+    required this.metrics,
+    required this.failed,
+    required this.accountFailed,
+    required this.onRetry,
+    required this.onOpenFocusMonth,
+  });
 
   final FocusDashboardMetrics? metrics;
+
+  /// 读取失败且没有可用值时，显示可见错误而不是一直转圈；重试只换订阅。
+  final bool failed;
+
+  /// 账号时区没有读到：数字仍按统一兜底时区显示，但必须说明来源。
+  final bool accountFailed;
+  final VoidCallback onRetry;
+  final VoidCallback onOpenFocusMonth;
 
   @override
   Widget build(BuildContext context) {
     final value = metrics;
     final hasRecentActivity =
         value?.recentActivity.any((day) => day.activeSeconds > 0) ?? false;
+    // The label promises a seven-day window; the lifetime total is a different
+    // number and must not be shown under it.
+    final recentSeconds =
+        value?.recentActivity.fold<int>(
+          0,
+          (sum, day) => sum + day.activeSeconds,
+        ) ??
+        0;
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -1429,17 +2691,45 @@ class _RecentFocusActivityCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('近期专注活动', style: Theme.of(context).textTheme.titleMedium),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '近期专注活动',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: onOpenFocusMonth,
+                  icon: const Icon(Icons.calendar_month_outlined),
+                  label: const Text('打开月历'),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
-            if (value == null)
+            if (accountFailed)
               const Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: Center(child: CircularProgressIndicator()),
-              )
+                padding: EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, size: 18),
+                    SizedBox(width: 8),
+                    Expanded(child: Text('暂时不能确认账号时区，以下按 UTC 显示。')),
+                  ],
+                ),
+              ),
+            if (value == null)
+              if (failed)
+                _BoardReadFailure(message: '暂时不能读取专注投影。', onRetry: onRetry)
+              else
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Center(child: CircularProgressIndicator()),
+                )
             else ...[
               Text(
                 '近 7 天 · 累计有效专注 '
-                '${_formatDuration(value.totalAcceptedFocusSeconds)}',
+                '${formatEffectiveDuration(recentSeconds)}',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
               if (value.hasPendingReview)
@@ -1502,7 +2792,7 @@ class _FocusActivityDayRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Semantics(
-        label: '$label，${_formatDuration(day.activeSeconds)}',
+        label: '$label，${formatEffectiveDuration(day.activeSeconds)}',
         child: LayoutBuilder(
           builder: (context, constraints) {
             final compact =
@@ -1521,7 +2811,7 @@ class _FocusActivityDayRow extends StatelessWidget {
                     runSpacing: 4,
                     children: [
                       Text(label),
-                      Text(_formatDuration(day.activeSeconds)),
+                      Text(formatEffectiveDuration(day.activeSeconds)),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -1537,7 +2827,7 @@ class _FocusActivityDayRow extends StatelessWidget {
                 SizedBox(
                   width: 68,
                   child: Text(
-                    _formatDuration(day.activeSeconds),
+                    formatEffectiveDuration(day.activeSeconds),
                     textAlign: TextAlign.end,
                   ),
                 ),
@@ -1550,103 +2840,6 @@ class _FocusActivityDayRow extends StatelessWidget {
   }
 }
 
-class _FocusTimeZonePickerDialog extends StatefulWidget {
-  const _FocusTimeZonePickerDialog({
-    required this.deviceTimeZoneId,
-    required this.selectedTimeZoneId,
-    required this.followsDeviceTimeZone,
-  });
-
-  final String deviceTimeZoneId;
-  final String selectedTimeZoneId;
-  final bool followsDeviceTimeZone;
-
-  @override
-  State<_FocusTimeZonePickerDialog> createState() =>
-      _FocusTimeZonePickerDialogState();
-}
-
-class _FocusTimeZonePickerDialogState
-    extends State<_FocusTimeZonePickerDialog> {
-  final _search = TextEditingController();
-  late final List<String> _timeZones = FocusTimeZones.identifiers.toList()
-    ..sort();
-
-  @override
-  void dispose() {
-    _search.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final query = _search.text.trim().toLowerCase();
-    final filtered = _timeZones
-        .where((zone) => zone.toLowerCase().contains(query))
-        .toList();
-    return AlertDialog(
-      title: const Text('时区'),
-      content: SizedBox(
-        width: 360,
-        height: 440,
-        child: Column(
-          children: [
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('跟随设备时区'),
-              subtitle: Text(widget.deviceTimeZoneId),
-              trailing: widget.followsDeviceTimeZone
-                  ? const Icon(Icons.check, semanticLabel: '当前选择')
-                  : null,
-              onTap: () => Navigator.pop(
-                context,
-                _FocusTimeZoneSettingsCardState._followDevice,
-              ),
-            ),
-            TextField(
-              controller: _search,
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
-                hintText: '搜索时区',
-              ),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: filtered.isEmpty
-                  ? const Center(child: Text('没有匹配的时区'))
-                  : ListView.builder(
-                      itemCount: filtered.length,
-                      itemBuilder: (context, index) {
-                        final zone = filtered[index];
-                        final selected =
-                            !widget.followsDeviceTimeZone &&
-                            zone == widget.selectedTimeZoneId;
-                        return ListTile(
-                          dense: true,
-                          selected: selected,
-                          title: Text(zone),
-                          trailing: selected
-                              ? const Icon(Icons.check, semanticLabel: '当前选择')
-                              : null,
-                          onTap: () => Navigator.pop(context, zone),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-      ],
-    );
-  }
-}
-
 class _GoalCard extends StatefulWidget {
   const _GoalCard({
     super.key,
@@ -1654,16 +2847,41 @@ class _GoalCard extends StatefulWidget {
     required this.goal,
     required this.focusProgressSecondsByTask,
     required this.pendingReviewTaskIds,
+    this.showPinControls = false,
+    this.canMoveUp = false,
+    this.canMoveDown = false,
+    this.onTogglePin,
+    this.onMoveUp,
+    this.onMoveDown,
   });
 
   final TaskRepository repository;
   final Goal goal;
+
+  /// 计划页显示置顶与手动排序控件；看板不再渲染完整目标卡。
+  final bool showPinControls;
+  final bool canMoveUp;
+  final bool canMoveDown;
+  final VoidCallback? onTogglePin;
+  final VoidCallback? onMoveUp;
+  final VoidCallback? onMoveDown;
   final Map<String, int>? focusProgressSecondsByTask;
   final Set<String> pendingReviewTaskIds;
 
   @override
   State<_GoalCard> createState() => _GoalCardState();
 }
+
+/// 目标卡头部：动作按钮各占 48 逻辑像素，标题剩余宽度不足时改为单独一行，
+/// 避免普通短标题被挤成两行、元信息碎成多段。用最大动作数判断，置顶前后
+/// 布局一致，不会因为多出上移/下移而突然换排版。
+const double _goalHeaderComfortableTitleWidth = 160;
+const double _goalHeaderActionSlotWidth = 48;
+const int _goalHeaderMaxActionCount = 6;
+
+bool _useStackedGoalHeader(double availableWidth) =>
+    availableWidth - _goalHeaderMaxActionCount * _goalHeaderActionSlotWidth <
+    _goalHeaderComfortableTitleWidth;
 
 class _GoalCardState extends State<_GoalCard> {
   var _tasksExpanded = true;
@@ -1702,148 +2920,162 @@ class _GoalCardState extends State<_GoalCard> {
         ? '已完成'
         : '进行中';
     final summary = '${goal.tasks.length} 项任务 · $status';
-    return Card(
-      margin: const EdgeInsets.only(top: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
+    // 标题块与动作按钮分开构造：窄屏时动作另起一行，宽屏才与标题并排，
+    // 这样普通短标题不会被多个图标挤成两行、元信息也不会碎成多段。
+    final header = Semantics(
+      key: ValueKey('goal-header-${goal.id}'),
+      container: true,
+      expanded: _tasksExpanded,
+      button: true,
+      value: _tasksExpanded ? '已展开' : '已折叠',
+      child: Tooltip(
+        message: _tasksExpanded ? '收起任务' : '展开任务',
+        child: InkWell(
+          onTap: () => setState(() => _tasksExpanded = !_tasksExpanded),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: Semantics(
-                    key: ValueKey('goal-header-${goal.id}'),
-                    container: true,
-                    expanded: _tasksExpanded,
-                    button: true,
-                    value: _tasksExpanded ? '已展开' : '已折叠',
-                    child: Tooltip(
-                      message: _tasksExpanded ? '收起任务' : '展开任务',
-                      child: InkWell(
-                        onTap: () =>
-                            setState(() => _tasksExpanded = !_tasksExpanded),
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(minHeight: 48),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      goal.title,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleMedium,
-                                    ),
-                                    if (goal.description.isNotEmpty)
-                                      Text(
-                                        goal.description,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall,
-                                      ),
-                                    Text(
-                                      summary,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodySmall
-                                          ?.copyWith(
-                                            color: Theme.of(context)
-                                                .colorScheme
-                                                .onSurfaceVariant,
-                                          ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              ExcludeSemantics(
-                                child: SizedBox(
-                                  width: 48,
-                                  height: 48,
-                                  child: Center(
-                                    child: Icon(
-                                      _tasksExpanded
-                                          ? Icons.expand_less
-                                          : Icons.expand_more,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        goal.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      if (goal.description.isNotEmpty)
+                        Text(
+                          goal.description,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall,
                         ),
+                      Text(
+                        summary,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ExcludeSemantics(
+                  child: SizedBox(
+                    width: 48,
+                    height: 48,
+                    child: Center(
+                      child: Icon(
+                        _tasksExpanded ? Icons.expand_less : Icons.expand_more,
                       ),
                     ),
                   ),
                 ),
-                Wrap(
-                  children: [
-                    IconButton(
-                      tooltip: '编辑目标',
-                      onPressed: () async {
-                        final draft = await _showGoalDialog(
-                          context,
-                          initial: goal,
-                        );
-                        if (draft != null) {
-                          await widget.repository.updateGoal(goal.id, draft);
-                        }
-                      },
-                      icon: const Icon(Icons.edit_outlined),
-                    ),
-                    IconButton(
-                      tooltip: '删除目标',
-                      onPressed: () => _confirmDeleteGoal(context),
-                      icon: const Icon(Icons.delete_outline),
-                    ),
-                  ],
-                ),
               ],
             ),
-            if (_tasksExpanded) ...[
-              if (goal.tasks.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 8),
-                  child: Text('暂无任务，先添加一个可执行的下一步。'),
-                )
-              else
-                for (final task in goal.tasks)
-                  _TaskTile(
-                    repository: widget.repository,
-                    task: widget.focusProgressSecondsByTask == null
-                        ? task
-                        : task.copyWith(
-                            focusProgressSeconds:
-                                widget.focusProgressSecondsByTask![task.id] ??
-                                0,
-                          ),
-                    hasPendingReview: widget.pendingReviewTaskIds.contains(
-                      task.id,
-                    ),
-                  ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: () async {
-                    final draft = await _showTaskDialog(context, goal: goal);
-                    if (draft != null) {
-                      await widget.repository.createTask(goal.id, draft);
-                    }
-                  },
-                  icon: const Icon(Icons.add_task),
-                  label: const Text('添加任务'),
+          ),
+        ),
+      ),
+    );
+    final actions = <Widget>[
+      IconButton(
+        tooltip: '编辑目标',
+        onPressed: () async {
+          final draft = await _showGoalDialog(context, initial: goal);
+          if (draft != null) {
+            await widget.repository.updateGoal(goal.id, draft);
+          }
+        },
+        icon: const Icon(Icons.edit_outlined),
+      ),
+      IconButton(
+        tooltip: '删除目标',
+        onPressed: () => _confirmDeleteGoal(context),
+        icon: const Icon(Icons.delete_outline),
+      ),
+      // 置顶与手动排序是次级管理动作，排在编辑/删除之后：
+      // 既有操作顺序（标题 → 编辑 → 删除）不变，鼠标与触摸入口一致。
+      if (widget.showPinControls)
+        IconButton(
+          tooltip: goal.isPinned ? '取消置顶' : '置顶目标',
+          onPressed: widget.onTogglePin,
+          icon: Icon(goal.isPinned ? Icons.push_pin : Icons.push_pin_outlined),
+        ),
+      if (widget.showPinControls && goal.isPinned) ...[
+        IconButton(
+          tooltip: '上移置顶目标',
+          onPressed: widget.canMoveUp ? widget.onMoveUp : null,
+          icon: const Icon(Icons.arrow_upward),
+        ),
+        IconButton(
+          tooltip: '下移置顶目标',
+          onPressed: widget.canMoveDown ? widget.onMoveDown : null,
+          icon: const Icon(Icons.arrow_downward),
+        ),
+      ],
+    ];
+    return Card(
+      margin: const EdgeInsets.only(top: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: LayoutBuilder(
+          builder: (context, constraints) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (_useStackedGoalHeader(constraints.maxWidth)) ...[
+                header,
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Wrap(children: actions),
                 ),
-              ),
+              ] else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: header),
+                    Wrap(children: actions),
+                  ],
+                ),
+              if (_tasksExpanded) ...[
+                if (goal.tasks.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: Text('暂无任务，先添加一个可执行的下一步。'),
+                  )
+                else
+                  for (final task in goal.tasks)
+                    _TaskTile(
+                      repository: widget.repository,
+                      task: widget.focusProgressSecondsByTask == null
+                          ? task
+                          : task.copyWith(
+                              focusProgressSeconds:
+                                  widget.focusProgressSecondsByTask![task.id] ??
+                                  0,
+                            ),
+                      hasPendingReview: widget.pendingReviewTaskIds.contains(
+                        task.id,
+                      ),
+                    ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () async {
+                      final draft = await _showTaskDialog(context, goal: goal);
+                      if (draft != null) {
+                        await widget.repository.createTask(goal.id, draft);
+                      }
+                    },
+                    icon: const Icon(Icons.add_task),
+                    label: const Text('添加任务'),
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -1872,23 +3104,31 @@ class _TaskTile extends ConsumerWidget {
         hasPendingReview ||
         deadline != null;
     final hasDescription = task.description.isNotEmpty;
+    final hasSubtitle = hasMeta || hasDescription;
     return ListTile(
       isThreeLine: hasMeta && hasDescription,
       contentPadding: EdgeInsets.zero,
-      leading: Checkbox(
+      titleAlignment: hasSubtitle
+          ? ListTileTitleAlignment.top
+          : ListTileTitleAlignment.center,
+      leading: PactaCheckCircle(
         value: task.isComplete,
-        onChanged: (value) {
-          if (value != null) {
-            repository.setTaskCompletion(task.id, isComplete: value);
-          }
-        },
+        semanticLabel: completionActionLabel(
+          task.title,
+          isCompleted: task.isComplete,
+        ),
+        onChanged: (value) =>
+            repository.setTaskCompletion(task.id, isComplete: value),
       ),
       title: Text(
         task.title,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: task.isComplete
-            ? const TextStyle(decoration: TextDecoration.lineThrough)
+            ? TextStyle(
+                decoration: TextDecoration.lineThrough,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              )
             : null,
       ),
       subtitle: !hasMeta && !hasDescription
@@ -1906,7 +3146,7 @@ class _TaskTile extends ConsumerWidget {
                         Text('${task.estimatedMinutes} 分钟'),
                       if (task.focusProgressSeconds > 0)
                         Text(
-                          '已专注 ${_formatDuration(task.focusProgressSeconds)}',
+                          '已专注 ${formatEffectiveDuration(task.focusProgressSeconds)}',
                         ),
                       if (hasPendingReview) const Text('待核对（争议部分暂不计入专注统计）'),
                       if (deadline != null) Text(deadline),
@@ -1921,85 +3161,95 @@ class _TaskTile extends ConsumerWidget {
                   ),
               ],
             ),
-      trailing: IconButton(
-        tooltip: '开始专注',
-        onPressed: () async {
-          final focusRepository = ref.read(focusRepositoryProvider);
-          final activeAppointment = await focusRepository
-              .getActiveAppointment();
-          if (!context.mounted) return;
-          if (activeAppointment != null) {
-            final goals = await repository.getGoals(includeDeleted: true);
-            if (!context.mounted) return;
-            await Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => AppointmentPreparationPage(
-                  appointment: activeAppointment,
-                  taskTitle:
-                      _findTaskTitle(goals, activeAppointment.taskId) ??
-                      '原预约任务',
-                ),
-              ),
-            );
-            return;
-          }
-          final activeSession = await focusRepository.getActiveSession();
-          if (!context.mounted) return;
-          if (activeSession != null) {
-            final goals = await repository.getGoals(includeDeleted: true);
-            if (!context.mounted) return;
-            await Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => FocusSessionPage(
-                  session: activeSession,
-                  taskTitle:
-                      _findTaskTitle(goals, activeSession.taskId) ?? '原任务',
-                ),
-              ),
-            );
-            return;
-          }
-          final mode = await focusRepository.getLastMode();
-          if (!context.mounted) return;
-          final result = await showDialog<Object>(
-            context: context,
-            builder: (_) => FocusSetupDialog(
-              task: task,
-              initialMode: _initialFocusModeFor(task.classification, mode),
-            ),
-          );
-          if (result is FocusSession && context.mounted) {
-            var taskTitle = task.title;
-            if (result.taskId != task.id) {
-              final goals = await repository.getGoals(includeDeleted: true);
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: '删除任务',
+            onPressed: () => _confirmDeleteTask(context, repository, task),
+            icon: const Icon(Icons.delete_outline),
+          ),
+          IconButton(
+            tooltip: '开始专注',
+            onPressed: () async {
+              final focusRepository = ref.read(focusRepositoryProvider);
+              final activeAppointment = await focusRepository
+                  .getActiveAppointment();
               if (!context.mounted) return;
-              taskTitle = _findTaskTitle(goals, result.taskId) ?? '原任务';
-            }
-            await Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) =>
-                    FocusSessionPage(session: result, taskTitle: taskTitle),
-              ),
-            );
-          }
-          if (result is AppointmentPreparation && context.mounted) {
-            var taskTitle = task.title;
-            if (result.taskId != task.id) {
-              final goals = await repository.getGoals(includeDeleted: true);
+              if (activeAppointment != null) {
+                final goals = await repository.getGoals(includeDeleted: true);
+                if (!context.mounted) return;
+                await Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => AppointmentPreparationPage(
+                      appointment: activeAppointment,
+                      taskTitle:
+                          _findTaskTitle(goals, activeAppointment.taskId) ??
+                          '原预约任务',
+                    ),
+                  ),
+                );
+                return;
+              }
+              final activeSession = await focusRepository.getActiveSession();
               if (!context.mounted) return;
-              taskTitle = _findTaskTitle(goals, result.taskId) ?? '原任务';
-            }
-            await Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => AppointmentPreparationPage(
-                  appointment: result,
-                  taskTitle: taskTitle,
+              if (activeSession != null) {
+                final goals = await repository.getGoals(includeDeleted: true);
+                if (!context.mounted) return;
+                await Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => FocusSessionPage(
+                      session: activeSession,
+                      taskTitle:
+                          _findTaskTitle(goals, activeSession.taskId) ?? '原任务',
+                    ),
+                  ),
+                );
+                return;
+              }
+              final mode = await focusRepository.getLastMode();
+              if (!context.mounted) return;
+              final result = await showDialog<Object>(
+                context: context,
+                builder: (_) => FocusSetupDialog(
+                  task: task,
+                  initialMode: _initialFocusModeFor(task.classification, mode),
                 ),
-              ),
-            );
-          }
-        },
-        icon: const Icon(Icons.play_arrow_rounded),
+              );
+              if (result is FocusSession && context.mounted) {
+                var taskTitle = task.title;
+                if (result.taskId != task.id) {
+                  final goals = await repository.getGoals(includeDeleted: true);
+                  if (!context.mounted) return;
+                  taskTitle = _findTaskTitle(goals, result.taskId) ?? '原任务';
+                }
+                await Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) =>
+                        FocusSessionPage(session: result, taskTitle: taskTitle),
+                  ),
+                );
+              }
+              if (result is AppointmentPreparation && context.mounted) {
+                var taskTitle = task.title;
+                if (result.taskId != task.id) {
+                  final goals = await repository.getGoals(includeDeleted: true);
+                  if (!context.mounted) return;
+                  taskTitle = _findTaskTitle(goals, result.taskId) ?? '原任务';
+                }
+                await Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => AppointmentPreparationPage(
+                      appointment: result,
+                      taskTitle: taskTitle,
+                    ),
+                  ),
+                );
+              }
+            },
+            icon: const Icon(Icons.play_arrow_rounded),
+          ),
+        ],
       ),
       onTap: () async {
         final draft = await _showTaskDialog(context, task: task);
@@ -2007,6 +3257,34 @@ class _TaskTile extends ConsumerWidget {
       },
     );
   }
+}
+
+Future<void> _confirmDeleteTask(
+  BuildContext context,
+  TaskRepository repository,
+  Task task,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('删除任务？'),
+      content: Text(
+        '“${task.title}”将从目标中移除，且不能恢复。'
+        '已安排到这条任务的日程仍然保留，历史会保留原任务名称并标记为已删除。',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('删除'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed == true) await repository.deleteTask(task.id);
 }
 
 Future<GoalDraft?> _showGoalDialog(BuildContext context, {Goal? initial}) {
@@ -2411,12 +3689,6 @@ String _formatDateTime(DateTime value) {
       '${twoDigits(value.hour)}:${twoDigits(value.minute)}';
 }
 
-String _formatDuration(int seconds) {
-  final minutes = seconds ~/ 60;
-  final remainingSeconds = seconds % 60;
-  return '$minutes分${remainingSeconds.toString().padLeft(2, '0')}秒';
-}
-
 class FocusChainPage extends ConsumerStatefulWidget {
   const FocusChainPage({super.key});
 
@@ -2430,21 +3702,25 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
   String? _projectionSignature;
   late Future<List<FocusChainRecord>> _chainRecordsFuture;
   late Future<AppointmentChainRecord> _appointmentChainRecordFuture;
-  late Future<AppointmentPreparation?> _activeAppointmentFuture;
+  late Stream<AppointmentPreparation?> _activeAppointmentStream;
+  late Future<List<PrecedentRule>> _precedentRulesFuture;
 
   @override
   void initState() {
     super.initState();
-    _activeAppointmentFuture = ref
+    _activeAppointmentStream = ref
         .read(focusRepositoryProvider)
-        .getActiveAppointment();
+        .watchActiveAppointment();
+    _precedentRulesFuture = ref
+        .read(focusRepositoryProvider)
+        .getPrecedentRules();
   }
 
   void _refreshActiveAppointment() {
     if (mounted) {
       setState(() {
         final repository = ref.read(focusRepositoryProvider);
-        _activeAppointmentFuture = repository.getActiveAppointment();
+        _activeAppointmentStream = repository.watchActiveAppointment();
         _appointmentChainRecordFuture = repository.getAppointmentChainRecord();
       });
     }
@@ -2489,202 +3765,194 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                       .firstOrNull;
             return Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 960),
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 20, 16, 28),
+                constraints: const BoxConstraints(
+                  maxWidth: PactaSpacing.maxContentWidth,
+                ),
+                child: Column(
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '专注链',
-                            style: Theme.of(context).textTheme.headlineSmall,
-                          ),
+                    Expanded(
+                      child: ListView(
+                        key: const ValueKey('focus-chain-list'),
+                        padding: PactaSpacing.pageInsets(
+                          context,
+                          top: PactaSpacing.lg,
+                          bottom: PactaSpacing.xs,
                         ),
-                        TextButton.icon(
-                          key: const ValueKey('focus-history-entry'),
-                          icon: const Icon(Icons.history, size: 20),
-                          label: const Text('历史'),
-                          onPressed: () => Navigator.of(context).push<void>(
-                            MaterialPageRoute<void>(
-                              builder: (_) => const FocusHistoryPage(),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      '选一个任务，开始本次专注。',
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    if (active != null) ...[
-                      const SizedBox(height: 16),
-                      Card(
-                        color: Theme.of(context).colorScheme.primaryContainer,
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              ListTile(
-                                contentPadding: EdgeInsets.zero,
-                                leading: const Icon(Icons.timer_outlined),
-                                title: const Text('已有进行中的专注'),
-                                subtitle: Text(
-                                  activeTask == null
-                                      ? '原任务'
-                                      : _taskDisplayTitle(activeTask),
+                        children: [
+                          PactaPageHeader(
+                            title: '专注链',
+                            trailing: TextButton.icon(
+                              key: const ValueKey('focus-history-entry'),
+                              style: TextButton.styleFrom(
+                                minimumSize: const Size(64, 48),
+                              ),
+                              icon: const Icon(Icons.history, size: 20),
+                              label: const Text('历史'),
+                              onPressed: () => Navigator.of(context).push<void>(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => const FocusHistoryPage(),
                                 ),
                               ),
-                              Wrap(
-                                alignment: WrapAlignment.end,
-                                children: [
-                                  FilledButton(
-                                    onPressed: () => _openSession(
-                                      active,
-                                      taskTitles[active.taskId] ?? '原任务',
+                            ),
+                          ),
+                          if (active != null)
+                            _FocusRecoveryStrip(
+                              icon: Icons.timer_outlined,
+                              title: '已有进行中的专注',
+                              subtitle: activeTask == null
+                                  ? '原任务'
+                                  : _taskDisplayTitle(activeTask),
+                              trailing: FilledButton(
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size(96, 48),
+                                ),
+                                onPressed: () => _openSession(
+                                  active,
+                                  taskTitles[active.taskId] ?? '原任务',
+                                ),
+                                child: const Text('返回专注'),
+                              ),
+                            ),
+                          StreamBuilder<AppointmentPreparation?>(
+                            key: const ValueKey('focus-active-appointment'),
+                            stream: _activeAppointmentStream,
+                            builder: (context, appointmentSnapshot) {
+                              final appointment = appointmentSnapshot.data;
+                              if (appointment == null) {
+                                return const SizedBox.shrink();
+                              }
+                              final title =
+                                  taskTitles[appointment.taskId] ?? '原预约任务';
+                              return _FocusRecoveryStrip(
+                                icon: Icons.event_available,
+                                title: '已有预约准备',
+                                subtitle: appointment.isPendingReview
+                                    ? '$title · 待核对'
+                                    : title,
+                                tone: _RecoveryStripTone.secondary,
+                                actions: [
+                                  OutlinedButton(
+                                    style: OutlinedButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                      minimumSize: const Size(0, 48),
                                     ),
-                                    child: const Text('返回专注'),
+                                    onPressed: () =>
+                                        _openAppointment(appointment, title),
+                                    child: const Text('返回准备'),
+                                  ),
+                                  FilledButton.tonal(
+                                    style: FilledButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                      minimumSize: const Size(0, 48),
+                                    ),
+                                    onPressed: () =>
+                                        _enterAppointment(appointment, title),
+                                    child: const Text('提前进入专注'),
+                                  ),
+                                  TextButton(
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                      minimumSize: const Size(0, 48),
+                                    ),
+                                    onPressed: () =>
+                                        _cancelAppointment(appointment),
+                                    child: const Text('取消预约'),
                                   ),
                                 ],
-                              ),
-                            ],
+                              );
+                            },
                           ),
-                        ),
-                      ),
-                    ],
-                    FutureBuilder<AppointmentPreparation?>(
-                      future: _activeAppointmentFuture,
-                      builder: (context, appointmentSnapshot) {
-                        final appointment = appointmentSnapshot.data;
-                        if (appointment == null) return const SizedBox.shrink();
-                        final title = taskTitles[appointment.taskId] ?? '原预约任务';
-                        return Card(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .secondaryContainer,
-                          child: Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  leading: const Icon(Icons.event_available),
-                                  title: const Text('已有预约准备'),
-                                  subtitle: Text(
-                                    appointment.isPendingReview
-                                        ? '$title · 待核对'
-                                        : title,
-                                  ),
-                                ),
-                                Wrap(
-                                  alignment: WrapAlignment.end,
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    OutlinedButton(
-                                      onPressed: () =>
-                                          _openAppointment(appointment, title),
-                                      child: const Text('返回准备'),
-                                    ),
-                                    FilledButton.tonal(
-                                      onPressed: () =>
-                                          _enterAppointment(appointment, title),
-                                      child: const Text('提前进入专注'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () =>
-                                          _cancelAppointment(appointment),
-                                      child: const Text('取消预约'),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
+                          const SizedBox(height: PactaSpacing.xs),
+                          FutureBuilder<List<FocusChainRecord>>(
+                            future: _chainRecordsFuture,
+                            builder: (context, recordSnapshot) {
+                              if (recordSnapshot.hasError) {
+                                return _recordReadError();
+                              }
+                              if (!recordSnapshot.hasData) {
+                                return const LinearProgressIndicator();
+                              }
+                              return FutureBuilder<AppointmentChainRecord>(
+                                future: _appointmentChainRecordFuture,
+                                builder: (context, appointmentSnapshot) {
+                                  if (appointmentSnapshot.hasError) {
+                                    return _recordReadError();
+                                  }
+                                  if (!appointmentSnapshot.hasData) {
+                                    return const LinearProgressIndicator();
+                                  }
+                                  return FocusChainOverview(
+                                    repository: signalsRepository,
+                                    records: recordSnapshot.data!,
+                                    appointmentRecord: appointmentSnapshot.data,
+                                    statistics: statistics,
+                                  );
+                                },
+                              );
+                            },
                           ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                    Wrap(
-                      spacing: 16,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          '开始一次专注',
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        Text(
-                          '可选任务 ${tasks.length} 个',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                              ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    FilledButton.icon(
-                      key: const ValueKey('focus-task-picker-entry'),
-                      onPressed: _openingTaskPicker ? null : _openTaskPicker,
-                      icon: const Icon(Icons.playlist_play),
-                      label: const Text('选择任务'),
-                    ),
-                    const SizedBox(height: 28),
-                    Text(
-                      '我的链',
-                      style: Theme.of(context).textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 12),
-                    FutureBuilder<List<FocusChainRecord>>(
-                      future: _chainRecordsFuture,
-                      builder: (context, recordSnapshot) {
-                        if (recordSnapshot.hasError) {
-                          return _recordReadError();
-                        }
-                        if (!recordSnapshot.hasData) {
-                          return const LinearProgressIndicator();
-                        }
-                        return FutureBuilder<AppointmentChainRecord>(
-                          future: _appointmentChainRecordFuture,
-                          builder: (context, appointmentSnapshot) {
-                            if (appointmentSnapshot.hasError) {
-                              return _recordReadError();
-                            }
-                            if (!appointmentSnapshot.hasData) {
-                              return const LinearProgressIndicator();
-                            }
-                            return FocusChainOverview(
-                              repository: signalsRepository,
-                              records: recordSnapshot.data!,
-                              appointmentRecord: appointmentSnapshot.data,
-                              statistics: statistics,
-                            );
-                          },
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      '累计与平均包含失败专注的有效时间，不含暂停。',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          const SizedBox(height: PactaSpacing.sm),
+                          _allowanceEntry(context),
+                        ],
                       ),
+                    ),
+                    _FocusStartBar(
+                      taskCount: tasks.length,
+                      busy: _openingTaskPicker,
+                      onPressed: _openTaskPicker,
                     ),
                   ],
                 ),
               ),
             );
           },
+        );
+      },
+    );
+  }
+
+  /// 下必为例入口：首屏只负责进入完整管理页。
+  ///
+  /// 整张卡只有一个点击目标（行本身），不再让行内按钮重复一次同样的动作。
+  Widget _allowanceEntry(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return FutureBuilder<List<PrecedentRule>>(
+      future: _precedentRulesFuture,
+      builder: (context, snapshot) {
+        final count = snapshot.data?.length;
+        final subtitle = snapshot.hasError
+            ? '读取失败，进入管理后可重试'
+            : count == null
+            ? '读取中…'
+            : '$count 条持续许可';
+        return Card(
+          key: const ValueKey('focus-allowance-entry'),
+          clipBehavior: Clip.antiAlias,
+          child: ListTile(
+            key: const ValueKey('focus-allowance-manage'),
+            contentPadding: const EdgeInsets.only(
+              left: PactaSpacing.lg,
+              right: PactaSpacing.sm,
+            ),
+            // 卡片标题保持 titleMedium；下方说明用 bodySmall，
+            // 层级由字号与前景色区分。
+            title: Text('下必为例', style: theme.textTheme.titleMedium),
+            subtitle: Text(
+              subtitle,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+            trailing: Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
+            onTap: _openPrecedentRules,
+          ),
         );
       },
     );
@@ -2837,11 +4105,204 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
     }
   }
 
+  Future<void> _openPrecedentRules() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(builder: (_) => const PrecedentRulesPage()),
+    );
+    if (!mounted) return;
+    setState(() {
+      _precedentRulesFuture = ref
+          .read(focusRepositoryProvider)
+          .getPrecedentRules();
+    });
+  }
+
   void _openSession(FocusSession session, String taskTitle) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) =>
             FocusSessionPage(session: session, taskTitle: taskTitle),
+      ),
+    );
+  }
+}
+
+enum _RecoveryStripTone { primary, secondary }
+
+/// Compact recovery strip for an unfinished session or a waiting appointment.
+class _FocusRecoveryStrip extends StatelessWidget {
+  const _FocusRecoveryStrip({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    this.trailing,
+    this.actions = const [],
+    this.tone = _RecoveryStripTone.primary,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Widget? trailing;
+  final List<Widget> actions;
+  final _RecoveryStripTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final primary = tone == _RecoveryStripTone.primary;
+    final background = primary
+        ? colors.primaryContainer
+        : colors.secondaryContainer;
+    final foreground = primary
+        ? colors.onPrimaryContainer
+        : colors.onSecondaryContainer;
+    return Container(
+      margin: const EdgeInsets.only(top: PactaSpacing.xs),
+      padding: const EdgeInsets.fromLTRB(
+        PactaSpacing.md,
+        PactaSpacing.sm,
+        PactaSpacing.sm,
+        PactaSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border(
+          left: BorderSide(
+            color: primary ? colors.primary : colors.secondary,
+            width: 3,
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 标题与任务名同处一行，窄屏可换行；恢复条不再额外增加整行高度。
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: PactaSpacing.sm,
+            runSpacing: PactaSpacing.xxs,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(icon, size: 20, color: foreground),
+                  const SizedBox(width: PactaSpacing.sm),
+                  Text(
+                    title,
+                    // 恢复条标题使用 titleSmall 与前景色；背景色区分恢复条与页面。
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: foreground,
+                    ),
+                  ),
+                ],
+              ),
+              Text(
+                subtitle,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: foreground.withValues(alpha: .85),
+                ),
+              ),
+              ?trailing,
+            ],
+          ),
+          if (actions.isNotEmpty) ...[
+            const SizedBox(height: PactaSpacing.xxs),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: PactaSpacing.xs,
+              runSpacing: PactaSpacing.xs,
+              children: actions,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Full 下必为例 manager, opened from the Focus Chain first screen.
+class PrecedentRulesPage extends StatelessWidget {
+  const PrecedentRulesPage({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('下必为例')),
+    body: ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      children: const [PrecedentRulesCard()],
+    ),
+  );
+}
+
+/// The pinned start action: choosing a task never requires scrolling away.
+class _FocusStartBar extends StatelessWidget {
+  const _FocusStartBar({
+    required this.taskCount,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final int taskCount;
+  final bool busy;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final surfaces = PactaSurfaces.of(context);
+    final gutter = PactaSpacing.gutterFor(MediaQuery.sizeOf(context).width);
+    // 定稿方案 A：全宽固定操作区，比页面与卡片各抬一档，顶部圆角 + 投影。
+    return Material(
+      color: surfaces.actionBar,
+      elevation: 3,
+      shadowColor: surfaces.actionBarShadow,
+      borderRadius: const BorderRadius.vertical(
+        top: Radius.circular(PactaSpacing.actionBarRadius),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          gutter,
+          PactaSpacing.sm,
+          gutter,
+          PactaSpacing.sm,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: PactaSpacing.sm,
+              runSpacing: PactaSpacing.xs,
+              children: [
+                // 操作区标题保持 titleMedium；主操作由下方 48dp 按钮承担。
+                Text('开始一次专注', style: theme.textTheme.titleMedium),
+                Text(
+                  '可选任务 $taskCount 个',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: PactaSpacing.xs),
+            FilledButton.icon(
+              key: const ValueKey('focus-task-picker-entry'),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+              ),
+              onPressed: busy ? null : onPressed,
+              icon: const Icon(Icons.playlist_play),
+              label: const Text('选择任务'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2932,7 +4393,7 @@ class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
                           title: Text(task.title),
                           subtitle: Text(
                             '目标：${entry.goal.title} · ${task.classification.label} · '
-                            '预计时长：$estimate · 已专注 ${_formatDuration(task.focusProgressSeconds)}',
+                            '预计时长：$estimate · 已专注 ${formatEffectiveDuration(task.focusProgressSeconds)}',
                           ),
                           onTap: () => _showSetup(task),
                           trailing: Tooltip(
@@ -3172,10 +4633,10 @@ class _FocusHistoryList extends StatelessWidget {
               title: Text(taskTitles[session.taskId] ?? '原任务'),
               subtitle: Text(
                 session.isFailed
-                    ? '失败 · ${_formatDuration(session.effectiveSeconds)}\n原因：${session.failureReason ?? '未填写'}'
+                    ? '失败 · ${formatEffectiveDuration(session.effectiveSeconds)}\n原因：${session.failureReason ?? '未填写'}'
                     : session.isEarlyCompleted
-                    ? '获准提前完成 · ${_formatDuration(session.effectiveSeconds)}\n依据：${session.completionRuleText ?? '未记录'}'
-                    : '正常完成 · ${_formatDuration(session.effectiveSeconds)}',
+                    ? '获准提前完成 · ${formatEffectiveDuration(session.effectiveSeconds)}\n依据：${session.completionRuleText ?? '未记录'}'
+                    : '正常完成 · ${formatEffectiveDuration(session.effectiveSeconds)}',
               ),
               trailing: Wrap(
                 children: [
@@ -3477,6 +4938,9 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
   final _durationFocus = flutter.FocusNode();
   late FocusChainMode _mode;
   late final TextEditingController _duration;
+  late final TextEditingController _preparation;
+  late int _preparationMinutes;
+  late bool _customPreparation;
   String? _error;
   bool _busy = false;
 
@@ -3486,12 +4950,16 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
     _durationFocus.addListener(_revealFocusedDuration);
     _mode = widget.initialMode;
     _duration = TextEditingController(text: '25');
+    _preparationMinutes = AppointmentPreparationDuration.defaultMinutes;
+    _customPreparation = false;
+    _preparation = TextEditingController(text: '$_preparationMinutes');
   }
 
   @override
   void dispose() {
     _durationFocus.dispose();
     _duration.dispose();
+    _preparation.dispose();
     super.dispose();
   }
 
@@ -3532,10 +5000,46 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
     }
   }
 
+  /// 本场准备时长；自定义非法时返回 null，由界面就地拒绝而不是截断。
+  Duration? _resolvedPreparation() {
+    if (!_customPreparation) {
+      return AppointmentPreparationDuration.validateMinutes(
+        _preparationMinutes,
+      );
+    }
+    final minutes = int.tryParse(_preparation.text.trim());
+    if (minutes == null) return null;
+    try {
+      return AppointmentPreparationDuration.validateMinutes(minutes);
+    } on ArgumentError {
+      return null;
+    }
+  }
+
+  String get _preparationButtonLabel {
+    final preparation = _resolvedPreparation();
+    if (preparation == null) return '开始准备（自定义）';
+    return '开始准备（${preparation.inMinutes}分钟）';
+  }
+
+  void _showPreparationError() {
+    setState(() => _error = AppointmentPreparationDuration.invalidMessage);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _errorKey.currentContext;
+      if (!mounted || context == null) return;
+      Scrollable.ensureVisible(context, alignment: 1);
+    });
+  }
+
   Future<void> _startAppointment() async {
     final minutes = int.tryParse(_duration.text.trim());
     if (minutes == null || minutes <= 0) {
       _showDurationError();
+      return;
+    }
+    final preparation = _resolvedPreparation();
+    if (preparation == null) {
+      _showPreparationError();
       return;
     }
     setState(() {
@@ -3554,6 +5058,7 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
             taskId: widget.task.id,
             mode: _mode,
             duration: Duration(minutes: minutes),
+            preparation: preparation,
           );
       if (mounted) Navigator.of(context).pop(appointment);
     } catch (error) {
@@ -3624,6 +5129,50 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: '时长（分钟）'),
               ),
+              const SizedBox(height: 14),
+              Text('预约准备时长', style: Theme.of(context).textTheme.labelLarge),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final minutes in AppointmentPreparationDuration.presets)
+                    ChoiceChip(
+                      label: Text('$minutes 分钟'),
+                      selected:
+                          !_customPreparation && _preparationMinutes == minutes,
+                      onSelected: _busy
+                          ? null
+                          : (_) => setState(() {
+                              _customPreparation = false;
+                              _preparationMinutes = minutes;
+                            }),
+                    ),
+                  ChoiceChip(
+                    label: const Text('自定义'),
+                    selected: _customPreparation,
+                    onSelected: _busy
+                        ? null
+                        : (_) => setState(() {
+                            _customPreparation = true;
+                            _preparation.text = '$_preparationMinutes';
+                          }),
+                  ),
+                ],
+              ),
+              if (_customPreparation) ...[
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _preparation,
+                  enabled: !_busy,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: '自定义准备时长（分钟）',
+                    helperText: '1–60 分钟；超出范围或非整数不会开始预约。',
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ],
               if (_error != null) ...[
                 const SizedBox(height: 10),
                 Text(
@@ -3639,7 +5188,7 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
                 const SizedBox(height: 10),
               ],
               const Text(
-                '触发信号和专注标志由你执行。可立即开始专注，或先准备15分钟；准备结束自动进入专注，无需再次执行专注标志。',
+                '触发信号和专注标志由你执行。可立即开始专注，或先按本场准备时长准备；准备结束自动进入专注，无需再次执行专注标志。',
               ),
             ],
           ),
@@ -3653,7 +5202,7 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
       ),
       OutlinedButton(
         onPressed: _busy ? null : _startAppointment,
-        child: const Text('开始准备（15分钟）'),
+        child: Text(_preparationButtonLabel),
       ),
       FilledButton(
         onPressed: _busy ? null : _start,
@@ -3972,11 +5521,17 @@ class _AppointmentPreparationPageState
   @override
   Widget build(BuildContext context) {
     final appointment = _current ?? widget.appointment;
-    final now = DateTime.now().toUtc();
+    final now = ref.watch(displayClockProvider)().toUtc();
+    final preparationSeconds = appointment.effectivePreparationSeconds;
     final remainingSeconds = appointment.isActive
-        ? appointment.endsAt.difference(now).inSeconds.clamp(0, 15 * 60)
+        ? appointment.endsAt
+              .difference(now)
+              .inSeconds
+              .clamp(0, preparationSeconds)
         : 0;
-    final progress = 1 - (remainingSeconds / (15 * 60));
+    final progress = preparationSeconds <= 0
+        ? 0.0
+        : 1 - (remainingSeconds / preparationSeconds);
     final tasks = _tasks;
     final canEdit = !_busy && !appointment.isPendingReview;
     final canProceed = !_busy;
@@ -3986,7 +5541,7 @@ class _AppointmentPreparationPageState
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 560),
           child: ListView(
-            padding: const EdgeInsets.all(20),
+            padding: PactaSpacing.pageInsets(context),
             children: [
               Text(
                 _taskTitle(appointment.taskId),
@@ -3998,7 +5553,7 @@ class _AppointmentPreparationPageState
                 appointment.isPendingReview
                     ? '两端对这份预约的配置存在分歧，自动交接已暂停，当前来源待核对。你仍可继续此预约或取消。'
                     : appointment.isActive
-                    ? '准备结束后自动进入专注，不需要再次点击或执行专注标志。'
+                    ? '本场准备 ${AppointmentPreparationDuration.describe(preparationSeconds)}，结束后自动进入专注，不需要再次点击或执行专注标志。'
                     : appointment.isFailed
                     ? '预约已取消，预约链当前记录已清零。'
                     : '预约已成功进入专注。',
@@ -4376,7 +5931,7 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
   @override
   Widget build(BuildContext context) {
     final session = _current ?? widget.session;
-    final now = DateTime.now().toUtc();
+    final now = ref.watch(displayClockProvider)().toUtc();
     final reference = session.isPaused ? (session.pausedAt ?? now) : now;
     final remaining = session.endsAt.difference(reference);
     final remainingSeconds = remaining.inSeconds.clamp(
@@ -4500,11 +6055,11 @@ class _MyPageState extends ConsumerState<MyPage> {
   Widget build(BuildContext context) {
     final repository = ref.watch(authRepositoryProvider);
     final calendarRepository = ref.watch(calendarRepositoryProvider);
+    final scheduleRepository = ref.watch(scheduleRepositoryProvider);
     return ListView(
-      padding: const EdgeInsets.all(20),
+      padding: PactaSpacing.pageInsets(context),
       children: [
-        Text('我的', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 16),
+        const PactaPageHeader(title: '我的'),
         MyProfileCard(
           repository: ref.watch(profileRepositoryProvider),
           overview: ref.watch(profileOverviewSourceProvider),
@@ -4547,17 +6102,16 @@ class _MyPageState extends ConsumerState<MyPage> {
                 builder: (_) => CalendarSourcesPage(
                   repository: calendarRepository,
                   isAndroid: Platform.isAndroid,
+                  scheduleRepository: scheduleRepository,
+                  displayTimeZoneIdLoader: () =>
+                      resolveAccountDisplayTimeZoneId(
+                        ref.read(profileRepositoryProvider),
+                      ),
                 ),
               ),
             ),
           ),
         ),
-        const SizedBox(height: 12),
-        _FocusTimeZoneSettingsCard(
-          repository: ref.watch(focusRepositoryProvider),
-        ),
-        const SizedBox(height: 12),
-        const PrecedentRulesCard(),
         const SizedBox(height: 12),
         Card(
           child: ListTile(
@@ -4598,7 +6152,14 @@ class _MyPageState extends ConsumerState<MyPage> {
         ),
         const SizedBox(height: 12),
         OutlinedButton.icon(
-          onPressed: () => ref.read(authRepositoryProvider).signOut(),
+          onPressed: () async {
+            final userId = ref.read(authRepositoryProvider).currentUserId;
+            // 明确登出才取消已登记的提醒；正常关应用保留未来项。
+            await ref
+                .read(focusNotificationServiceProvider)
+                .releaseUser(userId);
+            await ref.read(authRepositoryProvider).signOut();
+          },
           icon: const Icon(Icons.logout),
           label: const Text('退出登录'),
         ),
@@ -4609,88 +6170,6 @@ class _MyPageState extends ConsumerState<MyPage> {
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
-    );
-  }
-}
-
-class _FocusTimeZoneSettingsCard extends StatefulWidget {
-  const _FocusTimeZoneSettingsCard({required this.repository});
-
-  final FocusRepository repository;
-
-  @override
-  State<_FocusTimeZoneSettingsCard> createState() =>
-      _FocusTimeZoneSettingsCardState();
-}
-
-class _FocusTimeZoneSettingsCardState
-    extends State<_FocusTimeZoneSettingsCard> {
-  static const _followDevice = '__follow_device__';
-  late final Future<String> _deviceTimeZoneId;
-
-  @override
-  void initState() {
-    super.initState();
-    _deviceTimeZoneId = _loadDeviceTimeZoneId();
-  }
-
-  Future<String> _loadDeviceTimeZoneId() async {
-    final zone = await FlutterTimezone.getLocalTimezone();
-    if (!FocusTimeZones.contains(zone.identifier)) {
-      throw StateError('设备返回了无法识别的 IANA 时区。');
-    }
-    return zone.identifier;
-  }
-
-  @override
-  Widget build(BuildContext context) => FutureBuilder<String>(
-    future: _deviceTimeZoneId,
-    builder: (context, deviceSnapshot) {
-      final deviceZone = deviceSnapshot.data ?? 'Etc/UTC';
-      return StreamBuilder<FocusDashboardMetrics>(
-        stream: widget.repository.watchDashboardMetrics(
-          deviceTimeZoneId: deviceZone,
-        ),
-        builder: (context, snapshot) {
-          final current = snapshot.data;
-          return Card(
-            child: ListTile(
-              leading: const Icon(Icons.schedule_outlined),
-              title: const Text('显示时区'),
-              subtitle: Text(
-                current == null
-                    ? '加载中'
-                    : '${current.followsDeviceTimeZone ? '跟随设备' : '手动选择'} · '
-                          '${current.displayTimeZoneId}'
-                          '${deviceSnapshot.hasError ? '\n无法读取设备时区，默认使用 UTC，可手动选择。' : ''}',
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: current == null
-                  ? null
-                  : () => _chooseTimeZone(context, current, deviceZone),
-            ),
-          );
-        },
-      );
-    },
-  );
-
-  Future<void> _chooseTimeZone(
-    BuildContext context,
-    FocusDashboardMetrics current,
-    String deviceZone,
-  ) async {
-    final choice = await showDialog<String>(
-      context: context,
-      builder: (context) => _FocusTimeZonePickerDialog(
-        deviceTimeZoneId: deviceZone,
-        selectedTimeZoneId: current.displayTimeZoneId,
-        followsDeviceTimeZone: current.followsDeviceTimeZone,
-      ),
-    );
-    if (choice == null) return;
-    await widget.repository.setDisplayTimeZonePreference(
-      choice == _followDevice ? null : choice,
     );
   }
 }
@@ -5102,7 +6581,7 @@ void _openAiManualSync(BuildContext context, WidgetRef ref) {
         appBar: AppBar(title: const Text('手动同步')),
         body: SafeArea(
           child: ListView(
-            padding: const EdgeInsets.all(20),
+            padding: PactaSpacing.pageInsets(context),
             children: [
               const Text('选择上传本机，并在现有预览中核对整份覆盖范围。仅进入本页不会上传或下载。'),
               const SizedBox(height: 12),

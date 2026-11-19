@@ -48,9 +48,9 @@ begin
     perform public.save_cloud_business_snapshot(
       2,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', '3',
         'userId', current_setting('snapshot_test.owner_id'),
-        'tables', '{}'::jsonb
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb, 'local_goals', '[]'::jsonb, 'local_national_focus_failures', '[]'::jsonb)
       ),
       'device-a', 'Device A', now(), 0
     );
@@ -93,9 +93,9 @@ begin
     perform public.save_cloud_business_snapshot(
       0,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', '3',
         'userId', current_setting('snapshot_test.owner_id'),
-        'tables', '{}'::jsonb
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb, 'local_goals', '[]'::jsonb, 'local_national_focus_failures', '[]'::jsonb)
       ),
       'device-a', 'Device A', now(), 0,
       current_setting('snapshot_test.legacy_token')
@@ -115,9 +115,9 @@ begin
   perform public.save_cloud_business_snapshot(
     0,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', '3',
       'userId', current_setting('snapshot_test.owner_id'),
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb, 'local_goals', '[]'::jsonb, 'local_national_focus_failures', '[]'::jsonb)
     ),
     'device-a', 'Device A', now(), 0,
     current_legacy_result ->> 'token'
@@ -147,7 +147,7 @@ begin
       jsonb_build_object(
         'schemaVersion', 1,
         'userId', current_setting('snapshot_test.owner_id'),
-        'tables', '{}'::jsonb
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb)
       ),
       'direct-write', 'Direct write', now(), 0
     );
@@ -167,9 +167,9 @@ begin
     perform public.save_cloud_business_snapshot(
       0,
       jsonb_build_object(
-        'schemaVersion', 1,
+        'schemaVersion', '3',
         'userId', current_setting('snapshot_test.owner_id'),
-        'tables', '{}'::jsonb
+        'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb, 'local_goals', '[]'::jsonb, 'local_national_focus_failures', '[]'::jsonb)
       ),
       'device-a', 'Device A', now(), 0
     );
@@ -187,9 +187,9 @@ begin
   saved := public.save_cloud_business_snapshot(
     1,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', '3',
       'userId', current_setting('snapshot_test.owner_id'),
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb, 'local_goals', '[]'::jsonb, 'local_national_focus_failures', '[]'::jsonb)
     ),
     'device-b', 'Device B', now(), 0, null, 'Example Corp', 'Example Model'
   );
@@ -202,9 +202,9 @@ begin
   saved := public.save_cloud_business_snapshot(
     2,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', '3',
       'userId', current_setting('snapshot_test.owner_id'),
-      'tables', '{}'::jsonb
+      'tables', jsonb_build_object('local_schedules', '[]'::jsonb, 'local_schedule_recurrences', '[]'::jsonb, 'focus_appointments', '[]'::jsonb, 'local_goals', '[]'::jsonb, 'local_national_focus_failures', '[]'::jsonb)
     ),
     'old-client-device', 'Old client', now(), 0
   );
@@ -213,6 +213,161 @@ begin
   end if;
 end
 $device_metadata_and_old_client_compatibility$;
+
+-- 旧客户端（载荷版本 1）上传必须被独立错误码拒绝：版本 1 缺少后来新增的列，
+-- 静默接受等于让整份快照丢字段。
+do $outdated_schema_version$
+begin
+  begin
+    perform public.save_cloud_business_snapshot(
+      3,
+      jsonb_build_object(
+        'schemaVersion', 1,
+        'userId', current_setting('snapshot_test.owner_id'),
+        'tables', '{}'::jsonb
+      ),
+      'device-a', 'Device A', now(), 0
+    );
+    raise exception 'outdated_schema_version_was_accepted';
+  exception
+    when sqlstate 'PT426' then null;
+  end;
+  if (select revision from public.cloud_business_snapshots
+      where user_id = current_setting('snapshot_test.owner_id')::uuid) <> 3 then
+    raise exception 'rejected_upload_changed_revision';
+  end if;
+  -- 回滚证据：被拒绝的版本 1 上传没有改写已存载荷。历史是私有表，
+  -- 归档断言放在受信任会话里（见 $outdated_upload_left_no_history$）。
+  if (select payload ->> 'schemaVersion' from public.cloud_business_snapshots
+      where user_id = current_setting('snapshot_test.owner_id')::uuid) <> '3' then
+    raise exception 'rejected_outdated_upload_rewrote_the_payload';
+  end if;
+end
+$outdated_schema_version$;
+
+-- The upload ledger is a private table: the authenticated role has no
+-- privilege on it at all, and history is read-only for it. These denials are
+-- part of the contract, so they are asserted instead of granting anything.
+do $private_snapshot_tables_are_forbidden$
+declare
+  owner_id uuid := current_setting('snapshot_test.owner_id')::uuid;
+begin
+  begin
+    perform 1 from public.cloud_business_snapshot_upload_requests
+    where user_id = owner_id;
+    raise exception 'authenticated_could_read_the_upload_ledger';
+  exception
+    when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.cloud_business_snapshot_upload_requests (
+      user_id, request_id, revision, payload_fingerprint
+    ) values (owner_id, 'direct-ledger-write', 1, md5('{}'));
+    raise exception 'authenticated_could_write_the_upload_ledger';
+  exception
+    when insufficient_privilege then null;
+  end;
+  begin
+    insert into public.cloud_business_snapshot_history (
+      user_id, revision, payload, device_id, device_name, data_updated_at,
+      uploaded_at, row_count
+    ) values (
+      owner_id, 99,
+      jsonb_build_object(
+        'schemaVersion', '2',
+        'userId', owner_id::text,
+        'tables', '{}'::jsonb
+      ),
+      'direct-write', 'Direct write', now(), now(), 0
+    );
+    raise exception 'authenticated_could_write_snapshot_history';
+  exception
+    when insufficient_privilege then null;
+  end;
+end
+$private_snapshot_tables_are_forbidden$;
+
+-- Seeding and inspecting the private tables happens in the trusted session.
+-- The authenticated role is only used for the user-facing RPC calls and RLS
+-- assertions below.
+reset role;
+do $seed_committed_legacy_request$
+declare
+  legacy_payload jsonb := jsonb_build_object(
+    'schemaVersion', 1,
+    'userId', current_setting('snapshot_test.owner_id'),
+    'tables', '{}'::jsonb
+  );
+begin
+  insert into public.cloud_business_snapshot_history (
+    user_id, revision, payload, device_id, device_name, data_updated_at,
+    uploaded_at, row_count, request_id
+  ) values (
+    current_setting('snapshot_test.owner_id')::uuid, 4, legacy_payload,
+    'legacy-device', 'Legacy device', now(), now(), 0,
+    'committed-legacy-request'
+  );
+  insert into public.cloud_business_snapshot_upload_requests (
+    user_id, request_id, revision, payload_fingerprint
+  ) values (
+    current_setting('snapshot_test.owner_id')::uuid,
+    'committed-legacy-request', 4, md5(legacy_payload::text)
+  );
+end
+$seed_committed_legacy_request$;
+
+-- The rejected version 1 upload left no history row behind.
+do $outdated_upload_left_no_history$
+begin
+  if exists (
+    select 1 from public.cloud_business_snapshot_history
+    where user_id = current_setting('snapshot_test.owner_id')::uuid
+      and revision = 3
+      and payload ->> 'schemaVersion' = '1'
+  ) then
+    raise exception 'rejected_outdated_upload_was_archived';
+  end if;
+end
+$outdated_upload_left_no_history$;
+
+-- 升级前已经写入的请求（载荷当时就是版本 1）重试时按原请求身份只读返回：
+-- 不重复写入，也不改写它的载荷；请求台账的不变量保持不变。
+set local role authenticated;
+do $owner_claim_again$
+begin
+  perform set_config(
+    'request.jwt.claim.sub',
+    current_setting('snapshot_test.owner_id'),
+    true
+  );
+end
+$owner_claim_again$;
+
+do $committed_outdated_request_replay$
+declare
+  saved public.cloud_business_snapshots;
+  legacy_payload jsonb := jsonb_build_object(
+    'schemaVersion', 1,
+    'userId', current_setting('snapshot_test.owner_id'),
+    'tables', '{}'::jsonb
+  );
+begin
+  saved := public.save_cloud_business_snapshot(
+    3, legacy_payload, 'device-a', 'Device A', now(), 0,
+    null, null, null, 'committed-legacy-request'
+  );
+  if saved.revision <> 4 then
+    raise exception 'committed_legacy_replay_returned_other_revision';
+  end if;
+  if saved.payload ->> 'schemaVersion' <> '1' then
+    raise exception 'committed_legacy_replay_rewrote_its_payload';
+  end if;
+  if (select revision from public.cloud_business_snapshots
+      where user_id = current_setting('snapshot_test.owner_id')::uuid) <> 3 then
+    raise exception 'committed_legacy_replay_wrote_snapshot';
+  end if;
+end
+$committed_outdated_request_replay$;
 
 do $invalid_payload$
 begin

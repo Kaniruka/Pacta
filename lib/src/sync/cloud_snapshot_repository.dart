@@ -5,12 +5,36 @@ import 'package:drift/drift.dart' as drift;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+import '../focus/focus_time_zones.dart';
+import '../schedules/schedule_migration.dart';
+import '../schedules/schedule_models.dart';
+import '../schedules/schedule_repeat.dart';
 import '../tasks/task_database.dart';
 import '../tasks/task_models.dart';
 import 'legacy_cloud_snapshot.dart';
 import 'cloud_recovery_point.dart';
 import 'cloud_snapshot_history.dart';
 import 'cloud_sync_result.dart';
+
+/// 业务整份快照的载荷版本。
+///
+/// 版本 3 在完整 core 2（自有日程表 + 每场预约显式准备时长）之上加入重复日程：
+/// `local_schedule_recurrences` 规则表，以及每条实例的规则归属、稳定系列身份、
+/// 原始本地日期、规则时区与开始分钟、例外与墓碑标记。
+///
+/// 读取侧保留版本 1 与**完整**版本 2，用下方逐字段显式转换补默认值，而不是
+/// 依赖"未知字段容错"：
+/// * v1 → 现有安全转换（旧日历块提升为自有副本 + 预约边界），再补 v2/v3 列；
+/// * v2 → 空规则表 + 每条日程的重复列取空/非重复默认值，已存值一律保留；
+/// * v3 → 严格当前形状，缺表缺列整体拒绝。
+///
+/// 残缺的 pre-merge v2（缺日程表或任一预约缺 preparation_seconds）无论哪个
+/// 版本都整体拒绝，绝不静默合并另一个领域的数据。客户端只写当前版本，服务端
+/// 写入口同样只接受完整当前版本。
+const int cloudSnapshotSchemaVersion = 3;
+
+/// 完整第 2 版：日程表 + 每场预约准备时长的并集。
+const int _version2SnapshotSchemaVersion = 2;
 
 /// 同一上传请求被用于不同内容（服务端 PT422）。自动上传必须停止并检查，
 /// 不能把它改写成新请求。
@@ -32,6 +56,15 @@ class CloudUploadRequestIdUnsupported extends StateError {
 /// 并发版本校验失败（PT409）：云端已被推进，本次请求没有写入。
 class CloudUploadRevisionChanged extends StateError {
   CloudUploadRevisionChanged() : super('云端数据在确认期间发生变化，请重新查看并选择覆盖方向。');
+}
+
+/// 服务端只接受当前载荷版本（PT426）：本次上传完全没有写入。
+///
+/// 冻结的旧版本请求因此可以安全丢弃并按最新本机快照重发；同一 requestId
+/// 绝不能被改写内容重试。
+class CloudSnapshotSchemaOutdated extends StateError {
+  CloudSnapshotSchemaOutdated()
+    : super('该上传请求使用旧版云端载荷格式，本次没有写入；请更新 Pacta 后重新同步。');
 }
 
 /// 上传在真正发出前被取消（关闭开关、切换账号、恢复备份）。
@@ -308,6 +341,7 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
       if (error.code == 'PT409') throw CloudUploadRevisionChanged();
       if (error.code == 'PT422') throw CloudUploadRequestConflict();
       if (error.code == 'PT425') throw CloudUploadRequestEvicted();
+      if (error.code == 'PT426') throw CloudSnapshotSchemaOutdated();
       if (error.code == '42501') {
         throw StateError('当前用户无法同步，请检查登录或停用状态。');
       }
@@ -779,6 +813,20 @@ class CloudSnapshotRepository {
   /// exists; otherwise the restored source remains unselected.
   static const _calendarSourceExcluded = {'local_calendar_id', 'is_selected'};
 
+  /// Legacy envelope version still accepted on read.
+  ///
+  /// A version 1 payload (from an older client) is accepted only through an
+  /// explicit, validated conversion: documented missing columns are filled from
+  /// the stored values and its calendar blocks are promoted into owned schedule
+  /// copies before anything local is touched. Current writes always use
+  /// [cloudSnapshotSchemaVersion].
+  static const _legacySnapshotSchemaVersion = 1;
+
+  /// Complete core version 2 (owned schedules + preparation seconds).
+  ///
+  /// Still accepted on read through the explicit goal-pin conversion below.
+  /// Any half-missing version 2 payload is rejected atomically instead.
+
   /// Keep this table list explicit. It excludes per-device preferences,
   /// lifecycle state, device identity, and the legacy upload queue.
   static const _businessTables = <String>[
@@ -799,6 +847,8 @@ class CloudSnapshotRepository {
     'focus_sync_sources',
     'local_calendar_sources',
     'local_calendar_blocks',
+    'local_schedules',
+    'local_schedule_recurrences',
   ];
 
   Future<CloudSnapshotMetadata?> inspectCloud() =>
@@ -1125,32 +1175,82 @@ class CloudSnapshotRepository {
           {for (final column in columns) column: _jsonValue(row.data[column])},
       ];
     }
-    return {'schemaVersion': 1, 'userId': userId, 'tables': tables};
+    return {
+      'schemaVersion': cloudSnapshotSchemaVersion,
+      'userId': userId,
+      'tables': tables,
+    };
   }
 
   Future<Map<String, List<Map<String, Object?>>>> _validatePayload(
     Map<String, dynamic> payload,
   ) async {
-    if (payload['schemaVersion'] != 1 || payload['userId'] != userId) {
+    final schemaVersion = payload['schemaVersion'];
+    final isLegacy = schemaVersion == _legacySnapshotSchemaVersion;
+    final isVersion2 = schemaVersion == _version2SnapshotSchemaVersion;
+    if (!isLegacy &&
+        !isVersion2 &&
+        schemaVersion != cloudSnapshotSchemaVersion) {
+      throw StateError('云端快照版本不受支持：$schemaVersion。');
+    }
+    // 版本 1 与完整的版本 2 都要按显式转换补上重复日程领域；版本 3 必须是
+    // 当前完整形状，任何缺失都由后面的严格列校验整体拒绝。
+    final preRecurrence = isLegacy || isVersion2;
+    if (payload['userId'] != userId) {
       throw StateError('Snapshot version or user identity is invalid.');
     }
     final sourceTables = payload['tables'];
     final rawTables = sourceTables is Map<String, dynamic>
         ? Map<String, dynamic>.from(sourceTables)
         : sourceTables;
-    if (payload['schemaVersion'] == 1 && rawTables is Map<String, dynamic>) {
+    if (rawTables is! Map<String, dynamic>) {
+      throw StateError('Snapshot table set is invalid.');
+    }
+    // Version 1 payloads predate the chain-signal table as well; the missing
+    // table means "no signals yet", not a malformed snapshot.
+    if (isLegacy) {
       rawTables.putIfAbsent('chain_signals', () => <dynamic>[]);
     }
-    if (rawTables is! Map<String, dynamic> ||
-        rawTables.keys.length != _businessTables.length ||
-        !_businessTables.every(rawTables.containsKey)) {
+    // 完整 core 2 是两个票据的并集，所以任何一半缺失的 v2 都是合并前生成的
+    // 残缺载荷：整体拒绝（在任何本地行被读写之前），绝不静默丢弃另一方数据。
+    // 版本 3 是它的超集，同样必须携带这两个领域。
+    if (!isLegacy) {
+      if (rawTables['local_schedules'] is! List) {
+        throw StateError('版本 2 及以后快照缺少日程表，已整体拒绝；请先升级本机再上传。');
+      }
+      final appointmentRows = rawTables['focus_appointments'];
+      if (appointmentRows is List) {
+        for (final row in appointmentRows) {
+          if (row is Map && !row.containsKey('preparation_seconds')) {
+            throw StateError('版本 2 及以后快照缺少预约准备时长，已整体拒绝；请先升级本机再上传。');
+          }
+        }
+      }
+      // 完整核心 2 若已经带上后来的列（例如目标置顶），这些列属于已知列：
+      // 迁移只补齐缺失的默认值，已存值原样保留，不整体拒绝（见集成契约）。
+    }
+    if (preRecurrence) {
+      // v1/v2 没有规则表：显式转换成一个空集合，表示"这个账号还没有重复规则"，
+      // 而不是把缺失当成非法载荷。
+      rawTables.putIfAbsent('local_schedule_recurrences', () => <dynamic>[]);
+    } else if (rawTables['local_schedule_recurrences'] is! List) {
+      throw StateError('版本 3 快照缺少重复规则表，已整体拒绝；请先升级本机再上传。');
+    }
+    final expectedTables = isLegacy
+        ? [
+            for (final table in _businessTables)
+              if (table != 'local_schedules') table,
+          ]
+        : _businessTables;
+    if (rawTables.keys.length != expectedTables.length ||
+        !expectedTables.every(rawTables.containsKey)) {
       throw StateError('Snapshot table set is invalid.');
     }
     final registeredTables = database.allTables
         .map((table) => table.actualTableName)
         .toSet();
     final result = <String, List<Map<String, Object?>>>{};
-    for (final table in _businessTables) {
+    for (final table in expectedTables) {
       if (!registeredTables.contains(table)) {
         throw StateError('Snapshot table is not registered in Drift: $table');
       }
@@ -1170,17 +1270,13 @@ class CloudSnapshotRepository {
         if (item is! Map<String, dynamic>) {
           throw StateError('Invalid columns or user ownership in $table.');
         }
-        final missingLegacyDescription =
-            payload['schemaVersion'] == 1 &&
-            const {'local_goals', 'local_tasks'}.contains(table) &&
-            expectedColumns.contains('description') &&
-            !item.containsKey('description') &&
-            item.keys.length == expectedColumns.length - 1 &&
-            expectedColumns
-                .where((column) => column != 'description')
-                .every(item.containsKey);
-        final sourceRow = missingLegacyDescription
-            ? <String, dynamic>{...item, 'description': ''}
+        final sourceRow = preRecurrence
+            ? _withOlderVersionDefaults(
+                table,
+                item,
+                expectedColumns,
+                isLegacy: isLegacy,
+              )
             : item;
         if (sourceRow.keys.length != expectedColumns.length ||
             !expectedColumns.every(sourceRow.containsKey) ||
@@ -1209,9 +1305,163 @@ class CloudSnapshotRepository {
       }
       result[table] = rows;
     }
+    if (isLegacy) {
+      // Explicit legacy read: promote the old calendar-block projection into
+      // owned schedule copies inside a throwaway payload copy. The conversion
+      // happens before any local row is touched, so a rejected payload leaves
+      // the device exactly as it was.
+      result['local_schedules'] = await _promotedScheduleRows(result);
+    }
     await _validateReferences(result);
     return result;
   }
+
+  /// 旧版本的载荷缺少后来新增的列；只补这里列出的默认值，
+  /// 其余缺列、未知列、类型错误与用户归属仍按严格校验拒绝。
+  ///
+  /// 版本 1：日程表整体缺席（由旧日历副本提升），另缺描述与预约准备时长。
+  /// 版本 2：完整核心 2，只缺目标置顶标记与排序位。
+  static const _legacySnapshotColumnDefaults = <String, Map<String, Object?>>{
+    'local_goals': {'description': '', 'is_pinned': 0, 'sort_order': null},
+    'local_tasks': {'description': ''},
+    'focus_appointments': {'preparation_seconds': null},
+  };
+
+  /// 重复领域在 v1/v2 中不存在时的显式默认值。
+  ///
+  /// 只补缺失键：已存值（包括人为写入的非空值）一律保留，随后仍要过完整的
+  /// 类型与引用校验。v3 不走这条路径，缺列即拒绝。
+  static const _recurrenceColumnDefaults = <String, Object?>{
+    'recurrence_id': null,
+    'recurrence_series_id': null,
+    'recurrence_date': null,
+    'recurrence_time_zone_id': null,
+    'recurrence_start_minutes': null,
+    'is_recurrence_exception': 0,
+    'is_recurrence_cancelled': 0,
+  };
+
+  /// 07 的目标置顶与手动排序位同样晚于完整 core 2：v1/v2 缺列时补
+  /// "未置顶、无排序位"，已存值原样保留。
+  static const _goalPinColumnDefaults = <String, Object?>{
+    'is_pinned': 0,
+    'sort_order': null,
+  };
+
+  Map<String, dynamic> _withOlderVersionDefaults(
+    String table,
+    Map<String, dynamic> row,
+    Set<String> expectedColumns, {
+    required bool isLegacy,
+  }) {
+    final defaults = <String, Object?>{
+      if (isLegacy) ...?_legacySnapshotColumnDefaults[table],
+      // ticket 11：回顾字段晚于完整的 core 2。v1/v2 载荷缺这一列都表示未回顾，
+      // 已写入的值原样保留（只补缺失键），随后仍要过完整类型校验。
+      if (table == 'local_national_focus_failures') 'reviewed_at': null,
+      // ticket 07：置顶与排序位同样晚于 core 2。
+      if (table == 'local_goals') ..._goalPinColumnDefaults,
+      if (table == 'local_schedules') ..._recurrenceColumnDefaults,
+    };
+    if (defaults.isEmpty) return row;
+    final additions = <String, dynamic>{
+      for (final entry in defaults.entries)
+        if (expectedColumns.contains(entry.key) && !row.containsKey(entry.key))
+          entry.key: entry.value,
+    };
+    if (additions.isEmpty) return row;
+    return <String, dynamic>{...row, ...additions};
+  }
+
+  /// Converts the calendar blocks of a version 1 payload into owned schedule
+  /// rows, keeping every source marker for later import deduplication.
+  Future<List<Map<String, Object?>>> _promotedScheduleRows(
+    Map<String, List<Map<String, Object?>>> tables,
+  ) async {
+    final sourceNames = {
+      for (final row in tables['local_calendar_sources']!)
+        if (row['source_id'] is String && row['display_name'] is String)
+          row['source_id'] as String: row['display_name'] as String,
+    };
+    final blocks = <LegacyCalendarBlockProjection>[];
+    DateTime? migratedAt;
+    for (final row in tables['local_calendar_blocks']!) {
+      final startsAt = _epochToDateTime(row['starts_at']);
+      final endsAt = _epochToDateTime(row['ends_at']);
+      final updatedAt = _epochToDateTime(row['updated_at']);
+      if (startsAt == null || endsAt == null || updatedAt == null) {
+        throw StateError('旧版日历块缺少有效时间，无法转换日程。');
+      }
+      blocks.add(
+        LegacyCalendarBlockProjection(
+          sourceId: row['source_id'] as String,
+          sourceEventId: row['source_event_id'] as String,
+          occurrenceId: row['occurrence_id'] as String,
+          eventIdentity: row['event_identity'] as String,
+          title: row['title'] as String,
+          startsAt: startsAt,
+          endsAt: endsAt,
+          allDay: row['all_day'] == 1,
+          allDayStartDate: row['all_day_start_date'] as String?,
+          allDayEndDateExclusive: row['all_day_end_date_exclusive'] as String?,
+        ),
+      );
+      if (migratedAt == null || updatedAt.isAfter(migratedAt)) {
+        migratedAt = updatedAt;
+      }
+    }
+    final promoted = projectLegacyCalendarBlocks(
+      blocks,
+      migratedAt: migratedAt ?? DateTime.utc(1970),
+      sourceNames: sourceNames,
+    );
+    final columns = (await _tableColumns('local_schedules')).toSet();
+    return [
+      for (final schedule in promoted) _promotedScheduleRow(schedule, columns),
+    ];
+  }
+
+  Map<String, Object?> _promotedScheduleRow(
+    PromotedSchedule schedule,
+    Set<String> columns,
+  ) {
+    final row = <String, Object?>{
+      'user_id': userId,
+      'id': schedule.id,
+      'title': schedule.title,
+      'notes': '',
+      'starts_at': _epochSeconds(schedule.startsAt),
+      'ends_at': _epochSeconds(schedule.endsAt),
+      'all_day': schedule.allDay ? 1 : 0,
+      'all_day_start_date': schedule.allDayStartDate,
+      'all_day_end_date_exclusive': schedule.allDayEndDateExclusive,
+      'is_completed': 0,
+      'completed_at': null,
+      'task_id': null,
+      'reminder_minutes_before': null,
+      'origin': ScheduleOrigin.legacyCalendarBlock.storageValue,
+      'source_ids': jsonEncode(schedule.sourceIds),
+      'source_names': jsonEncode(schedule.sourceNames),
+      'source_event_id': schedule.sourceEventId,
+      'occurrence_id': schedule.occurrenceId,
+      'event_identity': schedule.eventIdentity,
+      // 旧日历块提升出来的副本不是重复日程，也没有例外或墓碑。
+      ..._recurrenceColumnDefaults,
+      'created_at': _epochSeconds(schedule.createdAt),
+      'updated_at': _epochSeconds(schedule.updatedAt),
+    };
+    if (row.keys.length != columns.length || !columns.every(row.containsKey)) {
+      throw StateError('转换出的日程字段与本机日程表不一致。');
+    }
+    return row;
+  }
+
+  int _epochSeconds(DateTime value) =>
+      value.toUtc().millisecondsSinceEpoch ~/ 1000;
+
+  DateTime? _epochToDateTime(Object? value) => value is int
+      ? DateTime.fromMillisecondsSinceEpoch(value * 1000, isUtc: true)
+      : null;
 
   Future<Map<String, Map<String, Object?>>> _tableColumnInfo(
     String table,
@@ -1326,6 +1576,234 @@ class CloudSnapshotRepository {
         'calendar source reference',
       );
     }
+    final recurrenceIds = <Object?>{
+      for (final row in tables['local_schedule_recurrences']!) row['id'],
+    };
+    final ruleZones = <Object?, Object?>{
+      for (final row in tables['local_schedule_recurrences']!)
+        row['id']: row['time_zone_id'],
+    };
+    // 稳定身份（系列 + 原始发生日期）在一份载荷里必须唯一：同一期既是活实例
+    // 又是墓碑会同时取消并展示它，恢复后无法解释。
+    final occurrences = <String>{};
+    for (final row in tables['local_schedule_recurrences']!) {
+      final frequency = row['frequency'];
+      final weekly = frequency == 'weekly';
+      requireReference(
+        frequency == 'daily' || weekly,
+        'Schedule recurrence frequency',
+      );
+      final weekdays = _decodeWeekdays(row['weekdays']);
+      requireReference(weekdays != null, 'Schedule recurrence weekdays');
+      requireReference(
+        weekly ? weekdays!.isNotEmpty : weekdays!.isEmpty,
+        'Schedule recurrence weekday set',
+      );
+      final firstDate = row['first_date'];
+      requireReference(
+        _isCalendarDate(firstDate),
+        'Schedule recurrence first date',
+      );
+      final endDate = row['end_date'];
+      requireReference(
+        endDate == null ||
+            (_isCalendarDate(endDate) &&
+                (endDate as String).compareTo(firstDate as String) >= 0),
+        'Schedule recurrence end date',
+      );
+      final zone = row['time_zone_id'];
+      // 只接受客户端真正能展开的 IANA 时区：Mars/Olympus 这类字符串会让
+      // getRecurrenceRules 在恢复后直接抛错，必须在替换本机数据之前整体拒绝。
+      requireReference(
+        zone is String && _isSupportedTimeZone(zone),
+        'Schedule recurrence time zone',
+      );
+      final shiftDays = row['shift_days'];
+      requireReference(
+        shiftDays is int && shiftDays.abs() <= maxRecurrenceShiftDays,
+        'Schedule recurrence shift',
+      );
+      final ruleTitle = row['title'];
+      requireReference(
+        ruleTitle is String && ruleTitle.trim().isNotEmpty,
+        'Schedule recurrence title',
+      );
+      requireReference(row['notes'] is String, 'Schedule recurrence notes');
+      final ruleTaskId = row['task_id'];
+      requireReference(
+        ruleTaskId == null || taskIds.contains(ruleTaskId),
+        'Schedule recurrence Task reference',
+      );
+      // 规则模板的提醒偏移与普通实例共用同一契约：null 或 0..10080 分钟。
+      // 类型（小数/字符串）与缺键已由 SQLite 列类型和严格列集合提前拒绝；
+      // 这里补上范围，避免越界值在恢复后随懒展开扩散到实例。
+      final ruleReminder = row['reminder_minutes_before'];
+      if (ruleReminder != null) {
+        requireReference(
+          ruleReminder is int &&
+              ruleReminder >= 0 &&
+              ruleReminder <= maxScheduleReminderMinutesBefore,
+          'Schedule recurrence reminder offset',
+        );
+      }
+      final allDay = row['all_day'];
+      requireReference(
+        allDay == 0 || allDay == 1,
+        'Schedule recurrence all-day',
+      );
+      final startMinutes = row['start_minutes_of_day'];
+      final duration = row['duration_minutes'];
+      final daySpan = row['day_span'];
+      if (allDay == 1) {
+        requireReference(
+          daySpan is int && daySpan >= 1,
+          'Schedule recurrence day span',
+        );
+      } else {
+        requireReference(
+          startMinutes is int && startMinutes >= 0 && startMinutes < 24 * 60,
+          'Schedule recurrence start minute',
+        );
+        requireReference(
+          duration is int && duration >= 1,
+          'Schedule recurrence duration',
+        );
+      }
+    }
+    for (final row in tables['local_schedules']!) {
+      final taskId = row['task_id'];
+      if (taskId != null) {
+        requireReference(taskIds.contains(taskId), 'Schedule Task reference');
+      }
+      final title = row['title'];
+      requireReference(
+        title is String && title.trim().isNotEmpty,
+        'Schedule title',
+      );
+      final startsAt = row['starts_at'];
+      final endsAt = row['ends_at'];
+      requireReference(
+        startsAt is int && endsAt is int && endsAt > startsAt,
+        'Schedule time range',
+      );
+      if (row['all_day'] == 1) {
+        final startDate = row['all_day_start_date'];
+        final endDate = row['all_day_end_date_exclusive'];
+        requireReference(
+          startDate is String &&
+              endDate is String &&
+              endDate.compareTo(startDate) > 0,
+          'Schedule all-day range',
+        );
+      }
+      final reminder = row['reminder_minutes_before'];
+      if (reminder != null) {
+        requireReference(
+          reminder is int && reminder >= 0 && reminder <= 7 * 24 * 60,
+          'Schedule reminder offset',
+        );
+      }
+      final origin = row['origin'];
+      requireReference(
+        origin is String &&
+            ScheduleOrigin.values.any((known) => known.storageValue == origin),
+        'Schedule origin',
+      );
+      final recurrenceId = row['recurrence_id'];
+      final exception = row['is_recurrence_exception'];
+      final cancelled = row['is_recurrence_cancelled'];
+      requireReference(
+        (exception == 0 || exception == 1) &&
+            (cancelled == 0 || cancelled == 1),
+        'Schedule recurrence flags',
+      );
+      if (recurrenceId == null) {
+        // 非重复日程不能带重复领域的一半字段：宁可整体拒绝，也不接受
+        // 归属不明、无法安全展开的实例。
+        requireReference(
+          row['recurrence_series_id'] == null &&
+              row['recurrence_date'] == null &&
+              row['recurrence_time_zone_id'] == null &&
+              row['recurrence_start_minutes'] == null &&
+              exception == 0 &&
+              cancelled == 0,
+          'Schedule recurrence linkage',
+        );
+        continue;
+      }
+      requireReference(recurrenceIds.contains(recurrenceId), 'recurrence rule');
+      requireReference(
+        row['recurrence_series_id'] is String &&
+            (row['recurrence_series_id'] as String).trim().isNotEmpty,
+        'Schedule recurrence series identity',
+      );
+      requireReference(
+        _isCalendarDate(row['recurrence_date']),
+        'Schedule recurrence date',
+      );
+      final instanceZone = row['recurrence_time_zone_id'];
+      requireReference(
+        instanceZone is String &&
+            _isSupportedTimeZone(instanceZone) &&
+            instanceZone == ruleZones[recurrenceId],
+        'Schedule recurrence instance zone',
+      );
+      // 结构性键必须逐字段读取：字符串插值里的 `$row[...]` 只会插入整张
+      // Map，再拼上字面方括号，不同 id 的重复身份因此逃过校验。
+      final seriesKey = row['recurrence_series_id'];
+      final identityKey = row['recurrence_date'];
+      requireReference(
+        occurrences.add('$seriesKey@$identityKey'),
+        'Schedule recurrence identity',
+      );
+      final startMinutes = row['recurrence_start_minutes'];
+      requireReference(
+        startMinutes == null ||
+            (startMinutes is int &&
+                startMinutes >= 0 &&
+                startMinutes < 24 * 60),
+        'Schedule recurrence instance start minute',
+      );
+    }
+  }
+
+  bool _isCalendarDate(Object? value) {
+    if (value is! String) return false;
+    try {
+      parseRecurrenceDate(value, '日期');
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
+  bool _isSupportedTimeZone(Object? value) {
+    if (value is! String || value.trim().isEmpty) return false;
+    try {
+      return FocusTimeZones.contains(value);
+    } on Object {
+      return false;
+    }
+  }
+
+  /// 星期集合的存储形式：整数数组。非法内容返回 null，由调用方拒绝整份载荷。
+  List<int>? _decodeWeekdays(Object? value) {
+    if (value is! String) return null;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(value);
+    } on FormatException {
+      return null;
+    }
+    if (decoded is! List) return null;
+    final weekdays = <int>[];
+    for (final entry in decoded) {
+      if (entry is! int || entry < DateTime.monday || entry > DateTime.sunday) {
+        return null;
+      }
+      weekdays.add(entry);
+    }
+    return weekdays;
   }
 
   Future<List<String>> _tableColumns(String table) async {

@@ -1,0 +1,33 @@
+name: Flutter checks
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # Matches the currently validated native SQLite test platform.
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, Node 24
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0, Node 24
+        with:
+          python-version: '3.x'
+      # Local-only AI artifacts must never reach the index; see scripts/check_repository_hygiene.py.
+      - run: python scripts/check_repository_hygiene.py
+      # Python tooling tests need no Flutter toolchain, device or network.
+      - run: python -m unittest discover -s scripts -p "test_*.py"
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+      - run: python scripts/fetch_misans.py
+      - run: flutter pub get
+      - run: flutter analyze
+      - run: flutter test

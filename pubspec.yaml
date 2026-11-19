@@ -46,8 +46,10 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  lunar: ^1.7.9
 
 dev_dependencies:
+  analyzer: ^10.2.0
   flutter_test:
     sdk: flutter
   integration_test:
@@ -85,6 +87,15 @@ flutter:
   assets:
     - assets/fonts/MiSans-LICENSE.txt
     - assets/fixtures/national_focus_tree/reference_v13_8_18.json
+    # 年度表逐文件声明：README 不随包发布。新增年份时补一行。
+    - assets/holidays/2020.json
+    - assets/holidays/2021.json
+    - assets/holidays/2022.json
+    - assets/holidays/2023.json
+    - assets/holidays/2024.json
+    - assets/holidays/2025.json
+    - assets/holidays/2026.json
+    - assets/holidays/2027.json
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

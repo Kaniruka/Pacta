@@ -164,13 +164,30 @@ abstract interface class FocusRepository {
     required Map<String, FocusSessionReconciliationSelection> sessionSelections,
     String? adoptedSessionId,
   });
+
+  /// [timeZoneId] is the account display time zone resolved by the caller from
+  /// the account profile; there is no device-zone branch in this projection.
   Stream<FocusDashboardMetrics> watchDashboardMetrics({
-    required String deviceTimeZoneId,
+    required String timeZoneId,
   });
   Future<FocusDashboardMetrics> getDashboardMetrics({
-    required String deviceTimeZoneId,
+    required String timeZoneId,
   });
-  Future<void> setDisplayTimeZonePreference(String? timeZoneId);
+
+  /// Accepted effective time of one visible [month] in [timeZoneId].
+  ///
+  /// Only this month is summed: the lifetime total and the fixed recent window
+  /// are different projections. [month] is normalized to its year and month.
+  Future<FocusMonthMetrics> getMonthMetrics({
+    required String timeZoneId,
+    required DateTime month,
+  });
+
+  /// Subscription form of [getMonthMetrics]; re-emits as sessions settle.
+  Stream<FocusMonthMetrics> watchMonthMetrics({
+    required String timeZoneId,
+    required DateTime month,
+  });
   Future<List<FocusSession>> getSessions();
   Future<FocusSession?> getSession(String sessionId);
   Future<FocusSession?> getActiveSession();
@@ -184,16 +201,20 @@ abstract interface class FocusRepository {
     required String sourceId,
   });
   Future<AppointmentPreparation?> getActiveAppointment();
+  Stream<AppointmentPreparation?> watchActiveAppointment();
   Future<AppointmentChainRecord> getAppointmentChainRecord();
   Future<FocusSession> startSession({
     required String taskId,
     required FocusChainMode mode,
     required Duration duration,
   });
+
+  /// 每场预约准备时长可选；默认沿用 15 分钟，非法值一律拒绝。
   Future<AppointmentPreparation> startAppointment({
     required String taskId,
     required FocusChainMode mode,
     required Duration duration,
+    Duration preparation,
   });
   Future<AppointmentPreparation> updateAppointment({
     required String appointmentId,
@@ -290,7 +311,9 @@ class LocalFocusRepository implements FocusRepository {
   Timer? _clockWatchdog;
   Future<void>? _clockObservation;
 
-  static const appointmentPreparationDuration = Duration(minutes: 15);
+  /// 旧记录缺少显式准备时长时沿用的历史值（15 分钟）。
+  static const appointmentPreparationDuration =
+      AppointmentPreparationDuration.defaultDuration;
 
   @override
   Stream<List<FocusSession>> watchSessions() async* {
@@ -787,27 +810,18 @@ class LocalFocusRepository implements FocusRepository {
 
   @override
   Stream<FocusDashboardMetrics> watchDashboardMetrics({
-    required String deviceTimeZoneId,
+    required String timeZoneId,
   }) => watchSessions().asyncMap(
-    (_) => getDashboardMetrics(deviceTimeZoneId: deviceTimeZoneId),
+    (_) => getDashboardMetrics(timeZoneId: timeZoneId),
   );
 
   @override
   Future<FocusDashboardMetrics> getDashboardMetrics({
-    required String deviceTimeZoneId,
+    required String timeZoneId,
   }) async {
     await _settleDueSessions();
-    final preference = await (database.select(
-      database.focusPreferences,
-    )..where((row) => row.userId.equals(userId))).getSingleOrNull();
-    final preferredZone = preference?.displayTimeZoneId;
-    final usesPreference =
-        preferredZone != null && FocusTimeZones.contains(preferredZone);
-    final zoneId = usesPreference
-        ? preferredZone
-        : FocusTimeZones.contains(deviceTimeZoneId)
-        ? deviceTimeZoneId
-        : 'Etc/UTC';
+    // 显示时区来自账号资料；这里不读设备时区，也不读被取代的设备级偏好。
+    final zoneId = FocusTimeZones.contains(timeZoneId) ? timeZoneId : 'Etc/UTC';
     final location = FocusTimeZones.location(zoneId);
     final sessions = await _getSessionsWithoutSettling();
     final pendingReviewSessions = sessions
@@ -830,11 +844,7 @@ class LocalFocusRepository implements FocusRepository {
     var totalSeconds = 0;
 
     for (final session in sessions) {
-      if ((session.status != FocusSessionStatus.completed &&
-              session.status != FocusSessionStatus.failed) ||
-          !session.reviewDisposition.contributesToFocusProgress) {
-        continue;
-      }
+      if (!_contributesToFocusProjection(session)) continue;
       final intervals = _effectiveIntervalsForProjection(session);
       final sessionSeconds = intervals.fold<int>(
         0,
@@ -878,7 +888,6 @@ class LocalFocusRepository implements FocusRepository {
       recentActivity: List.unmodifiable(recentActivity),
       totalAcceptedFocusSeconds: totalSeconds,
       displayTimeZoneId: zoneId,
-      followsDeviceTimeZone: !usesPreference,
       hasPendingReview:
           pendingReviewSessions.isNotEmpty ||
           pendingClockReviewSessions.isNotEmpty,
@@ -890,32 +899,52 @@ class LocalFocusRepository implements FocusRepository {
   }
 
   @override
-  Future<void> setDisplayTimeZonePreference(String? timeZoneId) async {
-    await lifecycleAccess.requireActive();
-    if (timeZoneId != null && !FocusTimeZones.contains(timeZoneId)) {
-      throw ArgumentError.value(timeZoneId, 'timeZoneId', '未知的时区标识。');
+  Stream<FocusMonthMetrics> watchMonthMetrics({
+    required String timeZoneId,
+    required DateTime month,
+  }) => watchSessions().asyncMap(
+    (_) => getMonthMetrics(timeZoneId: timeZoneId, month: month),
+  );
+
+  @override
+  Future<FocusMonthMetrics> getMonthMetrics({
+    required String timeZoneId,
+    required DateTime month,
+  }) async {
+    await _settleDueSessions();
+    final zoneId = FocusTimeZones.contains(timeZoneId) ? timeZoneId : 'Etc/UTC';
+    final location = FocusTimeZones.location(zoneId);
+    final monthStart = DateTime.utc(month.year, month.month);
+    final secondsByDay = <String, int>{};
+    for (final session in await _getSessionsWithoutSettling()) {
+      if (!_contributesToFocusProjection(session)) continue;
+      for (final interval in _effectiveIntervalsForProjection(session)) {
+        _addIntervalByCalendarDay(interval, location, secondsByDay);
+      }
     }
-    final row = await (database.select(
-      database.focusPreferences,
-    )..where((entry) => entry.userId.equals(userId))).getSingleOrNull();
-    if (row == null) {
-      await database
-          .into(database.focusPreferences)
-          .insert(
-            db.FocusPreferencesCompanion.insert(
-              userId: userId,
-              lastMode: FocusChainMode.regular.storageValue,
-              displayTimeZoneId: Value(timeZoneId),
-            ),
-          );
-    } else {
-      await (database.update(
-        database.focusPreferences,
-      )..where((entry) => entry.userId.equals(userId))).write(
-        db.FocusPreferencesCompanion(displayTimeZoneId: Value(timeZoneId)),
-      );
+
+    final dayCount = DateTime.utc(monthStart.year, monthStart.month + 1, 0).day;
+    final days = <FocusActivityDay>[];
+    var totalSeconds = 0;
+    var activeDayCount = 0;
+    for (var dayOfMonth = 1; dayOfMonth <= dayCount; dayOfMonth++) {
+      final date = DateTime.utc(monthStart.year, monthStart.month, dayOfMonth);
+      final seconds =
+          secondsByDay[_calendarDateKey(date.year, date.month, date.day)] ?? 0;
+      if (seconds > 0) {
+        totalSeconds += seconds;
+        activeDayCount++;
+      }
+      days.add(FocusActivityDay(date: date, activeSeconds: seconds));
     }
-    await _publish();
+
+    return FocusMonthMetrics(
+      displayTimeZoneId: zoneId,
+      month: monthStart,
+      days: List.unmodifiable(days),
+      totalActiveSeconds: totalSeconds,
+      activeDayCount: activeDayCount,
+    );
   }
 
   @override
@@ -1057,6 +1086,12 @@ class LocalFocusRepository implements FocusRepository {
   }
 
   @override
+  Stream<AppointmentPreparation?> watchActiveAppointment() async* {
+    yield await getActiveAppointment();
+    yield* _changes.stream.asyncMap((_) => getActiveAppointment());
+  }
+
+  @override
   Future<AppointmentChainRecord> getAppointmentChainRecord() async {
     final row = await (database.select(
       database.appointmentChainRecords,
@@ -1091,8 +1126,12 @@ class LocalFocusRepository implements FocusRepository {
     required String taskId,
     required FocusChainMode mode,
     required Duration duration,
+    Duration preparation = AppointmentPreparationDuration.defaultDuration,
   }) async {
     _validateDuration(duration);
+    final preparationDuration = AppointmentPreparationDuration.validate(
+      preparation,
+    );
     final task = await _taskForStart(taskId);
     if (task.isComplete) throw StateError('已完成任务不能开始新的预约。');
 
@@ -1114,10 +1153,11 @@ class LocalFocusRepository implements FocusRepository {
       mode: mode,
       durationSeconds: duration.inSeconds,
       startedAt: startedAt,
-      endsAt: startedAt.add(appointmentPreparationDuration),
+      endsAt: startedAt.add(preparationDuration),
       status: AppointmentPreparationStatus.active,
       settledAt: null,
       updatedAt: startedAt,
+      preparationSeconds: preparationDuration.inSeconds,
     );
     await database.transaction(() async {
       await _saveAppointment(appointment, queue: false);
@@ -3026,6 +3066,7 @@ class LocalFocusRepository implements FocusRepository {
             configurationBasisSourceId: Value(
               appointment.configurationBasisSourceId,
             ),
+            preparationSeconds: Value(appointment.preparationSeconds),
           ),
         );
     if (queue) {
@@ -3722,6 +3763,7 @@ class LocalFocusRepository implements FocusRepository {
         ),
         reviewDispositionUpdatedAt: row.reviewDispositionUpdatedAt,
         configurationBasisSourceId: row.configurationBasisSourceId,
+        preparationSeconds: row.preparationSeconds,
       );
 
   FocusNode _nodeFromRow(db.FocusNode row) => FocusNode(
@@ -3750,6 +3792,17 @@ class LocalFocusRepository implements FocusRepository {
         deletedAt: row.deletedAt,
       );
 }
+
+/// Sessions that may contribute effective focus time.
+///
+/// Shared by the dashboard and the month projection so both keep one acceptance
+/// rule: settled completed/failed sessions whose review disposition accepts the
+/// record. Pending, duplicate and clock-review-restricted time is filtered by
+/// the interval basis, not re-decided here.
+bool _contributesToFocusProjection(FocusSession session) =>
+    (session.status == FocusSessionStatus.completed ||
+        session.status == FocusSessionStatus.failed) &&
+    session.reviewDisposition.contributesToFocusProgress;
 
 List<FocusTimeInterval> _effectiveIntervalsForProjection(FocusSession session) {
   final closedIntervals = session.effectiveIntervals
@@ -4230,6 +4283,9 @@ Map<String, dynamic> _focusAppointmentToJson(
       ? null
       : _utcIso8601(appointment.reviewDispositionUpdatedAt!),
   'configuration_basis_source_id': appointment.configurationBasisSourceId,
+  // 旧记录没有显式值：省略该键，使新旧客户端对同一历史状态得到相同的载荷签名。
+  if (appointment.preparationSeconds != null)
+    'preparation_seconds': appointment.preparationSeconds,
 };
 
 AppointmentPreparation _focusAppointmentFromJson(
@@ -4256,6 +4312,7 @@ AppointmentPreparation _focusAppointmentFromJson(
       ? null
       : DateTime.parse(json['review_disposition_updated_at'] as String).toUtc(),
   configurationBasisSourceId: json['configuration_basis_source_id'] as String?,
+  preparationSeconds: json['preparation_seconds'] as int?,
 );
 
 AppointmentPreparation _focusAppointmentWithRemoteReview(
@@ -4844,20 +4901,41 @@ class InMemoryFocusRemote implements FocusRemoteDataSource {
   }
 }
 
-FocusDashboardMetrics _emptyDashboardMetrics(String deviceTimeZoneId) =>
+FocusDashboardMetrics _emptyDashboardMetrics(String timeZoneId) =>
     FocusDashboardMetrics(
       focusProgressSecondsByTask: const {},
       recentActivity: const [],
       totalAcceptedFocusSeconds: 0,
-      displayTimeZoneId: deviceTimeZoneId,
-      followsDeviceTimeZone: true,
+      displayTimeZoneId: timeZoneId,
     );
+
+FocusMonthMetrics _emptyMonthMetrics(String timeZoneId, DateTime month) {
+  final monthStart = DateTime.utc(month.year, month.month);
+  final dayCount = DateTime.utc(monthStart.year, monthStart.month + 1, 0).day;
+  return FocusMonthMetrics(
+    displayTimeZoneId: timeZoneId,
+    month: monthStart,
+    days: List.unmodifiable([
+      for (var dayOfMonth = 1; dayOfMonth <= dayCount; dayOfMonth++)
+        FocusActivityDay(
+          date: DateTime.utc(monthStart.year, monthStart.month, dayOfMonth),
+          activeSeconds: 0,
+        ),
+    ]),
+    totalActiveSeconds: 0,
+    activeDayCount: 0,
+  );
+}
 
 class UnavailableFocusRepository implements FocusRepository {
   const UnavailableFocusRepository();
 
   @override
   Stream<List<FocusSession>> watchSessions() => Stream.value(const []);
+
+  @override
+  Stream<AppointmentPreparation?> watchActiveAppointment() =>
+      Stream.value(null);
 
   @override
   Stream<List<FocusReconciliationCase>> watchFocusReconciliations() =>
@@ -4892,16 +4970,25 @@ class UnavailableFocusRepository implements FocusRepository {
 
   @override
   Stream<FocusDashboardMetrics> watchDashboardMetrics({
-    required String deviceTimeZoneId,
-  }) => Stream.value(_emptyDashboardMetrics(deviceTimeZoneId));
+    required String timeZoneId,
+  }) => Stream.value(_emptyDashboardMetrics(timeZoneId));
 
   @override
   Future<FocusDashboardMetrics> getDashboardMetrics({
-    required String deviceTimeZoneId,
-  }) async => _emptyDashboardMetrics(deviceTimeZoneId);
+    required String timeZoneId,
+  }) async => _emptyDashboardMetrics(timeZoneId);
 
   @override
-  Future<void> setDisplayTimeZonePreference(String? timeZoneId) async {}
+  Stream<FocusMonthMetrics> watchMonthMetrics({
+    required String timeZoneId,
+    required DateTime month,
+  }) => Stream.value(_emptyMonthMetrics(timeZoneId, month));
+
+  @override
+  Future<FocusMonthMetrics> getMonthMetrics({
+    required String timeZoneId,
+    required DateTime month,
+  }) async => _emptyMonthMetrics(timeZoneId, month);
 
   @override
   Future<List<FocusSession>> getSessions() async => const [];
@@ -4953,6 +5040,7 @@ class UnavailableFocusRepository implements FocusRepository {
     required String taskId,
     required FocusChainMode mode,
     required Duration duration,
+    Duration preparation = AppointmentPreparationDuration.defaultDuration,
   }) => _unavailable();
 
   @override

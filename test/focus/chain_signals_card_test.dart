@@ -1,7 +1,17 @@
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pacta/src/focus/chain_signals_card.dart';
+import 'package:pacta/src/focus/chain_signals_card.dart'
+    show
+        ChainSignalInstructions,
+        FocusChainOverview,
+        appointmentEntryRule,
+        appointmentNoteKey,
+        focusChainNoteKey,
+        focusDurationRule,
+        sharedFocusMarkerRule,
+        sharedSignalHelperText,
+        singleSignalHelperText;
 import 'package:pacta/src/focus/chain_signals_repository.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_statistics.dart';
@@ -11,6 +21,7 @@ import 'package:pacta/src/tasks/task_database.dart' show PactaDatabase;
 /// overview exposes exactly one entry point for it.
 const markerEditKey = ValueKey('focus-signal-edit-marker');
 const appointmentEditKey = ValueKey('focus-signal-edit-appointment');
+const chainTable = ValueKey('focus-chain-table');
 
 void main() {
   late PactaDatabase database;
@@ -40,9 +51,9 @@ void main() {
     );
     expect(find.byKey(appointmentEditKey), findsOneWidget);
     expect(find.byType(IconButton), findsNWidgets(2));
-    expect(find.text('最佳 12 次'), findsOneWidget);
-    expect(find.text('1 小时 30 分钟 1 秒'), findsOneWidget);
-    expect(find.text('平均每次'), findsNWidgets(2));
+    expect(find.text('12'), findsOneWidget);
+    expect(find.text('1小时30分01秒'), findsOneWidget);
+    expect(find.text('平均'), findsNWidgets(2));
     await _disposeWidget(tester);
   });
 
@@ -115,20 +126,20 @@ void main() {
         ),
       },
     );
-    expect(find.text('最佳 12 次'), findsOneWidget);
-    expect(find.text('最佳 5 次'), findsOneWidget);
+    expect(find.text('12'), findsOneWidget);
+    expect(find.text('5'), findsOneWidget);
     expect(find.text('记录待核对'), findsOneWidget);
 
     await _editAndSave(tester, markerEditKey, '坐到书桌前');
 
     expect(find.text('坐到书桌前'), findsOneWidget);
-    expect(find.text('最佳 12 次'), findsOneWidget);
-    expect(find.text('最佳 5 次'), findsOneWidget);
+    expect(find.text('12'), findsOneWidget);
+    expect(find.text('5'), findsOneWidget);
     expect(find.text('记录待核对'), findsOneWidget);
-    expect(find.text('1 小时'), findsOneWidget);
-    expect(find.text('30 分钟'), findsOneWidget);
-    expect(find.text('2 分钟 5 秒'), findsOneWidget);
-    expect(find.text('1 分钟 3 秒'), findsOneWidget);
+    expect(find.text('1小时00分00秒'), findsOneWidget);
+    expect(find.text('30分00秒'), findsOneWidget);
+    expect(find.text('2分05秒'), findsOneWidget);
+    expect(find.text('1分03秒'), findsOneWidget);
     await _disposeWidget(tester);
   });
 
@@ -147,8 +158,8 @@ void main() {
             eliteTotalSeconds: 360000001,
           );
           expect(find.text(action), findsOneWidget);
-          expect(find.text('100000 小时 1 秒'), findsOneWidget);
-          expect(find.text('最佳 12 次'), findsOneWidget);
+          expect(find.text('100000小时00分01秒'), findsOneWidget);
+          expect(find.text('12'), findsOneWidget);
           await _openEditor(tester, markerEditKey);
           expect(find.widgetWithText(TextField, action), findsOneWidget);
           await tester.enterText(find.byType(TextField), '取消的修改');
@@ -199,14 +210,192 @@ void main() {
       for (final title in ['精锐链', '普通链', '预约链']) {
         expect(find.text(title), findsOneWidget);
       }
-      expect(find.text('最佳 0 次'), findsNWidgets(3));
-      expect(find.text('累计专注'), findsNWidgets(2));
-      expect(find.text('平均每次'), findsNWidgets(2));
-      expect(find.text('0 秒'), findsNWidgets(4));
+      expect(find.text('0'), findsNWidgets(6));
+      expect(find.text('累计'), findsNWidgets(2));
+      expect(find.text('平均'), findsNWidgets(2));
+      expect(find.text('0分00秒'), findsNWidgets(4));
       expect(find.text('尚未设置'), findsNWidgets(2));
       await _disposeWidget(tester);
     },
   );
+
+  testWidgets('规则说明折进信息提示：折叠时不占正文，点开才出现', (tester) async {
+    await _pumpOverview(tester, repository);
+    expect(find.text(focusDurationRule), findsNothing);
+    expect(find.text(sharedFocusMarkerRule), findsNothing);
+
+    // 说明挂在「累计/平均」那一行，而不是表头或卡片外。
+    expect(find.byKey(focusChainNoteKey), findsOneWidget);
+    await tester.tap(find.byKey(focusChainNoteKey));
+    await tester.pumpAndSettle();
+    expect(find.text(focusDurationRule), findsOneWidget);
+
+    Tooltip.dismissAllToolTips();
+    await tester.pumpAndSettle();
+    expect(find.text(focusDurationRule), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey('focus-signal-note-marker')));
+    await tester.pumpAndSettle();
+    expect(find.text(sharedFocusMarkerRule), findsOneWidget);
+    // 触发信号没有共用关系，不挂提示。
+    expect(
+      find.byKey(const ValueKey('focus-signal-note-appointment')),
+      findsNothing,
+    );
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('预约入口提示挂在链名行：点行内文字即可展开，命中区覆盖整行', (tester) async {
+    await _pumpOverview(
+      tester,
+      repository,
+      appointmentRecord: AppointmentChainRecord(
+        currentConsecutive: 2,
+        bestConsecutive: 4,
+        updatedAt: DateTime(2026),
+      ),
+    );
+    // 入口句不作为正文出现，图标与「预约链」同属一条标题行。
+    expect(find.text(appointmentEntryRule), findsNothing);
+    final noteFinder = find.byKey(appointmentNoteKey);
+    expect(noteFinder, findsOneWidget);
+    expect(
+      find.descendant(of: noteFinder, matching: find.text('预约链')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: noteFinder,
+        matching: find.byIcon(Icons.info_outline),
+      ),
+      findsOneWidget,
+    );
+
+    // 命中区是整条标题行（链名 + 两个数值列），不是 12dp 图标本身。
+    final rowWidth = tester.getSize(noteFinder).width;
+    final cardWidth = tester.getSize(find.byKey(chainTable)).width;
+    expect(rowWidth, greaterThan(cardWidth * 0.9));
+
+    await tester.tap(find.text('预约链'));
+    await tester.pumpAndSettle();
+    expect(find.text(appointmentEntryRule), findsOneWidget);
+    Tooltip.dismissAllToolTips();
+    await tester.pumpAndSettle();
+    expect(find.text(appointmentEntryRule), findsNothing);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('预约链待核对时不挂入口提示，只显示核对状态', (tester) async {
+    await _pumpOverview(
+      tester,
+      repository,
+      appointmentRecord: AppointmentChainRecord(
+        currentConsecutive: 2,
+        bestConsecutive: 4,
+        hasPendingReview: true,
+        updatedAt: DateTime(2026),
+      ),
+    );
+    expect(find.text('记录待核对'), findsOneWidget);
+    expect(find.byKey(appointmentNoteKey), findsNothing);
+    expect(find.text(appointmentEntryRule), findsNothing);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('预约入口句进入语义：读屏读得到，不只在视觉提示里', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await _pumpOverview(tester, repository);
+    expect(
+      tester
+          .getSemantics(find.byKey(appointmentNoteKey))
+          .getSemanticsData()
+          .tooltip,
+      appointmentEntryRule,
+    );
+    // 时长口径句同样独立成节点，两条说明不会互相覆盖。
+    expect(
+      tester
+          .getSemantics(find.byKey(focusChainNoteKey))
+          .getSemanticsData()
+          .tooltip,
+      focusDurationRule,
+    );
+    semantics.dispose();
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('提示的语义边界不吞掉累计与平均的数值', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await _pumpOverview(tester, repository);
+    final data = tester
+        .getSemantics(find.byKey(const ValueKey('focus-chain-stat-精锐链-累计')))
+        .getSemanticsData();
+    expect(data.label, contains('累计'));
+    expect(data.label, contains('1小时30分01秒'));
+    expect(data.label, contains('平均'));
+    expect(data.label, contains('30分00秒'));
+    semantics.dispose();
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('编辑弹窗说明只说共用关系与清除结果', (tester) async {
+    await _pumpOverview(tester, repository);
+
+    await _openEditor(tester, markerEditKey);
+    final markerDialog = find.byType(AlertDialog);
+    expect(
+      find.descendant(
+        of: markerDialog,
+        matching: find.text(sharedSignalHelperText),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: markerDialog,
+        matching: find.text(singleSignalHelperText),
+      ),
+      findsNothing,
+    );
+    // 弹窗只放简短说明，完整规则句留在卡片提示里。
+    expect(
+      find.descendant(
+        of: markerDialog,
+        matching: find.text(sharedFocusMarkerRule),
+      ),
+      findsNothing,
+    );
+    await tester.tap(find.widgetWithText(TextButton, '取消'));
+    await tester.pumpAndSettle();
+
+    await _openEditor(tester, appointmentEditKey);
+    final appointmentDialog = find.byType(AlertDialog);
+    expect(
+      find.descendant(
+        of: appointmentDialog,
+        matching: find.text(singleSignalHelperText),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: appointmentDialog,
+        matching: find.text(sharedSignalHelperText),
+      ),
+      findsNothing,
+    );
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('说明图标不高于正文：12dp 图标，提示用悬停/点按', (tester) async {
+    await _pumpOverview(tester, repository);
+    final glyphs = tester.widgetList<Icon>(find.byIcon(Icons.info_outline));
+    expect(glyphs, isNotEmpty);
+    for (final glyph in glyphs) {
+      expect(glyph.size, 12, reason: '说明图标应与辅助文本同级，不抢标题的视觉重量');
+    }
+    await _disposeWidget(tester);
+  });
 
   testWidgets('instructions show the shared marker in both chain flows', (
     tester,
@@ -300,6 +489,7 @@ Future<void> _pumpOverview(
   int eliteTotalSeconds = 5401,
   List<FocusChainRecord>? records,
   Map<FocusChainMode, FocusSessionStatistics>? statistics,
+  AppointmentChainRecord? appointmentRecord,
   bool showInstructions = false,
 }) async {
   tester.view.devicePixelRatio = 1;
@@ -348,6 +538,7 @@ Future<void> _pumpOverview(
                       FocusChainOverview(
                         repository: repository,
                         records: overviewRecords,
+                        appointmentRecord: appointmentRecord,
                         statistics: overviewStatistics,
                       ),
                       if (showInstructions && repository != null) ...[

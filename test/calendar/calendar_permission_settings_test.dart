@@ -40,13 +40,14 @@ void main() {
           home: CalendarSourcesPage(
             repository: repository,
             isAndroid: true,
+            displayTimeZoneIdLoader: () async => 'Etc/UTC',
             permissionGateway: gateway,
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('日历权限尚未开启'), findsOneWidget);
+      expect(find.text('设备日历权限已关闭'), findsOneWidget);
       final settingsButton = find.byKey(
         const Key('calendar-open-system-settings'),
       );

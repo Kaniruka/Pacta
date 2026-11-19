@@ -25,11 +25,11 @@ void main() {
     h = _Harness();
   });
 
-  testWidgets('看板单精锐任务默认精锐链', (tester) async {
+  testWidgets('计划单精锐任务默认精锐链', (tester) async {
     try {
       await h.seedTask('精锐任务', TaskClassification.elite);
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await tester.tap(find.byTooltip('开始专注'));
       await _boundedSettle(tester);
@@ -40,7 +40,7 @@ void main() {
           matching: find.text('精锐链'),
         ),
         findsOneWidget,
-        reason: '新默认规则：单一精锐任务的看板入口应预选精锐链',
+        reason: '新默认规则：单一精锐任务的计划入口应预选精锐链',
       );
     } finally {
       await h.teardown(tester);
@@ -71,11 +71,11 @@ void main() {
     }
   });
 
-  testWidgets('看板预约准备自动交接保持所选模式', (tester) async {
+  testWidgets('计划预约准备自动交接保持所选模式', (tester) async {
     try {
       await h.seedTask('精锐任务', TaskClassification.elite);
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await tester.tap(find.byTooltip('开始专注'));
       await _boundedSettle(tester);
@@ -92,18 +92,18 @@ void main() {
       expect(
         session.mode,
         FocusChainMode.elite,
-        reason: '看板预约（预约模式=$appointmentMode）交接后应以同一模式进入专注',
+        reason: '计划预约（预约模式=$appointmentMode）交接后应以同一模式进入专注',
       );
     } finally {
       await h.teardown(tester);
     }
   });
 
-  testWidgets('回归 看板直接完成：看板时长与专注链累计同时增加', (tester) async {
+  testWidgets('回归 计划直接完成：看板时长与专注链累计同时增加', (tester) async {
     try {
       await h.seedTask('精锐任务', TaskClassification.elite);
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await h.startEliteFromBoard(tester);
       final started = (await h.focus.getActiveSession())!;
@@ -122,18 +122,14 @@ void main() {
 
       expect(find.text('已专注 25分00秒'), findsOneWidget);
       await h.openTab(tester, '专注链');
-      expect(
-        find.text('连续 1 次', findRichText: true),
-        findsWidgets,
-        reason: '专注链次数应加 1',
-      );
+      expect(find.text('1'), findsWidgets, reason: '专注链次数应加 1');
       expect(
         find.descendant(
-          of: _metric('精锐链', '累计专注'),
-          matching: find.text('25 分钟'),
+          of: _metric('精锐链', '累计'),
+          matching: find.text('25分00秒'),
         ),
         findsOneWidget,
-        reason: '专注链卡片的累计专注应为 25 分钟',
+        reason: '专注链卡片的累计应为 25 分钟',
       );
     } finally {
       await h.teardown(tester);
@@ -144,7 +140,7 @@ void main() {
     try {
       await h.seedTask('精锐任务', TaskClassification.elite);
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await tester.tap(find.byTooltip('开始专注'));
       await _boundedSettle(tester);
@@ -175,8 +171,8 @@ void main() {
       await h.openTab(tester, '专注链');
       expect(
         find.descendant(
-          of: _metric('精锐链', '累计专注'),
-          matching: find.text('25 分钟'),
+          of: _metric('精锐链', '累计'),
+          matching: find.text('25分00秒'),
         ),
         findsOneWidget,
       );
@@ -189,7 +185,7 @@ void main() {
     try {
       await h.seedTask('精锐任务', TaskClassification.elite);
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await h.startEliteFromBoard(tester);
       final started = (await h.focus.getActiveSession())!;
@@ -216,13 +212,13 @@ void main() {
       await h.openTab(tester, '专注链');
       expect(
         find.descendant(
-          of: _metric('精锐链', '累计专注'),
-          matching: find.text('25 分钟'),
+          of: _metric('精锐链', '累计'),
+          matching: find.text('25分00秒'),
         ),
         findsOneWidget,
-        reason: '后台恢复结算后累计专注应为 25 分钟',
+        reason: '后台恢复结算后累计应为 25 分钟',
       );
-      expect(find.text('连续 1 次', findRichText: true), findsWidgets);
+      expect(find.text('1'), findsWidgets);
     } finally {
       await h.teardown(tester);
     }
@@ -233,7 +229,7 @@ void main() {
       await h.seedTask('精锐任务', TaskClassification.elite);
       await h.focus.createPrecedentRule(text: '需要喝水时允许短暂离开');
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await h.startEliteFromBoard(tester);
       final started = (await h.focus.getActiveSession())!;
@@ -274,12 +270,12 @@ void main() {
       await h.openTab(tester, '专注链');
       expect(
         find.descendant(
-          of: _metric('精锐链', '累计专注'),
-          matching: find.text('20 分钟'),
+          of: _metric('精锐链', '累计'),
+          matching: find.text('20分00秒'),
         ),
         findsOneWidget,
       );
-      expect(find.text('连续 1 次', findRichText: true), findsWidgets);
+      expect(find.text('1'), findsWidgets);
     } finally {
       await h.teardown(tester);
     }
@@ -302,7 +298,7 @@ void main() {
       );
 
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await h.startEliteFromBoard(tester);
       h.advance(const Duration(minutes: 25));
@@ -320,27 +316,23 @@ void main() {
       await h.openTab(tester, '专注链');
       expect(
         find.descendant(
-          of: _metric('精锐链', '累计专注'),
-          matching: find.text('35 分钟'),
+          of: _metric('精锐链', '累计'),
+          matching: find.text('35分00秒'),
         ),
         findsOneWidget,
-        reason: '专注链卡片累计专注应为 35 分钟',
+        reason: '专注链卡片累计应为 35 分钟',
       );
-      expect(
-        find.text('连续 2 次', findRichText: true),
-        findsWidgets,
-        reason: '第二次完成后连续次数为 2',
-      );
+      expect(find.text('2'), findsWidgets, reason: '第二次完成后连续次数为 2');
     } finally {
       await h.teardown(tester);
     }
   });
 
-  testWidgets('对照组 看板单普通任务默认普通链', (tester) async {
+  testWidgets('对照组 计划单普通任务默认普通链', (tester) async {
     try {
       await h.seedTask('普通任务', TaskClassification.regular);
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await tester.tap(find.byTooltip('开始专注'));
       await _boundedSettle(tester);
@@ -357,11 +349,11 @@ void main() {
     }
   });
 
-  testWidgets('对照组 看板双分类任务沿用上次成功模式', (tester) async {
+  testWidgets('对照组 计划双分类任务沿用上次成功模式', (tester) async {
     try {
       await h.seedTask('双模式任务', TaskClassification.both);
       await h.show(tester);
-      await h.openTab(tester, '看板');
+      await h.openTab(tester, '计划');
 
       await tester.tap(find.byTooltip('开始专注'));
       await _boundedSettle(tester);
@@ -405,17 +397,9 @@ void main() {
   });
 }
 
-/// 专注链概览中的单链卡片（标题为"精锐链"/"普通链"/"预约链"）。
-Finder _chainCard(String title) =>
-    find.ancestor(of: find.text(title), matching: find.byType(Card)).first;
-
-/// 链卡内指定指标（如"累计专注"）的数值所在列。
-Finder _metric(String chainTitle, String label) => find.descendant(
-  of: _chainCard(chainTitle),
-  matching: find
-      .ancestor(of: find.text(label), matching: find.byType(Column))
-      .first,
-);
+/// 链表中指定链的指标（如"精锐链"的"累计"）所在格。
+Finder _metric(String chainTitle, String label) =>
+    find.byKey(ValueKey('focus-chain-stat-$chainTitle-$label'));
 
 /// 有界等待：完成路由/对话框动画，但不等周期性定时器。
 Future<void> _boundedSettle(WidgetTester tester) async {
@@ -495,7 +479,7 @@ class _Harness {
     await _boundedSettle(tester);
   }
 
-  /// 看板入口：开始专注 → 显式选择精锐链 → 开始倒计时。
+  /// 计划入口：开始专注 → 显式选择精锐链 → 开始倒计时。
   Future<void> startEliteFromBoard(WidgetTester tester) async {
     await tester.tap(find.byTooltip('开始专注'));
     await _boundedSettle(tester);

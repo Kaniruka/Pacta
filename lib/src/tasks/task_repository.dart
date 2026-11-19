@@ -54,9 +54,18 @@ abstract interface class TaskRepository {
   Future<Goal> createGoal(GoalDraft draft);
   Future<Goal> updateGoal(String goalId, GoalDraft draft);
   Future<void> deleteGoal(String goalId);
+
+  /// Pins or unpins one goal. Pinning appends to the end of the manual order.
+  Future<void> setGoalPinned(String goalId, {required bool isPinned});
+
+  /// Persists the manual order of every currently pinned goal.
+  Future<void> reorderPinnedGoals(List<String> orderedGoalIds);
   Future<Task> createTask(String goalId, TaskDraft draft);
   Future<Task> updateTask(String taskId, TaskDraft draft);
   Future<void> setTaskCompletion(String taskId, {required bool isComplete});
+
+  /// Removes one task as a tombstone; owned schedules and focus records stay.
+  Future<void> deleteTask(String taskId);
   Future<void> sync();
   Future<void> dispose();
 }
@@ -120,17 +129,29 @@ class LocalTaskRepository implements TaskRepository {
         return left.updatedAt.compareTo(right.updatedAt);
       });
     }
-    goals.sort((left, right) {
-      final leftHasExecutableTask = left.tasks.any((task) => !task.isComplete);
-      final rightHasExecutableTask = right.tasks.any(
-        (task) => !task.isComplete,
-      );
-      if (leftHasExecutableTask != rightHasExecutableTask) {
-        return leftHasExecutableTask ? -1 : 1;
-      }
-      return left.updatedAt.compareTo(right.updatedAt);
-    });
+    goals.sort(_compareGoals);
     return goals;
+  }
+
+  /// Pinned goals lead in their manual order; the rest keep the established
+  /// "has an unfinished task" then last-updated order. No user-visible task
+  /// sorting control is introduced here.
+  int _compareGoals(Goal left, Goal right) {
+    if (left.isPinned != right.isPinned) return left.isPinned ? -1 : 1;
+    if (left.isPinned) {
+      final leftOrder = left.sortOrder ?? 1 << 30;
+      final rightOrder = right.sortOrder ?? 1 << 30;
+      if (leftOrder != rightOrder) return leftOrder.compareTo(rightOrder);
+      final byCreated = left.createdAt.compareTo(right.createdAt);
+      if (byCreated != 0) return byCreated;
+      return left.id.compareTo(right.id);
+    }
+    final leftHasExecutableTask = left.tasks.any((task) => !task.isComplete);
+    final rightHasExecutableTask = right.tasks.any((task) => !task.isComplete);
+    if (leftHasExecutableTask != rightHasExecutableTask) {
+      return leftHasExecutableTask ? -1 : 1;
+    }
+    return left.updatedAt.compareTo(right.updatedAt);
   }
 
   @override
@@ -208,6 +229,60 @@ class LocalTaskRepository implements TaskRepository {
   }
 
   @override
+  Future<void> setGoalPinned(String goalId, {required bool isPinned}) async {
+    await lifecycleAccess.requireActive();
+    final existing = await _findGoal(goalId);
+    if (existing.isPinned == isPinned) return;
+    final goals = await getGoals();
+    final pinned = [
+      for (final goal in goals)
+        if (goal.isPinned && goal.id != goalId) goal,
+    ];
+    final nextOrder = pinned.isEmpty
+        ? 0
+        : pinned
+                  .map((goal) => goal.sortOrder ?? 1 << 30)
+                  .reduce((left, right) => left > right ? left : right) +
+              1;
+    final updatedAt = _nextTimestamp(existing.updatedAt);
+    await (database.update(database.localGoals)
+          ..where((goal) => goal.userId.equals(userId))
+          ..where((goal) => goal.id.equals(goalId)))
+        .write(
+          LocalGoalsCompanion(
+            isPinned: Value(isPinned),
+            sortOrder: Value(isPinned ? nextOrder : null),
+            updatedAt: Value(updatedAt),
+          ),
+        );
+    await _publish();
+  }
+
+  @override
+  Future<void> reorderPinnedGoals(List<String> orderedGoalIds) async {
+    await lifecycleAccess.requireActive();
+    final pinned = [
+      for (final goal in await getGoals())
+        if (goal.isPinned) goal,
+    ];
+    final pinnedIds = {for (final goal in pinned) goal.id};
+    if (orderedGoalIds.length != pinnedIds.length ||
+        orderedGoalIds.toSet().length != orderedGoalIds.length ||
+        !pinnedIds.containsAll(orderedGoalIds)) {
+      throw ArgumentError('排序必须且只能覆盖当前全部置顶目标。');
+    }
+    await database.transaction(() async {
+      for (var index = 0; index < orderedGoalIds.length; index++) {
+        await (database.update(database.localGoals)
+              ..where((goal) => goal.userId.equals(userId))
+              ..where((goal) => goal.id.equals(orderedGoalIds[index])))
+            .write(LocalGoalsCompanion(sortOrder: Value(index)));
+      }
+    });
+    await _publish();
+  }
+
+  @override
   Future<Task> createTask(String goalId, TaskDraft draft) async {
     await lifecycleAccess.requireActive();
     final goal = await _findGoal(goalId);
@@ -258,6 +333,20 @@ class LocalTaskRepository implements TaskRepository {
         isComplete: isComplete,
         updatedAt: _nextTimestamp(existing.updatedAt),
       ),
+    );
+    await _publish();
+  }
+
+  @override
+  Future<void> deleteTask(String taskId) async {
+    await lifecycleAccess.requireActive();
+    final existing = await _findTaskIncludingDeleted(taskId);
+    if (existing.isDeleted) return;
+    // 墓碑保留任务身份：已有日程、专注与暂停继续引用原任务名称，
+    // 不隐式删除任何已拥有的安排，也不伪造新目标。
+    final deletedAt = _nextTimestamp(existing.updatedAt);
+    await _saveTask(
+      existing.copyWith(deletedAt: deletedAt, updatedAt: deletedAt),
     );
     await _publish();
   }
@@ -358,6 +447,8 @@ class LocalTaskRepository implements TaskRepository {
             createdAt: goal.createdAt,
             updatedAt: goal.updatedAt,
             deletedAt: Value(goal.deletedAt),
+            isPinned: Value(goal.isPinned),
+            sortOrder: Value(goal.sortOrder),
           ),
         );
     if (queue) await _queue('goal', goal.id, goal.updatedAt);
@@ -447,6 +538,16 @@ class LocalTaskRepository implements TaskRepository {
     return _taskFromRow(row);
   }
 
+  Future<Task> _findTaskIncludingDeleted(String taskId) async {
+    final row =
+        await (database.select(database.localTasks)
+              ..where((task) => task.userId.equals(userId))
+              ..where((task) => task.id.equals(taskId)))
+            .getSingleOrNull();
+    if (row == null) throw StateError('任务不存在或已不属于当前用户。');
+    return _taskFromRow(row);
+  }
+
   Future<Map<String, Goal>> _localGoalsById() async {
     final goals = await getGoals(includeDeleted: true);
     return {for (final goal in goals) goal.id: goal};
@@ -472,6 +573,8 @@ class LocalTaskRepository implements TaskRepository {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,
+    isPinned: row.isPinned,
+    sortOrder: row.sortOrder,
     tasks: tasks,
   );
 
@@ -495,8 +598,14 @@ class LocalTaskRepository implements TaskRepository {
         ? remote
         : local;
     final deletedAt = _retainedDeletion(local.deletedAt, remote.deletedAt);
-    if (deletedAt == null) return preferred;
-    return preferred.copyWith(
+    // 置顶与排序位只随整份账号快照往返；旧逐实体同步不理解这两列，
+    // 因此合并时一律保留本机值，避免按远端默认值清空用户排序。
+    final withPins = preferred.copyWith(
+      isPinned: local.isPinned,
+      sortOrder: local.sortOrder,
+    );
+    if (deletedAt == null) return withPins;
+    return withPins.copyWith(
       deletedAt: deletedAt,
       updatedAt: _laterDate(preferred.updatedAt, deletedAt),
     );
@@ -740,6 +849,14 @@ class UnavailableTaskRepository implements TaskRepository {
   Future<void> deleteGoal(String goalId) => _unavailable();
 
   @override
+  Future<void> setGoalPinned(String goalId, {required bool isPinned}) =>
+      _unavailable();
+
+  @override
+  Future<void> reorderPinnedGoals(List<String> orderedGoalIds) =>
+      _unavailable();
+
+  @override
   Future<Task> createTask(String goalId, TaskDraft draft) => _unavailable();
 
   @override
@@ -748,6 +865,9 @@ class UnavailableTaskRepository implements TaskRepository {
   @override
   Future<void> setTaskCompletion(String taskId, {required bool isComplete}) =>
       _unavailable();
+
+  @override
+  Future<void> deleteTask(String taskId) => _unavailable();
 
   @override
   Future<void> sync() async {}

@@ -180,7 +180,7 @@ serialization failure and retries the transaction. See the
 Both snapshot migrations were applied to the configured development project
 on 2026-10-04. Live acceptance used isolated temporary identities, not normal
 users' data. Full results are in
-[the validation record](../docs/manual-cloud-sync-validation-20261004.md).
+the validation record in the local-only docs tree (`docs/manual-cloud-sync-validation-20261004.md`).
 ## Retained cloud snapshot history — 2026-11-13
 
 Apply `202611130001_cloud_snapshot_history.sql` for the 15-version retained
@@ -262,3 +262,70 @@ supabase db query --linked -f supabase/tests/profile_accounts.sql
 Client tests cover local caching, retry after a failed account write,
 cross-device adoption, and unchanged profile after a business restore. They do
 not prove deployed RLS.
+
+## Account display time zone — 2026-11-15
+
+Apply `202611150002_account_time_zone.sql` for the account-time-zone ticket.
+The display time zone is account-level: one value per account, shared by every
+device, stored on the same `public.profile_accounts` row and still excluded
+from `cloud_business_snapshots`. There is no device-level override and no
+second business store.
+
+- `read_profile_account()` now also returns `timeZoneId` (null until
+  recorded) and the account's server-owned `timeZoneRevision`.
+- `initialize_profile_time_zone(time_zone_id)` is the atomic first migration.
+  Two devices may both read "no value"; the database decides one winner with
+  `coalesce(existing, new)` and every caller reads the stored winner back. When
+  the account has no profile row, this RPC inserts it with an empty
+  `display_name` — an unset nickname, not a fabricated name — so the time zone
+  can exist before the person picks a nickname. Only a still-null account value
+  is ever filled, and the value must be an IANA identifier from the server's own
+  catalog.
+- `save_profile_account(display_name, avatar_base64, clear_avatar,
+  time_zone_id, time_zone_revision)` keeps the stored time zone when the zone
+  argument is omitted, so a nickname/avatar edit never re-asserts a cached
+  device value. An explicit zone must name the revision the choice is based on:
+  the write applies only while that revision is still current, so a late request
+  cannot replace a newer accepted value and no ordering depends on a device
+  clock. A superseded request returns the stored winner with
+  `"timeZoneConflict": true`; the client adopts it and a later explicit edit
+  uses the current revision. A blank display name is accepted only when the
+  stored name is already unset and the call carries a time zone: it never clears
+  an existing nickname and never creates a profile row.
+- `time_zone_revision` is written only by these RPCs and only advances on an
+  accepted change; `time_zone_updated_at` records when the current value was
+  accepted, in server time, for audit and never for ordering.
+- Both RPCs take an account-scoped `pg_advisory_xact_lock` before deciding
+  anything. An existing row is already serialized by `SELECT ... FOR UPDATE`,
+  but a missing row cannot be locked that way: two first writers could both read
+  "absent" and the later upsert would apply a stale decision over the winner.
+  The lock serializes first save/first save, first save/initialize and
+  initialize/initialize for the same account.
+
+The legacy three-argument call form remains valid through parameter defaults and
+never touches the stored time zone or its revision. The old five-argument
+signature with a client-supplied request time is dropped rather than kept next to
+the new one, because PostgREST resolves RPCs by name and two overloads would make
+the same call ambiguous. RLS, owner-scoped RPCs, the active-user checks and the
+`auth.users` cascade are unchanged, so an explicit purge still removes the row
+and its time zone with the identity.
+
+The rollback-only probe now also covers: initialization creating an
+empty-nickname row, a second device adopting the stored winner, a time-zone-only
+save keeping an unset name, a stale revision being refused and reported as a
+conflict, a nickname-only (including legacy three-argument) save keeping the zone,
+a blank name failing to clear an existing nickname, a missing revision being
+rejected, and invalid IANA identifiers being rejected by both RPCs. The
+real-service probe exercises
+true concurrent first save/first save, first save/initialize and
+initialize/initialize requests, because one session cannot prove that race.
+
+```powershell
+supabase db query --linked -f supabase/tests/profile_accounts.sql
+```
+
+Local tests cover repository revision semantics, true simultaneous first
+migration, future-clock independence and app-level display; the real-service
+probe `integration_test/profile_time_zone_real_service_test.dart` covers
+cross-client initialization, revision conflicts, isolation and offline recovery
+against the isolated project, and is host-run.

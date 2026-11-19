@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
+import 'package:pacta/src/profile/account_time_zone.dart';
 import 'package:pacta/src/profile/avatar_image.dart';
 import 'package:pacta/src/profile/avatar_picker.dart';
 import 'package:pacta/src/profile/profile_card.dart';
@@ -34,6 +35,9 @@ class _FakeProfileRepository implements ProfileRepository {
   int syncCalls = 0;
   ProfileAvatar? lastSavedAvatar;
   bool? lastClearAvatar;
+  String? lastTimeZoneId;
+  String? lastDeviceTimeZoneId;
+  int ensureTimeZoneCalls = 0;
 
   @override
   Stream<ProfileAccount> watchProfile() async* {
@@ -49,20 +53,33 @@ class _FakeProfileRepository implements ProfileRepository {
     required String displayName,
     ProfileAvatar? avatar,
     bool clearAvatar = false,
+    String? timeZoneId,
   }) async {
     saveCalls++;
     lastSavedAvatar = avatar;
     lastClearAvatar = clearAvatar;
+    lastTimeZoneId = timeZoneId;
     _account = _account.copyWith(
       displayName: displayName,
       avatar: avatar,
       clearAvatar: clearAvatar,
+      // null 表示"保留账号时区"，与本仓储契约一致；只有显式选择才改写。
+      displayTimeZoneId: timeZoneId ?? _account.displayTimeZoneId,
       updatedAt: DateTime.utc(2026, 11, 13),
       hasPendingSave: saveErrorMessage != null,
       syncError: saveErrorMessage,
       clearSyncError: saveErrorMessage == null,
     );
     _updates.add(_account);
+    return _account;
+  }
+
+  @override
+  Future<ProfileAccount> ensureDisplayTimeZone({
+    String? deviceTimeZoneId,
+  }) async {
+    ensureTimeZoneCalls++;
+    lastDeviceTimeZoneId = deviceTimeZoneId;
     return _account;
   }
 
@@ -503,6 +520,14 @@ void main() {
     });
     await tester.pumpAndSettle();
 
+    expect(find.text('使用此头像'), findsOneWidget);
+    await tester.ensureVisible(find.text('使用此头像'));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.text('使用此头像'));
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '小林');
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
@@ -536,5 +561,70 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('保存失败：云端暂不可用'), findsNothing);
+  });
+
+  testWidgets('编辑资料页提供七个城市时区并保存为账号值', (tester) async {
+    final repository = _FakeProfileRepository(
+      account: const ProfileAccount(
+        userId: 'user-a',
+        displayTimeZoneId: 'Asia/Shanghai',
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProfileEditPage(
+          repository: repository,
+          avatarPicker: _FakeAvatarPicker(null),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    for (final city in AccountTimeZones.cities) {
+      expect(find.text(city.label), findsOneWidget);
+    }
+    expect(find.textContaining('跟随设备'), findsNothing);
+    expect(find.textContaining('北京 · Asia/Shanghai'), findsOneWidget);
+    expect(find.textContaining('北京时间 04:00'), findsOneWidget);
+
+    await tester.tap(find.text('东京'));
+    await tester.pump();
+    expect(find.textContaining('东京 · Asia/Tokyo'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '小林');
+    await tester.ensureVisible(find.text('保存'));
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(repository.lastTimeZoneId, 'Asia/Tokyo');
+    expect((await repository.getProfile()).displayTimeZoneId, 'Asia/Tokyo');
+  });
+
+  testWidgets('城市名单外的合法账号时区不被静默改写', (tester) async {
+    final repository = _FakeProfileRepository(
+      account: const ProfileAccount(
+        userId: 'user-a',
+        displayTimeZoneId: 'Europe/Berlin',
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProfileEditPage(
+          repository: repository,
+          avatarPicker: _FakeAvatarPicker(null),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('当前时区'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '小林');
+    await tester.ensureVisible(find.text('保存'));
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    // 没有改动时区时，保存请求会省略时区（null=保留），因此断言账号最终值
+    // 保持 Berlin，而不是要求一个可选参数被重新发送。
+    expect((await repository.getProfile()).displayTimeZoneId, 'Europe/Berlin');
   });
 }
