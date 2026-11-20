@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../theme/pacta_spacing.dart';
+import '../ui/pacta_date_format.dart';
+import '../ui/pacta_error_text.dart';
 import 'cloud_recovery_point.dart';
 import 'cloud_snapshot_history.dart';
 import 'cloud_snapshot_repository.dart';
@@ -105,7 +108,8 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
     final confirmed = await _confirm(
       title: '恢复到该云端备份？',
       body:
-          '将用 ${_time(entry.uploadedAt)} 来自 ${entry.deviceName} 的 '
+          '将用 ${formatPactaDateTime(entry.uploadedAt)} 来自 '
+          '${entry.deviceName} 的 '
           '${entry.rowCount} 条记录替换本机数据。'
           '本机独有记录会被替换，恢复前会自动保存一份本机恢复点。'
           '本次恢复不会上传或覆盖云端。',
@@ -125,7 +129,8 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
     final confirmed = await _confirm(
       title: '找回本机恢复点？',
       body:
-          '将用 ${_time(point.createdAt)} 保存的 ${point.rowCount} 条记录'
+          '将用 ${formatPactaDateTime(point.createdAt)} 保存的 '
+          '${point.rowCount} 条记录'
           '替换本机数据。当前的记录会先另存为新的本机恢复点。'
           '本次操作不会上传或覆盖云端。',
       action: '确认找回',
@@ -159,15 +164,12 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
     } catch (error) {
       if (!mounted) return;
       messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            error is StateError
-                ? '恢复未完成：${error.message} 本机数据保持不变。'
-                : '恢复未完成，本机数据保持不变，请重试。',
-          ),
-        ),
-      );
+      // 异常先过共享脱敏：业务原因保留，技术异常一律换成可继续操作的话。
+      final detail = formatUserError(error, fallback: '');
+      final message = detail.isEmpty
+          ? '恢复未完成，本机数据保持不变，请重试。'
+          : '恢复未完成：$detail 本机数据保持不变。';
+      messenger.showSnackBar(SnackBar(content: Text(message)));
     } finally {
       if (mounted) setState(() => _working = false);
     }
@@ -197,13 +199,6 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
       ),
     );
     return result == true;
-  }
-
-  static String _time(DateTime time) {
-    final local = time.toLocal();
-    String two(int value) => value.toString().padLeft(2, '0');
-    return '${local.year}-${two(local.month)}-${two(local.day)} '
-        '${two(local.hour)}:${two(local.minute)}';
   }
 
   static String _reason(CloudRecoveryReason reason) => switch (reason) {
@@ -246,6 +241,14 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
     );
   }
 
+  /// 全局 `CardThemeData.margin` 为零：相邻历史记录之间显式留 8dp。
+  List<Widget> _spacedRows(List<Widget> rows) => [
+    for (var index = 0; index < rows.length; index++) ...[
+      if (index > 0) const SizedBox(height: PactaSpacing.sm),
+      rows[index],
+    ],
+  ];
+
   List<Widget> _cloudSection(BuildContext context) {
     final error = _cloudError;
     if (_loadingCloud) {
@@ -273,16 +276,16 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
         ),
       ];
     }
-    return [
+    return _spacedRows([
       for (final entry in _cloud)
         _HistoryTile(
-          title: _time(entry.uploadedAt),
+          title: formatPactaDateTime(entry.uploadedAt),
           subtitle: '${entry.deviceName} · ${entry.rowCount} 条记录',
           action: '恢复',
           onPressed: _working ? null : () => _restoreCloud(entry),
           icon: Icons.cloud_outlined,
         ),
-    ];
+    ]);
   }
 
   List<Widget> _pointsSection(BuildContext context) {
@@ -312,16 +315,16 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
         ),
       ];
     }
-    return [
+    return _spacedRows([
       for (final point in _points)
         _HistoryTile(
-          title: _time(point.createdAt),
+          title: formatPactaDateTime(point.createdAt),
           subtitle: '${_reason(point.reason)} · ${point.rowCount} 条记录',
           action: '找回',
           onPressed: _working ? null : () => _restorePoint(point),
           icon: Icons.restore_outlined,
         ),
-    ];
+    ]);
   }
 }
 

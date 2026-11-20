@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../ui/pacta_date_format.dart';
+import '../ui/pacta_error_text.dart';
 import 'focus_models.dart';
 import 'effective_duration_text.dart';
 import 'focus_repository.dart';
@@ -50,7 +52,7 @@ class _FocusClockReviewPageState extends State<FocusClockReviewPage> {
     try {
       await action();
     } catch (error) {
-      _showMessage(error.toString().replaceFirst('Bad state: ', ''));
+      _showMessage(formatUserError(error));
     } finally {
       if (mounted) setState(() => _busyCaseIds.remove(reviewCase.id));
     }
@@ -182,10 +184,5 @@ class _FocusClockReviewPageState extends State<FocusClockReviewPage> {
   }
 }
 
-String _formatDateTime(DateTime? value) {
-  if (value == null) return '未记录';
-  final local = value.toLocal();
-  String twoDigits(int number) => number.toString().padLeft(2, '0');
-  return '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)} '
-      '${twoDigits(local.hour)}:${twoDigits(local.minute)}:${twoDigits(local.second)}';
-}
+String _formatDateTime(DateTime? value) =>
+    value == null ? '未记录' : formatPactaDateTimeSeconds(value);

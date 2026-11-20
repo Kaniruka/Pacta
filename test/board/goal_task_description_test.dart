@@ -59,7 +59,8 @@ void main() {
     expect(find.text('保留目标描述'), findsOneWidget);
     expect(find.text('准备资料'), findsNothing);
     expect(tester.getSize(card).height, lessThan(expandedHeight - 100));
-    await tester.tap(find.byTooltip('编辑目标'));
+    await _openGoalActions(tester, '季度规划');
+    await tester.tap(find.text('编辑目标'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
@@ -100,7 +101,8 @@ void main() {
     expect(goal.description, '确认需求 整理资料');
     expect(find.text(goal.description), findsOneWidget);
 
-    await tester.tap(find.byTooltip('编辑目标'));
+    await _openGoalActions(tester, '完成发布');
+    await tester.tap(find.text('编辑目标'));
     await tester.pumpAndSettle();
     final longDescription = List.filled(201, '👨‍👩‍👧‍👦').join();
     final maximumDescription = List.filled(200, '👨‍👩‍👧‍👦').join();
@@ -118,7 +120,8 @@ void main() {
     expect(description.maxLines, 1);
     expect(description.overflow, TextOverflow.ellipsis);
 
-    await tester.tap(find.byTooltip('编辑目标'));
+    await _openGoalActions(tester, '完成发布');
+    await tester.tap(find.text('编辑目标'));
     await tester.pumpAndSettle();
     expect(
       tester.widget<TextField>(_field('描述（可选）')).controller!.text,
@@ -265,14 +268,16 @@ void main() {
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pumpAndSettle();
     expect(find.text('添加任务'), findsNothing);
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    // 管理动作不再占据 Tab 序列：长按标题打开操作面板。
+    await _openGoalActions(tester, '空目标');
+    await tester.tap(find.text('编辑目标'));
     await tester.pumpAndSettle();
     expect(find.text('编辑目标'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(find.text('添加任务'), findsNothing);
-    await tester.tap(find.byTooltip('删除目标'));
+    await _openGoalActions(tester, '空目标');
+    await tester.tap(find.text('删除目标'));
     await tester.pumpAndSettle();
     expect(find.text('删除目标和任务？'), findsOneWidget);
     await tester.tap(find.text('取消'));
@@ -298,7 +303,8 @@ void main() {
     await harness.showPlan(tester);
     expect(find.textContaining('精锐'), findsNothing);
     expect(find.textContaining('两者'), findsNothing);
-    await tester.tap(find.byTooltip('编辑目标'));
+    await _openGoalActions(tester, '分类目标');
+    await tester.tap(find.text('编辑目标'));
     await tester.pumpAndSettle();
     expect(find.text('新任务默认分类'), findsOneWidget);
     await tester.tap(find.text('取消'));
@@ -410,6 +416,12 @@ void main() {
 Finder _field(String label) => find.byWidgetPredicate(
   (widget) => widget is TextField && widget.decoration?.labelText == label,
 );
+
+/// 目标卡不再有内联图标栏：管理动作统一走"按住不动"的操作面板。
+Future<void> _openGoalActions(WidgetTester tester, String title) async {
+  await tester.longPress(find.text(title));
+  await tester.pumpAndSettle();
+}
 
 class _BoardHarness {
   _BoardHarness({

@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart' hide FocusNode;
 
 import '../tasks/task_repository.dart';
+import '../ui/pacta_date_format.dart';
+import '../ui/pacta_error_text.dart';
 import 'focus_models.dart';
 import 'effective_duration_text.dart';
 import 'focus_repository.dart';
@@ -307,9 +309,7 @@ class _PendingReconciliationCardState
       }
     } catch (error) {
       if (mounted) {
-        setState(
-          () => _error = error.toString().replaceFirst('Bad state: ', ''),
-        );
+        setState(() => _error = formatUserError(error));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -576,7 +576,7 @@ String _configurationLabel(
 }
 
 String _sourceContext(FocusSessionSourceOption option) =>
-    '设备 ${option.deviceId} · ${_formatDateTime(option.occurredAt)}';
+    '设备 ${option.deviceId} · ${formatPactaMonthDayTime(option.occurredAt)}';
 
 String _outcomeLabel(FocusSession session) => switch (session.status) {
   FocusSessionStatus.completed => session.isEarlyCompleted ? '依规则提前完成' : '正常完成',
@@ -587,14 +587,6 @@ String _outcomeLabel(FocusSession session) => switch (session.status) {
 
 String _formatRange(FocusSession session) {
   final end = session.completedAt ?? session.endsAt;
-  return '${_formatDateTime(session.startedAt)} – ${_formatDateTime(end)}';
-}
-
-String _formatDateTime(DateTime value) {
-  final local = value.toLocal();
-  final month = local.month.toString().padLeft(2, '0');
-  final day = local.day.toString().padLeft(2, '0');
-  final hour = local.hour.toString().padLeft(2, '0');
-  final minute = local.minute.toString().padLeft(2, '0');
-  return '$month-$day $hour:$minute';
+  return '${formatPactaMonthDayTime(session.startedAt)} – '
+      '${formatPactaMonthDayTime(end)}';
 }

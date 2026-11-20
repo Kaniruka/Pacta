@@ -23,7 +23,7 @@ import 'test_database.dart';
 /// 07 计划 UI 组合场景的唯一实现。
 ///
 /// 五个场景（无系统日历 + 自有增改、经"我的 → 编辑资料"改城市时的冲突、
-/// 重复范围与提醒模板（宽/窄两种视口）、预约准备 5/10/15/自定义与一次交接）
+/// 重复范围与提醒模板（宽/窄两种视口）、预约准备 5/10/15 预填或自填与一次交接）
 /// 在这里写成普通函数，由两条入口复用同一份代码：
 ///
 /// - `test/plan/windows_plan_composite_fixture_test.dart`：进程内 widget 夹具
@@ -585,9 +585,9 @@ Future<void> runAccountZoneScenario(
   expect(find.text('18:00–19:00'), findsOneWidget);
   await fixture.capture(tester, 'account-zone-tokyo-light-wide');
 
-  // 真实入口：我的 → 编辑 → 城市选择（产品自带 ChoiceChip，不是新交互）。
+  // 真实入口：我的 → 编辑资料（身份整行入口）→ 城市选择（产品自带 ChoiceChip）。
   await openMyDestination(tester);
-  await tester.tap(find.widgetWithText(TextButton, '编辑'));
+  await tester.tap(find.byTooltip('编辑资料'));
   await fixture.settle(tester);
   expect(find.text('编辑资料'), findsOneWidget);
   final newYork = find.widgetWithText(ChoiceChip, '纽约');
@@ -741,7 +741,7 @@ Future<void> runRecurrenceScenario(
   ]);
 }
 
-/// 场景四：预约准备 5/10/15/自定义可用，准备结束只交接一次，1280×900 亮色。
+/// 场景四：预约准备 5/10/15 预填或直接输入可用，准备结束只交接一次，1280×900 亮色。
 ///
 /// 10/15 不只断言 chip 存在：真的选一次、核对写入的准备秒数，再取消清理，
 /// 最后用 5 分钟走完唯一一次交接。
@@ -767,15 +767,16 @@ Future<void> runPreparationScenario(
   await tester.tap(find.byTooltip('开始专注'));
   await fixture.settle(tester);
   expect(find.text('预约准备时长'), findsOneWidget);
-  for (final label in ['5 分钟', '10 分钟', '15 分钟', '自定义']) {
+  for (final label in ['5 分钟', '10 分钟', '15 分钟']) {
     expect(find.text(label), findsOneWidget, reason: '准备预设 $label');
   }
+  // 没有“自定义”开关：数字输入框始终可见，chip 只做预填。
+  expect(find.text('自定义'), findsNothing);
+  expect(planFormField('预约准备时长（分钟）'), findsOneWidget);
   await fixture.capture(tester, 'preparation-presets-light-wide');
 
-  // 自定义：7 分钟准备，先验证落库再取消，不留下第二个活动预约。
-  await tester.tap(find.text('自定义'));
-  await fixture.settle(tester);
-  await tester.enterText(planFormField('自定义准备时长（分钟）'), '7');
+  // 自填 7 分钟（非预设档）：先验证落库再取消，不留下第二个活动预约。
+  await tester.enterText(planFormField('预约准备时长（分钟）'), '7');
   await tester.pump();
   await fixture.capture(tester, 'preparation-custom-light-wide');
   await tester.tap(find.text('开始准备（7分钟）'));

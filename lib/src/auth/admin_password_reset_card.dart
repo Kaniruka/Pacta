@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../ui/pacta_error_text.dart';
 import 'auth_repository.dart';
 
 class AdminPasswordResetCard extends StatefulWidget {
@@ -97,7 +98,7 @@ class _AdminPasswordResetCardState extends State<AdminPasswordResetCard> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _message = error.toString().replaceFirst('Bad state: ', '');
+        _message = formatUserError(error, fallback: '密码重置未完成，请稍后重试。');
         _hasError = true;
       });
     } finally {

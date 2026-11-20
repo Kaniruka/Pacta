@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../ui/pacta_date_format.dart';
+import '../ui/pacta_error_text.dart';
 import 'auth_repository.dart';
 import 'user_lifecycle_models.dart';
 
@@ -106,7 +108,7 @@ class _AdminUserLifecycleCardState extends State<AdminUserLifecycleCard> {
   }
 
   String _friendlyError(Object error) =>
-      error.toString().replaceFirst('Bad state: ', '');
+      formatUserError(error, fallback: '操作未完成，请稍后重试。');
 
   @override
   Widget build(BuildContext context) => Card(
@@ -196,10 +198,6 @@ class _AdminUserLifecycleCardState extends State<AdminUserLifecycleCard> {
     );
   }
 
-  String _formatDate(DateTime? value) {
-    if (value == null) return '待计算';
-    final local = value.toLocal();
-    String twoDigits(int number) => number.toString().padLeft(2, '0');
-    return '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)} ${twoDigits(local.hour)}:${twoDigits(local.minute)}';
-  }
+  String _formatDate(DateTime? value) =>
+      value == null ? '待计算' : formatPactaDateTime(value);
 }

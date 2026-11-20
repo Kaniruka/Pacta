@@ -2,7 +2,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pacta/src/profile/avatar_image.dart';
 import 'package:pacta/src/profile/profile_remote.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 
 void main() {
   final pngBytes = Uint8List.fromList(const [
@@ -132,6 +134,162 @@ void main() {
     }
   });
 
+  group('save_profile_account 参数与旧库回退', () {
+    test('没有时区可写时只发送 3 个参数', () async {
+      final calls = <Map<String, dynamic>>[];
+      final profile = await saveAccountProfile(
+        (function, params) async {
+          expect(function, 'save_profile_account');
+          calls.add(params);
+          return _savedProfileJson(
+            displayName: params['p_display_name'] as String,
+          );
+        },
+        displayName: '小林',
+        avatar: null,
+        displayTimeZoneId: null,
+        timeZoneRevision: null,
+      );
+
+      expect(calls, hasLength(1), reason: '不该多发一次 5 参请求');
+      expect(
+        calls.single.keys,
+        unorderedEquals([
+          'p_display_name',
+          'p_avatar_base64',
+          'p_clear_avatar',
+        ]),
+        reason: '旧库只注册了 3 参函数，带上时区键会整体失败',
+      );
+      expect(profile.displayName, '小林');
+    });
+
+    test('选择了账号时区时发送含修订号的 5 个参数', () async {
+      final calls = <Map<String, dynamic>>[];
+      final profile = await saveAccountProfile(
+        (function, params) async {
+          calls.add(params);
+          return _savedProfileJson(
+            displayName: params['p_display_name'] as String,
+            timeZoneId: params['p_time_zone_id'] as String?,
+            timeZoneRevision: params['p_time_zone_revision'] as int? ?? 0,
+          );
+        },
+        displayName: '小林',
+        avatar: ProfileAvatar(bytes: pngBytes, mimeType: 'image/png'),
+        displayTimeZoneId: 'Asia/Tokyo',
+        timeZoneRevision: 2,
+      );
+
+      expect(calls, hasLength(1));
+      expect(calls.single['p_time_zone_id'], 'Asia/Tokyo');
+      expect(calls.single['p_time_zone_revision'], 2);
+      expect(calls.single['p_avatar_base64'], base64Encode(pngBytes));
+      expect(profile.displayTimeZoneId, 'Asia/Tokyo');
+    });
+
+    test('云端缺少含时区的接口时给出中文提示，昵称与头像仍按 3 参数保底保存', () async {
+      final calls = <Map<String, dynamic>>[];
+      Object? thrown;
+      try {
+        await saveAccountProfile(
+          (function, params) async {
+            calls.add(params);
+            if (params.containsKey('p_time_zone_id')) {
+              throw const PostgrestException(
+                code: 'PGRST202',
+                message:
+                    'Could not find the function '
+                    'public.save_profile_account(p_avatar_base64, '
+                    'p_clear_avatar, p_display_name, p_time_zone_id, '
+                    'p_time_zone_revision) in the schema cache',
+              );
+            }
+            return _savedProfileJson(
+              displayName: params['p_display_name'] as String,
+            );
+          },
+          displayName: '小林',
+          avatar: null,
+          displayTimeZoneId: 'Asia/Tokyo',
+          timeZoneRevision: 1,
+        );
+      } on Object catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown, isA<StateError>());
+      final message = (thrown! as StateError).message;
+      expect(message, contains('云端尚未部署'));
+      expect(message, contains('时区'));
+      expect(message, contains('昵称与头像'));
+      expect(message, isNot(contains('Could not find the function')));
+      expect(message, isNot(contains('schema cache')));
+      expect(message, isNot(contains('PGRST202')));
+
+      expect(calls, hasLength(2), reason: '先试 5 参，再按 3 参保底保存');
+      expect(calls.first.containsKey('p_time_zone_id'), isTrue);
+      expect(
+        calls.last.keys,
+        unorderedEquals([
+          'p_display_name',
+          'p_avatar_base64',
+          'p_clear_avatar',
+        ]),
+      );
+    });
+
+    test('Postgres 权限错误换成中文提示，不外露英文 SQL', () async {
+      Object? thrown;
+      try {
+        await saveAccountProfile(
+          (function, params) async => throw const PostgrestException(
+            code: '42501',
+            message: 'permission denied for function save_profile_account',
+          ),
+          displayName: '小林',
+          avatar: null,
+          displayTimeZoneId: null,
+          timeZoneRevision: null,
+        );
+      } on Object catch (error) {
+        thrown = error;
+      }
+      expect(thrown, isA<StateError>());
+      final message = (thrown! as StateError).message;
+      expect(message, startsWith('保存失败：'));
+      expect(message, contains('权限'));
+      expect(message, isNot(contains('permission denied')));
+      expect(message, isNot(contains('42501')));
+      expect(message, isNot(contains('PostgrestException')));
+    });
+
+    test('其它 Postgrest 错误仍按保存失败返回且不泄露内部报错', () async {
+      Object? thrown;
+      try {
+        await saveAccountProfile(
+          (function, params) async => throw const PostgrestException(
+            code: 'PGRST500',
+            message:
+                'Internal server error: relation "profiles" does not exist',
+          ),
+          displayName: '小林',
+          avatar: null,
+          displayTimeZoneId: null,
+          timeZoneRevision: null,
+        );
+      } on Object catch (error) {
+        thrown = error;
+      }
+      expect(thrown, isA<StateError>());
+      final message = (thrown! as StateError).message;
+      expect(message, startsWith('保存失败：'));
+      expect(message, contains('云端服务'));
+      expect(message, isNot(contains('relation')));
+      expect(message, isNot(contains('profiles')));
+    });
+  });
+
   test('头像 base64 含非法字符时继续拒绝', () {
     final encoded = base64Encode(pngBytes);
     final broken = encoded.replaceRange(encoded.length, encoded.length, '!!');
@@ -225,6 +383,18 @@ Uint8List _onePixelPng() => Uint8List.fromList(const [
   0x60,
   0x82,
 ]);
+
+/// 账号资料 RPC 的返回负载，字段名与 remoteProfileFromJson 的输入一致。
+Map<String, dynamic> _savedProfileJson({
+  required String displayName,
+  String? timeZoneId,
+  int timeZoneRevision = 0,
+}) => {
+  'displayName': displayName,
+  'updatedAt': '2026-11-13T09:00:00+00:00',
+  'timeZoneId': timeZoneId,
+  'timeZoneRevision': timeZoneRevision,
+};
 
 /// Mirrors PostgreSQL `encode(bytea, 'base64')`: 76 characters per line,
 /// each line terminated by a line feed, including the last one.

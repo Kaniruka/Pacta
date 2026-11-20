@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../ui/pacta_error_text.dart';
 import 'account_time_zone.dart';
 import 'avatar_image.dart';
 import 'avatar_crop_page.dart';
@@ -77,7 +78,11 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     } on AvatarPickException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } on Object catch (error) {
-      if (mounted) setState(() => _error = '这张图片无法读取：$error');
+      if (mounted) {
+        setState(
+          () => _error = formatUserError(error, fallback: '这张图片无法读取，请重新选择。'),
+        );
+      }
     } finally {
       if (mounted) setState(() => _picking = false);
     }
@@ -150,19 +155,22 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
           requestedTimeZoneId != null &&
           saved.syncError == null &&
           saved.displayTimeZoneId != requestedTimeZoneId;
+      final saveError = saved.syncError;
       setState(() {
         _storedAvatar = saved.avatar?.bytes;
         _pickedAvatar = null;
         _timeZoneId = saved.displayTimeZoneId;
         _loadedTimeZoneId = saved.displayTimeZoneId;
         _error =
-            saved.syncError ??
+            (saveError == null
+                ? null
+                : formatUserError(saveError, fallback: '保存未完成，请稍后重试。')) ??
             (timeZoneReplaced
                 ? '账号时区已被其他设备更新，已采用最新值：'
                       '${AccountTimeZones.effectiveId(saved.displayTimeZoneId)}。'
                       '如仍想使用刚才的选择，请重新选择后再保存。'
                 : null);
-        _syncFailed = saved.syncError != null;
+        _syncFailed = saveError != null;
       });
       if (saved.syncError == null && !timeZoneReplaced) {
         Navigator.of(context).pop();
@@ -177,7 +185,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     } on Object catch (error) {
       if (mounted) {
         setState(() {
-          _error = '保存失败：${error is StateError ? error.message : error}';
+          // 保存失败就地显示在编辑页；退出编辑页后只读名片不继承这条报错。
+          _error = formatUserError(error, fallback: '保存未完成，请稍后重试。');
           _syncFailed = true;
         });
       }
@@ -191,10 +200,28 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     try {
       final synced = await widget.repository.syncProfile();
       if (!mounted) return;
+      final syncError = synced.syncError;
+      // 重试成功也可能遇到并发时区覆盖：账号存储按修订号保留了最新接受值，
+      // 这里与 _save() 用同一套说法，不静默停留在旧选择上。
+      final timeZoneReplaced =
+          syncError == null &&
+          _timeZoneId != null &&
+          synced.displayTimeZoneId != _timeZoneId;
       setState(() {
         _storedAvatar = synced.avatar?.bytes;
-        _error = synced.syncError;
-        _syncFailed = synced.syncError != null;
+        if (timeZoneReplaced) {
+          _timeZoneId = synced.displayTimeZoneId;
+          _loadedTimeZoneId = synced.displayTimeZoneId;
+          _error =
+              '账号时区已被其他设备更新，已采用最新值：'
+              '${AccountTimeZones.effectiveId(synced.displayTimeZoneId)}。'
+              '如仍想使用刚才的选择，请重新选择后再保存。';
+        } else {
+          _error = syncError == null
+              ? null
+              : formatUserError(syncError, fallback: '保存未完成，请稍后重试。');
+        }
+        _syncFailed = syncError != null;
       });
     } finally {
       if (mounted) setState(() => _busy = false);

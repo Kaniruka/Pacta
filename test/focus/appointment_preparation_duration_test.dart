@@ -31,7 +31,7 @@ void main() {
         );
   });
 
-  testWidgets('预约准备时长可选 5/10/15 或自定义，并按本场时长进入专注', (tester) async {
+  testWidgets('预约准备时长可用 5/10/15 预填也可直接输入，并按本场时长进入专注', (tester) async {
     final h = _Fixture();
     await h.seed();
     await h.mount(tester);
@@ -42,17 +42,45 @@ void main() {
     expect(find.text('5 分钟'), findsOneWidget);
     expect(find.text('10 分钟'), findsOneWidget);
     expect(find.text('15 分钟'), findsOneWidget);
-    expect(find.text('自定义'), findsOneWidget);
+    // 取消“自定义”开关：数字输入框始终可见，并与 chip 共用同一份状态。
+    expect(find.text('自定义'), findsNothing);
+    expect(find.text('预约准备时长（分钟）'), findsOneWidget);
+    expect(find.text('1–60 分钟；超出范围或非整数不会开始预约。'), findsOneWidget);
     expect(find.text('开始准备（15分钟）'), findsOneWidget);
+    expect(_preparationText(tester), '15');
 
     expect(find.text('25'), findsOneWidget);
 
+    // 快捷 chip 直接预填输入框，并显示选中态。
     await tester.tap(find.text('10 分钟'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    expect(_preparationText(tester), '10');
+    expect(_preparationChip(tester, '10 分钟').selected, isTrue);
+    expect(_preparationChip(tester, '5 分钟').selected, isFalse);
+    expect(_preparationChip(tester, '15 分钟').selected, isFalse);
+    expect(find.text('开始准备（10分钟）'), findsOneWidget);
+
+    // 手动输入非预设值时三个 chip 全部回到未选中态。
+    await tester.enterText(_preparationField(), '7');
+    await tester.pump();
+    expect(_preparationText(tester), '7');
+    for (final minutes in [5, 10, 15]) {
+      expect(
+        _preparationChip(tester, '$minutes 分钟').selected,
+        isFalse,
+        reason: '输入 7 时 $minutes 分钟不应选中',
+      );
+    }
+    expect(find.text('开始准备（7分钟）'), findsOneWidget);
+
+    // 输入恰好等于预设值时，对应 chip 立刻回到选中态。
+    await tester.enterText(_preparationField(), '10');
+    await tester.pump();
+    expect(_preparationChip(tester, '10 分钟').selected, isTrue);
     expect(find.text('开始准备（10分钟）'), findsOneWidget);
 
     // 本场正式专注时长仍在同一处展示与修改（回归项）。
-    await tester.enterText(find.byType(TextField).first, '40');
+    await tester.enterText(_durationField(), '40');
     await tester.pump();
     expect(find.text('40'), findsOneWidget);
 
@@ -84,21 +112,20 @@ void main() {
     await h.close(tester);
   });
 
-  testWidgets('自定义准备时长越界或非整数时就地拒绝且不创建预约', (tester) async {
+  testWidgets('准备时长越界或非整数时就地拒绝，7 分钟自填边界可正常落库', (tester) async {
     final h = _Fixture();
     await h.seed();
     await h.mount(tester);
 
     await tester.tap(find.byTooltip('开始专注'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('自定义'));
-    await tester.pumpAndSettle();
     expect(find.textContaining('1–60 分钟'), findsOneWidget);
 
     for (final invalid in ['61', '0', '7.5', '-5', '']) {
-      await tester.enterText(find.byType(TextField).last, invalid);
+      await tester.enterText(_preparationField(), invalid);
       await tester.pump();
-      await tester.tap(find.textContaining('开始准备'));
+      // 非法值不生成按钮之外的数字：按钮只显示“开始准备”。
+      await tester.tap(find.text('开始准备'));
       await tester.pumpAndSettle();
       expect(
         find.text('准备时长需为 1–60 分钟的整数。'),
@@ -108,20 +135,43 @@ void main() {
       expect(find.byType(AlertDialog), findsOneWidget);
       expect(await h.focus.getAppointments(), isEmpty);
       expect(await h.focus.getSessions(), isEmpty);
+      for (final minutes in [5, 10, 15]) {
+        expect(
+          _preparationChip(tester, '$minutes 分钟').selected,
+          isFalse,
+          reason: '输入 "$invalid" 时 $minutes 分钟不应选中',
+        );
+      }
     }
 
-    await tester.enterText(find.byType(TextField).last, '20');
+    // 7 分钟是自填边界：不是预设档，但仍在 1–60 内，照常落库。
+    await tester.enterText(_preparationField(), '7');
     await tester.pump();
-    expect(find.text('开始准备（20分钟）'), findsOneWidget);
-    await tester.tap(find.text('开始准备（20分钟）'));
+    expect(find.text('开始准备（7分钟）'), findsOneWidget);
+    await tester.tap(find.text('开始准备（7分钟）'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('预约准备'), findsOneWidget);
-    expect((await h.focus.getActiveAppointment())!.preparationSeconds, 20 * 60);
+    expect((await h.focus.getActiveAppointment())!.preparationSeconds, 7 * 60);
     await h.close(tester);
   });
 }
+
+Finder _durationField() => find.byWidgetPredicate(
+  (widget) => widget is TextField && widget.decoration?.labelText == '时长（分钟）',
+);
+
+Finder _preparationField() => find.byWidgetPredicate(
+  (widget) =>
+      widget is TextField && widget.decoration?.labelText == '预约准备时长（分钟）',
+);
+
+String _preparationText(WidgetTester tester) =>
+    tester.widget<TextField>(_preparationField()).controller!.text;
+
+ChoiceChip _preparationChip(WidgetTester tester, String label) =>
+    tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, label));
 
 class _Fixture {
   var now = DateTime.utc(2026, 11, 15, 8);

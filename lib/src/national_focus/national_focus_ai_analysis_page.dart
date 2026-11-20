@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../ui/pacta_date_format.dart';
 import 'national_focus_ai_access.dart';
 
 class NationalFocusAiAnalysisEntry extends StatelessWidget {
@@ -630,8 +631,8 @@ class _NationalFocusAiAnalysisPageState
             ),
             const SizedBox(height: 12),
             Text('范围：${_scopeLabel(grant.scope)}'),
-            Text('授权时间：${_formatDate(grant.createdAt)}'),
-            Text('到期时间：${_formatDate(grant.expiresAt)}'),
+            Text('授权时间：${formatPactaDateTime(grant.createdAt)}'),
+            Text('到期时间：${formatPactaDateTime(grant.expiresAt)}'),
             if (active) ...[
               const SizedBox(height: 12),
               OutlinedButton(
@@ -661,11 +662,4 @@ class _NationalFocusAiAnalysisPageState
     'national_focus:read' => '国策 AI 只读（云快照中的树、卡片、规则、进度与失败历史）',
     _ => scope,
   };
-
-  static String _formatDate(DateTime value) {
-    final local = value.toLocal();
-    String two(int part) => part.toString().padLeft(2, '0');
-    return '${local.year}-${two(local.month)}-${two(local.day)} '
-        '${two(local.hour)}:${two(local.minute)}';
-  }
 }

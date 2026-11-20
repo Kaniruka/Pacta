@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../theme/pacta_spacing.dart';
+import '../ui/pacta_date_format.dart';
 import '../ui/pacta_disclosure_section.dart';
+import '../ui/pacta_error_text.dart';
 import 'national_focus_models.dart';
 import 'national_focus_repository.dart';
 
@@ -47,7 +50,7 @@ class _NationalFocusStrengtheningPageState
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = _friendlyError(error);
+        _error = formatUserError(error);
       });
     }
   }
@@ -93,7 +96,7 @@ class _NationalFocusStrengtheningPageState
       unawaited(widget.repository.sync().catchError((Object _) {}));
       await _reload();
     } catch (error) {
-      if (mounted) setState(() => _error = _friendlyError(error));
+      if (mounted) setState(() => _error = formatUserError(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -103,7 +106,11 @@ class _NationalFocusStrengtheningPageState
   Widget build(BuildContext context) {
     final card = _card;
     if (_loading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      // 读取期间也要保留返回路径：缺 AppBar 时用户只能等读取结束才能退出。
+      return Scaffold(
+        appBar: AppBar(title: const Text('国策强化要求')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
     }
     if (card == null) {
       return Scaffold(
@@ -318,8 +325,9 @@ class _AvailableRequirementRow extends StatelessWidget {
       rule,
       style: theme.textTheme.bodyMedium?.copyWith(color: foreground),
     );
+    // 全局 CardThemeData.margin 为零：等级行之间显式留 8dp，禁止贴边。
     return Container(
-      margin: const EdgeInsets.only(bottom: 4),
+      margin: const EdgeInsets.only(bottom: PactaSpacing.sm),
       decoration: active
           ? BoxDecoration(
               color: colors.secondaryContainer,
@@ -543,11 +551,11 @@ class _RequirementVersionTile extends StatelessWidget {
     final label = levelNumber == null ? '基础要求' : '强化等级 $levelNumber';
     final endText = version.effectiveUntil == null
         ? '当前仍生效'
-        : _formatMoment(version.effectiveUntil!);
+        : formatPactaDateTime(version.effectiveUntil!);
     final end = version.effectiveUntil == null ? endText : '至 $endText';
     final legacyTrigger = version.effectiveTriggerCondition.trim();
     final exceptionNotes = version.exceptionNotes?.trim();
-    final start = _formatMoment(version.effectiveFrom);
+    final start = formatPactaDateTime(version.effectiveFrom);
     final versionNumber = version.versionNumber;
     final rule = version.effectiveAction;
     final details = [
@@ -582,21 +590,6 @@ String _currentIntervalLabel(List<NationalFocusRequirementVersion> versions) {
   if (versions.isEmpty) return '尚无生效版本记录';
   final current = versions.last;
   final versionNumber = current.versionNumber;
-  final effectiveFrom = _formatMoment(current.effectiveFrom);
+  final effectiveFrom = formatPactaDateTime(current.effectiveFrom);
   return '当前版本 $versionNumber · 自 $effectiveFrom 生效';
 }
-
-String _formatMoment(DateTime value) {
-  final local = value.toLocal();
-  final year = local.year.toString();
-  final month = local.month.toString().padLeft(2, '0');
-  final day = local.day.toString().padLeft(2, '0');
-  final hour = local.hour.toString().padLeft(2, '0');
-  final minute = local.minute.toString().padLeft(2, '0');
-  return '$year-$month-$day $hour:$minute';
-}
-
-String _friendlyError(Object error) => error
-    .toString()
-    .replaceFirst('Bad state: ', '')
-    .replaceFirst('Invalid argument(s): ', '');

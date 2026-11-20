@@ -53,7 +53,17 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('删除目标'));
+      // 目标/任务管理在计划页；删除目标已移入"按住不动"的操作面板。
+      final navigation = find.byType(NavigationBar).evaluate().isNotEmpty
+          ? find.byType(NavigationBar)
+          : find.byType(NavigationRail);
+      await tester.tap(
+        find.descendant(of: navigation, matching: find.text('计划')),
+      );
+      await tester.pumpAndSettle();
+      await tester.longPress(find.text('T09 设备验收目标'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('删除目标'));
       await tester.pumpAndSettle();
       expect(find.text('删除目标和任务？'), findsOneWidget);
       await tester.tap(find.text('删除'));

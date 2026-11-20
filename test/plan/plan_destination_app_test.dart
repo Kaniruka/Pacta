@@ -11,6 +11,7 @@ import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../support/fake_auth_repository.dart';
 
@@ -108,14 +109,20 @@ Finder _field(String label) => find.byWidgetPredicate(
   (widget) => widget is TextField && widget.decoration?.labelText == label,
 );
 
-Finder _goalCard(String title) =>
-    find.ancestor(of: find.text(title), matching: find.byType(Card));
-
-Finder _goalAction(String title, String tooltip) =>
-    find.descendant(of: _goalCard(title), matching: find.byTooltip(tooltip));
-
 Finder _taskTile(String title) =>
     find.ancestor(of: find.text(title), matching: find.byType(ListTile));
+
+/// 目标卡已不再提供内联图标栏：管理动作统一走"按住不动"的操作面板。
+Future<void> _openGoalActions(WidgetTester tester, String title) async {
+  await tester.longPress(find.text(title));
+  await tester.pumpAndSettle();
+}
+
+/// 任务行同理：内层列表认领指针，弹出的是任务菜单而不是目标菜单。
+Future<void> _openTaskActions(WidgetTester tester, String title) async {
+  await tester.longPress(find.text(title));
+  await tester.pumpAndSettle();
+}
 
 Finder _scheduleTile(String title) =>
     find.ancestor(of: find.text(title), matching: find.byType(ListTile));
@@ -170,6 +177,8 @@ double _top(WidgetTester tester, Finder finder) => tester.getTopLeft(finder).dy;
 void main() {
   // 平台时区是系统边界：测试固定为 UTC，日历日期与显示时区才可复现。
   setUp(() {
+    // 目标级"隐藏已完成"偏好走内存实现：读取在首帧后完成，不抢拖拽手势。
+    SharedPreferences.setMockInitialValues({});
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
           const MethodChannel('flutter_timezone'),
@@ -266,12 +275,9 @@ void main() {
       );
       expect(find.text('1 项任务 · 已完成'), findsOneWidget);
 
-      await tester.tap(
-        find.descendant(
-          of: _taskTile('写提纲（修订）'),
-          matching: find.byTooltip('删除任务'),
-        ),
-      );
+      await _openTaskActions(tester, '写提纲（修订）');
+      expect(find.text('标记未完成'), findsOneWidget);
+      await tester.tap(find.text('删除任务'));
       await tester.pumpAndSettle();
       expect(find.text('删除任务？'), findsOneWidget);
       await tester.tap(find.text('删除'));
@@ -280,7 +286,8 @@ void main() {
       expect(find.text('季度复盘'), findsOneWidget);
       expect(find.text('0 项任务 · 暂无任务 · 未完成'), findsOneWidget);
 
-      await tester.tap(_goalAction('季度复盘', '删除目标'));
+      await _openGoalActions(tester, '季度复盘');
+      await tester.tap(find.text('删除目标'));
       await tester.pumpAndSettle();
       expect(find.text('删除目标和任务？'), findsOneWidget);
       await tester.tap(find.text('删除'));
@@ -305,13 +312,15 @@ void main() {
       await tester.pumpAndSettle();
       await _openPlan(tester);
 
-      await tester.tap(_goalAction('目标乙', '置顶目标'));
+      await _openGoalActions(tester, '目标乙');
+      await tester.tap(find.text('置顶目标'));
       await tester.pumpAndSettle();
-      await tester.tap(_goalAction('目标甲', '置顶目标'));
+      await _openGoalActions(tester, '目标甲');
+      await tester.tap(find.text('置顶目标'));
       await tester.pumpAndSettle();
 
-      expect(find.text('置顶目标 · 手动顺序'), findsOneWidget);
-      expect(find.text('其他目标'), findsOneWidget);
+      expect(find.text('置顶目标 · 长按拖动排序'), findsOneWidget);
+      expect(find.text('其他目标 · 长按拖动排序'), findsOneWidget);
       expect(
         _top(tester, find.text('目标乙')),
         lessThan(_top(tester, find.text('目标甲'))),
@@ -321,12 +330,22 @@ void main() {
         lessThan(_top(tester, find.text('目标丙'))),
       );
 
-      await tester.tap(_goalAction('目标乙', '下移置顶目标'));
+      // 按住拖动直接改手动顺序：乙向下越过甲。
+      final drag = await tester.startGesture(
+        tester.getCenter(find.text('目标乙')),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      for (var step = 0; step < 15; step++) {
+        await drag.moveBy(const Offset(0, 40));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      await drag.up();
       await tester.pumpAndSettle();
       expect(
         _top(tester, find.text('目标甲')),
         lessThan(_top(tester, find.text('目标乙'))),
       );
+      expect(find.text('编辑目标'), findsNothing, reason: '拖拽不应弹出操作面板');
 
       final pinnedOrder = [
         for (final goal in await harness.tasks.getGoals())
@@ -343,7 +362,7 @@ void main() {
         _top(tester, find.text('目标甲')),
         lessThan(_top(tester, find.text('目标乙'))),
       );
-      expect(find.text('置顶目标 · 手动顺序'), findsOneWidget);
+      expect(find.text('置顶目标 · 长按拖动排序'), findsOneWidget);
     } finally {
       await harness.dispose(tester);
     }

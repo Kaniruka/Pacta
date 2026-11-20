@@ -114,7 +114,7 @@ Finder _taskTile(String title) =>
     find.ancestor(of: find.text(title), matching: find.byType(ListTile));
 
 void main() {
-  testWidgets('7 目标收起箭头与编辑/删除按钮对齐且折叠控制仍独立可用', (tester) async {
+  testWidgets('7 目标卡只留单一展开箭头，管理动作走长按操作面板', (tester) async {
     final harness = await _Harness.create();
     try {
       final goal = await harness.tasks.createGoal(
@@ -144,40 +144,29 @@ void main() {
         final card = _goalCard(title);
         await tester.ensureVisible(card);
         await tester.pumpAndSettle();
-        final chevron = tester.getRect(
-          find.descendant(of: card, matching: find.byIcon(Icons.expand_less)),
+        final header = find.descendant(
+          of: card,
+          matching: find.byIcon(Icons.expand_less),
         );
-        final editBox = tester.getRect(
-          find.descendant(of: card, matching: find.byTooltip('编辑目标')),
-        );
-        final deleteBox = tester.getRect(
-          find.descendant(of: card, matching: find.byTooltip('删除目标')),
-        );
-        // 目标卡里还可能有任务行的删除按钮，这里只量目标自己的操作字形。
-        final editGlyph = tester.getRect(
-          find.descendant(
-            of: find.descendant(of: card, matching: find.byTooltip('编辑目标')),
-            matching: find.byIcon(Icons.edit_outlined),
-          ),
-        );
-        final deleteGlyph = tester.getRect(
-          find.descendant(
-            of: find.descendant(of: card, matching: find.byTooltip('删除目标')),
-            matching: find.byIcon(Icons.delete_outline),
-          ),
-        );
-        expect(chevron.center.dy, closeTo(editBox.center.dy, 0.5));
-        expect(chevron.center.dy, closeTo(deleteBox.center.dy, 0.5));
+        expect(header, findsOneWidget, reason: '头部只剩唯一的展开/折叠箭头');
+        // 旧的内联动作栏整排移除：窄屏不再出现两排图标挤压标题。
+        for (final tooltip in ['编辑目标', '删除目标', '置顶目标', '上移置顶目标', '下移置顶目标']) {
+          expect(
+            find.descendant(of: card, matching: find.byTooltip(tooltip)),
+            findsNothing,
+            reason: '\$tooltip 不应常驻目标卡头部',
+          );
+        }
+        final cardRect = tester.getRect(card);
+        final chevron = tester.getRect(header);
         expect(
-          editGlyph.left - chevron.right,
-          closeTo(deleteGlyph.left - editGlyph.right, 0.5),
-          reason: '箭头字形与按钮字形的水平节奏一致',
+          chevron.center.dx,
+          greaterThan(cardRect.right - 56),
+          reason: '展开箭头仍是头部右侧唯一的 48dp 动作槽',
         );
-        expect(editBox.center.dy, closeTo(deleteBox.center.dy, 0.5));
       }
 
       // 标题整体仍是折叠控制。
-      final card = _goalCard('整理本周材料');
       expect(find.text('准备材料'), findsOneWidget);
       await tester.tap(find.text('整理本周材料'));
       await tester.pumpAndSettle();
@@ -187,12 +176,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('准备材料'), findsOneWidget);
 
-      // 编辑与删除独立，不触发折叠。
-      await tester.tap(
-        find.descendant(of: card, matching: find.byTooltip('编辑目标')),
-      );
+      // 按住不动打开操作面板：编辑不会顺带切换折叠状态。
+      await tester.longPress(find.text('整理本周材料'));
       await tester.pumpAndSettle();
       expect(find.text('编辑目标'), findsOneWidget);
+      expect(find.text('删除目标'), findsOneWidget);
+      await tester.tap(find.text('编辑目标'));
+      await tester.pumpAndSettle();
+      expect(find.text('编辑目标'), findsOneWidget, reason: '编辑弹窗');
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       expect(find.text('准备材料'), findsOneWidget);

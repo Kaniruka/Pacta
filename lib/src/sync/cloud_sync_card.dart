@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../focus/focus_repository.dart';
+import '../ui/pacta_date_format.dart';
 
 import 'cloud_auto_upload.dart';
 import 'cloud_snapshot_history_page.dart';
@@ -575,19 +576,19 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('本机数据更新：${_time(local.dataUpdatedAt)}'),
+            Text('本机数据更新：${formatPactaDateTimeSeconds(local.dataUpdatedAt)}'),
             Text('本机记录：${local.rowCount} 条'),
             const SizedBox(height: 8),
             if (cloud == null)
               const Text('云端暂无备份。')
             else ...[
-              Text('云端数据更新：${_time(cloud.dataUpdatedAt)}'),
+              Text('云端数据更新：${formatPactaDateTimeSeconds(cloud.dataUpdatedAt)}'),
               Text('云端记录：${cloud.rowCount} 条'),
               Text('来源：${cloud.deviceName}'),
               if (cloud.isLegacy)
                 const Text('发现旧版云端记录，将转换为整份数据；原设备和上传时间未记录。')
               else
-                Text('上传时间：${_time(cloud.uploadedAt)}'),
+                Text('上传时间：${formatPactaDateTimeSeconds(cloud.uploadedAt)}'),
               const SizedBox(height: 8),
               Text(_age(cloud.dataUpdatedAt, local.dataUpdatedAt)),
             ],
@@ -628,12 +629,6 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
       ? '本机有尚未同步的修改；下载将丢弃这些修改。'
       : '本机数据与上次成功同步时一致。';
 
-  static String _time(DateTime time) {
-    final local = time.toLocal();
-    String two(int value) => value.toString().padLeft(2, '0');
-    return '${local.year}-${two(local.month)}-${two(local.day)} ${two(local.hour)}:${two(local.minute)}:${two(local.second)}';
-  }
-
   static String _age(DateTime cloud, DateTime local) => cloud.isAfter(local)
       ? '云端数据时间较新，请选择要保留的数据。'
       : cloud.isBefore(local)
@@ -645,7 +640,9 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
   String get _summary {
     if (widget.repository == null) return '当前未配置云端连接。';
     final result = _result;
-    return result == null ? '尚未同步' : _time(result.succeededAt);
+    return result == null
+        ? '尚未同步'
+        : formatPactaDateTimeSeconds(result.succeededAt);
   }
 
   bool _reportedFailure = false;
@@ -685,38 +682,53 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
           padding: const EdgeInsets.all(16),
           child: LayoutBuilder(
             builder: (context, constraints) {
+              // 窄屏（< 400dp）把时间放到标题下一行时，两者必须在同一个
+              // 列里左对齐：状态行留在图标右侧的内容列内，就不能掉到图标
+              // 正下方，也不会因尾部箭头压缩而错位。
               final compact = constraints.maxWidth < 400;
+              // 时间戳始终是一行：窄屏下它跟标题同列左对齐，宽屏下右对齐。
+              // 空间真的不够时省略，而不是换行掉到图标下方。
               final status = Text(
                 _summary,
                 style: Theme.of(context).textTheme.bodySmall,
                 textAlign: compact ? TextAlign.start : TextAlign.end,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               );
-              final heading = Row(
+              final heading = Text(
+                '数据同步',
+                style: Theme.of(context).textTheme.titleMedium,
+              );
+              return Row(
                 children: [
                   const Icon(Icons.cloud_sync_outlined),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Text(
-                      '数据同步',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
+                    child: compact
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              heading,
+                              const SizedBox(height: 4),
+                              status,
+                            ],
+                          )
+                        : Row(
+                            children: [
+                              Expanded(child: heading),
+                              const SizedBox(width: 12),
+                              Flexible(child: status),
+                            ],
+                          ),
                   ),
-                  if (!compact) ...[
-                    const SizedBox(width: 12),
-                    Flexible(fit: FlexFit.tight, child: status),
-                    const SizedBox(width: 4),
-                  ],
+                  const SizedBox(width: 4),
                   Icon(
                     widget.versionCheck?.failed == true
                         ? Icons.refresh
                         : Icons.chevron_right,
                   ),
                 ],
-              );
-              if (!compact) return heading;
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [heading, const SizedBox(height: 4), status],
               );
             },
           ),

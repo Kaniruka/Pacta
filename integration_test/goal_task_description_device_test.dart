@@ -79,15 +79,15 @@ void main() {
         await tester.enterText(_field('描述（可选）'), '  新增目标\n描述  ');
         await _tap(tester, find.text('保存'));
         expect((await tasks.getGoals()).single.description, '新增目标 描述');
-        await _tap(tester, find.byTooltip('编辑目标'));
+        await _openGoalEditor(tester);
         await tester.enterText(_field('描述（可选）'), '修改后的目标描述');
         await _tap(tester, find.text('保存'));
         expect((await tasks.getGoals()).single.description, '修改后的目标描述');
-        await _tap(tester, find.byTooltip('编辑目标'));
+        await _openGoalEditor(tester);
         await tester.enterText(_field('描述（可选）'), '  ');
         await _tap(tester, find.text('保存'));
         expect((await tasks.getGoals()).single.description, isEmpty);
-        await _tap(tester, find.byTooltip('编辑目标'));
+        await _openGoalEditor(tester);
         await tester.enterText(_field('描述（可选）'), _goalDescription);
         await _tap(tester, find.text('保存'));
 
@@ -161,4 +161,16 @@ Future<void> _tap(WidgetTester tester, Finder finder) async {
   await tester.ensureVisible(finder);
   await tester.tap(finder);
   await tester.pumpAndSettle();
+}
+
+/// 目标管理动作已收进"按住不动"的操作面板：长按目标标题再点编辑。
+Future<void> _openGoalEditor(WidgetTester tester) async {
+  final title = find.text('设备描述验收目标');
+  await tester.ensureVisible(title);
+  await tester.pumpAndSettle();
+  final gesture = await tester.startGesture(tester.getCenter(title));
+  await tester.pump(const Duration(milliseconds: 400));
+  await gesture.up();
+  await tester.pumpAndSettle();
+  await _tap(tester, find.text('编辑目标'));
 }

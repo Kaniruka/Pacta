@@ -43,6 +43,68 @@ void main() {
     expect(repository.resolvedCaseId, 'review-1');
     expect(repository.resolvedSourceId, selectedSource);
   });
+
+  testWidgets('同组连续裁决卡片之间保留 8dp 纵向间距', (tester) async {
+    final repository = _ReviewRepository(_stackedCases());
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: NationalFocusReconciliationPage(repository: repository),
+      ),
+    );
+    await _pumpUi(tester);
+
+    // 全局 CardThemeData.margin 为零：紧邻的两张卡片必须显式隔开。
+    final cards = find.byType(Card);
+    expect(cards, findsNWidgets(2));
+    final first = tester.getRect(cards.at(0));
+    final second = tester.getRect(cards.at(1));
+    expect(second.top - first.bottom, greaterThanOrEqualTo(8));
+
+    // 时间文案走共享格式，并保持原来的本地时区展示。
+    expect(find.text('上次可信时间：2026-09-21 18:10'), findsOneWidget);
+  });
+}
+
+NationalFocusReviewState _stackedCases() {
+  NationalFocusClockReviewCase clockCase({
+    required String id,
+    required DateTime detectedAt,
+    required DateTime previousWallTime,
+    required DateTime observedWallTime,
+  }) => NationalFocusClockReviewCase(
+    id: id,
+    direction: NationalFocusClockChangeDirection.forward,
+    detectedAt: detectedAt,
+    previousWallTime: previousWallTime,
+    observedWallTime: observedWallTime,
+    reliableThroughTime: observedWallTime,
+    estimatedElapsedSeconds: 600,
+    cardIds: const ['parent'],
+  );
+  return NationalFocusReviewState(
+    clockReviewCases: [
+      clockCase(
+        id: 'clock-1',
+        detectedAt: DateTime(2026, 9, 21, 19, 10),
+        previousWallTime: DateTime(2026, 9, 21, 18, 10),
+        observedWallTime: DateTime(2026, 9, 21, 20, 10),
+      ),
+      clockCase(
+        id: 'clock-2',
+        detectedAt: DateTime(2026, 9, 21, 19, 20),
+        previousWallTime: DateTime(2026, 9, 21, 18, 20),
+        observedWallTime: DateTime(2026, 9, 21, 20, 20),
+      ),
+    ],
+  );
 }
 
 Future<void> _pumpUi(WidgetTester tester) async {

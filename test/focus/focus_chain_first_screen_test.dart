@@ -106,7 +106,7 @@ void main() {
 
     await _openDestination(tester, '我的');
     await tester.scrollUntilVisible(
-      find.text('提醒与通知'),
+      find.text('通知与设备权限'),
       160,
       scrollable: find
           .descendant(

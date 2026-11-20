@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:drift/drift.dart' as drift;
 
 import '../tasks/task_database.dart';
+import '../ui/pacta_error_text.dart';
 import 'account_time_zone.dart';
 import 'avatar_image.dart';
 import 'profile_models.dart';
@@ -257,7 +258,7 @@ class LocalProfileRepository implements ProfileRepository {
       // A failed read only records the failure. It must not create or advance a
       // local version, otherwise a later read could make the empty cache look
       // newer than the stored profile and upload over it.
-      return _recordFailure(local, _failureText(error));
+      return _recordFailure(local, _readFailureText(error));
     }
 
     if (remoteProfile == null) {
@@ -326,12 +327,19 @@ class LocalProfileRepository implements ProfileRepository {
         pendingTimeZoneUpload: false,
       );
     } catch (error) {
-      // Keep the pending intent; only a matching sequence may carry the error.
-      await _updateStateIfUnchanged(
+      // 编辑保存失败属于编辑页：本次调用把原因回给它，但只读名片读到的是
+      // 本机缓存，不能把这条待重试的保存报错当成永久错误展示。待上传意图
+      // 仍然保留，重试路径不变。
+      final applied = await _updateStateIfUnchanged(
         expectedSequence: sequence,
-        syncError: _failureText(error),
+        syncError: null,
         pendingSave: true,
       );
+      final current = await getProfile();
+      // 未能写入说明缓存已被新编辑推进：旧请求的失败不得挂到新版本上。
+      return applied
+          ? current.copyWith(syncError: _saveFailureText(error))
+          : current;
     }
     return getProfile();
   }
@@ -530,10 +538,18 @@ class LocalProfileRepository implements ProfileRepository {
     },
   );
 
-  String _failureText(Object error) {
-    final message = error is StateError ? error.message : error.toString();
+  /// 保存失败的对外文案：技术异常换成可继续操作的中文，业务提示保持原意。
+  String _saveFailureText(Object error) {
+    final message = formatUserError(error, fallback: '保存未完成，请稍后重试。');
     if (message.startsWith('保存失败')) return message;
     return '保存失败：$message';
+  }
+
+  /// 读取/同步初始化失败的对外文案：只读名片仅在没有可展示资料时显示它。
+  String _readFailureText(Object error) {
+    final message = formatUserError(error, fallback: '资料暂时无法读取，请稍后重试。');
+    if (message.startsWith('读取失败')) return message;
+    return '读取失败：$message';
   }
 
   Future<void> _writeLocal({

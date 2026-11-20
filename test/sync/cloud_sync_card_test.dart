@@ -404,6 +404,53 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await database.close();
   });
+
+  testWidgets('窄屏同步时间与标题同列左对齐，不掉到图标正下方', (tester) async {
+    tester.view.physicalSize = const Size(360, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    final database = PactaDatabase(NativeDatabase.memory());
+    final repository = CloudSnapshotRepository(
+      database: database,
+      remote: InMemoryCloudSnapshotRemote(),
+      userId: _userId,
+      deviceId: 'phone-a',
+      deviceName: '我的手机',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: CloudSyncCard(
+            repository: repository,
+            onDownloaded: () async {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final title = tester.getRect(find.text('数据同步'));
+    final status = tester.getRect(find.text('尚未同步'));
+    final icon = tester.getRect(find.byIcon(Icons.cloud_sync_outlined));
+    expect(
+      status.left,
+      moreOrLessEquals(title.left, epsilon: 0.5),
+      reason: '360dp 下时间戳换行后必须与标题左缘对齐',
+    );
+    expect(
+      status.top,
+      greaterThanOrEqualTo(title.bottom - 0.01),
+      reason: '时间戳在标题下一行',
+    );
+    expect(status.left, greaterThan(icon.right), reason: '时间戳不得掉到左侧图标正下方');
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await database.close();
+  });
 }
 
 /// 与 App 组合一致的自动上传协调器：开关只在配置了云端连接的卡片里出现。

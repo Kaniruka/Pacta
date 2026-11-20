@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../notifications/device_permission_gateway.dart';
 import '../schedules/schedule_repository.dart';
+import '../theme/pacta_spacing.dart';
 import 'calendar_models.dart';
 import 'calendar_repository.dart';
 import 'manual_calendar_import.dart';
@@ -245,6 +246,8 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
                     ),
                   ),
                 ),
+                // 卡片默认 margin 为零：相邻卡片之间显式留出 8dp 间距。
+                const SizedBox(height: PactaSpacing.sm),
                 if (_loading)
                   const Center(child: CircularProgressIndicator())
                 else if (widget.isAndroid)
@@ -315,7 +318,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: PactaSpacing.sm),
           TextButton.icon(
             key: const Key('calendar-open-system-settings'),
             onPressed: _working ? null : _openSystemSettings,

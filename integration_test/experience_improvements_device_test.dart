@@ -240,15 +240,34 @@ void main() {
       await _ensureVisible(tester, goalCard, '显示目标与任务');
       expect(find.text(task.title), findsOneWidget);
       expect(tester.widget<ListTile>(_taskTile(task.title)).subtitle, isNull);
+      // 目标卡头部只剩单一展开箭头；编辑/删除等管理动作在长按面板里。
       expect(
-        find.descendant(of: goalCard, matching: find.byTooltip('编辑目标')),
+        find.descendant(of: goalCard, matching: find.byIcon(Icons.expand_less)),
         findsOneWidget,
       );
+      // 头部没有编辑/删除图标：这两个字形只可能出现在旧的内联动作栏。
       expect(
-        find.descendant(of: goalCard, matching: find.byTooltip('删除目标')),
-        findsOneWidget,
+        find.descendant(
+          of: goalCard,
+          matching: find.byIcon(Icons.edit_outlined),
+        ),
+        findsNothing,
       );
+      expect(
+        find.descendant(
+          of: goalCard,
+          matching: find.byIcon(Icons.delete_outline),
+        ),
+        findsNothing,
+      );
+      await tester.longPress(find.text(goal.title));
+      await tester.pumpAndSettle();
+      expect(find.text('编辑目标'), findsOneWidget);
+      expect(find.text('删除目标'), findsOneWidget);
       await shot(tester, 'board-empty-options-goal-actions');
+      await tester.tapAt(const Offset(8, 8));
+      await tester.pumpAndSettle();
+      expect(find.text('编辑目标'), findsNothing);
 
       await _tapAndSettle(tester, find.text(task.title), '打开任务编辑');
       expect(find.text('编辑任务'), findsOneWidget);

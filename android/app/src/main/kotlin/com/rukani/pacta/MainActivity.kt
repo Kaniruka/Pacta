@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.CalendarContract
 import android.provider.MediaStore
 import android.provider.Settings
@@ -88,6 +89,11 @@ class MainActivity : FlutterActivity() {
                 }
                 "openAppSettings" -> {
                     openAppSettings()
+                    result.success(null)
+                }
+                "isIgnoringBatteryOptimizations" -> result.success(isIgnoringBatteryOptimizations())
+                "openBatteryOptimizationSettings" -> {
+                    openBatteryOptimizationSettings()
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -186,6 +192,31 @@ class MainActivity : FlutterActivity() {
                 ),
             ),
         )
+    }
+
+    /// Android 6.0 起系统会按电池优化限制后台进程；加入白名单后计时与提醒
+    /// 更不容易被系统掐断，但这不是业务前置条件。
+    private fun isIgnoringBatteryOptimizations(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
+        val powerManager = getSystemService(POWER_SERVICE) as? PowerManager
+            ?: return false
+        return powerManager.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    /// 白名单列表页不需要额外权限；设备上没有该屏幕时退到应用详情页，
+    /// 用户仍能在这里找到电池设置入口。
+    private fun openBatteryOptimizationSettings() {
+        val candidates = mutableListOf<Intent>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            candidates.add(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        }
+        candidates.add(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:$packageName"),
+            ),
+        )
+        openFirstAvailable(candidates)
     }
 
     private fun openFirstAvailable(intents: List<Intent>) {

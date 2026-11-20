@@ -267,7 +267,7 @@ void main() {
 
     await tester.tap(find.text('我的'));
     await pumpBoard(tester);
-    await tester.tap(find.text('编辑'));
+    await tester.tap(find.byTooltip('编辑资料'));
     await tester.pumpAndSettle();
 
     // 不输入昵称，只选择另一个城市并保存。

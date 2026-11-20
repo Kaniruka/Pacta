@@ -49,10 +49,16 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(
-      tester.getCenter(find.text('打开国策树')).dy,
-      closeTo(tester.getCenter(find.text('国策状态')).dy, 1),
-    );
+    // 标题与 48dp 打开按钮同一行；标题视觉顶距固定 16dp，卡片上下不再
+    // 一空一紧（48dp 按钮中心 y=32 与标题中线 y≈28 本就不同，这里断言
+    // 的是同一行与正确的视觉顶距）。
+    final cardRect = tester.getRect(find.byType(Card));
+    final titleRect = tester.getRect(find.text('国策状态'));
+    final openRect = tester.getRect(find.text('打开国策树'));
+    expect(openRect.center.dy, greaterThan(titleRect.top));
+    expect(openRect.center.dy, lessThan(titleRect.bottom + 16));
+    expect(titleRect.top - cardRect.top, closeTo(16, 0.5));
+    expect(cardRect.right - openRect.right, greaterThan(0));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });

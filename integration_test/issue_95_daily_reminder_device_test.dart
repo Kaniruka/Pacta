@@ -139,7 +139,7 @@ void main() {
         expect(find.byType(AppShell), findsOneWidget);
         expect(await service.ensureNotificationPermissionForUse(), allowed);
         await _openMyPage(tester);
-        expect(find.text('提醒与通知'), findsOneWidget);
+        expect(find.text('通知与设备权限'), findsOneWidget);
         _record('ISSUE95_PERMISSION_CORE_ACCESSIBLE repeated_prompt=false');
         return;
       }
@@ -188,7 +188,7 @@ void main() {
       expect(find.byType(AppShell), findsOneWidget);
 
       await _openMyPage(tester);
-      await tester.tap(find.text('提醒与通知'));
+      await tester.tap(find.text('通知与设备权限'));
       await _pumpFrames(tester);
       expect(find.text('每天打开 Pacta'), findsOneWidget);
       _record('ISSUE95_SETTINGS_OPENED');
@@ -311,7 +311,7 @@ Future<void> _openMyPage(WidgetTester tester) async {
   );
   await _pumpFrames(tester);
   await tester.scrollUntilVisible(
-    find.text('提醒与通知'),
+    find.text('通知与设备权限'),
     250,
     scrollable: find
         .descendant(of: find.byType(MyPage), matching: find.byType(Scrollable))

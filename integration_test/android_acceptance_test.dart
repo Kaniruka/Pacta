@@ -219,9 +219,9 @@ void main() {
       await tester.tap(find.text('我的'));
       await settle();
       expect(find.text('安卓验收'), findsWidgets);
-      expect(find.text('提醒与通知'), findsOneWidget);
+      expect(find.text('通知与设备权限'), findsOneWidget);
       await shot('08-my');
-      await tester.tap(find.text('提醒与通知'));
+      await tester.tap(find.text('通知与设备权限'));
       await settle();
       expect(find.byType(FocusNotificationSettingsPage), findsOneWidget);
       await shot('09-notification-settings');
@@ -229,7 +229,7 @@ void main() {
       await settle();
 
       // 8. Account time zone through the real edit page.
-      await tester.tap(find.text('编辑'));
+      await tester.tap(find.byTooltip('编辑资料'));
       await settle();
       expect(find.text('编辑资料'), findsOneWidget);
       await tester.tap(find.text('纽约'));

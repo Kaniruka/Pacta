@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../theme/pacta_spacing.dart';
+import '../ui/pacta_date_format.dart';
 import '../ui/pacta_disclosure_section.dart';
+import '../ui/pacta_error_text.dart';
 import 'national_focus_models.dart';
 import 'national_focus_repository.dart';
 
@@ -82,11 +85,15 @@ class _NationalFocusReconciliationPageState
         await widget.repository.sync();
       } catch (error) {
         if (mounted) {
-          setState(() => _error = '本机已保存核对结果，但跨设备同步失败：$error');
+          setState(
+            () => _error = '本机已保存核对结果，但跨设备同步失败：${formatUserError(error)}',
+          );
         }
       }
     } catch (error) {
-      if (mounted) setState(() => _error = '保存核对结果失败：$error');
+      if (mounted) {
+        setState(() => _error = '保存核对结果失败：${formatUserError(error)}');
+      }
     } finally {
       _busyIds.remove(id);
       if (mounted) setState(() {});
@@ -101,11 +108,40 @@ class _NationalFocusReconciliationPageState
       builder: (context, snapshot) {
         final state = snapshot.data;
         if (snapshot.hasError) {
-          return Center(child: Text('无法读取核对记录：${snapshot.error}'));
+          return Center(
+            child: Text('无法读取核对记录：${formatUserError(snapshot.error!)}'),
+          );
         }
         if (state == null) {
           return const Center(child: CircularProgressIndicator());
         }
+        // 历史与待核对同属一组纵向卡片：先按显示顺序摊平，再统一补间距。
+        final historyCards = <Widget>[
+          for (final result in state.reconciliationHistory.reversed)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.account_tree_outlined),
+                title: Text('已裁决 ${result.cardIds.length} 个节点的分支'),
+                subtitle: Text(
+                  '${formatPactaDateTime(result.resolvedAt)} · '
+                  '采用 ${result.acceptedSourceIds.length} 条来源，'
+                  '保留 ${result.retainedSourceIds.length} 条来源记录',
+                ),
+              ),
+            ),
+          for (final review in state.clockReviewHistory.reversed)
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.schedule_outlined),
+                title: Text('已核对${_directionLabel(review.direction)}时钟变更'),
+                subtitle: Text(
+                  '${formatPactaDateTime(review.detectedAt)} · 连续计时约 '
+                  '${review.estimatedElapsedSeconds} 秒 · '
+                  '检查点推进至 ${formatPactaDateTime(review.reliableThroughTime)}',
+                ),
+              ),
+            ),
+        ];
         return SafeArea(
           child: Align(
             alignment: Alignment.topCenter,
@@ -133,43 +169,21 @@ class _NationalFocusReconciliationPageState
                   const SizedBox(height: 12),
                   if (state.reconciliationCases.isNotEmpty) ...[
                     _sectionHeading(context, '真实分支冲突'),
-                    for (final review in state.reconciliationCases)
-                      _reconciliationCard(context, review),
+                    ..._spacedCards([
+                      for (final review in state.reconciliationCases)
+                        _reconciliationCard(context, review),
+                    ]),
                   ],
                   if (state.clockReviewCases.isNotEmpty) ...[
                     _sectionHeading(context, '时钟异常'),
-                    for (final review in state.clockReviewCases)
-                      _clockReviewCard(context, review),
+                    ..._spacedCards([
+                      for (final review in state.clockReviewCases)
+                        _clockReviewCard(context, review),
+                    ]),
                   ],
-                  if (state.reconciliationHistory.isNotEmpty ||
-                      state.clockReviewHistory.isNotEmpty) ...[
+                  if (historyCards.isNotEmpty) ...[
                     _sectionHeading(context, '已完成的核对'),
-                    for (final result in state.reconciliationHistory.reversed)
-                      Card(
-                        child: ListTile(
-                          leading: const Icon(Icons.account_tree_outlined),
-                          title: Text('已裁决 ${result.cardIds.length} 个节点的分支'),
-                          subtitle: Text(
-                            '${_dateTime(result.resolvedAt)} · '
-                            '采用 ${result.acceptedSourceIds.length} 条来源，'
-                            '保留 ${result.retainedSourceIds.length} 条来源记录',
-                          ),
-                        ),
-                      ),
-                    for (final review in state.clockReviewHistory.reversed)
-                      Card(
-                        child: ListTile(
-                          leading: const Icon(Icons.schedule_outlined),
-                          title: Text(
-                            '已核对${_directionLabel(review.direction)}时钟变更',
-                          ),
-                          subtitle: Text(
-                            '${_dateTime(review.detectedAt)} · 连续计时约 '
-                            '${review.estimatedElapsedSeconds} 秒 · '
-                            '检查点推进至 ${_dateTime(review.reliableThroughTime)}',
-                          ),
-                        ),
-                      ),
+                    ..._spacedCards(historyCards),
                   ],
                   if (state.reconciliationCases.isEmpty &&
                       state.clockReviewCases.isEmpty &&
@@ -195,6 +209,17 @@ class _NationalFocusReconciliationPageState
     child: Text(title, style: Theme.of(context).textTheme.titleMedium),
   );
 
+  /// 全局 `CardThemeData.margin` 为零：同组连续卡片之间显式留 8dp。
+  ///
+  /// 只在相邻两张卡片之间插入间隔，组尾不产生多余留白；段落下方的
+  /// 16dp 标题内边距仍然是分隔两个分组的唯一边距。
+  List<Widget> _spacedCards(List<Widget> cards) => [
+    for (var index = 0; index < cards.length; index++) ...[
+      if (index > 0) const SizedBox(height: PactaSpacing.sm),
+      cards[index],
+    ],
+  ];
+
   Widget _reconciliationCard(
     BuildContext context,
     NationalFocusReconciliationCase review,
@@ -214,7 +239,7 @@ class _NationalFocusReconciliationPageState
             ),
             const SizedBox(height: 4),
             Text(
-              '检测于 ${_dateTime(review.createdAt)}。请选择一个完整来源分支；'
+              '检测于 ${formatPactaDateTime(review.createdAt)}。请选择一个完整来源分支；'
               '系统会按该分支恢复状态、父子关系及连续统计。',
             ),
             RadioGroup<String>(
@@ -309,7 +334,7 @@ class _NationalFocusReconciliationPageState
                       leading: const Icon(Icons.history),
                       title: Text(_operationLabel(operation.operation)),
                       subtitle: Text(
-                        '${_dateTime(operation.occurredAt)} · ${operation.deviceId}\n'
+                        '${formatPactaDateTime(operation.occurredAt)} · ${operation.deviceId}\n'
                         '${operation.effects.map((effect) => _effectLabel(effect, review.cardNames)).join('\n')}',
                       ),
                     ),
@@ -380,10 +405,10 @@ class _NationalFocusReconciliationPageState
             style: Theme.of(context).textTheme.titleSmall,
           ),
           const SizedBox(height: 6),
-          Text('上次可信时间：${_dateTime(review.previousWallTime)}'),
-          Text('设备当前时间：${_dateTime(review.observedWallTime)}'),
+          Text('上次可信时间：${formatPactaDateTime(review.previousWallTime)}'),
+          Text('设备当前时间：${formatPactaDateTime(review.observedWallTime)}'),
           Text('连续计时估算：${review.estimatedElapsedSeconds} 秒'),
-          Text('可靠部分最多推进至：${_dateTime(review.reliableThroughTime)}'),
+          Text('可靠部分最多推进至：${formatPactaDateTime(review.reliableThroughTime)}'),
           const SizedBox(height: 8),
           const Text(
             '系统只按连续计时确认的时间结算固定 UTC 20:00 检查点（北京时间 04:00）。'
@@ -442,14 +467,4 @@ class _NationalFocusReconciliationPageState
 
   String _directionLabel(NationalFocusClockChangeDirection direction) =>
       direction == NationalFocusClockChangeDirection.forward ? '前跳' : '回拨';
-
-  String _dateTime(DateTime value) {
-    final local = value.toLocal();
-    final y = local.year.toString().padLeft(4, '0');
-    final m = local.month.toString().padLeft(2, '0');
-    final d = local.day.toString().padLeft(2, '0');
-    final h = local.hour.toString().padLeft(2, '0');
-    final minute = local.minute.toString().padLeft(2, '0');
-    return '$y-$m-$d $h:$minute';
-  }
 }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../national_focus/national_focus_models.dart';
 import '../national_focus/national_focus_repository.dart';
+import '../ui/pacta_card_header.dart';
 
 class NationalFocusSummaryCard extends StatefulWidget {
   const NationalFocusSummaryCard({
@@ -126,34 +127,27 @@ class _NationalFocusSummaryCardState extends State<NationalFocusSummaryCard> {
   Widget _card(BuildContext context, {required List<Widget> children}) {
     return Card(
       margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final title = Text(
-              '国策状态',
-              style: Theme.of(context).textTheme.titleMedium,
-            );
-            final openTree = TextButton.icon(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 标题 + 48dp 操作按钮改用统一头部：标题视觉顶距 16dp，
+          // 不再因为按钮把单行标题垂直居中而出现上空下紧。
+          PactaCardHeader(
+            title: '国策状态',
+            trailing: TextButton.icon(
               onPressed: widget.onOpenTree,
               icon: const Icon(Icons.account_tree_outlined),
               label: const Text('打开国策树', softWrap: false),
-            );
-            return Column(
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 12,
-                  runSpacing: 4,
-                  children: [title, openTree],
-                ),
-                ...children,
-              ],
-            );
-          },
-        ),
+              children: [const SizedBox(height: 8), ...children],
+            ),
+          ),
+        ],
       ),
     );
   }

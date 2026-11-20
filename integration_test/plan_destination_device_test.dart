@@ -168,9 +168,6 @@ Finder _field(String label) => find.byWidgetPredicate(
   (widget) => widget is TextField && widget.decoration?.labelText == label,
 );
 
-Finder _goalCard(String title) =>
-    find.ancestor(of: find.text(title), matching: find.byType(Card));
-
 Finder _scheduleTile(String title) =>
     find.ancestor(of: find.text(title), matching: find.byType(ListTile));
 
@@ -533,16 +530,11 @@ Future<List<String>> _runScenario({
   await pumpUi();
   expect(find.text('写提纲（修订）'), findsOneWidget);
 
-  // 6. 删除任务（保留目标与其它任务）。
-  await tapVisible(
-    find.descendant(
-      of: find.ancestor(
-        of: find.text('写提纲（修订）'),
-        matching: find.byType(ListTile),
-      ),
-      matching: find.byTooltip('删除任务'),
-    ),
-  );
+  // 6. 删除任务（保留目标与其它任务）。行内删除按钮已移除：
+  // 按住任务不动打开操作面板，再从面板进入原删除确认。
+  await tester.longPress(find.text('写提纲（修订）'));
+  await pumpUi();
+  await tapVisible(find.text('删除任务'));
   expect(find.text('删除任务？'), findsOneWidget);
   await shot(
     '09-task-delete-confirm',
@@ -571,9 +563,9 @@ Future<List<String>> _runScenario({
   await pumpUi();
   await saveDialog();
   expect(find.text('临时目标'), findsOneWidget);
-  await tapVisible(
-    find.descendant(of: _goalCard('临时目标'), matching: find.byTooltip('删除目标')),
-  );
+  await tester.longPress(find.text('临时目标'));
+  await pumpUi();
+  await tapVisible(find.text('删除目标'));
   expect(find.text('删除目标和任务？'), findsOneWidget);
   await shot(
     '11-goal-delete-confirm',
@@ -592,31 +584,39 @@ Future<List<String>> _runScenario({
     expect(find.text(title), findsOneWidget);
   }
   for (final title in ['本周交付', '整理发布材料']) {
-    await tapVisible(
-      find.descendant(of: _goalCard(title), matching: find.byTooltip('置顶目标')),
-    );
+    await tester.longPress(find.text(title));
+    await pumpUi();
+    await tapVisible(find.text('置顶目标'));
   }
-  expect(find.text('置顶目标 · 手动顺序'), findsOneWidget);
+  expect(find.text('置顶目标 · 长按拖动排序'), findsOneWidget);
   expect(
     _top(tester, find.text('本周交付')),
     lessThan(_top(tester, find.text('整理发布材料'))),
   );
   await shot(
     '12-pins-order',
-    marker: pageText(PlanPage, '置顶目标 · 手动顺序'),
+    marker: pageText(PlanPage, '置顶目标 · 长按拖动排序'),
     about: '置顶顺序',
   );
 
-  await tapVisible(
-    find.descendant(of: _goalCard('本周交付'), matching: find.byTooltip('下移置顶目标')),
+  // 按住拖动直接重排：把"本周交付"拖到"整理发布材料"之后。
+  final pinnedDrag = await tester.startGesture(
+    tester.getCenter(find.text('本周交付')),
   );
+  await tester.pump(const Duration(milliseconds: 400));
+  for (var step = 0; step < 12; step++) {
+    await pinnedDrag.moveBy(const Offset(0, 24));
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+  await pinnedDrag.up();
+  await pumpUi();
   expect(
     _top(tester, find.text('整理发布材料')),
     lessThan(_top(tester, find.text('本周交付'))),
   );
   await shot(
     '13-pins-reordered',
-    marker: pageText(PlanPage, '置顶目标 · 手动顺序'),
+    marker: pageText(PlanPage, '置顶目标 · 长按拖动排序'),
     about: '重排后的顺序',
   );
 
@@ -837,8 +837,8 @@ Future<List<String>> _runScenario({
 
   // 12. 回到目标视图：任务仍在、置顶顺序仍在。
   await tapVisible(find.text('目标'), preferTop: true);
-  await reveal(find.text('置顶目标 · 手动顺序'), preferTop: true);
-  expect(find.text('置顶目标 · 手动顺序'), findsOneWidget);
+  await reveal(find.text('置顶目标 · 长按拖动排序'), preferTop: true);
+  expect(find.text('置顶目标 · 长按拖动排序'), findsOneWidget);
   await reveal(find.text('整理发布材料'), preferTop: true);
   expect(
     _top(tester, find.text('整理发布材料')),

@@ -8,6 +8,18 @@ import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/notifications/focus_notification_settings_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// 合并后的页面更长：用高视口让三组设置同时参与布局。
+Future<void> _pumpPage(WidgetTester tester, Widget page) async {
+  tester.view.physicalSize = const Size(900, 2200);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(() {
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+  await tester.pumpWidget(page);
+  await tester.pumpAndSettle();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -37,10 +49,10 @@ void main() {
         await service.dispose();
       });
 
-      await tester.pumpWidget(
+      await _pumpPage(
+        tester,
         MaterialApp(home: FocusNotificationSettingsPage(service: service)),
       );
-      await tester.pumpAndSettle();
 
       expect(find.text('国策待确认提醒'), findsOneWidget);
       expect(find.text('提醒时间（北京时间）'), findsOneWidget);

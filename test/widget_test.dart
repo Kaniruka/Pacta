@@ -83,7 +83,8 @@ void main() {
 
     await tester.tap(find.byType(PactaCheckCircle).first);
     await tester.pumpAndSettle();
-    expect(find.textContaining('已完成'), findsOneWidget);
+    // 卡片底部同时出现“隐藏已完成 (1)”入口，这里锁定统计摘要本身。
+    expect(find.text('1 项任务 · 已完成'), findsOneWidget);
   });
 
   testWidgets('删除目标保留活动专注历史并阻止新开始', (tester) async {
@@ -126,7 +127,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('计划'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('删除目标'));
+    // 删除目标移入长按操作面板；点按标题仍只负责展开/折叠。
+    await tester.longPress(find.text('可删除目标'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除目标'));
     await tester.pumpAndSettle();
     expect(find.text('删除目标和任务？'), findsOneWidget);
     await tester.tap(find.text('删除'));

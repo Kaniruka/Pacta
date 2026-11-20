@@ -2,6 +2,9 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 
+import '../theme/pacta_fonts.dart';
+import '../theme/pacta_spacing.dart';
+import 'device_permission_gateway.dart';
 import 'focus_device_preferences.dart';
 import 'focus_notification_service.dart';
 
@@ -11,17 +14,38 @@ typedef ReminderTimePicker = Future<TimeOfDay?> Function(
   String helpText,
 );
 
-/// Device-local reminder settings: focus notifications, the National Focus
-/// reminder, and the independent daily open-Pacta reminder.
+/// 《通知与设备权限》：后台运行、系统权限、专注通知与定时提醒的唯一设备级设置面。
+///
+/// 页面分三组：先讲清楚应用能不能在后台跑、通知/精确闹钟/日历权限是否开放，
+/// 再放后台倒计时与专注流程通知，最后是国策待确认提醒与每日打开提醒。所有
+/// 设置都只在本设备生效，不随云备份同步。
 class FocusNotificationSettingsPage extends StatefulWidget {
   const FocusNotificationSettingsPage({
     super.key,
     required this.service,
     this.timePicker,
+    this.isAndroid,
+    this.permissionGateway,
+    this.batteryOptimizationGateway,
+    this.calendarSourcesBuilder,
   });
 
   final FocusNotificationService service;
   final ReminderTimePicker? timePicker;
+
+  /// 测试用平台覆盖；生产按 [Platform.isAndroid]。
+  final bool? isAndroid;
+
+  /// 系统设置入口；为空时按平台取默认实现。
+  final DevicePermissionGateway? permissionGateway;
+
+  /// Android 后台运行（忽略电池优化）能力；为空时按平台取默认实现。
+  final BatteryOptimizationGateway? batteryOptimizationGateway;
+
+  /// 打开已有《系统日历导入》页的来源勾选与手动导入界面。
+  ///
+  /// 由《我的》注入，本页因此不依赖日历模块；为空时该行只解释入口尚未接入。
+  final WidgetBuilder? calendarSourcesBuilder;
 
   @override
   State<FocusNotificationSettingsPage> createState() =>
@@ -33,9 +57,24 @@ class _FocusNotificationSettingsPageState
   FocusDevicePreferences? _preferences;
   bool _notificationsAllowed = false;
   bool _exactAlarmsAllowed = false;
+  bool _ignoringBatteryOptimizations = false;
   bool _loading = true;
   bool _updating = false;
   String? _message;
+
+  bool get _isAndroid => widget.isAndroid ?? Platform.isAndroid;
+
+  /// 真正的 Windows 桌面表现（系统托盘/前台进程保活）。
+  ///
+  /// 以 [_isAndroid] 为准而不是直接看宿主平台：注入 isAndroid 为 true 时一律
+  /// 按移动端文案与分支走，桌面宿主的测试才能覆盖 Android 权限请求路径。
+  bool get _isWindowsDesktop => !_isAndroid && Platform.isWindows;
+
+  DevicePermissionGateway get _permissions =>
+      widget.permissionGateway ?? createDevicePermissionGateway();
+
+  BatteryOptimizationGateway get _battery =>
+      widget.batteryOptimizationGateway ?? createBatteryOptimizationGateway();
 
   @override
   void initState() {
@@ -45,26 +84,36 @@ class _FocusNotificationSettingsPageState
 
   Future<void> _load() async {
     final preferences = await widget.service.getPreferences();
-    final notificationsAllowed = await widget.service.notificationsAllowed();
-    final exactAlarmsAllowed = await widget.service.exactAlarmsAllowed();
+    final permissions = await _readSystemPermissions();
     if (!mounted) return;
     setState(() {
       _preferences = preferences;
-      _notificationsAllowed = notificationsAllowed;
-      _exactAlarmsAllowed = exactAlarmsAllowed;
+      _notificationsAllowed = permissions.$1;
+      _exactAlarmsAllowed = permissions.$2;
+      _ignoringBatteryOptimizations = permissions.$3;
       _loading = false;
     });
   }
 
-  Future<void> _applyPreferences(FocusDevicePreferences updated) async {
-    await widget.service.updatePreferences(updated);
+  /// 三个系统权限状态并行读取；桌面端没有电池优化概念，固定为 false。
+  Future<(bool, bool, bool)> _readSystemPermissions() async {
     final notificationsAllowed = await widget.service.notificationsAllowed();
     final exactAlarmsAllowed = await widget.service.exactAlarmsAllowed();
+    final ignoringBattery = _isAndroid
+        ? await _battery.isIgnoringBatteryOptimizations()
+        : false;
+    return (notificationsAllowed, exactAlarmsAllowed, ignoringBattery);
+  }
+
+  Future<void> _applyPreferences(FocusDevicePreferences updated) async {
+    await widget.service.updatePreferences(updated);
+    final permissions = await _readSystemPermissions();
     if (!mounted) return;
     setState(() {
       _preferences = updated;
-      _notificationsAllowed = notificationsAllowed;
-      _exactAlarmsAllowed = exactAlarmsAllowed;
+      _notificationsAllowed = permissions.$1;
+      _exactAlarmsAllowed = permissions.$2;
+      _ignoringBatteryOptimizations = permissions.$3;
     });
   }
 
@@ -83,7 +132,7 @@ class _FocusNotificationSettingsPageState
             _message = '未授予通知权限，专注和预约仍可使用；可在系统设置中重新开启。';
           });
         }
-        if (Platform.isAndroid) {
+        if (_isAndroid) {
           await widget.service.updatePreferences(
             current.copyWith(notificationPermissionRequested: true),
           );
@@ -100,7 +149,7 @@ class _FocusNotificationSettingsPageState
       await _applyPreferences(current.copyWith(notificationsEnabled: enabled));
       if (!mounted) return;
       setState(() {
-        _message = enabled && !_exactAlarmsAllowed && Platform.isAndroid
+        _message = enabled && !_exactAlarmsAllowed && _isAndroid
             ? '提醒已开启；未允许精确提醒时，可能延迟送达。'
             : null;
       });
@@ -131,7 +180,7 @@ class _FocusNotificationSettingsPageState
     });
     try {
       if (enabled &&
-          Platform.isAndroid &&
+          _isAndroid &&
           !await widget.service.requestNotificationPermission()) {
         if (mounted) {
           setState(() {
@@ -156,7 +205,7 @@ class _FocusNotificationSettingsPageState
       );
       if (!mounted) return;
       setState(() {
-        _message = enabled && !_exactAlarmsAllowed && Platform.isAndroid
+        _message = enabled && !_exactAlarmsAllowed && _isAndroid
             ? '国策提醒已开启；未允许精确提醒时，可能延迟送达。'
             : null;
       });
@@ -223,7 +272,7 @@ class _FocusNotificationSettingsPageState
         dailyOpenReminderMinutesAfterMidnight: minutesAfterMidnight,
         dailyOpenReminderTimeChosen: timeChosen,
       );
-      if (Platform.isAndroid) {
+      if (_isAndroid) {
         final allowed = await widget.service.requestNotificationPermission();
         updated = updated.copyWith(notificationPermissionRequested: true);
         if (!allowed) {
@@ -279,6 +328,24 @@ class _FocusNotificationSettingsPageState
     );
   }
 
+  Future<void> _requestNotifications() async {
+    if (_updating) return;
+    setState(() {
+      _updating = true;
+      _message = null;
+    });
+    try {
+      final allowed = await widget.service.requestNotificationPermission();
+      if (!mounted) return;
+      setState(() {
+        _notificationsAllowed = allowed;
+        _message = allowed ? null : '系统未授予通知权限；可在系统设置中重新开启。';
+      });
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
   Future<void> _allowExactAlarms() async {
     setState(() {
       _updating = true;
@@ -297,16 +364,46 @@ class _FocusNotificationSettingsPageState
   }
 
   Future<void> _openSystemNotificationSettings() async {
-    await widget.service.openNotificationSettings();
+    // 走注入的网关而不是服务内部默认实现：系统屏幕入口可替换、可测试。
+    await _permissions.openNotificationSettings();
     if (!mounted) return;
-    final notificationsAllowed = await widget.service.notificationsAllowed();
-    final exactAlarmsAllowed = await widget.service.exactAlarmsAllowed();
+    final permissions = await _readSystemPermissions();
     if (!mounted) return;
     setState(() {
-      _notificationsAllowed = notificationsAllowed;
-      _exactAlarmsAllowed = exactAlarmsAllowed;
-      _message = notificationsAllowed ? null : '系统仍未开放通知权限，提醒暂不可送达。';
+      _notificationsAllowed = permissions.$1;
+      _exactAlarmsAllowed = permissions.$2;
+      _ignoringBatteryOptimizations = permissions.$3;
+      _message = permissions.$1 ? null : '系统仍未开放通知权限，提醒暂不可送达。';
     });
+  }
+
+  /// 从系统白名单页返回后重新读取状态：用户可能刚在系统里放行。
+  Future<void> _openBatteryOptimizationSettings() async {
+    setState(() {
+      _updating = true;
+      _message = null;
+    });
+    try {
+      await _battery.openBatteryOptimizationSettings();
+      if (!mounted) return;
+      final permissions = await _readSystemPermissions();
+      if (!mounted) return;
+      setState(() {
+        _notificationsAllowed = permissions.$1;
+        _exactAlarmsAllowed = permissions.$2;
+        _ignoringBatteryOptimizations = permissions.$3;
+        _message = permissions.$3 ? '已加入电池优化白名单，后台倒计时与提醒更稳定。' : null;
+      });
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
+  Future<void> _openCalendarSources() async {
+    final builder = widget.calendarSourcesBuilder;
+    if (builder == null) return;
+    await Navigator.of(context)
+        .push<void>(MaterialPageRoute<void>(builder: builder));
   }
 
   String _formatTime(int minutesAfterMidnight) =>
@@ -317,7 +414,7 @@ class _FocusNotificationSettingsPageState
   Widget build(BuildContext context) {
     final preferences = _preferences;
     return Scaffold(
-      appBar: AppBar(title: const Text('提醒与通知')),
+      appBar: AppBar(title: const Text('通知与设备权限')),
       body: _loading || preferences == null
           ? const Center(child: CircularProgressIndicator())
           : SafeArea(
@@ -328,26 +425,23 @@ class _FocusNotificationSettingsPageState
                   child: ListView(
                     padding: const EdgeInsets.all(20),
                     children: [
+                      _sectionTitle(context, '后台运行与系统权限'),
+                      const SizedBox(height: PactaSpacing.sm),
+                      _buildPermissionCard(context),
+                      const SizedBox(height: PactaSpacing.md),
+                      _sectionTitle(context, '后台倒计时与专注通知'),
+                      const SizedBox(height: PactaSpacing.sm),
+                      _buildBackgroundCard(preferences),
+                      const SizedBox(height: PactaSpacing.sm),
                       _buildFocusCard(preferences),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: PactaSpacing.md),
+                      _sectionTitle(context, '定时提醒'),
+                      const SizedBox(height: PactaSpacing.sm),
                       _buildNationalFocusCard(preferences),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: PactaSpacing.sm),
                       _buildDailyReminderCard(preferences),
-                      const SizedBox(height: 12),
-                      Card(
-                        child: SwitchListTile.adaptive(
-                          value: preferences.backgroundRunningEnabled,
-                          onChanged: _updating ? null : _setBackgroundEnabled,
-                          title: const Text('显示后台倒计时'),
-                          subtitle: Text(
-                            Platform.isWindows
-                                ? '在系统托盘显示当前状态；关闭窗口后会话仍在后台运行。'
-                                : '在通知栏显示预约或专注状态，点按可返回会话。',
-                          ),
-                        ),
-                      ),
                       if (_message != null) ...[
-                        const SizedBox(height: 12),
+                        const SizedBox(height: PactaSpacing.md),
                         Text(
                           _message!,
                           style: TextStyle(
@@ -357,7 +451,7 @@ class _FocusNotificationSettingsPageState
                           ),
                         ),
                       ],
-                      const SizedBox(height: 12),
+                      const SizedBox(height: PactaSpacing.md),
                       Text(
                         '这些提醒仅保存在本设备，不随云备份同步。',
                         style: Theme.of(context).textTheme.bodySmall,
@@ -370,36 +464,164 @@ class _FocusNotificationSettingsPageState
     );
   }
 
-  Widget _buildFocusCard(FocusDevicePreferences preferences) => Card(
-    child: Column(
-      children: [
-        SwitchListTile.adaptive(
-          value: preferences.notificationsEnabled,
-          onChanged: _updating ? null : _setNotificationsEnabled,
-          title: const Text('专注流程通知'),
-          subtitle: const Text('预约开始专注或专注结束时提醒；不提醒任务截止时间。'),
-        ),
-        if (preferences.notificationsEnabled && !_notificationsAllowed)
-          _PermissionHint(
-            message: '系统通知权限未开放，提醒暂不可送达。',
-            onOpenSettings: _updating ? null : _openSystemNotificationSettings,
-          ),
-        if (preferences.notificationsEnabled &&
-            Platform.isAndroid &&
-            _notificationsAllowed &&
-            !_exactAlarmsAllowed)
-          _ExactAlarmHint(onAllow: _updating ? null : _allowExactAlarms),
-        if (!preferences.notificationsEnabled &&
-            Platform.isAndroid &&
-            preferences.notificationPermissionRequested)
-          _OpenSystemSettingsHint(
-            message: '通知权限已被系统关闭；重新开启后可接收提醒。',
-            onOpenSettings: _updating ? null : _openSystemNotificationSettings,
-          ),
-      ],
+  /// 分组标题：只用主题字阶 + 600 字重，不声明任何字体族。
+  Widget _sectionTitle(BuildContext context, String title) => Padding(
+    padding: const EdgeInsets.only(left: PactaSpacing.xs),
+    child: Text(
+      title,
+      style: Theme.of(context).textTheme.titleSmall
+          ?.copyWith(fontWeight: PactaFonts.semibold),
     ),
   );
 
+  /// 第一组：系统通知、精确闹钟、后台运行白名单与系统日历只读导入。
+  Widget _buildPermissionCard(BuildContext context) {
+    final divider = const Divider(height: 1, indent: 16, endIndent: 16);
+    return Card(
+      child: Column(
+        children: [
+          ListTile(
+            leading: Icon(
+              _notificationsAllowed
+                  ? Icons.notifications_active_outlined
+                  : Icons.notifications_off_outlined,
+            ),
+            title: const Text('系统通知权限'),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _notificationsAllowed
+                      ? '已允许通知；专注、国策与每日提醒可以送达。'
+                      : '尚未允许通知；提醒仍保存在本机，但无法送达。',
+                ),
+                TextButton.icon(
+                  key: const Key('open-notification-settings'),
+                  onPressed: _updating ? null : _openSystemNotificationSettings,
+                  icon: const Icon(Icons.settings_outlined),
+                  label: const Text('去系统设置开启通知'),
+                ),
+                if (_isAndroid && !_notificationsAllowed)
+                  TextButton.icon(
+                    key: const Key('request-notification-permission'),
+                    onPressed: _updating ? null : _requestNotifications,
+                    icon: const Icon(Icons.notifications_outlined),
+                    label: const Text('申请通知权限'),
+                  ),
+              ],
+            ),
+          ),
+          divider,
+          if (_isAndroid) ...[
+            ListTile(
+              leading: const Icon(Icons.alarm_on_outlined),
+              title: const Text('精确提醒（闹钟）'),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _exactAlarmsAllowed
+                        ? '已允许精确闹钟；提醒按设定时刻送达。'
+                        : '未允许精确闹钟；系统可能把提醒延迟送达。',
+                  ),
+                  if (!_exactAlarmsAllowed)
+                    TextButton.icon(
+                      key: const Key('allow-exact-alarms'),
+                      onPressed: _updating ? null : _allowExactAlarms,
+                      icon: const Icon(Icons.alarm_add_outlined),
+                      label: const Text('允许精确提醒'),
+                    ),
+                ],
+              ),
+            ),
+            divider,
+            ListTile(
+              leading: Icon(
+                _ignoringBatteryOptimizations
+                    ? Icons.battery_charging_full_outlined
+                    : Icons.battery_alert_outlined,
+              ),
+              title: const Text('后台运行'),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _ignoringBatteryOptimizations
+                        ? '已加入电池优化白名单；锁屏或切到其他应用后倒计时与提醒仍会继续。'
+                        : '系统可能限制后台运行；加入电池优化白名单后倒计时与提醒更稳定。',
+                  ),
+                  TextButton.icon(
+                    key: const Key('open-battery-optimization-settings'),
+                    onPressed: _updating
+                        ? null
+                        : _openBatteryOptimizationSettings,
+                    icon: const Icon(Icons.battery_saver_outlined),
+                    label: Text(
+                      _ignoringBatteryOptimizations ? '查看电池优化设置' : '去电池优化白名单',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            divider,
+          ] else
+            const ListTile(
+              leading: Icon(Icons.desktop_windows_outlined),
+              title: Text('后台运行'),
+              subtitle: Text('桌面端依赖系统托盘/前台进程保活，无需电池优化白名单。'),
+            ),
+          if (!_isAndroid) divider,
+          ListTile(
+            leading: const Icon(Icons.calendar_month_outlined),
+            title: const Text('系统日历只读导入'),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _isAndroid
+                      ? '只读取你勾选的系统日历，手动导入为自有日程副本，不修改源日历。'
+                      : '桌面端暂不支持读取系统日历；已导入的副本仍可正常管理。',
+                ),
+                TextButton.icon(
+                  key: const Key('open-calendar-sources'),
+                  onPressed: _updating || widget.calendarSourcesBuilder == null
+                      ? null
+                      : _openCalendarSources,
+                  icon: const Icon(Icons.calendar_month_outlined),
+                  label: const Text('选择来源与导入'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 第二组：后台倒计时显示与专注流程通知。
+  Widget _buildBackgroundCard(FocusDevicePreferences preferences) => Card(
+    child: SwitchListTile.adaptive(
+      value: preferences.backgroundRunningEnabled,
+      onChanged: _updating ? null : _setBackgroundEnabled,
+      title: const Text('显示后台倒计时'),
+      subtitle: Text(
+        _isWindowsDesktop
+            ? '在系统托盘显示当前状态；关闭窗口后会话仍在后台运行。'
+            : '在通知栏显示预约或专注状态，点按可返回会话。',
+      ),
+    ),
+  );
+
+  Widget _buildFocusCard(FocusDevicePreferences preferences) => Card(
+    child: SwitchListTile.adaptive(
+      value: preferences.notificationsEnabled,
+      onChanged: _updating ? null : _setNotificationsEnabled,
+      title: const Text('专注流程通知'),
+      subtitle: const Text('预约开始专注或专注结束时提醒；不提醒任务截止时间。'),
+    ),
+  );
+
+  /// 第三组：国策待确认提醒与每天打开 Pacta 的独立提醒。
   Widget _buildNationalFocusCard(FocusDevicePreferences preferences) => Card(
     child: Column(
       children: [
@@ -428,18 +650,6 @@ class _FocusNotificationSettingsPageState
             ],
           ),
         ),
-        if (preferences.nationalFocusReminderEnabled &&
-            Platform.isAndroid &&
-            !_notificationsAllowed)
-          _PermissionHint(
-            message: '未授予通知权限，国策提醒暂不可送达；专注流程仍可使用。',
-            onOpenSettings: _updating ? null : _openSystemNotificationSettings,
-          ),
-        if (preferences.nationalFocusReminderEnabled &&
-            Platform.isAndroid &&
-            _notificationsAllowed &&
-            !_exactAlarmsAllowed)
-          _ExactAlarmHint(onAllow: _updating ? null : _allowExactAlarms),
       ],
     ),
   );
@@ -460,7 +670,7 @@ class _FocusNotificationSettingsPageState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                Platform.isWindows
+                _isWindowsDesktop
                     ? '仅在 Pacta 正在运行（含隐藏到托盘）时送达；完全退出后不会提醒。'
                     : '仅此设备有效，不随云备份同步。',
               ),
@@ -476,91 +686,7 @@ class _FocusNotificationSettingsPageState
             ],
           ),
         ),
-        if (Platform.isAndroid && !_notificationsAllowed)
-          _PermissionHint(
-            message: '未授予通知权限，每日提醒暂不可送达；其他功能仍可使用。',
-            onOpenSettings: _updating ? null : _openSystemNotificationSettings,
-          ),
-        if (Platform.isAndroid && _notificationsAllowed && !_exactAlarmsAllowed)
-          _ExactAlarmHint(onAllow: _updating ? null : _allowExactAlarms),
       ],
-    ),
-  );
-}
-
-class _PermissionHint extends StatelessWidget {
-  const _PermissionHint({required this.message, required this.onOpenSettings});
-
-  final String message;
-  final VoidCallback? onOpenSettings;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-    child: Align(
-      alignment: Alignment.centerLeft,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(message),
-          if (onOpenSettings != null)
-            TextButton.icon(
-              key: const Key('open-notification-settings'),
-              onPressed: onOpenSettings,
-              icon: const Icon(Icons.settings_outlined),
-              label: const Text('去系统设置开启通知'),
-            ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _OpenSystemSettingsHint extends StatelessWidget {
-  const _OpenSystemSettingsHint({
-    required this.message,
-    required this.onOpenSettings,
-  });
-
-  final String message;
-  final VoidCallback? onOpenSettings;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-    child: Align(
-      alignment: Alignment.centerLeft,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(message),
-          TextButton.icon(
-            key: const Key('open-notification-settings'),
-            onPressed: onOpenSettings,
-            icon: const Icon(Icons.settings_outlined),
-            label: const Text('去系统设置开启通知'),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-class _ExactAlarmHint extends StatelessWidget {
-  const _ExactAlarmHint({required this.onAllow});
-
-  final VoidCallback? onAllow;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-    child: Align(
-      alignment: Alignment.centerLeft,
-      child: TextButton.icon(
-        onPressed: onAllow,
-        icon: const Icon(Icons.alarm_add_outlined),
-        label: const Text('允许精确提醒'),
-      ),
     ),
   );
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
+import 'package:pacta/src/notifications/focus_notification_settings_page.dart';
 import 'package:pacta/src/ui/pacta_page_header.dart';
 import 'package:pacta/src/focus/focus_models.dart' as focus;
 import 'package:pacta/src/focus/focus_repository.dart';
@@ -110,7 +111,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('数据仅供你使用'), findsOneWidget);
+    expect(find.byTooltip('编辑资料'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('用户管理'),
       160,
@@ -242,6 +243,50 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
     }
+  });
+
+  testWidgets('我的把系统日历与提醒合并成一张《通知与设备权限》入口', (tester) async {
+    final auth = FakeAuthRepository()..signedInUser = 'layout-user';
+    await tester.pumpWidget(PactaApp(authRepository: auth));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.byType(NavigationBar),
+        matching: find.text('我的'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final scrollable = find
+        .descendant(of: find.byType(MyPage), matching: find.byType(Scrollable))
+        .first;
+    await tester.scrollUntilVisible(
+      find.text('通知与设备权限'),
+      160,
+      scrollable: scrollable,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('通知与设备权限'), findsOneWidget);
+    expect(find.text('日历块'), findsNothing, reason: '不再单列日历卡片');
+    expect(find.text('提醒与通知'), findsNothing, reason: '不再单列提醒卡片');
+    expect(
+      find.textContaining('系统日历只读导入'),
+      findsOneWidget,
+      reason: '副标题说明这张卡片同时覆盖日历只读导入',
+    );
+
+    await tester.tap(find.text('通知与设备权限'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(FocusNotificationSettingsPage), findsOneWidget);
+    // 三个分组标题就是合并后页面的大纲。
+    for (final section in ['后台运行与系统权限', '后台倒计时与专注通知', '定时提醒']) {
+      expect(find.text(section), findsOneWidget, reason: section);
+    }
+    expect(find.text('系统日历只读导入'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 }
 

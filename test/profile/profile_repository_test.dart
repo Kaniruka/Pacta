@@ -225,11 +225,39 @@ void main() {
     expect(saved.hasPendingSave, isTrue);
     expect(saved.syncError, contains('保存失败'));
 
+    // 编辑保存失败只回给这次调用（编辑页）；只读名片读到的缓存行不带报错，
+    // 否则退出编辑页后《我的》会一直挂着一条已过期的保存错误。
+    final cached = await repository.getProfile();
+    expect(cached.hasPendingSave, isTrue, reason: '待上传意图仍然保留');
+    expect(cached.syncError, isNull, reason: '保存失败不得写进只读名片状态');
+
     remote.saveError = null;
     final retried = await repository.syncProfile();
     expect(retried.hasPendingSave, isFalse);
     expect(retried.syncError, isNull);
     expect(remote.stored?.displayName, '小林');
+  });
+
+  test('读取失败给可读中文，编辑失败不带出云端函数签名', () async {
+    final repository = buildRepository();
+    remote.fetchError = Exception(
+      'PostgrestException(message: PGRST202: Could not find the function '
+      'public.read_profile_account in the schema cache)',
+    );
+    final failed = await repository.syncProfile();
+    expect(failed.updatedAt, isNull);
+    expect(failed.syncError, isNotNull);
+    expect(failed.syncError, isNot(contains('Could not find')));
+    expect(failed.syncError, isNot(contains('schema cache')));
+
+    remote.fetchError = null;
+    remote.saveError = Exception(
+      'PostgrestException(message: PGRST500: internal error)',
+    );
+    final saved = await repository.saveProfile(displayName: '小林');
+    expect(saved.syncError, isNotNull);
+    expect(saved.syncError, isNot(contains('PostgrestException')));
+    expect(saved.displayName, '小林');
   });
 
   test('首次读取失败不写本机版本，重试后采用云端既有资料且不上传', () async {

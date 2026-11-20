@@ -49,6 +49,7 @@ class Goal {
     this.isPinned = false,
     this.sortOrder,
     this.tasks = const [],
+    this.hasManualTaskOrder = false,
   });
 
   final String id;
@@ -62,9 +63,16 @@ class Goal {
   /// Account data: the goal appears in the board's pinned summary block.
   final bool isPinned;
 
-  /// Manual position among pinned goals; null while the goal is not pinned.
+  /// Manual position among pinned or unpinned goals; null until reordered.
   final int? sortOrder;
   final List<Task> tasks;
+
+  /// Whether [tasks] already carries the user's own unfinished-task order.
+  ///
+  /// The repository sets this after applying a saved manual order; [nextTask]
+  /// then projects the first unfinished row instead of re-deriving a deadline
+  /// ranking. It is a projection flag, never persisted.
+  final bool hasManualTaskOrder;
 
   bool get isComplete =>
       tasks.isNotEmpty && tasks.every((task) => task.isComplete);
@@ -74,6 +82,14 @@ class Goal {
   /// unfinished tasks without a deadline, then creation time and stable id.
   /// Never a completion signal; picking a task does not change its state.
   Task? get nextTask {
+    if (hasManualTaskOrder) {
+      // 手动顺序是用户显式表达的“下一步”：直接取列表中的第一个未完成任务，
+      // 不再按截止时间重新挑选。
+      for (final task in tasks) {
+        if (!task.isComplete) return task;
+      }
+      return null;
+    }
     Task? best;
     for (final task in tasks) {
       if (task.isComplete) continue;
@@ -106,6 +122,7 @@ class Goal {
     bool? isPinned,
     Object? sortOrder = _unchanged,
     Object? deletedAt = _unchanged,
+    bool? hasManualTaskOrder,
   }) {
     return Goal(
       id: id,
@@ -122,6 +139,7 @@ class Goal {
           ? this.deletedAt
           : deletedAt as DateTime?,
       tasks: tasks ?? this.tasks,
+      hasManualTaskOrder: hasManualTaskOrder ?? this.hasManualTaskOrder,
     );
   }
 }

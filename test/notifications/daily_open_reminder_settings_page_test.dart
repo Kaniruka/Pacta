@@ -22,8 +22,7 @@ void main() {
     final fixture = await _Fixture.create();
     addTearDown(fixture.dispose);
 
-    await tester.pumpWidget(fixture.page());
-    await tester.pumpAndSettle();
+    await _pumpPage(tester, fixture.page());
 
     expect(find.text('每天打开 Pacta'), findsOneWidget);
     expect(find.text('提醒时间（本机时间）'), findsOneWidget);
@@ -39,8 +38,7 @@ void main() {
     addTearDown(fixture.dispose);
     fixture.nextPick = const TimeOfDay(hour: 7, minute: 40);
 
-    await tester.pumpWidget(fixture.page());
-    await tester.pumpAndSettle();
+    await _pumpPage(tester, fixture.page());
 
     await tester.tap(find.text('每天打开 Pacta'));
     await tester.pumpAndSettle();
@@ -61,8 +59,7 @@ void main() {
     addTearDown(fixture.dispose);
     fixture.nextPick = null;
 
-    await tester.pumpWidget(fixture.page());
-    await tester.pumpAndSettle();
+    await _pumpPage(tester, fixture.page());
 
     await tester.tap(find.text('每天打开 Pacta'));
     await tester.pumpAndSettle();
@@ -88,8 +85,7 @@ void main() {
     addTearDown(fixture.dispose);
     fixture.nextPick = const TimeOfDay(hour: 23, minute: 0);
 
-    await tester.pumpWidget(fixture.page());
-    await tester.pumpAndSettle();
+    await _pumpPage(tester, fixture.page());
 
     await tester.tap(find.text('每天打开 Pacta'));
     await tester.pumpAndSettle();
@@ -115,8 +111,7 @@ void main() {
     addTearDown(fixture.dispose);
     fixture.nextPick = const TimeOfDay(hour: 21, minute: 15);
 
-    await tester.pumpWidget(fixture.page());
-    await tester.pumpAndSettle();
+    await _pumpPage(tester, fixture.page());
 
     await tester.tap(find.byKey(const Key('daily-open-reminder-time')));
     await tester.pumpAndSettle();
@@ -140,8 +135,7 @@ void main() {
     addTearDown(fixture.dispose);
 
     await fixture.service.syncDailyOpenReminder();
-    await tester.pumpWidget(fixture.page());
-    await tester.pumpAndSettle();
+    await _pumpPage(tester, fixture.page());
     expect(fixture.timers.where((timer) => timer.timer.isActive), hasLength(1));
 
     await tester.tap(find.text('每天打开 Pacta'));
@@ -154,6 +148,19 @@ void main() {
     expect(fixture.timers.where((timer) => timer.timer.isActive), isEmpty);
     expect(fixture.switchValue(tester), isFalse);
   }, skip: !Platform.isWindows);
+}
+
+/// 合并后的页面更长：用高视口让三组设置同时参与布局，避免 ListView 懒加载
+/// 让下方卡片尚未构建。
+Future<void> _pumpPage(WidgetTester tester, Widget page) async {
+  tester.view.physicalSize = const Size(900, 2200);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(() {
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+  await tester.pumpWidget(page);
+  await tester.pumpAndSettle();
 }
 
 class _Fixture {

@@ -80,14 +80,15 @@ void main() {
           expect(find.text('开始倒计时').hitTestable(), findsOneWidget);
           expect(find.text('开始准备（15分钟）').hitTestable(), findsOneWidget);
           if (size.width <= 411) {
-            await tester.showKeyboard(find.byType(TextField));
+            // 预约准备时长输入框始终可见，这里聚焦的是正式时长输入框。
+            await tester.showKeyboard(find.byType(TextField).first);
             tester.view.viewInsets = const FakeViewPadding(bottom: 300);
             await tester.pumpAndSettle();
             await _capture(
               tester,
               '${size.width.toInt()}-${dark ? 'dark' : 'light'}-ime',
             );
-            final inputBounds = tester.getRect(find.byType(TextField));
+            final inputBounds = tester.getRect(find.byType(TextField).first);
             final viewport = tester.getRect(
               find.descendant(
                 of: find.byType(AlertDialog),
@@ -99,7 +100,7 @@ void main() {
             expect(find.text('开始倒计时').hitTestable(), findsOneWidget);
             expect(find.text('开始准备（15分钟）').hitTestable(), findsOneWidget);
           }
-          await tester.enterText(find.byType(TextField), '0');
+          await tester.enterText(find.byType(TextField).first, '0');
           await tester.tap(find.text('开始倒计时'));
           await tester.pumpAndSettle();
           expect(find.byType(AlertDialog), findsOneWidget);

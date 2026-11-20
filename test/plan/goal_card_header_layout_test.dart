@@ -11,8 +11,8 @@ import 'package:pacta/src/tasks/task_repository.dart';
 import '../support/fake_auth_repository.dart';
 import '../support/plan_navigation.dart';
 
-/// 目标卡头部的响应式排版：窄屏标题占满整行、动作另起一行；
-/// 宽屏才并排。断言的是真实渲染尺寸，不是"存在即可"。
+/// 目标卡头部只剩"标题 + 唯一展开箭头"：窄屏不再有两排动作图标，
+/// 管理动作统一收进"按住不动"的操作面板。
 const _user = 'goal-card-header-layout';
 const _shortTitle = '本周交付';
 const _longTitle = '整理发布材料并同步给所有协作方确认最终版本后归档';
@@ -75,7 +75,7 @@ class _Harness {
 }
 
 void main() {
-  testWidgets('窄屏目标卡：短标题占满整行，动作另起一行', (tester) async {
+  testWidgets('窄屏目标卡：标题占满整行，只有单一展开箭头', (tester) async {
     final harness = _Harness.create();
     try {
       final goal = await harness.tasks.createGoal(
@@ -106,19 +106,52 @@ void main() {
       expect(titleRect.height, lessThan(40), reason: '短标题应保持一行，而不是被迫折成两行');
       final summaryRect = tester.getRect(find.text('1 项任务 · 进行中'));
       expect(summaryRect.height, lessThan(30), reason: '元信息应保持一行，不碎成多段');
-      final editRect = tester.getRect(find.byTooltip('编辑目标'));
       expect(
-        editRect.top,
-        greaterThanOrEqualTo(titleRect.bottom - 1),
-        reason: '窄屏动作按钮必须在标题块下方单独一行',
+        find.descendant(
+          of: find.ancestor(
+            of: find.text(_shortTitle),
+            matching: find.byType(Card),
+          ),
+          matching: find.byIcon(Icons.expand_less),
+        ),
+        findsOneWidget,
+        reason: '收起态只保留一个展开/折叠箭头',
       );
+      // 内联图标栏整排移除：编辑/删除字形不可能出现在头部。
+      expect(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text(_shortTitle),
+            matching: find.byType(Card),
+          ),
+          matching: find.byIcon(Icons.edit_outlined),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text(_shortTitle),
+            matching: find.byType(Card),
+          ),
+          matching: find.byIcon(Icons.delete_outline),
+        ),
+        findsNothing,
+      );
+
+      await tester.longPress(find.text(_shortTitle));
+      await tester.pumpAndSettle();
+      expect(find.text('编辑目标'), findsOneWidget, reason: '长按打开操作面板');
+      expect(find.text('删除目标'), findsOneWidget);
+      await tester.tapAt(const Offset(20, 20));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     } finally {
       await harness.dispose(tester);
     }
   });
 
-  testWidgets('置顶后的目标卡沿用同一套窄屏排版', (tester) async {
+  testWidgets('置顶目标用安静图钉区分，不再占用头部动作槽', (tester) async {
     final harness = _Harness.create();
     try {
       final goal = await harness.tasks.createGoal(
@@ -137,19 +170,26 @@ void main() {
       await harness.tasks.setGoalPinned(goal.id, isPinned: true);
       await harness.pump(tester);
 
-      expect(find.text('置顶目标 · 手动顺序'), findsOneWidget);
+      expect(find.text('置顶目标 · 长按拖动排序'), findsOneWidget);
       final headerRect = tester.getRect(
         find.byKey(ValueKey('goal-header-${goal.id}')),
       );
       expect(headerRect.width, greaterThan(260), reason: '置顶后标题块仍占满整行');
       final titleRect = tester.getRect(find.text(_shortTitle));
       expect(titleRect.height, lessThan(40), reason: '置顶后标题仍是一行');
-      final editRect = tester.getRect(find.byTooltip('编辑目标'));
-      expect(
-        editRect.top,
-        greaterThanOrEqualTo(titleRect.bottom - 1),
-        reason: '置顶多出上移/下移也不能把动作挤回标题同一行',
+      final card = find.ancestor(
+        of: find.text(_shortTitle),
+        matching: find.byType(Card),
       );
+      final pin = tester.getRect(
+        find.descendant(of: card, matching: find.byIcon(Icons.push_pin)),
+      );
+      expect(
+        pin.center.dy,
+        closeTo(titleRect.center.dy, 2),
+        reason: '图钉与标题同一基线，只做安静的区分',
+      );
+      expect(find.byTooltip('下移置顶目标'), findsNothing);
       expect(tester.takeException(), isNull);
     } finally {
       await harness.dispose(tester);
@@ -188,7 +228,7 @@ void main() {
     }
   });
 
-  testWidgets('宽屏目标卡仍把动作与标题并排', (tester) async {
+  testWidgets('宽屏目标卡仍是同一套"标题 + 单箭头"头部', (tester) async {
     final harness = _Harness.create();
     try {
       final goal = await harness.tasks.createGoal(
@@ -206,9 +246,11 @@ void main() {
       );
       await harness.pump(tester, width: 1000);
 
+      final chevron = tester.getRect(find.byIcon(Icons.expand_less));
       final titleRect = tester.getRect(find.text(_shortTitle));
-      final editRect = tester.getRect(find.byTooltip('编辑目标'));
-      expect(editRect.top, lessThan(titleRect.bottom), reason: '宽屏保持内联排版');
+      expect(chevron.top, lessThan(titleRect.bottom), reason: '宽屏箭头与标题同一行');
+      expect(find.byIcon(Icons.edit_outlined), findsNothing);
+      expect(find.byIcon(Icons.delete_outline), findsNothing);
       expect(tester.takeException(), isNull);
     } finally {
       await harness.dispose(tester);

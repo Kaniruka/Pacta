@@ -215,7 +215,7 @@ void main() {
       expect(find.byType(PlanPage), findsOneWidget);
       await tester.ensureVisible(find.text('季度规划'));
       await tester.pumpAndSettle();
-      expect(find.text('置顶目标 · 手动顺序'), findsOneWidget);
+      expect(find.text('置顶目标 · 长按拖动排序'), findsOneWidget);
       expect(find.text('每周回顾并调整计划'), findsOneWidget);
       expect(find.text('整理发布材料'), findsOneWidget);
       expect(find.text('先核对发布清单'), findsOneWidget);
@@ -339,7 +339,7 @@ void main() {
       await openDestination('我的');
       expect(find.byType(MyPage), findsOneWidget);
       await tester.scrollUntilVisible(
-        find.text('日历块'),
+        find.text('通知与设备权限'),
         200,
         scrollable: find
             .descendant(
@@ -349,8 +349,17 @@ void main() {
             .first,
       );
       await tester.pumpAndSettle();
-      expect(find.text('日历块'), findsOneWidget);
-      await tester.tap(find.text('日历块'));
+      expect(find.text('通知与设备权限'), findsOneWidget);
+      await tester.tap(find.text('通知与设备权限'));
+      await tester.pumpAndSettle();
+      // 系统日历导入已并入《通知与设备权限》：从该页的入口进入既有来源页。
+      await tester.scrollUntilVisible(
+        find.byKey(const Key('open-calendar-sources')),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('open-calendar-sources')));
       await tester.pumpAndSettle();
       expect(find.text('系统日历导入'), findsOneWidget);
       if (Platform.isAndroid) {
@@ -466,6 +475,22 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
             ? PointerDeviceKind.mouse
             : PointerDeviceKind.touch,
       );
+      await tester.pumpAndSettle();
+    }
+
+    /// 按住原地不动：目标/任务的管理动作都在操作面板里。
+    Future<void> holdItem(Finder finder) async {
+      await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
+      final gesture = await tester.startGesture(
+        tester.getCenter(finder),
+        kind: Platform.isWindows
+            ? PointerDeviceKind.mouse
+            : PointerDeviceKind.touch,
+        buttons: kPrimaryButton,
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      await gesture.up();
       await tester.pumpAndSettle();
     }
 
@@ -707,14 +732,9 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
       await tester.pumpAndSettle();
       expect(find.text(goalTitle), findsOneWidget);
       expect(find.text(taskTitle), findsOneWidget);
-      await click(
-        find
-            .descendant(
-              of: find.byType(PlanPage),
-              matching: find.byTooltip('编辑目标'),
-            )
-            .first,
-      );
+      // 目标卡不再有内联编辑按钮：按住卡片原位不动打开操作面板。
+      await holdItem(find.text(goalTitle));
+      await click(find.text('编辑目标'));
       await click(find.text('取消'));
       await click(find.text(goalTitle));
       expect(find.text(taskTitle), findsNothing);

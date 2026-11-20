@@ -132,7 +132,7 @@ class SupabaseProfileRemote implements ProfileRemote {
     try {
       response = await client.rpc('read_profile_account');
     } on PostgrestException catch (error) {
-      throw StateError('云端资料暂不可用：${error.message}');
+      throw StateError(postgrestFailureText(error, prefix: '云端资料暂不可用'));
     }
     return remoteProfileFromJson(response);
   }
@@ -147,26 +147,13 @@ class SupabaseProfileRemote implements ProfileRemote {
     int? timeZoneRevision,
   }) async {
     _assertCurrentUser(userId);
-    final Object? response;
-    try {
-      response = await client.rpc(
-        'save_profile_account',
-        params: {
-          'p_display_name': displayName,
-          'p_avatar_base64': avatar == null ? null : base64Encode(avatar.bytes),
-          'p_clear_avatar': avatar == null,
-          'p_time_zone_id': displayTimeZoneId,
-          'p_time_zone_revision': timeZoneRevision,
-        },
-      );
-    } on PostgrestException catch (error) {
-      throw StateError('保存失败：${error.message}');
-    }
-    final profile = remoteProfileFromJson(response);
-    if (profile == null) {
-      throw StateError('保存失败：云端没有返回资料。');
-    }
-    return profile;
+    return saveAccountProfile(
+      (function, params) => client.rpc(function, params: params),
+      displayName: displayName,
+      avatar: avatar,
+      displayTimeZoneId: displayTimeZoneId,
+      timeZoneRevision: timeZoneRevision,
+    );
   }
 
   @override
@@ -182,10 +169,108 @@ class SupabaseProfileRemote implements ProfileRemote {
         params: {'p_time_zone_id': displayTimeZoneId},
       );
     } on PostgrestException catch (error) {
-      throw StateError('时区初始化失败：${error.message}');
+      throw StateError(postgrestFailureText(error, prefix: '时区初始化失败'));
     }
     return remoteProfileFromJson(response);
   }
+}
+
+/// 账号资料写入的 RPC 调用面：生产是 [SupabaseClient.rpc]，测试可注入替身。
+typedef ProfileAccountRpc = Future<Object?> Function(
+  String function,
+  Map<String, dynamic> params,
+);
+
+/// 云端还没有部署含账号时区的 save_profile_account 时给用户看的中文提示。
+const accountTimeZoneRpcMissingMessage =
+    '云端尚未部署含账号时区的最新接口，暂时无法保存时区修改；昵称与头像未受影响。';
+
+/// 判断异常是否表示"服务端没有这个函数签名"（PostgREST 的 schema cache 未命中）。
+///
+/// 旧版数据库只注册了 3 参数的 save_profile_account，带 p_time_zone_id 的调用
+/// 会得到 PGRST202 与 "Could not find the function ... in the schema cache"。
+bool isMissingProfileAccountRpc(PostgrestException error) {
+  final text = '${error.code ?? ''} ${error.message}'.toLowerCase();
+  return text.contains('pgrst202') ||
+      text.contains('could not find the function') ||
+      text.contains('schema cache');
+}
+
+/// PostgREST 失败的中文提示：只说明业务后果与可执行动作。
+///
+/// 直接上抛 [PostgrestException.message] 会把英文 SQL / 函数签名（例如
+/// "permission denied for function save_profile_account"）带到界面上：中文
+/// 前缀会让共享的错误文案转换认不出技术异常而原样透出。这里按错误码与文案
+/// 先分类，再用 [prefix]（读取/保存/时区）拼出完整、可操作的中文提示。
+String postgrestFailureText(
+  PostgrestException error, {
+  required String prefix,
+}) {
+  final code = (error.code ?? '').trim().toUpperCase();
+  final message = error.message.toLowerCase();
+  if (code == '42501' || message.contains('permission denied')) {
+    return '$prefix：当前登录账号没有该操作的权限，请确认登录状态后重试。';
+  }
+  if (isMissingProfileAccountRpc(error)) {
+    return '$prefix：云端服务版本尚未同步最新接口，请稍后重试。';
+  }
+  if (code == 'PGRST301' || message.contains('jwt')) {
+    return '$prefix：登录状态已失效，请重新登录后再试。';
+  }
+  return '$prefix：云端服务暂时不可用，请稍后重试。';
+}
+
+/// 账号资料保存的统一流程。
+///
+/// [displayTimeZoneId] 为空时只发送 3 个参数：没有时区要写就不该把时区键
+/// 一起发出去，否则旧版数据库会直接找不到 5 参函数，昵称和头像也会一起失败。
+///
+/// 只有用户确实改了账号时区时才尝试 5 参数版本。服务端还没有该签名时，先按
+/// 3 参数把昵称与头像写回去，再抛出一条明确的中文提示，不把函数签名原文露给
+/// 用户；此时本机仍保留待上传意图，接口部署后可重试。
+Future<RemoteProfile> saveAccountProfile(
+  ProfileAccountRpc rpc, {
+  required String displayName,
+  required ProfileAvatar? avatar,
+  required String? displayTimeZoneId,
+  required int? timeZoneRevision,
+}) async {
+  final baseParams = <String, dynamic>{
+    'p_display_name': displayName,
+    'p_avatar_base64': avatar == null ? null : base64Encode(avatar.bytes),
+    'p_clear_avatar': avatar == null,
+  };
+  final Object? response;
+  if (displayTimeZoneId == null) {
+    try {
+      response = await rpc('save_profile_account', baseParams);
+    } on PostgrestException catch (error) {
+      throw StateError(postgrestFailureText(error, prefix: '保存失败'));
+    }
+  } else {
+    try {
+      response = await rpc('save_profile_account', {
+        ...baseParams,
+        'p_time_zone_id': displayTimeZoneId,
+        'p_time_zone_revision': timeZoneRevision,
+      });
+    } on PostgrestException catch (error) {
+      if (!isMissingProfileAccountRpc(error)) {
+        throw StateError(postgrestFailureText(error, prefix: '保存失败'));
+      }
+      try {
+        await rpc('save_profile_account', baseParams);
+      } on Object {
+        // 基础保存也不可用时时区同样没有提交，提示语义不变。
+      }
+      throw StateError(accountTimeZoneRpcMissingMessage);
+    }
+  }
+  final profile = remoteProfileFromJson(response);
+  if (profile == null) {
+    throw StateError('保存失败：云端没有返回资料。');
+  }
+  return profile;
 }
 
 /// Decodes the owner-scoped RPC payload. Null means the account has no stored

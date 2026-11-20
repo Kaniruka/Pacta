@@ -31,6 +31,9 @@ class _FakeProfileRepository implements ProfileRepository {
 
   /// 让同步停在请求中，测试可在此期间触发另一入口的保存。
   Completer<void>? syncGate;
+
+  /// 重试成功时账号存储返回的资料（例如另一台设备刚写入的时区）。
+  ProfileAccount? syncResultOverride;
   int saveCalls = 0;
   int syncCalls = 0;
   ProfileAvatar? lastSavedAvatar;
@@ -59,6 +62,7 @@ class _FakeProfileRepository implements ProfileRepository {
     lastSavedAvatar = avatar;
     lastClearAvatar = clearAvatar;
     lastTimeZoneId = timeZoneId;
+    final failure = saveErrorMessage;
     _account = _account.copyWith(
       displayName: displayName,
       avatar: avatar,
@@ -66,12 +70,13 @@ class _FakeProfileRepository implements ProfileRepository {
       // null 表示"保留账号时区"，与本仓储契约一致；只有显式选择才改写。
       displayTimeZoneId: timeZoneId ?? _account.displayTimeZoneId,
       updatedAt: DateTime.utc(2026, 11, 13),
-      hasPendingSave: saveErrorMessage != null,
-      syncError: saveErrorMessage,
-      clearSyncError: saveErrorMessage == null,
+      hasPendingSave: failure != null,
+      clearSyncError: true,
     );
     _updates.add(_account);
-    return _account;
+    // 与真实仓储一致：编辑保存失败只回给本次调用（编辑页），不写进对外只读
+    // 状态，退出编辑页后名片不会再看到这条报错。
+    return failure == null ? _account : _account.copyWith(syncError: failure);
   }
 
   @override
@@ -90,14 +95,22 @@ class _FakeProfileRepository implements ProfileRepository {
     if (gate != null) await gate.future;
     final thrown = syncThrownError;
     if (thrown != null) throw thrown;
+    final override = syncResultOverride;
+    if (override != null) {
+      _account = override;
+      _updates.add(_account);
+      return override;
+    }
     if (syncErrorMessage != null) {
       // 与真实仓储一致：没有缓存行时只返回内存错误，不产生本机资料版本。
       return _account.copyWith(syncError: syncErrorMessage);
     }
-    if (saveErrorMessage == null) {
-      _account = _account.copyWith(hasPendingSave: false, clearSyncError: true);
-      _updates.add(_account);
+    if (saveErrorMessage != null) {
+      // 待上传的重试仍然失败：错误只回给本次调用，缓存行保持干净。
+      return _account.copyWith(syncError: saveErrorMessage);
     }
+    _account = _account.copyWith(hasPendingSave: false, clearSyncError: true);
+    _updates.add(_account);
     return _account;
   }
 
@@ -333,7 +346,7 @@ void main() {
     expect(repository.syncCalls, 2);
   });
 
-  testWidgets('已有缓存时同步抛异常仍显示这次尝试的错误，缓存更新后清掉', (tester) async {
+  testWidgets('已有可展示资料时同步失败不把只读名片变成报错卡', (tester) async {
     final repository = _FakeProfileRepository(
       account: ProfileAccount(
         userId: 'user-a',
@@ -347,18 +360,17 @@ void main() {
     await overview.emit();
     await tester.pump();
 
-    // 缓存行没有记录这次错误（错误没能写库），瞬态原因不能被缓存掩盖。
-    expect(find.text('资料服务暂时不可用'), findsOneWidget);
+    // 名片有资料可展示：同步失败只在需要时由用户重试，不把整张名片变成
+    // 报错（错误行只服务于"无可展示资料"的首次读取失败）。
+    expect(find.text('资料服务暂时不可用'), findsNothing);
+    expect(find.textContaining('资料服务暂时不可用'), findsNothing);
     expect(find.text('小林'), findsOneWidget);
+    expect(repository.syncCalls, 1, reason: '重试只由用户触发');
 
-    // 另一入口更新了缓存：旧的瞬态错误作废，不再提示。
     repository.syncThrownError = null;
     await repository.saveProfile(displayName: '小林二号');
     await tester.pump();
-
-    expect(find.text('资料服务暂时不可用'), findsNothing);
     expect(find.text('小林二号'), findsOneWidget);
-    expect(repository.syncCalls, 1, reason: '重试只由用户触发');
   });
 
   testWidgets('同步期间并发保存成功后，这次尝试的失败不挂到新版本', (tester) async {
@@ -464,23 +476,79 @@ void main() {
     expect(find.text('有效时间 15 分钟'), findsOneWidget);
   });
 
-  testWidgets('云端写入失败显示原因并可重试', (tester) async {
+  testWidgets('编辑保存失败只属于编辑页，只读名片继续显示本机资料', (tester) async {
     final repository = _FakeProfileRepository();
     repository.saveErrorMessage = '保存失败：网络不可用';
-    repository.saveCalls = 0;
     final overview = _FakeOverviewSource();
     await pumpCard(tester, repository: repository, overview: overview);
     await overview.emit();
+    await tester.pump();
+
     await repository.saveProfile(displayName: '小林');
     await tester.pump();
 
-    expect(find.text('保存失败：网络不可用'), findsOneWidget);
+    // 失败回给了编辑页的调用方，读到的缓存行仍然没有错误。
+    expect(find.text('保存失败：网络不可用'), findsNothing);
+    expect(find.text('小林'), findsOneWidget);
+    final cached = await repository.getProfile();
+    expect(cached.hasPendingSave, isTrue, reason: '待上传意图保留，重试路径不变');
+    expect(cached.syncError, isNull, reason: '保存报错不得成为只读名片的永久错误');
+  });
 
-    repository.saveErrorMessage = null;
-    await tester.tap(find.text('重试'));
+  testWidgets('名片身份整行是编辑入口，不再单列编辑按钮', (tester) async {
+    final repository = _FakeProfileRepository(
+      account: ProfileAccount(userId: 'user-a', displayName: '小林'),
+    );
+    final overview = _FakeOverviewSource();
+    await pumpCard(tester, repository: repository, overview: overview);
+    await overview.emit();
     await tester.pump();
 
-    expect(find.text('保存失败：网络不可用'), findsNothing);
+    expect(find.text('数据仅供你使用'), findsNothing);
+    expect(find.widgetWithText(TextButton, '编辑'), findsNothing);
+    final entry = find.byTooltip('编辑资料');
+    expect(entry, findsOneWidget);
+    expect(
+      tester.getSize(entry).height,
+      greaterThanOrEqualTo(48),
+      reason: '整行点击区至少 48dp',
+    );
+
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ProfileEditPage), findsOneWidget);
+    expect(find.text('编辑资料'), findsOneWidget, reason: '编辑页标题');
+  });
+
+  testWidgets('编辑页保存失败退出后名片不继承保存报错', (tester) async {
+    final repository = _FakeProfileRepository(
+      account: ProfileAccount(userId: 'user-a', displayName: '小林'),
+    );
+    repository.saveErrorMessage = '保存失败：云端暂不可用';
+    final overview = _FakeOverviewSource();
+    await pumpCard(tester, repository: repository, overview: overview);
+    await overview.emit();
+    await tester.pump();
+
+    await tester.tap(find.byTooltip('编辑资料'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '小林二号');
+    await tester.ensureVisible(find.text('保存'));
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    // 编辑页原地显示原因并提供就地重试。
+    expect(find.text('保存失败：云端暂不可用'), findsOneWidget);
+    expect(find.text('重试同步'), findsOneWidget);
+    expect(find.byType(ProfileEditPage), findsOneWidget);
+
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(MyProfileCard), findsOneWidget);
+    expect(find.text('保存失败：云端暂不可用'), findsNothing);
+    expect(find.text('小林二号'), findsOneWidget);
   });
 
   testWidgets('编辑页拒绝超限图片且不保存', (tester) async {
@@ -561,6 +629,54 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('保存失败：云端暂不可用'), findsNothing);
+  });
+
+  testWidgets('重试保存成功但账号时区被覆盖时采用新值并提示', (tester) async {
+    final repository = _FakeProfileRepository(
+      account: const ProfileAccount(
+        userId: 'user-a',
+        displayName: '小林',
+        displayTimeZoneId: 'Asia/Shanghai',
+      ),
+    );
+    repository.saveErrorMessage = '保存失败：云端暂不可用';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProfileEditPage(
+          repository: repository,
+          avatarPicker: _FakeAvatarPicker(null),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 选择东京后保存失败：停留在编辑页，等待就地重试。
+    await tester.tap(find.text('东京'));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), '小林');
+    await tester.ensureVisible(find.text('保存'));
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    expect(find.text('保存失败：云端暂不可用'), findsOneWidget);
+    expect(find.text('重试同步'), findsOneWidget);
+
+    // 重试成功，但账号存储按修订号保留了另一台设备写入的伦敦。
+    repository.saveErrorMessage = null;
+    repository.syncResultOverride = ProfileAccount(
+      userId: 'user-a',
+      displayName: '小林',
+      displayTimeZoneId: 'Europe/London',
+      updatedAt: DateTime.utc(2026, 11, 18),
+    );
+    await tester.tap(find.text('重试同步'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('保存失败：云端暂不可用'), findsNothing);
+    expect(find.text('重试同步'), findsNothing, reason: '重试成功不再是失败状态');
+    expect(find.textContaining('账号时区已被其他设备更新'), findsOneWidget);
+    expect(find.textContaining('已采用最新值：Europe/London'), findsOneWidget);
+    // 页面不再停留在旧选择上：摘要与已加载值都指向账号最新值。
+    expect(find.textContaining('伦敦 · Europe/London'), findsOneWidget);
   });
 
   testWidgets('编辑资料页提供七个城市时区并保存为账号值', (tester) async {

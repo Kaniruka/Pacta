@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../focus/focus_models.dart';
 import '../national_focus/national_focus_models.dart';
+import '../theme/pacta_spacing.dart';
+import '../ui/pacta_error_text.dart';
 import 'avatar_picker.dart';
 import 'profile_edit_page.dart';
 import 'profile_format.dart';
@@ -45,11 +47,6 @@ class _MyProfileCardState extends State<MyProfileCard> {
   /// keeps that reason so an empty cache still says what went wrong.
   String? _syncError;
 
-  /// The cached row this attempt observed when it failed. The transient reason
-  /// is only shown while the cache is still in that same state: a newer row
-  /// (save or adopted profile) makes it stale.
-  ProfileAccount? _syncErrorCache;
-
   bool _syncing = false;
 
   /// Rebuilding with a new key resubscribes the record streams; retrying a
@@ -71,64 +68,36 @@ class _MyProfileCardState extends State<MyProfileCard> {
     } else {
       setState(() => _syncing = true);
     }
-    // 错误归属在请求开始前固定：这次尝试只对当时那一版缓存负责。请求期间
-    // 另一入口把缓存推进到新版本后，失败就不属于新版本，不能再显示。
-    final observed = await _readCachedRow();
     ProfileAccount? profile;
     String? failure;
     try {
       profile = await widget.repository.syncProfile();
     } catch (error) {
-      failure = error is StateError ? error.message : error.toString();
+      failure = formatUserError(error, fallback: '资料暂时无法读取，请稍后重试。');
     }
     if (!mounted) return;
-    final error = failure ?? profile?.syncError;
     setState(() {
       if (profile != null) _profile = profile;
-      _syncError = error;
-      _syncErrorCache = error == null ? null : observed;
+      _syncError = failure ?? profile?.syncError;
       _syncing = false;
     });
   }
 
-  /// The cached row this attempt starts from. Read before the request instead
-  /// of after a failure, so a concurrent save cannot hand the older error to a
-  /// newer version; a failed read falls back to what the card already shows.
-  Future<ProfileAccount?> _readCachedRow() async {
-    try {
-      final cached = await widget.repository.getProfile();
-      return cached.updatedAt == null ? null : cached;
-    } catch (_) {
-      final known = _profile;
-      return known == null || known.updatedAt == null ? null : known;
-    }
-  }
-
   void _retryStatistics() => setState(() => _statisticsAttempt++);
 
-  /// A cached row reports its own last error, but a failure of this attempt may
-  /// never have reached the row (the write itself can fail). Such a transient
-  /// reason still belongs on the card while the cache has not moved on; a newer
-  /// row means the older reason is stale and must not be shown again.
+  /// 只读名片只在"没有可展示资料"时报告错误。
+  ///
+  /// 编辑页保存失败属于编辑页：它在原地显示原因并提供就地重试，退出编辑页
+  /// 后这张只读名片不得继续展示那条保存报错。仓库也只把读取/初始化失败写进
+  /// 缓存行，因此这里按"本机是否已有资料版本"决定是否显示。
   String? _profileError(ProfileAccount? stored) {
-    final storedError = stored?.syncError;
-    if (storedError != null) return storedError;
-    final transient = _syncError;
-    if (transient == null) return null;
-    final cached = stored != null && stored.updatedAt != null ? stored : null;
-    final observed = _syncErrorCache;
-    if (observed == null) return cached == null ? transient : null;
-    if (observed.updatedAt == null) return cached == null ? transient : null;
-    if (cached == null) return null;
-    final sameRow =
-        cached.updatedAt == observed.updatedAt &&
-        cached.editSequence == observed.editSequence;
-    return sameRow ? transient : null;
+    if (stored != null && stored.updatedAt != null) return null;
+    final message = _syncError ?? stored?.syncError;
+    if (message == null) return null;
+    return formatUserError(message, fallback: '资料暂时无法读取，请稍后重试。');
   }
 
   Future<void> _openEdit() async {
-    final profile = _profile;
-    if (profile == null) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => ProfileEditPage(
@@ -255,52 +224,68 @@ class _MyProfileCardState extends State<MyProfileCard> {
     },
   );
 
+  /// 身份整行即编辑入口：头像 + 昵称 + 账号 + 右侧箭头，命中高度 ≥48dp。
   Widget _header(BuildContext context, ProfileAccount profile) {
     final avatar = profile.avatar;
-    return Row(
-      children: [
-        CircleAvatar(
-          radius: 26,
-          backgroundImage: avatar == null ? null : MemoryImage(avatar.bytes),
-          child: avatar == null ? const Icon(Icons.person_outline) : null,
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                profile.effectiveDisplayName,
-                style: Theme.of(context).textTheme.titleMedium,
-                overflow: TextOverflow.ellipsis,
+    final texts = Theme.of(context).textTheme;
+    return Semantics(
+      button: profile.userId.isNotEmpty,
+      label: '编辑资料',
+      child: Tooltip(
+        message: '编辑资料',
+        excludeFromSemantics: true,
+        child: InkWell(
+          onTap: profile.userId.isEmpty ? null : _openEdit,
+          borderRadius: BorderRadius.circular(PactaSpacing.md),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: PactaSpacing.xs),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 26,
+                    backgroundImage: avatar == null
+                        ? null
+                        : MemoryImage(avatar.bytes),
+                    child: avatar == null
+                        ? const Icon(Icons.person_outline)
+                        : null,
+                  ),
+                  const SizedBox(width: PactaSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          profile.effectiveDisplayName,
+                          style: texts.titleMedium,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: PactaSpacing.xxs),
+                        Text(
+                          widget.accountIdentifier ?? '账号资料 · 随账号同步',
+                          style: texts.bodySmall,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: PactaSpacing.sm),
+                  const Icon(Icons.chevron_right, size: 20),
+                ],
               ),
-              const SizedBox(height: 2),
-              Text(
-                widget.accountIdentifier ?? '账号资料 · 随账号同步',
-                style: Theme.of(context).textTheme.bodySmall,
-                overflow: TextOverflow.ellipsis,
-              ),
-              Text(
-                '数据仅供你使用',
-                style: Theme.of(context).textTheme.bodySmall,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+            ),
           ),
         ),
-        const SizedBox(width: 8),
-        TextButton.icon(
-          onPressed: _openEdit,
-          icon: const Icon(Icons.edit_outlined, size: 18),
-          label: const Text('编辑'),
-        ),
-      ],
+      ),
     );
   }
 
   Widget _syncErrorRow(BuildContext context, String message) => Wrap(
     crossAxisAlignment: WrapCrossAlignment.center,
-    spacing: 8,
+    spacing: PactaSpacing.sm,
     children: [
       Text(
         message,

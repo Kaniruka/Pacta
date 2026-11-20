@@ -1,10 +1,12 @@
 import 'dart:async';
 
 import 'package:drift/drift.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../auth/user_lifecycle.dart';
+import 'preference_storage_fallback.dart';
 import 'task_database.dart';
 import 'task_models.dart';
 
@@ -48,6 +50,67 @@ class UnavailableTaskRemoteDataSource implements TaskRemoteDataSource {
   }
 }
 
+/// 每个目标未完成任务的手动顺序（设备偏好）。
+///
+/// 只落在本机 `SharedPreferences`：任务表与 Cloud Snapshot v3 载荷都不新增
+/// 列，跨设备仍由既有整份快照同步目标与任务本身。
+///
+/// 纯 Dart 单测通常没有初始化 `WidgetsFlutterBinding`，此时
+/// `SharedPreferences.getInstance()` 连方法通道都建立不起来。这里把这种
+/// "偏好存储不可用" 视为正常的降级条件，退回进程内内存表，绝不让一次排序
+/// 把既有单元测试或离线页面弄崩。
+class GoalTaskOrderStore {
+  const GoalTaskOrderStore({
+    this.preferencesLoader = SharedPreferences.getInstance,
+  });
+
+  final Future<SharedPreferences> Function() preferencesLoader;
+
+  /// 没有偏好存储时的兜底；键已包含用户与目标，跨用户不会串门。
+  static final Map<String, List<String>> _memoryFallback =
+      <String, List<String>>{};
+
+  String keyFor(String userId, String goalId) =>
+      'pacta.device.goal_task_order.v1.$userId.$goalId';
+
+  Future<List<String>> load({
+    required String userId,
+    required String goalId,
+  }) async {
+    final key = keyFor(userId, goalId);
+    final preferences = await _preferencesOrNull();
+    if (preferences == null) {
+      return List<String>.unmodifiable(
+        _memoryFallback[key] ?? const <String>[],
+      );
+    }
+    // 旧写入失败可能让内存缓存领先磁盘，读取前对齐一次。
+    await preferences.reload();
+    return List<String>.unmodifiable(
+      preferences.getStringList(key) ?? const <String>[],
+    );
+  }
+
+  Future<void> save({
+    required String userId,
+    required String goalId,
+    required List<String> taskIds,
+  }) async {
+    final key = keyFor(userId, goalId);
+    final preferences = await _preferencesOrNull();
+    if (preferences == null) {
+      _memoryFallback[key] = List<String>.of(taskIds);
+      return;
+    }
+    if (!await preferences.setStringList(key, taskIds)) {
+      throw StateError('任务顺序未保存，请重试。');
+    }
+  }
+
+  Future<SharedPreferences?> _preferencesOrNull() =>
+      loadSharedPreferencesOrNull(preferencesLoader);
+}
+
 abstract interface class TaskRepository {
   Stream<List<Goal>> watchGoals({bool includeDeleted = false});
   Future<List<Goal>> getGoals({bool includeDeleted = false});
@@ -60,6 +123,15 @@ abstract interface class TaskRepository {
 
   /// Persists the manual order of every currently pinned goal.
   Future<void> reorderPinnedGoals(List<String> orderedGoalIds);
+
+  /// Persists the manual order of every currently unpinned goal.
+  Future<void> reorderUnpinnedGoals(List<String> orderedGoalIds);
+
+  /// Persists the manual order of the unfinished tasks inside one goal.
+  ///
+  /// The order is a device preference (it never enters the business snapshot);
+  /// [orderedTaskIds] must cover exactly the goal's unfinished tasks.
+  Future<void> reorderTasks(String goalId, List<String> orderedTaskIds);
   Future<Task> createTask(String goalId, TaskDraft draft);
   Future<Task> updateTask(String taskId, TaskDraft draft);
   Future<void> setTaskCompletion(String taskId, {required bool isComplete});
@@ -78,6 +150,7 @@ class LocalTaskRepository implements TaskRepository {
     this.cloudSyncEnabled = true,
     UserLifecycleAccess? lifecycleAccess,
     DateTime Function()? now,
+    this.taskOrderStore = const GoalTaskOrderStore(),
   }) : lifecycleAccess =
            lifecycleAccess ?? const AlwaysActiveUserLifecycleAccess(),
        _now = now ?? DateTime.now;
@@ -87,6 +160,9 @@ class LocalTaskRepository implements TaskRepository {
   final TaskRemoteDataSource remote;
   final bool cloudSyncEnabled;
   final UserLifecycleAccess lifecycleAccess;
+
+  /// 未完成任务的手动顺序；默认使用本机偏好存储，测试可注入替身。
+  final GoalTaskOrderStore taskOrderStore;
   final DateTime Function() _now;
   final _changes = StreamController<void>.broadcast();
   final _uuid = const Uuid();
@@ -116,21 +192,86 @@ class LocalTaskRepository implements TaskRepository {
       if (!includeDeleted && row.deletedAt != null) continue;
       tasksByGoal.putIfAbsent(row.goalId, () => []).add(_taskFromRow(row));
     }
-    final goals = [
-      for (final row in goalRows)
-        if (includeDeleted || row.deletedAt == null)
-          _goalFromRow(row, tasks: tasksByGoal[row.id] ?? const []),
-    ];
     for (final tasks in tasksByGoal.values) {
-      tasks.sort((left, right) {
-        if (left.isComplete != right.isComplete) {
-          return left.isComplete ? 1 : -1;
-        }
-        return left.updatedAt.compareTo(right.updatedAt);
-      });
+      tasks.sort(_compareTasks);
+    }
+    // 手动顺序是设备偏好：只影响本机读取的呈现，不写入任务行与快照。
+    final visibleGoalIds = <String>[
+      for (final row in goalRows)
+        if (includeDeleted || row.deletedAt == null) row.id,
+    ];
+    final taskOrders = await Future.wait([
+      for (final goalId in visibleGoalIds)
+        taskOrderStore.load(userId: userId, goalId: goalId),
+    ]);
+    final ordersByGoal = <String, List<String>>{
+      for (var index = 0; index < visibleGoalIds.length; index++)
+        visibleGoalIds[index]: taskOrders[index],
+    };
+    final goals = <Goal>[];
+    for (final row in goalRows) {
+      if (!includeDeleted && row.deletedAt != null) continue;
+      final applied = _applyManualTaskOrder(
+        tasksByGoal[row.id] ?? const [],
+        ordersByGoal[row.id] ?? const [],
+      );
+      goals.add(
+        _goalFromRow(
+          row,
+          tasks: applied.tasks,
+          // 只有真正命中至少一项未完成任务时才算"手动顺序生效"；旧顺序里
+          // 的任务全部完成/删除后，新建任务必须回退到既有截止时间排序。
+          hasManualTaskOrder: applied.hasManualOrder,
+        ),
+      );
     }
     goals.sort(_compareGoals);
     return goals;
+  }
+
+  /// 未完成在前、已完成在后；同组按最后更新时间，保持既有回退顺序。
+  static int _compareTasks(Task left, Task right) {
+    if (left.isComplete != right.isComplete) {
+      return left.isComplete ? 1 : -1;
+    }
+    return left.updatedAt.compareTo(right.updatedAt);
+  }
+
+  /// 应用已保存的手动顺序。
+  ///
+  /// 已保存的未完成任务按保存顺序排在前面；保存之后才新增的未完成任务
+  /// （或从已完成恢复的任务）沿用更新时间顺序接在其后；已完成任务始终
+  /// 留在末尾。空顺序或全部失效时退回既有排序，不伪造顺序。
+  ({List<Task> tasks, bool hasManualOrder}) _applyManualTaskOrder(
+    List<Task> base,
+    List<String> order,
+  ) {
+    if (order.isEmpty) {
+      return (tasks: base, hasManualOrder: false);
+    }
+    final byId = {for (final task in base) task.id: task};
+    final applied = <Task>[];
+    final used = <String>{};
+    for (final id in order) {
+      final task = byId[id];
+      if (task == null || task.isComplete) continue;
+      if (!used.add(id)) continue;
+      applied.add(task);
+    }
+    final appended = [
+      for (final task in base)
+        if (!task.isComplete && !used.contains(task.id)) task,
+    ];
+    final completed = [
+      for (final task in base)
+        if (task.isComplete) task,
+    ];
+    return (
+      tasks: [...applied, ...appended, ...completed],
+      // applied 为空说明保存过的顺序已全部失效（完成或删除）：此时只做
+      // "未完成在前、已完成在后"的稳定分组，不应声称手动顺序仍生效。
+      hasManualOrder: applied.isNotEmpty,
+    );
   }
 
   /// Pinned goals lead in their manual order; the rest keep the established
@@ -145,6 +286,14 @@ class LocalTaskRepository implements TaskRepository {
       final byCreated = left.createdAt.compareTo(right.createdAt);
       if (byCreated != 0) return byCreated;
       return left.id.compareTo(right.id);
+    }
+    // 未置顶目标一旦被手动排过序，就先按保存的序号；两边都没有序号时
+    // 继续沿用既有"有未完成任务优先 + 最近更新"的回退顺序，旧数据不变。
+    final leftOrder = left.sortOrder;
+    final rightOrder = right.sortOrder;
+    if (leftOrder != null || rightOrder != null) {
+      final byOrder = (leftOrder ?? 1 << 30).compareTo(rightOrder ?? 1 << 30);
+      if (byOrder != 0) return byOrder;
     }
     final leftHasExecutableTask = left.tasks.any((task) => !task.isComplete);
     final rightHasExecutableTask = right.tasks.any((task) => !task.isComplete);
@@ -279,6 +428,57 @@ class LocalTaskRepository implements TaskRepository {
             .write(LocalGoalsCompanion(sortOrder: Value(index)));
       }
     });
+    await _publish();
+  }
+
+  @override
+  Future<void> reorderUnpinnedGoals(List<String> orderedGoalIds) async {
+    await lifecycleAccess.requireActive();
+    final unpinnedIds = <String>{
+      for (final goal in await getGoals())
+        if (!goal.isPinned) goal.id,
+    };
+    if (orderedGoalIds.length != unpinnedIds.length ||
+        orderedGoalIds.toSet().length != orderedGoalIds.length ||
+        !unpinnedIds.containsAll(orderedGoalIds)) {
+      throw ArgumentError('排序必须且只能覆盖当前全部未置顶目标。');
+    }
+    await database.transaction(() async {
+      for (var index = 0; index < orderedGoalIds.length; index++) {
+        await (database.update(database.localGoals)
+              ..where((goal) => goal.userId.equals(userId))
+              ..where((goal) => goal.id.equals(orderedGoalIds[index])))
+            .write(LocalGoalsCompanion(sortOrder: Value(index)));
+      }
+    });
+    await _publish();
+  }
+
+  @override
+  Future<void> reorderTasks(String goalId, List<String> orderedTaskIds) async {
+    await lifecycleAccess.requireActive();
+    // _findGoal 同时校验归属：跨用户或已删除的目标不会被写入顺序。
+    final goal = await _findGoal(goalId);
+    final rows =
+        await (database.select(database.localTasks)
+              ..where((task) => task.userId.equals(userId))
+              ..where((task) => task.goalId.equals(goal.id))
+              ..where((task) => task.deletedAt.isNull()))
+            .get();
+    final unfinishedIds = <String>{
+      for (final row in rows)
+        if (!row.isComplete) row.id,
+    };
+    if (orderedTaskIds.toSet().length != orderedTaskIds.length ||
+        orderedTaskIds.length != unfinishedIds.length ||
+        !unfinishedIds.containsAll(orderedTaskIds)) {
+      throw ArgumentError('排序必须且只能覆盖该目标当前全部未完成任务。');
+    }
+    await taskOrderStore.save(
+      userId: userId,
+      goalId: goal.id,
+      taskIds: orderedTaskIds,
+    );
     await _publish();
   }
 
@@ -565,7 +765,11 @@ class LocalTaskRepository implements TaskRepository {
     _changes.add(null);
   }
 
-  Goal _goalFromRow(LocalGoal row, {List<Task> tasks = const []}) => Goal(
+  Goal _goalFromRow(
+    LocalGoal row, {
+    List<Task> tasks = const [],
+    bool hasManualTaskOrder = false,
+  }) => Goal(
     id: row.id,
     title: row.title,
     description: row.description,
@@ -576,6 +780,7 @@ class LocalTaskRepository implements TaskRepository {
     isPinned: row.isPinned,
     sortOrder: row.sortOrder,
     tasks: tasks,
+    hasManualTaskOrder: hasManualTaskOrder,
   );
 
   Task _taskFromRow(LocalTask row) => Task(
@@ -854,6 +1059,14 @@ class UnavailableTaskRepository implements TaskRepository {
 
   @override
   Future<void> reorderPinnedGoals(List<String> orderedGoalIds) =>
+      _unavailable();
+
+  @override
+  Future<void> reorderUnpinnedGoals(List<String> orderedGoalIds) =>
+      _unavailable();
+
+  @override
+  Future<void> reorderTasks(String goalId, List<String> orderedTaskIds) =>
       _unavailable();
 
   @override
