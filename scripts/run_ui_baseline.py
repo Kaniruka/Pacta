@@ -36,6 +36,7 @@ SOURCE_FILES = (
     'integration_test/ui_baseline_device_test.dart',
     'lib/main.dart',
     'lib/src/app/app_providers.dart',
+    'lib/src/app/pacta_locales.dart',
     'lib/src/app/app_shell.dart',
     'lib/src/auth/auth_screen.dart',
     'lib/src/board/board_page.dart',

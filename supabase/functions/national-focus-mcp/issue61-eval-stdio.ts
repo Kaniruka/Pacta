@@ -69,7 +69,9 @@ const activeSnapshot = {
   },
 };
 
-const evidence = JSON.parse(readFileSync(new URL('../../../docs/evidence/issue61-handler-synthetic-tools.json', import.meta.url), 'utf8'));
+const evidencePath = process.env.PACTA_ISSUE61_EVIDENCE_PATH
+  || new URL('../../../build/eval-evidence/issue61-handler-synthetic-tools.json', import.meta.url);
+const evidence = JSON.parse(readFileSync(evidencePath, 'utf8'));
 const rename = (id: string | null) => id === 'root-parent' ? 'tree-a' : id === 'cascade-parent' ? 'tree-b' : id === 'root-deleted' ? 'deleted-d' : id;
 const historicalFields: Record<string, string> = {
   trigger_condition: 'triggerCondition', exception_notes: 'exceptionNotes', is_in_tree: 'isInTree',

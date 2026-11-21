@@ -498,7 +498,7 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
   }
 
   /// 三层语义的日格：底色只表达 5 档专注热力，选中与今天都只改描边，
-  /// 今天另有独立的 '今' 角标，因此热力底色永远不会被选中态覆写。
+  /// 今天另有独立的去胶囊 '今' 微字，因此热力底色永远不会被选中态覆写。
   Widget _buildDayCell(
     BuildContext context, {
     required DateTime month,
@@ -535,14 +535,21 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
             minHeight: 48,
             borderRadius: 12,
             onTap: () => _selectDay(day),
-            topRightMarker: hasActivity
+            // 与看板热力月历完全同一形态：'今' 居中置顶、底部恒定 8dp
+            // 指示轨，有投入的微点从右上角移到底部轨道，日期数字不再因为
+            // 有无投入而上下错位。
+            centerTodayLabel: true,
+            reserveBottomSlot: true,
+            topRightMarker: null,
+            bottomDot: hasActivity
                 ? ExcludeSemantics(
                     child: Container(
-                      width: 5,
-                      height: 5,
+                      key: ValueKey('focus-month-activity-dot-$day'),
+                      width: 4,
+                      height: 4,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: foreground,
+                        color: foreground.withValues(alpha: 0.72),
                       ),
                     ),
                   )

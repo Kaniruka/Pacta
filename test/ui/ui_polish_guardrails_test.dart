@@ -916,6 +916,7 @@ void main() {
           find.descendant(of: planCell, matching: find.text('今')),
           findsOneWidget,
         );
+        expect(_todayLabelBackdrops(tester), 0, reason: '计划日历的今字不得被填充胶囊包住');
 
         // 专注月历：今天默认选中，热力底色保留。
         await tester.pumpWidget(
@@ -957,6 +958,12 @@ void main() {
           find.descendant(of: monthCell, matching: find.text('今')),
           findsOneWidget,
         );
+        expect(_todayLabelBackdrops(tester), 0, reason: '专注月历的今字不得被填充胶囊包住');
+        expect(
+          tester.widget<Text>(find.text('今')).style?.color,
+          colors.heat1Foreground,
+          reason: 'heat1 浅绿底上的今字用高对比业务前景，不是蓝字',
+        );
 
         // 融合卡片：同一格同样是单层描边 + 今角标 + 热力底色。
         await tester.pumpWidget(
@@ -996,6 +1003,7 @@ void main() {
           find.descendant(of: boardCell, matching: find.text('今')),
           findsOneWidget,
         );
+        expect(_todayLabelBackdrops(tester), 0, reason: '融合看板的今字不得被填充胶囊包住');
         expect(_hasKeyContaining(tester, 'plan-day-selected-ring'), isFalse);
 
         // 历史日期没有失败记录时必须显示未知，不推断为已完成。
@@ -1020,7 +1028,7 @@ void main() {
     // 320dp × textScaler 2.0：'今' 角标必须自己收紧并二次缩放，绝不把右上角
     // 标记挤出 32.3dp 窄格（基线截图 plan-calendar-schedule-unchecked 曾报
     // RenderFlex overflowed by 3.2 pixels on the right）。
-    testWidgets('320dp 与 2.0 字号下今角标与右上角标记同排零溢出且不重叠', (tester) async {
+    testWidgets('320dp 与 2.0 字号下今字与右上角标记同排零溢出且不重叠', (tester) async {
       tester.view.physicalSize = const Size(320, 568);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -1103,12 +1111,19 @@ void main() {
             reason: '${width}dp 宽 + $name 标记在 2.0 字号下不允许溢出',
           );
           final cell = tester.getRect(find.byKey(const ValueKey('guard-cell')));
-          final badge = _todayBadgeRect(tester);
-          final glyph = tester.getRect(find.text('今'));
+          final label = _todayBadgeRect(tester);
+          final topBar = tester.getRect(
+            find
+                .descendant(
+                  of: find.byKey(const ValueKey('guard-cell')),
+                  matching: find.byType(Row),
+                )
+                .first,
+          );
           final markerRect = tester.getRect(
             find.byKey(ValueKey('guard-marker-$name')),
           );
-          for (final rect in <Rect>[badge, markerRect]) {
+          for (final rect in <Rect>[label, markerRect]) {
             expect(
               rect.left,
               greaterThanOrEqualTo(cell.left - 0.01),
@@ -1123,28 +1138,33 @@ void main() {
             expect(rect.bottom, lessThanOrEqualTo(cell.bottom + 0.01));
           }
           expect(
-            badge.height,
+            label.height,
             lessThanOrEqualTo(12.01),
-            reason: '$name：今角标仍须收在 12dp 顶栏内',
+            reason: '$name：今字仍须收在 12dp 顶栏内',
           );
           expect(
-            badge.contains(glyph.center),
+            topBar.contains(label.center),
             isTrue,
-            reason: '$name：今字被底衬完整包住，不放大的同时也不裁切',
+            reason: '$name：今字完整落在顶栏里，不放大的同时也不被裁切',
           );
           expect(
-            badge.overlaps(markerRect),
+            _todayLabelBackdrops(tester),
+            0,
+            reason: '$name：今字不再有胶囊底衬，量到的就是字形本身',
+          );
+          expect(
+            label.overlaps(markerRect),
             isFalse,
-            reason: '$name：今角标与右上角标记不得重叠',
+            reason: '$name：今字与右上角标记不得重叠',
           );
           expect(
-            badge.right,
+            label.right,
             lessThanOrEqualTo(markerRect.left + 0.01),
-            reason: '$name：今角标必须整体位于标记左侧',
+            reason: '$name：今字必须整体位于标记左侧',
           );
         }
 
-        // 只有今角标、没有标记：整格宽度都归它，同样不得溢出。
+        // 只有今字、没有标记：整格宽度都归它，同样不得溢出。
         await pumpCell(width: width, today: true, marker: null, textScale: 2.0);
         expect(tester.takeException(), isNull);
         final bareCell = tester.getRect(
@@ -1155,7 +1175,7 @@ void main() {
         expect(bareBadge.right, lessThanOrEqualTo(bareCell.right + 0.01));
       }
 
-      // 1.0 字号下四种组合的视觉位置完全不变：今角标贴左内边距，标记贴右。
+      // 1.0 字号下四种组合的视觉位置完全不变：今字贴左内边距，标记贴右。
       for (final today in <bool>[true, false]) {
         for (final (name, marker) in <(String, Widget?)>[
           ...markers,
@@ -1181,7 +1201,7 @@ void main() {
             expect(
               _todayBadgeRect(tester).left,
               closeTo(row.left, 0.01),
-              reason: 'today=$today/$name：今角标仍贴顶栏左端',
+              reason: 'today=$today/$name：今字仍贴顶栏左端',
             );
           } else {
             expect(find.text('今'), findsNothing);
@@ -1271,18 +1291,26 @@ void main() {
       final todayCell = tester.getRect(
         find.byKey(const ValueKey('guard-grid-day-4')),
       );
-      final badge = _todayBadgeRect(tester);
-      final glyph = tester.getRect(find.text('今'));
+      final label = _todayBadgeRect(tester);
       final marker = tester.getRect(
         find.byKey(const ValueKey('guard-grid-marker')),
       );
-      for (final rect in <Rect>[badge, marker]) {
+      for (final rect in <Rect>[label, marker]) {
         expect(rect.left, greaterThanOrEqualTo(todayCell.left - 0.01));
         expect(rect.right, lessThanOrEqualTo(todayCell.right + 0.01));
       }
-      expect(badge.contains(glyph.center), isTrue);
-      expect(badge.overlaps(marker), isFalse, reason: '今角标与圆点不得重叠');
-      expect(badge.right, lessThanOrEqualTo(marker.left + 0.01));
+      final topBar = tester.getRect(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey('guard-grid-day-4')),
+              matching: find.byType(Row),
+            )
+            .first,
+      );
+      expect(topBar.contains(label.center), isTrue);
+      expect(_todayLabelBackdrops(tester), 0);
+      expect(label.overlaps(marker), isFalse, reason: '今字与圆点不得重叠');
+      expect(label.right, lessThanOrEqualTo(marker.left + 0.01));
     });
   });
 
@@ -1948,6 +1976,319 @@ void main() {
       }
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Phase 4：去胶囊 '今' + 底部固定指示轨
+  // ---------------------------------------------------------------------------
+  group('Phase 4 去胶囊今字与底部指示轨', () {
+    const zone = 'Asia/Shanghai';
+    final now = DateTime.utc(2026, 11, 18, 2);
+    final colors = PactaCalendarColors.light;
+
+    NationalFocusFailure failureOn(DateTime checkpointAt, String id) =>
+        NationalFocusFailure(
+          id: id,
+          batchId: 'batch-$id',
+          cardId: 'card-$id',
+          checkpointAt: checkpointAt,
+          cause: NationalFocusFailureCause.missedConfirmation,
+          failureReason: null,
+          sharedExplanation: null,
+          treeSnapshot: [
+            NationalFocusCardSnapshot(
+              id: 'card-$id',
+              name: '先写第一步',
+              triggerCondition: '开始前',
+              action: '写一步',
+              isInTree: true,
+              state: NationalFocusCardState.pendingTodayConfirmation,
+              successfulDays: 1,
+              currentConsecutiveDays: 0,
+              bestConsecutiveDays: 1,
+              maintenanceCycleStarted: true,
+              createdAt: DateTime.utc(2026, 9, 1),
+              updatedAt: DateTime.utc(2026, 11, 6),
+            ),
+          ],
+        );
+
+    Schedule scheduleOn(String id, String title, DateTime startsAt) => Schedule(
+      id: id,
+      title: title,
+      startsAt: startsAt,
+      endsAt: startsAt.add(const Duration(hours: 1)),
+      createdAt: DateTime.utc(2026, 9, 1),
+      updatedAt: DateTime.utc(2026, 9, 1),
+      isCompleted: false,
+    );
+
+    // 5 种格态同屏：12 深绿+失败、14 灰蓝+失败、16 双态、18 今天+专注+安排、
+    // 19 纯安排；17 是无状态对照日。16..20 同行，14 在上一行。
+    Widget board() => MaterialApp(
+      theme: pactaTheme(Brightness.light),
+      home: Scaffold(
+        body: SingleChildScrollView(
+          child: SizedBox(
+            width: 360,
+            child: FocusNationalCalendarCard(
+              focusRepository: _Phase4FocusRepository(
+                seconds: {12: 5400, 16: 5400, 18: 9000},
+              ),
+              nationalFocusRepository: _Phase4NationalFocusRepository(
+                failures: [
+                  failureOn(DateTime.utc(2026, 11, 12, 4), 'f12'),
+                  failureOn(DateTime.utc(2026, 11, 14, 4), 'f14'),
+                  failureOn(DateTime.utc(2026, 11, 16, 4), 'f16'),
+                  failureOn(DateTime.utc(2026, 11, 20, 4), 'f20'),
+                ],
+              ),
+              scheduleRepository: _Phase4ScheduleRepository([
+                scheduleOn('s16', '周会', DateTime.utc(2026, 11, 16, 4)),
+                scheduleOn('s18', '与设计评审', DateTime.utc(2026, 11, 18, 3)),
+                scheduleOn('s19', '复盘', DateTime.utc(2026, 11, 19, 3)),
+              ]),
+              displayTimeZoneId: zone,
+              now: () => now,
+              onOpenNationalFocus: () {},
+              onOpenFocusMonth: () {},
+              onRetryProjection: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('三个入口的今字都不再有填充胶囊', (tester) async {
+      _useView(tester, const Size(360, 1400));
+      await tester.pumpWidget(board());
+      await tester.pumpAndSettle();
+      expect(find.text('今'), findsOneWidget);
+      expect(
+        _todayLabelBackdrops(tester),
+        0,
+        reason: '看板热力月历：今字之上不得出现带填充色的 Container/DecoratedBox',
+      );
+      expect(
+        tester.widget<Text>(find.text('今')).style?.color,
+        colors.heat3Foreground,
+        reason: '深绿 heat3 上的今字用白色业务前景，而不是蓝字配绿底',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: pactaTheme(Brightness.light),
+          home: Scaffold(
+            body: FocusMonthPage(
+              repository: _Phase4FocusRepository(seconds: {15: 780}),
+              accountTimeZoneIds: () => Stream<String?>.value(zone),
+              now: () => DateTime.utc(2026, 11, 15, 2),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('今'), findsOneWidget);
+      expect(
+        _todayLabelBackdrops(tester),
+        0,
+        reason: '专注月历：今字之上不得出现带填充色的 Container/DecoratedBox',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: pactaTheme(Brightness.light),
+          home: Scaffold(
+            body: PlanCalendarView(
+              repository: _Phase4ScheduleRepository([
+                scheduleOn('plan-s15', '今日安排', DateTime.utc(2026, 11, 15, 3)),
+              ]),
+              goals: const <Goal>[],
+              displayTimeZoneId: zone,
+              now: () => DateTime.utc(2026, 11, 15, 2),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('今'), findsOneWidget);
+      expect(
+        _todayLabelBackdrops(tester),
+        0,
+        reason: '计划日历：今字之上不得出现带填充色的 Container/DecoratedBox',
+      );
+      expect(
+        tester.widget<Text>(find.text('今')).style?.color,
+        colors.hasPlansForeground,
+        reason: '柔和黄有安排底上的今字用该底色的高对比前景',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('同行四种格态的日期数字垂直中心严格对齐，没有上下跳动', (tester) async {
+      _useView(tester, const Size(360, 1400));
+      await tester.pumpWidget(board());
+      await tester.pumpAndSettle();
+
+      double numberCenterDy(int day) => tester
+          .getRect(
+            find.descendant(
+              of: find.byKey(ValueKey('board-focus-day-$day')),
+              matching: find.text('$day'),
+            ),
+          )
+          .center
+          .dy;
+
+      // 16..20 在同一行：16 双态、17 无状态、18 今天、19 纯安排、20 纯失败。
+      // 无论有没有状态点，日期数字都必须落在同一条水平线上。
+      final centers = {
+        for (final day in [16, 17, 18, 19, 20]) day: numberCenterDy(day),
+      };
+      final lowest = centers.values.reduce((a, b) => a < b ? a : b);
+      final highest = centers.values.reduce((a, b) => a > b ? a : b);
+      expect(
+        highest - lowest,
+        lessThanOrEqualTo(0.5),
+        reason: '四种格态的数字中心必须严格齐平：$centers',
+      );
+
+      // 底部轨道恒定存在：无状态日的格子高度与双态日完全一致。
+      final heights = {
+        for (final day in [16, 17, 18, 19, 20])
+          day: tester
+              .getRect(find.byKey(ValueKey('board-focus-day-$day')))
+              .height,
+      };
+      final staticHeights = {
+        for (final day in [16, 17, 19, 20]) heights[day]!,
+      };
+      expect(
+        staticHeights.length,
+        1,
+        reason:
+            '指示轨恒定保留，无状态/纯安排/纯失败/双态格子高度不得随状态变化：'
+            '$heights',
+      );
+      expect(
+        (heights[18]! - staticHeights.first).abs(),
+        lessThanOrEqualTo(4.5),
+        reason: '今天只多出 1.5dp 外框的 4dp 内缩，不额外撑高内容：$heights',
+      );
+    });
+
+    testWidgets('双态日微点与细杠同轨并排、互不重叠且仍只有一层描边', (tester) async {
+      _useView(tester, const Size(360, 1400));
+      await tester.pumpWidget(board());
+      await tester.pumpAndSettle();
+
+      final cell = find.byKey(const ValueKey('board-focus-day-16'));
+      // 选中双态日：2dp 主蓝描边落在日格最外层 Ink 上，仍只有一层。
+      await tester.tap(cell);
+      await tester.pumpAndSettle();
+      final number = tester.getRect(
+        find.descendant(of: cell, matching: find.text('16')),
+      );
+      final dot = tester.getRect(
+        find.byKey(const ValueKey('board-focus-schedule-dot-16')),
+      );
+      final bar = tester.getRect(
+        find.byKey(const ValueKey('board-focus-failure-dot-16')),
+      );
+      expect(dot.width, closeTo(dot.height, 0.01), reason: '安排点是等宽高微点');
+      expect(bar.width, greaterThan(bar.height), reason: '国策失败是横向细短杠');
+      expect(dot.overlaps(bar), isFalse, reason: '微点与细杠不得重叠');
+      expect(dot.right, lessThanOrEqualTo(bar.left + 0.01));
+      for (final rect in [dot, bar]) {
+        expect(
+          rect.top,
+          greaterThanOrEqualTo(number.bottom - 0.01),
+          reason: '所有底部标记都在日期数字下方',
+        );
+      }
+      expect(_borderLayers(tester, cell), 1, reason: '双态日仍只有一层等大外框');
+      expect(_todayLabelBackdrops(tester), 0, reason: '底部标记不得把今字包回胶囊');
+
+      // 14 在 heat0 上不需要托底；12 在 heat3 上必须有半透托底。
+      expect(
+        find.byKey(const ValueKey('board-focus-failure-halo-14')),
+        findsNothing,
+      );
+      final halo = find.byKey(const ValueKey('board-focus-failure-halo-12'));
+      expect(halo, findsOneWidget, reason: '深绿底上的珊瑚红细杠需要隔离托底');
+      final haloDecoration =
+          tester.widget<Container>(halo).decoration! as BoxDecoration;
+      expect(
+        haloDecoration.border,
+        isNull,
+        reason: '托底只能填充：加 border 会打破单层描边守卫',
+      );
+      // 未选中的深绿格：托底不引入任何 border，装饰层里没有第二层外框。
+      expect(
+        _borderLayers(tester, find.byKey(const ValueKey('board-focus-day-12'))),
+        0,
+        reason: '光晕托底不得带回第二层描边',
+      );
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('今字按底色自适应取色：heat0/无底色用 todayLabelColor，业务底用前景', (tester) async {
+      final cases = <(String, Color?, Color, Color)>[
+        ('无底色', null, colors.heat0Foreground, colors.todayLabelColor),
+        (
+          'heat0',
+          colors.heat0Background,
+          colors.heat0Foreground,
+          colors.todayLabelColor,
+        ),
+        (
+          'heat3',
+          colors.heat3Background,
+          colors.heat3Foreground,
+          colors.heat3Foreground,
+        ),
+        (
+          'hasPlans',
+          colors.hasPlansBackground,
+          colors.hasPlansForeground,
+          colors.hasPlansForeground,
+        ),
+      ];
+      for (final (name, background, foreground, expected) in cases) {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: pactaTheme(Brightness.light),
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 64,
+                  child: PactaCalendarDayBox(
+                    cellKey: ValueKey('phase4-cell-$name'),
+                    dayNumber: '15',
+                    today: true,
+                    backgroundColor: background,
+                    foregroundColor: foreground,
+                    centerTodayLabel: true,
+                    reserveBottomSlot: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<Text>(find.text('今')).style?.color,
+          expected,
+          reason: '$name：今字颜色必须自适应底色',
+        );
+        expect(
+          _borderLayers(tester, find.byKey(ValueKey('phase4-cell-$name'))),
+          1,
+        );
+        expect(_todayLabelBackdrops(tester), 0, reason: '$name：今字不带胶囊');
+      }
+    });
+  });
 }
 
 /// 固定逻辑尺寸与像素比，测试结束时自动还原。
@@ -2128,10 +2469,10 @@ int _borderLayers(WidgetTester tester, Finder scope) {
   return count;
 }
 
-/// 取出 '今' 角标整块（含 3dp 内边距的底衬）的视觉矩形，用于窄格边界断言。
-Rect _todayBadgeRect(WidgetTester tester) => tester.getRect(
-  find.ancestor(of: find.text('今'), matching: find.byType(Container)).first,
-);
+/// 取出 '今' 微字的视觉矩形，用于窄格边界断言。
+///
+/// 去胶囊后 '今' 就是一段纯文字：没有 3dp 内边距的底衬，量到的就是字形本身。
+Rect _todayBadgeRect(WidgetTester tester) => tester.getRect(find.text('今'));
 
 /// 整棵树里是否存在包含指定片段的 Key（例如已废弃的 plan-day-selected-ring-*）。
 bool _hasKeyContaining(WidgetTester tester, String fragment) {
@@ -2154,4 +2495,85 @@ class _FocusTreeFixtureRepository extends UnavailableNationalFocusRepository {
   @override
   Stream<List<NationalFocusCard>> watchLibraryCards() =>
       Stream.value(const <NationalFocusCard>[]);
+}
+
+/// '今' 与格子之间带填充色的 Container / DecoratedBox 数量（去胶囊守卫）。
+int _todayLabelBackdrops(WidgetTester tester) {
+  final filled = find.ancestor(
+    of: find.text('今'),
+    matching: find.byWidgetPredicate((widget) {
+      if (widget is Container) {
+        if (widget.color != null) return true;
+        final decoration = widget.decoration;
+        return decoration is BoxDecoration && decoration.color != null;
+      }
+      if (widget is DecoratedBox) {
+        final decoration = widget.decoration;
+        return decoration is BoxDecoration && decoration.color != null;
+      }
+      return false;
+    }),
+  );
+  return filled.evaluate().length;
+}
+
+/// Phase 4 夹具：按日给专注秒数，只读投影，不写库。
+class _Phase4FocusRepository extends UnavailableFocusRepository {
+  _Phase4FocusRepository({required this.seconds});
+
+  final Map<int, int> seconds;
+
+  @override
+  Stream<FocusMonthMetrics> watchMonthMetrics({
+    required String timeZoneId,
+    required DateTime month,
+  }) {
+    final start = DateTime.utc(month.year, month.month);
+    final count = DateTime.utc(start.year, start.month + 1, 0).day;
+    final days = [
+      for (var day = 1; day <= count; day++)
+        FocusActivityDay(
+          date: DateTime.utc(start.year, start.month, day),
+          activeSeconds: seconds[day] ?? 0,
+        ),
+    ];
+    return Stream.value(
+      FocusMonthMetrics(
+        displayTimeZoneId: timeZoneId,
+        month: start,
+        days: days,
+        totalActiveSeconds: days.fold(0, (sum, day) => sum + day.activeSeconds),
+        activeDayCount: days.where((day) => day.activeSeconds > 0).length,
+      ),
+    );
+  }
+}
+
+/// Phase 4 夹具：固定的国策失败记录，不结算、不写库。
+class _Phase4NationalFocusRepository
+    extends UnavailableNationalFocusRepository {
+  _Phase4NationalFocusRepository({required this.failures});
+
+  final List<NationalFocusFailure> failures;
+
+  @override
+  Stream<List<NationalFocusCard>> watchTreeCards() =>
+      Stream.value(const <NationalFocusCard>[]);
+
+  @override
+  Stream<List<NationalFocusFailure>> watchFailures() => Stream.value(failures);
+
+  @override
+  Future<void> settleDueCheckpoints() async {}
+}
+
+/// Phase 4 夹具：固定的只读安排行。
+class _Phase4ScheduleRepository extends UnavailableScheduleRepository {
+  _Phase4ScheduleRepository(this.rows);
+
+  final List<Schedule> rows;
+
+  @override
+  Stream<List<Schedule>> watchSchedules({DateTime? from, DateTime? to}) =>
+      Stream.value(rows);
 }

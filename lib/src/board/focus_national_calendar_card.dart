@@ -759,15 +759,49 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
     if (day < 1 || day > dayCount) return const SizedBox(height: 48);
     final colors = PactaCalendarColors.of(context);
     final seconds = secondsByDay[day] ?? 0;
-    final (background, foreground) = colors.heatColorsForLevel(
-      PactaCalendarColors.heatLevelForSeconds(seconds),
-    );
+    final heatLevel = PactaCalendarColors.heatLevelForSeconds(seconds);
+    final (background, foreground) = colors.heatColorsForLevel(heatLevel);
     final date = DateTime.utc(month.year, month.month, day);
     final isToday =
         date.year == today.year &&
         date.month == today.month &&
         date.day == today.day;
     final failures = _failuresOn(date);
+    // 第四层语义：统一指示轨只表示“这天有安排 / 这天有国策失败”，与热力
+    // 底色、选中/今天描边、'今' 微字互不遮挡。右上角不再放任何孤立标记，
+    // 全部收进日期数字下方的 8dp 轨道。
+    final scheduleDot = hasSchedules
+        ? ExcludeSemantics(
+            child: Container(
+              key: ValueKey('board-focus-schedule-dot-$day'),
+              width: 4,
+              height: 4,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: foreground.withValues(alpha: 0.72),
+              ),
+            ),
+          )
+        : null;
+    final failureIndicator = failures.isEmpty
+        ? null
+        : _failureIndicator(
+            context,
+            day: day,
+            colors: colors,
+            heatLevel: heatLevel,
+          );
+    final bottomDot = scheduleDot == null && failureIndicator == null
+        ? null
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ?scheduleDot,
+              if (scheduleDot != null && failureIndicator != null)
+                const SizedBox(width: 3),
+              ?failureIndicator,
+            ],
+          );
     return LayoutBuilder(
       builder: (context, constraints) {
         // 312dp 版心七等分后每列 44.5dp：≥46dp 才让出 2dp 视觉间隙，
@@ -785,34 +819,12 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
             minHeight: 48,
             borderRadius: 12,
             onTap: () => setState(() => _selectedDay = day),
-            topRightMarker: failures.isEmpty
-                ? null
-                : ExcludeSemantics(
-                    child: Container(
-                      key: ValueKey('board-focus-failure-dot-$day'),
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: colors.failureDotColor,
-                      ),
-                    ),
-                  ),
-            // 第四层语义：底部小点只表示“这天有安排”，与热力底色、
-            // 选中/今天描边、今角标、国策失败红点互不遮挡。
-            bottomDot: hasSchedules
-                ? ExcludeSemantics(
-                    child: Container(
-                      key: ValueKey('board-focus-schedule-dot-$day'),
-                      width: 4,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: foreground,
-                      ),
-                    ),
-                  )
-                : null,
+            // 热力月历的固定形态：'今' 居中置顶、底部恒定 8dp 指示轨，
+            // 右上角不再挂任何标记。
+            centerTodayLabel: true,
+            reserveBottomSlot: true,
+            topRightMarker: null,
+            bottomDot: bottomDot,
             semanticLabel:
                 '${month.month}月$day日，'
                 '${seconds > 0 ? '有效专注 ${formatEffectiveDuration(seconds)}' : '无有效专注'}'
@@ -822,6 +834,47 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
           ),
         );
       },
+    );
+  }
+
+  /// 国策失败的底部细短杠：横向 10dp × 3dp 圆角，与安排微点同轨并排。
+  ///
+  /// 深绿底（heat ≥ 2）上细杠几乎与底色同亮度，因此外包一层同系半透托底
+  /// 把标记与底色隔开。托底只用填充色、**绝不设 border**：日格的
+  /// “只允许一层等大外框”守卫依赖装饰层不带描边，加边框会立刻变成双层框。
+  Widget _failureIndicator(
+    BuildContext context, {
+    required int day,
+    required PactaCalendarColors colors,
+    required int heatLevel,
+  }) {
+    final bar = ExcludeSemantics(
+      child: Container(
+        key: ValueKey('board-focus-failure-dot-$day'),
+        width: 10,
+        height: 3,
+        decoration: BoxDecoration(
+          color: colors.failureDotColor,
+          borderRadius: BorderRadius.circular(999),
+        ),
+      ),
+    );
+    if (heatLevel < 2) return bar;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final haloColor =
+        (theme.brightness == Brightness.dark
+                ? scheme.surfaceContainerLow
+                : scheme.surfaceContainerLowest)
+            .withValues(alpha: 0.92);
+    return Container(
+      key: ValueKey('board-focus-failure-halo-$day'),
+      padding: const EdgeInsets.all(1),
+      decoration: BoxDecoration(
+        color: haloColor,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: bar,
     );
   }
 

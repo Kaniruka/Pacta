@@ -8,9 +8,9 @@ bow, tilted face and original character colors. It contains no embedded bitmap.
 Regenerate native assets from the repository root:
 
 ```powershell
-python -m venv .scratch/icon-tools
-.scratch/icon-tools/Scripts/python -m pip install pillow==13.0.0 resvg-py==0.5.0
-.scratch/icon-tools/Scripts/python scripts/generate_app_icons.py
+python -m venv build/icon-tools-venv
+build/icon-tools-venv/Scripts/python -m pip install pillow==13.0.0 resvg-py==0.5.0
+build/icon-tools-venv/Scripts/python scripts/generate_app_icons.py
 ```
 
 Commit the SVG, generated Android XML/PNG, Windows ICO and `pacta-icon.png`

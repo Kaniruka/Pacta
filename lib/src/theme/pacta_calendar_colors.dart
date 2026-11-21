@@ -10,8 +10,8 @@ import 'package:flutter/material.dart';
 ///      由浅到深的绿阶）。
 ///    选中与今天都不覆写背景，业务色始终可见。
 /// 2. 描边只表达选中/今天：单层、与单元格等大，选中优先于今天。
-/// 3. 今天另用独立 '今' 角标（[todayBadgeBackground]/[todayBadgeForeground]）
-///    表达，不依赖描边，也不与右上角状态标记抢位置。
+/// 3. 今天另用独立的 '今' 微字（[todayLabelColor] 或业务前景）表达，不铺
+///    胶囊底色、不依赖描边，也不与右上角状态标记抢位置。
 ///
 /// [selectedBackground]/[selectedForeground] 是历史保留字段：选中态早已改用
 /// 描边表达、不再覆写底色，这两个值只作为回归负向断言（“业务底色不被选中蓝
@@ -43,6 +43,7 @@ class PactaCalendarColors extends ThemeExtension<PactaCalendarColors> {
     required this.heat4Foreground,
     required this.todayBadgeBackground,
     required this.todayBadgeForeground,
+    required this.todayLabelColor,
     required this.failureDotColor,
   });
 
@@ -109,13 +110,20 @@ class PactaCalendarColors extends ThemeExtension<PactaCalendarColors> {
   /// 专注热力 4 档前景。
   final Color heat4Foreground;
 
-  /// '今' 角标底色；在无背景及绿/黄/薰衣草底上都保持高对比。
+  /// 历史保留字段：旧版 '今' 胶囊底色。
+  ///
+  /// 去胶囊排版后 '今' 不再绘制实心底衬，本字段只为兼容既有构造方与回归
+  /// 断言保留，任何渲染路径都不得把它当作背景。
   final Color todayBadgeBackground;
 
-  /// '今' 角标前景。
+  /// 历史保留字段：旧版 '今' 胶囊前景，同样只作回归参考。
   final Color todayBadgeForeground;
 
-  /// 失败标记的小红点；不承担正文语义，仅作辅助标记。
+  /// 无业务底色（或 heat0）时 '今' 的文字色；与白底 / [heat0Background]
+  /// 均 ≥ 4.5:1，不铺胶囊也能被读到。
+  final Color todayLabelColor;
+
+  /// 国策失败的温和珊瑚红标记；不承担正文语义，仅作辅助标记。
   final Color failureDotColor;
 
   static const PactaCalendarColors light = PactaCalendarColors(
@@ -141,7 +149,8 @@ class PactaCalendarColors extends ThemeExtension<PactaCalendarColors> {
     heat4Foreground: Color(0xffffffff),
     todayBadgeBackground: Color(0xff0b57d0),
     todayBadgeForeground: Color(0xffffffff),
-    failureDotColor: Color(0xffc5221f),
+    todayLabelColor: Color(0xff0b57d0),
+    failureDotColor: Color(0xffd94b43),
   );
 
   static const PactaCalendarColors dark = PactaCalendarColors(
@@ -167,6 +176,7 @@ class PactaCalendarColors extends ThemeExtension<PactaCalendarColors> {
     heat4Foreground: Color(0xff07210f),
     todayBadgeBackground: Color(0xffa8c7fa),
     todayBadgeForeground: Color(0xff062e6f),
+    todayLabelColor: Color(0xff8ab4f8),
     failureDotColor: Color(0xfff28b82),
   );
 
@@ -220,6 +230,7 @@ class PactaCalendarColors extends ThemeExtension<PactaCalendarColors> {
     Color? heat4Foreground,
     Color? todayBadgeBackground,
     Color? todayBadgeForeground,
+    Color? todayLabelColor,
     Color? failureDotColor,
   }) => PactaCalendarColors(
     hasPlansBackground: hasPlansBackground ?? this.hasPlansBackground,
@@ -244,6 +255,7 @@ class PactaCalendarColors extends ThemeExtension<PactaCalendarColors> {
     heat4Foreground: heat4Foreground ?? this.heat4Foreground,
     todayBadgeBackground: todayBadgeBackground ?? this.todayBadgeBackground,
     todayBadgeForeground: todayBadgeForeground ?? this.todayBadgeForeground,
+    todayLabelColor: todayLabelColor ?? this.todayLabelColor,
     failureDotColor: failureDotColor ?? this.failureDotColor,
   );
 
@@ -316,6 +328,7 @@ class PactaCalendarColors extends ThemeExtension<PactaCalendarColors> {
         other.todayBadgeForeground,
         t,
       )!,
+      todayLabelColor: Color.lerp(todayLabelColor, other.todayLabelColor, t)!,
       failureDotColor: Color.lerp(failureDotColor, other.failureDotColor, t)!,
     );
   }

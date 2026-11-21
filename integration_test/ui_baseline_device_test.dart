@@ -1,8 +1,10 @@
 // ignore_for_file: avoid_print
 
+import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -131,6 +133,18 @@ void main() {
         estimatedMinutes: 30,
       ),
     );
+    // Phase 4：11 月 12 日的一条 90 分钟已完成专注，正好落在 heat3 深绿档。
+    // 它必须按时间顺序先结算，再进入 11 月 18 日的一批会话，这样看板月历
+    // 上同时存在「深绿 + 带隔离光晕的珊瑚红细短杠」的真实样本。
+    now = DateTime(2026, 11, 12, 8);
+    await focus.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 90),
+    );
+    now = now.add(const Duration(minutes: 90));
+    await focus.settleDueSessions();
+    now = DateTime(2026, 11, 18, 9);
     for (final mode in [FocusChainMode.elite, FocusChainMode.regular]) {
       for (var round = 0; round < 3; round++) {
         await focus.startSession(
@@ -197,6 +211,57 @@ void main() {
       cardId: childNationalFocus.id,
       parentId: rootNationalFocus.id,
     );
+    // Phase 4：三条已回顾（reviewedAt 非空）的历史国策失败记录，检查点落在
+    // 11 月 12 / 14 / 16 日（04:00Z = 上海当天 12:00，与看板按账号时区归日
+    // 的规则一致）。字段与 LocalNationalFocusFailures 完全一一对应，树快照
+    // 与 _failureFromRow 的读取顺序一致；reviewedAt 已回填，所以真实设备
+    // 看板截图不会出现顶栏「待回顾」提醒。配合上面的 90 分钟会话，同一张
+    // 月历上可以同时目检 5 种格态。
+    final childSnapshot = jsonEncode([
+      <String, Object?>{
+        'id': childNationalFocus.id,
+        'name': '开始前写第一步',
+        'triggerCondition': '每次开始专注之前',
+        'action': '先写下一句话的目标，再决定这件事是否值得 25 分钟。',
+        'effectiveTriggerCondition': '每次开始专注之前',
+        'effectiveAction': '先写下一句话的目标，再决定这件事是否值得 25 分钟。',
+        'activeStrengtheningLevel': 0,
+        'requirementVersionNumber': null,
+        'scope': null,
+        'exceptionNotes': null,
+        'isInTree': true,
+        'parentId': rootNationalFocus.id,
+        'state': NationalFocusCardState.pendingTodayConfirmation.storageValue,
+        'successfulDays': 0,
+        'currentConsecutiveDays': 0,
+        'bestConsecutiveDays': 0,
+        'maintenanceCycleStarted': true,
+        'failureReason': null,
+        'cascadeSourceCardId': null,
+        'cascadePriorState': null,
+        'failureSourceCardId': null,
+        'createdAt': childNationalFocus.createdAt.toUtc().toIso8601String(),
+        'updatedAt': childNationalFocus.updatedAt.toUtc().toIso8601String(),
+      },
+    ]);
+    for (final day in const [12, 14, 16]) {
+      await database
+          .into(database.localNationalFocusFailures)
+          .insert(
+            LocalNationalFocusFailuresCompanion.insert(
+              userId: userId,
+              id: 'ui-baseline-failure-202611$day',
+              batchId: 'ui-baseline-batch-202611$day',
+              cardId: childNationalFocus.id,
+              checkpointAt: DateTime.utc(2026, 11, day, 4),
+              cause: NationalFocusFailureCause.missedConfirmation.storageValue,
+              failureReason: const Value(null),
+              sharedExplanation: const Value(null),
+              treeSnapshot: childSnapshot,
+              reviewedAt: Value(now),
+            ),
+          );
+    }
 
     final boundaryKey = GlobalKey();
     var androidSurfaceReady = false;

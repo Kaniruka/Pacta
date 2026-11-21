@@ -5,9 +5,6 @@ and card details, plus read-only failure-event lists and frozen historical trees
 Write tools and arbitrary SQL/table access are not available.
 Neither connecting nor reading performs a manual upload/download or settlement.
 
-Deployment, matching App configuration and skill ZIP distribution are described
-in the release runbook, which is part of the local-only docs tree (`docs/issue-62-deployment.md`) and is not published with the repository.
-
 ## Deploy
 
 Apply `supabase/migrations/202610210001_national_focus_mcp.sql` and then
@@ -178,7 +175,8 @@ object rows owned by this User, and nonempty standalone card names.
 Card details require `expected_revision` and return the same metadata/version
 context. History pagination preserves this revision constraint. No historical cloud snapshots are retained by MCP.
 The installable analysis skill supports structure analysis and failure review;
-see the installation and usage notes in the local-only docs tree (`docs/issue-60-skill.md`).
+see [`skills/pacta-national-focus-analysis/`](../../../skills/pacta-national-focus-analysis/)
+for installation and usage notes.
 The skill ZIP is reproducible from this repository alone: `python scripts/package_national_focus_skill.py` writes `build/skills/pacta-national-focus-analysis.zip` with a sibling `.zip.sha256` (fixed allowlist `SKILL.md`, `references/contract.md`, `evals/README.md`, `evals/cases.json`; `--output` overrides the directory).
 Current tree/library/card tools are available in T2 (#58).
 
@@ -193,9 +191,8 @@ node --experimental-transform-types --test supabase/functions/national-focus-mcp
 Use Node 24+; production is Supabase's Deno Edge runtime. Run
 `supabase/tests/national_focus_mcp_access.sql` in an isolated test project after
 the migration. It is rollback-only. Real public deployment/OAuth, App revoke,
-Codex version and Android/Windows evidence are tracked separately in
-`docs/issue-57-validation.md`; mock HTTP or local SQL evidence alone does not
-prove those acceptance steps.
+Codex version and Android/Windows evidence remain separate acceptance steps;
+mock HTTP or local SQL evidence alone does not prove them.
 
 Primary protocol references reviewed 2026-10-21:
 [MCP authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization),
@@ -254,8 +251,6 @@ For database scope, privilege and revision verification run the rollback-only
 identities and fixtures and never selects an ordinary user as a test subject.
 Use a dedicated test project where available. Validation against the configured
 project with isolated identities must be described as identity isolation.
-Actual platform and remote-client evidence belongs in `docs/issue-58-validation.md`.
-
 
 ## Failure-history tools (T3 / Issue #59)
 

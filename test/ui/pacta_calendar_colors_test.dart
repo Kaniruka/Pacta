@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/theme/pacta_calendar_colors.dart';
+import 'package:pacta/src/theme/pacta_surfaces.dart';
 import 'package:pacta/src/theme/pacta_theme.dart';
 import 'package:pacta/src/ui/pacta_calendar_day_cell.dart';
 
@@ -19,6 +20,79 @@ void main() {
         );
       }
     }
+  });
+
+  test('去胶囊今字色在白底与 heat0 上亮暗主题都达到 4.5:1', () {
+    // '今' 不再铺实心胶囊，直接落在格子的业务底色或卡片面上：
+    // 亮主题的“无底色”格落在纯白卡片（#FFFFFF）上，暗主题落在深色卡片面
+    // （PactaSurfaces.dark.card）上——把白色当成暗主题承载面会与配色自相
+    // 矛盾，因此按主题各自取真实承载面。
+    final light = PactaCalendarColors.light;
+    for (final background in [
+      PactaSurfaces.light.card,
+      light.heat0Background,
+    ]) {
+      expect(
+        _contrast(light.todayLabelColor, background),
+        greaterThanOrEqualTo(4.5),
+        reason: '亮主题今字色与承载面 $background 的对比度',
+      );
+    }
+    final dark = PactaCalendarColors.dark;
+    for (final background in [PactaSurfaces.dark.card, dark.heat0Background]) {
+      expect(
+        _contrast(dark.todayLabelColor, background),
+        greaterThanOrEqualTo(4.5),
+        reason: '暗主题今字色与承载面 $background 的对比度',
+      );
+    }
+    // 亮主题的白底断言必须真的包含纯白卡片面，不能只测 heat0。
+    expect(PactaSurfaces.light.card, const Color(0xffffffff));
+  });
+
+  test('失败标记是温和珊瑚红，不再使用刺眼纯红', () {
+    expect(PactaCalendarColors.light.failureDotColor, const Color(0xFFD94B43));
+    expect(PactaCalendarColors.dark.failureDotColor, const Color(0xFFF28B82));
+    // 珊瑚红不再停在绿阶里冒充“又一层绿”：它与 heat3/heat4 明确不同色相，
+    // 深绿底上的可读性由日格里的同系半透托底（halo）负责，而不是把失败标
+    // 染成刺眼的高饱和纯红。
+    for (final colors in [
+      PactaCalendarColors.light,
+      PactaCalendarColors.dark,
+    ]) {
+      for (final background in [
+        colors.heat3Background,
+        colors.heat4Background,
+      ]) {
+        expect(
+          colors.failureDotColor,
+          isNot(background),
+          reason: '失败标不能与热力底色同色',
+        );
+      }
+    }
+  });
+
+  test('copyWith 与 lerp 都携带 todayLabelColor', () {
+    final custom = const Color(0xFF123456);
+    expect(
+      PactaCalendarColors.light
+          .copyWith(todayLabelColor: custom)
+          .todayLabelColor,
+      custom,
+    );
+    final lerped = PactaCalendarColors.light.lerp(
+      PactaCalendarColors.dark,
+      0.5,
+    );
+    expect(
+      lerped.todayLabelColor,
+      Color.lerp(
+        PactaCalendarColors.light.todayLabelColor,
+        PactaCalendarColors.dark.todayLabelColor,
+        0.5,
+      ),
+    );
   });
 
   test('热力档位按 30 / 90 / 180 分钟边界划分', () {
@@ -110,7 +184,16 @@ void main() {
     );
     expect(secondBorder, findsNothing);
 
+    // 去胶囊：'今' 直接是文字，没有包裹它的实心底衬，也不与业务前景撞色。
     expect(find.text('今'), findsOneWidget);
+    expect(
+      _todayLabelHasFilledBackdrop(tester),
+      isFalse,
+      reason: '今字不得再被填充胶囊包住',
+    );
+    final todayLabel = tester.widget<Text>(find.text('今'));
+    expect(todayLabel.style?.fontSize, 10);
+    expect(todayLabel.style?.color, colors.heat2Foreground);
     expect(find.text('初八'), findsOneWidget);
     expect(find.byKey(const ValueKey('top-marker')), findsOneWidget);
     expect(find.byKey(const ValueKey('bottom-dot')), findsOneWidget);
@@ -159,6 +242,12 @@ void main() {
     expect(border.top.width, 1.5);
     expect(border.top.color, colors.todayBorder);
     expect(find.text('今'), findsOneWidget);
+    // heat0 不是业务色底：'今' 用 todayLabelColor，而不是 heat0Foreground。
+    expect(_todayLabelHasFilledBackdrop(tester), isFalse);
+    final todayLabel = tester.widget<Text>(find.text('今'));
+    expect(todayLabel.style?.color, colors.todayLabelColor);
+    expect(todayLabel.style?.fontSize, 10);
+    expect(todayLabel.style?.height, 1.0);
   });
 
   testWidgets('仅选中：不显示今标识；都未设置时不画边框', (tester) async {
@@ -214,6 +303,67 @@ void main() {
     expect((plainInk.decoration! as BoxDecoration).border, isNull);
     expect((plainInk.decoration! as BoxDecoration).color, isNull);
   });
+  testWidgets('无底色与业务色底上的今字自适应取色，且从不铺胶囊', (tester) async {
+    final colors = PactaCalendarColors.light;
+    final cases = <(String, Color?, Color, Color)>[
+      ('无底色', null, colors.heat0Foreground, colors.todayLabelColor),
+      (
+        'heat0',
+        colors.heat0Background,
+        colors.heat0Foreground,
+        colors.todayLabelColor,
+      ),
+      (
+        'heat3 深绿',
+        colors.heat3Background,
+        colors.heat3Foreground,
+        colors.heat3Foreground,
+      ),
+      (
+        '有安排 柔和黄',
+        colors.hasPlansBackground,
+        colors.hasPlansForeground,
+        colors.hasPlansForeground,
+      ),
+      (
+        '全部完成 浅绿',
+        colors.allCompleteBackground,
+        colors.allCompleteForeground,
+        colors.allCompleteForeground,
+      ),
+    ];
+    for (final (name, background, foreground, expected) in cases) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: pactaTheme(Brightness.light),
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 72,
+                height: 72,
+                child: PactaCalendarDayBox(
+                  key: ValueKey('label-case-$name'),
+                  dayNumber: '9',
+                  today: true,
+                  backgroundColor: background,
+                  foregroundColor: foreground,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('今'), findsOneWidget, reason: '$name：今天仍有今字');
+      expect(
+        _todayLabelHasFilledBackdrop(tester),
+        isFalse,
+        reason: '$name：今字不得被填充胶囊包住',
+      );
+      final label = tester.widget<Text>(find.text('今'));
+      expect(label.style?.color, expected, reason: '$name：今字颜色自适应底色');
+    }
+  });
 }
 
 double _contrast(Color a, Color b) {
@@ -222,4 +372,24 @@ double _contrast(Color a, Color b) {
   final lighter = luminanceA > luminanceB ? luminanceA : luminanceB;
   final darker = luminanceA > luminanceB ? luminanceB : luminanceA;
   return (lighter + 0.05) / (darker + 0.05);
+}
+
+/// '今' 与格子之间是否存在带填充色的 Container / DecoratedBox（旧胶囊底衬）。
+bool _todayLabelHasFilledBackdrop(WidgetTester tester) {
+  final filled = find.ancestor(
+    of: find.text('今'),
+    matching: find.byWidgetPredicate((widget) {
+      if (widget is Container) {
+        if (widget.color != null) return true;
+        final decoration = widget.decoration;
+        return decoration is BoxDecoration && decoration.color != null;
+      }
+      if (widget is DecoratedBox) {
+        final decoration = widget.decoration;
+        return decoration is BoxDecoration && decoration.color != null;
+      }
+      return false;
+    }),
+  );
+  return filled.evaluate().isNotEmpty;
 }

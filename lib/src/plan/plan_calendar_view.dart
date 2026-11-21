@@ -582,6 +582,9 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
                       ),
                     ),
                   ),
+            // 计划日历保持默认排版：'今' 左对齐（不占独立一行），右侧
+            // 仍放日程点/完成勾，下方保留农历副标签；不预留底部指示轨。
+            // 去胶囊 '今' 与自适应配色由 PactaCalendarDayBox 自动继承。
             topRightMarker: marker,
             semanticLabel:
                 '${day.month}月${day.day}日'

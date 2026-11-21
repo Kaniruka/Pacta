@@ -5,7 +5,7 @@ Pacta 是基于 Flutter 的自我调节应用，用任务、专注链和国策�
 ## 新成员接入
 
 1. 克隆仓库并进入项目目录：`git clone https://github.com/Kaniruka/Pacta.git`、`cd Pacta`。
-2. 安装满足 `pubspec.yaml` 要求的 Flutter/Dart SDK，以及目标平台的工具链。运行 `flutter doctor -v` 检查环境；Android 需要 Android SDK，Windows 构建需要 Visual Studio 的 C++ 桌面开发组件。详细环境记录属本机开发档案（`docs/development-environment.md`，不随仓库发布）。
+2. 安装满足 `pubspec.yaml` 要求的 Flutter/Dart SDK，以及目标平台的工具链。运行 `flutter doctor -v` 检查环境；Android 需要 Android SDK，Windows 构建需要 Visual Studio 的 C++ 桌面开发组件。
 3. 获取团队开发用 Supabase 项目的 **Project URL** 和 **publishable key**，在仓库根目录运行 `Copy-Item .env.example .env`，然后填写 `.env` 中的两个变量。`.env` 被 Git 忽略；它仅用于传递可公开的客户端配置，不要放数据库密码、`service_role`/secret key、管理员密码或测试账号密码。
 4. 安装依赖并运行应用：
 
@@ -21,11 +21,9 @@ Pacta 是基于 Flutter 的自我调节应用，用任务、专注链和国策�
 
 5. 提交代码前运行 `flutter analyze` 和 `flutter test`；Python 侧运行 `python scripts/check_repository_hygiene.py`（仓库卫生检查）与 `python -m unittest discover -s scripts -p "test_*.py"`（与 CI 同一命令）。涉及平台权限、日历或通知的改动，还应在相应设备上验证。
 
-代理维护入口、术语表、需求来源和有日期的执行记录保存在本机 `docs/`、`AGENTS.md` 与 `GLOSSARY.md`，不随仓库发布；新克隆不含这些文档。GitHub Issues 保留既有 Issue 的可追溯历史；当前过程状态记录在本机，新政策不再自动发布到 Issue tracker。
-
 ## 国策树交互与预览
 
-国策页面的产品设计与画布方案记录在本机 `docs/`（不随仓库发布）。样例预览直接运行仓库内入口：`flutter run -t tool/national_focus_reference_demo.dart`（50 节点图片样例）或 `flutter run -t tool/national_focus_ui_review_demo.dart`（4 节点隔离 UI 预览）；两者使用内存数据库，不读取 `.env`。
+样例预览直接运行仓库内入口：`flutter run -t tool/national_focus_reference_demo.dart`（50 节点图片样例）或 `flutter run -t tool/national_focus_ui_review_demo.dart`（4 节点隔离 UI 预览）；两者使用内存数据库，不读取 `.env`。
 
 ## 自行部署云端
 
@@ -87,7 +85,5 @@ Android APK 输出位于 `build/app/outputs/flutter-apk/`。**当前 `android/ap
 
 ## 相关资料
 
-- 开发环境与本机配置：本机 `docs/development-environment.md`（本地档案）
 - [Supabase 迁移、管理员函数和权限验证](supabase/README.md)
-- 产品设计与核心规格：本机 `docs/product-design.md`、`docs/spec-focus-loop-and-core-shell.md`（本地档案）
 - [Supabase CLI 官方部署流程](https://supabase.com/docs/guides/local-development/cli-workflows)与[Edge Function 部署说明](https://supabase.com/docs/guides/functions/deploy)

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'src/app/app_providers.dart';
+import 'src/app/pacta_locales.dart';
 import 'src/auth/auth_repository.dart';
 import 'src/auth/auth_screen.dart';
 import 'src/auth/supabase_auth_repository.dart';
@@ -173,6 +174,7 @@ String? _nationalFocusMcpUrl(String supabaseUrl) {
 class PactaApp extends StatelessWidget {
   const PactaApp({
     super.key,
+    this.locale,
     required this.authRepository,
     this.nationalFocusMcpUrl,
     this.nationalFocusAiGrantRepositoryFactory,
@@ -192,6 +194,9 @@ class PactaApp extends StatelessWidget {
     this.profileRepositoryFactory,
     this.deviceTimeZoneIdReader = readDeviceTimeZoneId,
   });
+
+  /// 覆盖系统语言；为空时按设备首选语言在简体中文、繁体中文、英文之间解析。
+  final Locale? locale;
 
   final ProfileRepository Function(String userId)? profileRepositoryFactory;
 
@@ -287,6 +292,10 @@ class PactaApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'Pacta',
+        locale: locale,
+        localizationsDelegates: pactaLocalizationsDelegates,
+        supportedLocales: pactaSupportedLocales,
+        localeListResolutionCallback: resolvePactaLocaleList,
         scrollBehavior: const PactaScrollBehavior(),
         debugShowCheckedModeBanner: false,
         theme: pactaTheme(Brightness.light),

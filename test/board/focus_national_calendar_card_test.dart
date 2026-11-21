@@ -223,12 +223,61 @@ void main() {
     expect(
       find.byKey(const ValueKey('board-focus-failure-dot-6')),
       findsOneWidget,
-      reason: '20:00Z 在上海是 11 月 6 日，失败点落在 6 日',
+      reason: '20:00Z 在上海是 11 月 6 日，失败细短杠落在 6 日',
     );
     expect(
       find.byKey(const ValueKey('board-focus-failure-dot-7')),
       findsNothing,
     );
+    // 右上角不再挂任何孤立标记：失败标已经整体移到底部指示轨。
+    final failureRect = tester.getRect(
+      find.byKey(const ValueKey('board-focus-failure-dot-6')),
+    );
+    final cellRect = tester.getRect(
+      find.byKey(const ValueKey('board-focus-day-6')),
+    );
+    final numberRect = tester.getRect(
+      find.descendant(
+        of: find.byKey(const ValueKey('board-focus-day-6')),
+        matching: find.text('6'),
+      ),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('board-focus-day-6')),
+        matching: find.byType(Row),
+      ),
+      findsWidgets,
+    );
+    expect(
+      failureRect.top,
+      greaterThanOrEqualTo(numberRect.bottom - 0.01),
+      reason: '失败标必须位于日期数字下方，而不是右上角顶栏',
+    );
+    expect(failureRect.top, greaterThan(cellRect.top + 12));
+    expect(
+      failureRect.width,
+      greaterThan(failureRect.height),
+      reason: '失败标是横向细短杠，不是圆形红点',
+    );
+    expect(failureRect.width, closeTo(10, 0.01));
+    expect(failureRect.height, closeTo(3, 0.01));
+    final failureBar = tester.widget<Container>(
+      find.byKey(const ValueKey('board-focus-failure-dot-6')),
+    );
+    final failureDecoration = failureBar.decoration! as BoxDecoration;
+    expect(failureDecoration.color, colors.failureDotColor);
+    expect(
+      (failureDecoration.borderRadius! as BorderRadius).topLeft.x,
+      greaterThan(failureRect.height),
+      reason: '细短杠两端必须是胶囊圆角，不是方角',
+    );
+    // 6 日没有专注投入（heat0），失败短杠不需要托底光晕。
+    expect(
+      find.byKey(const ValueKey('board-focus-failure-halo-6')),
+      findsNothing,
+    );
+    expect(_borderedLayerCount(tester, 6), 0, reason: '底部指示轨不得引入第二层描边');
 
     await tester.tap(find.byKey(const ValueKey('board-focus-day-6')));
     await tester.pumpAndSettle();
@@ -716,6 +765,113 @@ void main() {
       reason: '月历内部不再出现横向滚动条',
     );
     expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+  testWidgets('深绿底上的失败细短杠带同系半透托底，且不新增描边层', (tester) async {
+    // 90 分钟专注 = heat3 深绿；同一天落一条国策失败。
+    final harness = _Harness(
+      seconds: {4: 5400},
+      failures: [
+        _failure(
+          id: 'failure-heat3',
+          cardId: 'card-1',
+          cardName: '先写第一步',
+          checkpointAt: DateTime.utc(2026, 11, 4, 4),
+          cause: NationalFocusFailureCause.missedConfirmation,
+        ),
+      ],
+    );
+    await tester.pumpWidget(harness.build());
+    await tester.pumpAndSettle();
+
+    expect(_cellColor(tester, 4), colors.heat3Background);
+    final bar = find.byKey(const ValueKey('board-focus-failure-dot-4'));
+    final halo = find.byKey(const ValueKey('board-focus-failure-halo-4'));
+    expect(bar, findsOneWidget);
+    expect(halo, findsOneWidget, reason: '深绿底必须给珊瑚红细杠留一层隔离托底');
+    final haloContainer = tester.widget<Container>(halo);
+    final haloDecoration = haloContainer.decoration! as BoxDecoration;
+    expect(haloDecoration.border, isNull, reason: '托底只能用填充色：加 border 会立刻变成双层框');
+    expect(haloDecoration.color, isNotNull);
+    expect(haloDecoration.color!.a, closeTo(0.92, 0.01), reason: '托底是半透的同系表面色');
+    expect(haloContainer.padding, const EdgeInsets.all(1));
+    final haloRect = tester.getRect(halo);
+    final numberRect = tester.getRect(
+      find.descendant(
+        of: find.byKey(const ValueKey('board-focus-day-4')),
+        matching: find.text('4'),
+      ),
+    );
+    expect(haloRect.top, greaterThanOrEqualTo(numberRect.bottom - 0.01));
+    expect(
+      haloRect.height,
+      lessThanOrEqualTo(5.01),
+      reason: '含光晕在内高 ≤ 5dp，稳定放进 8dp 指示轨',
+    );
+    expect(_borderedLayerCount(tester, 4), 0);
+    expect(_cellBorder(tester, 4), isNull);
+    await _unmount(tester);
+  });
+
+  testWidgets('同日安排微点与国策失败细杠同轨并排，互不重叠', (tester) async {
+    final harness = _Harness(
+      seconds: {16: 5400},
+      failures: [
+        _failure(
+          id: 'failure-dual',
+          cardId: 'card-1',
+          cardName: '先写第一步',
+          checkpointAt: DateTime.utc(2026, 11, 16, 4),
+          cause: NationalFocusFailureCause.missedConfirmation,
+        ),
+      ],
+    );
+    final schedules = _FakeScheduleRepository(
+      rows: [
+        _schedule(
+          'schedule-dual',
+          '周会',
+          startsAt: DateTime.utc(2026, 11, 16, 4),
+          duration: const Duration(hours: 1),
+        ),
+      ],
+    );
+    await tester.pumpWidget(harness.build(schedules: schedules));
+    await tester.pumpAndSettle();
+
+    final dot = find.byKey(const ValueKey('board-focus-schedule-dot-16'));
+    final bar = find.byKey(const ValueKey('board-focus-failure-dot-16'));
+    expect(dot, findsOneWidget);
+    expect(bar, findsOneWidget);
+    final dotRect = tester.getRect(dot);
+    final barRect = tester.getRect(bar);
+    expect(dotRect.width, closeTo(dotRect.height, 0.01), reason: '安排点是等宽高微点');
+    expect(barRect.width, greaterThan(barRect.height), reason: '失败标是横向细杠');
+    expect(dotRect.overlaps(barRect), isFalse, reason: '微点与细杠不得重叠');
+    expect(dotRect.right, lessThanOrEqualTo(barRect.left + 0.01));
+    final numberRect = tester.getRect(
+      find.descendant(
+        of: find.byKey(const ValueKey('board-focus-day-16')),
+        matching: find.text('16'),
+      ),
+    );
+    for (final rect in [dotRect, barRect]) {
+      expect(rect.top, greaterThanOrEqualTo(numberRect.bottom - 0.01));
+      expect(
+        rect.bottom,
+        lessThanOrEqualTo(
+          tester
+                  .getRect(find.byKey(const ValueKey('board-focus-day-16')))
+                  .bottom -
+              0.01,
+        ),
+      );
+    }
+    expect(
+      _borderedLayerCount(tester, 16),
+      0,
+      reason: '双态日同样只有日格最外层那一条 Ink 装饰',
+    );
     await _unmount(tester);
   });
 }
