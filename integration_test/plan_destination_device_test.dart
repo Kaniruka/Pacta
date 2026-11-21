@@ -438,13 +438,16 @@ Future<List<String>> _runScenario({
     reason: '必须是真实 pactaTheme，而不是另建的主题',
   );
 
-  // 1. 看板：空目标时只显示摘要与提示。
+  // 1. 看板：空目标时不占位，融合卡直接贴着页头。
   expect(find.byType(BoardPage), findsOneWidget);
-  expectOnScreen(find.text('今天先做什么'), reason: '看板标题应在视口内');
-  expect(find.text('还没有置顶目标'), findsOneWidget);
+  // 「看板」同时出现在底部导航与页头：标题断言限定在页面子树内。
+  expectOnScreen(pageText(BoardPage, '看板'), reason: '看板标题应在视口内');
+  expect(find.text('置顶目标'), findsNothing);
+  expect(find.text('还没有置顶目标'), findsNothing);
+  expect(find.text('专注与国策'), findsOneWidget);
   await shot(
     '01-board-empty',
-    marker: pageText(BoardPage, '今天先做什么'),
+    marker: pageText(BoardPage, '看板'),
     about: '看板标题',
   );
 
@@ -478,8 +481,9 @@ Future<List<String>> _runScenario({
     about: '计划里的新目标',
   );
 
-  // 4. 任务：新建、编辑、完成。
-  await tapVisible(find.text('添加任务'));
+  // 4. 任务：新建、编辑、完成。「添加任务」已移入目标长按菜单；
+  // 0 任务目标用可点的空态引导行起手。
+  await tapVisible(find.text('暂无任务，点击添加'));
   expectOnScreen(_field('任务名称'), reason: '任务名称输入框应在视口内');
   await tester.enterText(_field('任务名称'), '写提纲');
   await pumpUi();
@@ -545,7 +549,7 @@ Future<List<String>> _runScenario({
   expect(find.text('写提纲（修订）'), findsNothing);
   expect(find.text('整理发布材料'), findsOneWidget);
 
-  await tapVisible(find.text('添加任务'));
+  await tapVisible(find.text('暂无任务，点击添加'));
   await tester.enterText(_field('任务名称'), '补充证据');
   await pumpUi();
   await saveDialog();
@@ -659,6 +663,7 @@ Future<List<String>> _runScenario({
   expect(find.text('上午整理'), findsOneWidget);
   expect(find.text('任务：补充证据'), findsOneWidget);
   expect(find.text('提前 10 分钟提醒'), findsOneWidget);
+  await reveal(pageText(PlanPage, '上午整理'));
   await shot(
     '16-arrangement-linked',
     marker: pageText(PlanPage, '上午整理'),
@@ -668,6 +673,7 @@ Future<List<String>> _runScenario({
   await createArrangement('下午复核', task: '补充证据');
   expect(find.text('下午复核'), findsOneWidget);
   expect(find.textContaining('2 项安排'), findsOneWidget);
+  await reveal(pageText(PlanPage, '下午复核'));
   await shot(
     '17-two-arrangements',
     marker: pageText(PlanPage, '下午复核'),
@@ -677,6 +683,7 @@ Future<List<String>> _runScenario({
   await createArrangement('取快递');
   expect(find.text('取快递'), findsOneWidget);
   expect(find.text('独立事项'), findsOneWidget);
+  await reveal(pageText(PlanPage, '取快递'));
   await shot(
     '18-standalone-created',
     marker: pageText(PlanPage, '取快递'),
@@ -712,6 +719,7 @@ Future<List<String>> _runScenario({
         .value,
     isTrue,
   );
+  await reveal(pageText(PlanPage, '取快递并寄件'));
   await shot(
     '20-standalone-completed',
     marker: pageText(PlanPage, '取快递并寄件'),

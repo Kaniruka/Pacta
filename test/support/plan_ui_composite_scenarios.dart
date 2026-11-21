@@ -766,13 +766,22 @@ Future<void> runPreparationScenario(
 
   await tester.tap(find.byTooltip('开始专注'));
   await fixture.settle(tester);
-  expect(find.text('预约准备时长'), findsOneWidget);
+  // 标题行已移除：输入框自带标签并在上，5/10/15 三个档位紧随其下。
+  expect(find.text('预约准备时长'), findsNothing);
   for (final label in ['5 分钟', '10 分钟', '15 分钟']) {
     expect(find.text(label), findsOneWidget, reason: '准备预设 $label');
   }
   // 没有“自定义”开关：数字输入框始终可见，chip 只做预填。
   expect(find.text('自定义'), findsNothing);
   expect(planFormField('预约准备时长（分钟）'), findsOneWidget);
+  final preparationField = tester.getRect(planFormField('预约准备时长（分钟）'));
+  for (final label in ['5 分钟', '10 分钟', '15 分钟']) {
+    expect(
+      tester.getRect(find.text(label)).top,
+      greaterThanOrEqualTo(preparationField.bottom),
+      reason: '$label 档位在输入框之下',
+    );
+  }
   await fixture.capture(tester, 'preparation-presets-light-wide');
 
   // 自填 7 分钟（非预设档）：先验证落库再取消，不留下第二个活动预约。

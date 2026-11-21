@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:timezone/timezone.dart' as timezone;
 
 import '../profile/account_time_zone.dart';
+import '../theme/pacta_calendar_colors.dart';
+import '../ui/pacta_calendar_day_cell.dart';
 import 'focus_models.dart';
 import 'effective_duration_text.dart';
 import 'focus_repository.dart';
@@ -79,10 +81,20 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
 
   DateTime get _now => (widget.now ?? DateTime.now)();
 
+  timezone.TZDateTime get _nowInAccountZone => timezone.TZDateTime.from(
+    _now.toUtc(),
+    FocusTimeZones.location(_timeZoneId),
+  );
+
   DateTime get _currentMonthInAccountZone {
-    final location = FocusTimeZones.location(_timeZoneId);
-    final local = timezone.TZDateTime.from(_now.toUtc(), location);
+    final local = _nowInAccountZone;
     return DateTime.utc(local.year, local.month);
+  }
+
+  /// 账号显示时区里的“今天”，用 UTC 日期值承载自然日。
+  DateTime get _todayInAccountZone {
+    final local = _nowInAccountZone;
+    return DateTime.utc(local.year, local.month, local.day);
   }
 
   @override
@@ -421,6 +433,9 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
         selectedDay: _selectedDay,
         onClearSelection: () => _selectDay(_selectedDay ?? 0),
       ),
+      const SizedBox(height: 12),
+      // 五档色阶的说明与看板融合卡片共用同一个图例组件。
+      const PactaFocusHeatLegend(),
     ];
   }
 
@@ -482,6 +497,8 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
     ];
   }
 
+  /// 三层语义的日格：底色只表达 5 档专注热力，选中与今天都只改描边，
+  /// 今天另有独立的 '今' 角标，因此热力底色永远不会被选中态覆写。
   Widget _buildDayCell(
     BuildContext context, {
     required DateTime month,
@@ -493,53 +510,50 @@ class _FocusMonthPageState extends State<FocusMonthPage> {
     final seconds = secondsByDay[day] ?? 0;
     final hasActivity = seconds > 0;
     final selected = _selectedDay == day;
-    final scheme = Theme.of(context).colorScheme;
-    final foreground = selected ? scheme.onPrimaryContainer : scheme.onSurface;
-    return Semantics(
-      label:
-          '${month.month}月$day日，'
-          '${hasActivity ? '有效投入 ${formatEffectiveDuration(seconds)}' : '无有效投入'}',
-      container: true,
-      button: true,
-      selected: selected,
-      child: InkWell(
-        key: ValueKey('focus-month-day-$day'),
-        borderRadius: BorderRadius.circular(10),
-        onTap: () => _selectDay(day),
-        child: Container(
-          height: 48,
-          decoration: BoxDecoration(
-            color: selected ? scheme.primaryContainer : null,
-            borderRadius: BorderRadius.circular(10),
+    final colors = PactaCalendarColors.of(context);
+    final (background, foreground) = colors.heatColorsForLevel(
+      PactaCalendarColors.heatLevelForSeconds(seconds),
+    );
+    final today = _todayInAccountZone;
+    final isToday =
+        today.year == month.year &&
+        today.month == month.month &&
+        today.day == day;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 窄窗先保证 48dp 命中宽度：只有格子宽到 52 以上才让出 4dp 视觉间隙。
+        final gap = constraints.maxWidth >= 52 ? 2.0 : 0.0;
+        return Padding(
+          padding: EdgeInsets.all(gap),
+          child: PactaCalendarDayBox(
+            cellKey: ValueKey('focus-month-day-$day'),
+            dayNumber: '$day',
+            selected: selected,
+            today: isToday,
+            backgroundColor: background,
+            foregroundColor: foreground,
+            minHeight: 48,
+            borderRadius: 12,
+            onTap: () => _selectDay(day),
+            topRightMarker: hasActivity
+                ? ExcludeSemantics(
+                    child: Container(
+                      width: 5,
+                      height: 5,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: foreground,
+                      ),
+                    ),
+                  )
+                : null,
+            semanticLabel:
+                '${month.month}月$day日，'
+                '${hasActivity ? '有效投入 ${formatEffectiveDuration(seconds)}' : '无有效投入'}'
+                '${isToday ? '，今天' : ''}',
           ),
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                '$day',
-                style: Theme.of(context).textTheme.bodyMedium
-                    ?.copyWith(color: foreground),
-              ),
-              const SizedBox(height: 4),
-              SizedBox(
-                height: 6,
-                width: 6,
-                child: hasActivity
-                    ? DecoratedBox(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: selected
-                              ? scheme.onPrimaryContainer
-                              : scheme.primary,
-                        ),
-                      )
-                    : null,
-              ),
-            ],
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -671,6 +685,59 @@ class _MonthSummaryCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 专注热力五档图例。
+///
+/// 看板「专注与国策」卡片与专注月历共用这一份色阶说明，深浅含义只有一处
+/// 定义；两处都从 [PactaCalendarColors] 取色，亮暗主题自动跟随。
+class PactaFocusHeatLegend extends StatelessWidget {
+  const PactaFocusHeatLegend({super.key, this.label = '专注时长：按颜色深浅区分'});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = PactaCalendarColors.of(context);
+    return Semantics(
+      container: true,
+      label: '专注热力图例：颜色越深表示当天有效专注时长越长',
+      excludeSemantics: true,
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 4,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var level = 0; level <= 4; level++)
+                Padding(
+                  padding: EdgeInsets.only(left: level == 0 ? 0 : 3),
+                  child: Container(
+                    key: ValueKey('pacta-heat-legend-$level'),
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: colors.heatColorsForLevel(level).$1,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }

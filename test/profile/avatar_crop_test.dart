@@ -69,8 +69,12 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        // 选择头像只有一个入口：先打开头像操作面板，再选新图片。
+        await tester.tap(find.text('更换头像'));
+        await tester.pumpAndSettle();
+        expect(find.text('选择新图片'), findsOneWidget);
         await tester.runAsync(() async {
-          await tester.tap(find.text('选择图片'));
+          await tester.tap(find.text('选择新图片'));
           await Future<void>.delayed(const Duration(milliseconds: 300));
         });
         await tester.pumpAndSettle();
@@ -101,11 +105,15 @@ void main() {
           orderedEquals(bytes),
         );
         await tester.pumpAndSettle();
+        // 「重新裁剪」不再是平铺按钮，从同一个头像面板进入。
+        await tester.tap(find.text('更换头像'));
+        await tester.pumpAndSettle();
         await tester.runAsync(() async {
           await tester.tap(find.text('重新裁剪'));
           await Future<void>.delayed(const Duration(milliseconds: 300));
         });
         await tester.pumpAndSettle();
+        expect(find.text('裁剪头像'), findsOneWidget);
         await tester.tap(find.text('取消'));
         await tester.pumpAndSettle();
         expect(

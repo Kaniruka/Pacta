@@ -84,17 +84,44 @@ ThemeData pactaTheme(Brightness brightness) {
       surfaces,
     ],
     scaffoldBackgroundColor: surfaces.page,
-    // 页面层级：页面 surface → 卡片抬起一档 → 底部固定操作区再抬一档。
-    // 卡片不使用描边表达边界，亮色用极浅投影、暗色用色阶区分。
+    // Google 服务式 Material 3：页面浅蓝灰、卡片纯白零投影、统一 20dp 圆角。
+    // 层级由底色差与圆角表达，不用投影或描边；底部固定操作区另有一套语义。
     cardTheme: CardThemeData(
-      elevation: 1,
+      elevation: 0,
+      color: surfaces.card,
       shadowColor: surfaces.cardShadow,
       surfaceTintColor: Colors.transparent,
-      color: surfaces.card,
+      clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(PactaSpacing.cardRadius),
       ),
       margin: EdgeInsets.zero,
+    ),
+    // 弹出菜单与卡片同一表面语言：白底、12dp 圆角、轻微抬起。
+    popupMenuTheme: PopupMenuThemeData(
+      color: surfaces.card,
+      elevation: 3,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ),
+    // 分组列表的 1dp 细分隔线：只用来切分同一容器内的相邻行。
+    dividerTheme: DividerThemeData(
+      color: surfaces.hairline,
+      thickness: 1,
+      space: 1,
+    ),
+    chipTheme: ChipThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      side: BorderSide(color: colors.outlineVariant),
+      selectedColor: colors.secondaryContainer,
+      backgroundColor: surfaces.card,
+    ),
+    // ListTile 的 contentPadding 会以 SafeArea 形式加在整行外侧：vertical 4
+    // 会让每行无差别长高 8dp，破坏 M3 固定的 56/72dp 行高，并把《通知与设备
+    // 权限》的第三个分组挤出 ListView 预构建范围。这里只固定 Google 式的
+    // 16dp 水平内容边距，纵向呼吸交给 ListTile 自身的行高规格。
+    listTileTheme: const ListTileThemeData(
+      contentPadding: EdgeInsets.symmetric(horizontal: 16),
     ),
     appBarTheme: AppBarTheme(
       centerTitle: false,

@@ -15,6 +15,8 @@ import 'package:pacta/src/tasks/task_repository.dart';
 
 import '../support/fake_auth_repository.dart';
 
+/// 看板融合卡片的订阅契约：账号时区门禁、换仓储/换时区清空旧投影、
+/// 失败可见与只读重试、账号变化退出月历路由。
 void main() {
   Widget boardHost({
     required TaskRepository taskRepository,
@@ -35,6 +37,10 @@ void main() {
         profileRepositoryFactoryProvider.overrideWithValue(
           (_) => profileRepository,
         ),
+        // 固定看板“今天”，日期详情与热力档位才有确定答案。
+        displayClockProvider.overrideWithValue(
+          () => DateTime.utc(2026, 11, 12, 10),
+        ),
       ],
       child: MaterialApp(
         theme: pactaTheme(Brightness.light),
@@ -45,7 +51,7 @@ void main() {
     );
   }
 
-  testWidgets('近期专注卡提供月历入口，按账号时区请求月投影', (tester) async {
+  testWidgets('融合卡片提供月历入口，按账号时区请求月投影', (tester) async {
     final focus = _RecordingFocusRepository();
     await tester.pumpWidget(
       boardHost(
@@ -56,15 +62,22 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('近期专注活动'), findsOneWidget);
-    await tester.tap(find.text('打开月历'));
+    expect(find.text('专注与国策'), findsOneWidget);
+    // 完整年月只在热力月历的切换器里出现，卡片头不再重复一枚月份按钮。
+    expect(find.text('2026年11月'), findsOneWidget);
+    expect(focus.monthTimeZoneIds, ['Asia/Shanghai']);
+    expect(focus.monthRequests.single.isUtc, isTrue);
+    expect(focus.monthRequests.single.day, 1);
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('board-focus-open-month')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('board-focus-open-month')));
     await tester.pumpAndSettle();
 
     expect(find.byType(FocusMonthPage), findsOneWidget);
     expect(find.text('专注月历'), findsOneWidget);
-    expect(focus.monthTimeZoneIds, ['Asia/Shanghai']);
-    expect(focus.monthRequests.single.isUtc, isTrue);
-    expect(focus.monthRequests.single.day, 1);
   });
 
   testWidgets('账号时区为空时月历入口沿统一兜底时区查询', (tester) async {
@@ -77,27 +90,22 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('打开月历'));
+    // 月历入口在「日期详情」里（卡片底部），先滚进视口再点。
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('board-focus-open-month')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('board-focus-open-month')));
     await tester.pumpAndSettle();
 
     expect(find.byType(FocusMonthPage), findsOneWidget);
-    expect(focus.monthTimeZoneIds, ['Etc/UTC']);
+    expect(focus.monthTimeZoneIds.first, 'Etc/UTC');
   });
 
-  testWidgets('切换仓储实例时不回显上一仓储的近期数字', (tester) async {
+  testWidgets('切换仓储实例时不回显上一仓储的日期详情数字', (tester) async {
     final profile = _FixedProfileRepository('Asia/Shanghai');
     final first = _ScriptedFocusRepository(
-      dashboard: FocusDashboardMetrics(
-        focusProgressSecondsByTask: const {},
-        recentActivity: [
-          FocusActivityDay(
-            date: DateTime.utc(2026, 11, 12),
-            activeSeconds: 780,
-          ),
-        ],
-        totalAcceptedFocusSeconds: 780,
-        displayTimeZoneId: 'Asia/Shanghai',
-      ),
+      month: _monthMetrics(month: DateTime.utc(2026, 11), seconds: {12: 780}),
     );
     await tester.pumpWidget(
       boardHost(
@@ -107,7 +115,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
+    expect(find.text('13分00秒'), findsOneWidget);
 
     final silent = _SilentFocusRepository();
     addTearDown(silent.disposeControllers);
@@ -120,7 +128,7 @@ void main() {
     );
     await tester.pump();
     expect(
-      find.textContaining('累计有效专注 13分00秒'),
+      find.text('13分00秒'),
       findsNothing,
       reason: '等待新仓储的首个投影时，不能继续显示上一仓储的数字',
     );
@@ -150,21 +158,21 @@ void main() {
     await tester.pump();
     profile.emit('Asia/Shanghai');
     await tester.pumpAndSettle();
-    expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
+    expect(find.text('13分00秒'), findsOneWidget);
 
     profile.emit('America/New_York');
-    // 资料事件经流送达后，看板才切换到新时区投影；切换完成后新的流仍是
+    // 资料事件经流送达后，卡片才切换到新时区投影；切换完成后新的流仍是
     // 静默的，旧时区的数字必须已经消失。多给一帧让清空后的重建落地。
     for (var frame = 0; frame < 10; frame++) {
       await tester.pump();
       final switched =
           focus.requestedTimeZoneIds.contains('America/New_York') &&
-          find.textContaining('累计有效专注 13分00秒').evaluate().isEmpty;
+          find.text('13分00秒').evaluate().isEmpty;
       if (switched) break;
     }
     expect(focus.requestedTimeZoneIds, contains('America/New_York'));
     expect(
-      find.textContaining('累计有效专注 13分00秒'),
+      find.text('13分00秒'),
       findsNothing,
       reason: '换时区后要等待新投影，旧时区的日分摊不能留在屏上',
     );
@@ -172,26 +180,9 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('近期卡片的数字是近 7 天窗口，不是终身累计', (tester) async {
-    final focus = _ScriptedFocusRepository(
-      dashboard: FocusDashboardMetrics(
-        focusProgressSecondsByTask: const {},
-        recentActivity: [
-          FocusActivityDay(
-            date: DateTime.utc(2026, 11, 12),
-            activeSeconds: 780,
-          ),
-          for (var day = 13; day <= 18; day++)
-            FocusActivityDay(
-              date: DateTime.utc(2026, 11, day),
-              activeSeconds: 0,
-            ),
-        ],
-        // A lifetime total that must not be rendered under the 7-day label.
-        totalAcceptedFocusSeconds: 3600,
-        displayTimeZoneId: 'Asia/Shanghai',
-      ),
-    );
+  testWidgets('切月后按新月份重新查询并清空旧数字', (tester) async {
+    final focus = _DeferredFocusRepository();
+    addTearDown(focus.dispose);
     await tester.pumpWidget(
       boardHost(
         taskRepository: const UnavailableTaskRepository(),
@@ -199,10 +190,29 @@ void main() {
         profileRepository: _FixedProfileRepository('Asia/Shanghai'),
       ),
     );
+    await tester.pump();
+    await tester.pump();
+    focus.last.controller.add(
+      _monthMetrics(month: DateTime.utc(2026, 11), seconds: {12: 780}),
+    );
     await tester.pumpAndSettle();
+    expect(find.text('13分00秒'), findsOneWidget);
+    expect(focus.requests, hasLength(1));
 
-    expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
-    expect(find.textContaining('1小时00分00秒'), findsNothing);
+    await tester.ensureVisible(find.byTooltip('下个月'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('下个月'));
+    await tester.pump();
+    expect(find.text('2026年12月'), findsOneWidget);
+    expect(find.text('13分00秒'), findsNothing);
+    expect(focus.requests, hasLength(2));
+    expect(focus.last.month, DateTime.utc(2026, 12));
+
+    focus.last.controller.add(
+      _monthMetrics(month: DateTime.utc(2026, 12), seconds: {3: 60}),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('1分00秒'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
@@ -220,7 +230,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(focus.dashboardCalls, 0, reason: '时区未知时不应发起投影查询');
+    expect(focus.monthRequests, isEmpty, reason: '时区未知时不应发起投影查询');
+    expect(find.text('月份待确认'), findsOneWidget);
     expect(
       find.descendant(
         of: find.byType(BoardPage),
@@ -231,8 +242,8 @@ void main() {
 
     profile.emit('Asia/Shanghai');
     await tester.pumpAndSettle();
-    expect(focus.dashboardCalls, 1);
-    expect(focus.dashboardZones, ['Asia/Shanghai']);
+    expect(focus.monthTimeZoneIds, ['Asia/Shanghai']);
+    expect(find.text('2026年11月'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
@@ -258,17 +269,21 @@ void main() {
       findsNothing,
       reason: '读取失败不能一直显示成加载中',
     );
-    final failedCalls = focus.dashboardCalls;
+    final failedCalls = focus.monthCalls;
     final goalCalls = tasks.goalsCalls;
 
     focus.failing = false;
-    await tester.tap(find.text('重试'));
+    // 日期详情也有一个只读重试：这里按 Key 精确点热力区那一颗。
+    final heatRetry = find.byKey(const ValueKey('board-focus-heat-retry'));
+    await tester.ensureVisible(heatRetry);
+    await tester.pumpAndSettle();
+    await tester.tap(heatRetry);
     await tester.pumpAndSettle();
 
-    expect(focus.dashboardCalls, greaterThan(failedCalls));
+    expect(focus.monthCalls, greaterThan(failedCalls));
     expect(tasks.goalsCalls, greaterThan(goalCalls), reason: '重试重新读取整块投影');
     expect(find.text('暂时不能读取专注投影。'), findsNothing);
-    expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
+    expect(find.text('13分00秒'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
@@ -284,7 +299,9 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // 读取失败必须可见，且绝不能被渲染成“还没有置顶目标”。
     expect(find.text('暂时不能读取目标列表。'), findsOneWidget);
+    expect(find.text('置顶目标'), findsOneWidget);
     expect(find.text('还没有置顶目标'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
@@ -303,7 +320,11 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('打开月历'));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('board-focus-open-month')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('board-focus-open-month')));
     await tester.pumpAndSettle();
     expect(find.byType(FocusMonthPage), findsOneWidget);
 
@@ -354,24 +375,6 @@ class _FixedProfileRepository extends UnavailableProfileRepository {
 class _RecordingFocusRepository extends UnavailableFocusRepository {
   final monthTimeZoneIds = <String>[];
   final monthRequests = <DateTime>[];
-  final dashboardZones = <String>[];
-  var dashboardCalls = 0;
-
-  @override
-  Stream<FocusDashboardMetrics> watchDashboardMetrics({
-    required String timeZoneId,
-  }) {
-    dashboardCalls += 1;
-    dashboardZones.add(timeZoneId);
-    return Stream.value(
-      FocusDashboardMetrics(
-        focusProgressSecondsByTask: const {},
-        recentActivity: const [],
-        totalAcceptedFocusSeconds: 0,
-        displayTimeZoneId: timeZoneId,
-      ),
-    );
-  }
 
   @override
   Stream<FocusMonthMetrics> watchMonthMetrics({
@@ -380,7 +383,7 @@ class _RecordingFocusRepository extends UnavailableFocusRepository {
   }) {
     monthTimeZoneIds.add(timeZoneId);
     monthRequests.add(month);
-    return Stream.value(_emptyMonthMetrics(timeZoneId, month));
+    return Stream.value(_monthMetrics(month: month));
   }
 }
 
@@ -432,27 +435,18 @@ class _MutableProfileRepository extends UnavailableProfileRepository {
 }
 
 class _ZoneScriptedFocusRepository extends UnavailableFocusRepository {
-  final _silent = StreamController<FocusDashboardMetrics>.broadcast();
+  final _silent = StreamController<FocusMonthMetrics>.broadcast();
   final requestedTimeZoneIds = <String>[];
 
   @override
-  Stream<FocusDashboardMetrics> watchDashboardMetrics({
+  Stream<FocusMonthMetrics> watchMonthMetrics({
     required String timeZoneId,
+    required DateTime month,
   }) {
     requestedTimeZoneIds.add(timeZoneId);
     if (timeZoneId != 'Asia/Shanghai') return _silent.stream;
     return Stream.value(
-      FocusDashboardMetrics(
-        focusProgressSecondsByTask: const {},
-        recentActivity: [
-          FocusActivityDay(
-            date: DateTime.utc(2026, 11, 12),
-            activeSeconds: 780,
-          ),
-        ],
-        totalAcceptedFocusSeconds: 780,
-        displayTimeZoneId: timeZoneId,
-      ),
+      _monthMetrics(month: month, seconds: {12: 780}, timeZoneId: timeZoneId),
     );
   }
 
@@ -460,24 +454,19 @@ class _ZoneScriptedFocusRepository extends UnavailableFocusRepository {
 }
 
 class _ScriptedFocusRepository extends UnavailableFocusRepository {
-  _ScriptedFocusRepository({required this.dashboard});
+  _ScriptedFocusRepository({required this.month});
 
-  final FocusDashboardMetrics dashboard;
+  final FocusMonthMetrics month;
 
   @override
-  Stream<FocusDashboardMetrics> watchDashboardMetrics({
+  Stream<FocusMonthMetrics> watchMonthMetrics({
     required String timeZoneId,
-  }) => Stream.value(dashboard);
+    required DateTime month,
+  }) => Stream.value(this.month);
 }
 
 class _SilentFocusRepository extends UnavailableFocusRepository {
-  final _dashboard = StreamController<FocusDashboardMetrics>.broadcast();
   final _month = StreamController<FocusMonthMetrics>.broadcast();
-
-  @override
-  Stream<FocusDashboardMetrics> watchDashboardMetrics({
-    required String timeZoneId,
-  }) => _dashboard.stream;
 
   @override
   Stream<FocusMonthMetrics> watchMonthMetrics({
@@ -485,38 +474,65 @@ class _SilentFocusRepository extends UnavailableFocusRepository {
     required DateTime month,
   }) => _month.stream;
 
-  void disposeControllers() {
-    unawaited(_dashboard.close());
-    unawaited(_month.close());
-  }
+  void disposeControllers() => unawaited(_month.close());
 }
 
 class _FlakyFocusRepository extends UnavailableFocusRepository {
   var failing = true;
-  var dashboardCalls = 0;
+  var monthCalls = 0;
 
   @override
-  Stream<FocusDashboardMetrics> watchDashboardMetrics({
+  Stream<FocusMonthMetrics> watchMonthMetrics({
     required String timeZoneId,
+    required DateTime month,
   }) {
-    dashboardCalls += 1;
+    monthCalls += 1;
     if (failing) {
-      return Stream<FocusDashboardMetrics>.error(StateError('投影读取失败'));
+      return Stream<FocusMonthMetrics>.error(StateError('投影读取失败'));
     }
     return Stream.value(
-      FocusDashboardMetrics(
-        focusProgressSecondsByTask: const {},
-        recentActivity: [
-          FocusActivityDay(
-            date: DateTime.utc(2026, 11, 12),
-            activeSeconds: 780,
-          ),
-        ],
-        totalAcceptedFocusSeconds: 780,
-        displayTimeZoneId: timeZoneId,
-      ),
+      _monthMetrics(month: month, seconds: {12: 780}, timeZoneId: timeZoneId),
     );
   }
+}
+
+class _DeferredFocusRepository extends UnavailableFocusRepository {
+  final requests = <_MonthRequest>[];
+
+  _MonthRequest get last => requests.last;
+
+  @override
+  Stream<FocusMonthMetrics> watchMonthMetrics({
+    required String timeZoneId,
+    required DateTime month,
+  }) {
+    final request = _MonthRequest(
+      timeZoneId: timeZoneId,
+      month: DateTime.utc(month.year, month.month),
+      controller: StreamController<FocusMonthMetrics>(),
+    );
+    requests.add(request);
+    return request.controller.stream;
+  }
+
+  @override
+  Future<void> dispose() async {
+    for (final request in requests) {
+      await request.controller.close();
+    }
+  }
+}
+
+class _MonthRequest {
+  _MonthRequest({
+    required this.timeZoneId,
+    required this.month,
+    required this.controller,
+  });
+
+  final String timeZoneId;
+  final DateTime month;
+  final StreamController<FocusMonthMetrics> controller;
 }
 
 class _FailingGoalsTaskRepository extends UnavailableTaskRepository {
@@ -535,7 +551,11 @@ class _CountingTaskRepository extends UnavailableTaskRepository {
   }
 }
 
-FocusMonthMetrics _emptyMonthMetrics(String timeZoneId, DateTime month) {
+FocusMonthMetrics _monthMetrics({
+  required DateTime month,
+  Map<int, int> seconds = const {},
+  String timeZoneId = 'Asia/Shanghai',
+}) {
   final start = DateTime.utc(month.year, month.month);
   final count = DateTime.utc(start.year, start.month + 1, 0).day;
   return FocusMonthMetrics(
@@ -545,10 +565,10 @@ FocusMonthMetrics _emptyMonthMetrics(String timeZoneId, DateTime month) {
       for (var day = 1; day <= count; day++)
         FocusActivityDay(
           date: DateTime.utc(start.year, start.month, day),
-          activeSeconds: 0,
+          activeSeconds: seconds[day] ?? 0,
         ),
     ],
-    totalActiveSeconds: 0,
-    activeDayCount: 0,
+    totalActiveSeconds: seconds.values.fold(0, (sum, value) => sum + value),
+    activeDayCount: seconds.values.where((value) => value > 0).length,
   );
 }

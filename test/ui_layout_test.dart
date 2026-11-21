@@ -16,7 +16,14 @@ void main() {
       tester.platformDispatcher.platformBrightnessTestValue = brightness;
       await tester.pumpWidget(PactaApp(authRepository: auth));
       await tester.pumpAndSettle();
-      final colors = Theme.of(tester.element(find.text('今天先做什么'))).colorScheme;
+      final colors = Theme.of(
+        tester.element(
+          find.descendant(
+            of: find.byType(PactaPageHeader),
+            matching: find.text('看板'),
+          ),
+        ),
+      ).colorScheme;
       for (final pair in [
         (colors.onSurface, colors.surface),
         (colors.onSurfaceVariant, colors.surface),
@@ -182,7 +189,8 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final auth = FakeAuthRepository()..signedInUser = 'layout-user';
     const destinations = [
-      ('看板', '今天先做什么'),
+      // 看板页头标题已改回「看板」，与底部导航同名：查找必须限定在页头内。
+      ('看板', '看板'),
       ('计划', '计划'),
       ('国策树', '国策树'),
       ('专注链', '专注链'),

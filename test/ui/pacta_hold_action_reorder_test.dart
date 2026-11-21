@@ -279,6 +279,147 @@ void main() {
       expect(find.text('内层单项菜单'), findsNothing);
     });
   }
+
+  testWidgets('itemSpacing：拖拽代理透明外包，高亮描边只包卡片本体', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: pactaTheme(Brightness.light),
+        home: Scaffold(
+          body: PactaHoldReorderList(
+            itemCount: 3,
+            itemSpacing: 12,
+            proxyBorderRadius: 24,
+            onReorder: (_, _) {},
+            itemBuilder: (context, index) => SizedBox(
+              key: ValueKey('spacing-item-$index'),
+              height: 96,
+              child: Card(child: Center(child: Text('卡片 $index'))),
+            ),
+          ),
+        ),
+      ),
+    );
+    final firstItem = find.byKey(const ValueKey('spacing-item-0'));
+    expect(tester.getSize(firstItem).height, 96);
+    expect(find.byType(Card), findsNWidgets(3));
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(firstItem),
+      kind: PointerDeviceKind.touch,
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await gesture.moveBy(const Offset(0, 20));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    final surface = find.byKey(
+      const ValueKey('pacta-hold-reorder-proxy-surface'),
+    );
+    expect(surface, findsOneWidget);
+    // 外层 Material 完全透明：itemSpacing 区域没有白底、没有直角阴影块。
+    expect(tester.widget<Material>(surface).type, MaterialType.transparency);
+    expect(tester.getSize(surface).height, 108);
+
+    final highlight = find.byKey(
+      const ValueKey('pacta-hold-reorder-proxy-highlight'),
+    );
+    expect(highlight, findsOneWidget);
+    final highlightMaterial = tester.widget<Material>(highlight);
+    expect(highlightMaterial.color, Colors.transparent);
+    expect(highlightMaterial.elevation, greaterThan(0));
+    final shape = highlightMaterial.shape! as RoundedRectangleBorder;
+    expect(shape.borderRadius, BorderRadius.circular(24));
+    expect(shape.side.width, 1.5);
+    expect(shape.side.color.a, greaterThan(0));
+    // 高亮与卡片本体等大，并整体下移 itemSpacing：间距不在边框内。
+    expect(tester.getSize(highlight).height, 96);
+    expect(tester.getTopLeft(highlight).dy - tester.getTopLeft(surface).dy, 12);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(surface, findsNothing);
+    expect(highlight, findsNothing);
+  });
+
+  testWidgets('拖拽代理复用卡片 State：折叠态不丢失', (tester) async {
+    _CollapsibleCardState.created = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: pactaTheme(Brightness.light),
+        home: Scaffold(
+          body: PactaHoldReorderList(
+            itemCount: 2,
+            itemSpacing: 8,
+            onReorder: (_, _) {},
+            itemBuilder: (context, index) => index == 0
+                ? const _CollapsibleCard()
+                : const SizedBox(
+                    key: ValueKey('second-item'),
+                    height: 80,
+                    child: Center(child: Text('第二项')),
+                  ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('展开'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('collapsible-toggle')));
+    await tester.pump();
+    expect(find.text('已收起'), findsOneWidget);
+    expect(find.text('展开'), findsNothing);
+    expect(_CollapsibleCardState.created, 1);
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.text('已收起')),
+      kind: PointerDeviceKind.touch,
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await gesture.moveBy(const Offset(0, 12));
+    await tester.pump(const Duration(milliseconds: 100));
+    // 代理仍复用同一个元素，内部折叠状态不会被重置成默认展开。
+    expect(_CollapsibleCardState.created, 1);
+    expect(find.text('已收起'), findsOneWidget);
+    expect(find.text('展开'), findsNothing);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(_CollapsibleCardState.created, 1);
+    expect(find.text('已收起'), findsOneWidget);
+  });
+}
+
+/// 用于验证拖拽代理复用元素：静态计数只在真正创建 State 时递增。
+class _CollapsibleCard extends StatefulWidget {
+  const _CollapsibleCard();
+
+  @override
+  State<_CollapsibleCard> createState() => _CollapsibleCardState();
+}
+
+class _CollapsibleCardState extends State<_CollapsibleCard> {
+  static int created = 0;
+
+  var _expanded = true;
+
+  @override
+  void initState() {
+    super.initState();
+    created++;
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 88,
+    child: Column(
+      children: [
+        Expanded(child: Center(child: Text(_expanded ? '展开' : '已收起'))),
+        TextButton(
+          key: const ValueKey('collapsible-toggle'),
+          onPressed: () => setState(() => _expanded = !_expanded),
+          child: const Text('切换'),
+        ),
+      ],
+    ),
+  );
 }
 
 class _Harness extends StatefulWidget {

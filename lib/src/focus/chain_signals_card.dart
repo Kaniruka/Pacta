@@ -514,6 +514,11 @@ Future<void> _editSignal(
       _SignalEditor(repository: repository, texts: texts, target: target),
 );
 
+/// 一句「触发信号 / 专注标志」的紧凑双行说明。
+///
+/// 旧版把「预约触发信号：」「精锐链专注标志：」写进正文，两行都以长前缀开头，
+/// 值被挤到右侧换行。现在标签退成同宽的弱化列，值占满剩余宽度；链名信息
+/// 交给读屏语义，视觉上不再重复。
 class ChainSignalInstructions extends StatelessWidget {
   const ChainSignalInstructions({
     super.key,
@@ -527,25 +532,62 @@ class ChainSignalInstructions extends StatelessWidget {
   final FocusChainMode mode;
 
   @override
-  Widget build(BuildContext context) => StreamBuilder<ChainSignalTexts>(
-    stream: repository.watch(),
-    builder: (context, snapshot) {
-      final texts = snapshot.data;
-      if (texts == null) return const SizedBox.shrink();
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            '预约触发信号：${texts.appointmentTriggerSignal.isEmpty ? '尚未设置' : texts.appointmentTriggerSignal}',
-          ),
-          const SizedBox(height: PactaSpacing.sm),
-          Text(
-            '${mode.label}专注标志：${texts.focusMarker.isEmpty ? '尚未设置' : texts.focusMarker}',
-          ),
-        ],
-      );
-    },
-  );
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final labelStyle = theme.textTheme.labelSmall?.copyWith(
+      color: colors.onSurfaceVariant,
+    );
+    final valueStyle = theme.textTheme.bodySmall;
+    Widget label(String text) => Padding(
+      padding: const EdgeInsets.only(
+        right: PactaSpacing.sm,
+        bottom: PactaSpacing.xxs,
+      ),
+      child: Text(text, style: labelStyle),
+    );
+    Widget value(String text, String semanticsLabel) => Padding(
+      padding: const EdgeInsets.only(bottom: PactaSpacing.xxs),
+      child: Semantics(
+        label: semanticsLabel,
+        child: Text(text, style: valueStyle),
+      ),
+    );
+    return StreamBuilder<ChainSignalTexts>(
+      stream: repository.watch(),
+      builder: (context, snapshot) {
+        final texts = snapshot.data;
+        if (texts == null) return const SizedBox.shrink();
+        return Table(
+          // 标签列按内容取宽，两行天然对齐；值列吃掉剩余宽度。
+          columnWidths: const {0: IntrinsicColumnWidth(), 1: FlexColumnWidth()},
+          defaultVerticalAlignment: TableCellVerticalAlignment.top,
+          children: [
+            TableRow(
+              children: [
+                label('触发信号'),
+                value(
+                  texts.appointmentTriggerSignal.isEmpty
+                      ? '未设置'
+                      : texts.appointmentTriggerSignal,
+                  '触发信号',
+                ),
+              ],
+            ),
+            TableRow(
+              children: [
+                label('专注标志'),
+                value(
+                  texts.focusMarker.isEmpty ? '未设置' : texts.focusMarker,
+                  '${mode.label}专注标志',
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 class _SignalEditor extends StatefulWidget {

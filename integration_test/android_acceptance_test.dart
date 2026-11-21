@@ -18,6 +18,7 @@ import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart' show PactaDatabase;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:pacta/src/ui/pacta_page_header.dart';
 
 import '../test/support/fake_auth_repository.dart';
 
@@ -153,16 +154,31 @@ void main() {
       if (Platform.isAndroid) await binding.convertFlutterSurfaceToImage();
       await settle();
 
-      // 1. Board: today's arrangement, pinned goal with next task, recent effort.
-      expect(find.text('今天先做什么'), findsOneWidget);
+      // 1. Board: today's arrangement, pinned goal with next task, fused card.
+      // 「看板」同时出现在底部导航与页头：只认页头里的那一处。
+      expect(
+        find.descendant(
+          of: find.byType(PactaPageHeader),
+          matching: find.text('看板'),
+        ),
+        findsOneWidget,
+      );
       expect(find.text('取快递'), findsWidgets);
       expect(find.text('下一项：整理发布材料'), findsOneWidget);
-      expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
-      expect(find.text('打开月历'), findsOneWidget);
+      expect(find.text('专注与国策'), findsOneWidget);
+      expect(find.text('13分00秒'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('board-focus-open-month')),
+        findsOneWidget,
+      );
       await shot('01-board');
 
-      // 2. Month entry: the board pushes the standalone month page.
-      await tester.tap(find.text('打开月历'));
+      // 2. Month entry: the fused card still pushes the standalone month page.
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('board-focus-open-month')),
+      );
+      await settle();
+      await tester.tap(find.byKey(const ValueKey('board-focus-open-month')));
       await settle();
       expect(find.byType(FocusMonthPage), findsOneWidget);
       expect(find.text('专注月历'), findsOneWidget);

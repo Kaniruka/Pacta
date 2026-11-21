@@ -61,14 +61,21 @@ void main() {
     tester,
   ) async {
     await _pumpOverview(tester, repository, showInstructions: true);
-    expect(find.text('精锐链专注标志：尚未设置'), findsOneWidget);
-    expect(find.text('普通链专注标志：尚未设置'), findsOneWidget);
+    expect(_instructionText('触发信号'), findsNWidgets(2));
+    expect(_instructionText('专注标志'), findsNWidgets(2));
+    expect(_instructionText('未设置'), findsNWidgets(4));
 
     await _editAndSave(tester, markerEditKey, '戴上指定耳机');
 
-    expect(find.text('戴上指定耳机'), findsOneWidget);
-    expect(find.text('精锐链专注标志：戴上指定耳机'), findsOneWidget);
-    expect(find.text('普通链专注标志：戴上指定耳机'), findsOneWidget);
+    // 值只在说明行里出现两次，不再重复「精锐链专注标志：」这类长前缀。
+    expect(
+      find.descendant(
+        of: find.byType(ChainSignalInstructions),
+        matching: find.text('戴上指定耳机'),
+      ),
+      findsNWidgets(2),
+    );
+    expect(_instructionText('未设置'), findsNWidgets(2));
     await _disposeWidget(tester);
   });
 
@@ -80,16 +87,33 @@ void main() {
 
     await _editAndSave(tester, appointmentEditKey, '预约动作');
 
-    expect(find.text('预约触发信号：预约动作'), findsNWidgets(2));
-    expect(find.text('精锐链专注标志：共用动作'), findsOneWidget);
-    expect(find.text('普通链专注标志：共用动作'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(ChainSignalInstructions),
+        matching: find.text('预约动作'),
+      ),
+      findsNWidgets(2),
+    );
+    expect(
+      find.descendant(
+        of: find.byType(ChainSignalInstructions),
+        matching: find.text('共用动作'),
+      ),
+      findsNWidgets(2),
+    );
 
     await _openEditor(tester, appointmentEditKey);
     await tester.enterText(find.byType(TextField), '不应保存的改动');
     await tester.tap(find.widgetWithText(TextButton, '取消'));
     await tester.pumpAndSettle();
 
-    expect(find.text('预约触发信号：预约动作'), findsNWidgets(2));
+    expect(
+      find.descendant(
+        of: find.byType(ChainSignalInstructions),
+        matching: find.text('预约动作'),
+      ),
+      findsNWidgets(2),
+    );
     expect(find.text('不应保存的改动'), findsNothing);
     await _disposeWidget(tester);
   });
@@ -435,11 +459,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('精锐链专注标志：打开深度任务'), findsOneWidget);
-    expect(find.text('普通链专注标志：打开深度任务'), findsOneWidget);
+    // 两条链各自一份说明：标签同排对齐，值不再挂链名前缀。
+    expect(_instructionText('触发信号'), findsNWidgets(2));
+    expect(_instructionText('专注标志'), findsNWidgets(2));
+    expect(_instructionText('打开深度任务'), findsNWidgets(2));
+    expect(_instructionText('未设置'), findsNWidgets(2));
     await _disposeWidget(tester);
   });
 }
+
+/// 说明卡里的文字：与信号卡自身的动作标签区分开。
+Finder _instructionText(String text) => find.descendant(
+  of: find.byType(ChainSignalInstructions),
+  matching: find.text(text),
+);
 
 Future<void> _openEditor(WidgetTester tester, Key key) async {
   final edit = find.byKey(key);

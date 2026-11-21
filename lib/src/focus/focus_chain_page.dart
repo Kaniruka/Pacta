@@ -575,7 +575,8 @@ class PrecedentRulesPage extends StatelessWidget {
     appBar: AppBar(title: const Text('下必为例')),
     body: ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      children: const [PrecedentRulesCard()],
+      // 页面本身已有 AppBar 标题「下必为例」，卡片不再重复一次。
+      children: const [PrecedentRulesCard(showTitle: false)],
     ),
   );
 }
@@ -598,53 +599,64 @@ class _FocusStartBar extends StatelessWidget {
     final colors = theme.colorScheme;
     final surfaces = PactaSurfaces.of(context);
     final gutter = PactaSpacing.gutterFor(MediaQuery.sizeOf(context).width);
-    // 定稿方案 A：全宽固定操作区，比页面与卡片各抬一档，顶部圆角 + 投影。
-    return Material(
-      color: surfaces.actionBar,
-      elevation: 3,
-      shadowColor: surfaces.actionBarShadow,
-      borderRadius: const BorderRadius.vertical(
-        top: Radius.circular(PactaSpacing.actionBarRadius),
-      ),
-      clipBehavior: Clip.antiAlias,
+    // 悬浮卡片：左右留 gutter、底部留一档边距，四周统一 20dp 圆角 + 投影，
+    // 与页面卡片同一半径，不再贴边成一条通栏操作区。
+    return SizedBox(
+      width: double.infinity,
       child: Padding(
         padding: EdgeInsets.fromLTRB(
           gutter,
-          PactaSpacing.sm,
+          PactaSpacing.xs,
           gutter,
-          PactaSpacing.sm,
+          PactaSpacing.md,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: PactaSpacing.sm,
-              runSpacing: PactaSpacing.xs,
+        child: Material(
+          key: const ValueKey('focus-start-bar'),
+          color: surfaces.actionBar,
+          elevation: 3,
+          shadowColor: surfaces.actionBarShadow,
+          borderRadius: BorderRadius.circular(PactaSpacing.cardRadius),
+          clipBehavior: Clip.antiAlias,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(
+              PactaSpacing.lg,
+              PactaSpacing.sm,
+              PactaSpacing.lg,
+              PactaSpacing.md,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // 操作区标题保持 titleMedium；主操作由下方 48dp 按钮承担。
-                Text('开始一次专注', style: theme.textTheme.titleMedium),
-                Text(
-                  '可选任务 $taskCount 个',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: PactaSpacing.sm,
+                  runSpacing: PactaSpacing.xs,
+                  children: [
+                    // 操作区标题保持 titleMedium；主操作由下方 48dp 按钮承担。
+                    Text('开始一次专注', style: theme.textTheme.titleMedium),
+                    Text(
+                      '可选任务 $taskCount 个',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: PactaSpacing.xs),
+                FilledButton.icon(
+                  key: const ValueKey('focus-task-picker-entry'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(48),
                   ),
+                  onPressed: busy ? null : onPressed,
+                  icon: const Icon(Icons.playlist_play),
+                  label: const Text('选择任务'),
                 ),
               ],
             ),
-            const SizedBox(height: PactaSpacing.xs),
-            FilledButton.icon(
-              key: const ValueKey('focus-task-picker-entry'),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size.fromHeight(48),
-              ),
-              onPressed: busy ? null : onPressed,
-              icon: const Icon(Icons.playlist_play),
-              label: const Text('选择任务'),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -1013,7 +1025,10 @@ class _FocusHistoryList extends StatelessWidget {
 }
 
 class PrecedentRulesCard extends ConsumerStatefulWidget {
-  const PrecedentRulesCard({super.key});
+  const PrecedentRulesCard({super.key, this.showTitle = true});
+
+  /// 独立页已有 AppBar 标题时关掉卡片标题，避免同屏重复两次「下必为例」。
+  final bool showTitle;
 
   @override
   ConsumerState<PrecedentRulesCard> createState() => _PrecedentRulesCardState();
@@ -1125,8 +1140,10 @@ class _PrecedentRulesCardState extends ConsumerState<PrecedentRulesCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('下必为例', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 6),
+          if (widget.showTitle) ...[
+            Text('下必为例', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 6),
+          ],
           const Text('专注中断时可直接选择或新建；规则含义由你自己判断。'),
           if (_loading)
             const Padding(

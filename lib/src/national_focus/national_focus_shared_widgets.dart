@@ -6,6 +6,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../theme/pacta_fonts.dart';
+import '../theme/pacta_status_colors.dart';
 import 'national_focus_repository.dart';
 import 'national_focus_strengthening_page.dart';
 
@@ -391,6 +393,108 @@ class NationalFocusFieldText extends StatelessWidget {
       ),
     ],
   );
+}
+
+/// 节点名称旁的连续点亮矢量胶囊：当前连续与历史最高连续。
+///
+/// 只用 12dp 图标 + 半粗数字，不占额外一行：放进调用方的 [Wrap] 后短名称
+/// 与胶囊同排、长名称自动换行，窄屏也不会溢出。0 天用中性浅灰，点亮中的
+/// 连续天数与历史最高分别取点亮态容器色和主色容器色。
+class NationalFocusStreakTags extends StatelessWidget {
+  const NationalFocusStreakTags({
+    super.key,
+    required this.currentConsecutiveDays,
+    required this.bestConsecutiveDays,
+  });
+
+  final int currentConsecutiveDays;
+  final int bestConsecutiveDays;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final status = PactaStatusColors.of(context);
+    final currentActive = currentConsecutiveDays > 0;
+    return Wrap(
+      key: const ValueKey('national-focus-streak-tags'),
+      spacing: 6,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        _StreakPill(
+          key: const ValueKey('national-focus-streak-current'),
+          icon: Icons.lightbulb_outline,
+          label: '${currentConsecutiveDays}d',
+          semanticsLabel: '当前连续点亮 $currentConsecutiveDays 天',
+          background: currentActive
+              ? status.successContainer
+              : colors.surfaceContainerHighest,
+          foreground: currentActive
+              ? status.onSuccessContainer
+              : colors.onSurfaceVariant,
+        ),
+        _StreakPill(
+          key: const ValueKey('national-focus-streak-best'),
+          icon: Icons.track_changes,
+          label: '${bestConsecutiveDays}d',
+          semanticsLabel: '历史最高连续点亮 $bestConsecutiveDays 天',
+          background: colors.primaryContainer,
+          foreground: colors.onPrimaryContainer,
+        ),
+      ],
+    );
+  }
+}
+
+class _StreakPill extends StatelessWidget {
+  const _StreakPill({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.semanticsLabel,
+    required this.background,
+    required this.foreground,
+  });
+
+  final IconData icon;
+  final String label;
+  final String semanticsLabel;
+  final Color background;
+  final Color foreground;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = Theme.of(context).textTheme.labelSmall;
+    return Tooltip(
+      message: semanticsLabel,
+      child: Semantics(
+        label: semanticsLabel,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 1, 8, 1),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 12, color: foreground),
+                const SizedBox(width: 3),
+                Text(
+                  label,
+                  style: style?.copyWith(
+                    color: foreground,
+                    fontWeight: PactaFonts.semibold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class NationalFocusTreeMessage extends StatelessWidget {

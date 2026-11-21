@@ -6,17 +6,19 @@ import 'package:pacta/main.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
+import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart' hide FocusSession;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:pacta/src/ui/pacta_page_header.dart';
 
 import '../support/fake_auth_repository.dart';
 import '../support/plan_navigation.dart';
 
 void main() {
   for (final activeDays in [0, 1, 7]) {
-    testWidgets('支撑摘要 $activeDays 日活动在实际宽度切换后保留事实和顺序', (tester) async {
+    testWidgets('融合卡片 $activeDays 日活动在实际宽度切换后保留事实和顺序', (tester) async {
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
@@ -104,6 +106,7 @@ void main() {
             taskRepositoryFactory: (_) => tasks,
             focusRepositoryFactory: (_) => focus,
             nationalFocusRepositoryFactory: (_) => tree,
+            displayClock: () => now,
           ),
         );
         await tester.pumpAndSettle();
@@ -118,83 +121,66 @@ void main() {
         ]) {
           tester.view.physicalSize = Size(width, 800);
           await tester.pumpAndSettle();
-          debugPrint(
-            'support width=$width page=${tester.getSize(find.byType(BoardPage)).width}',
+          final title = tester.getRect(
+            find.descendant(
+              of: find.byType(PactaPageHeader),
+              matching: find.text('看板'),
+            ),
           );
-          final title = tester.getRect(find.text('今天先做什么'));
-          final national = tester.getRect(find.text('国策状态'));
+          final fusedCard = tester.getRect(
+            find.byKey(const ValueKey('board-focus-national-card')),
+          );
           if (tester.getSize(find.byType(BoardPage)).width >= 960) {
-            // 一级页头横跨整页；两栏内容从页头下方开始且顶部对齐。
-            expect(
-              national.left,
-              greaterThan(
-                tester.getRect(find.textContaining('今天 · ').first).right,
-              ),
+            // 有置顶目标时宽屏两栏：左侧置顶摘要，右侧 420dp 融合卡，
+            // 两栏顶部对齐；页头仍横跨整页。
+            final pinnedTitle = tester.getRect(find.text('置顶目标'));
+            // 置顶标题所在行（标题 + 管理按钮）的顶边就是左栏起点。
+            final pinnedRow = tester.getRect(
+              find
+                  .ancestor(of: find.text('置顶目标'), matching: find.byType(Row))
+                  .first,
             );
-            expect(national.top, greaterThan(title.bottom));
+            expect(fusedCard.left, greaterThan(pinnedTitle.right));
+            expect(fusedCard.top, greaterThan(title.bottom));
             expect(
-              tester.getRect(find.textContaining('今天 · ')).top,
-              moreOrLessEquals(national.top, epsilon: 0.5),
+              fusedCard.top,
+              moreOrLessEquals(pinnedRow.top, epsilon: 0.5),
               reason: '宽屏两栏顶部对齐',
             );
           } else {
+            // 单栏：置顶摘要在上，融合卡紧随其后。
             expect(
-              national.top,
+              fusedCard.top,
               greaterThan(
                 tester.getRect(find.textContaining('下一项：准备材料')).bottom,
               ),
             );
           }
+          // 卡片顶部：当前展示月份 + 今日国策实时状态。
+          expect(find.text('2026年11月'), findsOneWidget);
           expect(
-            tester.getRect(find.text('近期专注活动')).top,
-            greaterThan(national.bottom),
-          );
-          expect(
-            find.text(activeDays == 0 ? '国策树尚无节点。' : '点亮 0 · 确认 1 · 熄灭 0'),
+            find.text(activeDays == 0 ? '国策树尚无节点' : '待确认 1'),
             findsOneWidget,
           );
+          // 中部热力月历：选中今天，按 5 档专注热力铺底色。
+          expect(find.text('专注热力月历'), findsOneWidget);
+          final todayCell = find.byKey(const ValueKey('board-focus-day-12'));
+          expect(todayCell, findsOneWidget);
           expect(
-            find.textContaining(
-              activeDays == 0
-                  ? '累计有效专注 0分00秒'
-                  : activeDays == 1
-                  ? '累计有效专注 13分00秒'
-                  : '累计有效专注 1小时31分00秒',
-            ),
+            find.descendant(of: todayCell, matching: find.text('今')),
             findsOneWidget,
           );
-          if (activeDays == 0) {
-            expect(find.text('近 7 天暂无专注活动。'), findsOneWidget);
-          } else {
-            expect(find.text('近 7 天暂无专注活动。'), findsNothing);
-            for (final date in ['11月6日 · 周五', '11月12日 · 周四']) {
-              final text = find.text(date);
-              expect(text, findsOneWidget);
-              expect(
-                tester.renderObject<RenderParagraph>(text).didExceedMaxLines,
-                isFalse,
-              );
-            }
-            expect(find.text('13分00秒'), findsNWidgets(activeDays));
-            final bars = find.descendant(
-              of: find.byType(BoardPage),
-              matching: find.byType(LinearProgressIndicator),
-            );
-            expect(bars, findsNWidgets(7));
-            final firstDate = tester.getRect(find.text('11月6日 · 周五'));
-            final firstBar = tester.getRect(bars.first);
-            expect(firstBar.width, greaterThan(0));
-            expect(firstBar.left, greaterThanOrEqualTo(0));
-            expect(firstBar.right, lessThanOrEqualTo(width));
-            if (width == 320 ||
-                tester.getSize(find.byType(BoardPage)).width >= 960) {
-              expect(firstBar.top, greaterThanOrEqualTo(firstDate.bottom));
-            } else {
-              expect(firstBar.left, greaterThanOrEqualTo(firstDate.right));
-            }
-          }
+          // 底部日期详情：今天与真实专注时长。
+          expect(find.text('11 月 12 日 · 今日'), findsOneWidget);
+          // 详情按“选中的这一天”给时长，不是整月或近 7 天汇总。
+          expect(
+            find.text(activeDays == 0 ? '0分00秒' : '13分00秒'),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull, reason: 'width=$width');
+          // 今天没有安排时空态落在融合卡的日期详情里（不再是独立卡片）。
           await tester.scrollUntilVisible(
-            find.textContaining('今天 · '),
+            find.text('今天还没有安排。'),
             200,
             scrollable: find
                 .descendant(
@@ -206,7 +192,10 @@ void main() {
           expect(find.text('今天还没有安排。'), findsOneWidget);
           expect(tester.takeException(), isNull, reason: 'width=$width');
           await tester.scrollUntilVisible(
-            find.text('今天先做什么'),
+            find.descendant(
+              of: find.byType(PactaPageHeader),
+              matching: find.text('看板'),
+            ),
             -300,
             scrollable: find
                 .descendant(
@@ -217,10 +206,19 @@ void main() {
           );
           await tester.pumpAndSettle();
         }
-        await tester.ensureVisible(find.text('打开国策树'));
+        // 今日国策状态整卡可点：直达国策树。
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('board-today-national-focus')),
+        );
         await tester.pumpAndSettle();
-        await tester.tap(find.text('打开国策树'));
+        await tester.tap(
+          find.byKey(const ValueKey('board-today-national-focus')),
+        );
         await tester.pumpAndSettle();
+        expect(find.byType(NationalFocusTreePage), findsOneWidget);
+        if (activeDays > 0) {
+          expect(find.text('全部确认 (1)'), findsOneWidget);
+        }
         expect(find.byTooltip('更多'), findsOneWidget);
         await tester.tap(
           find.descendant(
@@ -239,7 +237,6 @@ void main() {
       }
     });
   }
-
   testWidgets('320宽长任务仍完整呈现预计、已专注、待核对和截止并可开始', (tester) async {
     tester.view.physicalSize = const Size(320, 800);
     tester.view.devicePixelRatio = 1;
@@ -418,17 +415,23 @@ void main() {
         taskRepositoryFactory: (_) => taskRepository,
         focusRepositoryFactory: (_) => focusRepository,
         nationalFocusRepositoryFactory: (_) => nationalFocusRepository,
+        displayClock: () => now,
       ),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('国策状态'), findsOneWidget);
+    // 融合卡片：今日国策实时状态 + 专注热力月历 + 日期详情。
+    expect(find.text('专注与国策'), findsOneWidget);
     expect(find.textContaining('检查点'), findsNothing);
     expect(find.text('时区'), findsNothing);
     expect(find.text('日历来源'), findsNothing);
-    expect(find.text('点亮 0 · 确认 1 · 熄灭 0'), findsOneWidget);
-    await tester.ensureVisible(find.text('近期专注活动'));
-    expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
+    expect(find.text('待确认 1'), findsOneWidget);
+    await tester.ensureVisible(find.text('专注热力月历'));
+    // 9 月 22 日的 13 分钟专注落在日期详情里，不是“近期 7 天”汇总。
+    expect(find.text('9 月 22 日 · 今日'), findsOneWidget);
+    expect(find.text('13分00秒'), findsOneWidget);
+    // 今天选中时不在日期详情重复国策汇总，只由顶部「今日国策状态」说一次。
+    expect(find.textContaining('国策记录'), findsNothing);
     // 完整任务列表与开始入口迁到计划：看板不再展开全部任务。
     expect(find.text('整理发布材料'), findsNothing);
 
@@ -451,9 +454,11 @@ void main() {
     await tester.pumpAndSettle();
     await openBoard(tester);
     expect(find.byType(BoardPage), findsOneWidget);
-    await tester.ensureVisible(find.text('打开国策树'));
+    await tester.ensureVisible(
+      find.byKey(const ValueKey('board-today-national-focus')),
+    );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('打开国策树'));
+    await tester.tap(find.byKey(const ValueKey('board-today-national-focus')));
     await tester.pumpAndSettle();
     expect(find.text('全部确认 (1)'), findsOneWidget);
     expect(find.byTooltip('更多'), findsOneWidget);

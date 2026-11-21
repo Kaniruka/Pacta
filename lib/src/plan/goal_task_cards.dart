@@ -10,9 +10,11 @@ import '../focus/focus_session_pages.dart';
 import '../focus/focus_setup_dialog.dart';
 import '../tasks/task_models.dart';
 import '../tasks/task_repository.dart';
+import '../theme/pacta_fonts.dart';
+import '../theme/pacta_spacing.dart';
 import '../ui/pacta_check_circle.dart';
-import '../ui/pacta_hold_action_reorder.dart';
 import '../ui/pacta_date_format.dart';
+import '../ui/pacta_hold_action_reorder.dart';
 
 class GoalCard extends StatefulWidget {
   const GoalCard({
@@ -89,6 +91,41 @@ class GoalCardState extends State<GoalCard> {
     await widget.repository.createTask(widget.goal.id, draft);
   }
 
+  /// 0 任务且展开时的轻量起手行：点一下就是新建任务。
+  ///
+  /// 「添加任务」按钮已移入目标长按菜单首项，空目标仍保留一键起手体验；
+  /// 文案与图标都用主色，保证在卡片底色上达到 AA 对比度。
+  Widget _emptyTasksHint(BuildContext context) {
+    final theme = Theme.of(context);
+    return InkWell(
+      key: const ValueKey('goal-empty-task-hint'),
+      onTap: _addTask,
+      borderRadius: BorderRadius.circular(12),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: Row(
+          children: [
+            Icon(
+              Icons.add_circle_outline,
+              size: 20,
+              color: theme.colorScheme.primary,
+            ),
+            const SizedBox(width: PactaSpacing.sm),
+            Flexible(
+              child: Text(
+                '暂无任务，点击添加',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: PactaFonts.medium,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final goal = widget.goal;
@@ -113,6 +150,13 @@ class GoalCardState extends State<GoalCard> {
     }
     final allCompletedHidden =
         widget.hideCompletedTasks && goal.tasks.isNotEmpty && openTasks.isEmpty;
+    // 是否有可展开的内容：决定头部下边距，收起态上下边距因此严格对称。
+    final hasExpandedContent =
+        goal.tasks.isEmpty ||
+        allCompletedHidden ||
+        openTasks.isNotEmpty ||
+        (!widget.hideCompletedTasks && completedTasks.isNotEmpty) ||
+        (completedCount > 0 && widget.onToggleHideCompleted != null);
     final header = Semantics(
       key: ValueKey('goal-header-${goal.id}'),
       container: true,
@@ -125,155 +169,164 @@ class GoalCardState extends State<GoalCard> {
           onTap: () => setState(() => _tasksExpanded = !_tasksExpanded),
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 48),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (goal.isPinned)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 3, right: 4),
-                              child: Icon(
-                                Icons.push_pin,
-                                size: 16,
-                                color: theme.colorScheme.onSurfaceVariant,
+            // 头部内边距本身承担全部节奏：收起态 16/16 严格对称；展开态底边
+            // 收到 12dp，这 12dp 就是头部末行到首条任务的全部间隔，不随
+            // "有无描述"或标题行数变化。
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                16,
+                12,
+                (_tasksExpanded && hasExpandedContent) ? 12 : 16,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (goal.isPinned)
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  top: 3,
+                                  right: 4,
+                                ),
+                                child: Icon(
+                                  Icons.push_pin,
+                                  size: 16,
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            Flexible(
+                              child: Text(
+                                goal.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.titleMedium,
                               ),
                             ),
-                          Flexible(
-                            child: Text(
-                              goal.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.titleMedium,
-                            ),
+                          ],
+                        ),
+                        if (goal.description.isNotEmpty)
+                          Text(
+                            goal.description,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall,
                           ),
-                        ],
-                      ),
-                      if (goal.description.isNotEmpty)
                         Text(
-                          goal.description,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall,
+                          summary.toString(),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
-                      Text(
-                        summary.toString(),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // 唯一常驻的头部动作：展开/折叠。管理动作全部收进长按菜单，
-                // 窄屏不再出现两排图标把标题挤成两行。
-                ExcludeSemantics(
-                  child: SizedBox(
-                    width: 48,
-                    height: 48,
-                    child: Center(
-                      child: Icon(
-                        _tasksExpanded ? Icons.expand_less : Icons.expand_more,
-                      ),
+                      ],
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(width: 12),
+                  // 唯一常驻的头部动作：展开/折叠。管理动作全部收进长按菜单，
+                  // 窄屏不再出现两排图标把标题挤成两行。图标本体只有 24dp，
+                  // 必然矮于右侧两行文字块，不会反向撑高头部。
+                  ExcludeSemantics(
+                    child: Icon(
+                      _tasksExpanded ? Icons.expand_less : Icons.expand_more,
+                      size: 24,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
       ),
     );
     return Card(
-      margin: const EdgeInsets.only(top: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            header,
-            if (_tasksExpanded) ...[
-              if (goal.tasks.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 8),
-                  child: Text('暂无任务，先添加一个可执行的下一步。'),
-                ),
-              // 全部任务都已完成并被隐藏时，绝不能显示成"暂无任务"：
-              // 明确说明数量，并给出一步恢复展示的入口。
-              if (allCompletedHidden)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('全部 ${goal.tasks.length} 项任务已完成并隐藏'),
-                      if (widget.onToggleHideCompleted != null)
-                        TextButton(
-                          key: const ValueKey('show-completed-inline'),
-                          onPressed: widget.onToggleHideCompleted,
-                          child: const Text('显示已完成'),
-                        ),
-                    ],
-                  ),
-                ),
-              if (openTasks.isNotEmpty)
-                PactaHoldReorderList(
-                  itemCount: openTasks.length,
-                  onReorder: (oldIndex, newIndex) =>
-                      _reorderOpenTasks(openTasks, oldIndex, newIndex),
-                  onHoldMenu: widget.onHoldTask == null
-                      ? null
-                      : (index) => widget.onHoldTask!(openTasks[index]),
-                  itemBuilder: (context, index) => KeyedSubtree(
-                    key: ValueKey('task-${openTasks[index].id}'),
-                    child: _taskTile(openTasks[index]),
-                  ),
-                ),
-              if (!widget.hideCompletedTasks)
-                for (final task in completedTasks) _completedTaskRow(task),
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    TextButton.icon(
-                      onPressed: _addTask,
-                      icon: const Icon(Icons.add_task),
-                      label: const Text('添加任务'),
-                    ),
-                    if (completedCount > 0 &&
-                        widget.onToggleHideCompleted != null)
-                      Tooltip(
-                        message: widget.hideCompletedTasks
-                            ? '显示已完成的 $completedCount 项任务'
-                            : '隐藏已完成的 $completedCount 项任务',
-                        child: TextButton.icon(
-                          onPressed: widget.onToggleHideCompleted,
-                          icon: Icon(
-                            widget.hideCompletedTasks
-                                ? Icons.visibility_outlined
-                                : Icons.visibility_off_outlined,
+      // 卡片自身的边距交给 PactaHoldReorderList(itemSpacing: 12)：拖拽代理
+      // 只包卡片本体，高亮描边与阴影才能严丝合缝贴住 20dp 圆角。
+      margin: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          header,
+          if (_tasksExpanded && hasExpandedContent)
+            // 头部底边已经是精确的 12dp，展开区不再补一段间隔：首条任务顶边
+            // 到头部末行文字底边因此恒为 PactaSpacing.md。
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (goal.tasks.isEmpty) _emptyTasksHint(context),
+                  // 全部任务都已完成并被隐藏时，绝不能显示成"暂无任务"：
+                  // 明确说明数量，并给出一步恢复展示的入口。
+                  if (allCompletedHidden)
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('全部 ${goal.tasks.length} 项任务已完成并隐藏'),
+                        if (widget.onToggleHideCompleted != null)
+                          TextButton(
+                            key: const ValueKey('show-completed-inline'),
+                            onPressed: widget.onToggleHideCompleted,
+                            child: const Text('显示已完成'),
                           ),
-                          label: Text(
-                            widget.hideCompletedTasks
-                                ? '显示已完成 ($completedCount)'
-                                : '隐藏已完成 ($completedCount)',
+                      ],
+                    ),
+                  if (openTasks.isNotEmpty)
+                    PactaHoldReorderList(
+                      itemCount: openTasks.length,
+                      onReorder: (oldIndex, newIndex) =>
+                          _reorderOpenTasks(openTasks, oldIndex, newIndex),
+                      onHoldMenu: widget.onHoldTask == null
+                          ? null
+                          : (index) => widget.onHoldTask!(openTasks[index]),
+                      // 行距由 TaskTile 自身决定：间距加在列表里会让首条任务
+                      // 比后续任务多一段顶部空隙。
+                      itemSpacing: 0,
+                      itemBuilder: (context, index) => KeyedSubtree(
+                        key: ValueKey('task-${openTasks[index].id}'),
+                        child: _taskTile(openTasks[index]),
+                      ),
+                    ),
+                  if (!widget.hideCompletedTasks)
+                    for (final task in completedTasks) _completedTaskRow(task),
+                  // 「添加任务」已移入目标长按菜单首项；底部只保留按目标独立的
+                  // 「隐藏/显示已完成」开关，0 任务时由可点的空态引导行承担起手。
+                  if (completedCount > 0 &&
+                      widget.onToggleHideCompleted != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Tooltip(
+                          message: widget.hideCompletedTasks
+                              ? '显示已完成的 $completedCount 项任务'
+                              : '隐藏已完成的 $completedCount 项任务',
+                          child: TextButton.icon(
+                            onPressed: widget.onToggleHideCompleted,
+                            icon: Icon(
+                              widget.hideCompletedTasks
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
+                            ),
+                            label: Text(
+                              widget.hideCompletedTasks
+                                  ? '显示已完成 ($completedCount)'
+                                  : '隐藏已完成 ($completedCount)',
+                            ),
                           ),
                         ),
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
-            ],
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }

@@ -165,8 +165,8 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsNothing);
     }
 
-    Future<void> scrollBoardTo(String text) => tester.scrollUntilVisible(
-      find.text(text),
+    Future<void> scrollBoardTo(Finder target) => tester.scrollUntilVisible(
+      target,
       200,
       scrollable: find
           .descendant(
@@ -249,13 +249,21 @@ void main() {
       );
       await settle();
 
-      await scrollBoardTo('打开月历');
-      expect(find.text('近期专注活动'), findsOneWidget);
-      expect(find.text('打开月历'), findsOneWidget);
-      expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
+      // 原「近期专注活动」已融合进「专注与国策」。卡内「日期详情」按选中日
+      // 展示有效专注：默认选中今天（11 月 18 日），当天没有专注，所以只有
+      // 点开 12 日才会显示当天的 13 分钟。月历入口在日期详情右侧。
+      expect(find.text('专注与国策'), findsOneWidget);
+      final monthEntry = find.byKey(const ValueKey('board-focus-open-month'));
+      final boardDay12 = find.byKey(const ValueKey('board-focus-day-12'));
+      await scrollBoardTo(boardDay12);
+      await tester.tap(boardDay12);
+      await settle();
+      await scrollBoardTo(monthEntry);
+      expect(monthEntry, findsOneWidget);
+      expect(find.text('13分00秒'), findsOneWidget);
       await shot('board');
 
-      await tester.tap(find.text('打开月历'));
+      await tester.tap(monthEntry);
       await settle();
       expect(find.text('专注月历'), findsOneWidget);
       expect(find.text('2026年11月'), findsOneWidget);
@@ -293,8 +301,8 @@ void main() {
 
       await tester.tap(find.text('看板'));
       await settle();
-      await scrollBoardTo('打开月历');
-      await tester.tap(find.text('打开月历'));
+      await scrollBoardTo(monthEntry);
+      await tester.tap(monthEntry);
       await settle();
       expect(find.text('2026年11月'), findsOneWidget);
       expect(find.text('13分00秒'), findsOneWidget);

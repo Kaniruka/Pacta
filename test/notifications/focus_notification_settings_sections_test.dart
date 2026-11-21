@@ -7,6 +7,7 @@ import 'package:pacta/src/notifications/device_permission_gateway.dart';
 import 'package:pacta/src/notifications/focus_device_preferences.dart';
 import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/notifications/focus_notification_settings_page.dart';
+import 'package:pacta/src/ui/pacta_grouped_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -39,10 +40,12 @@ void main() {
       ),
     );
 
-    // 分组标题就是合并后页面的大纲。
+    // 分组标题就是合并后页面的大纲：三个蓝色标题，各带一块分组列表。
     for (final section in ['后台运行与系统权限', '后台倒计时与专注通知', '定时提醒']) {
       expect(find.text(section), findsOneWidget, reason: section);
     }
+    expect(find.byType(PactaSectionHeader), findsNWidgets(3));
+    expect(find.byType(PactaGroupedList), findsNWidgets(3));
 
     // 第一组：通知、精确闹钟、后台运行白名单与系统日历只读导入。
     for (final row in ['系统通知权限', '精确提醒（闹钟）', '后台运行', '系统日历只读导入']) {
@@ -53,6 +56,26 @@ void main() {
       find.byKey(const Key('open-battery-optimization-settings')),
       findsOneWidget,
     );
+
+    // 权限状态是行尾胶囊，入口是整行点击：副标题里不再内嵌任何按钮。
+    expect(find.text('已开启'), findsOneWidget);
+    expect(find.text('已允许'), findsOneWidget);
+    expect(find.text('建议开启'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(ListTile),
+        matching: find.byType(TextButton),
+      ),
+      findsNothing,
+      reason: '整行可点后，ListTile.subtitle 不得再放跳转按钮',
+    );
+    final dividers = tester.widgetList<Divider>(find.byType(Divider));
+    expect(dividers, isNotEmpty, reason: '同组相邻行之间仍有 1dp 细分隔线');
+    for (final divider in dividers) {
+      expect(divider.indent, isNull, reason: '不再用缩进分割线把卡片割裂成碎片');
+      expect(divider.endIndent, isNull);
+      expect(divider.thickness, 1);
+    }
 
     // 第二组：后台倒计时与专注流程通知。
     expect(find.text('显示后台倒计时'), findsOneWidget);
@@ -67,18 +90,17 @@ void main() {
     expect(find.text('每天打开 Pacta'), findsOneWidget);
     expect(find.byKey(const Key('daily-open-reminder-time')), findsOneWidget);
 
-    // 卡片默认 margin 为零：相邻卡片必须显式留出至少 8dp。
-    final cards = find.byType(Card);
+    // 分组之间必须留出至少 8dp，避免两块白卡粘连。
+    final groups = find.byType(PactaGroupedList);
     final rects = [
-      for (var index = 0; index < cards.evaluate().length; index++)
-        tester.getRect(cards.at(index)),
+      for (var index = 0; index < groups.evaluate().length; index++)
+        tester.getRect(groups.at(index)),
     ];
-    expect(rects.length, greaterThanOrEqualTo(4));
     for (var index = 1; index < rects.length; index++) {
       expect(
         rects[index].top - rects[index - 1].bottom,
         greaterThanOrEqualTo(8 - 0.01),
-        reason: '第 $index 与第 ${index + 1} 张卡片间距',
+        reason: '第 $index 与第 ${index + 1} 组分房间距',
       );
     }
 
@@ -163,18 +185,18 @@ void main() {
     );
 
     expect(find.text('后台运行与系统权限'), findsOneWidget);
-    expect(find.text('桌面端依赖系统托盘/前台进程保活，无需电池优化白名单。'), findsOneWidget);
+    expect(find.text('桌面端保活运行，无需电池优化'), findsOneWidget);
     expect(find.text('精确提醒（闹钟）'), findsNothing, reason: 'Android 专属能力');
     expect(
       find.byKey(const Key('open-battery-optimization-settings')),
       findsNothing,
     );
-    // 没有注入来源页构建器时入口保留但不可点，不会假装已接入。
+    // 没有注入来源页构建器时入口保留但整行禁用，不会假装已接入。
     expect(
       tester
-          .widget<TextButton>(find.byKey(const Key('open-calendar-sources')))
-          .onPressed,
-      isNull,
+          .widget<ListTile>(find.byKey(const Key('open-calendar-sources')))
+          .enabled,
+      isFalse,
     );
     expect(tester.takeException(), isNull);
   });

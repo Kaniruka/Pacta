@@ -480,59 +480,6 @@ class FocusSyncSource {
   final String payload;
 }
 
-class FocusSessionSourceOption {
-  const FocusSessionSourceOption({
-    required this.sourceId,
-    required this.deviceId,
-    required this.occurredAt,
-    required this.session,
-  });
-
-  final String sourceId;
-  final String deviceId;
-  final DateTime occurredAt;
-  final FocusSession session;
-}
-
-class FocusReconciliationSession {
-  const FocusReconciliationSession({
-    required this.session,
-    required this.availableSources,
-    required this.selectedConfigurationSource,
-    required this.selectedOutcomeSource,
-    required this.requiresConfigurationChoice,
-    required this.requiresOutcomeChoice,
-  });
-
-  final FocusSession session;
-  final List<FocusSessionSourceOption> availableSources;
-  final FocusSessionSourceOption? selectedConfigurationSource;
-  final FocusSessionSourceOption? selectedOutcomeSource;
-  final bool requiresConfigurationChoice;
-  final bool requiresOutcomeChoice;
-}
-
-class FocusReconciliationCase {
-  const FocusReconciliationCase({required this.id, required this.sessions});
-
-  final String id;
-  final List<FocusReconciliationSession> sessions;
-
-  bool get isPendingReview =>
-      sessions.any((entry) => entry.session.isPendingReview);
-  bool get hasOverlappingSessions => sessions.length > 1;
-}
-
-class FocusSessionReconciliationSelection {
-  const FocusSessionReconciliationSelection({
-    this.configurationSourceId,
-    this.outcomeSourceId,
-  });
-
-  final String? configurationSourceId;
-  final String? outcomeSourceId;
-}
-
 class FocusAppointmentSourceOption {
   const FocusAppointmentSourceOption({
     required this.sourceId,

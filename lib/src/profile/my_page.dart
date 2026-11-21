@@ -8,14 +8,13 @@ import '../auth/admin_password_reset_card.dart';
 import '../auth/admin_user_lifecycle_card.dart';
 import '../auth/auth_repository.dart';
 import '../calendar/calendar_page.dart';
-import '../focus/focus_models.dart';
-import '../focus/focus_reconciliation_page.dart';
 import '../national_focus/national_focus_ai_access.dart';
 import '../national_focus/national_focus_ai_analysis_page.dart';
 import '../notifications/focus_notification_settings_page.dart';
 import '../sync/cloud_sync_card.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_error_text.dart';
+import '../ui/pacta_grouped_list.dart';
 import '../ui/pacta_page_header.dart';
 import 'profile_card.dart';
 
@@ -50,7 +49,7 @@ class _MyPageState extends ConsumerState<MyPage> {
           avatarPicker: ref.watch(avatarPickerProvider),
           accountIdentifier: repository.currentUserIdentifier,
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: PactaSpacing.md),
         CloudSyncCard(
           repository: ref.watch(cloudSnapshotRepositoryProvider),
           versionCheck: ref.watch(cloudVersionCheckProvider),
@@ -66,66 +65,61 @@ class _MyPageState extends ConsumerState<MyPage> {
                 .settleDueCheckpoints();
           },
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: PactaSpacing.md),
         NationalFocusAiAnalysisEntry(
           onOpenSync: () => openAiManualSync(context, ref),
           mcpUrl: ref.watch(nationalFocusMcpUrlProvider),
           repository: ref.watch(nationalFocusAiGrantRepositoryProvider),
         ),
         const SizedBox(height: PactaSpacing.md),
-        // 系统日历只读导入与通知/权限同属"这台设备能做什么"，合并成一张
-        // 入口卡片：来源勾选与手动导入仍走既有 CalendarSourcesPage。
-        Card(
-          child: ListTile(
-            leading: const Icon(Icons.tune_outlined),
-            title: const Text('通知与设备权限'),
-            subtitle: Text(
-              Platform.isAndroid
-                  ? '后台运行、通知提醒与系统日历只读导入；仅本机生效'
-                  : '通知提醒与系统日历只读导入；桌面端无需电池优化白名单；仅本机生效',
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push<void>(
-              MaterialPageRoute<void>(
-                builder: (_) => FocusNotificationSettingsPage(
-                  service: ref.read(focusNotificationServiceProvider),
-                  calendarSourcesBuilder: (_) => CalendarSourcesPage(
-                    repository: calendarRepository,
-                    isAndroid: Platform.isAndroid,
-                    scheduleRepository: scheduleRepository,
-                    displayTimeZoneIdLoader: () =>
-                        resolveAccountDisplayTimeZoneId(
-                          ref.read(profileRepositoryProvider),
-                        ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(height: PactaSpacing.md),
-        const _FocusReconciliationPageLink(),
-        const SizedBox(height: PactaSpacing.md),
+        // 功能入口合成一块 Google 服务式分组列表：通知/权限与管理员入口共用
+        // 同一套 20dp 圆角、1dp 细分隔线与整行点击，不再各占一张独立卡片。
         FutureBuilder<bool>(
           future: _isAdministrator,
-          builder: (context, snapshot) => snapshot.data == true
-              ? Card(
-                  key: const ValueKey('admin-users-entry'),
-                  child: ListTile(
-                    leading: const Icon(Icons.admin_panel_settings_outlined),
-                    title: const Text('用户管理'),
-                    subtitle: const Text('注册资格、用户状态与密码重置'),
-                    trailing: const Icon(Icons.chevron_right),
+          builder: (context, snapshot) {
+            final isAdministrator = snapshot.data == true;
+            return PactaGroupedList(
+              children: [
+                PactaSettingsTile(
+                  leadingIcon: Icons.tune_outlined,
+                  title: '通知与设备权限',
+                  subtitle: Platform.isAndroid
+                      ? '后台运行、通知提醒与系统日历只读导入'
+                      : '通知提醒与系统日历只读导入',
+                  onTap: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => FocusNotificationSettingsPage(
+                        service: ref.read(focusNotificationServiceProvider),
+                        calendarSourcesBuilder: (_) => CalendarSourcesPage(
+                          repository: calendarRepository,
+                          isAndroid: Platform.isAndroid,
+                          scheduleRepository: scheduleRepository,
+                          displayTimeZoneIdLoader: () =>
+                              resolveAccountDisplayTimeZoneId(
+                                ref.read(profileRepositoryProvider),
+                              ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (isAdministrator)
+                  PactaSettingsTile(
+                    tileKey: const ValueKey('admin-users-entry'),
+                    leadingIcon: Icons.admin_panel_settings_outlined,
+                    title: '用户管理',
+                    subtitle: '注册资格、用户状态与密码重置',
                     onTap: () => Navigator.of(context).push<void>(
                       MaterialPageRoute<void>(
                         builder: (_) => const AdminUsersPage(),
                       ),
                     ),
                   ),
-                )
-              : const SizedBox.shrink(),
+              ],
+            );
+          },
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: PactaSpacing.xl),
         OutlinedButton.icon(
           onPressed: () async {
             final userId = ref.read(authRepositoryProvider).currentUserId;
@@ -138,12 +132,7 @@ class _MyPageState extends ConsumerState<MyPage> {
           icon: const Icon(Icons.logout),
           label: const Text('退出登录'),
         ),
-        const SizedBox(height: 12),
-        Text(
-          '本应用使用 MiSans 字体',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
+        const SizedBox(height: PactaSpacing.xl),
       ],
     );
   }
@@ -226,44 +215,6 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
           );
         },
       ),
-    );
-  }
-}
-
-class _FocusReconciliationPageLink extends ConsumerWidget {
-  const _FocusReconciliationPageLink();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final focusRepository = ref.watch(focusRepositoryProvider);
-    final taskRepository = ref.watch(taskRepositoryProvider);
-    return StreamBuilder<List<FocusReconciliationCase>>(
-      stream: focusRepository.watchFocusReconciliations(),
-      builder: (context, snapshot) {
-        final pendingCount = (snapshot.data ?? const [])
-            .where((item) => item.isPendingReview)
-            .length;
-        return Card(
-          child: ListTile(
-            leading: const Icon(Icons.fact_check_outlined),
-            title: const Text('专注记录核对'),
-            subtitle: Text(
-              pendingCount == 0
-                  ? '查看已完成的核对结果和来源依据'
-                  : '$pendingCount 组待核对 · 争议部分暂不计入统计',
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => FocusReconciliationPage(
-                  focusRepository: focusRepository,
-                  taskRepository: taskRepository,
-                ),
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }

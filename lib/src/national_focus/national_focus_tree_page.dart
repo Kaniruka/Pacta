@@ -921,8 +921,13 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     return _detailed ? 210 : 148;
   }
 
+  /// 节点高度：详细视图要放下两行名称 + 两行规则，随字号缩放留足余量。
+  ///
+  /// 1x 时详细视图内容约 126dp（图标 40 + 名称 40 + 规则 32 + 间距与内边距），
+  /// 148dp 留出呼吸位；2x 时内容约 198dp，仍在 296dp 之内，不会出现
+  /// RenderFlex overflow。
   double get _nodeHeight =>
-      (_detailed ? 124.0 : 100.0) * MediaQuery.textScalerOf(context).scale(1);
+      (_detailed ? 148.0 : 100.0) * MediaQuery.textScalerOf(context).scale(1);
 
   int _treeDepth(
     List<NationalFocusCard> roots,
@@ -1093,7 +1098,19 @@ class _NodeActionsSheet extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(card.name, style: theme.textTheme.headlineSmall),
+          // 名称与连续点亮胶囊同排：短名称时胶囊紧跟右侧，长名称自动换行。
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              Text(card.name, style: theme.textTheme.headlineSmall),
+              NationalFocusStreakTags(
+                currentConsecutiveDays: card.currentConsecutiveDays,
+                bestConsecutiveDays: card.bestConsecutiveDays,
+              ),
+            ],
+          ),
           if (reviewBlocked) const NationalFocusReviewNotice(),
           const SizedBox(height: 12),
           Text(card.effectiveAction, style: theme.textTheme.bodyLarge),
@@ -1197,7 +1214,8 @@ class _NationalFocusTreeNode extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final statusIcon = card.hasPendingReview
         ? Icons.sync_problem_outlined
         : switch (card.state) {
@@ -1222,7 +1240,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
           };
     final content = InkWell(
       onTap: selecting ? onSelect : onOpen,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(_nodeCardRadius),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         child: Column(
@@ -1256,19 +1274,19 @@ class _NationalFocusTreeNode extends StatelessWidget {
             Text(
               card.name,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleSmall,
+              style: theme.textTheme.titleSmall,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
+            // 详细视图固定两行规则：不再按字号把规则压回 1 行，默认字号也
+            // 能读到「条件 → 行动」的完整一句。
             if (detailed) ...[
               const SizedBox(height: 3),
               Text(
                 card.effectiveAction,
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall,
-                maxLines: MediaQuery.textScalerOf(context).scale(1) > 1.3
-                    ? 2
-                    : 1,
+                style: theme.textTheme.bodySmall,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
             ],
@@ -1288,15 +1306,130 @@ class _NationalFocusTreeNode extends StatelessWidget {
                     : '，选择为父节点'
               : '，打开操作'}',
       child: detailed
-          ? Card(
-              clipBehavior: Clip.antiAlias,
-              color: selecting && !blocked
-                  ? colors.secondaryContainer
-                  : colors.surfaceContainerLow,
+          ? _NationalFocusNodeCard(
+              card: card,
+              selecting: selecting,
+              blocked: blocked,
               child: content,
             )
-          : Material(color: Colors.transparent, child: content),
+          // 简洁视图严格只留圆形状态图标 + 名称：没有卡片底色、外框和投影。
+          : Material(type: MaterialType.transparency, child: content),
     );
+  }
+}
+
+/// 画布内节点卡片的圆角。
+///
+/// 比页面级 20dp 卡片（[PactaSpacing.cardRadius]）更紧凑：画布节点是密集的
+/// 信息单元而不是独立卡片，16dp 让相邻节点的边界更利落。
+const double _nodeCardRadius = 16;
+
+/// 详细视图的节点卡片：按状态着色，底色必须与画布表面 surfaceContainerLow
+/// 明确分层（亮色近似白 / 浅绿 / 浅琥珀，暗色对应深柔色）。
+class _NationalFocusNodeCard extends StatelessWidget {
+  const _NationalFocusNodeCard({
+    required this.card,
+    required this.selecting,
+    required this.blocked,
+    required this.child,
+  });
+
+  final NationalFocusCard card;
+  final bool selecting;
+  final bool blocked;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final palette = _NationalFocusNodePalette.resolve(
+      context,
+      card,
+      selecting: selecting,
+      blocked: blocked,
+    );
+    return Card(
+      key: ValueKey('national-focus-card-${card.id}'),
+      // 画布内卡片用零外边距：节点盒子的高度是布局契约，不能被 Card 的
+      // 默认 4dp 边距悄悄吃掉。
+      margin: EdgeInsets.zero,
+      elevation: 1,
+      shadowColor: colors.shadow.withValues(alpha: 0.18),
+      surfaceTintColor: Colors.transparent,
+      color: palette.fill,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(_nodeCardRadius),
+        side: BorderSide(color: palette.border, width: palette.borderWidth),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// 详细视图卡片的三段语义：底、边、边宽。
+@immutable
+class _NationalFocusNodePalette {
+  const _NationalFocusNodePalette({
+    required this.fill,
+    required this.border,
+    required this.borderWidth,
+  });
+
+  final Color fill;
+  final Color border;
+  final double borderWidth;
+
+  /// 底色规则：状态容器色按比例调进 ColorScheme.surfaceContainerLowest。
+  ///
+  /// 调进最亮 / 最暗的表面而不是直接铺容器色，是为了既保住状态语义，又让
+  /// 卡片与画布 surfaceContainerLow 拉开一档——亮色卡片近乎白、暗色卡片
+  /// 明显更暗，正文始终保持 AA 对比度。
+  static _NationalFocusNodePalette resolve(
+    BuildContext context,
+    NationalFocusCard card, {
+    required bool selecting,
+    required bool blocked,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    final surface = colors.surfaceContainerLowest;
+    Color tint(Color container, double amount) =>
+        Color.alphaBlend(container.withValues(alpha: amount), surface);
+    if (selecting && !blocked) {
+      return _NationalFocusNodePalette(
+        fill: colors.secondaryContainer,
+        border: colors.primary,
+        borderWidth: 1.5,
+      );
+    }
+    if (card.hasPendingReview) {
+      return _NationalFocusNodePalette(
+        fill: tint(colors.errorContainer, 0.55),
+        border: colors.error.withValues(alpha: 0.55),
+        borderWidth: 1,
+      );
+    }
+    final status = PactaStatusColors.of(context);
+    return switch (card.state) {
+      NationalFocusCardState.lit => _NationalFocusNodePalette(
+        fill: tint(status.successContainer, 0.55),
+        border: status.successContainer,
+        borderWidth: 1,
+      ),
+      NationalFocusCardState.pendingTodayConfirmation =>
+        _NationalFocusNodePalette(
+          fill: tint(colors.tertiaryContainer, 0.6),
+          border: colors.tertiary.withValues(alpha: 0.55),
+          borderWidth: 1,
+        ),
+      // 熄灭态用最纯的高亮表面 + 明显细边：亮色是纯白配冷蓝灰画布，
+      // 一眼就是画布上的一张卡。
+      NationalFocusCardState.extinguished => _NationalFocusNodePalette(
+        fill: surface,
+        border: colors.outlineVariant,
+        borderWidth: 1,
+      ),
+    };
   }
 }
 

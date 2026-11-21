@@ -13,6 +13,7 @@ import 'package:pacta/main.dart';
 import 'package:pacta/src/focus/chain_signals_repository.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
+import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/schedules/schedule_models.dart';
 import 'package:pacta/src/schedules/schedule_repository.dart';
@@ -74,6 +75,8 @@ void main() {
       database: database,
       userId: userId,
       cloudSyncEnabled: false,
+      // 与其余 fixture 共用同一个注入时钟：国策检查点结算不能落到真实今天。
+      now: () => now,
     );
     final signals = ChainSignalsRepository(database: database, userId: userId);
     final schedules = LocalScheduleRepository(
@@ -109,6 +112,23 @@ void main() {
         title: '梳理明天的计划',
         classification: TaskClassification.regular,
         estimatedMinutes: 15,
+      ),
+    );
+    // Phase 3：第二个目标带单行描述，与无描述的种子目标形成对照，收起态
+    // 上下内边距与展开态头部末行间距在双端截图里都有真实样本。
+    final weeklyGoal = await tasks.createGoal(
+      const GoalDraft(
+        title: '每周体能与休息',
+        description: '保证作息与运动节奏',
+        classification: TaskClassification.regular,
+      ),
+    );
+    await tasks.createTask(
+      weeklyGoal.id,
+      const TaskDraft(
+        title: '慢跑 30 分钟',
+        classification: TaskClassification.regular,
+        estimatedMinutes: 30,
       ),
     );
     for (final mode in [FocusChainMode.elite, FocusChainMode.regular]) {
@@ -153,6 +173,29 @@ void main() {
     await schedules.setScheduleCompletion(
       completedSchedule.id,
       isCompleted: true,
+    );
+    // Phase 3：国策树样本——根节点点亮、子节点未点亮（即熄灭态），看板顶部
+    // 因此显示「点亮 1 / 待确认 0 / 熄灭 1」，国策树页也有真实分支而不是空态
+    // 引导。两张卡都在同一个检查点窗口内，不跨天结算。
+    final rootNationalFocus = await tree.createCard(
+      const NationalFocusCardDraft(
+        name: '根国策',
+        triggerCondition: '打开今天的待办清单',
+        action: '坐到书桌前先写下今天的第一步。',
+      ),
+    );
+    await tree.placeCard(cardId: rootNationalFocus.id, parentId: null);
+    await tree.lightCard(rootNationalFocus.id);
+    final childNationalFocus = await tree.createCard(
+      const NationalFocusCardDraft(
+        name: '开始前写第一步',
+        triggerCondition: '每次开始专注之前',
+        action: '先写下一句话的目标，再决定这件事是否值得 25 分钟。',
+      ),
+    );
+    await tree.placeCard(
+      cardId: childNationalFocus.id,
+      parentId: rootNationalFocus.id,
     );
 
     final boundaryKey = GlobalKey();
@@ -258,6 +301,17 @@ void main() {
           await settle();
           await shot('plan-goals-checked-$suffix');
           await tester.tap(taskCheck);
+          await settle();
+          // Phase 3：第二个目标带单行描述——收起后上下内边距严格对称，头部
+          // 末行到首条任务的间距与无描述目标一致。独立后缀，不覆盖既有基线。
+          final weeklyHeader = find.byKey(
+            ValueKey('goal-header-${weeklyGoal.id}'),
+          );
+          await reveal(weeklyHeader);
+          await tester.tap(weeklyHeader);
+          await settle();
+          await shot('plan-goals-collapsed-$suffix');
+          await tester.tap(weeklyHeader);
           await settle();
           await reveal(find.byType(PactaPageHeader));
         }

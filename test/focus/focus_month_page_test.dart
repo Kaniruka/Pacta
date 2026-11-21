@@ -7,6 +7,7 @@ import 'package:pacta/main.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_month_page.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
+import 'package:pacta/src/theme/pacta_calendar_colors.dart';
 import 'package:pacta/src/tasks/task_database.dart' show PactaDatabase;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
@@ -834,7 +835,112 @@ void main() {
       expect(find.text('2026年11月'), findsOneWidget);
     }),
   );
+
+  testWidgets(
+    '日格三层语义：热力底色不被选中覆写，今天与选中都是单层描边',
+    (tester) => withFixture(tester, () async {
+      final task = await createTask(tester);
+      // 2026-11-03 45 分钟 → 热力 2 档；今天 = 2026-11-20（0 秒 → 0 档）。
+      await seed(tester, task, {DateTime.utc(2026, 11, 3, 2): 45 * 60});
+      await tester.pumpWidget(host(repository: focusRepository));
+      await tester.pumpAndSettle();
+
+      final colors = PactaCalendarColors.light;
+      // 普通日：只有业务热力底色，不画描边。
+      expect(_cellColorFor(tester, 3), colors.heat2Background);
+      expect(_cellBorderFor(tester, 3), isNull);
+      // 今天（未选中）：热力底色 + 1.5dp 中性单层描边 + 独立 '今'。
+      expect(_cellColorFor(tester, 20), colors.heat0Background);
+      expect(_cellBorderColorFor(tester, 20), colors.todayBorder);
+      expect(_cellBorderWidthFor(tester, 20), 1.5);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('focus-month-day-20')),
+          matching: find.text('今'),
+        ),
+        findsOneWidget,
+      );
+
+      // 选中普通日：热力底色保留，蓝色 2dp 单层框，不铺蓝色实底。
+      await tester.tap(find.byKey(const ValueKey('focus-month-day-3')));
+      await tester.pumpAndSettle();
+      expect(_cellColorFor(tester, 3), colors.heat2Background);
+      expect(_cellBorderColorFor(tester, 3), colors.selectedBorder);
+      expect(_cellBorderWidthFor(tester, 3), 2);
+      expect(_borderedLayersFor(tester, 3), 0);
+      expect(_cellBorderColorFor(tester, 20), colors.todayBorder);
+
+      // 选中今天：与普通选中日完全相同的 2dp 主蓝单层框 + '今'。
+      await tester.tap(find.byKey(const ValueKey('focus-month-day-20')));
+      await tester.pumpAndSettle();
+      expect(_cellBorderColorFor(tester, 20), colors.selectedBorder);
+      expect(_cellBorderWidthFor(tester, 20), 2);
+      expect(_borderedLayersFor(tester, 20), 0);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('focus-month-day-20')),
+          matching: find.text('今'),
+        ),
+        findsOneWidget,
+      );
+
+      // 底部五档图例与看板融合卡片共用同一份色阶说明。
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('pacta-heat-legend-4')),
+        200,
+        scrollable: find
+            .descendant(
+              of: find.byType(FocusMonthPage),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
+      await tester.pumpAndSettle();
+      for (var level = 0; level <= 4; level++) {
+        expect(
+          find.byKey(ValueKey('pacta-heat-legend-$level')),
+          findsOneWidget,
+        );
+      }
+    }),
+  );
 }
+
+BoxDecoration _dayDecoration(WidgetTester tester, int day) {
+  final ink = tester.widget<Ink>(
+    find
+        .descendant(
+          of: find.byKey(ValueKey('focus-month-day-$day')),
+          matching: find.byType(Ink),
+        )
+        .first,
+  );
+  return ink.decoration! as BoxDecoration;
+}
+
+Color? _cellColorFor(WidgetTester tester, int day) =>
+    _dayDecoration(tester, day).color;
+
+Border? _cellBorderFor(WidgetTester tester, int day) =>
+    _dayDecoration(tester, day).border as Border?;
+
+Color? _cellBorderColorFor(WidgetTester tester, int day) =>
+    _cellBorderFor(tester, day)?.top.color;
+
+double? _cellBorderWidthFor(WidgetTester tester, int day) =>
+    _cellBorderFor(tester, day)?.top.width;
+
+int _borderedLayersFor(WidgetTester tester, int day) => find
+    .descendant(
+      of: find.byKey(ValueKey('focus-month-day-$day')),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is DecoratedBox &&
+            (widget.decoration as BoxDecoration?)?.border != null,
+      ),
+    )
+    .evaluate()
+    .length;
 
 bool _monthNavigationDisabled(WidgetTester tester, String tooltip) {
   final button = tester

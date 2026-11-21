@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+
+import '../theme/pacta_spacing.dart';
 
 /// 操作面板中的一项。
 class PactaActionItem {
@@ -111,6 +114,9 @@ class PactaHoldReorderController extends ChangeNotifier {
 /// 页面滚动视图里。排序由 [ReorderableListView] 承担；每一项外层的
 /// [PactaHoldReorderListener] 在 350ms 后启动拖拽，同时记录指针位移：
 /// 位移不超过 8dp 且没有实际换位时，抬起指针打开 [onHoldMenu]。
+///
+/// 拖拽代理只负责让卡片本体浮起：高亮描边与阴影画在 [itemSpacing] 内层，
+/// 与卡片圆角严丝合缝；间距区域保持完全透明，不出现白色直角块。
 class PactaHoldReorderList extends StatefulWidget {
   const PactaHoldReorderList({
     super.key,
@@ -122,6 +128,8 @@ class PactaHoldReorderList extends StatefulWidget {
     this.controller,
     this.padding,
     this.itemExtent,
+    this.itemSpacing = 0,
+    this.proxyBorderRadius = PactaSpacing.cardRadius,
     this.holdDelay = const Duration(milliseconds: 350),
     this.moveThreshold = 8.0,
   });
@@ -139,6 +147,15 @@ class PactaHoldReorderList extends StatefulWidget {
   final PactaHoldReorderController? controller;
   final EdgeInsets? padding;
   final double? itemExtent;
+
+  /// 每项顶部附加的视觉间距；0 表示由调用方在卡片内部自行留白。
+  ///
+  /// 间距加在 [PactaHoldReorderListener] 外层，拖拽代理的高亮只包卡片本体。
+  final double itemSpacing;
+
+  /// 拖拽代理高亮描边与阴影的圆角，应等于卡片本身的圆角。
+  final double proxyBorderRadius;
+
   final Duration holdDelay;
   final double moveThreshold;
 
@@ -169,24 +186,61 @@ class _PactaHoldReorderListState extends State<PactaHoldReorderList> {
       padding: widget.padding,
       itemCount: widget.itemCount,
       itemExtent: widget.itemExtent,
+      proxyDecorator: _buildProxy,
       onReorderItem: (oldIndex, newIndex) {
         _controller.markReordered();
         widget.onReorder(oldIndex, newIndex);
       },
       itemBuilder: (context, index) {
         final child = widget.itemBuilder(context, index);
-        if (!canReorder && widget.onHoldMenu == null) return child;
-        return PactaHoldReorderListener(
-          key: child.key ?? ValueKey<Object>('pacta-hold-item-$index'),
-          index: index,
-          enabled: canReorder,
-          controller: _controller,
-          onHoldMenu: widget.onHoldMenu,
-          holdDelay: widget.holdDelay,
-          moveThreshold: widget.moveThreshold,
-          child: child,
-        );
+        // ReorderableListView 要求 itemBuilder 的直接返回值带 key。外层用
+        // 包裹 key 保留条目身份，但值不等于 child 自身的 Key：否则同一个
+        // 值会同时出现在父子两个节点，finder/语义树会把一项当成两项。
+        final childKey = child.key;
+        final itemKey = childKey == null || childKey is GlobalKey
+            ? ValueKey<Object>('pacta-hold-item-$index')
+            : _PactaHoldItemKey(childKey);
+        Widget item = child;
+        if (canReorder || widget.onHoldMenu != null) {
+          // 手势宿主只包卡片本体，不包含 [itemSpacing]：拖拽代理的描边与
+          // 阴影因此严格贴合卡片圆角，顶部间距区域保持完全透明。
+          item = PactaHoldReorderListener(
+            index: index,
+            enabled: canReorder,
+            controller: _controller,
+            onHoldMenu: widget.onHoldMenu,
+            holdDelay: widget.holdDelay,
+            moveThreshold: widget.moveThreshold,
+            child: child,
+          );
+        }
+        if (widget.itemSpacing > 0) {
+          // 间距统一加在每项顶部，调用方不必再在 Card 上写 margin；拖拽时
+          // 这段间距留在高亮之外，不会形成白色直角阴影块。
+          item = Padding(
+            padding: EdgeInsets.only(top: widget.itemSpacing),
+            child: item,
+          );
+        }
+        return KeyedSubtree(key: itemKey, child: item);
       },
+    );
+  }
+
+  /// 透明外包：清掉框架默认的白底与动态投影，只向下传递拖拽动画。
+  ///
+  /// 真正的高亮由 [PactaHoldReorderListener] 在卡片本体内绘制；这里保留
+  /// 列表元素本身（Flutter 用 GlobalKey 复用元素），展开/折叠等 State 不会
+  /// 在拖拽期间被重建。
+  Widget _buildProxy(Widget child, int index, Animation<double> animation) {
+    return _PactaReorderProxyScope(
+      animation: animation,
+      borderRadius: widget.proxyBorderRadius,
+      child: Material(
+        key: const ValueKey('pacta-hold-reorder-proxy-surface'),
+        type: MaterialType.transparency,
+        child: child,
+      ),
     );
   }
 }
@@ -225,6 +279,10 @@ class _PactaHoldReorderListenerState extends State<PactaHoldReorderListener> {
   /// `startItemDragReorder`，避免抬起时同时弹两层菜单。指针 ID 在
   /// up/cancel/dispose 时释放，不复用、不泄漏。
   static final Set<int> _claimedPointers = <int>{};
+
+  /// 拖拽时代理会在 listener 外包一层 Material；卡片内容用 GlobalKey 在
+  /// 同一帧内跨位置复用元素，展开/折叠等 State 不会被重建。
+  final GlobalKey _childHostKey = GlobalKey();
 
   int? _pointer;
   Offset? _start;
@@ -348,38 +406,112 @@ class _PactaHoldReorderListenerState extends State<PactaHoldReorderListener> {
       onPointerMove: _onPointerMove,
       onPointerUp: _onPointerUp,
       onPointerCancel: _onPointerCancel,
-      child: widget.child,
+      child: KeyedSubtree(key: _childHostKey, child: widget.child),
     );
-    if (!_holdMenuHandledByArena) return listener;
-    // RawGestureDetector 包在 Listener 外层：命中路径由内向外派发，本节点的
-    // Listener._onPointerDown 先完成 _claimedPointers 认领，内层列表项的
-    // Listener 又先于本节点执行。识别器再以 _pointer 作为准入条件，被内层
-    // 认领的指针根本不会登记进本节点的 GestureArena——内层中途卸载、
-    // holdDelay 更长或未挂在 SliverReorderableList 下时，外层都不会在超时
-    // 后误弹操作菜单。
-    return RawGestureDetector(
-      gestures: <Type, GestureRecognizerFactory>{
-        _ClaimedPointerLongPressGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<
-              _ClaimedPointerLongPressGestureRecognizer
-            >(
-              () => _ClaimedPointerLongPressGestureRecognizer(
-                duration: widget.holdDelay,
-                debugOwner: this,
-                // 与 _onPointerDown 的主键判定一致：右键/中键长按不打开菜单。
-                allowedButtonsFilter: (buttons) => buttons == kPrimaryButton,
-                onPointerAllowed: (pointer) => _pointer == pointer,
+    final Widget content;
+    if (!_holdMenuHandledByArena) {
+      content = listener;
+    } else {
+      // RawGestureDetector 包在 Listener 外层：命中路径由内向外派发，本节点
+      // 的 Listener._onPointerDown 先完成 _claimedPointers 认领，内层列表项
+      // 的 Listener 又先于本节点执行。识别器再以 _pointer 作为准入条件，被
+      // 内层认领的指针根本不会登记进本节点的 GestureArena——内层中途卸载、
+      // holdDelay 更长或未挂在 SliverReorderableList 下时，外层都不会在超时
+      // 后误弹操作菜单。
+      content = RawGestureDetector(
+        gestures: <Type, GestureRecognizerFactory>{
+          _ClaimedPointerLongPressGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<
+                _ClaimedPointerLongPressGestureRecognizer
+              >(
+                () => _ClaimedPointerLongPressGestureRecognizer(
+                  duration: widget.holdDelay,
+                  debugOwner: this,
+                  // 与 _onPointerDown 的主键判定一致：右键/中键长按不打开菜单。
+                  allowedButtonsFilter: (buttons) => buttons == kPrimaryButton,
+                  onPointerAllowed: (pointer) => _pointer == pointer,
+                ),
+                (recognizer) {
+                  // supportedDevices 默认 null：touch / mouse / stylus 等全部
+                  // 设备都参与，与排序路径的拖拽识别器一致。
+                  recognizer.onLongPressStart = _onLongPressStart;
+                },
               ),
-              (recognizer) {
-                // supportedDevices 默认 null：touch / mouse / stylus 等全部
-                // 设备都参与，与排序路径的拖拽识别器一致。
-                recognizer.onLongPressStart = _onLongPressStart;
-              },
+        },
+        child: listener,
+      );
+    }
+    final proxy = _PactaReorderProxyScope.maybeOf(context);
+    if (proxy == null) return content;
+    // 只有拖拽代理子树能读到这个作用域：浮起阴影与高亮描边加在卡片本体，
+    // 外层的 itemSpacing 仍由透明 Material 承载，绝不会被边框一起包住。
+    final colors = Theme.of(context).colorScheme;
+    return AnimatedBuilder(
+      animation: proxy.animation,
+      builder: (context, child) {
+        final curve = Curves.easeInOut.transform(proxy.animation.value);
+        return Material(
+          key: const ValueKey('pacta-hold-reorder-proxy-highlight'),
+          color: Colors.transparent,
+          elevation: lerpDouble(0, 6, curve)!,
+          shadowColor: colors.shadow.withValues(alpha: 0.25),
+          surfaceTintColor: Colors.transparent,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(proxy.borderRadius),
+            side: BorderSide(
+              color: colors.primary.withValues(alpha: 0.45 * curve),
+              width: 1.5,
             ),
+          ),
+          child: child,
+        );
       },
-      child: listener,
+      child: content,
     );
   }
+}
+
+/// 列表项外层 Key：按 child 的 Key 保持稳定身份，但不与 child 同名。
+@immutable
+class _PactaHoldItemKey extends Key {
+  const _PactaHoldItemKey(this.itemKey) : super.empty();
+
+  final Key itemKey;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _PactaHoldItemKey && other.itemKey == itemKey;
+
+  @override
+  int get hashCode => itemKey.hashCode;
+}
+
+/// 只在拖拽代理子树中出现的动画作用域。
+///
+/// [PactaHoldReorderList] 的 proxyDecorator 只把框架默认的白底和投影换成
+/// 透明表面，并把拖拽动画从这里向下传递；高亮由卡片本体的
+/// [PactaHoldReorderListener] 绘制，所以描边与卡片圆角严丝合缝。
+class _PactaReorderProxyScope extends InheritedWidget {
+  const _PactaReorderProxyScope({
+    required this.animation,
+    required this.borderRadius,
+    required super.child,
+  });
+
+  /// 框架的拖拽动画（0 → 1，250ms）。
+  final Animation<double> animation;
+
+  /// 高亮描边与阴影的圆角。
+  final double borderRadius;
+
+  static _PactaReorderProxyScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_PactaReorderProxyScope>();
+
+  @override
+  bool updateShouldNotify(_PactaReorderProxyScope oldWidget) =>
+      animation != oldWidget.animation ||
+      borderRadius != oldWidget.borderRadius;
 }
 
 /// 只在指针已被本节点 Listener 认领时才进入 GestureArena 的长按识别器。

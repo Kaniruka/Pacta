@@ -105,6 +105,7 @@ void main() {
   });
 
   late PactaDatabase database;
+  late DateTime now;
   late _MemoryProfileRemote remote;
   late LocalTaskRepository tasks;
   late LocalFocusRepository focus;
@@ -118,7 +119,7 @@ void main() {
   setUp(() async {
     database = PactaDatabase(NativeDatabase.memory());
     remote = _MemoryProfileRemote();
-    var now = start;
+    now = start;
     tasks = LocalTaskRepository(
       database: database,
       userId: 'user-a',
@@ -170,6 +171,9 @@ void main() {
     nationalFocusRepositoryFactory: (_) => nationalFocusRepository ?? tree,
     profileRepositoryFactory: (_) => profileRepository ?? profile,
     deviceTimeZoneIdReader: () async => deviceTimeZoneId,
+    // 看板"今天"与热力月历共用 displayClock：不注入就会落到系统真实月份，
+    // 9 月的日期格根本不存在。
+    displayClock: () => now,
   );
 
   testWidgets('账号还没有时区时按统一 fallback 显示，迁移只写入一次设备时区', (tester) async {
@@ -185,11 +189,10 @@ void main() {
     await tester.pumpWidget(buildApp(deviceTimeZoneId: 'Asia/Tokyo'));
     await tester.pump();
 
-    // 迁移未完成：显示按固定 fallback（UTC）分摊，而不是设备时区。近期活动
-    // 是以"今天"结束的近 7 天窗口；UTC 下今天仍是 9/22，9/23 属于窗口外的
-    // 未来日，页面不会渲染那一行。
-    expectDayValue(tester, '9月22日 · 周二', '30分00秒');
-    expect(find.text('9月23日 · 周三'), findsNothing);
+    // 迁移未完成：显示按固定 fallback（UTC）分摊，而不是设备时区；整段
+    // 30 分钟落在 9/22，9/23 的有效专注仍为 0。
+    await expectDayValue(tester, 22, '30分00秒');
+    await expectDayValue(tester, 23, '0分00秒');
 
     gate.complete(null);
     remote.fetchGate = null;
@@ -201,8 +204,8 @@ void main() {
     expect(remote.stored['user-a']?.displayName, '小林');
     final migrated = await tester.runAsync(() => profile.getProfile());
     expect(migrated?.displayTimeZoneId, 'Asia/Tokyo');
-    expectDayValue(tester, '9月23日 · 周三', '30分00秒');
-    expectDayValue(tester, '9月22日 · 周二', '0分00秒');
+    await expectDayValue(tester, 23, '30分00秒');
+    await expectDayValue(tester, 22, '0分00秒');
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
@@ -219,8 +222,8 @@ void main() {
     await tester.pumpWidget(buildApp(deviceTimeZoneId: 'America/Los_Angeles'));
     await pumpBoard(tester);
 
-    expectDayValue(tester, '9月23日 · 周三', '30分00秒');
-    expectDayValue(tester, '9月22日 · 周二', '0分00秒');
+    await expectDayValue(tester, 23, '30分00秒');
+    await expectDayValue(tester, 22, '0分00秒');
     final cached = await tester.runAsync(() => profile.getProfile());
     expect(cached?.displayTimeZoneId, 'Asia/Tokyo');
     expect(remote.initializeCalls, 0, reason: '已有账号值时不得再写入种子');
@@ -247,8 +250,8 @@ void main() {
     expect(cached?.displayTimeZoneId, 'Asia/Tokyo');
 
     // 有账号值后按东京分摊：整段落在 9/23。
-    expectDayValue(tester, '9月23日 · 周三', '30分00秒');
-    expectDayValue(tester, '9月22日 · 周二', '0分00秒');
+    await expectDayValue(tester, 23, '30分00秒');
+    await expectDayValue(tester, 22, '0分00秒');
 
     // 昵称未设置时，"我的"仍显示占位称呼而不是空白。
     await tester.tap(find.text('我的'));
@@ -289,8 +292,8 @@ void main() {
     // 返回看板：按新加坡（UTC+8）分摊，9/22 有 10 分钟、9/23 有 20 分钟。
     await tester.tap(find.text('看板'));
     await pumpBoard(tester);
-    expectDayValue(tester, '9月23日 · 周三', '20分00秒');
-    expectDayValue(tester, '9月22日 · 周二', '10分00秒');
+    await expectDayValue(tester, 23, '20分00秒');
+    await expectDayValue(tester, 22, '10分00秒');
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
@@ -337,7 +340,7 @@ void main() {
 
     await tester.pumpWidget(buildApp(deviceTimeZoneId: 'Asia/Tokyo'));
     await pumpBoard(tester);
-    expectDayValue(tester, '9月23日 · 周三', '30分00秒');
+    await expectDayValue(tester, 23, '30分00秒');
 
     await tester.pumpWidget(
       buildApp(
@@ -349,9 +352,9 @@ void main() {
       ),
     );
     await pumpBoard(tester);
-    expectDayValue(tester, '9月22日 · 周二', '30分00秒');
-    // 伦敦此时仍是 9/22，近 7 天窗口以 9/22 结束，9/23 不渲染。
-    expect(find.text('9月23日 · 周三'), findsNothing);
+    await expectDayValue(tester, 22, '30分00秒');
+    // 伦敦此时仍是 9/22：整段落在 9/22，9/23 的有效专注为 0。
+    await expectDayValue(tester, 23, '0分00秒');
     expect(remote.stored['user-a']?.displayTimeZoneId, 'Asia/Tokyo');
     expect(remote.stored['user-b']?.displayTimeZoneId, 'Europe/London');
 
@@ -360,32 +363,40 @@ void main() {
   });
 }
 
-/// 可见证据：某一天那一行显示的时长。只用页面文字，不依赖无障碍语义。
-void expectDayValue(WidgetTester tester, String label, String duration) {
-  final labelFinder = find.text(label);
-  expect(labelFinder, findsOneWidget, reason: '应显示日期 $label');
-  Element? rowElement;
-  tester.element(labelFinder).visitAncestorElements((ancestor) {
-    if (ancestor.widget is Padding) {
-      rowElement = ancestor;
-      return false;
-    }
-    return true;
-  });
-  expect(rowElement, isNotNull, reason: '$label 应在一天的活动行里');
-  final texts = <String>[];
-  void collect(Element element) {
-    final widget = element.widget;
-    if (widget is Text && widget.data != null) texts.add(widget.data!);
-    element.visitChildren(collect);
+/// 可见证据：点选热力月历中的某一天后，日期详情显示的有效专注时长。
+///
+/// 看板已把"近期专注活动"列表融合成一张热力月历，日期时长不再以列表行呈现，
+/// 而是落在同卡片的「日期详情」里；这里只读页面文字，不依赖无障碍语义。
+Future<void> expectDayValue(
+  WidgetTester tester,
+  int day,
+  String duration,
+) async {
+  final cell = find.byKey(ValueKey('board-focus-day-$day'));
+  if (cell.evaluate().isEmpty) {
+    await tester.scrollUntilVisible(
+      cell,
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byType(BoardPage),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+      maxScrolls: 40,
+    );
   }
-
-  rowElement!.visitChildren(collect);
-  expect(
-    texts,
-    contains(duration),
-    reason: '$label 所在行应显示 $duration，实际 $texts',
+  expect(cell, findsOneWidget, reason: '9 月 $day 日应出现在热力月历里');
+  await tester.ensureVisible(cell);
+  // 热力月历在看板首屏之下：ensureVisible 只改滚动位置，必须再走一帧布局，
+  // 点击坐标才是滚动后的真实位置。
+  await tester.pump();
+  await tester.tap(cell);
+  await tester.pump();
+  final detail = tester.widget<Text>(
+    find.byKey(const ValueKey('board-focus-day-duration')),
   );
+  expect(detail.data, duration, reason: '9 月 $day 日的有效专注');
 }
 
 /// 让真实数据库与流有机会推进，不依赖 pumpAndSettle（应用里有周期计时器）。

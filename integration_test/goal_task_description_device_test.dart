@@ -91,7 +91,8 @@ void main() {
         await tester.enterText(_field('描述（可选）'), _goalDescription);
         await _tap(tester, find.text('保存'));
 
-        await _tap(tester, find.text('添加任务'));
+        // 「添加任务」已移入目标长按菜单；0 任务目标用可点的空态引导行起手。
+        await _tap(tester, find.text('暂无任务，点击添加'));
         await tester.enterText(_field('任务名称'), '设备描述验收任务');
         await tester.enterText(_field('描述（可选）'), '  新增任务\r\n描述  ');
         await _tap(tester, find.text('保存'));

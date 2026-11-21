@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
+import 'package:pacta/src/national_focus/national_focus_shared_widgets.dart';
 import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 
@@ -295,7 +296,11 @@ void main() {
     // Strengthening management is only reachable from the card editor.
     expect(find.text('强化要求'), findsNothing);
     expect(find.text('记录'), findsOneWidget);
-    expect(find.textContaining('历史最高'), findsOneWidget);
+    // 连续天数只在名称旁的胶囊里出现一次，记录区不再重复写一遍。
+    expect(find.byTooltip('当前连续点亮 0 天'), findsOneWidget);
+    expect(find.byTooltip('历史最高连续点亮 0 天'), findsOneWidget);
+    expect(find.textContaining('当前连续'), findsNothing);
+    expect(find.textContaining('历史最高'), findsNothing);
     expect(find.textContaining('成功日'), findsNWidgets(2));
     expect(find.textContaining('内化进度'), findsOneWidget);
     expect(find.text('管理强化要求'), findsNothing);
@@ -947,7 +952,12 @@ void main() {
     expect(find.text('查看详情'), findsOneWidget);
     await tester.tap(find.text('查看详情'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('当前连续'), findsOneWidget);
+    // 详情页的连续天数只由名称旁的胶囊承担，记录区不重复。
+    expect(find.byType(NationalFocusStreakTags), findsOneWidget);
+    expect(find.textContaining('累计成功日'), findsOneWidget);
+    expect(find.byTooltip('当前连续点亮 0 天'), findsOneWidget);
+    expect(find.byTooltip('历史最高连续点亮 0 天'), findsOneWidget);
+    expect(find.textContaining('当前连续'), findsNothing);
     expect(find.byType(ExpansionTile), findsNothing);
     await tester.pageBack();
     await tester.pumpAndSettle();

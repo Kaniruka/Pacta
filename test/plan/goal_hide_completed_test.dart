@@ -160,7 +160,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('全部 3 项任务已完成并隐藏'), findsOneWidget);
-      expect(find.text('暂无任务，先添加一个可执行的下一步。'), findsNothing);
+      expect(find.text('暂无任务，点击添加'), findsNothing);
       expect(_inCard('季度复盘', find.text('显示已完成')), findsOneWidget);
 
       await tester.tap(_inCard('季度复盘', find.text('显示已完成')));
@@ -234,14 +234,14 @@ void main() {
       await harness.pump(tester);
       await openPlan(tester);
 
-      expect(find.text('添加任务'), findsOneWidget, reason: '默认展开');
+      expect(find.byTooltip('收起任务'), findsOneWidget, reason: '默认展开');
       await tester.longPress(find.text('唯一目标'));
       await tester.pumpAndSettle();
 
       expect(find.text('编辑目标'), findsOneWidget, reason: '原地长按弹出目标操作面板');
       expect(find.text('删除目标'), findsOneWidget);
       // 抬手不能被标题 InkWell 当成点按而折叠目标。
-      expect(find.text('添加任务'), findsOneWidget, reason: '目标保持展开');
+      expect(find.byTooltip('收起任务'), findsOneWidget, reason: '目标保持展开');
       expect(find.text('唯一任务'), findsOneWidget);
       expect(find.byType(AlertDialog), findsNothing);
       expect(tester.takeException(), isNull);
@@ -275,7 +275,7 @@ void main() {
       expect(find.text('编辑目标'), findsNothing, reason: '不应误触外层目标菜单');
       expect(find.byType(AlertDialog), findsNothing, reason: '抬手不应打开编辑弹窗');
       expect(find.text('任务名称'), findsNothing);
-      expect(find.text('添加任务'), findsOneWidget, reason: '目标保持展开');
+      expect(find.byTooltip('收起任务'), findsOneWidget, reason: '目标保持展开');
       expect(tester.takeException(), isNull);
     } finally {
       await harness.dispose(tester);

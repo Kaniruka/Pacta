@@ -150,19 +150,12 @@ class UnavailableFocusRemoteDataSource implements FocusRemoteDataSource {
 
 abstract interface class FocusRepository {
   Stream<List<FocusSession>> watchSessions();
-  Stream<List<FocusReconciliationCase>> watchFocusReconciliations();
   Stream<List<FocusClockReviewCase>> watchClockReviewCases();
   Future<List<FocusClockReviewCase>> getClockReviewCases();
   Future<void> deferClockReviewCase(String caseId);
   Future<void> resolveClockReviewCase({
     required String caseId,
     required FocusClockReviewDecision decision,
-  });
-  Future<List<FocusReconciliationCase>> getFocusReconciliations();
-  Future<void> resolveFocusReconciliation({
-    required String caseId,
-    required Map<String, FocusSessionReconciliationSelection> sessionSelections,
-    String? adoptedSessionId,
   });
 
   /// [timeZoneId] is the account display time zone resolved by the caller from
@@ -449,12 +442,6 @@ class LocalFocusRepository implements FocusRepository {
   }
 
   @override
-  Stream<List<FocusReconciliationCase>> watchFocusReconciliations() async* {
-    yield await getFocusReconciliations();
-    yield* _changes.stream.asyncMap((_) => getFocusReconciliations());
-  }
-
-  @override
   Future<List<FocusSession>> getSessions() async {
     await _settleDueAppointments();
     await _settleDueSessions();
@@ -464,348 +451,6 @@ class LocalFocusRepository implements FocusRepository {
               ..orderBy([(session) => OrderingTerm.desc(session.startedAt)]))
             .get();
     return [for (final row in rows) _sessionFromRow(row)];
-  }
-
-  @override
-  Future<List<FocusReconciliationCase>> getFocusReconciliations() async {
-    final sessions = await _getSessionsWithoutSettling();
-    if (sessions.isEmpty) return const [];
-    final sources = await _getSyncSources();
-    final sourceById = {for (final source in sources) source.sourceId: source};
-    final headsBySession = _focusSourceHeadGroups(
-      sources,
-      entityType: 'focus_session',
-    );
-    final conflictingIds = _conflictingFocusEntityIds(
-      sources,
-      entityType: 'focus_session',
-    );
-    final comparisonSessions = <FocusSession>[];
-    for (final session in sessions) {
-      final variants = [
-        for (final source in headsBySession[session.id] ?? const [])
-          _focusSessionFromJson(
-            jsonDecode(source.payload) as Map<String, dynamic>,
-          ),
-      ];
-      comparisonSessions.add(
-        variants.isEmpty
-            ? session
-            : _sessionWithUnionedIntervals(session, variants),
-      );
-    }
-
-    final includedIds = <String>{};
-    final cases = <FocusReconciliationCase>[];
-    for (final overlapping in _overlappingFocusSessionGroups(
-      comparisonSessions,
-    )) {
-      final groupIds = overlapping.map((session) => session.id).toSet();
-      final needsReview = overlapping.any(
-        (session) =>
-            session.isPendingReview ||
-            conflictingIds.contains(session.id) ||
-            session.reviewDispositionUpdatedAt != null ||
-            session.reviewDisposition == FocusRecordDisposition.duplicate,
-      );
-      if (!needsReview) continue;
-      includedIds.addAll(groupIds);
-      cases.add(
-        _reconciliationCase(
-          id: _reconciliationCaseId(groupIds),
-          sessions: [
-            for (final id in groupIds)
-              comparisonSessions.singleWhere((session) => session.id == id),
-          ],
-          headsBySession: headsBySession,
-          conflictingIds: conflictingIds,
-          sourceById: sourceById,
-        ),
-      );
-    }
-
-    for (final session in sessions) {
-      if (includedIds.contains(session.id)) continue;
-      if (!session.isPendingReview &&
-          !conflictingIds.contains(session.id) &&
-          session.reviewDispositionUpdatedAt == null &&
-          session.reviewDisposition != FocusRecordDisposition.duplicate) {
-        continue;
-      }
-      cases.add(
-        _reconciliationCase(
-          id: _reconciliationCaseId({session.id}),
-          sessions: [
-            comparisonSessions.singleWhere(
-              (candidate) => candidate.id == session.id,
-            ),
-          ],
-          headsBySession: headsBySession,
-          conflictingIds: conflictingIds,
-          sourceById: sourceById,
-        ),
-      );
-    }
-    cases.sort((left, right) {
-      if (left.isPendingReview != right.isPendingReview) {
-        return left.isPendingReview ? -1 : 1;
-      }
-      final leftAt = left.sessions
-          .map((entry) => entry.session.startedAt)
-          .reduce((a, b) => a.isBefore(b) ? a : b);
-      final rightAt = right.sessions
-          .map((entry) => entry.session.startedAt)
-          .reduce((a, b) => a.isBefore(b) ? a : b);
-      return rightAt.compareTo(leftAt);
-    });
-    return List.unmodifiable(cases);
-  }
-
-  FocusReconciliationCase _reconciliationCase({
-    required String id,
-    required List<FocusSession> sessions,
-    required Map<String, List<FocusSyncSource>> headsBySession,
-    required Set<String> conflictingIds,
-    required Map<String, FocusSyncSource> sourceById,
-  }) {
-    final sessionEntries = <FocusReconciliationSession>[];
-    for (final session in sessions) {
-      final heads = headsBySession[session.id] ?? const <FocusSyncSource>[];
-      final options = [
-        for (final source in heads)
-          FocusSessionSourceOption(
-            sourceId: source.sourceId,
-            deviceId: source.deviceId,
-            occurredAt: source.occurredAt,
-            session: _focusSessionFromJson(
-              jsonDecode(source.payload) as Map<String, dynamic>,
-            ),
-          ),
-      ]..sort((left, right) => left.occurredAt.compareTo(right.occurredAt));
-      final variants = options.map((option) => option.session).toList();
-      final displaySession = variants.isEmpty
-          ? session
-          : _sessionWithUnionedIntervals(session, variants);
-      final configSignatures = variants
-          .map(_focusConfigurationSignature)
-          .toSet();
-      final outcomeSignatures = variants.map(_focusOutcomeSignature).toSet();
-      sessionEntries.add(
-        FocusReconciliationSession(
-          session: displaySession,
-          availableSources: List.unmodifiable(options),
-          selectedConfigurationSource:
-              sourceById[session.configurationBasisSourceId ??
-                      (options.length == 1 ? options.single.sourceId : '')] ==
-                  null
-              ? null
-              : _sourceOption(
-                  sourceById[session.configurationBasisSourceId ??
-                      options.single.sourceId]!,
-                ),
-          selectedOutcomeSource:
-              sourceById[session.outcomeBasisSourceId ??
-                      (options.length == 1 ? options.single.sourceId : '')] ==
-                  null
-              ? null
-              : _sourceOption(
-                  sourceById[session.outcomeBasisSourceId ??
-                      options.single.sourceId]!,
-                ),
-          requiresConfigurationChoice:
-              conflictingIds.contains(session.id) &&
-              configSignatures.length > 1,
-          requiresOutcomeChoice:
-              conflictingIds.contains(session.id) &&
-              outcomeSignatures.length > 1,
-        ),
-      );
-    }
-    sessionEntries.sort((left, right) {
-      final byStart = left.session.startedAt.compareTo(right.session.startedAt);
-      return byStart == 0
-          ? left.session.id.compareTo(right.session.id)
-          : byStart;
-    });
-    return FocusReconciliationCase(id: id, sessions: sessionEntries);
-  }
-
-  FocusSessionSourceOption _sourceOption(FocusSyncSource source) =>
-      FocusSessionSourceOption(
-        sourceId: source.sourceId,
-        deviceId: source.deviceId,
-        occurredAt: source.occurredAt,
-        session: _focusSessionFromJson(
-          jsonDecode(source.payload) as Map<String, dynamic>,
-        ),
-      );
-
-  @override
-  Future<void> resolveFocusReconciliation({
-    required String caseId,
-    required Map<String, FocusSessionReconciliationSelection> sessionSelections,
-    String? adoptedSessionId,
-  }) async {
-    await lifecycleAccess.requireActive();
-    final cases = await getFocusReconciliations();
-    FocusReconciliationCase? reconciliation;
-    for (final candidate in cases) {
-      if (candidate.id == caseId) {
-        reconciliation = candidate;
-        break;
-      }
-    }
-    if (reconciliation == null) throw StateError('这组专注记录已不存在。');
-    if (!reconciliation.isPendingReview) return;
-
-    final sessionIds = reconciliation.sessions
-        .map((entry) => entry.session.id)
-        .toSet();
-    if (!sessionSelections.keys.toSet().containsAll(sessionIds)) {
-      throw StateError('请为这组中的每条专注记录选择核对结果。');
-    }
-    if (reconciliation.hasOverlappingSessions &&
-        (adoptedSessionId == null || !sessionIds.contains(adoptedSessionId))) {
-      throw StateError('请先选择实际采用的专注记录。');
-    }
-    if (!reconciliation.hasOverlappingSessions && adoptedSessionId != null) {
-      throw StateError('这组记录不需要选择重复记录。');
-    }
-
-    final sources = await _getSyncSources();
-    final headsBySession = _focusSourceHeadGroups(
-      sources,
-      entityType: 'focus_session',
-    );
-    final now = _now().toUtc();
-    final updates = <String, FocusSession>{};
-    final sourceUpdates = <({FocusSession session, List<String> parents})>[];
-
-    for (final entry in reconciliation.sessions) {
-      final currentRow = await _sessionRow(entry.session.id);
-      if (currentRow == null) throw StateError('专注记录已不存在。');
-      final current = _sessionFromRow(currentRow);
-      final options = entry.availableSources;
-      if (options.isEmpty) {
-        throw StateError('专注记录缺少可核对的原始来源。');
-      }
-      final selection = sessionSelections[entry.session.id]!;
-      final optionIds = options.map((option) => option.sourceId).toSet();
-      if (entry.requiresConfigurationChoice &&
-          (selection.configurationSourceId == null ||
-              !optionIds.contains(selection.configurationSourceId))) {
-        throw StateError('请从本组来源中选择配置依据。');
-      }
-      if (entry.requiresOutcomeChoice &&
-          (selection.outcomeSourceId == null ||
-              !optionIds.contains(selection.outcomeSourceId))) {
-        throw StateError('请从本组来源中选择结果依据。');
-      }
-
-      final configurationOption = _selectedSourceOption(
-        options,
-        requestedSourceId: selection.configurationSourceId,
-        rememberedSourceId: current.configurationBasisSourceId,
-        configurationSignature: _focusConfigurationSignature,
-      );
-      final outcomeOption = _selectedSourceOption(
-        options,
-        requestedSourceId: selection.outcomeSourceId,
-        rememberedSourceId: current.outcomeBasisSourceId,
-        configurationSignature: _focusOutcomeSignature,
-      );
-      final outcome = outcomeOption.session;
-      if (outcome.status != FocusSessionStatus.completed &&
-          outcome.status != FocusSessionStatus.failed) {
-        throw StateError('未结束的专注仍由原流程接续，不能在此核对结果。');
-      }
-      final intervals = _unionFocusIntervals([
-        for (final option in options) option.session,
-      ]);
-      final effectiveSeconds = intervals.isEmpty
-          ? outcome.effectiveSeconds
-          : intervals.fold<int>(
-              0,
-              (seconds, interval) => seconds + interval.durationSeconds,
-            );
-      final isAdopted =
-          !reconciliation.hasOverlappingSessions ||
-          entry.session.id == adoptedSessionId;
-      final updated = FocusSession(
-        id: current.id,
-        appointmentId: outcome.appointmentId,
-        taskId: configurationOption.session.taskId,
-        mode: configurationOption.session.mode,
-        durationSeconds: configurationOption.session.durationSeconds,
-        startedAt: outcome.startedAt,
-        endsAt: outcome.endsAt,
-        status: outcome.status,
-        completedAt: outcome.completedAt,
-        effectiveSeconds: effectiveSeconds,
-        completionType: outcome.completionType,
-        completionRuleText: outcome.completionRuleText,
-        pausedAt: outcome.pausedAt,
-        pausedSeconds: outcome.pausedSeconds,
-        pauseRuleText: outcome.pauseRuleText,
-        failureReason: outcome.failureReason,
-        effectiveIntervals: intervals,
-        reviewDisposition: isAdopted
-            ? FocusRecordDisposition.accepted
-            : FocusRecordDisposition.duplicate,
-        reviewDispositionUpdatedAt: now,
-        configurationBasisSourceId:
-            configurationOption.session.configurationBasisSourceId ??
-            configurationOption.sourceId,
-        outcomeBasisSourceId:
-            outcomeOption.session.outcomeBasisSourceId ??
-            outcomeOption.sourceId,
-      );
-      updates[updated.id] = updated;
-      sourceUpdates.add((
-        session: updated,
-        parents: headsBySession[updated.id]!
-            .map((source) => source.sourceId)
-            .toList(),
-      ));
-    }
-
-    await database.transaction(() async {
-      for (final session in updates.values) {
-        await _saveSession(session, queue: false);
-      }
-      for (final update in sourceUpdates) {
-        await _recordSyncSource(
-          entityType: 'focus_session',
-          entityId: update.session.id,
-          occurredAt: now,
-          parentSourceIds: update.parents,
-          payload: jsonEncode(_focusSessionToJson(update.session)),
-        );
-      }
-    });
-    await _reconcileFocusEffectsAfterDispositionChanges(updates: updates);
-    await _reconcileTaskFocusProgressFromSessions();
-    await _removeNodesForNonAcceptedSessionsAndRemote();
-    await _publish();
-  }
-
-  FocusSessionSourceOption _selectedSourceOption(
-    List<FocusSessionSourceOption> options, {
-    required String? requestedSourceId,
-    required String? rememberedSourceId,
-    required String Function(FocusSession) configurationSignature,
-  }) {
-    final selectedId = requestedSourceId ?? rememberedSourceId;
-    if (selectedId != null) {
-      for (final option in options) {
-        if (option.sourceId == selectedId) return option;
-      }
-    }
-    final signatures = options
-        .map((option) => configurationSignature(option.session))
-        .toSet();
-    if (signatures.length == 1) return options.first;
-    throw StateError('请明确选择专注记录的来源。');
   }
 
   @override
@@ -2331,11 +1976,14 @@ class LocalFocusRepository implements FocusRepository {
       }
       final clockSample = _sampleClock();
       final completedAt = isEarlyCompletion ? now : row.endsAt;
-      final intervals = _closeCurrentInterval(
+      var intervals = _closeCurrentInterval(
         row,
         completedAt,
         clockSample: clockSample,
       );
+      if (!isEarlyCompletion) {
+        intervals = _settledCountdownIntervals(row, intervals, completedAt);
+      }
       final seconds = _reliableIntervalSeconds(intervals);
       if (isEarlyCompletion && seconds <= 0) {
         throw StateError('至少需要有有效专注时间才能提前完成。');
@@ -2411,6 +2059,46 @@ class LocalFocusRepository implements FocusRepository {
       }
       await _queue('focus_session', sessionId, completedAt);
     });
+  }
+
+  /// 正常倒计时到点结算时，把末段区间的实测秒数补齐到会话预设时长。
+  ///
+  /// 单调时钟按秒向下取整：墙钟刚跨过 `endsAt` 时，单调时钟往往只走了
+  /// 1499.95 秒，1499 便被记成 24 分 59 秒；中途暂停再继续时，每一段的余量
+  /// 都会各自丢失，缺口还会叠加。到点完成的契约时长始终是
+  /// [db.FocusSession.durationSeconds]，所以只在墙钟确实走到 `endsAt` 时，
+  /// 把累计缺口补在末段区间上，让区间累加、会话有效秒数、节点与任务累计
+  /// 取同一个数。
+  ///
+  /// 下列情况一律不补偿，保持实测口径：
+  /// - 提前完成（下必为例）与主动放弃不走这个分支；
+  /// - 任何待审或排除区间在场时，实测秒数就是最终答案，绝不虚增到预设时长；
+  /// - 末段区间没有恰好结束在 `endsAt` 时，说明这次不是正常到点。
+  List<FocusTimeInterval> _settledCountdownIntervals(
+    db.FocusSession row,
+    List<FocusTimeInterval> intervals,
+    DateTime completedAt,
+  ) {
+    if (intervals.isEmpty) return intervals;
+    if (intervals.any(
+      (interval) =>
+          interval.isAwaitingClockReview || interval.excludeFromFocusProgress,
+    )) {
+      return intervals;
+    }
+    final lastIndex = intervals.lastIndexWhere(
+      (interval) => interval.endedAt != null,
+    );
+    if (lastIndex < 0) return intervals;
+    final last = intervals[lastIndex];
+    if (!last.endedAt!.isAtSameMomentAs(completedAt)) return intervals;
+    final deficit = row.durationSeconds - _reliableIntervalSeconds(intervals);
+    if (deficit <= 0) return intervals;
+    final settled = [...intervals];
+    settled[lastIndex] = last.copyWith(
+      measuredDurationSeconds: last.durationSeconds + deficit,
+    );
+    return settled;
   }
 
   @override
@@ -3841,6 +3529,13 @@ void _addIntervalByCalendarDay(
   if (end == null) return;
   var cursor = interval.startedAt.toUtc();
   if (!end.isAfter(cursor)) return;
+  // 区间要分摊的秒数以区间自身口径为准（measured/effective），墙钟起止只决定
+  // 这些秒数落到哪一天：到点结算的末段区间会被补齐到预设时长，若这里再用
+  // 墙钟差值重新取整，月历会比仪表盘少一秒（25 分 00 秒 / 24 分 59 秒）。
+  final intervalSeconds = interval.durationSeconds;
+  if (intervalSeconds <= 0) return;
+  final segments = <(String, int)>[];
+  var segmentMicroseconds = 0;
   while (cursor.isBefore(end)) {
     final localCursor = timezone.TZDateTime.from(cursor, location);
     final nextDay = timezone.TZDateTime(
@@ -3853,20 +3548,44 @@ void _addIntervalByCalendarDay(
         ? nextDay
         : cursor.add(const Duration(days: 1));
     final segmentEnd = end.isBefore(boundary) ? end : boundary;
-    final segmentSeconds = segmentEnd.difference(cursor).inSeconds;
-    if (segmentSeconds > 0) {
-      final key = _calendarDateKey(
-        localCursor.year,
-        localCursor.month,
-        localCursor.day,
-      );
-      secondsByDay.update(
-        key,
-        (seconds) => seconds + segmentSeconds,
-        ifAbsent: () => segmentSeconds,
-      );
+    final microseconds = segmentEnd.difference(cursor).inMicroseconds;
+    if (microseconds > 0) {
+      segments.add((
+        _calendarDateKey(localCursor.year, localCursor.month, localCursor.day),
+        microseconds,
+      ));
+      segmentMicroseconds += microseconds;
     }
     cursor = segmentEnd;
+  }
+  if (segments.isEmpty || segmentMicroseconds <= 0) return;
+  if (segments.length == 1) {
+    final key = segments.single.$1;
+    secondsByDay.update(
+      key,
+      (seconds) => seconds + intervalSeconds,
+      ifAbsent: () => intervalSeconds,
+    );
+    return;
+  }
+  // 跨日：按墙钟比例拆分，余数落在最后一段，保证分摊总额等于区间口径。
+  var remaining = intervalSeconds;
+  for (var index = 0; index < segments.length; index++) {
+    final (key, microseconds) = segments[index];
+    final share = index == segments.length - 1
+        ? remaining
+        : ((intervalSeconds * microseconds) ~/ segmentMicroseconds).clamp(
+            0,
+            remaining,
+          );
+    if (share > 0) {
+      secondsByDay.update(
+        key,
+        (seconds) => seconds + share,
+        ifAbsent: () => share,
+      );
+      remaining -= share;
+    }
   }
 }
 
@@ -3982,22 +3701,6 @@ int? _optionalJsonInt(Object? value) => value is num ? value.toInt() : null;
 
 String _clockReviewCaseId(String sessionId, int intervalIndex) =>
     '$sessionId:$intervalIndex';
-
-String _focusConfigurationSignature(FocusSession session) => _canonicalJson({
-  'task_id': session.taskId,
-  'mode': session.mode.storageValue,
-  'duration_seconds': session.durationSeconds,
-});
-
-String _focusOutcomeSignature(FocusSession session) => _canonicalJson({
-  'status': session.status.storageValue,
-  'completed_at': session.completedAt == null
-      ? null
-      : _utcIso8601(session.completedAt!),
-  'completion_type': session.completionType.storageValue,
-  'completion_rule_text': session.completionRuleText,
-  'failure_reason': session.failureReason,
-});
 
 List<FocusTimeInterval> _unionFocusIntervals(Iterable<FocusSession> sessions) {
   final intervals = <FocusTimeInterval>[];
@@ -4189,9 +3892,6 @@ bool _intervalsOverlap(
   }
   return false;
 }
-
-String _reconciliationCaseId(Set<String> sessionIds) =>
-    (sessionIds.toList()..sort()).join('|');
 
 Map<String, dynamic> _focusSessionToJson(FocusSession session) => {
   'id': session.id,
@@ -4938,10 +4638,6 @@ class UnavailableFocusRepository implements FocusRepository {
       Stream.value(null);
 
   @override
-  Stream<List<FocusReconciliationCase>> watchFocusReconciliations() =>
-      Stream.value(const []);
-
-  @override
   Stream<List<FocusClockReviewCase>> watchClockReviewCases() =>
       Stream.value(const []);
 
@@ -4956,17 +4652,6 @@ class UnavailableFocusRepository implements FocusRepository {
     required String caseId,
     required FocusClockReviewDecision decision,
   }) async {}
-
-  @override
-  Future<List<FocusReconciliationCase>> getFocusReconciliations() async =>
-      const [];
-
-  @override
-  Future<void> resolveFocusReconciliation({
-    required String caseId,
-    required Map<String, FocusSessionReconciliationSelection> sessionSelections,
-    String? adoptedSessionId,
-  }) => _unavailable();
 
   @override
   Stream<FocusDashboardMetrics> watchDashboardMetrics({

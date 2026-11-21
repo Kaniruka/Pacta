@@ -13,6 +13,7 @@ import '../schedules/schedule_repeat_editor.dart';
 import '../schedules/schedule_repository.dart';
 import '../tasks/task_models.dart';
 import '../theme/pacta_calendar_colors.dart';
+import '../ui/pacta_calendar_day_cell.dart';
 import '../ui/pacta_check_circle.dart';
 import '../ui/pacta_hold_action_reorder.dart';
 import 'calendar_almanac.dart';
@@ -478,6 +479,8 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     return Column(children: rows);
   }
 
+  /// 三层语义的日格：背景只表达业务（全部完成/有安排/放假日），选中与
+  /// 今天都只改描边，因此颜色永远不会被选区覆写；今天另有独立 '今' 角标。
   Widget _buildDayCell(
     BuildContext context,
     DateTime day,
@@ -494,13 +497,11 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     final hasPlans = state != _DayScheduleState.none;
     final allComplete = state == _DayScheduleState.allComplete;
     final hasIncomplete = state == _DayScheduleState.hasIncomplete;
-    // 背景色的唯一优先级：选中 > 当日安排全部完成 > 有安排 > 放假日兜底。
+    // 背景色的唯一优先级：当日安排全部完成 > 有安排 > 放假日兜底。选中与
+    // 今天都不参与背景，蓝/中性语义全部交给单层描边与 '今' 角标。
     final Color? background;
     final Color foreground;
-    if (selected) {
-      background = calendarColors.selectedBackground;
-      foreground = calendarColors.selectedForeground;
-    } else if (allComplete) {
+    if (allComplete) {
       background = calendarColors.allCompleteBackground;
       foreground = calendarColors.allCompleteForeground;
     } else if (hasPlans) {
@@ -513,23 +514,10 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
       background = null;
       foreground = colorScheme.onSurfaceVariant;
     }
-    final almanacColor = selected
-        ? calendarColors.selectedForeground
-        : holiday
+    final almanacColor = holiday
         ? calendarColors.holidayForeground
         : foreground;
-    final markerColor = selected
-        ? calendarColors.selectedForeground
-        : foreground;
-    // 今天用中性外框；选中且今天时外框保留今天，内嵌主蓝环让两种状态
-    // 同时可见。其它情况只画一条 1.5dp 外框。
-    final outerBorderColor = selected && today
-        ? calendarColors.todayBorder
-        : selected
-        ? calendarColors.selectedBorder
-        : today
-        ? calendarColors.todayBorder
-        : null;
+    final markerColor = foreground;
     final stateLabel = switch (state) {
       _DayScheduleState.none => '',
       _DayScheduleState.hasIncomplete => '，有安排',
@@ -537,118 +525,71 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     };
     final todayLabel = today ? '，今天' : '';
     final storageKey = _dayStorageKey(day);
-    return Semantics(
-      button: true,
-      selected: selected,
-      label:
-          '${day.month}月${day.day}日${info == null ? '' : ' ${info.shortLabel}'}$stateLabel$todayLabel',
-      child: InkWell(
-        key: ValueKey('plan-day-$storageKey'),
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => setState(() {
-          _selectedDay = day;
-          // 用户自己换了日子，就不再强调通知带来的那一条。
-          _clearHighlightedSchedule();
-        }),
-        child: Container(
-          // 定案：日期格第二行 48→64dp，短标签最多 4 字。
-          constraints: const BoxConstraints(minHeight: 64),
-          margin: const EdgeInsets.all(2),
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          foregroundDecoration: outerBorderColor == null
-              ? null
-              : BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: outerBorderColor, width: 1.5),
-                ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    '${day.day}',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: foreground,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  SizedBox(
-                    height: 16,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        if (info != null)
-                          Flexible(
-                            child: Text(
-                              info.shortLabel,
-                              maxLines: 1,
-                              softWrap: false,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: almanacColor,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
+    final Widget? marker = allComplete
+        ? ExcludeSemantics(
+            child: Icon(
+              Icons.check,
+              key: ValueKey('plan-day-check-$storageKey'),
+              size: 10,
+              color: markerColor,
+            ),
+          )
+        : hasIncomplete
+        ? ExcludeSemantics(
+            child: Container(
+              key: ValueKey('plan-day-dot-$storageKey'),
+              width: 5,
+              height: 5,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: markerColor,
               ),
-              if (selected && today)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: Container(
-                      key: ValueKey('plan-day-selected-ring-$storageKey'),
-                      margin: const EdgeInsets.all(3),
-                      foregroundDecoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(9),
-                        border: Border.all(
-                          color: calendarColors.selectedBorder,
-                          width: 1.5,
-                        ),
+            ),
+          )
+        : null;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // 窄窗优先保住 48dp 命中宽度；格子宽到 52 以上才让出 4dp 视觉间隙。
+        final gap = constraints.maxWidth >= 52 ? 2.0 : 0.0;
+        return Padding(
+          padding: EdgeInsets.all(gap),
+          child: PactaCalendarDayBox(
+            cellKey: ValueKey('plan-day-$storageKey'),
+            dayNumber: '${day.day}',
+            selected: selected,
+            today: today,
+            backgroundColor: background,
+            foregroundColor: foreground,
+            // 定案：日期格第二行 48→64dp，短标签最多 4 字。
+            minHeight: 64,
+            borderRadius: 12,
+            onTap: () => setState(() {
+              _selectedDay = day;
+              // 用户自己换了日子，就不再强调通知带来的那一条。
+              _clearHighlightedSchedule();
+            }),
+            subLabel: info == null
+                ? null
+                : Align(
+                    alignment: Alignment.center,
+                    child: Text(
+                      info.shortLabel,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: almanacColor,
                       ),
                     ),
                   ),
-                ),
-              if (hasIncomplete)
-                Positioned(
-                  top: 4,
-                  right: 4,
-                  child: ExcludeSemantics(
-                    child: Container(
-                      key: ValueKey('plan-day-dot-$storageKey'),
-                      width: 5,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: markerColor,
-                      ),
-                    ),
-                  ),
-                ),
-              if (allComplete)
-                Positioned(
-                  top: 2,
-                  right: 2,
-                  child: ExcludeSemantics(
-                    child: Icon(
-                      Icons.check,
-                      key: ValueKey('plan-day-check-$storageKey'),
-                      size: 10,
-                      color: markerColor,
-                    ),
-                  ),
-                ),
-            ],
+            topRightMarker: marker,
+            semanticLabel:
+                '${day.month}月${day.day}日'
+                '${info == null ? '' : ' ${info.shortLabel}'}'
+                '$stateLabel$todayLabel',
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

@@ -738,7 +738,19 @@ class NationalFocusCardDetailPage extends StatelessWidget {
             children: [
               Text(card.state.label, style: theme.textTheme.labelMedium),
               const SizedBox(height: 6),
-              Text(card.name, style: theme.textTheme.headlineSmall),
+              // 名称与连续点亮胶囊同排：短名称时胶囊紧跟右侧，长名称自动换行。
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 6,
+                children: [
+                  Text(card.name, style: theme.textTheme.headlineSmall),
+                  NationalFocusStreakTags(
+                    currentConsecutiveDays: card.currentConsecutiveDays,
+                    bestConsecutiveDays: card.bestConsecutiveDays,
+                  ),
+                ],
+              ),
               const SizedBox(height: 22),
               NationalFocusFieldText(
                 label: ruleLabel,
@@ -751,7 +763,8 @@ class NationalFocusCardDetailPage extends StatelessWidget {
               const SizedBox(height: 24),
               Text('记录', style: theme.textTheme.titleSmall),
               const SizedBox(height: 4),
-              _NationalFocusRecordSummary(card: card),
+              // 连续天数已在名称旁的胶囊里，记录区只留累计成功日与内化进度。
+              _NationalFocusRecordSummary(card: card, showStreaks: false),
               if (cascadeSourceLabel != null) ...[
                 const SizedBox(height: 16),
                 _CascadeStatusNote(
@@ -815,9 +828,15 @@ class _CascadeStatusNote extends StatelessWidget {
 }
 
 class _NationalFocusRecordSummary extends StatelessWidget {
-  const _NationalFocusRecordSummary({required this.card});
+  const _NationalFocusRecordSummary({
+    required this.card,
+    this.showStreaks = true,
+  });
 
   final NationalFocusCard card;
+
+  /// 详情页名称旁已用 [NationalFocusStreakTags] 展示连续天数，记录区不再重复。
+  final bool showStreaks;
 
   @override
   Widget build(BuildContext context) {
@@ -826,8 +845,10 @@ class _NationalFocusRecordSummary extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          '当前连续 ${card.currentConsecutiveDays} 天 · 历史最高 '
-          '${card.bestConsecutiveDays} 天 · 成功日 ${card.successfulDays} 天',
+          showStreaks
+              ? '当前连续 ${card.currentConsecutiveDays} 天 · 历史最高 '
+                    '${card.bestConsecutiveDays} 天 · 成功日 ${card.successfulDays} 天'
+              : '累计成功日 ${card.successfulDays} 天',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 8),

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/ui/pacta_check_circle.dart';
+import 'package:pacta/src/ui/pacta_page_header.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart' show PactaDatabase;
@@ -28,9 +29,31 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('看板'), findsWidgets);
-    expect(find.text('今天先做什么'), findsOneWidget);
+    // 页头标题与底部导航同名：只认页头里的那一处。
+    expect(
+      find.descendant(
+        of: find.byType(PactaPageHeader),
+        matching: find.text('看板'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('专注与国策'), findsOneWidget);
+    // 没有置顶目标时整套「置顶目标」区块与空卡片都不渲染，
+    // 今天没有安排的空态落在融合卡的日期详情里。
+    expect(find.text('置顶目标'), findsNothing);
+    expect(find.text('还没有置顶目标'), findsNothing);
     expect(find.text('今天还没有安排。'), findsOneWidget);
-    expect(find.text('还没有置顶目标'), findsOneWidget);
+    // 融合卡直接贴着页头：上方没有残留的空区块死空间。
+    expect(
+      tester
+          .getRect(find.byKey(const ValueKey('board-focus-national-card')))
+          .top,
+      moreOrLessEquals(
+        tester.getRect(find.byType(PactaPageHeader)).bottom,
+        epsilon: 0.5,
+      ),
+      reason: '无置顶目标时融合卡直接位于页头下方',
+    );
 
     await tester.tap(find.text('计划'));
     await tester.pumpAndSettle();
@@ -74,7 +97,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('发布版本'), findsOneWidget);
 
-    await tester.tap(find.text('添加任务'));
+    // 「添加任务」已移入目标长按菜单；0 任务目标用可点的空态引导行起手。
+    await tester.tap(find.text('暂无任务，点击添加'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, '检查构建');
     await tester.tap(find.text('保存'));

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/ui/pacta_check_circle.dart';
+import 'package:pacta/src/ui/pacta_page_header.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
@@ -135,10 +136,11 @@ Future<void> _createGoal(WidgetTester tester, String title) async {
   await tester.pumpAndSettle();
 }
 
+/// 0 任务目标用可点的空态引导行起手：「添加任务」已移入目标长按菜单。
 Future<void> _addTask(WidgetTester tester, String title) async {
-  await tester.ensureVisible(find.text('添加任务'));
+  await tester.ensureVisible(find.text('暂无任务，点击添加'));
   await tester.pumpAndSettle();
-  await tester.tap(find.text('添加任务'));
+  await tester.tap(find.text('暂无任务，点击添加'));
   await tester.pumpAndSettle();
   await tester.enterText(_field('任务名称'), title);
   await tester.tap(find.text('保存'));
@@ -230,7 +232,14 @@ void main() {
 
       await _switchDestination(tester, '看板');
       expect(find.byType(BoardPage), findsOneWidget);
-      expect(find.text('今天先做什么'), findsOneWidget);
+      // 看板标题改回「看板」：底部导航也有同名文案，必须精确到页头。
+      expect(
+        find.descendant(
+          of: find.byType(PactaPageHeader),
+          matching: find.text('看板'),
+        ),
+        findsOneWidget,
+      );
     } finally {
       await harness.dispose(tester);
     }
@@ -535,7 +544,8 @@ void main() {
       expect(find.text('整理素材'), findsNothing, reason: '看板不展开任务列表');
       expect(find.text('添加任务'), findsNothing);
       expect(find.byTooltip('开始专注'), findsNothing);
-      expect(find.text('近期专注活动'), findsOneWidget);
+      // 原「国策状态」与「近期专注活动」融合为一张「专注与国策」卡片。
+      expect(find.text('专注与国策'), findsOneWidget);
 
       await tester.tap(find.text('打开计划'));
       await tester.pumpAndSettle();

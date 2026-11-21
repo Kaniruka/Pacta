@@ -106,9 +106,22 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // 看板只保留摘要：国策状态与专注热力融合成「专注与国策」。
+      expect(find.text('专注与国策'), findsOneWidget);
+      expect(find.text('今日国策状态'), findsOneWidget);
+      expect(find.text('点亮 0'), findsOneWidget);
+      expect(find.text('待确认 1'), findsOneWidget);
+      expect(find.text('熄灭 0'), findsOneWidget);
+
+      // 任务与「开始专注」只在计划页。
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text('计划'),
+        ),
+      );
+      await tester.pumpAndSettle();
       expect(find.text('设备验收任务'), findsOneWidget);
-      expect(find.text('国策状态'), findsOneWidget);
-      expect(find.text('点亮 0 · 确认 1 · 熄灭 0'), findsOneWidget);
       expect(find.textContaining('已专注 13分00秒'), findsOneWidget);
 
       await tester.ensureVisible(find.byTooltip('开始专注'));
@@ -129,8 +142,20 @@ void main() {
 
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
-      await tester.ensureVisible(find.text('打开国策树'));
-      await tester.tap(find.text('打开国策树'));
+      // 回到看板：今日国策状态整卡可点，直达国策树。
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text('看板'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('board-today-national-focus')),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey('board-today-national-focus')),
+      );
       await tester.pumpAndSettle();
       expect(find.text('全部确认 (1)'), findsOneWidget);
     } finally {

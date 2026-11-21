@@ -112,6 +112,71 @@ void main() {
     await h.close(tester);
   });
 
+  testWidgets('输入框在上、5/10/15 档位严格单排，说明卡精简为双行 + 行内 ⓘ', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final h = _Fixture();
+    await h.seed();
+    await h.mount(tester);
+
+    await tester.tap(find.byTooltip('开始专注'));
+    await tester.pumpAndSettle();
+
+    final input = tester.getRect(_preparationField());
+    final chips = [
+      for (final minutes in [5, 10, 15])
+        tester.getRect(find.widgetWithText(ChoiceChip, '$minutes 分钟')),
+    ];
+    for (final chip in chips) {
+      expect(
+        input.bottom,
+        lessThanOrEqualTo(chip.top),
+        reason: '准备时长输入框在快捷档位之上',
+      );
+    }
+    // 360dp 弹窗内容区约 232dp：三枚档位必须严格同排、等宽、不折行。
+    expect(
+      chips.map((rect) => rect.top).toSet(),
+      hasLength(1),
+      reason: '三枚档位同一行',
+    );
+    expect(chips.map((rect) => rect.bottom).toSet(), hasLength(1));
+    for (final chip in chips) {
+      expect(chip.width, closeTo(chips.first.width, 0.5), reason: '三枚档位等宽');
+    }
+    final content = tester.getRect(
+      find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.byType(SingleChildScrollView),
+      ),
+    );
+    expect(chips.first.left, greaterThanOrEqualTo(content.left));
+    expect(chips.last.right, lessThanOrEqualTo(content.right));
+    expect(tester.takeException(), isNull);
+
+    // 说明卡不再有标题行与 48dp 图标行，只剩两行事实 + 行内 ⓘ。
+    expect(find.text('本场准备说明'), findsNothing);
+    expect(find.text('触发信号'), findsOneWidget);
+    expect(find.text('专注标志'), findsOneWidget);
+    final info = find.byKey(const ValueKey('focus-setup-instructions-info'));
+    expect(info, findsOneWidget);
+    final glyph = find.descendant(
+      of: info,
+      matching: find.byIcon(Icons.info_outline),
+    );
+    expect(glyph, findsOneWidget);
+    expect(tester.widget<Icon>(glyph).size, 16, reason: '行内图标与辅助文本同级');
+
+    // 整张卡片就是提示的命中区：点开即可读到完整规则。
+    await tester.tap(info);
+    await tester.pumpAndSettle();
+    expect(find.text(focusSetupInstructionsMessage), findsOneWidget);
+    Tooltip.dismissAllToolTips();
+    await tester.pumpAndSettle();
+    await h.close(tester);
+  });
+
   testWidgets('准备时长越界或非整数时就地拒绝，7 分钟自填边界可正常落库', (tester) async {
     final h = _Fixture();
     await h.seed();

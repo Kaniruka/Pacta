@@ -15,6 +15,8 @@ import '../support/fake_auth_repository.dart';
 const _sessionStrip = ValueKey('focus-recovery-session');
 const _chainTable = ValueKey('focus-chain-table');
 const _historyEntry = ValueKey('focus-history-entry');
+const _startBar = ValueKey('focus-start-bar');
+const _startBarCard = ValueKey('focus-task-picker-entry');
 
 void main() {
   testWidgets('进行中恢复条是圆角容器（无左竖条），与统计表相隔 12dp', (tester) async {
@@ -42,6 +44,50 @@ void main() {
         tester.getRect(find.byKey(_chainTable)).top -
         tester.getRect(strip).bottom;
     expect(gap, PactaSpacing.md, reason: '恢复条与统计表相隔 12dp');
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('底部选择任务栏是四周 20dp 圆角、带左右 gutter 与底部边距的悬浮卡片', (tester) async {
+    final fixture = await _Fixture.create();
+    addTearDown(fixture.dispose);
+    await _mount(tester, fixture);
+    await _openDestination(tester, '专注链');
+
+    final barFinder = find.byKey(_startBar);
+    expect(barFinder, findsOneWidget);
+    final card = tester.widget<Material>(barFinder);
+    expect(card.elevation, 3);
+    expect(card.clipBehavior, Clip.antiAlias);
+    final radius = card.borderRadius!.resolve(TextDirection.ltr);
+    for (final corner in [
+      radius.topLeft,
+      radius.topRight,
+      radius.bottomLeft,
+      radius.bottomRight,
+    ]) {
+      expect(
+        corner,
+        const Radius.circular(PactaSpacing.cardRadius),
+        reason: '四周统一 20dp 圆角，不再是只抬顶部的通栏',
+      );
+    }
+
+    // 悬浮几何：左右各留一档 gutter，底部再留 12dp，与导航栏不贴边。
+    final bar = tester.getRect(barFinder);
+    expect(bar.left, PactaSpacing.lg);
+    expect(bar.right, 420 - PactaSpacing.lg);
+    final navigation = tester.getRect(find.byType(NavigationBar));
+    expect(
+      navigation.top - bar.bottom,
+      PactaSpacing.md,
+      reason: '悬浮卡片与底部导航之间保留 12dp',
+    );
+    expect(
+      tester.getRect(find.byKey(_startBarCard)).width,
+      lessThan(bar.width),
+      reason: '按钮不再通栏贴边',
+    );
     expect(tester.takeException(), isNull);
     await _disposeWidget(tester);
   });

@@ -120,15 +120,15 @@ void main() {
       );
 
       Color? cellColor(String ymd) {
-        final container = tester.widget<Container>(
+        final ink = tester.widget<Ink>(
           find
               .descendant(
                 of: find.byKey(ValueKey('plan-day-$ymd')),
-                matching: find.byType(Container),
+                matching: find.byType(Ink),
               )
               .first,
         );
-        return (container.decoration as BoxDecoration?)?.color;
+        return (ink.decoration as BoxDecoration?)?.color;
       }
 
       // 02-18 放假但非选中日、02-14 补班、02-25 普通日（选中日是 02-17）。

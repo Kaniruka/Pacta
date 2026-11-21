@@ -7,6 +7,7 @@ import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:pacta/src/ui/pacta_page_header.dart';
 
 import '../support/fake_auth_repository.dart';
 
@@ -125,6 +126,18 @@ void main() {
           _top(tester, find.text('甲目标')),
           lessThan(_top(tester, find.text('乙目标'))),
         );
+        // 工单 09 / #3：间距由列表的 itemSpacing 承担，卡片零外边距，
+        // 长按提起的高亮描边因此严格贴合 20dp 圆角。
+        final firstCard = find.byKey(ValueKey('board-pinned-goal-${first.id}'));
+        final secondCard = find.byKey(
+          ValueKey('board-pinned-goal-${second.id}'),
+        );
+        expect(
+          tester.getTopLeft(secondCard).dy - tester.getBottomLeft(firstCard).dy,
+          8,
+          reason: '置顶目标之间是 itemSpacing 的 8dp，不是卡片 margin',
+        );
+        expect(tester.widget<Card>(firstCard).margin, EdgeInsets.zero);
 
         await _dragUntilReordered(
           tester,
@@ -169,8 +182,22 @@ void main() {
       await tester.tap(find.text('取消置顶'));
       await tester.pumpAndSettle();
       expect((await harness.tasks.getGoals()).single.isPinned, isFalse);
-      expect(find.text('还没有置顶目标'), findsOneWidget);
+      // 空置顶目标不再有占位：标题、管理入口与「还没有置顶目标」空卡片
+      // 全部消失，融合卡直接接管页头下方。
+      expect(find.text('还没有置顶目标'), findsNothing);
+      expect(find.text('置顶目标'), findsNothing);
       expect(find.text('发布'), findsNothing);
+      expect(find.text('专注与国策'), findsOneWidget);
+      expect(
+        tester
+            .getRect(find.byKey(const ValueKey('board-focus-national-card')))
+            .top,
+        moreOrLessEquals(
+          tester.getRect(find.byType(PactaPageHeader)).bottom,
+          epsilon: 0.5,
+        ),
+        reason: '无置顶目标时融合卡紧贴页头，没有多余死空间',
+      );
       expect(tester.takeException(), isNull);
     } finally {
       await harness.dispose(tester);

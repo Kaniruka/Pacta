@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart' show FontLoader, rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
@@ -13,6 +15,8 @@ import 'package:pacta/src/profile/profile_edit_page.dart';
 import 'package:pacta/src/profile/profile_models.dart';
 import 'package:pacta/src/profile/profile_overview.dart';
 import 'package:pacta/src/profile/profile_repository.dart';
+import 'package:pacta/src/theme/pacta_theme.dart';
+import 'package:pacta/src/ui/pacta_grouped_list.dart';
 
 class _FakeProfileRepository implements ProfileRepository {
   _FakeProfileRepository({ProfileAccount? account})
@@ -563,7 +567,7 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.text('选择图片'));
+    await tester.tap(find.text('选择头像'));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('5 MB'), findsOneWidget);
@@ -582,7 +586,7 @@ void main() {
     await tester.pump();
 
     await tester.runAsync(() async {
-      await tester.tap(find.text('选择图片'));
+      await tester.tap(find.text('选择头像'));
       await tester.pump();
       await Future<void>.delayed(const Duration(milliseconds: 50));
     });
@@ -602,6 +606,48 @@ void main() {
 
     expect(repository.saveCalls, 1);
     expect(repository.lastSavedAvatar?.mimeType, 'image/png');
+  });
+
+  testWidgets('头像只留单入口，移除头像从同一操作面板完成', (tester) async {
+    final repository = _FakeProfileRepository(
+      account: ProfileAccount(
+        userId: 'user-a',
+        displayName: '小林',
+        avatar: ProfileAvatar(bytes: _onePixelPng, mimeType: 'image/png'),
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProfileEditPage(
+          repository: repository,
+          avatarPicker: _FakeAvatarPicker(_onePixelPng),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 旧的三个平铺按钮已经收成一个入口：页面上只有「更换头像」。
+    expect(find.text('更换头像'), findsOneWidget);
+    expect(find.text('重新裁剪'), findsNothing);
+    expect(find.text('移除头像'), findsNothing);
+
+    await tester.tap(find.text('更换头像'));
+    await tester.pumpAndSettle();
+    expect(find.text('选择新图片'), findsOneWidget);
+    expect(find.text('重新裁剪'), findsOneWidget);
+    expect(find.text('移除头像'), findsOneWidget);
+
+    await tester.tap(find.text('移除头像'));
+    await tester.pumpAndSettle();
+    expect(find.text('选择头像'), findsOneWidget, reason: '移除后入口回到选择态');
+
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(repository.saveCalls, 1);
+    expect(repository.lastClearAvatar, isTrue);
+    expect(repository.lastSavedAvatar, isNull);
+    expect((await repository.getProfile()).avatar, isNull);
   });
 
   testWidgets('保存失败停留在编辑页并可重试同步', (tester) async {
@@ -701,7 +747,21 @@ void main() {
     }
     expect(find.textContaining('跟随设备'), findsNothing);
     expect(find.textContaining('北京 · Asia/Shanghai'), findsOneWidget);
-    expect(find.textContaining('北京时间 04:00'), findsOneWidget);
+    // 时区摘要严格单行；时区 ID 与结算规则收进行内 ⓘ 的提示里。
+    final zoneTooltip = tester.widget<Tooltip>(
+      find.ancestor(
+        of: find.byIcon(Icons.info_outline),
+        matching: find.byType(Tooltip),
+      ),
+    );
+    expect(zoneTooltip.triggerMode, TooltipTriggerMode.tap);
+    expect(zoneTooltip.message, contains('Asia/Shanghai'));
+    expect(zoneTooltip.message, contains('北京时间 04:00'));
+    expect(
+      tester.widget<Text>(find.text('北京 · Asia/Shanghai')).maxLines,
+      1,
+      reason: '摘要不得折成两行',
+    );
 
     await tester.tap(find.text('东京'));
     await tester.pump();
@@ -742,5 +802,73 @@ void main() {
     // 没有改动时区时，保存请求会省略时区（null=保留），因此断言账号最终值
     // 保持 Berlin，而不是要求一个可选参数被重新发送。
     expect((await repository.getProfile()).displayTimeZoneId, 'Europe/Berlin');
+  });
+
+  testWidgets('360×800 下选择洛杉矶后摘要完整显示、贴右缘且无异常', (tester) async {
+    // 组件测试默认字体每个字形都按 1em 渲染，量不出真实排版；先加载账号
+    // 资料页真正使用的 MiSans，再按 360dp 真机宽度断言。
+    await tester.runAsync(() async {
+      final loader = FontLoader('MiSans')
+        ..addFont(rootBundle.load('assets/fonts/MiSans-Regular.ttf'));
+      await loader.load();
+    });
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final repository = _FakeProfileRepository(
+      account: const ProfileAccount(
+        userId: 'user-a',
+        displayTimeZoneId: 'Asia/Shanghai',
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: pactaTheme(Brightness.light),
+        home: ProfileEditPage(
+          repository: repository,
+          avatarPicker: _FakeAvatarPicker(null),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('洛杉矶'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('洛杉矶'));
+    await tester.pumpAndSettle();
+
+    const summary = '洛杉矶 · America/Los_Angeles';
+    expect(find.text(summary), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.text(summary)).maxLines,
+      1,
+      reason: '摘要仍然严格单行',
+    );
+    // 不再被 50%/50% 均分腰斩：360dp 下完整渲染，不出现省略号。
+    final paragraph = tester.renderObject<RenderParagraph>(find.text(summary));
+    expect(
+      paragraph.didExceedMaxLines,
+      isFalse,
+      reason: '360dp 下摘要必须完整显示，不能提前省略',
+    );
+    // 贴右缘：ⓘ 的右边缘与分区标题内容区右缘重合（旧实现停在 50% 分界处）。
+    final headerRect = tester.getRect(find.byType(PactaSectionHeader));
+    expect(
+      tester.getRect(find.byIcon(Icons.info_outline)).right,
+      moreOrLessEquals(headerRect.right - 4, epsilon: 0.01),
+      reason: '摘要（含 ⓘ）必须贴齐标题内容区右缘',
+    );
+    // 拿到完整固有宽度：旧实现只给 (312-8)/2-4-18 = 134dp，会截断到 134。
+    expect(
+      paragraph.size.width,
+      moreOrLessEquals(
+        paragraph.getMaxIntrinsicWidth(double.infinity),
+        epsilon: 0.5,
+      ),
+      reason: '摘要未被提前截断，拿到了自己的完整宽度',
+    );
+    expect(paragraph.size.width, greaterThan(150));
+    expect(tester.takeException(), isNull);
   });
 }

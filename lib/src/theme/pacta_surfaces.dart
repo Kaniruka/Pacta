@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 
 /// 页面 / 卡片 / 底部固定操作区三层表面的语义令牌。
 ///
-/// 只靠 `surfaceContainerLow` 一档色差，在亮暗两套主题里都不足以分开层级：
-/// 页面最低、卡片抬起一层、操作区再抬起一层。亮色主题用极浅投影补足边界，
-/// 暗色主题投影不可见，靠色阶本身区分。卡片不再靠描边表达层级。
+/// Google 服务式 Material 3 扁平层级：浅蓝灰页面、纯白卡片、零投影边界。
+/// 卡片靠底色差与 20dp 圆角分开，不再用投影表达层级；只有底部固定操作区
+/// 保留一层很浅的投影，避免与可滚动内容粘连。暗色主题沿用同层色阶，
+/// 投影对暗色几乎不可见，层级仍由色差承担。
 @immutable
 class PactaSurfaces extends ThemeExtension<PactaSurfaces> {
   const PactaSurfaces({
@@ -19,16 +20,16 @@ class PactaSurfaces extends ThemeExtension<PactaSurfaces> {
   /// 页面底色（Scaffold 背景）。
   final Color page;
 
-  /// 卡片底色，比页面亮一档。
+  /// 卡片底色，与页面明确分层。
   final Color card;
 
-  /// 底部固定操作区底色，比卡片再亮/抬一档。
+  /// 底部固定操作区底色，与卡片同层或再抬一档。
   final Color actionBar;
 
   /// 同层之间的细分隔线，不用来表达卡片边界。
   final Color hairline;
 
-  /// 亮色主题的卡片投影；暗色主题为全透明。
+  /// 卡片投影；Google 扁平卡片为全透明，保留字段供页面兼容调用。
   final Color cardShadow;
 
   /// 底部操作区与导航栏的投影。
@@ -38,16 +39,16 @@ class PactaSurfaces extends ThemeExtension<PactaSurfaces> {
     page: Color(0xfff2f6fc),
     card: Color(0xffffffff),
     actionBar: Color(0xffffffff),
-    hairline: Color(0xffd9e2ef),
-    cardShadow: Color(0x14000000),
+    hairline: Color(0xffe3e8ef),
+    cardShadow: Color(0x00000000),
     actionBarShadow: Color(0x1f000000),
   );
 
   static const PactaSurfaces dark = PactaSurfaces(
-    page: Color(0xff0d1015),
+    page: Color(0xff0e1116),
     card: Color(0xff1c2129),
-    actionBar: Color(0xff232932),
-    hairline: Color(0xff2f3641),
+    actionBar: Color(0xff252b36),
+    hairline: Color(0xff2d333d),
     cardShadow: Color(0x00000000),
     actionBarShadow: Color(0x66000000),
   );

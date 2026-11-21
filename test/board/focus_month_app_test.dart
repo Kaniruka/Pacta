@@ -124,9 +124,15 @@ void main() {
         ),
         size: const Size(360, 800),
       );
-      expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
+      // 融合卡片把 11 月 12 日的 13 分钟落在日期详情里。
+      expect(find.text('11 月 12 日 · 今日'), findsOneWidget);
+      expect(find.text('13分00秒'), findsOneWidget);
 
-      await tester.tap(find.text('打开月历'));
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('board-focus-open-month')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('board-focus-open-month')));
       await tester.pumpAndSettle();
 
       expect(find.byType(FocusMonthPage), findsOneWidget);
@@ -185,8 +191,13 @@ void main() {
         size: const Size(360, 800),
       );
 
-      expect(find.text('今天 · 1 项安排'), findsOneWidget);
+      // 安排已融合进融合卡的日期详情：项数标题在卡内，不再是独立卡片。
+      expect(find.text('今日安排 · 1 项'), findsOneWidget);
       expect(find.text('今天的取快递'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('board-focus-schedule-dot-12')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
@@ -255,7 +266,7 @@ void main() {
 
       await tester.tap(find.text('看板'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('打开月历'));
+      await tester.tap(find.byKey(const ValueKey('board-focus-open-month')));
       await tester.pumpAndSettle();
       expect(find.text('2026年11月'), findsOneWidget);
       expect(find.text('本月暂无有效投入。'), findsOneWidget);
@@ -388,7 +399,7 @@ void main() {
         ),
         size: const Size(360, 800),
       );
-      expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
+      expect(find.text('13分00秒'), findsOneWidget);
 
       await tester.pumpWidget(
         appHost(
@@ -401,7 +412,7 @@ void main() {
       );
       await tester.pump();
       expect(
-        find.textContaining('累计有效专注 13分00秒'),
+        find.text('13分00秒'),
         findsNothing,
         reason: '切账号后等待新投影时，不能继续显示上一账号的数字',
       );
@@ -421,18 +432,18 @@ void main() {
       await tester.pump();
       profile.emit('Asia/Shanghai');
       await tester.pumpAndSettle();
-      expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
+      expect(find.text('13分00秒'), findsOneWidget);
 
       profile.emit('America/New_York');
       for (var frame = 0; frame < 10; frame++) {
         await tester.pump();
         final switched =
             zoneFocus.requestedTimeZoneIds.contains('America/New_York') &&
-            find.textContaining('累计有效专注 13分00秒').evaluate().isEmpty;
+            find.text('13分00秒').evaluate().isEmpty;
         if (switched) break;
       }
       expect(zoneFocus.requestedTimeZoneIds, contains('America/New_York'));
-      expect(find.textContaining('累计有效专注 13分00秒'), findsNothing);
+      expect(find.text('13分00秒'), findsNothing);
       expect(tester.takeException(), isNull);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
@@ -487,40 +498,51 @@ class _MutableProfileRepository extends UnavailableProfileRepository {
 }
 
 class _ZoneScriptedFocusRepository extends UnavailableFocusRepository {
-  final _silent = StreamController<FocusDashboardMetrics>.broadcast();
+  final _silent = StreamController<FocusMonthMetrics>.broadcast();
   final requestedTimeZoneIds = <String>[];
 
   @override
-  Stream<FocusDashboardMetrics> watchDashboardMetrics({
+  Stream<FocusMonthMetrics> watchMonthMetrics({
     required String timeZoneId,
+    required DateTime month,
   }) {
     requestedTimeZoneIds.add(timeZoneId);
     if (timeZoneId != 'Asia/Shanghai') return _silent.stream;
-    return Stream.value(
-      FocusDashboardMetrics(
-        focusProgressSecondsByTask: const {},
-        recentActivity: [
-          FocusActivityDay(
-            date: DateTime.utc(2026, 11, 12),
-            activeSeconds: 780,
-          ),
-        ],
-        totalAcceptedFocusSeconds: 780,
-        displayTimeZoneId: timeZoneId,
-      ),
-    );
+    return Stream.value(_monthMetrics(month: month, timeZoneId: timeZoneId));
   }
 
   void disposeControllers() => unawaited(_silent.close());
 }
 
 class _SilentFocusRepository extends UnavailableFocusRepository {
-  final _dashboard = StreamController<FocusDashboardMetrics>.broadcast();
+  final _month = StreamController<FocusMonthMetrics>.broadcast();
 
   @override
-  Stream<FocusDashboardMetrics> watchDashboardMetrics({
+  Stream<FocusMonthMetrics> watchMonthMetrics({
     required String timeZoneId,
-  }) => _dashboard.stream;
+    required DateTime month,
+  }) => _month.stream;
 
-  void disposeControllers() => unawaited(_dashboard.close());
+  void disposeControllers() => unawaited(_month.close());
+}
+
+FocusMonthMetrics _monthMetrics({
+  required DateTime month,
+  String timeZoneId = 'Asia/Shanghai',
+}) {
+  final start = DateTime.utc(month.year, month.month);
+  final count = DateTime.utc(start.year, start.month + 1, 0).day;
+  return FocusMonthMetrics(
+    displayTimeZoneId: timeZoneId,
+    month: start,
+    days: [
+      for (var day = 1; day <= count; day++)
+        FocusActivityDay(
+          date: DateTime.utc(start.year, start.month, day),
+          activeSeconds: day == 12 ? 780 : 0,
+        ),
+    ],
+    totalActiveSeconds: 780,
+    activeDayCount: 1,
+  );
 }

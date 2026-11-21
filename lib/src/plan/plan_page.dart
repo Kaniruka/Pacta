@@ -305,7 +305,9 @@ class _PlanPageState extends ConsumerState<PlanPage> {
           ),
         ],
       ),
-      if (goals.isEmpty)
+      if (goals.isEmpty) ...[
+        // 标题行与空态卡之间留一档：否则卡片顶边与「新建目标」按钮 0dp 贴合。
+        const SizedBox(height: PactaSpacing.md),
         Card(
           child: Padding(
             padding: const EdgeInsets.all(24),
@@ -320,6 +322,7 @@ class _PlanPageState extends ConsumerState<PlanPage> {
             ),
           ),
         ),
+      ],
       if (pinned.isNotEmpty) ...[
         const SizedBox(height: 12),
         _sectionLabel(context, '置顶目标 · 长按拖动排序'),
@@ -337,6 +340,9 @@ class _PlanPageState extends ConsumerState<PlanPage> {
           onHoldMenu: (index) => unawaited(
             _openGoalActions(context, taskRepository, pinned[index], userId),
           ),
+          // 12dp 行距由列表提供：拖拽代理只包 GoalCard 本体，高亮描边与
+          // 阴影因此贴合卡片 20dp 圆角，不会把间距一起框进去。
+          itemSpacing: PactaSpacing.md,
           itemBuilder: (context, index) => KeyedSubtree(
             key: ValueKey('pinned-goal-${pinned[index].id}'),
             child: _goalCard(
@@ -368,6 +374,7 @@ class _PlanPageState extends ConsumerState<PlanPage> {
           onHoldMenu: (index) => unawaited(
             _openGoalActions(context, taskRepository, others[index], userId),
           ),
+          itemSpacing: PactaSpacing.md,
           itemBuilder: (context, index) => KeyedSubtree(
             key: ValueKey('goal-${others[index].id}'),
             child: _goalCard(
@@ -479,6 +486,14 @@ class _PlanPageState extends ConsumerState<PlanPage> {
       title: goal.title,
       subtitle: '${goal.tasks.length} 项任务 · $status',
       actions: [
+        // 「添加任务」不再是卡片底部的大按钮：它是目标菜单的首项，空目标
+        // 另有可点的空态引导行，两者都走同一条新建流程。
+        PactaActionItem(
+          id: 'add-task',
+          label: '添加任务',
+          icon: Icons.add_task,
+          onTap: () => unawaited(_createTask(context, repository, goal)),
+        ),
         PactaActionItem(
           id: 'edit-goal',
           label: '编辑目标',
@@ -563,6 +578,16 @@ class _PlanPageState extends ConsumerState<PlanPage> {
         ),
       ],
     );
+  }
+
+  Future<void> _createTask(
+    BuildContext context,
+    TaskRepository repository,
+    Goal goal,
+  ) async {
+    final draft = await showTaskDialog(context, goal: goal);
+    if (draft == null) return;
+    await repository.createTask(goal.id, draft);
   }
 
   Future<void> _editGoal(

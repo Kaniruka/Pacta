@@ -48,8 +48,12 @@ class _Harness {
     );
   }
 
-  Future<void> pump(WidgetTester tester, {double width = 360}) async {
-    tester.view.physicalSize = Size(width, 800);
+  Future<void> pump(
+    WidgetTester tester, {
+    double width = 360,
+    double height = 800,
+  }) async {
+    tester.view.physicalSize = Size(width, height);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -190,6 +194,314 @@ void main() {
         reason: '图钉与标题同一基线，只做安静的区分',
       );
       expect(find.byTooltip('下移置顶目标'), findsNothing);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await harness.dispose(tester);
+    }
+  });
+
+  testWidgets('卡片零外边距并由列表统一 12dp 行距，拖拽高亮贴合卡片圆角', (tester) async {
+    final harness = _Harness.create();
+    try {
+      final goal = await harness.tasks.createGoal(
+        const GoalDraft(
+          title: _shortTitle,
+          classification: TaskClassification.regular,
+        ),
+      );
+      await harness.tasks.createTask(
+        goal.id,
+        const TaskDraft(
+          title: '发确认邮件',
+          classification: TaskClassification.regular,
+        ),
+      );
+      await harness.pump(tester);
+
+      final cardFinder = find.ancestor(
+        of: find.text(_shortTitle),
+        matching: find.byType(Card),
+      );
+      // 卡片的上下间距移交给列表：Card 不再自带 margin，代理阴影才贴住圆角。
+      expect(tester.widget<Card>(cardFinder).margin, EdgeInsets.zero);
+      final goalList = tester.widget<PactaHoldReorderList>(
+        find
+            .ancestor(
+              of: find.text(_shortTitle),
+              matching: find.byType(PactaHoldReorderList),
+            )
+            .first,
+      );
+      expect(goalList.itemSpacing, 12);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await harness.dispose(tester);
+    }
+  });
+
+  testWidgets('头部末行到首条任务的距离不随描述行数变化（偏差 <= 1dp）', (tester) async {
+    final harness = _Harness.create();
+    try {
+      // 单行标题 + 无描述：头部文字块最矮（约 40dp）。
+      final tight = await harness.tasks.createGoal(
+        const GoalDraft(
+          title: '无描述目标',
+          classification: TaskClassification.regular,
+        ),
+      );
+      await harness.tasks.createTask(
+        tight.id,
+        const TaskDraft(
+          title: '先写提纲',
+          classification: TaskClassification.regular,
+        ),
+      );
+      // 同样的标题但多一行描述：头部文字块被撑高。
+      final roomy = await harness.tasks.createGoal(
+        const GoalDraft(
+          title: '有描述目标',
+          description: '周四前发出',
+          classification: TaskClassification.regular,
+        ),
+      );
+      await harness.tasks.createTask(
+        roomy.id,
+        const TaskDraft(
+          title: '再发邮件',
+          classification: TaskClassification.regular,
+        ),
+      );
+      await harness.pump(tester, width: 420, height: 1200);
+
+      double headerToFirstTask(String goalTitle, String taskTitle) {
+        final card = find.ancestor(
+          of: find.text(goalTitle),
+          matching: find.byType(Card),
+        );
+        final summary = find.descendant(
+          of: card,
+          matching: find.text('1 项任务 · 进行中'),
+        );
+        final firstTask = find.ancestor(
+          of: find.text(taskTitle),
+          matching: find.byType(ListTile),
+        );
+        expect(summary, findsOneWidget);
+        expect(firstTask, findsOneWidget);
+        return tester.getRect(firstTask).top - tester.getRect(summary).bottom;
+      }
+
+      final withoutDescription = headerToFirstTask('无描述目标', '先写提纲');
+      final withDescription = headerToFirstTask('有描述目标', '再发邮件');
+      expect(withoutDescription, greaterThan(0));
+      expect(
+        (withoutDescription - withDescription).abs(),
+        lessThanOrEqualTo(1.0),
+        reason:
+            '头部末行文字底到首条任务顶的距离必须恒定：'
+            '无描述 $withoutDescription / 有描述 $withDescription',
+      );
+      expect(tester.takeException(), isNull);
+    } finally {
+      await harness.dispose(tester);
+    }
+  });
+
+  testWidgets('收起态目标卡上下内边距严格对称，且不随描述行数变化', (tester) async {
+    final harness = _Harness.create();
+    try {
+      final tight = await harness.tasks.createGoal(
+        const GoalDraft(
+          title: '收起无描述',
+          classification: TaskClassification.regular,
+        ),
+      );
+      await harness.tasks.createTask(
+        tight.id,
+        const TaskDraft(
+          title: '先写提纲',
+          classification: TaskClassification.regular,
+        ),
+      );
+      final roomy = await harness.tasks.createGoal(
+        const GoalDraft(
+          title: '收起有描述',
+          description: '周四前发出',
+          classification: TaskClassification.regular,
+        ),
+      );
+      await harness.tasks.createTask(
+        roomy.id,
+        const TaskDraft(
+          title: '再发邮件',
+          classification: TaskClassification.regular,
+        ),
+      );
+      await harness.pump(tester, width: 420, height: 1200);
+
+      // 收起两张卡：头部只剩「16dp 上边距 + 文字块 + 16dp 下边距」。
+      for (final id in [tight.id, roomy.id]) {
+        await tester.tap(find.byKey(ValueKey('goal-header-$id')));
+        await tester.pumpAndSettle();
+      }
+
+      List<double> insets(String goalTitle) {
+        final card = find.ancestor(
+          of: find.text(goalTitle),
+          matching: find.byType(Card),
+        );
+        expect(card, findsOneWidget);
+        expect(
+          find.descendant(of: card, matching: find.byType(ListTile)),
+          findsNothing,
+          reason: '$goalTitle 应处于收起态，任务行不再渲染',
+        );
+        final cardRect = tester.getRect(card);
+        final titleRect = tester.getRect(
+          find.descendant(of: card, matching: find.text(goalTitle)),
+        );
+        final summaryRect = tester.getRect(
+          find.descendant(of: card, matching: find.text('1 项任务 · 进行中')),
+        );
+        return [
+          titleRect.top - cardRect.top,
+          cardRect.bottom - summaryRect.bottom,
+        ];
+      }
+
+      final tightInsets = insets('收起无描述');
+      final roomyInsets = insets('收起有描述');
+      expect(
+        (tightInsets[0] - tightInsets[1]).abs(),
+        lessThanOrEqualTo(1.0),
+        reason:
+            '无描述卡上下内边距必须对称：'
+            '上 ${tightInsets[0]} / 下 ${tightInsets[1]}',
+      );
+      expect(
+        (roomyInsets[0] - roomyInsets[1]).abs(),
+        lessThanOrEqualTo(1.0),
+        reason:
+            '有描述卡上下内边距必须对称：'
+            '上 ${roomyInsets[0]} / 下 ${roomyInsets[1]}',
+      );
+      expect(
+        (tightInsets[0] - roomyInsets[0]).abs(),
+        lessThanOrEqualTo(1.0),
+        reason: '有无描述不改变顶部内边距',
+      );
+      expect(
+        (tightInsets[1] - roomyInsets[1]).abs(),
+        lessThanOrEqualTo(1.0),
+        reason: '有无描述不改变底部内边距',
+      );
+      // 收起态上下各一档 16dp：底部不再叠加旧的 10dp 呼吸位变成 26dp。
+      expect(tightInsets[0], closeTo(16, 1.0));
+      expect(tightInsets[1], closeTo(16, 1.0));
+      expect(roomyInsets[0], closeTo(16, 1.0));
+      expect(roomyInsets[1], closeTo(16, 1.0));
+      expect(tester.takeException(), isNull);
+    } finally {
+      await harness.dispose(tester);
+    }
+  });
+
+  testWidgets('卡片底部不再有添加任务按钮，空目标用可点提示起手', (tester) async {
+    final harness = _Harness.create();
+    try {
+      final empty = await harness.tasks.createGoal(
+        const GoalDraft(
+          title: '空目标',
+          classification: TaskClassification.regular,
+        ),
+      );
+      final busy = await harness.tasks.createGoal(
+        const GoalDraft(
+          title: '有任务目标',
+          classification: TaskClassification.regular,
+        ),
+      );
+      await harness.tasks.createTask(
+        busy.id,
+        const TaskDraft(
+          title: '已有任务',
+          classification: TaskClassification.regular,
+        ),
+      );
+      await harness.pump(tester, width: 420, height: 1200);
+
+      expect(find.text('添加任务'), findsNothing, reason: '底部冗余按钮已移除');
+      final hint = find.byKey(const ValueKey('goal-empty-task-hint'));
+      expect(hint, findsOneWidget);
+      expect(
+        find.descendant(of: hint, matching: find.text('暂无任务，点击添加')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: hint,
+          matching: find.byIcon(Icons.add_circle_outline),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.getSize(hint).height,
+        greaterThanOrEqualTo(48),
+        reason: '空态引导行保留 48dp 命中区',
+      );
+
+      await tester.tap(hint);
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, '点出来的任务');
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+      final created = (await harness.tasks.getGoals()).singleWhere(
+        (goal) => goal.id == empty.id,
+      );
+      expect(created.tasks.single.title, '点出来的任务');
+      expect(find.text('暂无任务，点击添加'), findsNothing);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await harness.dispose(tester);
+    }
+  });
+
+  testWidgets('目标长按菜单首项是添加任务，点击直接新建任务', (tester) async {
+    final harness = _Harness.create();
+    try {
+      final goal = await harness.tasks.createGoal(
+        const GoalDraft(
+          title: '菜单目标',
+          classification: TaskClassification.regular,
+        ),
+      );
+      await harness.tasks.createTask(
+        goal.id,
+        const TaskDraft(
+          title: '已有任务',
+          classification: TaskClassification.regular,
+        ),
+      );
+      await harness.pump(tester, width: 420, height: 1200);
+
+      await tester.longPress(find.text('菜单目标'));
+      await tester.pumpAndSettle();
+      expect(find.text('添加任务'), findsOneWidget);
+      expect(
+        tester.getRect(find.text('添加任务')).top,
+        lessThan(tester.getRect(find.text('编辑目标')).top),
+        reason: '添加任务是目标菜单的第一项',
+      );
+      await tester.tap(find.text('添加任务'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField).first, '菜单添加的任务');
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+      final updated = (await harness.tasks.getGoals()).singleWhere(
+        (item) => item.id == goal.id,
+      );
+      expect(updated.tasks.map((task) => task.title), contains('菜单添加的任务'));
+      expect(find.text('菜单添加的任务'), findsOneWidget);
       expect(tester.takeException(), isNull);
     } finally {
       await harness.dispose(tester);

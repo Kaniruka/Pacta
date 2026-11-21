@@ -21,6 +21,7 @@ import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart' hide FocusSession;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:pacta/src/ui/pacta_page_header.dart';
 
 import '../test/support/fake_auth_repository.dart';
 import '../test/support/fake_calendar_provider.dart';
@@ -36,7 +37,8 @@ void main() {
   testWidgets('看板摘要层级、计划页目标折叠与键盘、我的设置入口', (tester) async {
     const userId = 'board-design-offline-fixture';
     final database = PactaDatabase(NativeDatabase.memory());
-    var now = DateTime.now().subtract(const Duration(minutes: 13));
+    final sessionStart = DateTime.now().subtract(const Duration(minutes: 13));
+    var now = sessionStart;
     final tasks = LocalTaskRepository(
       database: database,
       userId: userId,
@@ -118,7 +120,7 @@ void main() {
         mode: FocusChainMode.regular,
         duration: const Duration(minutes: 25),
       );
-      now = DateTime.now();
+      now = sessionStart.add(const Duration(minutes: 13));
       await focus.abandonSession(
         sessionId: session.id,
         failureReason: '设备界面验收样例',
@@ -148,6 +150,8 @@ void main() {
           focusRepositoryFactory: (_) => focus,
           nationalFocusRepositoryFactory: (_) => nationalFocus,
           calendarRepositoryFactory: (_) => calendar,
+          displayClock: () => now,
+          cloudCheckClock: () => now,
         ),
       );
       await tester.pumpAndSettle();
@@ -171,7 +175,14 @@ void main() {
 
       // 1. 看板是只读摘要：置顶目标 + 下一项，不再渲染完整目标卡与任务列。
       expect(find.byType(BoardPage), findsOneWidget);
-      expect(find.text('今天先做什么'), findsOneWidget);
+      // 「看板」同时出现在导航与页头：只认页头里的那一处。
+      expect(
+        find.descendant(
+          of: find.byType(PactaPageHeader),
+          matching: find.text('看板'),
+        ),
+        findsOneWidget,
+      );
       await tester.scrollUntilVisible(
         find.text('下一项：整理发布材料'),
         250,
@@ -191,24 +202,28 @@ void main() {
       expect(find.textContaining('检查点'), findsNothing);
       expect(find.textContaining('固定规则为北京时间'), findsNothing);
 
-      // 近 7 天活动与国策摘要仍留在看板。
+      // 国策状态与近 7 天活动已融合为一张「专注与国策」卡片。
       await tester.scrollUntilVisible(
-        find.text('近期专注活动'),
+        find.text('专注与国策'),
         250,
         scrollable: boardScrollable(),
       );
       await tester.pumpAndSettle();
-      expect(find.text('近期专注活动'), findsOneWidget);
-      expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
-      expect(find.text('打开月历'), findsOneWidget);
-      await tester.scrollUntilVisible(
-        find.text('国策状态'),
-        -250,
-        scrollable: boardScrollable(),
+      expect(find.text('专注与国策'), findsOneWidget);
+      expect(find.text('今日国策状态'), findsOneWidget);
+      expect(find.text('点击查看国策树及具体节点状态 →'), findsOneWidget);
+      expect(find.text('13分00秒'), findsOneWidget);
+      // 进入完整月历的唯一入口是「日期详情」里的「完整月历 →」；
+      // 卡片头不再重复一枚月份按钮（年月只在热力月历切换器里出现一次）。
+      expect(
+        find.byKey(const ValueKey('board-focus-open-month')),
+        findsOneWidget,
       );
-      await tester.pumpAndSettle();
-      expect(find.text('国策状态'), findsOneWidget);
-      expect(find.text('打开国策树'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('board-focus-month-entry')),
+        findsNothing,
+      );
+      expect(find.text('专注热力月历'), findsOneWidget);
 
       // 2. 计划页承担目标与任务的完整管理：折叠、语义与键盘。
       await openDestination('计划');
@@ -261,9 +276,10 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await tester.pumpAndSettle();
       expect(find.text('整理发布材料'), findsOneWidget);
+      // 「添加任务」已归入目标长按菜单首项：卡片底部不再有常驻按钮。
       expect(
         find.descendant(of: goalCard, matching: find.text('添加任务')),
-        findsOneWidget,
+        findsNothing,
       );
       await tester.sendKeyEvent(LogicalKeyboardKey.space);
       await tester.pumpAndSettle();
@@ -284,13 +300,13 @@ void main() {
         tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
         await tester.pumpAndSettle();
         await tester.scrollUntilVisible(
-          find.text('近期专注活动'),
+          find.text('专注与国策'),
           250,
           scrollable: boardScrollable(),
         );
         await tester.pumpAndSettle();
-        expect(find.text('近期专注活动'), findsOneWidget);
-        expect(find.textContaining('累计有效专注 13分00秒'), findsOneWidget);
+        expect(find.text('专注与国策'), findsOneWidget);
+        expect(find.text('13分00秒'), findsOneWidget);
         expect(find.textContaining('检查点'), findsNothing);
         expect(find.textContaining('固定规则为北京时间'), findsNothing);
         expect(find.text('日历块'), findsNothing);
@@ -680,7 +696,8 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
             LiveTestWidgetsFlutterBindingFramePolicy.fadePointers;
       }
       if (const bool.fromEnvironment('FOCUS_DESIGN_SNAPSHOT_ONLY')) return;
-      // 看板只保留摘要：今日安排、置顶目标、国策与近 7 天活动。
+      // 看板只保留摘要：置顶目标 + 融合卡（今日国策、热力月历、日期详情
+      // 与只读安排）。今天安排不再是独立卡片。
       final boardScrollable = find
           .descendant(
             of: find.byType(BoardPage),
@@ -688,42 +705,55 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
           )
           .first;
       await tester.scrollUntilVisible(
-        find.text('近期专注活动'),
+        find.text('专注与国策'),
         200,
         scrollable: boardScrollable,
       );
       await tester.pumpAndSettle();
       await shot('support');
-      expect(find.textContaining('累计有效专注'), findsOneWidget);
-      await tester.scrollUntilVisible(
-        find.text('置顶目标'),
-        -250,
-        scrollable: boardScrollable,
-      );
-      await tester.pumpAndSettle();
+      expect(find.text('今日国策状态'), findsOneWidget);
       if (scenario == 'zero') {
-        expect(find.text('还没有置顶目标'), findsOneWidget);
+        // 没有置顶目标时整套置顶区块（标题、管理入口、空卡片）都不渲染，
+        // 融合卡直接贴着页头。
+        expect(find.text('置顶目标'), findsNothing);
+        expect(find.text('还没有置顶目标'), findsNothing);
+        expect(find.text('专注与国策'), findsOneWidget);
       } else {
+        await tester.scrollUntilVisible(
+          find.text('置顶目标'),
+          -250,
+          scrollable: boardScrollable,
+        );
+        await tester.pumpAndSettle();
         expect(find.textContaining('下一项：'), findsOneWidget);
       }
       await tester.scrollUntilVisible(
-        find.text('打开国策树'),
+        find.byKey(const ValueKey('board-today-national-focus')),
         250,
         scrollable: boardScrollable,
       );
-      await click(find.text('打开国策树'));
+      await click(find.byKey(const ValueKey('board-today-national-focus')));
       expect(find.byTooltip('更多'), findsOneWidget);
       final navigation = find.byType(NavigationRail).evaluate().isNotEmpty
           ? find.byType(NavigationRail)
           : find.byType(NavigationBar);
       await click(find.descendant(of: navigation, matching: find.text('看板')));
       await tester.scrollUntilVisible(
-        find.text('今天先做什么'),
+        find.descendant(
+          of: find.byType(PactaPageHeader),
+          matching: find.text('看板'),
+        ),
         -250,
         scrollable: boardScrollable,
       );
       await tester.pumpAndSettle();
-      expect(find.text('今天先做什么'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(PactaPageHeader),
+          matching: find.text('看板'),
+        ),
+        findsOneWidget,
+      );
       if (scenario == 'zero') return;
       // 目标的完整管理在计划页：复核长标题、折叠与取消路径。
       await click(find.text('打开计划'));

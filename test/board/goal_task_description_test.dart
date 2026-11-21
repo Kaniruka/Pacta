@@ -156,10 +156,10 @@ void main() {
     await harness.showPlan(tester);
     final header = find.byKey(ValueKey('goal-header-${goal.id}'));
     final headerNodeId = tester.getSemantics(header).id;
-    expect(find.text('暂无任务，先添加一个可执行的下一步。'), findsOneWidget);
+    expect(find.text('暂无任务，点击添加'), findsOneWidget);
     expect(
       tester.getSemantics(header).getSemanticsData().label,
-      isNot(contains('暂无任务，先添加一个可执行的下一步。')),
+      isNot(contains('暂无任务，点击添加')),
     );
     expect(
       tester.getSemantics(header).flagsCollection.isExpanded == Tristate.isTrue,
@@ -182,7 +182,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.getSemantics(header).id, headerNodeId);
-    expect(find.text('暂无任务，先添加一个可执行的下一步。'), findsNothing);
+    expect(find.text('暂无任务，点击添加'), findsNothing);
     expect(find.text('添加任务'), findsNothing);
     expect(find.text('折叠仍可读的目标说明'), findsOneWidget);
     expect(find.text('0 项任务 · 暂无任务 · 未完成'), findsOneWidget);
@@ -264,10 +264,10 @@ void main() {
     );
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
-    expect(find.text('添加任务'), findsOneWidget);
+    expect(find.text(taskTitle), findsOneWidget, reason: '键盘展开后可见任务行');
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pumpAndSettle();
-    expect(find.text('添加任务'), findsNothing);
+    expect(find.text(taskTitle), findsNothing, reason: '键盘折叠后收起任务行');
     // 管理动作不再占据 Tab 序列：长按标题打开操作面板。
     await _openGoalActions(tester, '空目标');
     await tester.tap(find.text('编辑目标'));
@@ -346,9 +346,11 @@ void main() {
     );
     await harness.showPlan(tester);
 
-    await tester.ensureVisible(find.text('添加任务'));
+    // 「添加任务」按钮已移入目标长按菜单；空目标改由可点的空态引导行起手。
+    final emptyHint = find.byKey(const ValueKey('goal-empty-task-hint'));
+    await tester.ensureVisible(emptyHint);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('添加任务'));
+    await tester.tap(emptyHint);
     await tester.pumpAndSettle();
     await tester.enterText(_field('任务名称'), '整理发布文案');
     final longDescription = List.filled(10, '这是一段完整的任务说明文字，').join();

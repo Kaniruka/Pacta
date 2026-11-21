@@ -2,8 +2,9 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 
-import '../theme/pacta_fonts.dart';
 import '../theme/pacta_spacing.dart';
+import '../theme/pacta_surfaces.dart';
+import '../ui/pacta_grouped_list.dart';
 import 'device_permission_gateway.dart';
 import 'focus_device_preferences.dart';
 import 'focus_notification_service.dart';
@@ -16,8 +17,9 @@ typedef ReminderTimePicker = Future<TimeOfDay?> Function(
 
 /// 《通知与设备权限》：后台运行、系统权限、专注通知与定时提醒的唯一设备级设置面。
 ///
-/// 页面分三组：先讲清楚应用能不能在后台跑、通知/精确闹钟/日历权限是否开放，
-/// 再放后台倒计时与专注流程通知，最后是国策待确认提醒与每日打开提醒。所有
+/// 页面按 Google 服务式分组呈现：每个分组只有一个 [PactaSectionHeader] 标题
+/// 和一块 [PactaGroupedList]。行内不再内嵌跳转按钮，也不再用缩进分割线把
+/// 卡片割裂成碎片——整行点击、尾部状态胶囊与箭头承担全部入口与状态。所有
 /// 设置都只在本设备生效，不随云备份同步。
 class FocusNotificationSettingsPage extends StatefulWidget {
   const FocusNotificationSettingsPage({
@@ -406,287 +408,268 @@ class _FocusNotificationSettingsPageState
         .push<void>(MaterialPageRoute<void>(builder: builder));
   }
 
-  String _formatTime(int minutesAfterMidnight) =>
-      '${(minutesAfterMidnight ~/ 60).toString().padLeft(2, '0')}:'
-      '${(minutesAfterMidnight % 60).toString().padLeft(2, '0')}';
+  String _formatTime(int minutesAfterMidnight) {
+    final hour = (minutesAfterMidnight ~/ 60).toString().padLeft(2, '0');
+    final minute = (minutesAfterMidnight % 60).toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
 
   @override
   Widget build(BuildContext context) {
     final preferences = _preferences;
-    return Scaffold(
-      appBar: AppBar(title: const Text('通知与设备权限')),
-      body: _loading || preferences == null
-          ? const Center(child: CircularProgressIndicator())
-          : SafeArea(
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 800),
-                  child: ListView(
-                    padding: const EdgeInsets.all(20),
-                    children: [
-                      _sectionTitle(context, '后台运行与系统权限'),
-                      const SizedBox(height: PactaSpacing.sm),
-                      _buildPermissionCard(context),
-                      const SizedBox(height: PactaSpacing.md),
-                      _sectionTitle(context, '后台倒计时与专注通知'),
-                      const SizedBox(height: PactaSpacing.sm),
-                      _buildBackgroundCard(preferences),
-                      const SizedBox(height: PactaSpacing.sm),
-                      _buildFocusCard(preferences),
-                      const SizedBox(height: PactaSpacing.md),
-                      _sectionTitle(context, '定时提醒'),
-                      const SizedBox(height: PactaSpacing.sm),
-                      _buildNationalFocusCard(preferences),
-                      const SizedBox(height: PactaSpacing.sm),
-                      _buildDailyReminderCard(preferences),
-                      if (_message != null) ...[
-                        const SizedBox(height: PactaSpacing.md),
+    final theme = Theme.of(context);
+    return _withPactaSurfaces(
+      context,
+      Scaffold(
+        appBar: AppBar(title: const Text('通知与设备权限')),
+        body: _loading || preferences == null
+            ? const Center(child: CircularProgressIndicator())
+            : SafeArea(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 800),
+                    child: ListView(
+                      padding: PactaSpacing.pageInsets(
+                        context,
+                        top: PactaSpacing.xs,
+                      ),
+                      children: [
+                        const PactaSectionHeader(title: '后台运行与系统权限'),
+                        _buildPermissionGroup(),
+                        const PactaSectionHeader(title: '后台倒计时与专注通知'),
+                        _buildFocusGroup(preferences),
+                        const PactaSectionHeader(title: '定时提醒'),
+                        _buildReminderGroup(preferences),
+                        if (_message != null) ...[
+                          const SizedBox(height: PactaSpacing.md),
+                          _buildMessage(theme),
+                        ],
+                        const SizedBox(height: PactaSpacing.lg),
                         Text(
-                          _message!,
-                          style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
-                          ),
+                          '这些提醒仅保存在本设备，不随云备份同步。',
+                          style: theme.textTheme.bodySmall,
                         ),
                       ],
-                      const SizedBox(height: PactaSpacing.md),
-                      Text(
-                        '这些提醒仅保存在本设备，不随云备份同步。',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
+      ),
     );
   }
 
-  /// 分组标题：只用主题字阶 + 600 字重，不声明任何字体族。
-  Widget _sectionTitle(BuildContext context, String title) => Padding(
-    padding: const EdgeInsets.only(left: PactaSpacing.xs),
-    child: Text(
-      title,
-      style: Theme.of(context).textTheme.titleSmall
-          ?.copyWith(fontWeight: PactaFonts.semibold),
+  /// 提示只用一行轻量说明，不再把页面变成第二张告警卡片。
+  Widget _buildMessage(ThemeData theme) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: PactaSpacing.xs),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          Icons.info_outline,
+          size: 16,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(width: PactaSpacing.sm),
+        Expanded(
+          child: Text(
+            _message!,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
     ),
   );
 
   /// 第一组：系统通知、精确闹钟、后台运行白名单与系统日历只读导入。
-  Widget _buildPermissionCard(BuildContext context) {
-    final divider = const Divider(height: 1, indent: 16, endIndent: 16);
-    return Card(
-      child: Column(
-        children: [
-          ListTile(
-            leading: Icon(
-              _notificationsAllowed
-                  ? Icons.notifications_active_outlined
-                  : Icons.notifications_off_outlined,
-            ),
-            title: const Text('系统通知权限'),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _notificationsAllowed
-                      ? '已允许通知；专注、国策与每日提醒可以送达。'
-                      : '尚未允许通知；提醒仍保存在本机，但无法送达。',
-                ),
-                TextButton.icon(
-                  key: const Key('open-notification-settings'),
-                  onPressed: _updating ? null : _openSystemNotificationSettings,
-                  icon: const Icon(Icons.settings_outlined),
-                  label: const Text('去系统设置开启通知'),
-                ),
-                if (_isAndroid && !_notificationsAllowed)
-                  TextButton.icon(
-                    key: const Key('request-notification-permission'),
-                    onPressed: _updating ? null : _requestNotifications,
-                    icon: const Icon(Icons.notifications_outlined),
-                    label: const Text('申请通知权限'),
-                  ),
-              ],
-            ),
-          ),
-          divider,
-          if (_isAndroid) ...[
-            ListTile(
-              leading: const Icon(Icons.alarm_on_outlined),
-              title: const Text('精确提醒（闹钟）'),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _exactAlarmsAllowed
-                        ? '已允许精确闹钟；提醒按设定时刻送达。'
-                        : '未允许精确闹钟；系统可能把提醒延迟送达。',
-                  ),
-                  if (!_exactAlarmsAllowed)
-                    TextButton.icon(
-                      key: const Key('allow-exact-alarms'),
-                      onPressed: _updating ? null : _allowExactAlarms,
-                      icon: const Icon(Icons.alarm_add_outlined),
-                      label: const Text('允许精确提醒'),
-                    ),
-                ],
-              ),
-            ),
-            divider,
-            ListTile(
-              leading: Icon(
-                _ignoringBatteryOptimizations
-                    ? Icons.battery_charging_full_outlined
-                    : Icons.battery_alert_outlined,
-              ),
-              title: const Text('后台运行'),
-              subtitle: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _ignoringBatteryOptimizations
-                        ? '已加入电池优化白名单；锁屏或切到其他应用后倒计时与提醒仍会继续。'
-                        : '系统可能限制后台运行；加入电池优化白名单后倒计时与提醒更稳定。',
-                  ),
-                  TextButton.icon(
-                    key: const Key('open-battery-optimization-settings'),
-                    onPressed: _updating
-                        ? null
-                        : _openBatteryOptimizationSettings,
-                    icon: const Icon(Icons.battery_saver_outlined),
-                    label: Text(
-                      _ignoringBatteryOptimizations ? '查看电池优化设置' : '去电池优化白名单',
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            divider,
-          ] else
-            const ListTile(
-              leading: Icon(Icons.desktop_windows_outlined),
-              title: Text('后台运行'),
-              subtitle: Text('桌面端依赖系统托盘/前台进程保活，无需电池优化白名单。'),
-            ),
-          if (!_isAndroid) divider,
-          ListTile(
-            leading: const Icon(Icons.calendar_month_outlined),
-            title: const Text('系统日历只读导入'),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _isAndroid
-                      ? '只读取你勾选的系统日历，手动导入为自有日程副本，不修改源日历。'
-                      : '桌面端暂不支持读取系统日历；已导入的副本仍可正常管理。',
-                ),
-                TextButton.icon(
-                  key: const Key('open-calendar-sources'),
-                  onPressed: _updating || widget.calendarSourcesBuilder == null
-                      ? null
-                      : _openCalendarSources,
-                  icon: const Icon(Icons.calendar_month_outlined),
-                  label: const Text('选择来源与导入'),
-                ),
-              ],
-            ),
-          ),
-        ],
+  ///
+  /// 每项都是一整行入口：状态放在右侧胶囊里，需要去系统设置的动作由点击整行
+  /// 触发，不在副标题里再塞一行按钮。
+  Widget _buildPermissionGroup() => PactaGroupedList(
+    children: [
+      PactaSettingsTile(
+        tileKey: const Key('open-notification-settings'),
+        leadingIcon: _notificationsAllowed
+            ? Icons.notifications_active_outlined
+            : Icons.notifications_off_outlined,
+        title: '系统通知权限',
+        subtitle: _notificationsAllowed
+            ? '已允许通知；专注、国策与每日提醒可以送达。'
+            : '尚未允许通知；提醒仍保存在本机，但无法送达。',
+        statusBadge: PactaStatusBadge(
+          label: _notificationsAllowed ? '已开启' : '未开启',
+          tone: _notificationsAllowed
+              ? PactaStatusBadgeTone.success
+              : PactaStatusBadgeTone.warning,
+        ),
+        onTap: _updating ? null : _openSystemNotificationSettings,
       ),
-    );
-  }
+      if (_isAndroid && !_notificationsAllowed)
+        PactaSettingsTile(
+          tileKey: const Key('request-notification-permission'),
+          leadingIcon: Icons.notifications_outlined,
+          title: '申请系统通知权限',
+          subtitle: '直接向系统请求通知授权',
+          onTap: _updating ? null : _requestNotifications,
+        ),
+      if (_isAndroid)
+        PactaSettingsTile(
+          tileKey: const Key('allow-exact-alarms'),
+          leadingIcon: Icons.alarm_on_outlined,
+          title: '精确提醒（闹钟）',
+          subtitle: _exactAlarmsAllowed
+              ? '已允许；提醒按设定时刻送达。'
+              : '未允许；系统可能延迟送达，点按即可允许。',
+          statusBadge: PactaStatusBadge(
+            label: _exactAlarmsAllowed ? '已允许' : '待开启',
+            tone: _exactAlarmsAllowed
+                ? PactaStatusBadgeTone.success
+                : PactaStatusBadgeTone.warning,
+          ),
+          onTap: _updating ? null : _allowExactAlarms,
+        ),
+      if (_isAndroid)
+        PactaSettingsTile(
+          tileKey: const Key('open-battery-optimization-settings'),
+          leadingIcon: _ignoringBatteryOptimizations
+              ? Icons.battery_charging_full_outlined
+              : Icons.battery_alert_outlined,
+          title: '后台运行',
+          subtitle: _ignoringBatteryOptimizations
+              ? '已加入电池优化白名单；锁屏或切到其他应用后倒计时与提醒仍会继续。'
+              : '系统可能限制后台运行；加入白名单后倒计时与提醒更稳定。',
+          statusBadge: PactaStatusBadge(
+            label: _ignoringBatteryOptimizations ? '已加白名单' : '建议开启',
+            tone: _ignoringBatteryOptimizations
+                ? PactaStatusBadgeTone.success
+                : PactaStatusBadgeTone.warning,
+          ),
+          onTap: _updating ? null : _openBatteryOptimizationSettings,
+        )
+      else
+        const PactaSettingsTile(
+          leadingIcon: Icons.desktop_windows_outlined,
+          title: '后台运行',
+          subtitle: '桌面端保活运行，无需电池优化',
+          showChevron: false,
+        ),
+      PactaSettingsTile(
+        tileKey: const Key('open-calendar-sources'),
+        leadingIcon: Icons.calendar_month_outlined,
+        title: '系统日历只读导入',
+        subtitle: _isAndroid
+            ? '只读取你勾选的系统日历，导入为自有日程副本，不改源日历。'
+            : '桌面端暂不支持读取系统日历；已导入的副本仍可正常管理。',
+        enabled: !_updating && widget.calendarSourcesBuilder != null,
+        onTap: _openCalendarSources,
+      ),
+    ],
+  );
 
   /// 第二组：后台倒计时显示与专注流程通知。
-  Widget _buildBackgroundCard(FocusDevicePreferences preferences) => Card(
-    child: SwitchListTile.adaptive(
-      value: preferences.backgroundRunningEnabled,
-      onChanged: _updating ? null : _setBackgroundEnabled,
-      title: const Text('显示后台倒计时'),
-      subtitle: Text(
-        _isWindowsDesktop
-            ? '在系统托盘显示当前状态；关闭窗口后会话仍在后台运行。'
-            : '在通知栏显示预约或专注状态，点按可返回会话。',
-      ),
-    ),
-  );
+  Widget _buildFocusGroup(FocusDevicePreferences preferences) =>
+      PactaGroupedList(
+        children: [
+          SwitchListTile.adaptive(
+            value: preferences.backgroundRunningEnabled,
+            onChanged: _updating ? null : _setBackgroundEnabled,
+            title: const Text('显示后台倒计时'),
+            subtitle: Text(
+              _isWindowsDesktop
+                  ? '在系统托盘显示当前状态；关闭窗口后会话仍在后台运行。'
+                  : '在通知栏显示预约或专注状态，点按可返回会话。',
+            ),
+          ),
+          SwitchListTile.adaptive(
+            value: preferences.notificationsEnabled,
+            onChanged: _updating ? null : _setNotificationsEnabled,
+            title: const Text('专注流程通知'),
+            subtitle: const Text('预约开始专注或专注结束时提醒；不提醒任务截止时间。'),
+          ),
+        ],
+      );
 
-  Widget _buildFocusCard(FocusDevicePreferences preferences) => Card(
-    child: SwitchListTile.adaptive(
-      value: preferences.notificationsEnabled,
-      onChanged: _updating ? null : _setNotificationsEnabled,
-      title: const Text('专注流程通知'),
-      subtitle: const Text('预约开始专注或专注结束时提醒；不提醒任务截止时间。'),
-    ),
-  );
+  /// 第三组：国策待确认提醒与每天打开 Pacta，各自带整行可点的时间值。
+  Widget _buildReminderGroup(FocusDevicePreferences preferences) =>
+      PactaGroupedList(
+        children: [
+          SwitchListTile.adaptive(
+            key: const Key('national-focus-reminder-enabled'),
+            value: preferences.nationalFocusReminderEnabled,
+            onChanged: _updating ? null : _setNationalFocusReminderEnabled,
+            title: const Text('国策待确认提醒'),
+            subtitle: const Text('有国策待确认时提醒一次；预约、专注或暂停中的会话结束后再提醒。'),
+          ),
+          PactaSettingsTile(
+            tileKey: const Key('national-focus-reminder-time'),
+            title: '提醒时间（北京时间）',
+            subtitle: '不影响国策检查点',
+            trailing: _timeTrailing(
+              preferences.nationalFocusReminderMinutesAfterMidnight,
+            ),
+            onTap: _updating ? null : _setNationalFocusReminderTime,
+          ),
+          SwitchListTile.adaptive(
+            key: const Key('daily-open-reminder-enabled'),
+            value: preferences.dailyOpenReminderEnabled,
+            onChanged: _updating ? null : _setDailyOpenReminderEnabled,
+            title: const Text('每天打开 Pacta'),
+            subtitle: const Text('默认关闭。按本机当地时间每天提醒一次，点按打开看板。'),
+          ),
+          PactaSettingsTile(
+            tileKey: const Key('daily-open-reminder-time'),
+            title: '提醒时间（本机时间）',
+            subtitle: _isWindowsDesktop
+                ? '仅在 Pacta 正在运行（含隐藏到托盘）时送达；完全退出后不会提醒。'
+                : '每天按本机当地时间提醒',
+            trailing: _timeTrailing(
+              preferences.dailyOpenReminderMinutesAfterMidnight,
+            ),
+            onTap: _updating ? null : _setDailyOpenReminderTime,
+          ),
+        ],
+      );
 
-  /// 第三组：国策待确认提醒与每天打开 Pacta 的独立提醒。
-  Widget _buildNationalFocusCard(FocusDevicePreferences preferences) => Card(
-    child: Column(
+  /// 行尾时间值 + 箭头：整行仍是唯一命中区，时间只是它的右侧读数。
+  Widget _timeTrailing(int minutesAfterMidnight) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        SwitchListTile.adaptive(
-          key: const Key('national-focus-reminder-enabled'),
-          value: preferences.nationalFocusReminderEnabled,
-          onChanged: _updating ? null : _setNationalFocusReminderEnabled,
-          title: const Text('国策待确认提醒'),
-          subtitle: const Text('有国策待确认时提醒一次；预约、专注或暂停中的会话结束后再提醒。'),
-        ),
-        ListTile(
-          title: const Text('提醒时间（北京时间）'),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('仅此设备有效，不影响国策检查点。'),
-              TextButton(
-                key: const Key('national-focus-reminder-time'),
-                onPressed: _updating ? null : _setNationalFocusReminderTime,
-                child: Text(
-                  _formatTime(
-                    preferences.nationalFocusReminderMinutesAfterMidnight,
-                  ),
-                ),
-              ),
-            ],
+        Text(
+          _formatTime(minutesAfterMidnight),
+          style: theme.textTheme.titleSmall?.copyWith(
+            color: theme.colorScheme.primary,
           ),
         ),
+        const SizedBox(width: PactaSpacing.xs),
+        Icon(
+          Icons.chevron_right,
+          size: 20,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ],
-    ),
-  );
+    );
+  }
+}
 
-  Widget _buildDailyReminderCard(FocusDevicePreferences preferences) => Card(
-    child: Column(
-      children: [
-        SwitchListTile.adaptive(
-          key: const Key('daily-open-reminder-enabled'),
-          value: preferences.dailyOpenReminderEnabled,
-          onChanged: _updating ? null : _setDailyOpenReminderEnabled,
-          title: const Text('每天打开 Pacta'),
-          subtitle: const Text('默认关闭。按本机当地时间每天提醒一次，点按打开看板。'),
-        ),
-        ListTile(
-          title: const Text('提醒时间（本机时间）'),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _isWindowsDesktop
-                    ? '仅在 Pacta 正在运行（含隐藏到托盘）时送达；完全退出后不会提醒。'
-                    : '仅此设备有效，不随云备份同步。',
-              ),
-              TextButton(
-                key: const Key('daily-open-reminder-time'),
-                onPressed: _updating ? null : _setDailyOpenReminderTime,
-                child: Text(
-                  _formatTime(
-                    preferences.dailyOpenReminderMinutesAfterMidnight,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+/// 独立路由兜底：预览或测试宿主可能只提供裸 [ThemeData]，此时补一层
+/// [PactaSurfaces]，让分组列表的卡片与分割线令牌始终有定义；已注入完整
+/// 主题时原样返回，不叠加第二套表面。
+Widget _withPactaSurfaces(BuildContext context, Widget child) {
+  final theme = Theme.of(context);
+  if (theme.extension<PactaSurfaces>() != null) return child;
+  return Theme(
+    data: theme.copyWith(
+      extensions: [
+        ...theme.extensions.values,
+        theme.brightness == Brightness.dark
+            ? PactaSurfaces.dark
+            : PactaSurfaces.light,
       ],
     ),
+    child: child,
   );
 }

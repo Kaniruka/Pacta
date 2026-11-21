@@ -79,35 +79,34 @@ void main() {
       );
       await _pumpBoard(tester);
 
-      // 上海（UTC+8）：15:50Z–16:20Z 是 23:50–00:20，跨到 9/23。
-      expect(find.text('今天先做什么'), findsOneWidget);
-      expect(find.text('核对有效投入'), findsOneWidget);
-      expect(find.textContaining('已专注 30分00秒'), findsOneWidget);
-      expect(find.text('近期专注活动'), findsOneWidget);
-      expect(find.textContaining('累计有效专注 30分00秒'), findsOneWidget);
-      expect(find.textContaining('9月23日'), findsOneWidget);
-      expect(find.textContaining('9月22日'), findsOneWidget);
-      final shanghaiDay = _dayRowTexts(tester, '9月23日');
-      expect(shanghaiDay.any((text) => text.contains('20分00秒')), isTrue);
+      // 「看板」同时出现在底部导航与页头：标题断言限定在页面子树内。
+      expect(
+        find.descendant(of: find.byType(BoardPage), matching: find.text('看板')),
+        findsOneWidget,
+      );
+      // 原「近期专注活动」已融合为「专注与国策」：账号时区分摊体现在
+      // 热力月历与日期详情里，不再有单独的近 7 天文字行。
+      await _revealBoard(tester, find.text('专注与国策'));
+      expect(find.text('专注与国策'), findsOneWidget);
 
-      // 同一账号改成洛杉矶（UTC−7）：08:50–09:20，整段在 9/22；
-      // 此时当地今天仍是 9/22，9/23 不在近 7 天窗口里。
+      // 上海（UTC+8）：15:50Z–16:20Z 是 23:50–00:20，跨到 9/23。
+      // 今天（9/22）只拿到 00:00 之前的 10 分钟，9/23 拿到 20 分钟。
+      expect(find.text('9 月 22 日 · 今日'), findsOneWidget);
+      expect(find.text('10分00秒'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('board-focus-day-23')));
+      await _pumpBoard(tester);
+      expect(find.text('9 月 23 日'), findsOneWidget);
+      expect(find.text('20分00秒'), findsOneWidget);
+
+      // 同一账号改成洛杉矶（UTC−7）：08:50–09:20，整段落在 9/22。
       await profileRepository.saveProfile(
         displayName: '设备验收',
         timeZoneId: 'America/Los_Angeles',
       );
       await _pumpBoard(tester);
-      expect(find.textContaining('累计有效专注 30分00秒'), findsOneWidget);
-      expect(find.textContaining('9月22日'), findsOneWidget);
-      expect(find.textContaining('9月23日'), findsNothing);
-      final losAngelesDay = _dayRowTexts(tester, '9月22日');
-      expect(losAngelesDay.any((text) => text.contains('30分00秒')), isTrue);
-
-      // 8 天后窗口里没有任何活动，但总量仍保留。
-      now = now.add(const Duration(days: 8));
-      await _pumpBoard(tester);
-      expect(find.text('近 7 天暂无专注活动。'), findsOneWidget);
-      expect(find.textContaining('累计有效专注 30分00秒'), findsOneWidget);
+      await _revealBoard(tester, find.text('专注与国策'));
+      expect(find.text('9 月 22 日 · 今日'), findsOneWidget);
+      expect(find.text('30分00秒'), findsOneWidget);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 1));
@@ -116,25 +115,19 @@ void main() {
   });
 }
 
-/// 某一天那一行里可见的文字。
-List<String> _dayRowTexts(WidgetTester tester, String label) {
-  final labelFinder = find.textContaining(label);
-  final texts = <String>[];
-  for (final element in labelFinder.evaluate()) {
-    Element? row;
-    element.visitAncestorElements((ancestor) {
-      if (ancestor.widget is Padding) {
-        row = ancestor;
-        return false;
-      }
-      return true;
-    });
-    row?.visitChildren((child) {
-      final widget = child.widget;
-      if (widget is Text && widget.data != null) texts.add(widget.data!);
-    });
-  }
-  return texts;
+/// 把看板上的目标滚进可见区（融合卡片在今日安排与置顶摘要之下）。
+Future<void> _revealBoard(WidgetTester tester, Finder target) async {
+  await tester.scrollUntilVisible(
+    target,
+    200,
+    scrollable: find
+        .descendant(
+          of: find.byType(BoardPage),
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
+  await tester.pumpAndSettle();
 }
 
 /// 真实数据库与流需要真实时间推进；周期计时器让 pumpAndSettle 不可用。

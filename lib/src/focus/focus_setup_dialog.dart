@@ -187,6 +187,26 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
     }
   }
 
+  /// 单个快捷档位：等宽、单行、无勾号占位。
+  ///
+  /// 选中时 ChoiceChip 默认会插入一个勾号，把芯片撑宽后三枚档位就会换行；
+  /// 这里关掉勾号、清零内边距，并用 FittedBox 兜住放大字号，使三枚档位在
+  /// 360dp 手机弹窗里始终严格同排等宽。
+  Widget _presetChip(BuildContext context, int minutes) => ChoiceChip(
+    key: ValueKey('focus-preparation-preset-$minutes'),
+    showCheckmark: false,
+    padding: EdgeInsets.zero,
+    labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+    label: Center(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text('$minutes 分钟', maxLines: 1, softWrap: false),
+      ),
+    ),
+    selected: _preparationPreset == minutes,
+    onSelected: _busy ? null : (_) => _selectPreparationPreset(minutes),
+  );
+
   void _showDurationError() {
     setState(() => _error = '请输入大于 0 的分钟数。');
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -223,7 +243,7 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
                 widget.task.title,
                 style: Theme.of(context).textTheme.titleMedium,
               ),
-              const SizedBox(height: PactaSpacing.md),
+              const SizedBox(height: PactaSpacing.sm),
               DropdownButtonFormField<FocusChainMode>(
                 initialValue: _mode,
                 decoration: const InputDecoration(labelText: '专注模式'),
@@ -235,7 +255,7 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
                     ? null
                     : (value) => setState(() => _mode = value!),
               ),
-              const SizedBox(height: PactaSpacing.md),
+              const SizedBox(height: PactaSpacing.sm),
               TextField(
                 key: _durationKey,
                 focusNode: _durationFocus,
@@ -244,24 +264,8 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(labelText: '时长（分钟）'),
               ),
-              const SizedBox(height: PactaSpacing.md),
-              Text('预约准备时长', style: Theme.of(context).textTheme.labelLarge),
               const SizedBox(height: PactaSpacing.sm),
-              Wrap(
-                spacing: PactaSpacing.sm,
-                runSpacing: PactaSpacing.xs,
-                children: [
-                  for (final minutes in AppointmentPreparationDuration.presets)
-                    ChoiceChip(
-                      label: Text('$minutes 分钟'),
-                      selected: _preparationPreset == minutes,
-                      onSelected: _busy
-                          ? null
-                          : (_) => _selectPreparationPreset(minutes),
-                    ),
-                ],
-              ),
-              const SizedBox(height: PactaSpacing.sm),
+              // 输入框在上、快捷档位在下：先看到要填什么，再看到可以直接点的档位。
               // 输入框始终可见：快捷档位只是预填，手动输入也是同一份状态。
               TextField(
                 controller: _preparation,
@@ -270,8 +274,20 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
                 decoration: const InputDecoration(
                   labelText: '预约准备时长（分钟）',
                   helperText: '1–60 分钟；超出范围或非整数不会开始预约。',
+                  // 360dp 弹窗里这行提示放不进单行：允许两行，不要省略号。
+                  helperMaxLines: 2,
                 ),
                 onChanged: (_) => setState(() => _error = null),
+              ),
+              const SizedBox(height: PactaSpacing.xs),
+              // 三个档位强制单排：360dp 弹窗内容区约 232dp，等宽 Expanded +
+              // 去掉选中勾号占位 + FittedBox 缩放，任何字号下都不折行、不溢出。
+              Row(
+                spacing: PactaSpacing.sm,
+                children: [
+                  for (final minutes in AppointmentPreparationDuration.presets)
+                    Expanded(child: _presetChip(context, minutes)),
+                ],
               ),
               if (_error != null) ...[
                 const SizedBox(height: PactaSpacing.sm),
@@ -325,10 +341,10 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
   );
 }
 
-/// 预约与专注标志的规则说明卡：浅色信息容器 + 行内 ⓘ。
+/// 预约与专注标志的规则说明卡：紧凑双行键值表 + 行内 ⓘ。
 ///
-/// 说明不再裸露成三行正文；信息量仍在，弹窗高度由信息卡承担，
-/// 44/48dp 的点击区域挂在图标上，触摸与读屏都能命中。
+/// 整张卡片就是提示的命中区：标题行与 48dp 的大图标行都不再占高度，
+/// 弹窗只保留「触发信号」「专注标志」两行事实，点按卡片展开完整规则。
 class _SetupInstructions extends StatelessWidget {
   const _SetupInstructions({required this.repository, required this.mode});
 
@@ -337,52 +353,37 @@ class _SetupInstructions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    return Container(
-      key: const ValueKey('focus-setup-instructions'),
-      padding: const EdgeInsets.fromLTRB(
-        PactaSpacing.md,
-        PactaSpacing.xs,
-        PactaSpacing.xs,
-        PactaSpacing.sm,
-      ),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(PactaSpacing.md),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '本场准备说明',
-                  style: theme.textTheme.labelLarge?.copyWith(
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
+    final colors = Theme.of(context).colorScheme;
+    return Tooltip(
+      key: const ValueKey('focus-setup-instructions-info'),
+      message: focusSetupInstructionsMessage,
+      triggerMode: TooltipTriggerMode.tap,
+      showDuration: const Duration(seconds: 8),
+      child: Container(
+        key: const ValueKey('focus-setup-instructions'),
+        padding: const EdgeInsets.fromLTRB(
+          PactaSpacing.md,
+          PactaSpacing.sm,
+          PactaSpacing.md,
+          PactaSpacing.sm,
+        ),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(PactaSpacing.md),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ChainSignalInstructions(
+                repository: repository,
+                mode: mode,
               ),
-              Tooltip(
-                key: const ValueKey('focus-setup-instructions-info'),
-                message: focusSetupInstructionsMessage,
-                triggerMode: TooltipTriggerMode.tap,
-                showDuration: const Duration(seconds: 8),
-                child: SizedBox.square(
-                  dimension: 48,
-                  child: Icon(
-                    Icons.info_outline,
-                    size: 20,
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          ChainSignalInstructions(repository: repository, mode: mode),
-          const SizedBox(height: PactaSpacing.xs),
-        ],
+            ),
+            const SizedBox(width: PactaSpacing.sm),
+            Icon(Icons.info_outline, size: 16, color: colors.onSurfaceVariant),
+          ],
+        ),
       ),
     );
   }

@@ -2,14 +2,22 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../theme/pacta_spacing.dart';
 import '../ui/pacta_error_text.dart';
+import '../ui/pacta_grouped_list.dart';
+import '../ui/pacta_hold_action_reorder.dart';
 import 'account_time_zone.dart';
 import 'avatar_image.dart';
 import 'avatar_crop_page.dart';
 import 'avatar_picker.dart';
 import 'profile_repository.dart';
 
-/// Edits the account display name and selects one avatar through the system.
+/// Edits the account display name, avatar and account-level display time zone.
+///
+/// 头像只有一个入口：可点的大圆头像 + 一颗「更换头像 / 选择头像」按钮，
+/// 更换/重新裁剪/移除收进同一张操作面板；时区是一段与表单同语言的
+/// [PactaSectionHeader] + 芯片组，规则说明折进行内 ⓘ，不再插一张风格不同
+/// 的小卡片。保存失败只在页内呈现并可就地重试。
 class ProfileEditPage extends StatefulWidget {
   const ProfileEditPage({
     super.key,
@@ -63,6 +71,57 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
 
   Uint8List? get _visibleAvatar =>
       _clearAvatar ? null : (_pickedAvatar ?? _storedAvatar);
+
+  /// 头像与「更换头像」共用这一个入口：没有头像时直接选图，已有头像时先
+  /// 让用户在更换、重新裁剪和移除之间做一次明确选择。
+  Future<void> _handleAvatarTap() async {
+    if (_busy || _picking) return;
+    if (_visibleAvatar == null) {
+      await _pickAvatar();
+      return;
+    }
+    await _showAvatarActions();
+  }
+
+  Future<void> _showAvatarActions() async {
+    final hasAvatar = _visibleAvatar != null;
+    await showPactaActionSheet(
+      context,
+      title: '头像',
+      subtitle: hasAvatar ? '更换、重新裁剪或移除当前头像' : null,
+      actions: [
+        PactaActionItem(
+          id: 'pick-avatar',
+          label: '选择新图片',
+          icon: Icons.photo_library_outlined,
+          onTap: _pickAvatar,
+        ),
+        if (hasAvatar)
+          PactaActionItem(
+            id: 'recrop-avatar',
+            label: '重新裁剪',
+            icon: Icons.crop_outlined,
+            onTap: _recropAvatar,
+          ),
+        if (hasAvatar)
+          PactaActionItem(
+            id: 'remove-avatar',
+            label: '移除头像',
+            icon: Icons.delete_outline,
+            destructive: true,
+            onTap: _removeAvatar,
+          ),
+      ],
+    );
+  }
+
+  void _removeAvatar() {
+    setState(() {
+      _pickedAvatar = null;
+      _cropSource = null;
+      _clearAvatar = true;
+    });
+  }
 
   Future<void> _pickAvatar() async {
     setState(() {
@@ -156,6 +215,9 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
           saved.syncError == null &&
           saved.displayTimeZoneId != requestedTimeZoneId;
       final saveError = saved.syncError;
+      final effectiveZoneId = AccountTimeZones.effectiveId(
+        saved.displayTimeZoneId,
+      );
       setState(() {
         _storedAvatar = saved.avatar?.bytes;
         _pickedAvatar = null;
@@ -166,8 +228,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                 ? null
                 : formatUserError(saveError, fallback: '保存未完成，请稍后重试。')) ??
             (timeZoneReplaced
-                ? '账号时区已被其他设备更新，已采用最新值：'
-                      '${AccountTimeZones.effectiveId(saved.displayTimeZoneId)}。'
+                ? '账号时区已被其他设备更新，已采用最新值：$effectiveZoneId。'
                       '如仍想使用刚才的选择，请重新选择后再保存。'
                 : null);
         _syncFailed = saveError != null;
@@ -207,14 +268,16 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
           syncError == null &&
           _timeZoneId != null &&
           synced.displayTimeZoneId != _timeZoneId;
+      final effectiveZoneId = AccountTimeZones.effectiveId(
+        synced.displayTimeZoneId,
+      );
       setState(() {
         _storedAvatar = synced.avatar?.bytes;
         if (timeZoneReplaced) {
           _timeZoneId = synced.displayTimeZoneId;
           _loadedTimeZoneId = synced.displayTimeZoneId;
           _error =
-              '账号时区已被其他设备更新，已采用最新值：'
-              '${AccountTimeZones.effectiveId(synced.displayTimeZoneId)}。'
+              '账号时区已被其他设备更新，已采用最新值：$effectiveZoneId。'
               '如仍想使用刚才的选择，请重新选择后再保存。';
         } else {
           _error = syncError == null
@@ -228,80 +291,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     }
   }
 
-  /// 账号级时区：各设备共享同一值；这里只放可编辑的常见城市，完整的 IANA
-  /// 校验仍由 FocusTimeZones 承担（导入事件的原始时区不因此收窄）。
-  Widget _timeZoneSection(BuildContext context) {
-    final selected = _timeZoneId;
-    final currentCity = AccountTimeZones.cityFor(selected);
-    final offList = AccountTimeZones.isKnown(selected) && currentCity == null;
-    final summary = currentCity == null
-        ? (offList ? selected! : '未设置')
-        : '${currentCity.label} · ${currentCity.timeZoneId}';
-    return Card(
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.schedule_outlined, size: 20),
-                const SizedBox(width: 8),
-                Text('显示时区', style: Theme.of(context).textTheme.titleMedium),
-                const Spacer(),
-                Flexible(
-                  child: Text(
-                    summary,
-                    textAlign: TextAlign.end,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '时区属于账号资料：各设备显示同一时区，城市按夏令时规则换算。'
-              '国策检查点始终按北京时间 04:00 结算，不随时区移动。',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final city in AccountTimeZones.cities)
-                  _timeZoneChip(context, city, selected == city.timeZoneId),
-                if (offList)
-                  _timeZoneChip(
-                    context,
-                    DisplayTimeZoneCity(label: '当前时区', timeZoneId: selected!),
-                    true,
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _timeZoneChip(
-    BuildContext context,
-    DisplayTimeZoneCity city,
-    bool selected,
-  ) => ChoiceChip(
-    label: Text(city.label),
-    tooltip: city.timeZoneId,
-    selected: selected,
-    onSelected: _busy
-        ? null
-        : (_) => setState(() => _timeZoneId = city.timeZoneId),
-  );
-
   @override
   Widget build(BuildContext context) {
-    final avatar = _visibleAvatar;
     return Scaffold(
       appBar: AppBar(title: const Text('编辑资料')),
       body: Center(
@@ -310,51 +301,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
             children: [
-              Center(
-                child: CircleAvatar(
-                  radius: 44,
-                  backgroundImage: avatar == null ? null : MemoryImage(avatar),
-                  child: avatar == null
-                      ? const Icon(Icons.person_outline, size: 32)
-                      : null,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: _picking || _busy ? null : _pickAvatar,
-                    icon: const Icon(Icons.photo_library_outlined),
-                    label: Text(_picking ? '正在读取图片…' : '选择图片'),
-                  ),
-                  if (_visibleAvatar != null)
-                    TextButton(
-                      onPressed: _busy || _picking ? null : _recropAvatar,
-                      child: const Text('重新裁剪'),
-                    ),
-                  if (_visibleAvatar != null)
-                    TextButton(
-                      onPressed: _busy || _picking
-                          ? null
-                          : () => setState(() {
-                              _pickedAvatar = null;
-                              _cropSource = null;
-                              _clearAvatar = true;
-                            }),
-                      child: const Text('移除头像'),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '只会读取你在系统选择器中选中的这一张图片，不需要相册权限。'
-                '头像会压缩到 256 KB 以内。',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              _avatarSection(context),
               const SizedBox(height: 20),
               TextField(
                 controller: _nameController,
@@ -363,7 +310,6 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                 maxLength: maxDisplayNameLength,
                 decoration: const InputDecoration(
                   labelText: '昵称',
-                  helperText: '昵称和头像属于账号资料，业务备份恢复不会改变它们。',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -387,9 +333,12 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                   ),
               ],
               const SizedBox(height: 16),
-              FilledButton(
-                onPressed: _busy || _picking ? null : _save,
-                child: Text(_busy ? '正在保存…' : '保存'),
+              SizedBox(
+                height: 48,
+                child: FilledButton(
+                  onPressed: _busy || _picking ? null : _save,
+                  child: Text(_busy ? '正在保存…' : '保存'),
+                ),
               ),
               if (_busy) ...[
                 const SizedBox(height: 12),
@@ -401,4 +350,121 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       ),
     );
   }
+
+  /// 头像区：上方一个大圆，下方一颗按钮。两者都只做一件事——换头像。
+  Widget _avatarSection(BuildContext context) {
+    final avatar = _visibleAvatar;
+    final label = avatar == null ? '选择头像' : '更换头像';
+    final busy = _busy || _picking;
+    return Column(
+      children: [
+        Tooltip(
+          message: label,
+          child: InkWell(
+            key: const Key('profile-avatar'),
+            onTap: busy ? null : _handleAvatarTap,
+            customBorder: const CircleBorder(),
+            child: Padding(
+              padding: const EdgeInsets.all(PactaSpacing.xs),
+              child: CircleAvatar(
+                radius: 44,
+                backgroundImage: avatar == null ? null : MemoryImage(avatar),
+                child: avatar == null
+                    ? const Icon(Icons.person_outline, size: 32)
+                    : null,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: PactaSpacing.xs),
+        OutlinedButton(
+          onPressed: busy ? null : _handleAvatarTap,
+          child: Text(_picking ? '正在读取图片…' : label),
+        ),
+      ],
+    );
+  }
+
+  /// 账号级时区：各设备共享同一值；这里只放可编辑的常见城市，完整的 IANA
+  /// 校验仍由 FocusTimeZones 承担（导入事件的原始时区不因此收窄）。
+  ///
+  /// 摘要严格单行，规则（含国策检查点固定北京时间 04:00）折进行内 ⓘ。
+  Widget _timeZoneSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final selected = _timeZoneId;
+    final currentCity = AccountTimeZones.cityFor(selected);
+    final offList = AccountTimeZones.isKnown(selected) && currentCity == null;
+    final cityLabel = currentCity?.label;
+    final cityZoneId = currentCity?.timeZoneId;
+    final summary = currentCity == null
+        ? (offList ? selected! : '未设置')
+        : '$cityLabel · $cityZoneId';
+    final zoneLabel = selected ?? '未设置';
+    final explanation = <String>[
+      '时区 ID：$zoneLabel',
+      '时区属于账号资料：各设备显示同一时区，城市按夏令时规则换算。',
+      '国策检查点始终按北京时间 04:00 结算，不随时区移动。',
+    ].join('\n');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PactaSectionHeader(
+          title: '显示时区',
+          // 外层不再包 Flexible：PactaSectionHeader 给 trailing 的是「最多 72%
+          // 宽」而不是「与标题五五分」，摘要因此能完整渲染并贴齐右缘。
+          trailing: Tooltip(
+            triggerMode: TooltipTriggerMode.tap,
+            message: explanation,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    summary,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.end,
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+                const SizedBox(width: PactaSpacing.xs),
+                Icon(
+                  Icons.info_outline,
+                  size: 18,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+        Wrap(
+          spacing: PactaSpacing.sm,
+          runSpacing: PactaSpacing.sm,
+          children: [
+            for (final city in AccountTimeZones.cities)
+              _timeZoneChip(context, city, selected == city.timeZoneId),
+            if (offList)
+              _timeZoneChip(
+                context,
+                DisplayTimeZoneCity(label: '当前时区', timeZoneId: selected!),
+                true,
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _timeZoneChip(
+    BuildContext context,
+    DisplayTimeZoneCity city,
+    bool selected,
+  ) => ChoiceChip(
+    label: Text(city.label),
+    tooltip: city.timeZoneId,
+    selected: selected,
+    onSelected: _busy
+        ? null
+        : (_) => setState(() => _timeZoneId = city.timeZoneId),
+  );
 }

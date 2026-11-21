@@ -137,32 +137,37 @@ class _Host {
   }
 }
 
-Color? _cellColor(WidgetTester tester, DateTime day) {
-  final container = tester.widget<Container>(
+BoxDecoration _cellDecoration(WidgetTester tester, DateTime day) {
+  final ink = tester.widget<Ink>(
     find
-        .descendant(
-          of: find.byKey(_dayKey(day)),
-          matching: find.byType(Container),
-        )
+        .descendant(of: find.byKey(_dayKey(day)), matching: find.byType(Ink))
         .first,
   );
-  return (container.decoration as BoxDecoration?)?.color;
+  return ink.decoration! as BoxDecoration;
 }
 
-BoxBorder? _cellOuterBorder(WidgetTester tester, DateTime day) {
-  final container = tester.widget<Container>(
-    find
-        .descendant(
-          of: find.byKey(_dayKey(day)),
-          matching: find.byType(Container),
-        )
-        .first,
-  );
-  return (container.foregroundDecoration as BoxDecoration?)?.border;
-}
+Color? _cellColor(WidgetTester tester, DateTime day) =>
+    _cellDecoration(tester, day).color;
 
-Color? _borderColor(BoxBorder? border) =>
-    border is Border ? border.top.color : null;
+/// 三层规范只有一层描边：日格自己的 [Ink] 上那一层。
+Border? _cellBorder(WidgetTester tester, DateTime day) =>
+    _cellDecoration(tester, day).border as Border?;
+
+Color? _borderColor(Border? border) => border?.top.color;
+
+double? _borderWidth(Border? border) => border?.top.width;
+
+int _borderedLayerCount(WidgetTester tester, DateTime day) => find
+    .descendant(
+      of: find.byKey(_dayKey(day)),
+      matching: find.byWidgetPredicate(
+        (widget) =>
+            widget is DecoratedBox &&
+            (widget.decoration as BoxDecoration?)?.border != null,
+      ),
+    )
+    .evaluate()
+    .length;
 
 Color? _markerColor(WidgetTester tester, DateTime day) {
   final finder = find.byKey(_dotKey(day));
@@ -171,13 +176,13 @@ Color? _markerColor(WidgetTester tester, DateTime day) {
   return (container.decoration as BoxDecoration?)?.color;
 }
 
+/// 已废弃的双层内嵌选中环：三层规范落地后必须彻底消失。
 Color? _selectedRingColor(WidgetTester tester, DateTime day) {
   final finder = find.byKey(_selectedRingKey(day));
   if (finder.evaluate().isEmpty) return null;
   final container = tester.widget<Container>(finder);
-  return _borderColor(
-    (container.foregroundDecoration as BoxDecoration?)?.border,
-  );
+  final decoration = container.foregroundDecoration as BoxDecoration?;
+  return _borderColor(decoration?.border as Border?);
 }
 
 Future<void> _tapDay(WidgetTester tester, DateTime day) async {
@@ -186,7 +191,7 @@ Future<void> _tapDay(WidgetTester tester, DateTime day) async {
 }
 
 void main() {
-  testWidgets('日格状态、边框与微标识按优先级呈现', (tester) async {
+  testWidgets('日格背景只表达业务，选中与今天只改单层描边', (tester) async {
     final host = _Host.create();
     try {
       final today = DateTime(2026, 11, 18);
@@ -203,22 +208,33 @@ void main() {
 
       final semanticHandle = tester.ensureSemantics();
       var colors = PactaCalendarColors.light;
-      expect(_cellColor(tester, today), colors.selectedBackground);
-      expect(_borderColor(_cellOuterBorder(tester, today)), colors.todayBorder);
-      expect(_selectedRingColor(tester, today), colors.selectedBorder);
-      expect(_markerColor(tester, today), colors.selectedForeground);
+      // 今天且默认选中：业务底色原样保留，描边与普通选中日完全相同（2dp
+      // 主蓝单层），另有独立 '今' 角标，不再是“今天框套选中框”的双层。
+      expect(_cellColor(tester, today), colors.hasPlansBackground);
+      expect(_borderColor(_cellBorder(tester, today)), colors.selectedBorder);
+      expect(_borderWidth(_cellBorder(tester, today)), 2);
+      expect(
+        find.descendant(
+          of: find.byKey(_dayKey(today)),
+          matching: find.text('今'),
+        ),
+        findsOneWidget,
+      );
+      expect(_borderedLayerCount(tester, today), 0, reason: '不允许第二层内嵌描边');
+      expect(_selectedRingColor(tester, today), isNull);
+      expect(_markerColor(tester, today), colors.hasPlansForeground);
       expect(find.byKey(_checkKey(today)), findsNothing);
+      // 未选中普通日：有安排黄 / 全部完成绿，均不画描边。
       expect(_cellColor(tester, hasPlans), colors.hasPlansBackground);
-      expect(_borderColor(_cellOuterBorder(tester, hasPlans)), isNull);
-      expect(_markerColor(tester, hasPlans), colors.hasPlansForeground);
+      expect(_cellBorder(tester, hasPlans), isNull);
       expect(_cellColor(tester, allComplete), colors.allCompleteBackground);
       expect(find.byKey(_checkKey(allComplete)), findsOneWidget);
       expect(find.byKey(_dotKey(allComplete)), findsNothing);
       expect(_cellColor(tester, mixed), colors.hasPlansBackground);
       expect(find.byKey(_dotKey(mixed)), findsOneWidget);
       expect(_cellColor(tester, noPlans), isNull);
+      expect(_cellBorder(tester, noPlans), isNull);
       expect(find.byKey(_dotKey(noPlans)), findsNothing);
-      expect(find.byKey(_checkKey(noPlans)), findsNothing);
 
       var data = tester
           .getSemantics(find.byKey(_dayKey(today)))
@@ -231,22 +247,25 @@ void main() {
       expect(completeData.label, contains('安排已全部完成'));
       semanticHandle.dispose();
 
+      // 选中无业务底色的日子：不铺蓝色实底，只有一层 2dp 主蓝描边。
       await _tapDay(tester, noPlans);
-      expect(_cellColor(tester, today), colors.hasPlansBackground);
-      expect(_borderColor(_cellOuterBorder(tester, today)), colors.todayBorder);
-      expect(_selectedRingColor(tester, today), isNull);
-      expect(_markerColor(tester, today), colors.hasPlansForeground);
-      expect(_cellColor(tester, noPlans), colors.selectedBackground);
       expect(
-        _borderColor(_cellOuterBorder(tester, noPlans)),
-        colors.selectedBorder,
+        _cellColor(tester, today),
+        colors.hasPlansBackground,
+        reason: '今天回到未选中仍保留黄色底',
       );
+      expect(_borderColor(_cellBorder(tester, today)), colors.todayBorder);
+      expect(_cellColor(tester, noPlans), isNull);
+      expect(_borderColor(_cellBorder(tester, noPlans)), colors.selectedBorder);
+      expect(_borderWidth(_cellBorder(tester, noPlans)), 2);
+      expect(_borderedLayerCount(tester, noPlans), 0);
       expect(_selectedRingColor(tester, noPlans), isNull);
 
+      // 选中“全部完成”：绿色业务底色保留，蓝色描边取代中性描边。
       await _tapDay(tester, allComplete);
-      expect(_cellColor(tester, allComplete), colors.selectedBackground);
+      expect(_cellColor(tester, allComplete), colors.allCompleteBackground);
       expect(
-        _borderColor(_cellOuterBorder(tester, allComplete)),
+        _borderColor(_cellBorder(tester, allComplete)),
         colors.selectedBorder,
       );
       expect(find.byKey(_checkKey(allComplete)), findsOneWidget);
@@ -262,9 +281,16 @@ void main() {
         brightness: Brightness.dark,
       );
       colors = PactaCalendarColors.dark;
-      expect(_cellColor(tester, today), colors.selectedBackground);
-      expect(_borderColor(_cellOuterBorder(tester, today)), colors.todayBorder);
-      expect(_selectedRingColor(tester, today), colors.selectedBorder);
+      // 重新挂载后默认选中今天：暗色同样是业务黄底 + 2dp 主蓝单层框。
+      expect(_cellColor(tester, today), colors.hasPlansBackground);
+      expect(_borderColor(_cellBorder(tester, today)), colors.selectedBorder);
+      expect(
+        find.descendant(
+          of: find.byKey(_dayKey(today)),
+          matching: find.text('今'),
+        ),
+        findsOneWidget,
+      );
       expect(_cellColor(tester, hasPlans), colors.hasPlansBackground);
       expect(_cellColor(tester, allComplete), colors.allCompleteBackground);
       expect(
@@ -276,7 +302,7 @@ void main() {
     }
   });
 
-  testWidgets('放假日与有安排/选中同时存在时保留标签且紫蓝可辨', (tester) async {
+  testWidgets('放假日与有安排/选中同时存在时保留标签且单层描边可辨', (tester) async {
     final host = _Host.create();
     try {
       final holiday = DateTime(2026, 2, 18);
@@ -291,13 +317,10 @@ void main() {
         today: holiday,
       );
 
-      var colors = PactaCalendarColors.light;
+      final colors = PactaCalendarColors.light;
+      // 放假日 + 有安排 + 今天：黄底、单层中性描边、'今' 与节气短标签同时可辨。
       expect(_cellColor(tester, holiday), colors.hasPlansBackground);
-      expect(
-        _borderColor(_cellOuterBorder(tester, holiday)),
-        colors.todayBorder,
-      );
-      expect(find.byKey(_dotKey(holiday)), findsOneWidget);
+      expect(_borderColor(_cellBorder(tester, holiday)), colors.todayBorder);
       expect(
         find.descendant(
           of: find.byKey(_dayKey(holiday)),
@@ -306,22 +329,29 @@ void main() {
         findsOneWidget,
         reason: '放假日短标签与安排底色同时可辨',
       );
+      expect(
+        find.descendant(
+          of: find.byKey(_dayKey(holiday)),
+          matching: find.text('今'),
+        ),
+        findsOneWidget,
+      );
       var data = tester
           .getSemantics(find.byKey(_dayKey(holiday)))
           .getSemanticsData();
       expect(data.label, contains('有安排'));
       expect(data.label, contains('今天'));
+      // 无安排的放假日只有薰衣草底色，不画描边。
       expect(_cellColor(tester, otherHoliday), colors.holidayBackground);
-      expect(_borderColor(_cellOuterBorder(tester, otherHoliday)), isNull);
+      expect(_cellBorder(tester, otherHoliday), isNull);
 
+      // 选中今天：业务黄底保留，描边换成与普通选中日完全相同的 2dp 主蓝单层框。
       await _tapDay(tester, holiday);
-      expect(_cellColor(tester, holiday), colors.selectedBackground);
-      expect(
-        _borderColor(_cellOuterBorder(tester, holiday)),
-        colors.todayBorder,
-        reason: '今天+选中时外框保留今天中性色',
-      );
-      expect(_selectedRingColor(tester, holiday), colors.selectedBorder);
+      expect(_cellColor(tester, holiday), colors.hasPlansBackground);
+      expect(_borderColor(_cellBorder(tester, holiday)), colors.selectedBorder);
+      expect(_borderWidth(_cellBorder(tester, holiday)), 2);
+      expect(_borderedLayerCount(tester, holiday), 0);
+      expect(_selectedRingColor(tester, holiday), isNull);
       expect(
         find.descendant(
           of: find.byKey(_dayKey(holiday)),
@@ -334,6 +364,7 @@ void main() {
           .getSemanticsData();
       expect(data.label, contains('有安排'));
 
+      // 今天过去之后，选中日仍是黄底 + 蓝色单层描边。
       await host.pump(
         tester,
         holiday,
@@ -341,12 +372,8 @@ void main() {
         almanac: _assetAlmanac(),
         today: DateTime(2026, 2, 20),
       );
-      colors = PactaCalendarColors.light;
-      expect(_cellColor(tester, holiday), colors.selectedBackground);
-      expect(
-        _borderColor(_cellOuterBorder(tester, holiday)),
-        colors.selectedBorder,
-      );
+      expect(_cellColor(tester, holiday), colors.hasPlansBackground);
+      expect(_borderColor(_cellBorder(tester, holiday)), colors.selectedBorder);
       expect(_selectedRingColor(tester, holiday), isNull);
       expect(
         find.descendant(
@@ -359,7 +386,6 @@ void main() {
       await host.dispose(tester);
     }
   });
-
   testWidgets('真实 PactaApp 在 360 宽下日格命中区不小于 48dp', (tester) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
