@@ -6,7 +6,6 @@ import 'package:pacta/main.dart';
 import 'package:pacta/src/ui/pacta_check_circle.dart';
 import 'package:pacta/src/auth/auth_repository.dart';
 import 'package:pacta/src/focus/focus_models.dart';
-import 'package:pacta/src/focus/focus_month_page.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/profile/profile_models.dart';
 import 'package:pacta/src/profile/profile_repository.dart';
@@ -17,6 +16,7 @@ import 'package:pacta/src/tasks/task_repository.dart';
 
 import '../support/fake_auth_repository.dart';
 import '../support/test_database.dart';
+import '../support/focus_session_seed.dart';
 
 /// Public App navigation evidence for ticket 12: the Board entry, the two
 /// calendars staying independent, pinned order/next task and account/zone
@@ -89,7 +89,8 @@ void main() {
           classification: TaskClassification.both,
         ),
       );
-      await focusRemote.upsertSessions(
+      await seedFocusSessions(
+        database,
         userId: 'user-a',
         sessions: [
           FocusSession(
@@ -112,7 +113,7 @@ void main() {
           ),
         ],
       );
-      await focus.sync();
+      await focus.settleDueSessions();
 
       await pumpApp(
         tester,
@@ -124,20 +125,16 @@ void main() {
         ),
         size: const Size(360, 800),
       );
-      // 融合卡片把 11 月 12 日的 13 分钟落在日期详情里。
+      // 融合卡片把 11 月 12 日的 13 分钟落在日期详情里；完整月历页
+      // 已删除，同一条事实直接在看板卡内可见。
       expect(find.text('11 月 12 日 · 今日'), findsOneWidget);
       expect(find.text('13分00秒'), findsOneWidget);
-
-      await tester.ensureVisible(
-        find.byKey(const ValueKey('board-focus-open-month')),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('board-focus-open-month')));
-      await tester.pumpAndSettle();
-
-      expect(find.byType(FocusMonthPage), findsOneWidget);
       expect(find.text('2026年11月'), findsOneWidget);
-      expect(find.text('13分00秒'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('board-focus-open-month')),
+        findsNothing,
+        reason: '完整月历入口随页面一起硬删除',
+      );
       expect(tester.takeException(), isNull);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
@@ -209,7 +206,7 @@ void main() {
     }
   });
 
-  testWidgets('计划日历完成独立事项不写入专注月历', (tester) async {
+  testWidgets('计划日历完成独立事项不写入看板热力月历', (tester) async {
     final database = openTestDatabase();
     final tasks = LocalTaskRepository(
       database: database,
@@ -266,10 +263,10 @@ void main() {
 
       await tester.tap(find.text('看板'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('board-focus-open-month')));
-      await tester.pumpAndSettle();
+      // 完成计划页的独立安排不会写入专注：当天详情仍是 0 分钟，也没有
+      // 任何失败语言。
       expect(find.text('2026年11月'), findsOneWidget);
-      expect(find.text('本月暂无有效投入。'), findsOneWidget);
+      expect(find.text('0分00秒'), findsOneWidget);
       expect(find.textContaining('失败'), findsNothing);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());

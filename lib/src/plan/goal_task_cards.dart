@@ -11,6 +11,7 @@ import '../focus/focus_setup_dialog.dart';
 import '../tasks/task_models.dart';
 import '../tasks/task_repository.dart';
 import '../theme/pacta_fonts.dart';
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_check_circle.dart';
 import '../ui/pacta_date_format.dart';
@@ -22,7 +23,6 @@ class GoalCard extends StatefulWidget {
     required this.repository,
     required this.goal,
     required this.focusProgressSecondsByTask,
-    required this.pendingReviewTaskIds,
     this.hideCompletedTasks = false,
     this.onToggleHideCompleted,
     this.onHoldTask,
@@ -40,7 +40,6 @@ class GoalCard extends StatefulWidget {
   /// 任务行原地长按：由计划页弹出任务操作面板。
   final ValueChanged<Task>? onHoldTask;
   final Map<String, int>? focusProgressSecondsByTask;
-  final Set<String> pendingReviewTaskIds;
 
   @override
   State<GoalCard> createState() => GoalCardState();
@@ -57,7 +56,6 @@ class GoalCardState extends State<GoalCard> {
             focusProgressSeconds:
                 widget.focusProgressSecondsByTask![task.id] ?? 0,
           ),
-    hasPendingReview: widget.pendingReviewTaskIds.contains(task.id),
   );
 
   /// 已完成任务不参与排序，但仍要能原地长按弹菜单：用禁用的监听器把
@@ -107,7 +105,7 @@ class GoalCardState extends State<GoalCard> {
           children: [
             Icon(
               Icons.add_circle_outline,
-              size: 20,
+              size: PactaIconSizes.compact,
               color: theme.colorScheme.primary,
             ),
             const SizedBox(width: PactaSpacing.sm),
@@ -198,7 +196,7 @@ class GoalCardState extends State<GoalCard> {
                                 ),
                                 child: Icon(
                                   Icons.push_pin,
-                                  size: 16,
+                                  size: PactaIconSizes.sm,
                                   color: theme.colorScheme.onSurfaceVariant,
                                 ),
                               ),
@@ -235,7 +233,7 @@ class GoalCardState extends State<GoalCard> {
                   ExcludeSemantics(
                     child: Icon(
                       _tasksExpanded ? Icons.expand_less : Icons.expand_more,
-                      size: 24,
+                      size: PactaIconSizes.md,
                     ),
                   ),
                 ],
@@ -333,16 +331,10 @@ class GoalCardState extends State<GoalCard> {
 }
 
 class TaskTile extends ConsumerWidget {
-  const TaskTile({
-    super.key,
-    required this.repository,
-    required this.task,
-    this.hasPendingReview = false,
-  });
+  const TaskTile({super.key, required this.repository, required this.task});
 
   final TaskRepository repository;
   final Task task;
-  final bool hasPendingReview;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -352,7 +344,6 @@ class TaskTile extends ConsumerWidget {
     final hasMeta =
         task.estimatedMinutes != null ||
         task.focusProgressSeconds > 0 ||
-        hasPendingReview ||
         deadline != null;
     final hasDescription = task.description.isNotEmpty;
     final hasSubtitle = hasMeta || hasDescription;
@@ -375,8 +366,9 @@ class TaskTile extends ConsumerWidget {
         task.title,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
+        // 完成态只改字形：字号/字距仍从主题字阶派生，不另起一套裸 TextStyle。
         style: task.isComplete
-            ? TextStyle(
+            ? Theme.of(context).textTheme.bodyLarge?.copyWith(
                 decoration: TextDecoration.lineThrough,
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               )
@@ -399,7 +391,6 @@ class TaskTile extends ConsumerWidget {
                         Text(
                           '已专注 ${formatEffectiveDuration(task.focusProgressSeconds)}',
                         ),
-                      if (hasPendingReview) const Text('待核对（争议部分暂不计入专注统计）'),
                       if (deadline != null) Text(deadline),
                     ],
                   ),

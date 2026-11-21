@@ -11,6 +11,7 @@ import '../profile/profile_models.dart';
 import '../schedules/schedule_repository.dart';
 import '../tasks/task_models.dart';
 import '../tasks/task_repository.dart';
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_hold_action_reorder.dart';
 import '../ui/pacta_page_header.dart';
@@ -310,13 +311,16 @@ class _PlanPageState extends ConsumerState<PlanPage> {
         const SizedBox(height: PactaSpacing.md),
         Card(
           child: Padding(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(PactaSpacing.xl),
             child: Column(
               children: [
-                const Icon(Icons.inbox_outlined, size: 48),
-                const SizedBox(height: 12),
+                const Icon(
+                  Icons.inbox_outlined,
+                  size: PactaIconSizes.heroLarge,
+                ),
+                const SizedBox(height: PactaSpacing.md),
                 Text('还没有目标', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
+                const SizedBox(height: PactaSpacing.sm),
                 const Text('新建目标后在这里管理任务；看板只显示置顶目标摘要。'),
               ],
             ),
@@ -422,8 +426,6 @@ class _PlanPageState extends ConsumerState<PlanPage> {
           onHoldTask: (task) =>
               unawaited(_openTaskActions(context, taskRepository, task)),
           focusProgressSecondsByTask: metrics?.focusProgressSecondsByTask,
-          pendingReviewTaskIds:
-              metrics?.pendingReviewTaskIds ?? const <String>{},
         );
       },
     );

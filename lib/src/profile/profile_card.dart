@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../focus/focus_models.dart';
 import '../national_focus/national_focus_models.dart';
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_error_text.dart';
 import 'avatar_picker.dart';
@@ -273,7 +274,7 @@ class _MyProfileCardState extends State<MyProfileCard> {
                     ),
                   ),
                   const SizedBox(width: PactaSpacing.sm),
-                  const Icon(Icons.chevron_right, size: 20),
+                  const Icon(Icons.chevron_right, size: PactaIconSizes.compact),
                 ],
               ),
             ),
@@ -327,7 +328,7 @@ class _StatisticsGroup extends StatelessWidget {
         label: label,
         primary: primary,
         secondary: secondary,
-        trailing: const Icon(Icons.chevron_right, size: 18),
+        trailing: const Icon(Icons.chevron_right, size: PactaIconSizes.sm),
       ),
     ),
   );
@@ -407,7 +408,7 @@ class _StatisticsBody extends StatelessWidget {
               children: [
                 Icon(
                   icon,
-                  size: 16,
+                  size: PactaIconSizes.sm,
                   color: muted ? colors.outline : colors.primary,
                 ),
                 const SizedBox(width: 4),

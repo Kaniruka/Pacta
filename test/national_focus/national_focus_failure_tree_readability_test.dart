@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
+import 'package:pacta/src/theme/pacta_spacing.dart';
 
 /// Ticket 11 复审视觉修复的回归：历史树在窄窗里要可读，
 /// 父子边与独立根要画对，冻结详情要保持完整内容与历史措辞。
@@ -82,6 +83,30 @@ void main() {
     // 历史措辞：描述当时状态，而不是实时动作标签。
     expect(find.text('待今日确认 · 连续 1 天'), findsWidgets);
     expect(find.text('确认 · 连续 1 天'), findsNothing);
+
+    // 节点卡必须浮在 surfaceContainerLow 画布之上：卡片底色 + 细边框 +
+    // 页面级 20dp 圆角，不再与画布同色融成一片。
+    final colors = Theme.of(
+      tester.element(find.byType(NationalFocusFailureTreePage)),
+    ).colorScheme;
+    final parentCard = tester.widget<Card>(
+      find
+          .descendant(
+            of: find.byKey(
+              const ValueKey('national-focus-history-node-parent'),
+            ),
+            matching: find.byType(Card),
+          )
+          .first,
+    );
+    expect(parentCard.color, isNot(colors.surfaceContainerLow));
+    final cardShape = parentCard.shape! as RoundedRectangleBorder;
+    expect(
+      cardShape.borderRadius,
+      BorderRadius.circular(PactaSpacing.cardRadius),
+    );
+    expect(cardShape.side.color, colors.outlineVariant);
+    expect(cardShape.side.width, greaterThan(0));
 
     // 正确边：子节点在父节点正下方；独立根另起一段。
     final parentRect = tester.getRect(

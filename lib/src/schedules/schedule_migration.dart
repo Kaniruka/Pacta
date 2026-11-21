@@ -278,58 +278,6 @@ Future<SchedulePromotionResult> promoteLegacyCalendarBlocksInTransaction(
   );
 }
 
-/// Restores the pre-migration calendar-block rows recorded in a rollback copy.
-///
-/// The rows are upserted, never deleted: the promotion itself never modified
-/// the calendar-block projection, so a rollback only needs to prove the copies
-/// survived. Rows imported after the promotion therefore stay untouched.
-Future<int> restoreLegacyCalendarBlocks(
-  PactaDatabase database,
-  String backupPayload,
-) async {
-  final decoded = jsonDecode(backupPayload);
-  if (decoded is! List) throw StateError('日程迁移回滚副本已损坏。');
-  var restored = 0;
-  for (final item in decoded) {
-    if (item is! Map) throw StateError('日程迁移回滚副本已损坏。');
-    final row = Map<String, dynamic>.from(item);
-    await database
-        .into(database.localCalendarBlocks)
-        .insertOnConflictUpdate(
-          LocalCalendarBlocksCompanion.insert(
-            userId: row['user_id'] as String,
-            sourceId: row['source_id'] as String,
-            sourceEventId: row['source_event_id'] as String,
-            occurrenceId: row['occurrence_id'] as String,
-            eventIdentity: row['event_identity'] as String,
-            title: row['title'] as String,
-            startsAt: _decodeDateTime(row['starts_at']),
-            endsAt: _decodeDateTime(row['ends_at']),
-            allDay: Value(row['all_day'] == 1),
-            allDayStartDate: Value(row['all_day_start_date'] as String?),
-            allDayEndDateExclusive: Value(
-              row['all_day_end_date_exclusive'] as String?,
-            ),
-            availability: row['availability'] as String,
-            timeZoneId: row['time_zone_id'] as String,
-            updatedAt: _decodeDateTime(row['updated_at']),
-          ),
-        );
-    restored++;
-  }
-  return restored;
-}
-
-/// Decodes the schedule ids recorded by one promotion run.
-Set<String> promotedScheduleIdsFrom(LocalScheduleMigration run) {
-  final decoded = jsonDecode(run.promotedScheduleIds);
-  if (decoded is! List) return const {};
-  return {
-    for (final value in decoded)
-      if (value is String && value.isNotEmpty) value,
-  };
-}
-
 Future<bool> _hasCalendarTables(PactaDatabase database) async {
   final rows = await database.customSelect('''
     SELECT name FROM sqlite_master
@@ -394,6 +342,3 @@ Map<String, Object?> _encodeBlockRow(LocalCalendarBlock row) => {
 
 int _encodeDateTime(DateTime value) =>
     value.toUtc().millisecondsSinceEpoch ~/ 1000;
-
-DateTime _decodeDateTime(Object? value) =>
-    DateTime.fromMillisecondsSinceEpoch((value as int) * 1000, isUtc: true);

@@ -1,16 +1,22 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart' hide FocusNode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/app_providers.dart';
 import '../tasks/task_models.dart';
+import '../theme/pacta_fonts.dart';
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../theme/pacta_surfaces.dart';
+import '../ui/pacta_date_format.dart';
 import '../ui/pacta_error_text.dart';
+import '../ui/pacta_grouped_list.dart';
 import '../ui/pacta_page_header.dart';
 import 'chain_signals_card.dart';
 import 'effective_duration_text.dart';
+import 'focus_chain_history.dart';
 import 'focus_flow_helpers.dart';
 import 'focus_models.dart';
 import 'focus_repository.dart';
@@ -115,7 +121,10 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                               style: TextButton.styleFrom(
                                 minimumSize: const Size(64, 48),
                               ),
-                              icon: const Icon(Icons.history, size: 20),
+                              icon: const Icon(
+                                Icons.history,
+                                size: PactaIconSizes.sm,
+                              ),
                               label: const Text('历史'),
                               onPressed: () => Navigator.of(context).push<void>(
                                 MaterialPageRoute<void>(
@@ -159,9 +168,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                                 ),
                                 icon: Icons.event_available,
                                 title: '已有预约准备',
-                                subtitle: appointment.isPendingReview
-                                    ? '$title · 待核对'
-                                    : title,
+                                subtitle: title,
                                 tone: _RecoveryStripTone.secondary,
                                 actions: [
                                   OutlinedButton(
@@ -255,43 +262,37 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
   /// 下必为例入口：首屏只负责进入完整管理页。
   ///
   /// 整张卡只有一个点击目标（行本身），不再让行内按钮重复一次同样的动作。
-  Widget _allowanceEntry(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    return FutureBuilder<List<PrecedentRule>>(
-      future: _precedentRulesFuture,
-      builder: (context, snapshot) {
-        final count = snapshot.data?.length;
-        final subtitle = snapshot.hasError
-            ? '读取失败，进入管理后可重试'
-            : count == null
-            ? '读取中…'
-            : '$count 条持续许可';
-        return Card(
-          key: const ValueKey('focus-allowance-entry'),
-          clipBehavior: Clip.antiAlias,
-          child: ListTile(
-            key: const ValueKey('focus-allowance-manage'),
-            contentPadding: const EdgeInsets.only(
-              left: PactaSpacing.lg,
-              right: PactaSpacing.sm,
-            ),
-            // 卡片标题保持 titleMedium；下方说明用 bodySmall，
-            // 层级由字号与前景色区分。
-            title: Text('下必为例', style: theme.textTheme.titleMedium),
-            subtitle: Text(
-              subtitle,
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colors.onSurfaceVariant,
+  Widget _allowanceEntry(BuildContext context) =>
+      FutureBuilder<List<PrecedentRule>>(
+        future: _precedentRulesFuture,
+        builder: (context, snapshot) {
+          final count = snapshot.data?.length;
+          final subtitle = snapshot.hasError
+              ? '读取失败，进入管理后可重试'
+              : count == null
+              ? '读取中…'
+              : '$count 条持续许可';
+          // 与信号卡同一套分组语法：单行设置项 + 右侧箭头，整行 48dp 命中区。
+          return PactaGroupedList(
+            key: const ValueKey('focus-allowance-entry'),
+            children: [
+              PactaSettingsTile(
+                tileKey: const ValueKey('focus-allowance-manage'),
+                leadingIcon: Icons.rule_outlined,
+                title: '下必为例',
+                subtitle: subtitle,
+                statusBadge: snapshot.hasError
+                    ? const PactaStatusBadge(
+                        label: '读取失败',
+                        tone: PactaStatusBadgeTone.error,
+                      )
+                    : null,
+                onTap: _openPrecedentRules,
               ),
-            ),
-            trailing: Icon(Icons.chevron_right, color: colors.onSurfaceVariant),
-            onTap: _openPrecedentRules,
-          ),
-        );
-      },
-    );
-  }
+            ],
+          );
+        },
+      );
 
   Widget _recordReadError() => Padding(
     padding: const EdgeInsets.symmetric(vertical: 12),
@@ -518,7 +519,11 @@ class _FocusRecoveryStrip extends StatelessWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.only(top: PactaSpacing.xxs),
-                child: Icon(icon, size: 20, color: foreground),
+                child: Icon(
+                  icon,
+                  size: PactaIconSizes.compact,
+                  color: foreground,
+                ),
               ),
               const SizedBox(width: PactaSpacing.sm),
               Expanded(
@@ -573,10 +578,22 @@ class PrecedentRulesPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('下必为例')),
-    body: ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      // 页面本身已有 AppBar 标题「下必为例」，卡片不再重复一次。
-      children: const [PrecedentRulesCard(showTitle: false)],
+    // 推入式二级页统一居中并限制正文宽度：桌面宽屏下与页面级卡片同一
+    // 阅读节奏，不再横向撑满整块画布。
+    body: Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 800),
+        child: ListView(
+          padding: PactaSpacing.pageInsets(
+            context,
+            top: PactaSpacing.sm,
+            bottom: PactaSpacing.xl,
+          ),
+          // 页面本身已有 AppBar 标题「下必为例」，卡片不再重复一次。
+          children: const [PrecedentRulesCard(showTitle: false)],
+        ),
+      ),
     ),
   );
 }
@@ -651,7 +668,10 @@ class _FocusStartBar extends StatelessWidget {
                     minimumSize: const Size.fromHeight(48),
                   ),
                   onPressed: busy ? null : onPressed,
-                  icon: const Icon(Icons.playlist_play),
+                  icon: const Icon(
+                    Icons.playlist_play,
+                    size: PactaIconSizes.sm,
+                  ),
                   label: const Text('选择任务'),
                 ),
               ],
@@ -681,99 +701,117 @@ class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
   bool _openingSetup = false;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('选择任务')),
-    body: Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 960),
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: SegmentedButton<TaskClassification?>(
-                segments: const [
-                  ButtonSegment<TaskClassification?>(
-                    value: null,
-                    label: Text('全部'),
-                  ),
-                  ButtonSegment<TaskClassification?>(
-                    value: TaskClassification.elite,
-                    label: Text('精锐'),
-                  ),
-                  ButtonSegment<TaskClassification?>(
-                    value: TaskClassification.regular,
-                    label: Text('普通'),
-                  ),
-                ],
-                selected: {_filter},
-                onSelectionChanged: (values) =>
-                    setState(() => _filter = values.single),
+  Widget build(BuildContext context) {
+    final gutter = PactaSpacing.gutterFor(MediaQuery.sizeOf(context).width);
+    return Scaffold(
+      appBar: AppBar(title: const Text('选择任务')),
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxWidth: PactaSpacing.maxContentWidth,
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  gutter,
+                  PactaSpacing.sm,
+                  gutter,
+                  PactaSpacing.sm,
+                ),
+                child: SegmentedButton<TaskClassification?>(
+                  segments: const [
+                    ButtonSegment<TaskClassification?>(
+                      value: null,
+                      label: Text('全部'),
+                    ),
+                    ButtonSegment<TaskClassification?>(
+                      value: TaskClassification.elite,
+                      label: Text('精锐'),
+                    ),
+                    ButtonSegment<TaskClassification?>(
+                      value: TaskClassification.regular,
+                      label: Text('普通'),
+                    ),
+                  ],
+                  selected: {_filter},
+                  onSelectionChanged: (values) =>
+                      setState(() => _filter = values.single),
+                ),
               ),
-            ),
-            Expanded(
-              child: StreamBuilder<List<Goal>>(
-                stream: ref.watch(taskRepositoryProvider).watchGoals(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return const Center(child: Text('任务读取失败，请返回后重试。'));
-                  }
-                  if (!snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final goals = snapshot.data!;
-                  final entries = [
-                    for (final goal in goals)
-                      if (!goal.isDeleted)
-                        for (final task in goal.tasks)
-                          if (!task.isDeleted &&
-                              !task.isComplete &&
-                              _matchesFilter(task))
-                            (goal: goal, task: task),
-                  ];
-                  if (entries.isEmpty) {
-                    return const Center(child: Text('当前筛选下没有可开始的任务。'));
-                  }
-                  return ListView.separated(
-                    key: const PageStorageKey('focus-task-picker-list'),
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 28),
-                    itemCount: entries.length,
-                    // 主题把 Card 的外边距设为 0，连续卡片会紧贴；
-                    // 任务卡之间补一档 8dp，滚动时仍能区分相邻任务。
-                    separatorBuilder: (context, index) =>
-                        const SizedBox(height: PactaSpacing.sm),
-                    itemBuilder: (context, index) {
-                      final entry = entries[index];
-                      final task = entry.task;
-                      final estimate = task.estimatedMinutes == null
-                          ? '未设置'
-                          : '${task.estimatedMinutes} 分钟';
-                      return Card(
-                        child: ListTile(
-                          title: Text(task.title),
-                          subtitle: Text(
-                            '目标：${entry.goal.title} · ${task.classification.label} · '
-                            '预计时长：$estimate · 已专注 ${formatEffectiveDuration(task.focusProgressSeconds)}',
-                          ),
-                          onTap: () => _showSetup(task),
-                          trailing: Tooltip(
-                            message: '开始任务：${task.title}',
-                            child: FilledButton.tonal(
-                              onPressed: () => _showSetup(task),
-                              child: const Text('开始'),
+              Expanded(
+                child: StreamBuilder<List<Goal>>(
+                  stream: ref.watch(taskRepositoryProvider).watchGoals(),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return const Center(child: Text('任务读取失败，请返回后重试。'));
+                    }
+                    if (!snapshot.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final goals = snapshot.data!;
+                    final entries = [
+                      for (final goal in goals)
+                        if (!goal.isDeleted)
+                          for (final task in goal.tasks)
+                            if (!task.isDeleted &&
+                                !task.isComplete &&
+                                _matchesFilter(task))
+                              (goal: goal, task: task),
+                    ];
+                    if (entries.isEmpty) {
+                      return const Center(child: Text('当前筛选下没有可开始的任务。'));
+                    }
+                    return ListView.separated(
+                      key: const PageStorageKey('focus-task-picker-list'),
+                      padding: EdgeInsets.fromLTRB(
+                        gutter,
+                        0,
+                        gutter,
+                        PactaSpacing.xl,
+                      ),
+                      itemCount: entries.length,
+                      // 主题把 Card 的外边距设为 0，连续卡片会紧贴；
+                      // 任务卡之间补一档 8dp，滚动时仍能区分相邻任务。
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: PactaSpacing.sm),
+                      itemBuilder: (context, index) {
+                        final entry = entries[index];
+                        final task = entry.task;
+                        final estimate = task.estimatedMinutes == null
+                            ? '未设置'
+                            : '${task.estimatedMinutes} 分钟';
+                        return Card(
+                          child: ListTile(
+                            leading: _TaskTypeWell(
+                              classification: task.classification,
+                            ),
+                            title: Text(task.title),
+                            subtitle: Text(
+                              '目标：${entry.goal.title} · ${task.classification.label} · '
+                              '预计时长：$estimate · 已专注 ${formatEffectiveDuration(task.focusProgressSeconds)}',
+                            ),
+                            onTap: () => _showSetup(task),
+                            trailing: Tooltip(
+                              message: '开始任务：${task.title}',
+                              child: FilledButton.tonal(
+                                onPressed: () => _showSetup(task),
+                                child: const Text('开始'),
+                              ),
                             ),
                           ),
-                        ),
-                      );
-                    },
-                  );
-                },
+                        );
+                      },
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 
   bool _matchesFilter(Task task) {
     return switch (_filter) {
@@ -820,6 +858,51 @@ class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
   }
 }
 
+/// 任务卡左侧的柔色圆底图标井：精锐 / 普通 / 双模式各一档图标与底色。
+class _TaskTypeWell extends StatelessWidget {
+  const _TaskTypeWell({required this.classification});
+
+  final TaskClassification classification;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final (
+      IconData icon,
+      Color background,
+      Color foreground,
+    ) = switch (classification) {
+      TaskClassification.elite => (
+        Icons.shield_outlined,
+        colors.primaryContainer,
+        colors.onPrimaryContainer,
+      ),
+      TaskClassification.regular => (
+        Icons.all_inclusive,
+        colors.secondaryContainer,
+        colors.onSecondaryContainer,
+      ),
+      TaskClassification.both => (
+        Icons.swap_horiz,
+        colors.tertiaryContainer,
+        colors.onTertiaryContainer,
+      ),
+    };
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(color: background, shape: BoxShape.circle),
+      child: Icon(icon, size: PactaIconSizes.compact, color: foreground),
+    );
+  }
+}
+
+/// 专注历史：按链切换的纵向链式时间轴。
+///
+/// 顶部三段切换（精锐链 / 普通链 / 预约链），下方把已结算记录回放成
+/// #1 -> #2 -> #3 -> 断链 -> #1 的连胜段：段头写清连续长度，段内用纵向
+/// 连接线与圆形序号徽章串联，失败以「断链」收尾并明确下一段重新从 #1 起算。
+/// 现行单设备时钟待核对只挂轻量徽标，不占序号也不断链。
 class FocusHistoryPage extends ConsumerStatefulWidget {
   const FocusHistoryPage({super.key});
 
@@ -827,47 +910,124 @@ class FocusHistoryPage extends ConsumerStatefulWidget {
   ConsumerState<FocusHistoryPage> createState() => _FocusHistoryPageState();
 }
 
+class _FocusHistoryData {
+  const _FocusHistoryData({
+    required this.nodes,
+    required this.appointments,
+    required this.nodesFailed,
+    required this.appointmentsFailed,
+  });
+
+  final List<FocusNode> nodes;
+  final List<AppointmentPreparation> appointments;
+
+  /// 节点备注与预约记录各自读取失败：失败只降级对应信息，不隐藏已有记录。
+  final bool nodesFailed;
+  final bool appointmentsFailed;
+}
+
 class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
-  FocusRepository? _nodesRepository;
-  String? _nodesSessionSignature;
-  late Future<List<FocusNode>> _nodesFuture;
+  /// 用户显式选中的链；为空时按「第一条有记录的链」做默认选择。
+  FocusChainType? _chain;
+  FocusRepository? _dataRepository;
+  String? _dataSignature;
+  late Future<_FocusHistoryData> _dataFuture;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadNodes(ref.read(focusRepositoryProvider));
+  Future<_FocusHistoryData> _readData(FocusRepository repository) async {
+    List<FocusNode> nodes = const <FocusNode>[];
+    var nodesFailed = false;
+    try {
+      nodes = await repository.getNodes();
+    } catch (_) {
+      nodesFailed = true;
+    }
+    List<AppointmentPreparation> appointments =
+        const <AppointmentPreparation>[];
+    var appointmentsFailed = false;
+    try {
+      appointments = await repository.getAppointments();
+    } catch (_) {
+      appointmentsFailed = true;
+    }
+    return _FocusHistoryData(
+      nodes: nodes,
+      appointments: appointments,
+      nodesFailed: nodesFailed,
+      appointmentsFailed: appointmentsFailed,
+    );
   }
 
-  void _loadNodes(FocusRepository repository) {
-    _nodesRepository = repository;
-    _nodesSessionSignature = null;
-    _nodesFuture = repository.getNodes();
-  }
-
-  void _refreshNodesForSessions(
+  /// 专注记录变化（新结算、改正失败原因）时，节点备注与预约记录一起刷新；
+  /// 只有签名变化才重新读，避免每帧重复查询。
+  void _syncForSessions(
     FocusRepository repository,
     List<FocusSession> sessions,
   ) {
-    final signature = sessions.map((session) => session.id).join('|');
-    if (!identical(_nodesRepository, repository) ||
-        _nodesSessionSignature != signature) {
-      _nodesRepository = repository;
-      _nodesSessionSignature = signature;
-      _nodesFuture = repository.getNodes();
+    final signature = [
+      for (final session in sessions)
+        '${session.id}:${session.status.storageValue}:'
+            '${session.reviewDisposition.storageValue}:'
+            '${session.failureReason}',
+    ].join('|');
+    if (identical(_dataRepository, repository) && _dataSignature == signature) {
+      return;
     }
+    _dataRepository = repository;
+    _dataSignature = signature;
+    _dataFuture = _readData(repository);
   }
 
-  void _reloadNodes(FocusRepository repository) {
+  void _reload(FocusRepository repository) {
     if (!mounted) return;
     setState(() {
-      _nodesFuture = repository.getNodes();
+      _dataFuture = _readData(repository);
     });
+  }
+
+  /// 默认落在第一条有记录的链：精锐链没有记录时不必先看到空态再手动切换。
+  FocusChainType _defaultChain(FocusChainHistory history) {
+    for (final chain in FocusChainType.values) {
+      if (history.timelineFor(chain).isNotEmpty) return chain;
+    }
+    return FocusChainType.elite;
+  }
+
+  Widget _chainSwitch(BuildContext context, FocusChainType chain) {
+    final gutter = PactaSpacing.gutterFor(MediaQuery.sizeOf(context).width);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        gutter,
+        PactaSpacing.sm,
+        gutter,
+        PactaSpacing.xs,
+      ),
+      child: SegmentedButton<FocusChainType>(
+        key: const ValueKey('focus-history-chain-switch'),
+        showSelectedIcon: false,
+        style: SegmentedButton.styleFrom(
+          minimumSize: const Size(0, 44),
+          visualDensity: VisualDensity.compact,
+          // 800dp 居中块减去两侧 gutter 后只剩 752dp：段内横向 padding 收到
+          // 8dp，三个中文标签才不会把整条胶囊挤到左缘之外。
+          padding: const EdgeInsets.symmetric(horizontal: PactaSpacing.sm),
+        ),
+        segments: [
+          for (final chain in FocusChainType.values)
+            ButtonSegment<FocusChainType>(
+              value: chain,
+              label: Text(chain.label),
+            ),
+        ],
+        selected: {chain},
+        onSelectionChanged: (selection) =>
+            setState(() => _chain = selection.single),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final repository = ref.watch(focusRepositoryProvider);
-    if (!identical(_nodesRepository, repository)) _loadNodes(repository);
     final taskRepository = ref.watch(taskRepositoryProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('专注历史')),
@@ -893,28 +1053,51 @@ class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
               if (!sessionsSnapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
-              final sessions = sessionsSnapshot.data!
-                  .where((session) => !session.isUnfinished)
-                  .toList();
-              _refreshNodesForSessions(repository, sessions);
-              if (sessions.isEmpty) {
-                return const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('完成或结束专注后，记录会显示在这里。'),
-                  ),
-                );
-              }
-              return FutureBuilder<List<FocusNode>>(
-                future: _nodesFuture,
-                builder: (context, nodesSnapshot) => _FocusHistoryList(
-                  repository: repository,
-                  sessions: sessions,
-                  nodes: nodesSnapshot.data ?? const [],
-                  taskTitles: taskTitles,
-                  nodeError: nodesSnapshot.hasError,
-                  onNodeNoteUpdated: () => _reloadNodes(repository),
-                ),
+              final sessions = [
+                for (final session in sessionsSnapshot.data!)
+                  if (!session.isUnfinished) session,
+              ];
+              _syncForSessions(repository, sessions);
+              return FutureBuilder<_FocusHistoryData>(
+                future: _dataFuture,
+                builder: (context, dataSnapshot) {
+                  if (dataSnapshot.hasError) {
+                    return const Center(child: Text('暂时无法读取专注历史。'));
+                  }
+                  final data = dataSnapshot.data;
+                  if (data == null) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final history = buildFocusChainHistory(
+                    sessions: sessions,
+                    appointments: data.appointments,
+                  );
+                  final chain = _chain ?? _defaultChain(history);
+                  // 三链切换、统计摘要与时间轴同受 800dp 居中约束：桌面宽屏
+                  // 不再把时间轴拉成 1248dp 的通栏。
+                  return Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 800),
+                      child: Column(
+                        children: [
+                          _chainSwitch(context, chain),
+                          Expanded(
+                            child: _FocusHistoryTimeline(
+                              repository: repository,
+                              chain: chain,
+                              timeline: history.timelineFor(chain),
+                              nodes: data.nodes,
+                              taskTitles: taskTitles,
+                              dataNotice: _dataNotice(data),
+                              onNodeNoteUpdated: () => _reload(repository),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               );
             },
           );
@@ -922,105 +1105,589 @@ class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
       ),
     );
   }
+
+  String? _dataNotice(_FocusHistoryData data) {
+    if (data.nodesFailed) return '节点备注暂时不可用，专注记录仍可查看。';
+    if (data.appointmentsFailed) return '预约记录暂时不可用，专注记录仍可查看。';
+    return null;
+  }
 }
 
-class _FocusHistoryList extends StatelessWidget {
-  const _FocusHistoryList({
+/// 纵向链式时间轴：段头 + 连接线 + 圆形序号徽章。
+class _FocusHistoryTimeline extends StatelessWidget {
+  const _FocusHistoryTimeline({
     required this.repository,
-    required this.sessions,
+    required this.chain,
+    required this.timeline,
     required this.nodes,
     required this.taskTitles,
-    required this.nodeError,
+    required this.dataNotice,
     required this.onNodeNoteUpdated,
   });
 
   final FocusRepository repository;
-  final List<FocusSession> sessions;
+  final FocusChainType chain;
+  final FocusChainTimeline timeline;
   final List<FocusNode> nodes;
   final Map<String, String> taskTitles;
-  final bool nodeError;
+  final String? dataNotice;
   final VoidCallback onNodeNoteUpdated;
 
   @override
   Widget build(BuildContext context) {
-    final nodesBySession = {for (final node in nodes) node.sessionId: node};
+    if (timeline.isEmpty) return _emptyState(context);
+    final nodesBySession = <String, FocusNode>{
+      for (final node in nodes) node.sessionId: node,
+    };
+    final gutter = PactaSpacing.gutterFor(MediaQuery.sizeOf(context).width);
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+      key: const ValueKey('focus-history-timeline'),
+      padding: EdgeInsets.fromLTRB(
+        gutter,
+        PactaSpacing.md,
+        gutter,
+        PactaSpacing.xl,
+      ),
       children: [
-        if (nodeError)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 8),
-            child: Text('节点备注暂时不可用，专注记录仍可查看。'),
+        if (dataNotice case final notice?) _notice(context, notice),
+        _summary(context),
+        if (timeline.awaitingClockReview.isNotEmpty) ...[
+          const SizedBox(height: PactaSpacing.lg),
+          _sectionHeader(context, '待核对的专注', '不计入链号，也不打断连胜'),
+          const SizedBox(height: PactaSpacing.sm),
+          for (final entry in timeline.awaitingClockReview) ...[
+            _clockReviewCard(context, entry),
+            const SizedBox(height: PactaSpacing.sm),
+          ],
+        ],
+        for (final (index, run) in timeline.runs.indexed) ...[
+          const SizedBox(height: PactaSpacing.lg),
+          _runSection(
+            context,
+            run: run,
+            isNewest: index == 0,
+            nodesBySession: nodesBySession,
           ),
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Text(
-            '${sessions.length} 次已结算专注',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        ),
-        for (final (index, session) in sessions.indexed) ...[
-          // 卡片外边距为 0，历史记录之间补一档 8dp 才能读成独立条目。
-          if (index > 0) const SizedBox(height: PactaSpacing.sm),
-          Card(
-            child: ListTile(
-              title: Text(taskTitles[session.taskId] ?? '原任务'),
-              subtitle: Text(
-                session.isFailed
-                    ? '失败 · ${formatEffectiveDuration(session.effectiveSeconds)}\n原因：${session.failureReason ?? '未填写'}'
-                    : session.isEarlyCompleted
-                    ? '获准提前完成 · ${formatEffectiveDuration(session.effectiveSeconds)}\n依据：${session.completionRuleText ?? '未记录'}'
-                    : '正常完成 · ${formatEffectiveDuration(session.effectiveSeconds)}',
-              ),
-              trailing: Wrap(
-                children: [
-                  if (session.isFailed)
-                    IconButton(
-                      tooltip: '编辑失败原因',
-                      icon: const Icon(Icons.edit_note_outlined),
-                      onPressed: () async {
-                        final reason = await showTextEditor(
-                          context,
-                          title: '编辑失败原因',
-                          label: '失败原因',
-                          initial: session.failureReason ?? '',
-                          required: true,
-                        );
-                        if (reason != null) {
-                          await repository.updateFailureReason(
-                            sessionId: session.id,
-                            failureReason: reason,
-                          );
-                        }
-                      },
-                    ),
-                  if (nodesBySession[session.id] case final node?)
-                    IconButton(
-                      tooltip: '编辑节点备注',
-                      icon: const Icon(Icons.sticky_note_2_outlined),
-                      onPressed: () async {
-                        final note = await showTextEditor(
-                          context,
-                          title: '编辑节点备注',
-                          label: '备注（可选）',
-                          initial: node.note ?? '',
-                        );
-                        if (note != null) {
-                          await repository.updateNodeNote(
-                            nodeId: node.id,
-                            note: note,
-                          );
-                          onNodeNoteUpdated();
-                        }
-                      },
-                    ),
-                ],
-              ),
-            ),
-          ),
+        ],
+        if (timeline.leadingBreaks.isNotEmpty) ...[
+          const SizedBox(height: PactaSpacing.lg),
+          _sectionHeader(context, '更早的断链记录', '第一次连胜之前的失败'),
+          const SizedBox(height: PactaSpacing.sm),
+          for (final entry in timeline.leadingBreaks) ...[
+            _breakCard(context, entry),
+            const SizedBox(height: PactaSpacing.sm),
+          ],
         ],
       ],
     );
+  }
+
+  Widget _emptyState(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final message = switch (chain) {
+      FocusChainType.elite || FocusChainType.regular => '完成或结束专注后，记录会显示在这里。',
+      FocusChainType.appointment => '完成或结束预约准备后，记录会显示在这里。',
+    };
+    return Center(
+      key: const ValueKey('focus-history-empty'),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(PactaSpacing.xl),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.timeline,
+              size: PactaIconSizes.hero,
+              color: colors.onSurfaceVariant,
+            ),
+            const SizedBox(height: PactaSpacing.md),
+            Text(
+              '${chain.label}还没有连胜记录。',
+              style: theme.textTheme.titleMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: PactaSpacing.xs),
+            Text(
+              message,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _notice(BuildContext context, String notice) => Padding(
+    padding: const EdgeInsets.only(bottom: PactaSpacing.sm),
+    child: Text(
+      notice,
+      style: Theme.of(context).textTheme.bodySmall
+          ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+    ),
+  );
+
+  /// 段数摘要：当前连续、最高连胜与段数一次读全。
+  Widget _summary(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final valueStyle = theme.textTheme.titleMedium?.copyWith(
+      fontFeatures: const [ui.FontFeature.tabularFigures()],
+      fontWeight: PactaFonts.semibold,
+    );
+    Widget metric(String label, String value) => Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: PactaSpacing.xxs),
+          Text(value, style: valueStyle),
+        ],
+      ),
+    );
+    return PactaGroupedList(
+      key: const ValueKey('focus-history-summary'),
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: PactaSpacing.lg,
+            vertical: PactaSpacing.md,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              metric('当前连续', '${timeline.currentStreak} 次'),
+              metric('最高连胜', '${timeline.bestStreak} 次'),
+              metric('连胜段数', '${timeline.runCount} 段'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _sectionHeader(BuildContext context, String title, String caption) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        Text(
+          title,
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: PactaFonts.semibold,
+          ),
+        ),
+        const SizedBox(width: PactaSpacing.sm),
+        Expanded(
+          child: Text(
+            caption,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 一段连胜：段头写明连续长度，段内节点与断链共用一条连接线。
+  Widget _runSection(
+    BuildContext context, {
+    required FocusChainStreakRun run,
+    required bool isNewest,
+    required Map<String, FocusNode> nodesBySession,
+  }) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final surfaces = PactaSurfaces.of(context);
+    final header = isNewest && !run.isBroken
+        ? '当前连续 ${run.length} 次'
+        : '连续 ${run.length} 次';
+    final rows = <Widget>[
+      for (final entry in run.entries)
+        _timelineRow(
+          context,
+          entry: entry,
+          badge: _streakBadge(context, entry.streakIndex!),
+          card: _completedCard(context, entry, nodesBySession[entry.id]),
+        ),
+      for (final entry in run.closingBreaks)
+        _timelineRow(
+          context,
+          entry: entry,
+          badge: _breakBadge(context),
+          card: _breakCard(context, entry),
+        ),
+    ];
+    return Column(
+      key: ValueKey(
+        'focus-history-run-${run.length}-${run.startedAt.millisecondsSinceEpoch}',
+      ),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Text(
+              header,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: PactaFonts.semibold,
+              ),
+            ),
+            const SizedBox(width: PactaSpacing.sm),
+            Expanded(
+              child: Text(
+                '${formatPactaMonthDayTime(run.startedAt)} – '
+                '${formatPactaMonthDayTime(run.endedAt)}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: PactaSpacing.sm),
+        Stack(
+          children: [
+            // 连接线只画一条：它从第一枚徽章贯穿到本段最后一个节点。
+            Positioned(
+              left: 15,
+              top: 0,
+              bottom: 0,
+              child: Container(width: 2, color: surfaces.hairline),
+            ),
+            Column(
+              children: [
+                for (final (index, row) in rows.indexed) ...[
+                  if (index > 0) const SizedBox(height: PactaSpacing.sm),
+                  row,
+                ],
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _timelineRow(
+    BuildContext context, {
+    required FocusChainHistoryEntry entry,
+    required Widget badge,
+    required Widget card,
+  }) => Row(
+    key: ValueKey('focus-history-row-${entry.id}'),
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      SizedBox(
+        width: 32,
+        child: Align(alignment: Alignment.topCenter, child: badge),
+      ),
+      const SizedBox(width: PactaSpacing.sm),
+      Expanded(child: card),
+    ],
+  );
+
+  Widget _streakBadge(BuildContext context, int index) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: 32,
+      height: 32,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: colors.primaryContainer,
+        shape: BoxShape.circle,
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text(
+            '#$index',
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: colors.onPrimaryContainer,
+              fontWeight: PactaFonts.semibold,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _breakBadge(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: 32,
+      height: 32,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: colors.errorContainer,
+        shape: BoxShape.circle,
+      ),
+      child: Icon(
+        Icons.link_off,
+        size: PactaIconSizes.micro,
+        color: colors.onErrorContainer,
+      ),
+    );
+  }
+
+  Widget _completedCard(
+    BuildContext context,
+    FocusChainHistoryEntry entry,
+    FocusNode? node,
+  ) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final status = switch (entry.chain) {
+      FocusChainType.appointment => '预约成功',
+      FocusChainType.elite ||
+      FocusChainType.regular => entry.basisText == null ? '正常完成' : '获准提前完成',
+    };
+    final meta =
+        '$status · ${formatPactaDateTime(entry.occurredAt)} · '
+        '${formatEffectiveDuration(entry.effectiveSeconds)}';
+    return Card(
+      key: ValueKey('focus-history-node-${entry.id}'),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          PactaSpacing.lg,
+          PactaSpacing.sm,
+          PactaSpacing.xs,
+          PactaSpacing.sm,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    taskTitles[entry.taskId] ?? '原任务',
+                    style: theme.textTheme.titleSmall,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: PactaSpacing.xxs),
+                  Text(
+                    meta,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (entry.basisText case final basis?) ...[
+                    const SizedBox(height: PactaSpacing.xxs),
+                    Text(
+                      '依据：$basis',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (node != null)
+              IconButton(
+                key: ValueKey('focus-history-node-note-${entry.id}'),
+                tooltip: '编辑节点备注',
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                icon: const Icon(
+                  Icons.sticky_note_2_outlined,
+                  size: PactaIconSizes.compact,
+                ),
+                onPressed: () => _editNodeNote(context, node),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 断链节点：失败徽标、原因与有效时长，并说明下一次从 #1 重新起算。
+  Widget _breakCard(BuildContext context, FocusChainHistoryEntry entry) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final durationLabel = entry.chain == FocusChainType.appointment
+        ? '准备时长'
+        : '有效专注';
+    final editable = entry.chain != FocusChainType.appointment;
+    return Card(
+      key: ValueKey('focus-history-break-${entry.id}'),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          PactaSpacing.lg,
+          PactaSpacing.sm,
+          PactaSpacing.xs,
+          PactaSpacing.sm,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Wrap(
+                    spacing: PactaSpacing.sm,
+                    runSpacing: PactaSpacing.xxs,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const PactaStatusBadge(
+                        label: '断链',
+                        icon: Icons.link_off,
+                        tone: PactaStatusBadgeTone.error,
+                      ),
+                      Text(
+                        formatPactaDateTime(entry.occurredAt),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: PactaSpacing.xs),
+                  Text(
+                    '${taskTitles[entry.taskId] ?? '原任务'} · '
+                    '原因：${entry.failureReason ?? '未填写'}',
+                    style: theme.textTheme.bodyMedium,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: PactaSpacing.xxs),
+                  Text(
+                    '$durationLabel '
+                    '${formatEffectiveDuration(entry.effectiveSeconds)}'
+                    ' · 之后重新从 #1 起算',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            if (editable)
+              IconButton(
+                key: ValueKey('focus-history-break-reason-${entry.id}'),
+                tooltip: '编辑失败原因',
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                icon: const Icon(
+                  Icons.edit_note_outlined,
+                  size: PactaIconSizes.compact,
+                ),
+                onPressed: () => _editFailureReason(context, entry),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _clockReviewCard(BuildContext context, FocusChainHistoryEntry entry) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Card(
+      key: ValueKey('focus-history-clock-review-${entry.id}'),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: PactaSpacing.lg,
+          vertical: PactaSpacing.sm,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    taskTitles[entry.taskId] ?? '原任务',
+                    style: theme.textTheme.titleSmall,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: PactaSpacing.xxs),
+                  Text(
+                    '${formatPactaDateTime(entry.occurredAt)} · '
+                    '${formatEffectiveDuration(entry.effectiveSeconds)}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: PactaSpacing.sm),
+            const PactaStatusBadge(
+              label: '时钟待核对',
+              icon: Icons.schedule,
+              tone: PactaStatusBadgeTone.warning,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _editNodeNote(BuildContext context, FocusNode node) async {
+    final note = await showTextEditor(
+      context,
+      title: '编辑节点备注',
+      label: '备注（可选）',
+      initial: node.note ?? '',
+    );
+    if (note == null) return;
+    // 停用账号、备注超长或离线都会在写入时抛：降级成可读提示，不让异步
+    // 异常从按钮的 onPressed 里逃出去。
+    try {
+      await repository.updateNodeNote(nodeId: node.id, note: note);
+    } catch (error) {
+      if (!context.mounted) return;
+      showFocusError(context, error);
+      return;
+    }
+    if (!context.mounted) return;
+    onNodeNoteUpdated();
+  }
+
+  Future<void> _editFailureReason(
+    BuildContext context,
+    FocusChainHistoryEntry entry,
+  ) async {
+    final reason = await showTextEditor(
+      context,
+      title: '编辑失败原因',
+      label: '失败原因',
+      initial: entry.failureReason ?? '',
+      required: true,
+    );
+    if (reason == null) return;
+    // 同 _editNodeNote：写入失败只提示，不把异常丢给上层事件循环。
+    try {
+      await repository.updateFailureReason(
+        sessionId: entry.id,
+        failureReason: reason,
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      showFocusError(context, error);
+    }
   }
 }
 
@@ -1134,62 +1801,102 @@ class _PrecedentRulesCardState extends ConsumerState<PrecedentRulesCard> {
   }
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (widget.showTitle) ...[
-            Text('下必为例', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 6),
-          ],
-          const Text('专注中断时可直接选择或新建；规则含义由你自己判断。'),
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_rules.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('还没有共享规则。'),
-            )
-          else
-            for (final rule in _rules)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(rule.text),
-                trailing: Wrap(
-                  children: [
-                    IconButton(
-                      tooltip: '编辑下必为例',
-                      onPressed: _busy ? null : () => _edit(rule),
-                      icon: const Icon(Icons.edit_outlined),
-                    ),
-                    IconButton(
-                      tooltip: '删除下必为例',
-                      onPressed: _busy ? null : () => _delete(rule),
-                      icon: const Icon(Icons.delete_outline),
-                    ),
-                  ],
-                ),
-              ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(PactaSpacing.lg),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (widget.showTitle) ...[
+              Text('下必为例', style: theme.textTheme.titleMedium),
+              const SizedBox(height: PactaSpacing.sm),
+            ],
+            Text(
+              '专注中断时可直接选择或新建；规则含义由你自己判断。',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
               ),
             ),
-          FilledButton.icon(
-            onPressed: _busy ? null : _create,
-            icon: const Icon(Icons.add),
-            label: const Text('新建规则'),
-          ),
-        ],
+            const SizedBox(height: PactaSpacing.md),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: PactaSpacing.lg),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_rules.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: PactaSpacing.md),
+                child: Text('还没有共享规则。'),
+              )
+            else
+              // 规则是一组同质条目：行间只放 1dp hairline，不散落成独立卡片。
+              Column(
+                children: [
+                  for (final (index, rule) in _rules.indexed) ...[
+                    if (index > 0)
+                      Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: colors.outlineVariant,
+                      ),
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(rule.text),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: '编辑下必为例',
+                            constraints: const BoxConstraints(
+                              minWidth: 48,
+                              minHeight: 48,
+                            ),
+                            onPressed: _busy ? null : () => _edit(rule),
+                            icon: const Icon(
+                              Icons.edit_outlined,
+                              size: PactaIconSizes.compact,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: '删除下必为例',
+                            constraints: const BoxConstraints(
+                              minWidth: 48,
+                              minHeight: 48,
+                            ),
+                            onPressed: _busy ? null : () => _delete(rule),
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              size: PactaIconSizes.compact,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: PactaSpacing.sm),
+                child: Text(
+                  _error!,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colors.error,
+                  ),
+                ),
+              ),
+            const SizedBox(height: PactaSpacing.md),
+            FilledButton.icon(
+              onPressed: _busy ? null : _create,
+              icon: const Icon(Icons.add, size: PactaIconSizes.sm),
+              label: const Text('新建规则'),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }

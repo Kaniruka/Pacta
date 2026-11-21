@@ -291,15 +291,6 @@ void main() {
         fail('T20 云端同步验收未建立 Windows 本地副本。');
       }
 
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: ThemeData(platform: TargetPlatform.windows),
-          home: CalendarAgendaCard(repository: windowsRepository!),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Ticket-20 跨端验收样例'), findsNWidgets(2));
-
       Object? reconciliationFailure;
       try {
         await tester.runAsync(() async {

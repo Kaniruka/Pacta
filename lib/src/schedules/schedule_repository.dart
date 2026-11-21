@@ -99,12 +99,6 @@ abstract interface class ScheduleRepository {
   /// once per account. Repeated calls report the recorded result.
   Future<SchedulePromotionResult> promoteLegacyCalendarBlocks();
 
-  Future<ScheduleMigrationStatus> getLegacyMigrationStatus();
-
-  /// Removes only the schedules created by the recorded promotion and proves
-  /// the pre-migration calendar-block copies are still present.
-  Future<ScheduleRollbackResult> rollbackLegacyCalendarBlockPromotion();
-
   Future<void> dispose();
 }
 
@@ -151,75 +145,6 @@ class LocalScheduleRepository implements ScheduleRepository {
     });
     return result;
   }
-
-  @override
-  Future<ScheduleMigrationStatus> getLegacyMigrationStatus() async {
-    final run = await _migrationRun();
-    if (run == null) {
-      return const ScheduleMigrationStatus(
-        hasCompletedMigration: false,
-        isRolledBack: false,
-        canRollback: false,
-        promotedCount: 0,
-        sourceBlockCount: 0,
-      );
-    }
-    final completed =
-        run.status == ScheduleMigrationState.completed.storageValue;
-    return ScheduleMigrationStatus(
-      hasCompletedMigration: completed,
-      isRolledBack: !completed,
-      canRollback: completed,
-      promotedCount: run.promotedCount,
-      sourceBlockCount: run.sourceBlockCount,
-      migrationId: run.migrationId,
-      completedAt: run.completedAt.toUtc(),
-    );
-  }
-
-  @override
-  Future<ScheduleRollbackResult> rollbackLegacyCalendarBlockPromotion() async {
-    await lifecycleAccess.requireActive();
-    late ScheduleRollbackResult result;
-    await database.transaction(() async {
-      final run = await _migrationRun();
-      if (run == null ||
-          run.status != ScheduleMigrationState.completed.storageValue) {
-        throw StateError('没有可回滚的旧日历迁移。');
-      }
-      final promotedIds = promotedScheduleIdsFrom(run);
-      var removed = 0;
-      if (promotedIds.isNotEmpty) {
-        removed =
-            await (database.delete(database.localSchedules)
-                  ..where((row) => row.userId.equals(userId))
-                  ..where((row) => row.id.isIn(promotedIds)))
-                .go();
-      }
-      final restored = await restoreLegacyCalendarBlocks(
-        database,
-        run.backupPayload,
-      );
-      await (database.update(
-        database.localScheduleMigrations,
-      )..where((row) => row.userId.equals(userId))).write(
-        LocalScheduleMigrationsCompanion(
-          status: Value(ScheduleMigrationState.rolledBack.storageValue),
-          rolledBackAt: Value(_now().toUtc()),
-        ),
-      );
-      result = ScheduleRollbackResult(
-        migrationId: run.migrationId,
-        removedSchedules: removed,
-        restoredBlocks: restored,
-      );
-    });
-    return result;
-  }
-
-  Future<LocalScheduleMigration?> _migrationRun() => (database.select(
-    database.localScheduleMigrations,
-  )..where((row) => row.userId.equals(userId))).getSingleOrNull();
 
   @override
   Future<CalendarImportPreview> previewCalendarImport(
@@ -1745,20 +1670,6 @@ class UnavailableScheduleRepository implements ScheduleRepository {
 
   @override
   Future<SchedulePromotionResult> promoteLegacyCalendarBlocks() =>
-      _unavailable();
-
-  @override
-  Future<ScheduleMigrationStatus> getLegacyMigrationStatus() async =>
-      ScheduleMigrationStatus(
-        hasCompletedMigration: true,
-        isRolledBack: false,
-        canRollback: false,
-        promotedCount: 0,
-        sourceBlockCount: 0,
-      );
-
-  @override
-  Future<ScheduleRollbackResult> rollbackLegacyCalendarBlockPromotion() =>
       _unavailable();
 
   @override

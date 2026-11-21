@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:drift/native.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:pacta/src/focus/chain_signals_repository.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -209,41 +208,6 @@ void main() {
     );
   }
 
-  test(
-    'legacy downloads persist the restored baseline and stable cloud token',
-    () async {
-      await _addGoal(database, userId: 'user-a', id: 'goal-a', title: 'Cloud');
-      final cloud = await repository.captureLocalState();
-      remote.seedLegacySnapshot(
-        userId: 'user-a',
-        token: '0123456789abcdef0123456789abcdef',
-        state: cloud,
-      );
-      await _addGoal(database, userId: 'user-a', id: 'goal-a', title: 'Local');
-      final local = await repository.captureLocalState();
-      final inspected = (await repository.inspectCloud())!;
-      await repository.downloadCloud(
-        expectedRevision: inspected.revision,
-        expectedFingerprint: local.fingerprint,
-      );
-      final result = (await repository.loadSyncResult())!;
-      expect(result.localFingerprint, cloud.fingerprint);
-      expect(result.localFingerprint, isNot(local.fingerprint));
-      expect(result.cloudRevision, inspected.revision);
-      expect(result.legacyToken, '0123456789abcdef0123456789abcdef');
-      await repository.inspectCloud();
-      expect(
-        (await repository.loadSyncResult())!.succeededAt,
-        result.succeededAt,
-      );
-      await _addGoal(database, userId: 'user-a', id: 'goal-a', title: 'Edited');
-      expect(
-        (await repository.captureLocalState()).fingerprint,
-        isNot(result.localFingerprint),
-      );
-    },
-  );
-
   test('historical success with unknown baseline stays unknown', () async {
     await const CloudSyncResultStore().save(
       'user-a',
@@ -259,65 +223,6 @@ void main() {
     await repository.inspectCloud();
     expect((await repository.loadSyncResult())!.localFingerprint, isNull);
   });
-
-  test(
-    'signals round-trip while legacy snapshots restore empty signal texts',
-    () async {
-      final signals = ChainSignalsRepository(
-        database: database,
-        userId: 'user-a',
-      );
-      await signals.save(
-        const ChainSignalTexts(
-          appointmentTriggerSignal: '戴耳机',
-          focusMarker: '坐下',
-        ),
-      );
-      final otherSignals = ChainSignalsRepository(
-        database: database,
-        userId: 'user-b',
-      );
-      await otherSignals.save(const ChainSignalTexts(focusMarker: '他人的标志'));
-      final captured = await repository.captureLocalState();
-      await repository.uploadLocal(
-        expectedRevision: 0,
-        expectedFingerprint: captured.fingerprint,
-      );
-      await signals.save(
-        const ChainSignalTexts(appointmentTriggerSignal: '改动'),
-      );
-      var local = await repository.captureLocalState();
-      await repository.downloadCloud(
-        expectedRevision: 1,
-        expectedFingerprint: local.fingerprint,
-      );
-      expect((await signals.get()).appointmentTriggerSignal, '戴耳机');
-      expect((await signals.get()).focusMarker, '坐下');
-      // A version 1 payload predates both the signal table and the owned
-      // schedule table; mark it as such instead of hand-editing a current one.
-      final legacy = Map<String, dynamic>.from(captured.payload)
-        ..['schemaVersion'] = 1;
-      legacy['tables'] = Map<String, dynamic>.from(legacy['tables'] as Map)
-        ..remove('chain_signals')
-        ..remove('local_schedules');
-      await remote.upload(
-        userId: 'user-a',
-        expectedRevision: 1,
-        payload: legacy,
-        deviceId: 'legacy',
-        deviceName: 'Legacy',
-        dataUpdatedAt: DateTime.utc(2026, 10, 7),
-        rowCount: 0,
-      );
-      local = await repository.captureLocalState();
-      await repository.downloadCloud(
-        expectedRevision: 2,
-        expectedFingerprint: local.fingerprint,
-      );
-      expect((await signals.get()).appointmentTriggerSignal, isEmpty);
-      expect((await otherSignals.get()).focusMarker, '他人的标志');
-    },
-  );
 
   test(
     'round-trips a user snapshot and advances revision with device metadata',
@@ -770,70 +675,6 @@ void main() {
     },
   );
 
-  test('legacy fallback uploads only with the exact inspected token', () async {
-    final state = CloudSnapshotLocalState(
-      fingerprint: 'legacy-fingerprint',
-      payload: const {'schemaVersion': 1, 'userId': 'user-a', 'tables': {}},
-      rowCount: 0,
-      dataUpdatedAt: DateTime.utc(2026, 10, 4),
-      hasUnfinishedFlow: false,
-    );
-    remote.seedLegacySnapshot(
-      userId: 'user-a',
-      token: '0123456789abcdef0123456789abcdef',
-      state: state,
-    );
-    final oldPreview = await remote.inspect(userId: 'user-a');
-    expect(oldPreview?.isLegacy, isTrue);
-    expect(oldPreview?.revision, lessThan(0));
-
-    remote.seedLegacySnapshot(
-      userId: 'user-a',
-      token: '1123456789abcdef0123456789abcdef',
-      state: state,
-    );
-    await remote.inspect(userId: 'user-a');
-    await expectLater(
-      remote.upload(
-        userId: 'user-a',
-        expectedRevision: oldPreview!.revision,
-        payload: state.payload,
-        deviceId: 'device-a',
-        deviceName: 'Phone A',
-        dataUpdatedAt: state.dataUpdatedAt,
-        rowCount: state.rowCount,
-      ),
-      throwsA(isA<StateError>()),
-    );
-  });
-
-  test('legacy fallback converts to canonical revision after matching token upload', () async {
-    final state = CloudSnapshotLocalState(
-      fingerprint: 'legacy-fingerprint',
-      payload: const {'schemaVersion': 1, 'userId': 'user-a', 'tables': {}},
-      rowCount: 0,
-      dataUpdatedAt: DateTime.utc(2026, 10, 4),
-      hasUnfinishedFlow: false,
-    );
-    remote.seedLegacySnapshot(
-      userId: 'user-a',
-      token: '0123456789abcdef0123456789abcdef',
-      state: state,
-    );
-    final preview = await remote.inspect(userId: 'user-a');
-    final saved = await remote.upload(
-      userId: 'user-a',
-      expectedRevision: preview!.revision,
-      payload: state.payload,
-      deviceId: 'device-a',
-      deviceName: 'Phone A',
-      dataUpdatedAt: state.dataUpdatedAt,
-      rowCount: state.rowCount,
-    );
-    expect(saved.revision, 1);
-    expect(saved.isLegacy, isFalse);
-  });
-
   test('validates the full payload before deleting local rows', () async {
     await _addGoal(database, userId: 'user-a', id: 'goal-a', title: 'Preserve');
     final malformed = <String, dynamic>{
@@ -864,90 +705,6 @@ void main() {
     )..where((row) => row.id.equals('goal-a'))).getSingle();
     expect(goal.title, 'Preserve');
   });
-
-  test(
-    'accepts version 1 cloud rows without goal and task descriptions as empty',
-    () async {
-      final tasks = LocalTaskRepository(
-        database: database,
-        userId: 'user-a',
-        remote: const UnavailableTaskRemoteDataSource(),
-        cloudSyncEnabled: false,
-      );
-      final goal = await tasks.createGoal(
-        const GoalDraft(
-          title: '本地目标',
-          description: '本地目标描述',
-          classification: TaskClassification.regular,
-        ),
-      );
-      final task = await tasks.createTask(
-        goal.id,
-        const TaskDraft(
-          title: '本地任务',
-          description: '本地任务描述',
-          classification: TaskClassification.regular,
-        ),
-      );
-      final oldCloudState = await repository.captureLocalState();
-      final tables = Map<String, dynamic>.from(
-        oldCloudState.payload['tables'] as Map,
-      );
-      for (final table in const ['local_goals', 'local_tasks']) {
-        tables[table] = [
-          for (final rawRow in tables[table] as List)
-            Map<String, dynamic>.from(rawRow as Map)
-              ..remove('description')
-              ..['title'] = table == 'local_goals' ? '云端旧目标' : '云端旧任务',
-        ];
-      }
-      // Version 1 payloads predate the owned schedule table, so the legacy
-      // read is marked as such instead of editing a current payload in place.
-      final oldPayload = <String, dynamic>{
-        ...oldCloudState.payload,
-        'schemaVersion': 1,
-        'tables': tables..remove('local_schedules'),
-      };
-      await remote.upload(
-        userId: 'user-a',
-        expectedRevision: 0,
-        payload: oldPayload,
-        deviceId: 'legacy-device',
-        deviceName: 'Legacy device',
-        dataUpdatedAt: oldCloudState.dataUpdatedAt,
-        rowCount: oldCloudState.rowCount,
-      );
-      await tasks.updateGoal(
-        goal.id,
-        const GoalDraft(
-          title: '本地保留目标',
-          description: '本地保留目标描述',
-          classification: TaskClassification.regular,
-        ),
-      );
-      await tasks.updateTask(
-        task.id,
-        const TaskDraft(
-          title: '本地保留任务',
-          description: '本地保留任务描述',
-          classification: TaskClassification.regular,
-        ),
-      );
-      final beforeDownload = await repository.captureLocalState();
-
-      await repository.downloadCloud(
-        expectedRevision: 1,
-        expectedFingerprint: beforeDownload.fingerprint,
-      );
-
-      final restored = (await tasks.getGoals()).single;
-      expect(restored.title, '云端旧目标');
-      expect(restored.description, isEmpty);
-      expect(restored.tasks.single.title, '云端旧任务');
-      expect(restored.tasks.single.description, isEmpty);
-      await tasks.dispose();
-    },
-  );
 
   test(
     'normalizes Goal and Task descriptions when restoring a snapshot',
@@ -1109,95 +866,6 @@ void main() {
       await tasks.dispose();
     },
   );
-
-  test('exports the current schema version and reads version 1 appointments by their retained boundary', () async {
-    final tasks = LocalTaskRepository(
-      database: database,
-      userId: 'user-a',
-      remote: const UnavailableTaskRemoteDataSource(),
-      cloudSyncEnabled: false,
-    );
-    var clock = DateTime.utc(2026, 11, 15, 8);
-    final focus = LocalFocusRepository(
-      database: database,
-      userId: 'user-a',
-      remote: InMemoryFocusRemote(),
-      cloudSyncEnabled: false,
-      now: () => clock,
-    );
-    final goal = await tasks.createGoal(
-      const GoalDraft(
-        title: '准备时长目标',
-        classification: TaskClassification.regular,
-      ),
-    );
-    final task = await tasks.createTask(
-      goal.id,
-      const TaskDraft(
-        title: '准备时长任务',
-        classification: TaskClassification.regular,
-      ),
-    );
-    final appointment = await focus.startAppointment(
-      taskId: task.id,
-      mode: FocusChainMode.regular,
-      duration: const Duration(minutes: 25),
-      preparation: const Duration(minutes: 37),
-    );
-    await focus.cancelAppointment(
-      appointmentId: appointment.id,
-      failureReason: '快照往返准备',
-    );
-    final settled = (await focus.getAppointment(appointment.id))!;
-
-    final local = await repository.captureLocalState();
-    expect(local.payload['schemaVersion'], cloudSnapshotSchemaVersion);
-    final localTables = Map<String, dynamic>.from(
-      local.payload['tables'] as Map,
-    );
-    expect(
-      (localTables['focus_appointments'] as List).single,
-      containsPair('preparation_seconds', 37 * 60),
-    );
-
-    // 版本 1 的云端备份既没有显式准备时长，也没有自有日程表：读取后沿用已存
-    // 起止时刻，日程只从旧日历块提升。
-    final legacyTables = Map<String, dynamic>.from(localTables)
-      ..remove('local_schedules');
-    legacyTables['focus_appointments'] = [
-      for (final rawRow in localTables['focus_appointments'] as List)
-        Map<String, dynamic>.from(rawRow as Map)..remove('preparation_seconds'),
-    ];
-    final legacyPayload = <String, dynamic>{
-      ...local.payload,
-      'schemaVersion': 1,
-      'tables': legacyTables,
-    };
-    await remote.upload(
-      userId: 'user-a',
-      expectedRevision: 0,
-      payload: legacyPayload,
-      deviceId: 'legacy-device',
-      deviceName: 'Legacy device',
-      dataUpdatedAt: local.dataUpdatedAt,
-      rowCount: local.rowCount,
-    );
-
-    await repository.downloadCloud(
-      expectedRevision: 1,
-      expectedFingerprint: local.fingerprint,
-    );
-
-    final restored = (await focus.getAppointment(appointment.id))!;
-    expect(restored.status, AppointmentPreparationStatus.failed);
-    expect(restored.startedAt.isAtSameMomentAs(settled.startedAt), isTrue);
-    expect(restored.endsAt.isAtSameMomentAs(settled.endsAt), isTrue);
-    expect(restored.settledAt!.isAtSameMomentAs(settled.settledAt!), isTrue);
-    expect(restored.preparationSeconds, isNull);
-    expect(restored.effectivePreparationSeconds, 37 * 60);
-    await focus.dispose();
-    await tasks.dispose();
-  });
 
   test(
     'rejects a version 2 snapshot that drops the stored preparation length',

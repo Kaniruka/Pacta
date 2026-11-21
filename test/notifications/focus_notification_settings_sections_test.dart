@@ -7,6 +7,7 @@ import 'package:pacta/src/notifications/device_permission_gateway.dart';
 import 'package:pacta/src/notifications/focus_device_preferences.dart';
 import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/notifications/focus_notification_settings_page.dart';
+import 'package:pacta/src/theme/pacta_icon_sizes.dart';
 import 'package:pacta/src/ui/pacta_grouped_list.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -121,7 +122,77 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(battery.opens, 1);
-    expect(find.textContaining('已加入电池优化白名单'), findsWidgets);
+    // 白名单状态由行尾胶囊承担，不再靠副标题里的长句复述一遍。
+    expect(find.text('已加白名单'), findsOneWidget);
+    expect(find.text('建议开启'), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    // 页面末尾不再有「仅保存在本设备」的免责声明，也没有只为它服务的留白。
+    expect(find.textContaining('这些提醒仅保存在本设备'), findsNothing);
+    expect(find.textContaining('不随云备份同步'), findsNothing);
+  });
+
+  testWidgets('冗余副标题已删除，机制说明折进行内 ⓘ 说明', (tester) async {
+    // 缺权限、未加入白名单的 Android 形态：保留可操作提示的行正好同屏可比。
+    final service = _StubNotificationService(
+      const FocusDevicePreferences(
+        notificationsEnabled: false,
+        backgroundRunningEnabled: false,
+        dailyOpenReminderMinutesAfterMidnight: 9 * 60,
+        dailyOpenReminderTimeChosen: true,
+      ),
+    );
+
+    await _pumpPage(
+      tester,
+      FocusNotificationSettingsPage(
+        service: service,
+        isAndroid: true,
+        permissionGateway: _RecordingPermissionGateway(),
+        batteryOptimizationGateway: _RecordingBatteryGateway(),
+      ),
+    );
+
+    // 与右侧状态胶囊重复、或只是复述标题的副标题全部删除。
+    for (final removed in <String>[
+      '直接向系统请求通知授权',
+      '已允许通知；专注、国策与每日提醒可以送达',
+      '已允许；提醒按设定时刻送达',
+      '已加入电池优化白名单；',
+      '系统可能限制后台运行',
+      '默认关闭。',
+      '每天按本机当地时间提醒',
+    ]) {
+      expect(find.textContaining(removed), findsNothing, reason: removed);
+    }
+
+    // 明确的可操作缺权限提示仍然常驻，不能一起被删掉。
+    expect(find.textContaining('未授予通知权限'), findsOneWidget);
+    expect(find.textContaining('未加入电池优化白名单'), findsOneWidget);
+    expect(find.text('已允许'), findsOneWidget, reason: '已允许仍由状态胶囊表达');
+    expect(find.textContaining('已允许；'), findsNothing, reason: '胶囊之外不再复述同一结论');
+
+    // 「不影响国策检查点」这类机制说明只在行内 ⓘ 的 tooltip 里，点开即可读全文。
+    expect(find.textContaining('不影响国策检查点'), findsNothing);
+    final note = find.byKey(const Key('national-focus-reminder-time-note'));
+    expect(note, findsOneWidget);
+    final tooltip = tester.widget<Tooltip>(note);
+    expect(tooltip.message, contains('不影响国策检查点'));
+    expect(tooltip.message, contains('04:00'));
+    expect(
+      tester
+          .widget<Icon>(find.descendant(of: note, matching: find.byType(Icon)))
+          .size,
+      PactaIconSizes.micro,
+    );
+    await tester.tap(note);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('不影响国策检查点'), findsWidgets);
+    expect(
+      find.byType(TimePickerDialog),
+      findsNothing,
+      reason: '点说明不该顺带把时间选择器弹出来',
+    );
     expect(tester.takeException(), isNull);
   });
 

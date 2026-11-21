@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/app_providers.dart';
 import '../tasks/task_models.dart';
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_date_format.dart';
 import '../ui/pacta_error_text.dart';
@@ -31,13 +32,10 @@ class _AppointmentPreparationPageState
   Timer? _timer;
   AppointmentPreparation? _current;
   List<Task>? _tasks;
-  List<FocusAppointmentSourceOption> _configurationSources = const [];
   late FocusChainMode _mode;
   late String _taskId;
   late final TextEditingController _duration;
   bool _busy = false;
-  bool _loadingConfigurationSources = false;
-  bool _configurationSourcesRequested = false;
   String? _error;
 
   @override
@@ -87,7 +85,7 @@ class _AppointmentPreparationPageState
         .read(focusRepositoryProvider)
         .getAppointment(widget.appointment.id);
     if (!mounted || current == null) return;
-    if (current.isSucceeded && !current.isPendingReview) {
+    if (current.isSucceeded) {
       final session = await ref
           .read(focusRepositoryProvider)
           .getSession(current.sessionId ?? current.id);
@@ -118,9 +116,6 @@ class _AppointmentPreparationPageState
     // 每次轮询都重建：准备倒计时与进度条按 displayClock 的当前时刻前进，
     // 只在配置变化时刷新会让停表卡在初始 MM:SS。通知仍只跟随状态跳变。
     if (mounted) setState(() => _current = current);
-    if (current.isPendingReview && !_configurationSourcesRequested) {
-      unawaited(_loadConfigurationSources());
-    }
   }
 
   Future<void> _syncAppointmentNotification(
@@ -150,56 +145,6 @@ class _AppointmentPreparationPageState
           );
     } catch (_) {
       // A notification failure does not affect the focus session.
-    }
-  }
-
-  Future<void> _loadConfigurationSources({bool force = false}) async {
-    if (_loadingConfigurationSources ||
-        (!force && _configurationSourcesRequested)) {
-      return;
-    }
-    _configurationSourcesRequested = true;
-    _loadingConfigurationSources = true;
-    if (mounted) setState(() {});
-    try {
-      final sources = await ref
-          .read(focusRepositoryProvider)
-          .getAppointmentConfigurationSources(widget.appointment.id);
-      if (mounted) setState(() => _configurationSources = sources);
-    } catch (error) {
-      if (mounted) setState(() => _error = _friendlyFocusError(error));
-    } finally {
-      _loadingConfigurationSources = false;
-      if (mounted) setState(() {});
-    }
-  }
-
-  Future<void> _selectConfigurationSource(
-    FocusAppointmentSourceOption source,
-  ) async {
-    if (_busy) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      final updated = await ref
-          .read(focusRepositoryProvider)
-          .selectAppointmentConfigurationSource(
-            appointmentId: widget.appointment.id,
-            sourceId: source.sourceId,
-          );
-      _taskId = updated.taskId;
-      _mode = updated.mode;
-      _duration.text = _minutesFor(updated.durationSeconds).toString();
-      if (mounted) setState(() => _current = updated);
-      unawaited(_syncAppointmentNotification(updated));
-      _configurationSourcesRequested = false;
-      await _loadConfigurationSources(force: true);
-    } catch (error) {
-      if (mounted) setState(() => _error = _friendlyFocusError(error));
-    } finally {
-      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -328,7 +273,7 @@ class _AppointmentPreparationPageState
         ? 0.0
         : 1 - (remainingSeconds / preparationSeconds);
     final tasks = _tasks;
-    final canEdit = !_busy && !appointment.isPendingReview;
+    final canEdit = !_busy;
     final canProceed = !_busy;
     return Scaffold(
       appBar: AppBar(title: const Text('预约准备')),
@@ -345,9 +290,7 @@ class _AppointmentPreparationPageState
               ),
               const SizedBox(height: 8),
               Text(
-                appointment.isPendingReview
-                    ? '两端对这份预约的配置存在分歧，自动交接已暂停，当前来源待核对。你仍可继续此预约或取消。'
-                    : appointment.isActive
+                appointment.isActive
                     ? '本场准备 ${AppointmentPreparationDuration.describe(preparationSeconds)}，结束后自动进入专注，不需要再次点击或执行专注标志。'
                     : appointment.isFailed
                     ? '预约已取消，预约链当前记录已清零。'
@@ -363,52 +306,6 @@ class _AppointmentPreparationPageState
               const SizedBox(height: 16),
               LinearProgressIndicator(value: progress.clamp(0.0, 1.0)),
               const SizedBox(height: 16),
-              if (appointment.isPendingReview)
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          '配置来源对比',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        if (_loadingConfigurationSources)
-                          const Center(child: CircularProgressIndicator())
-                        else if (_configurationSources.isEmpty)
-                          const Text('当前待核对记录没有不同的预约配置来源。')
-                        else
-                          for (final source in _configurationSources) ...[
-                            const Divider(),
-                            Text(
-                              '设备 ${source.deviceId.substring(0, source.deviceId.length < 8 ? source.deviceId.length : 8)} · ${source.occurredAt.toLocal()}',
-                            ),
-                            Text('任务：${_taskTitle(source.taskId)}'),
-                            Text(
-                              '模式：${source.mode.label} · 时长：${_minutesFor(source.durationSeconds)} 分钟',
-                            ),
-                            OutlinedButton(
-                              onPressed:
-                                  _busy ||
-                                      appointment.configurationBasisSourceId ==
-                                          source.sourceId
-                                  ? null
-                                  : () => _selectConfigurationSource(source),
-                              child: Text(
-                                appointment.configurationBasisSourceId ==
-                                        source.sourceId
-                                    ? '当前配置依据'
-                                    : '采用此来源作为配置依据',
-                              ),
-                            ),
-                          ],
-                      ],
-                    ),
-                  ),
-                ),
-              if (appointment.isPendingReview) const SizedBox(height: 16),
               if (appointment.isActive)
                 Card(
                   child: Padding(
@@ -739,8 +636,6 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
         ? 1.0
         : 1 - (remainingSeconds / session.durationSeconds);
     final settled = !session.isUnfinished;
-    final needsReview =
-        session.reviewDisposition == FocusRecordDisposition.pendingReview;
     return Scaffold(
       appBar: AppBar(title: const Text('专注进行中')),
       body: Center(
@@ -769,9 +664,7 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
                 LinearProgressIndicator(value: settled ? 1 : progress),
                 const SizedBox(height: 20),
                 Text(
-                  needsReview
-                      ? '两端对这次专注的记录存在分歧，当前结果和计时已暂停，待核对来源。'
-                      : session.isFailed
+                  session.isFailed
                       ? '本次专注已失败，已保留有效投入时间。任务仍需你单独确认完成。\n失败原因：${session.failureReason ?? '未填写'}'
                       : session.isEarlyCompleted
                       ? '本次专注已获准提前完成，已生成一个专注节点并记录有效时间。\n依据：${session.completionRuleText ?? '未记录'}'
@@ -793,12 +686,16 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
                         onPressed: _busy ? null : _togglePause,
                         icon: Icon(
                           session.isPaused ? Icons.play_arrow : Icons.pause,
+                          size: PactaIconSizes.sm,
                         ),
                         label: Text(session.isPaused ? '继续' : '暂停'),
                       ),
                       OutlinedButton.icon(
                         onPressed: _busy ? null : _completeEarly,
-                        icon: const Icon(Icons.check_circle_outline),
+                        icon: const Icon(
+                          Icons.check_circle_outline,
+                          size: PactaIconSizes.sm,
+                        ),
                         label: const Text('依据规则提前完成'),
                       ),
                       TextButton(

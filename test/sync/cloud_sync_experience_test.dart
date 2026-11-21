@@ -79,6 +79,9 @@ class _CountingRemote extends InMemoryCloudSnapshotRemote {
   int downloadCalls = 0;
   int uploadCalls = 0;
 
+  /// 非空时下载直接抛出这个异常，用来验证内部错误文案的脱敏。
+  Object? downloadError;
+
   @override
   Future<CloudSnapshotMetadata?> inspect({required String userId}) {
     inspectCalls++;
@@ -86,8 +89,10 @@ class _CountingRemote extends InMemoryCloudSnapshotRemote {
   }
 
   @override
-  Future<CloudSnapshotMetadata> download({required String userId}) {
+  Future<CloudSnapshotMetadata> download({required String userId}) async {
     downloadCalls++;
+    final error = downloadError;
+    if (error != null) throw error;
     return super.download(userId: userId);
   }
 
@@ -417,6 +422,48 @@ void main() {
         seeded.succeededAt.toUtc(),
       );
       harness.remote.available = true;
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await harness.dispose();
+    }
+  });
+
+  testWidgets('云快照内部英文 StateError 换成中文提示，不外泄原文', (tester) async {
+    final harness = await _SyncHarness.create();
+    try {
+      harness.remote.downloadError = StateError(
+        'Cloud snapshot does not exist.',
+      );
+      await _pumpCard(tester, harness);
+      await tester.tap(find.byType(Card));
+      await tester.pumpAndSettle();
+      await _tapLabel(tester, _downloadAction());
+      await _tapLabel(tester, _firstLabelled(const ['确认下载', '确认从云端更新']));
+
+      expect(find.textContaining('云端快照已不存在'), findsWidgets);
+      expect(
+        find.textContaining('Cloud snapshot does not exist'),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await harness.dispose();
+    }
+  });
+
+  testWidgets('云快照中文 StateError 保持原意，不改成技术兜底', (tester) async {
+    final harness = await _SyncHarness.create();
+    try {
+      harness.remote.downloadError = StateError('云端快照与当前版本不兼容，请重新上传。');
+      await _pumpCard(tester, harness);
+      await tester.tap(find.byType(Card));
+      await tester.pumpAndSettle();
+      await _tapLabel(tester, _downloadAction());
+      await _tapLabel(tester, _firstLabelled(const ['确认下载', '确认从云端更新']));
+
+      expect(find.textContaining('云端快照与当前版本不兼容，请重新上传。'), findsWidgets);
+      expect(tester.takeException(), isNull);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
       await harness.dispose();

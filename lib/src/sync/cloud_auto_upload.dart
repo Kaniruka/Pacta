@@ -313,14 +313,8 @@ class CloudAutoUploadCoordinator extends ChangeNotifier {
     unawaited(check.check(force: true));
   }
 
-  bool _sameVersion(CloudSnapshotMetadata left, CloudSnapshotMetadata right) {
-    if (left.isLegacy || right.isLegacy) {
-      return left.isLegacy &&
-          right.isLegacy &&
-          left.legacyToken == right.legacyToken;
-    }
-    return left.revision == right.revision;
-  }
+  bool _sameVersion(CloudSnapshotMetadata left, CloudSnapshotMetadata right) =>
+      left.revision == right.revision;
 
   Future<void> _stopForUnhandledCloud(int generation) async {
     if (!await _block(cloudAutoUploadUnhandledCloudReason, generation)) return;

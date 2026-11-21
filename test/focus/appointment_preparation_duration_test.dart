@@ -10,6 +10,7 @@ import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:pacta/src/theme/pacta_icon_sizes.dart';
 
 import '../support/fake_auth_repository.dart';
 
@@ -166,7 +167,11 @@ void main() {
       matching: find.byIcon(Icons.info_outline),
     );
     expect(glyph, findsOneWidget);
-    expect(tester.widget<Icon>(glyph).size, 16, reason: '行内图标与辅助文本同级');
+    expect(
+      tester.widget<Icon>(glyph).size,
+      PactaIconSizes.micro,
+      reason: '行内图标与辅助文本同级',
+    );
 
     // 整张卡片就是提示的命中区：点开即可读到完整规则。
     await tester.tap(info);

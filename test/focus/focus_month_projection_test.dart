@@ -6,6 +6,8 @@ import 'package:pacta/src/tasks/task_database.dart' show PactaDatabase;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 
+import '../support/focus_session_seed.dart';
+
 void main() {
   late PactaDatabase database;
   late InMemoryTaskRemote taskRemote;
@@ -51,7 +53,8 @@ void main() {
 
   test('月历有效投入包含已完成与失败会话，并按天分摊', () async {
     final task = await createTask();
-    await focusRemote.upsertSessions(
+    await seedFocusSessions(
+      database,
       userId: 'user-a',
       sessions: [
         _settledSession(
@@ -69,7 +72,7 @@ void main() {
         ),
       ],
     );
-    await focusRepository.sync();
+    await focusRepository.settleDueSessions();
 
     final month = await focusRepository.getMonthMetrics(
       timeZoneId: 'Asia/Shanghai',
@@ -88,7 +91,8 @@ void main() {
   test('暂停间隔、排除区间与待核对区间不计入月分摊', () async {
     final task = await createTask();
     final base = DateTime.utc(2026, 9, 12, 1);
-    await focusRemote.upsertSessions(
+    await seedFocusSessions(
+      database,
       userId: 'user-a',
       sessions: [
         _settledSession(
@@ -119,7 +123,7 @@ void main() {
         ),
       ],
     );
-    await focusRepository.sync();
+    await focusRepository.settleDueSessions();
 
     final month = await focusRepository.getMonthMetrics(
       timeZoneId: 'Asia/Shanghai',
@@ -130,51 +134,11 @@ void main() {
     expect(month.activeDayCount, 1);
   });
 
-  test('待核对与重复来源记录不点亮月历', () async {
-    final task = await createTask();
-    await focusRemote.upsertSessions(
-      userId: 'user-a',
-      sessions: [
-        _settledSession(
-          id: 'accepted',
-          taskId: task.id,
-          startedAt: DateTime.utc(2026, 9, 15, 8),
-          seconds: 10 * 60,
-        ),
-        _settledSession(
-          id: 'pending',
-          taskId: task.id,
-          startedAt: DateTime.utc(2026, 9, 16, 8),
-          seconds: 20 * 60,
-          status: FocusSessionStatus.failed,
-          disposition: FocusRecordDisposition.pendingReview,
-        ),
-        _settledSession(
-          id: 'duplicate',
-          taskId: task.id,
-          startedAt: DateTime.utc(2026, 9, 17, 8),
-          seconds: 30 * 60,
-          disposition: FocusRecordDisposition.duplicate,
-        ),
-      ],
-    );
-    await focusRepository.sync();
-
-    final month = await focusRepository.getMonthMetrics(
-      timeZoneId: 'Asia/Shanghai',
-      month: DateTime(2026, 9),
-    );
-
-    expect(month.totalActiveSeconds, 10 * 60);
-    expect(month.activeDayCount, 1);
-    expect(month.activeSecondsOn(DateTime.utc(2026, 9, 16)), 0);
-    expect(month.activeSecondsOn(DateTime.utc(2026, 9, 17)), 0);
-  });
-
   test('跨月区间按账号时区午夜拆分，每个月只算自己那段', () async {
     final task = await createTask();
     // 2026-09-30T15:00Z 是上海 9 月 30 日 23:00，两小时后进入 10 月 1 日 01:00。
-    await focusRemote.upsertSessions(
+    await seedFocusSessions(
+      database,
       userId: 'user-a',
       sessions: [
         _settledSession(
@@ -185,7 +149,7 @@ void main() {
         ),
       ],
     );
-    await focusRepository.sync();
+    await focusRepository.settleDueSessions();
 
     final september = await focusRepository.getMonthMetrics(
       timeZoneId: 'Asia/Shanghai',
@@ -206,7 +170,8 @@ void main() {
   test('夏令时结束日按账号时区的真实日长分摊', () async {
     final task = await createTask();
     // 伦敦 2026-10-25 是夏令时结束日：本地当天有 25 小时。
-    await focusRemote.upsertSessions(
+    await seedFocusSessions(
+      database,
       userId: 'user-a',
       sessions: [
         _settledSession(
@@ -217,7 +182,7 @@ void main() {
         ),
       ],
     );
-    await focusRepository.sync();
+    await focusRepository.settleDueSessions();
 
     final month = await focusRepository.getMonthMetrics(
       timeZoneId: 'Europe/London',
@@ -232,7 +197,8 @@ void main() {
 
   test('旧记录没有区间时回退到有效时长', () async {
     final task = await createTask();
-    await focusRemote.upsertSessions(
+    await seedFocusSessions(
+      database,
       userId: 'user-a',
       sessions: [
         _settledSession(
@@ -244,7 +210,7 @@ void main() {
         ),
       ],
     );
-    await focusRepository.sync();
+    await focusRepository.settleDueSessions();
 
     final month = await focusRepository.getMonthMetrics(
       timeZoneId: 'Asia/Shanghai',
@@ -282,7 +248,8 @@ void main() {
       now: () => now,
     );
     addTearDown(otherRepository.dispose);
-    await focusRemote.upsertSessions(
+    await seedFocusSessions(
+      database,
       userId: 'user-a',
       sessions: [
         _settledSession(
@@ -293,7 +260,8 @@ void main() {
         ),
       ],
     );
-    await focusRemote.upsertSessions(
+    await seedFocusSessions(
+      database,
       userId: 'user-b',
       sessions: [
         _settledSession(
@@ -304,8 +272,8 @@ void main() {
         ),
       ],
     );
-    await focusRepository.sync();
-    await otherRepository.sync();
+    await focusRepository.settleDueSessions();
+    await otherRepository.settleDueSessions();
 
     final mine = await focusRepository.getMonthMetrics(
       timeZoneId: 'Asia/Shanghai',
@@ -322,7 +290,8 @@ void main() {
 
   test('切换账号时区不改变全历史总额，但会移动月边界分摊', () async {
     final task = await createTask();
-    await focusRemote.upsertSessions(
+    await seedFocusSessions(
+      database,
       userId: 'user-a',
       sessions: [
         _settledSession(
@@ -334,7 +303,7 @@ void main() {
         ),
       ],
     );
-    await focusRepository.sync();
+    await focusRepository.settleDueSessions();
 
     final shanghaiMonth = await focusRepository.getMonthMetrics(
       timeZoneId: 'Asia/Shanghai',
@@ -414,21 +383,19 @@ void main() {
     expect(totals, [0]);
 
     final task = await createTask();
-    await focusRemote.upsertSessions(
-      userId: 'user-a',
-      sessions: [
-        _settledSession(
-          id: 'watched',
-          taskId: task.id,
-          startedAt: DateTime.utc(2026, 9, 19, 8),
-          seconds: 10 * 60,
-        ),
-      ],
+    final session = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 10),
     );
-    await focusRepository.sync();
+    now = now.add(const Duration(minutes: 5));
+    await focusRepository.abandonSession(
+      sessionId: session.id,
+      failureReason: '先到这里',
+    );
     await _flush();
 
-    expect(totals.last, 10 * 60);
+    expect(totals.last, 5 * 60);
   });
 }
 

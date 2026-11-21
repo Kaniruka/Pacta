@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../focus/focus_models.dart';
 import '../focus/focus_statistics.dart';
 import '../national_focus/national_focus_models.dart';
+import '../theme/pacta_spacing.dart';
 import 'profile_format.dart';
 import 'profile_overview.dart';
 
@@ -55,7 +56,7 @@ class NationalFocusStatisticsPage extends StatelessWidget {
         ];
         return _ReadableWidth(
           child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            padding: PactaSpacing.pageInsets(context, top: PactaSpacing.sm),
             itemCount: entries.length,
             itemBuilder: (context, index) => entries[index],
           ),
@@ -90,7 +91,7 @@ class FocusStatisticsPage extends StatelessWidget {
         }
         return _ReadableWidth(
           child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            padding: PactaSpacing.pageInsets(context, top: PactaSpacing.sm),
             itemCount: completed.length + 1,
             itemBuilder: (context, index) {
               if (index == 0) {

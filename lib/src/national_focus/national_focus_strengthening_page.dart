@@ -93,7 +93,6 @@ class _NationalFocusStrengtheningPageState
     });
     try {
       await operation();
-      unawaited(widget.repository.sync().catchError((Object _) {}));
       await _reload();
     } catch (error) {
       if (mounted) setState(() => _error = formatUserError(error));
@@ -524,9 +523,10 @@ class _StrengtheningLevelEditorPageState
                           padding: const EdgeInsets.only(top: 12),
                           child: Text(
                             state.errorText!,
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.error,
-                            ),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
                           ),
                         )
                       : const SizedBox.shrink(),
@@ -582,7 +582,8 @@ class _InlineError extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
     message,
-    style: TextStyle(color: Theme.of(context).colorScheme.error),
+    style: Theme.of(context).textTheme.bodyMedium
+        ?.copyWith(color: Theme.of(context).colorScheme.error),
   );
 }
 

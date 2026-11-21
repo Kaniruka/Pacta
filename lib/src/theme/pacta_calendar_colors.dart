@@ -80,10 +80,12 @@ class PactaCalendarColors extends ThemeExtension<PactaCalendarColors> {
   /// 今天的中性石板描边；不抢占选中态的蓝色焦点。
   final Color todayBorder;
 
-  /// 专注热力 0 档（0 秒）背景。
+  /// 专注热力 0 档（0 秒）背景；计划日历里也用作“无安排普通日”的统一
+  /// 中性圆角底块。两处共用同一色值，七列网格的视觉重量才能与看板一致。
   final Color heat0Background;
 
-  /// 专注热力 0 档前景。
+  /// 专注热力 0 档前景；计划日历普通日的公历数字与农历/节气副标签也用它，
+  /// 在两套主题下都 ≥ 4.5:1（亮 14.65:1 / 暗 8.77:1）。
   final Color heat0Foreground;
 
   /// 专注热力 1 档（> 0 且 < 30 分钟）背景。

@@ -27,9 +27,7 @@ class CloudVersionCheck extends ChangeNotifier {
 
   String get _ignoredKey =>
       'pacta.device.cloud_sync.ignored.${repository.userId}';
-  String _version(CloudSnapshotMetadata cloud) => cloud.isLegacy
-      ? 'legacy:${cloud.legacyToken}'
-      : 'revision:${cloud.revision}';
+  String _version(CloudSnapshotMetadata cloud) => 'revision:${cloud.revision}';
 
   Future<void> ignore(CloudSnapshotMetadata cloud) async {
     if (_disposed) return;
@@ -78,10 +76,7 @@ class CloudVersionCheck extends ChangeNotifier {
       hasPendingVersion =
           cloud != null &&
           ignored != _version(cloud) &&
-          (cloud.isLegacy
-              ? handled?.legacyToken != cloud.legacyToken
-              : handled?.cloudRevision != cloud.revision ||
-                    handled?.legacyToken != null);
+          handled?.cloudRevision != cloud.revision;
     } catch (_) {
       if (_disposed || generation != _generation) return;
       failed = true;

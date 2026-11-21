@@ -4,13 +4,13 @@ import 'package:flutter/material.dart';
 
 import '../national_focus/national_focus_models.dart';
 import '../national_focus/national_focus_repository.dart';
+import '../theme/pacta_icon_sizes.dart';
 import '../ui/pacta_card_header.dart';
 
 /// 今日国策状态的纯计算口径。
 ///
-/// 确认态节点按点亮 / 待确认 / 熄灭计数；待核对节点单独列出，绝不混进
-/// 确定汇总（否则会把“不知道”说成“点亮”）。看板融合卡片与国策摘要共用
-/// 这一份口径，两个入口对同一天的判断因此永远一致。
+/// 节点按点亮 / 待确认 / 熄灭计数。看板融合卡片与国策摘要共用这一份口径，
+/// 两个入口对同一天的判断因此永远一致。
 @immutable
 class NationalFocusStatusCounts {
   const NationalFocusStatusCounts({
@@ -18,19 +18,13 @@ class NationalFocusStatusCounts {
     required this.litCount,
     required this.pendingCount,
     required this.extinguishedCount,
-    required this.pendingReview,
   });
 
   factory NationalFocusStatusCounts.fromCards(List<NationalFocusCard> cards) {
     var lit = 0;
     var pending = 0;
     var extinguished = 0;
-    final review = <NationalFocusCard>[];
     for (final card in cards) {
-      if (card.hasPendingReview) {
-        review.add(card);
-        continue;
-      }
       switch (card.state) {
         case NationalFocusCardState.lit:
           lit += 1;
@@ -45,28 +39,22 @@ class NationalFocusStatusCounts {
       litCount: lit,
       pendingCount: pending,
       extinguishedCount: extinguished,
-      pendingReview: List<NationalFocusCard>.unmodifiable(review),
     );
   }
 
-  /// 国策树里的节点总数（含待核对）。
+  /// 国策树里的节点总数。
   final int totalCount;
   final int litCount;
   final int pendingCount;
   final int extinguishedCount;
-  final List<NationalFocusCard> pendingReview;
 
   bool get isEmpty => totalCount == 0;
 
-  /// 有确定结论的节点数，不含待核对。
+  /// 有确定结论的节点数。
   int get confirmedCount => litCount + pendingCount + extinguishedCount;
 
-  /// 全部确定节点都点亮，且没有待核对节点。
-  bool get allLit =>
-      confirmedCount > 0 && litCount == confirmedCount && pendingReview.isEmpty;
-
-  /// 没有任何确定结论，只剩待核对节点。
-  bool get allPendingReview => confirmedCount == 0 && pendingReview.isNotEmpty;
+  /// 全部确定节点都点亮。
+  bool get allLit => confirmedCount > 0 && litCount == confirmedCount;
 }
 
 /// 今日国策摘要卡片（独立入口）。
@@ -143,36 +131,17 @@ class _NationalFocusSummaryCardState extends State<NationalFocusSummaryCard> {
       }
 
       final counts = NationalFocusStatusCounts.fromCards(cards);
-      final pendingReview = counts.pendingReview;
 
       return _card(
         context,
         children: [
           if (counts.isEmpty)
             const Text('国策树尚无节点。')
-          else if (counts.allPendingReview)
-            const Text('国策状态均待核对。')
           else
             Text(
               '点亮 ${counts.litCount} · 确认 ${counts.pendingCount} · '
               '熄灭 ${counts.extinguishedCount}',
             ),
-          if (pendingReview.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Text(
-              '${pendingReview.length} 个节点待核对，未计入上方汇总。',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            for (final card in pendingReview)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  '${card.name} · 上次确认：连续 '
-                  '${card.currentConsecutiveDays} 天',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-          ],
         ],
       );
     },
@@ -190,7 +159,10 @@ class _NationalFocusSummaryCardState extends State<NationalFocusSummaryCard> {
             title: '国策状态',
             trailing: TextButton.icon(
               onPressed: widget.onOpenTree,
-              icon: const Icon(Icons.account_tree_outlined),
+              icon: const Icon(
+                Icons.account_tree_outlined,
+                size: PactaIconSizes.sm,
+              ),
               label: const Text('打开国策树', softWrap: false),
             ),
           ),

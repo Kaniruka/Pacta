@@ -9,6 +9,7 @@ import 'package:pacta/src/plan/calendar_almanac.dart';
 import 'package:pacta/src/plan/plan_calendar_view.dart';
 import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
+import 'package:pacta/src/theme/pacta_calendar_colors.dart';
 
 /// T1 的界面断言：日期格第二行与选中日详情都来自随包年度表 + lunar。
 const _user = 'plan-calendar-almanac-ui';
@@ -110,7 +111,7 @@ void main() {
     }
   });
 
-  testWidgets('放假日用格背景突出（休），普通日与补班日不着色', (tester) async {
+  testWidgets('放假日铺假期底色，普通日与补班日统一铺 heat0 中性底块', (tester) async {
     final host = _Host.create();
     try {
       await host.pump(
@@ -131,21 +132,23 @@ void main() {
         return (ink.decoration as BoxDecoration?)?.color;
       }
 
+      const colors = PactaCalendarColors.light;
       // 02-18 放假但非选中日、02-14 补班、02-25 普通日（选中日是 02-17）。
       expect(
         cellColor('2026-02-18'),
-        isNot(anyOf(isNull, Colors.transparent)),
-        reason: '放假日要有底色',
+        colors.holidayBackground,
+        reason: '放假日要有假期底色',
       );
+      // 普通有效日不再留白：与看板热力 0 档一致的中性圆角底块。
       expect(
         cellColor('2026-02-14'),
-        anyOf(isNull, Colors.transparent),
-        reason: '补班日不按放假日着色',
+        colors.heat0Background,
+        reason: '补班日只表达普通日底块，不按放假日着色',
       );
       expect(
         cellColor('2026-02-25'),
-        anyOf(isNull, Colors.transparent),
-        reason: '普通日不着色',
+        colors.heat0Background,
+        reason: '普通日统一铺 heat0 中性底块',
       );
     } finally {
       await host.dispose(tester);

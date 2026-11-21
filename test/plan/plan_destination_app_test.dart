@@ -538,7 +538,20 @@ void main() {
       await harness.tasks.setGoalPinned(goal.id, isPinned: true);
       await tester.pumpAndSettle();
 
-      expect(find.text('置顶目标'), findsOneWidget);
+      // 默认视口 800x600 是单栏且没有国策节点：顶槽默认停在「国策状态」，
+      // 置顶摘要收在「置顶目标 (1)」胶囊后面。先断言胶囊与条数，再切页签；
+      // 宽屏双栏没有胶囊，置顶摘要直接在当前版面里。
+      final pinnedTab = find.byKey(const ValueKey('board-top-slot-pinned'));
+      if (pinnedTab.evaluate().isNotEmpty) {
+        expect(pinnedTab, findsOneWidget);
+        expect(find.text('置顶目标 (1)'), findsOneWidget);
+        await tester.ensureVisible(pinnedTab);
+        await tester.pumpAndSettle();
+        await tester.tap(pinnedTab);
+        await tester.pumpAndSettle();
+      } else {
+        expect(find.text('置顶目标'), findsOneWidget);
+      }
       expect(find.text('发布'), findsOneWidget);
       expect(find.text('下一项：整理素材'), findsOneWidget);
       expect(find.text('整理素材'), findsNothing, reason: '看板不展开任务列表');

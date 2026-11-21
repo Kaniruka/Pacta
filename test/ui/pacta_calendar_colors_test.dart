@@ -50,6 +50,42 @@ void main() {
     expect(PactaSurfaces.light.card, const Color(0xffffffff));
   });
 
+  test('计划日历四类业务底与 heat0 中性底块的正文/标记达到 4.5:1', () {
+    for (final colors in [
+      PactaCalendarColors.light,
+      PactaCalendarColors.dark,
+    ]) {
+      for (final (name, background, foreground) in <(String, Color, Color)>[
+        ('全部完成', colors.allCompleteBackground, colors.allCompleteForeground),
+        ('有安排', colors.hasPlansBackground, colors.hasPlansForeground),
+        ('放假日', colors.holidayBackground, colors.holidayForeground),
+        ('普通 heat0', colors.heat0Background, colors.heat0Foreground),
+      ]) {
+        expect(
+          _contrast(background, foreground),
+          greaterThanOrEqualTo(4.5),
+          reason: '$name 底的公历数字与底部标记对比度',
+        );
+      }
+      // 放假日短标签会叠加在黄/绿业务底上；'今' 微字落在 heat0 中性底块上。
+      for (final background in [
+        colors.hasPlansBackground,
+        colors.allCompleteBackground,
+      ]) {
+        expect(
+          _contrast(background, colors.holidayForeground),
+          greaterThanOrEqualTo(4.5),
+          reason: '放假日短标签在 $background 上',
+        );
+      }
+      expect(
+        _contrast(colors.heat0Background, colors.todayLabelColor),
+        greaterThanOrEqualTo(4.5),
+        reason: 'heat0 底块上的今字',
+      );
+    }
+  });
+
   test('失败标记是温和珊瑚红，不再使用刺眼纯红', () {
     expect(PactaCalendarColors.light.failureDotColor, const Color(0xFFD94B43));
     expect(PactaCalendarColors.dark.failureDotColor, const Color(0xFFF28B82));

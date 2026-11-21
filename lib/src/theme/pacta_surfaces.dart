@@ -59,6 +59,14 @@ class PactaSurfaces extends ThemeExtension<PactaSurfaces> {
     return surfaces ?? light;
   }
 
+  /// 按亮度直接取卡片底色。
+  ///
+  /// 画布内嵌组件（例如只读历史节点）不一定继承注入了 [PactaSurfaces] 的
+  /// 主题（灰盒测试只用裸 MaterialApp）；按亮度取同一份语义令牌，既保持
+  /// 卡片与 `surfaceContainerLow` 画布的分层，也不把断言带进组件树。
+  static Color cardFor(Brightness brightness) =>
+      brightness == Brightness.dark ? dark.card : light.card;
+
   @override
   PactaSurfaces copyWith({
     Color? page,

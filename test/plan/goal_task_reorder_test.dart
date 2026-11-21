@@ -183,6 +183,16 @@ void main() {
 
       // 看板读同一份仓储：置顶摘要的"下一项"必须跟着手动顺序走。
       await openBoard(tester);
+      // 1000 宽减去 AppShell 80dp 侧边栏后 BoardPage 只有 920 < 960（单栏），
+      // 且这里没有国策节点：顶槽默认停在「国策状态」，置顶摘要在胶囊后面。
+      // 先切到置顶目标页签再断言；宽屏双栏没有胶囊，摘要本来就在左栏。
+      final pinnedTab = find.byKey(const ValueKey('board-top-slot-pinned'));
+      if (pinnedTab.evaluate().isNotEmpty) {
+        await tester.ensureVisible(pinnedTab);
+        await tester.pumpAndSettle();
+        await tester.tap(pinnedTab);
+        await tester.pumpAndSettle();
+      }
       expect(find.text('下一项：${nextTask.title}'), findsOneWidget);
       expect(find.textContaining('下一项：甲'), findsNothing);
       expect(tester.takeException(), isNull);

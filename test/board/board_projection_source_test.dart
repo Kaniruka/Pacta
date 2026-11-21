@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/auth/auth_repository.dart';
 import 'package:pacta/src/focus/focus_models.dart';
-import 'package:pacta/src/focus/focus_month_page.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/profile/profile_models.dart';
 import 'package:pacta/src/profile/profile_repository.dart';
@@ -51,7 +50,7 @@ void main() {
     );
   }
 
-  testWidgets('融合卡片提供月历入口，按账号时区请求月投影', (tester) async {
+  testWidgets('融合卡片按账号时区请求月投影，不再有完整月历二级入口', (tester) async {
     final focus = _RecordingFocusRepository();
     await tester.pumpWidget(
       boardHost(
@@ -68,19 +67,11 @@ void main() {
     expect(focus.monthTimeZoneIds, ['Asia/Shanghai']);
     expect(focus.monthRequests.single.isUtc, isTrue);
     expect(focus.monthRequests.single.day, 1);
-
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('board-focus-open-month')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('board-focus-open-month')));
-    await tester.pumpAndSettle();
-
-    expect(find.byType(FocusMonthPage), findsOneWidget);
-    expect(find.text('专注月历'), findsOneWidget);
+    // 完整月历页已硬删除：日期详情里不再有任何跳转按钮。
+    expect(find.byKey(const ValueKey('board-focus-open-month')), findsNothing);
   });
 
-  testWidgets('账号时区为空时月历入口沿统一兜底时区查询', (tester) async {
+  testWidgets('账号时区为空时沿统一兜底时区查询月投影', (tester) async {
     final focus = _RecordingFocusRepository();
     await tester.pumpWidget(
       boardHost(
@@ -90,16 +81,9 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    // 月历入口在「日期详情」里（卡片底部），先滚进视口再点。
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('board-focus-open-month')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('board-focus-open-month')));
-    await tester.pumpAndSettle();
 
-    expect(find.byType(FocusMonthPage), findsOneWidget);
     expect(focus.monthTimeZoneIds.first, 'Etc/UTC');
+    expect(find.text('2026年11月'), findsOneWidget);
   });
 
   testWidgets('切换仓储实例时不回显上一仓储的日期详情数字', (tester) async {
@@ -299,62 +283,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 读取失败必须可见，且绝不能被渲染成“还没有置顶目标”。
-    expect(find.text('暂时不能读取目标列表。'), findsOneWidget);
+    // 切换栏必须露出「置顶目标」页签（没有条数），失败详情在页签里，
+    // 绝不能被渲染成“还没有置顶目标”。
     expect(find.text('置顶目标'), findsOneWidget);
+    expect(find.text('置顶目标 (0)'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('board-top-slot-pinned')));
+    await tester.pumpAndSettle();
+    expect(find.text('暂时不能读取目标列表。'), findsOneWidget);
     expect(find.text('还没有置顶目标'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
-
-  testWidgets('账号变化时月历路由退出，不保留上一个账号的月份', (tester) async {
-    final auth = _MutableAuthRepository('user-a');
-    addTearDown(auth.disposeEvents);
-    final focus = _RecordingFocusRepository();
-    await tester.pumpWidget(
-      boardHost(
-        taskRepository: const UnavailableTaskRepository(),
-        focusRepository: focus,
-        profileRepository: _FixedProfileRepository('Asia/Shanghai'),
-        authRepository: auth,
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(
-      find.byKey(const ValueKey('board-focus-open-month')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('board-focus-open-month')));
-    await tester.pumpAndSettle();
-    expect(find.byType(FocusMonthPage), findsOneWidget);
-
-    auth.switchUser('user-b');
-    await tester.pumpAndSettle();
-
-    expect(find.byType(FocusMonthPage), findsNothing);
-    expect(find.byType(BoardPage), findsOneWidget);
-  });
-}
-
-class _MutableAuthRepository extends FakeAuthRepository {
-  _MutableAuthRepository(String user) {
-    signedInUser = user;
-  }
-
-  final _events = StreamController<String?>.broadcast();
-
-  @override
-  Stream<String?> get authState async* {
-    yield signedInUser;
-    yield* _events.stream;
-  }
-
-  void switchUser(String? user) {
-    signedInUser = user;
-    _events.add(user);
-  }
-
-  void disposeEvents() => unawaited(_events.close());
 }
 
 class _FixedProfileRepository extends UnavailableProfileRepository {

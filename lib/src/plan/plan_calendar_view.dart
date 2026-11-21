@@ -13,6 +13,7 @@ import '../schedules/schedule_repeat_editor.dart';
 import '../schedules/schedule_repository.dart';
 import '../tasks/task_models.dart';
 import '../theme/pacta_calendar_colors.dart';
+import '../theme/pacta_icon_sizes.dart';
 import '../ui/pacta_calendar_day_cell.dart';
 import '../ui/pacta_check_circle.dart';
 import '../ui/pacta_hold_action_reorder.dart';
@@ -349,7 +350,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
         _selectedDay = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
         _clearHighlightedSchedule();
       }),
-      icon: const Icon(Icons.chevron_left),
+      icon: const Icon(Icons.chevron_left, size: PactaIconSizes.md),
     );
     final next = IconButton(
       tooltip: '下个月',
@@ -358,7 +359,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
         _selectedDay = DateTime(_visibleMonth.year, _visibleMonth.month, 1);
         _clearHighlightedSchedule();
       }),
-      icon: const Icon(Icons.chevron_right),
+      icon: const Icon(Icons.chevron_right, size: PactaIconSizes.md),
     );
     final import = widget.calendarRepository == null
         ? null
@@ -366,11 +367,11 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
             key: const ValueKey('plan-import-open'),
             tooltip: '从系统日历导入',
             onPressed: _importFromCalendar,
-            icon: const Icon(Icons.download_outlined),
+            icon: const Icon(Icons.download_outlined, size: PactaIconSizes.md),
           );
     final create = FilledButton.icon(
       onPressed: _createSchedule,
-      icon: const Icon(Icons.add),
+      icon: const Icon(Icons.add, size: PactaIconSizes.sm),
       label: const Text('新建安排'),
     );
     return LayoutBuilder(
@@ -479,8 +480,13 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     return Column(children: rows);
   }
 
-  /// 三层语义的日格：背景只表达业务（全部完成/有安排/放假日），选中与
-  /// 今天都只改描边，因此颜色永远不会被选区覆写；今天另有独立 '今' 角标。
+  /// 三层语义的日格：背景只表达业务（全部完成/有安排/放假日），没有业务
+  /// 数据的普通有效日统一铺看板同款 heat0 中性圆角底块；选中与今天都只改
+  /// 描边，因此颜色永远不会被选区覆写，今天另有居中的独立 '今' 微字。
+  ///
+  /// 与看板热力月历共用同一套几何：顶部 12dp 的 '今' 行、底部 2dp 间隔 +
+  /// 8dp 指示槽；农历/节气第二行恒定占 20dp，所以加载前后、有无副标签都
+  /// 不会推动公历数字的垂直基线。
   Widget _buildDayCell(
     BuildContext context,
     DateTime day,
@@ -489,7 +495,6 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     final theme = Theme.of(context);
     final selected = day == _selectedDay;
     final today = day == _todayKey();
-    final colorScheme = theme.colorScheme;
     final calendarColors = PactaCalendarColors.of(context);
     final info = _almanac?.describe(day);
     final holiday = info?.kind == CalendarDayKind.holiday;
@@ -497,9 +502,10 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     final hasPlans = state != _DayScheduleState.none;
     final allComplete = state == _DayScheduleState.allComplete;
     final hasIncomplete = state == _DayScheduleState.hasIncomplete;
-    // 背景色的唯一优先级：当日安排全部完成 > 有安排 > 放假日兜底。选中与
-    // 今天都不参与背景，蓝/中性语义全部交给单层描边与 '今' 角标。
-    final Color? background;
+    // 背景色的唯一优先级：当日安排全部完成 > 有安排 > 放假日兜底 > 普通日
+    // 的 heat0 中性底块。选中与今天都不参与背景，蓝/中性语义全部交给单层
+    // 描边与 '今' 微字。
+    final Color background;
     final Color foreground;
     if (allComplete) {
       background = calendarColors.allCompleteBackground;
@@ -511,8 +517,10 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
       background = calendarColors.holidayBackground;
       foreground = calendarColors.holidayForeground;
     } else {
-      background = null;
-      foreground = colorScheme.onSurfaceVariant;
+      // 普通有效日不再留白：与看板热力 0 档同款中性圆角底块，七列网格
+      // 的圆角、间隙与视觉重量才能完全一致。
+      background = calendarColors.heat0Background;
+      foreground = calendarColors.heat0Foreground;
     }
     final almanacColor = holiday
         ? calendarColors.holidayForeground
@@ -525,12 +533,16 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     };
     final todayLabel = today ? '，今天' : '';
     final storageKey = _dayStorageKey(day);
-    final Widget? marker = allComplete
+    // 未完成圆点与全部完成勾都收进底部居中指示槽，右上角不再挂任何孤立
+    // 标记；Key 保持稳定，读屏由日格 semanticLabel 统一播报。
+    final Widget? bottomDot = allComplete
         ? ExcludeSemantics(
             child: Icon(
               Icons.check,
               key: ValueKey('plan-day-check-$storageKey'),
-              size: 10,
+              // 底部槽只有 8dp：勾也用 8dp，完整落在槽内，避免在 8dp
+              // 高度里上下各溢出 1dp。
+              size: 8,
               color: markerColor,
             ),
           )
@@ -549,8 +561,9 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
         : null;
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 窄窗优先保住 48dp 命中宽度；格子宽到 52 以上才让出 4dp 视觉间隙。
-        final gap = constraints.maxWidth >= 52 ? 2.0 : 0.0;
+        // 与看板热力月历同一条间隙规则：≥46dp 让出 2dp 视觉间隙，更窄
+        // 收到 1dp；360dp 七列（48dp/列）与 320dp（42.3dp/列）都不溢出。
+        final gap = constraints.maxWidth >= 46 ? 2.0 : 1.0;
         return Padding(
           padding: EdgeInsets.all(gap),
           child: PactaCalendarDayBox(
@@ -568,24 +581,33 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
               // 用户自己换了日子，就不再强调通知带来的那一条。
               _clearHighlightedSchedule();
             }),
-            subLabel: info == null
-                ? null
-                : Align(
-                    alignment: Alignment.center,
-                    child: Text(
-                      info.shortLabel,
-                      maxLines: 1,
-                      softWrap: false,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: almanacColor,
+            // 第二行恒定占 20dp：加载前后、有无农历/节气标签都不会推动
+            // 公历数字的垂直基线。字号最多放到 1.15x，单行省略不换行，
+            // 320dp × 2.0 系统字号下也留在槽内。
+            subLabel: SizedBox(
+              height: 20,
+              child: info == null
+                  ? null
+                  : Center(
+                      child: Text(
+                        info.shortLabel,
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.ellipsis,
+                        textScaler: MediaQuery.textScalerOf(context)
+                            .clamp(minScaleFactor: 1.0, maxScaleFactor: 1.15),
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          color: almanacColor,
+                        ),
                       ),
                     ),
-                  ),
-            // 计划日历保持默认排版：'今' 左对齐（不占独立一行），右侧
-            // 仍放日程点/完成勾，下方保留农历副标签；不预留底部指示轨。
-            // 去胶囊 '今' 与自适应配色由 PactaCalendarDayBox 自动继承。
-            topRightMarker: marker,
+            ),
+            // 统一看板热力月历的排版：'今' 居中置顶；未完成点/完成勾全部
+            // 收进底部居中指示槽，右上角不再挂孤立标记。
+            centerTodayLabel: true,
+            reserveBottomSlot: true,
+            topRightMarker: null,
+            bottomDot: bottomDot,
             semanticLabel:
                 '${day.month}月${day.day}日'
                 '${info == null ? '' : ' ${info.shortLabel}'}'
@@ -673,7 +695,11 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
         children: [
           Row(
             children: [
-              Icon(Icons.error_outline, color: scheme.onErrorContainer),
+              Icon(
+                Icons.error_outline,
+                color: scheme.onErrorContainer,
+                size: PactaIconSizes.md,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -696,7 +722,7 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
             child: FilledButton.tonalIcon(
               key: const ValueKey('plan-schedules-retry'),
               onPressed: _retrySchedules,
-              icon: const Icon(Icons.refresh),
+              icon: const Icon(Icons.refresh, size: PactaIconSizes.sm),
               label: const Text('重试'),
             ),
           ),
@@ -1074,6 +1100,7 @@ class _ScheduleTile extends StatelessWidget {
           ),
           trailing: PopupMenuButton<String>(
             tooltip: '安排操作',
+            icon: const Icon(Icons.more_vert, size: PactaIconSizes.compact),
             onSelected: (value) {
               switch (value) {
                 case 'edit':

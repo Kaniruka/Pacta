@@ -7,7 +7,6 @@ import 'package:integration_test/integration_test.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/ui/pacta_check_circle.dart';
 import 'package:pacta/src/focus/focus_models.dart';
-import 'package:pacta/src/focus/focus_month_page.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
@@ -117,7 +116,7 @@ void main() {
           ),
         ],
       );
-      await focus.sync();
+      await focus.settleDueSessions();
       final rootCard = await tree.createCard(
         const NationalFocusCardDraft(
           name: '开始一天之前',
@@ -164,34 +163,49 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('取快递'), findsWidgets);
-      expect(find.text('下一项：整理发布材料'), findsOneWidget);
       expect(find.text('专注与国策'), findsOneWidget);
       expect(find.text('13分00秒'), findsOneWidget);
+      // 完整月历二级页已删除：日期详情不再提供「完整月历 →」入口。
       expect(
         find.byKey(const ValueKey('board-focus-open-month')),
-        findsOneWidget,
+        findsNothing,
       );
       await shot('01-board');
 
-      // 2. Month entry: the fused card still pushes the standalone month page.
-      await tester.ensureVisible(
-        find.byKey(const ValueKey('board-focus-open-month')),
+      // 1b. Pinned summary: on a phone the board is single-column and today
+      //     still has one unconfirmed card, so the top slot defaults to
+      //     国策状态. The pinned summary lives behind the 置顶目标 pill; wide
+      //     layouts keep it in the left column with no pill at all.
+      final boardPinnedTab = find.byKey(
+        const ValueKey('board-top-slot-pinned'),
       );
+      if (boardPinnedTab.evaluate().isNotEmpty) {
+        await tester.ensureVisible(boardPinnedTab);
+        await settle();
+        await tester.tap(boardPinnedTab);
+        await settle();
+      }
+      expect(find.text('下一项：整理发布材料'), findsOneWidget);
+
+      // 2. Selected-day national focus: tapping a heat-calendar day always
+      //    brings the top slot back to 国策状态, and history without failure
+      //    records stays unknown.
+      final day12Cell = find.byKey(const ValueKey('board-focus-day-12'));
+      await tester.ensureVisible(day12Cell);
       await settle();
-      await tester.tap(find.byKey(const ValueKey('board-focus-open-month')));
+      await tester.tap(day12Cell);
       await settle();
-      expect(find.byType(FocusMonthPage), findsOneWidget);
-      expect(find.text('专注月历'), findsOneWidget);
-      expect(find.text('2026年11月'), findsOneWidget);
-      expect(find.text('13分00秒'), findsOneWidget);
-      final dayCell = find.byKey(const ValueKey('focus-month-day-12'));
-      expect(dayCell, findsOneWidget);
-      final daySize = tester.getSize(dayCell);
-      expect(daySize.width, greaterThanOrEqualTo(48));
-      expect(daySize.height, greaterThanOrEqualTo(48));
-      await shot('02-month');
-      await tester.pageBack();
+      expect(find.text('11月12日国策记录'), findsOneWidget);
+      expect(find.text('未知'), findsOneWidget);
+      expect(find.text('0分00秒'), findsOneWidget);
+      await shot('02-day-record');
+      // Back to today so the remaining captures keep today's facts.
+      final day18Cell = find.byKey(const ValueKey('board-focus-day-18'));
+      await tester.ensureVisible(day18Cell);
       await settle();
+      await tester.tap(day18Cell);
+      await settle();
+      expect(find.text('今日国策状态'), findsOneWidget);
 
       // 3. Plan goals: the pinned goal keeps its task disclosure.
       await tester.tap(find.text('计划'));

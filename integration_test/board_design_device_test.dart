@@ -175,6 +175,21 @@ void main() {
 
       // 1. 看板是只读摘要：置顶目标 + 下一项，不再渲染完整目标卡与任务列。
       expect(find.byType(BoardPage), findsOneWidget);
+      // 单栏顶槽默认页签由国策状态决定：切到置顶目标后摘要与「下一项」才可见。
+      // 单栏才有顶槽胶囊：宽屏双栏的置顶摘要本来就在左栏，不能去找胶囊。
+      final boardPinnedTab = find.byKey(
+        const ValueKey('board-top-slot-pinned'),
+      );
+      if (boardPinnedTab.evaluate().isNotEmpty) {
+        await tester.scrollUntilVisible(
+          boardPinnedTab,
+          250,
+          scrollable: boardScrollable(),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(boardPinnedTab);
+        await tester.pumpAndSettle();
+      }
       // 「看板」同时出现在导航与页头：只认页头里的那一处。
       expect(
         find.descendant(
@@ -213,11 +228,11 @@ void main() {
       expect(find.text('今日国策状态'), findsOneWidget);
       expect(find.text('点击查看国策树及具体节点状态 →'), findsOneWidget);
       expect(find.text('13分00秒'), findsOneWidget);
-      // 进入完整月历的唯一入口是「日期详情」里的「完整月历 →」；
-      // 卡片头不再重复一枚月份按钮（年月只在热力月历切换器里出现一次）。
+      // 完整月历二级页已删除：日期详情不再有「完整月历 →」入口，年月仍
+      // 只在热力月历的切换器里出现一次。
       expect(
         find.byKey(const ValueKey('board-focus-open-month')),
-        findsOneWidget,
+        findsNothing,
       );
       expect(
         find.byKey(const ValueKey('board-focus-month-entry')),
@@ -312,6 +327,19 @@ void main() {
         expect(find.text('日历块'), findsNothing);
         expect(find.text('显示时区'), findsNothing);
         expect(find.text('设计评审'), findsNothing);
+        // 大字窄屏单栏：顶槽默认可能是国策状态，先切到置顶目标（若已
+        // 在该页签则无变化）再核对摘要与下一项。
+        final pinnedTab = find.byKey(const ValueKey('board-top-slot-pinned'));
+        if (pinnedTab.evaluate().isNotEmpty) {
+          await tester.scrollUntilVisible(
+            pinnedTab,
+            -250,
+            scrollable: boardScrollable(),
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(pinnedTab);
+          await tester.pumpAndSettle();
+        }
         await tester.scrollUntilVisible(
           find.text('季度规划'),
           -250,
@@ -581,15 +609,8 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
           );
         }
 
-        await remote.upsertSessions(
-          userId: userId,
-          sessions: [
-            if (!support)
-              session('accepted', 9, FocusRecordDisposition.accepted),
-            if (!support)
-              session('pending', 10, FocusRecordDisposition.pendingReview),
-          ],
-        );
+        // 测试阶段不再保留多端 pendingReview 语义：只灌当前设备可见的
+        // 已接受记录，看板/专注链的基线由 beforeOpen 的本地状态决定。
         if (support) {
           await remote.upsertSessions(
             userId: userId,
@@ -616,7 +637,7 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
           await tree.settleDueCheckpoints();
           now = DateTime(2026, 11, 12, 10);
         }
-        await focus.sync();
+        await focus.settleDueSessions();
       }
       final logical = Platform.isAndroid
           ? const Size(411, 731)
@@ -710,6 +731,12 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
         scrollable: boardScrollable,
       );
       await tester.pumpAndSettle();
+      // 默认页签可能是置顶目标：截图前先固定到国策状态，断言才确定。
+      final statusTab = find.byKey(const ValueKey('board-top-slot-status'));
+      if (statusTab.evaluate().isNotEmpty) {
+        await tester.tap(statusTab);
+        await tester.pumpAndSettle();
+      }
       await shot('support');
       expect(find.text('今日国策状态'), findsOneWidget);
       if (scenario == 'zero') {
@@ -719,13 +746,25 @@ void _boardPilot(IntegrationTestWidgetsFlutterBinding binding) {
         expect(find.text('还没有置顶目标'), findsNothing);
         expect(find.text('专注与国策'), findsOneWidget);
       } else {
-        await tester.scrollUntilVisible(
-          find.text('置顶目标'),
-          -250,
-          scrollable: boardScrollable,
-        );
-        await tester.pumpAndSettle();
+        // 单栏：置顶摘要在顶槽胶囊后面；宽屏：左栏本来就直接可见。
+        final pinnedTab = find.byKey(const ValueKey('board-top-slot-pinned'));
+        final statusTab = find.byKey(const ValueKey('board-top-slot-status'));
+        if (pinnedTab.evaluate().isNotEmpty) {
+          await tester.scrollUntilVisible(
+            pinnedTab,
+            -250,
+            scrollable: boardScrollable,
+          );
+          await tester.pumpAndSettle();
+          await tester.tap(pinnedTab);
+          await tester.pumpAndSettle();
+        }
         expect(find.textContaining('下一项：'), findsOneWidget);
+        // 回到国策状态，后面的今日卡入口仍可直接点击。
+        if (statusTab.evaluate().isNotEmpty) {
+          await tester.tap(statusTab);
+          await tester.pumpAndSettle();
+        }
       }
       await tester.scrollUntilVisible(
         find.byKey(const ValueKey('board-today-national-focus')),

@@ -198,20 +198,30 @@ class _AdminUsersPageState extends ConsumerState<AdminUsersPage> {
           if (snapshot.data != true) {
             return const Center(child: Text('仅管理员可访问用户管理。'));
           }
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
-            children: [
-              Text(
-                '注册资格、用户状态与密码重置',
-                style: Theme.of(context).textTheme.bodyLarge,
+          // 二级页只在宽屏居中并收在 800dp：管理员卡片是表单，行长过宽
+          // 反而难扫读；窄屏仍用统一页边距。
+          return SafeArea(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 800),
+                child: ListView(
+                  padding: PactaSpacing.pageInsets(context),
+                  children: [
+                    Text(
+                      '注册资格、用户状态与密码重置',
+                      style: Theme.of(context).textTheme.bodyLarge,
+                    ),
+                    const SizedBox(height: PactaSpacing.md),
+                    AdminUserLifecycleCard(repository: repository),
+                    const SizedBox(height: PactaSpacing.md),
+                    const AdminEligibilityCard(),
+                    const SizedBox(height: PactaSpacing.md),
+                    AdminPasswordResetCard(repository: repository),
+                  ],
+                ),
               ),
-              const SizedBox(height: 12),
-              AdminUserLifecycleCard(repository: repository),
-              const SizedBox(height: 12),
-              const AdminEligibilityCard(),
-              const SizedBox(height: 12),
-              AdminPasswordResetCard(repository: repository),
-            ],
+            ),
           );
         },
       ),
@@ -336,26 +346,34 @@ void openAiManualSync(BuildContext context, WidgetRef ref) {
       builder: (_) => Scaffold(
         appBar: AppBar(title: const Text('手动同步')),
         body: SafeArea(
-          child: ListView(
-            padding: PactaSpacing.pageInsets(context),
-            children: [
-              const Text('选择上传本机，并在现有预览中核对整份覆盖范围。仅进入本页不会上传或下载。'),
-              const SizedBox(height: 12),
-              CloudSyncCard(
-                repository: ref.read(cloudSnapshotRepositoryProvider),
-                versionCheck: ref.read(cloudVersionCheckProvider),
-                autoUpload: ref.read(cloudAutoUploadCoordinatorProvider),
-                onDownloaded: () async {
-                  ref.invalidate(taskRepositoryProvider);
-                  ref.invalidate(focusRepositoryProvider);
-                  ref.invalidate(nationalFocusRepositoryProvider);
-                  ref.invalidate(calendarRepositoryProvider);
-                  await ref
-                      .read(nationalFocusRepositoryProvider)
-                      .settleDueCheckpoints();
-                },
+          // 推入式二级页统一居中并限制正文宽度：手动同步在桌面宽屏下不再
+          // 横向撑满整块画布。
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: ListView(
+                padding: PactaSpacing.pageInsets(context),
+                children: [
+                  const Text('选择上传本机，并在现有预览中核对整份覆盖范围。仅进入本页不会上传或下载。'),
+                  const SizedBox(height: 12),
+                  CloudSyncCard(
+                    repository: ref.read(cloudSnapshotRepositoryProvider),
+                    versionCheck: ref.read(cloudVersionCheckProvider),
+                    autoUpload: ref.read(cloudAutoUploadCoordinatorProvider),
+                    onDownloaded: () async {
+                      ref.invalidate(taskRepositoryProvider);
+                      ref.invalidate(focusRepositoryProvider);
+                      ref.invalidate(nationalFocusRepositoryProvider);
+                      ref.invalidate(calendarRepositoryProvider);
+                      await ref
+                          .read(nationalFocusRepositoryProvider)
+                          .settleDueCheckpoints();
+                    },
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),

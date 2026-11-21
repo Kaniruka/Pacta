@@ -6,12 +6,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../focus/focus_time_zones.dart';
-import '../schedules/schedule_migration.dart';
 import '../schedules/schedule_models.dart';
 import '../schedules/schedule_repeat.dart';
 import '../tasks/task_database.dart';
 import '../tasks/task_models.dart';
-import 'legacy_cloud_snapshot.dart';
 import 'cloud_recovery_point.dart';
 import 'cloud_snapshot_history.dart';
 import 'cloud_sync_result.dart';
@@ -22,19 +20,9 @@ import 'cloud_sync_result.dart';
 /// `local_schedule_recurrences` 规则表，以及每条实例的规则归属、稳定系列身份、
 /// 原始本地日期、规则时区与开始分钟、例外与墓碑标记。
 ///
-/// 读取侧保留版本 1 与**完整**版本 2，用下方逐字段显式转换补默认值，而不是
-/// 依赖"未知字段容错"：
-/// * v1 → 现有安全转换（旧日历块提升为自有副本 + 预约边界），再补 v2/v3 列；
-/// * v2 → 空规则表 + 每条日程的重复列取空/非重复默认值，已存值一律保留；
-/// * v3 → 严格当前形状，缺表缺列整体拒绝。
-///
-/// 残缺的 pre-merge v2（缺日程表或任一预约缺 preparation_seconds）无论哪个
-/// 版本都整体拒绝，绝不静默合并另一个领域的数据。客户端只写当前版本，服务端
-/// 写入口同样只接受完整当前版本。
+/// 客户端与读取侧都只走这一版：v3 是严格当前形状，缺表缺列整体拒绝；旧版
+/// v1/v2 载荷不再被接受，客户端也不写出任何旧版形状。
 const int cloudSnapshotSchemaVersion = 3;
-
-/// 完整第 2 版：日程表 + 每场预约准备时长的并集。
-const int _version2SnapshotSchemaVersion = 2;
 
 /// 同一上传请求被用于不同内容（服务端 PT422）。自动上传必须停止并检查，
 /// 不能把它改写成新请求。
@@ -86,8 +74,6 @@ class CloudSnapshotMetadata {
     required this.dataUpdatedAt,
     required this.uploadedAt,
     required this.rowCount,
-    this.isLegacy = false,
-    this.legacyToken,
     this.payload,
     this.deviceManufacturer,
     this.deviceModel,
@@ -99,8 +85,6 @@ class CloudSnapshotMetadata {
   final DateTime dataUpdatedAt;
   final DateTime uploadedAt;
   final int rowCount;
-  final bool isLegacy;
-  final String? legacyToken;
   final Map<String, dynamic>? payload;
   final String? deviceManufacturer;
   final String? deviceModel;
@@ -140,7 +124,6 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
   SupabaseCloudSnapshotRemote(this.client);
 
   final SupabaseClient client;
-  final Map<String, String> _legacyTokensByUser = {};
 
   void _assertCurrentUser(String userId) {
     if (client.auth.currentUser?.id != userId) {
@@ -152,11 +135,7 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
   Future<CloudSnapshotMetadata?> inspect({required String userId}) async {
     _assertCurrentUser(userId);
     final row = await _inspectSnapshotRow(userId);
-    if (row != null) {
-      _legacyTokensByUser.remove(userId);
-      return _metadataFromJson(row);
-    }
-    return _readLegacySnapshot(userId);
+    return row == null ? null : _metadataFromJson(row);
   }
 
   Future<Map<String, dynamic>?> _inspectSnapshotRow(String userId) async {
@@ -215,13 +194,8 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
         .select()
         .eq('user_id', userId)
         .maybeSingle();
-    if (row != null) {
-      _legacyTokensByUser.remove(userId);
-      return _metadataFromJson(row);
-    }
-    final legacy = await _readLegacySnapshot(userId);
-    if (legacy == null) throw StateError('Cloud snapshot does not exist.');
-    return legacy;
+    if (row == null) throw StateError('Cloud snapshot does not exist.');
+    return _metadataFromJson(row);
   }
 
   @override
@@ -287,29 +261,16 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
     String? requestId,
   }) async {
     _assertCurrentUser(userId);
-    final String? expectedLegacyToken;
-    final int remoteRevision;
     if (expectedRevision < 0) {
-      expectedLegacyToken = _legacyTokensByUser[userId];
-      if (expectedLegacyToken == null) {
-        throw StateError('请重新检查旧版云数据后再上传，避免覆盖期间变化的数据。');
-      }
-      if (_legacyRevision(expectedLegacyToken) != expectedRevision) {
-        throw StateError('旧版云数据预览已变化，请重新检查后再上传。');
-      }
-      remoteRevision = 0;
-    } else {
-      expectedLegacyToken = null;
-      remoteRevision = expectedRevision;
+      throw StateError('云端快照版本无效，请重新检查后再上传。');
     }
     final parameters = <String, dynamic>{
-      'p_expected_revision': remoteRevision,
+      'p_expected_revision': expectedRevision,
       'p_payload': payload,
       'p_device_id': deviceId,
       'p_device_name': deviceName,
       'p_data_updated_at': dataUpdatedAt.toUtc().toIso8601String(),
       'p_row_count': rowCount,
-      'p_expected_legacy_token': expectedLegacyToken,
       'p_device_manufacturer': _normalizeDeviceMetadata(deviceManufacturer),
       'p_device_model': _normalizeDeviceMetadata(deviceModel),
       'p_request_id': _normalizeDeviceMetadata(requestId),
@@ -355,9 +316,7 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
     } else {
       throw StateError('Cloud snapshot RPC returned an invalid result.');
     }
-    final saved = _metadataFromJson(row);
-    _legacyTokensByUser.remove(userId);
-    return saved;
+    return _metadataFromJson(row);
   }
 
   /// 旧项目可能缺少后加的可选参数（设备元数据、上传请求标识）。
@@ -402,51 +361,6 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
   bool _sameSignature(Set<String> left, Set<String> right) =>
       left.length == right.length && left.containsAll(right);
 
-  Future<CloudSnapshotMetadata?> _readLegacySnapshot(String userId) async {
-    _assertCurrentUser(userId);
-    final response = await client.rpc('read_legacy_business_records');
-    if (response == null) {
-      _legacyTokensByUser.remove(userId);
-      return null;
-    }
-    if (response is! Map) {
-      throw StateError('Legacy cloud records returned an invalid result.');
-    }
-    final result = Map<String, dynamic>.from(response);
-    final records = result['records'];
-    final token = result['token'];
-    if (records is! Map ||
-        token is! String ||
-        !RegExp(r'^[0-9a-f]{32}$').hasMatch(token)) {
-      throw StateError(
-        'Legacy cloud records are missing their revision token.',
-      );
-    }
-    final local = await LegacyCloudSnapshotConverter().convert(
-      userId: userId,
-      records: Map<String, dynamic>.from(records),
-    );
-    if (local == null) {
-      _legacyTokensByUser.remove(userId);
-      return null;
-    }
-    _legacyTokensByUser[userId] = token;
-    return CloudSnapshotMetadata(
-      revision: _legacyRevision(token),
-      deviceId: 'legacy',
-      deviceName: '旧版云数据（来源设备未记录）',
-      dataUpdatedAt: local.dataUpdatedAt,
-      uploadedAt: DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
-      rowCount: local.rowCount,
-      isLegacy: true,
-      legacyToken: token,
-      payload: local.payload,
-    );
-  }
-
-  int _legacyRevision(String token) =>
-      -(int.parse(token.substring(0, 15), radix: 16) + 1);
-
   CloudSnapshotMetadata _metadataFromJson(Map<String, dynamic> row) =>
       CloudSnapshotMetadata(
         revision: row['revision'] as int,
@@ -455,7 +369,6 @@ class SupabaseCloudSnapshotRemote implements CloudSnapshotRemote {
         dataUpdatedAt: DateTime.parse(row['data_updated_at'] as String).toUtc(),
         uploadedAt: DateTime.parse(row['uploaded_at'] as String).toUtc(),
         rowCount: row['row_count'] as int,
-        isLegacy: false,
         payload: row['payload'] == null
             ? null
             : Map<String, dynamic>.from(row['payload'] as Map),
@@ -508,8 +421,6 @@ class UnavailableCloudSnapshotRemote implements CloudSnapshotRemote {
 /// In-memory cloud implementation for application and repository tests.
 class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
   final Map<String, CloudSnapshotMetadata> _snapshots = {};
-  final Map<String, CloudSnapshotMetadata> _legacySnapshots = {};
-  final Map<String, String> _observedLegacyTokens = {};
   final Map<String, List<CloudSnapshotMetadata>> _history = {};
 
   /// 请求台账：request id → (version, payload 指纹)。与真实服务一样不含业务载荷，
@@ -519,24 +430,6 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
   bool available = true;
   bool suspended = false;
 
-  void seedLegacySnapshot({
-    required String userId,
-    required String token,
-    required CloudSnapshotLocalState state,
-  }) {
-    _legacySnapshots[userId] = CloudSnapshotMetadata(
-      revision: -(int.parse(token.substring(0, 15), radix: 16) + 1),
-      deviceId: 'legacy',
-      deviceName: '旧版云数据（来源设备未记录）',
-      dataUpdatedAt: state.dataUpdatedAt,
-      uploadedAt: DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
-      rowCount: state.rowCount,
-      isLegacy: true,
-      legacyToken: token,
-      payload: state.payload,
-    );
-  }
-
   void _checkAccess() {
     if (!available) throw StateError('Cloud snapshot service is offline.');
     if (suspended) throw StateError('Suspended users cannot sync snapshots.');
@@ -545,20 +438,13 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
   @override
   Future<CloudSnapshotMetadata?> inspect({required String userId}) async {
     _checkAccess();
-    final snapshot = _snapshots[userId];
-    if (snapshot != null) {
-      _observedLegacyTokens.remove(userId);
-      return snapshot;
-    }
-    final legacy = _legacySnapshots[userId];
-    if (legacy != null) _observedLegacyTokens[userId] = legacy.legacyToken!;
-    return legacy;
+    return _snapshots[userId];
   }
 
   @override
   Future<CloudSnapshotMetadata> download({required String userId}) async {
     _checkAccess();
-    final snapshot = _snapshots[userId] ?? _legacySnapshots[userId];
+    final snapshot = _snapshots[userId];
     if (snapshot == null) throw StateError('Cloud snapshot does not exist.');
     return snapshot;
   }
@@ -593,26 +479,11 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
         throw CloudUploadRequestEvicted();
       }
     }
-    final legacy = _legacySnapshots[userId];
-    if (legacy != null && legacy.legacyToken != null) {
-      if (_legacyRevision(legacy.legacyToken!) != legacy.revision) {
-        throw StateError('Invalid in-memory legacy token.');
-      }
-    }
-    if (expectedRevision < 0 &&
-        _observedLegacyTokens[userId] != legacy?.legacyToken) {
-      throw StateError('Legacy cloud snapshot changed; inspect it again.');
-    }
-    if (expectedRevision < 0 &&
-        _legacyRevision(_observedLegacyTokens[userId]!) != expectedRevision) {
-      throw StateError('Legacy cloud snapshot preview is stale.');
-    }
-    if (expectedRevision == 0 && legacy != null) {
-      throw StateError('Legacy cloud snapshot exists; inspect it before sync.');
+    if (expectedRevision < 0) {
+      throw StateError('云端快照版本无效，请重新检查后再上传。');
     }
     final currentRevision = _snapshots[userId]?.revision ?? 0;
-    final targetRevision = expectedRevision < 0 ? 0 : expectedRevision;
-    if (currentRevision != targetRevision) {
+    if (currentRevision != expectedRevision) {
       throw CloudUploadRevisionChanged();
     }
     final snapshot = CloudSnapshotMetadata(
@@ -638,8 +509,6 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
         fingerprint: requestFingerprint,
       );
     }
-    _legacySnapshots.remove(userId);
-    _observedLegacyTokens.remove(userId);
     return snapshot;
   }
 
@@ -675,9 +544,6 @@ class InMemoryCloudSnapshotRemote implements CloudSnapshotRemote {
     }
     throw StateError('该云端备份已不在最近 $cloudSnapshotHistoryLimit 份之内。');
   }
-
-  int _legacyRevision(String token) =>
-      -(int.parse(token.substring(0, 15), radix: 16) + 1);
 }
 
 /// 恢复替换事务内的边界，用于在确切时机观察状态变化（例如账号切换）。
@@ -799,7 +665,6 @@ class CloudSnapshotRepository {
       succeededAt: now().toUtc(),
       localFingerprint: fingerprint,
       cloudRevision: cloud.revision,
-      legacyToken: cloud.legacyToken,
     );
     try {
       await syncResultStore.save(userId, result);
@@ -812,20 +677,6 @@ class CloudSnapshotRepository {
   /// omitted. A download reuses this device's matching source mapping when one
   /// exists; otherwise the restored source remains unselected.
   static const _calendarSourceExcluded = {'local_calendar_id', 'is_selected'};
-
-  /// Legacy envelope version still accepted on read.
-  ///
-  /// A version 1 payload (from an older client) is accepted only through an
-  /// explicit, validated conversion: documented missing columns are filled from
-  /// the stored values and its calendar blocks are promoted into owned schedule
-  /// copies before anything local is touched. Current writes always use
-  /// [cloudSnapshotSchemaVersion].
-  static const _legacySnapshotSchemaVersion = 1;
-
-  /// Complete core version 2 (owned schedules + preparation seconds).
-  ///
-  /// Still accepted on read through the explicit goal-pin conversion below.
-  /// Any half-missing version 2 payload is rejected atomically instead.
 
   /// Keep this table list explicit. It excludes per-device preferences,
   /// lifecycle state, device identity, and the legacy upload queue.
@@ -1186,16 +1037,9 @@ class CloudSnapshotRepository {
     Map<String, dynamic> payload,
   ) async {
     final schemaVersion = payload['schemaVersion'];
-    final isLegacy = schemaVersion == _legacySnapshotSchemaVersion;
-    final isVersion2 = schemaVersion == _version2SnapshotSchemaVersion;
-    if (!isLegacy &&
-        !isVersion2 &&
-        schemaVersion != cloudSnapshotSchemaVersion) {
+    if (schemaVersion != cloudSnapshotSchemaVersion) {
       throw StateError('云端快照版本不受支持：$schemaVersion。');
     }
-    // 版本 1 与完整的版本 2 都要按显式转换补上重复日程领域；版本 3 必须是
-    // 当前完整形状，任何缺失都由后面的严格列校验整体拒绝。
-    final preRecurrence = isLegacy || isVersion2;
     if (payload['userId'] != userId) {
       throw StateError('Snapshot version or user identity is invalid.');
     }
@@ -1206,42 +1050,21 @@ class CloudSnapshotRepository {
     if (rawTables is! Map<String, dynamic>) {
       throw StateError('Snapshot table set is invalid.');
     }
-    // Version 1 payloads predate the chain-signal table as well; the missing
-    // table means "no signals yet", not a malformed snapshot.
-    if (isLegacy) {
-      rawTables.putIfAbsent('chain_signals', () => <dynamic>[]);
+    if (rawTables['local_schedules'] is! List) {
+      throw StateError('快照缺少日程表，已整体拒绝；请重新上传完整快照。');
     }
-    // 完整 core 2 是两个票据的并集，所以任何一半缺失的 v2 都是合并前生成的
-    // 残缺载荷：整体拒绝（在任何本地行被读写之前），绝不静默丢弃另一方数据。
-    // 版本 3 是它的超集，同样必须携带这两个领域。
-    if (!isLegacy) {
-      if (rawTables['local_schedules'] is! List) {
-        throw StateError('版本 2 及以后快照缺少日程表，已整体拒绝；请先升级本机再上传。');
-      }
-      final appointmentRows = rawTables['focus_appointments'];
-      if (appointmentRows is List) {
-        for (final row in appointmentRows) {
-          if (row is Map && !row.containsKey('preparation_seconds')) {
-            throw StateError('版本 2 及以后快照缺少预约准备时长，已整体拒绝；请先升级本机再上传。');
-          }
+    final appointmentRows = rawTables['focus_appointments'];
+    if (appointmentRows is List) {
+      for (final row in appointmentRows) {
+        if (row is Map && !row.containsKey('preparation_seconds')) {
+          throw StateError('快照缺少预约准备时长，已整体拒绝；请重新上传完整快照。');
         }
       }
-      // 完整核心 2 若已经带上后来的列（例如目标置顶），这些列属于已知列：
-      // 迁移只补齐缺失的默认值，已存值原样保留，不整体拒绝（见集成契约）。
     }
-    if (preRecurrence) {
-      // v1/v2 没有规则表：显式转换成一个空集合，表示"这个账号还没有重复规则"，
-      // 而不是把缺失当成非法载荷。
-      rawTables.putIfAbsent('local_schedule_recurrences', () => <dynamic>[]);
-    } else if (rawTables['local_schedule_recurrences'] is! List) {
-      throw StateError('版本 3 快照缺少重复规则表，已整体拒绝；请先升级本机再上传。');
+    if (rawTables['local_schedule_recurrences'] is! List) {
+      throw StateError('快照缺少重复规则表，已整体拒绝；请重新上传完整快照。');
     }
-    final expectedTables = isLegacy
-        ? [
-            for (final table in _businessTables)
-              if (table != 'local_schedules') table,
-          ]
-        : _businessTables;
+    const expectedTables = _businessTables;
     if (rawTables.keys.length != expectedTables.length ||
         !expectedTables.every(rawTables.containsKey)) {
       throw StateError('Snapshot table set is invalid.');
@@ -1270,14 +1093,7 @@ class CloudSnapshotRepository {
         if (item is! Map<String, dynamic>) {
           throw StateError('Invalid columns or user ownership in $table.');
         }
-        final sourceRow = preRecurrence
-            ? _withOlderVersionDefaults(
-                table,
-                item,
-                expectedColumns,
-                isLegacy: isLegacy,
-              )
-            : item;
+        final sourceRow = item;
         if (sourceRow.keys.length != expectedColumns.length ||
             !expectedColumns.every(sourceRow.containsKey) ||
             sourceRow['user_id'] != userId) {
@@ -1292,6 +1108,11 @@ class CloudSnapshotRepository {
           for (final column in expectedColumns)
             column: _sqliteValue(sourceRow[column]),
         };
+        // 旧多端核对流程已废除：任何来源的残留裁定都直接归一到正常记录，
+        // 读取侧不再出现待核对或重复状态。
+        if (expectedColumns.contains('review_disposition')) {
+          row['review_disposition'] = 'accepted';
+        }
         if (const {'local_goals', 'local_tasks'}.contains(table)) {
           try {
             row['description'] = normalizeDescription(
@@ -1305,163 +1126,9 @@ class CloudSnapshotRepository {
       }
       result[table] = rows;
     }
-    if (isLegacy) {
-      // Explicit legacy read: promote the old calendar-block projection into
-      // owned schedule copies inside a throwaway payload copy. The conversion
-      // happens before any local row is touched, so a rejected payload leaves
-      // the device exactly as it was.
-      result['local_schedules'] = await _promotedScheduleRows(result);
-    }
     await _validateReferences(result);
     return result;
   }
-
-  /// 旧版本的载荷缺少后来新增的列；只补这里列出的默认值，
-  /// 其余缺列、未知列、类型错误与用户归属仍按严格校验拒绝。
-  ///
-  /// 版本 1：日程表整体缺席（由旧日历副本提升），另缺描述与预约准备时长。
-  /// 版本 2：完整核心 2，只缺目标置顶标记与排序位。
-  static const _legacySnapshotColumnDefaults = <String, Map<String, Object?>>{
-    'local_goals': {'description': '', 'is_pinned': 0, 'sort_order': null},
-    'local_tasks': {'description': ''},
-    'focus_appointments': {'preparation_seconds': null},
-  };
-
-  /// 重复领域在 v1/v2 中不存在时的显式默认值。
-  ///
-  /// 只补缺失键：已存值（包括人为写入的非空值）一律保留，随后仍要过完整的
-  /// 类型与引用校验。v3 不走这条路径，缺列即拒绝。
-  static const _recurrenceColumnDefaults = <String, Object?>{
-    'recurrence_id': null,
-    'recurrence_series_id': null,
-    'recurrence_date': null,
-    'recurrence_time_zone_id': null,
-    'recurrence_start_minutes': null,
-    'is_recurrence_exception': 0,
-    'is_recurrence_cancelled': 0,
-  };
-
-  /// 07 的目标置顶与手动排序位同样晚于完整 core 2：v1/v2 缺列时补
-  /// "未置顶、无排序位"，已存值原样保留。
-  static const _goalPinColumnDefaults = <String, Object?>{
-    'is_pinned': 0,
-    'sort_order': null,
-  };
-
-  Map<String, dynamic> _withOlderVersionDefaults(
-    String table,
-    Map<String, dynamic> row,
-    Set<String> expectedColumns, {
-    required bool isLegacy,
-  }) {
-    final defaults = <String, Object?>{
-      if (isLegacy) ...?_legacySnapshotColumnDefaults[table],
-      // ticket 11：回顾字段晚于完整的 core 2。v1/v2 载荷缺这一列都表示未回顾，
-      // 已写入的值原样保留（只补缺失键），随后仍要过完整类型校验。
-      if (table == 'local_national_focus_failures') 'reviewed_at': null,
-      // ticket 07：置顶与排序位同样晚于 core 2。
-      if (table == 'local_goals') ..._goalPinColumnDefaults,
-      if (table == 'local_schedules') ..._recurrenceColumnDefaults,
-    };
-    if (defaults.isEmpty) return row;
-    final additions = <String, dynamic>{
-      for (final entry in defaults.entries)
-        if (expectedColumns.contains(entry.key) && !row.containsKey(entry.key))
-          entry.key: entry.value,
-    };
-    if (additions.isEmpty) return row;
-    return <String, dynamic>{...row, ...additions};
-  }
-
-  /// Converts the calendar blocks of a version 1 payload into owned schedule
-  /// rows, keeping every source marker for later import deduplication.
-  Future<List<Map<String, Object?>>> _promotedScheduleRows(
-    Map<String, List<Map<String, Object?>>> tables,
-  ) async {
-    final sourceNames = {
-      for (final row in tables['local_calendar_sources']!)
-        if (row['source_id'] is String && row['display_name'] is String)
-          row['source_id'] as String: row['display_name'] as String,
-    };
-    final blocks = <LegacyCalendarBlockProjection>[];
-    DateTime? migratedAt;
-    for (final row in tables['local_calendar_blocks']!) {
-      final startsAt = _epochToDateTime(row['starts_at']);
-      final endsAt = _epochToDateTime(row['ends_at']);
-      final updatedAt = _epochToDateTime(row['updated_at']);
-      if (startsAt == null || endsAt == null || updatedAt == null) {
-        throw StateError('旧版日历块缺少有效时间，无法转换日程。');
-      }
-      blocks.add(
-        LegacyCalendarBlockProjection(
-          sourceId: row['source_id'] as String,
-          sourceEventId: row['source_event_id'] as String,
-          occurrenceId: row['occurrence_id'] as String,
-          eventIdentity: row['event_identity'] as String,
-          title: row['title'] as String,
-          startsAt: startsAt,
-          endsAt: endsAt,
-          allDay: row['all_day'] == 1,
-          allDayStartDate: row['all_day_start_date'] as String?,
-          allDayEndDateExclusive: row['all_day_end_date_exclusive'] as String?,
-        ),
-      );
-      if (migratedAt == null || updatedAt.isAfter(migratedAt)) {
-        migratedAt = updatedAt;
-      }
-    }
-    final promoted = projectLegacyCalendarBlocks(
-      blocks,
-      migratedAt: migratedAt ?? DateTime.utc(1970),
-      sourceNames: sourceNames,
-    );
-    final columns = (await _tableColumns('local_schedules')).toSet();
-    return [
-      for (final schedule in promoted) _promotedScheduleRow(schedule, columns),
-    ];
-  }
-
-  Map<String, Object?> _promotedScheduleRow(
-    PromotedSchedule schedule,
-    Set<String> columns,
-  ) {
-    final row = <String, Object?>{
-      'user_id': userId,
-      'id': schedule.id,
-      'title': schedule.title,
-      'notes': '',
-      'starts_at': _epochSeconds(schedule.startsAt),
-      'ends_at': _epochSeconds(schedule.endsAt),
-      'all_day': schedule.allDay ? 1 : 0,
-      'all_day_start_date': schedule.allDayStartDate,
-      'all_day_end_date_exclusive': schedule.allDayEndDateExclusive,
-      'is_completed': 0,
-      'completed_at': null,
-      'task_id': null,
-      'reminder_minutes_before': null,
-      'origin': ScheduleOrigin.legacyCalendarBlock.storageValue,
-      'source_ids': jsonEncode(schedule.sourceIds),
-      'source_names': jsonEncode(schedule.sourceNames),
-      'source_event_id': schedule.sourceEventId,
-      'occurrence_id': schedule.occurrenceId,
-      'event_identity': schedule.eventIdentity,
-      // 旧日历块提升出来的副本不是重复日程，也没有例外或墓碑。
-      ..._recurrenceColumnDefaults,
-      'created_at': _epochSeconds(schedule.createdAt),
-      'updated_at': _epochSeconds(schedule.updatedAt),
-    };
-    if (row.keys.length != columns.length || !columns.every(row.containsKey)) {
-      throw StateError('转换出的日程字段与本机日程表不一致。');
-    }
-    return row;
-  }
-
-  int _epochSeconds(DateTime value) =>
-      value.toUtc().millisecondsSinceEpoch ~/ 1000;
-
-  DateTime? _epochToDateTime(Object? value) => value is int
-      ? DateTime.fromMillisecondsSinceEpoch(value * 1000, isUtc: true)
-      : null;
 
   Future<Map<String, Map<String, Object?>>> _tableColumnInfo(
     String table,

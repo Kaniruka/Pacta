@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/pacta_icon_sizes.dart';
+
 /// 完成任务/安排时统一的语义动作文案。
 String completionActionLabel(String title, {required bool isCompleted}) =>
     isCompleted ? '将“$title”标记为未完成' : '完成“$title”';
@@ -21,11 +23,11 @@ class PactaCheckCircle extends StatelessWidget {
   /// 交互式勾选的命中区，沿用 Material 的最小触控尺寸。
   static const double hitTargetSize = 48;
 
-  /// 看板行内只读指示的默认视觉尺寸。
-  static const double compactVisualSize = 18;
+  /// 看板行内只读指示的默认视觉尺寸（取共享图标尺度，不另写像素值）。
+  static const double compactVisualSize = PactaIconSizes.sm;
 
-  /// 计划/安排行的默认视觉尺寸。
-  static const double interactiveVisualSize = 24;
+  /// 计划/安排行的默认视觉尺寸（取共享图标尺度，不另写像素值）。
+  static const double interactiveVisualSize = PactaIconSizes.md;
 
   final bool value;
 

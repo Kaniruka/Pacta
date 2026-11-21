@@ -12,7 +12,6 @@ import 'package:pacta/main.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
-import 'package:pacta/src/national_focus/national_focus_reconciliation_page.dart';
 import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
 import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/tasks/task_database.dart';
@@ -500,26 +499,6 @@ void main() {
 
       final brightness = Theme.of(tester.element(find.byType(Scaffold).last))
           .brightness;
-      final reviewApp = MaterialApp(
-        debugShowCheckedModeBanner: false,
-        theme: pactaTheme(brightness),
-        home: NationalFocusReconciliationPage(
-          repository: _LayoutReviewRepository(),
-        ),
-      );
-      await tester.pumpWidget(
-        Platform.isWindows
-            ? RepaintBoundary(key: boundaryKey, child: reviewApp)
-            : reviewApp,
-      );
-      await pumpUi();
-      await tester.ensureVisible(find.text('查看完整来源操作').first);
-      await tester.pumpAndSettle();
-      await shot('11-review-source-collapsed');
-      await tester.tap(find.text('查看完整来源操作').first);
-      await tester.pumpAndSettle();
-      await shot('11b-review-source-expanded');
-
       final blockedCard = NationalFocusCard(
         id: 'layout-blocked-card',
         name: '待核对的晨光校准',
@@ -527,7 +506,6 @@ void main() {
         triggerCondition: '',
         isInTree: true,
         state: NationalFocusCardState.pendingTodayConfirmation,
-        hasPendingReview: true,
         createdAt: now,
         updatedAt: now,
       );
@@ -546,25 +524,6 @@ void main() {
             : blockedApp,
       );
       await pumpUi();
-      await openNode(blockedCard);
-      expect(
-        tester
-            .widget<FilledButton>(
-              find.byKey(const ValueKey('national-focus-primary-state-action')),
-            )
-            .onPressed,
-        isNull,
-      );
-      expect(
-        tester
-            .widget<OutlinedButton>(
-              find.byKey(
-                const ValueKey('national-focus-secondary-state-action'),
-              ),
-            )
-            .onPressed,
-        isNull,
-      );
       await shot('12-review-blocked-actions-row');
       expect(tester.takeException(), isNull);
     } finally {
@@ -577,56 +536,6 @@ void main() {
       await database.close();
     }
   });
-}
-
-/// Read-only layout sample, using the existing reconciliation page test seam.
-/// No branch is adopted and no real account or cloud operation is invoked.
-class _LayoutReviewRepository extends UnavailableNationalFocusRepository {
-  @override
-  Stream<NationalFocusReviewState> watchNationalFocusReviewState() {
-    final effect = NationalFocusReconciliationCardEffect(
-      cardId: 'sample-card',
-      triggerCondition: '晨光校准',
-      previousState: 'lit',
-      newState: 'extinguished',
-      previousParentId: null,
-      newParentId: null,
-      previousIsInTree: true,
-      newIsInTree: true,
-      previousSuccessfulDays: 10,
-      newSuccessfulDays: 10,
-      previousCurrentConsecutiveDays: 10,
-      newCurrentConsecutiveDays: 0,
-    );
-    return Stream.value(
-      NationalFocusReviewState(
-        reconciliationCases: [
-          NationalFocusReconciliationCase(
-            id: 'layout-review',
-            createdAt: DateTime.utc(2026, 11, 14),
-            cardIds: const ['sample-card'],
-            cardNames: const {'sample-card': '晨光校准'},
-            options: [
-              for (final source in ['手机', '电脑'])
-                NationalFocusReconciliationOption(
-                  sourceId: 'layout-$source',
-                  effects: [effect],
-                  operations: [
-                    NationalFocusReconciliationOperation(
-                      sourceId: 'layout-$source',
-                      deviceId: source,
-                      operation: 'extinguish_card',
-                      occurredAt: DateTime.utc(2026, 11, 14),
-                      effects: [effect],
-                    ),
-                  ],
-                ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 /// Existing page-test seam for read-only presentation of a review-blocked card.

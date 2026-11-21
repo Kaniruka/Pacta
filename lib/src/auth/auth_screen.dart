@@ -7,6 +7,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app/app_providers.dart';
 import '../app/app_shell.dart';
+import '../theme/pacta_icon_sizes.dart';
+import '../theme/pacta_spacing.dart';
 import '../ui/pacta_error_text.dart';
 import 'user_lifecycle.dart';
 
@@ -150,7 +152,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       if (error.message.toLowerCase().contains('eligib')) {
         return '该标识没有可用的注册资格，请联系管理员。';
       }
-      return error.message;
+      // 只取 message：AuthException.toString() 会连 statusCode / code 一起
+      // 打出来。经 formatUserError 与其它页面共用同一套脱敏口径。
+      return formatUserError(error.message);
     }
     // 非鉴权异常（网络/服务端技术错误）统一换成可继续操作的中文提示。
     return formatUserError(error);
@@ -164,15 +168,19 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 440),
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(PactaSpacing.xl),
             child: Card(
               child: Padding(
                 padding: const EdgeInsets.all(28),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(Icons.anchor_rounded, size: 48, color: colors.primary),
-                    const SizedBox(height: 16),
+                    Icon(
+                      Icons.anchor_rounded,
+                      size: PactaIconSizes.heroLarge,
+                      color: colors.primary,
+                    ),
+                    const SizedBox(height: PactaSpacing.lg),
                     Text(
                       '进入 Pacta',
                       style: Theme.of(context).textTheme.headlineMedium,
@@ -196,7 +204,11 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     ),
                     if (_error != null) ...[
                       const SizedBox(height: 14),
-                      Text(_error!, style: TextStyle(color: colors.error)),
+                      Text(
+                        _error!,
+                        style: Theme.of(context).textTheme.bodyMedium
+                            ?.copyWith(color: colors.error),
+                      ),
                     ],
                     const SizedBox(height: 22),
                     FilledButton(

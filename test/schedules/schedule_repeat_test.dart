@@ -3,10 +3,7 @@ import 'package:pacta/src/schedules/schedule_repeat.dart';
 
 void main() {
   test('拒绝公历之外的 0000 年日期', () {
-    expect(
-      () => parseRecurrenceDate('0000-01-01', '首日'),
-      throwsArgumentError,
-    );
+    expect(() => parseRecurrenceDate('0000-01-01', '首日'), throwsArgumentError);
   });
 
   ScheduleRepeatRule rule({

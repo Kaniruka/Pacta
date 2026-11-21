@@ -720,6 +720,15 @@ class PactaDatabase extends _$PactaDatabase {
   @override
   int get schemaVersion => 39;
 
+  /// 仍然携带 `review_disposition` 的本地表。旧多端核对流程已废除，
+  /// 这些列只保留给历史数据库的结构兼容，业务上一律按 `accepted` 读取。
+  static const reviewDispositionTables = <String>[
+    'focus_sessions',
+    'focus_appointments',
+    'local_national_focus_cards',
+    'local_national_focus_failures',
+  ];
+
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
@@ -1014,6 +1023,29 @@ class PactaDatabase extends _$PactaDatabase {
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);
+      }
+    },
+    // 每次打开既有库都把测试期残留的旧核对状态直接掰正：待核对 / 重复
+    // 记录一律变成正常记录。不新增 DB migration，也不改 schemaVersion。
+    beforeOpen: (details) async {
+      if (details.wasCreated) return;
+      final existing = await customSelect(
+        "SELECT name FROM sqlite_master WHERE type = 'table'",
+      ).get();
+      final tableNames = {for (final row in existing) row.read<String>('name')};
+      for (final table in reviewDispositionTables) {
+        if (!tableNames.contains(table)) continue;
+        final columns = await customSelect('PRAGMA table_info("$table")').get();
+        if (!columns.any(
+          (column) => column.read<String>('name') == 'review_disposition',
+        )) {
+          continue;
+        }
+        await customStatement(
+          'UPDATE "$table" SET review_disposition = ? '
+          'WHERE review_disposition IS NOT NULL AND review_disposition != ?',
+          ['accepted', 'accepted'],
+        );
       }
     },
   );

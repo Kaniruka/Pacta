@@ -6,6 +6,8 @@ import 'package:pacta/src/tasks/task_database.dart' show PactaDatabase;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 
+import '../support/focus_session_seed.dart';
+
 void main() {
   late PactaDatabase database;
   late InMemoryTaskRemote taskRemote;
@@ -233,7 +235,8 @@ void main() {
     final task = await createTask('核对前不计争议时间');
     final startedAt = wallTime.subtract(const Duration(hours: 1));
     final endedAt = startedAt.add(const Duration(seconds: 45));
-    await focusRemote.upsertSessions(
+    await seedFocusSessions(
+      database,
       userId: 'clock-user',
       sessions: [
         FocusSession(
@@ -263,14 +266,14 @@ void main() {
       ],
     );
 
-    await focusRepository.sync();
+    await focusRepository.settleDueSessions();
 
     final metrics = await focusRepository.getDashboardMetrics(
       timeZoneId: 'Etc/UTC',
     );
     expect(metrics.focusProgressSecondsByTask.containsKey(task.id), isFalse);
     expect(metrics.totalAcceptedFocusSeconds, 0);
-    expect((await focusRepository.getNodes()).single.effectiveSeconds, 0);
+    expect(await focusRepository.getNodes(), isEmpty);
   });
 
   test('正常进程重启保留原倒计时结束点并恢复有效专注时间', () async {
@@ -348,92 +351,6 @@ void main() {
       started.startedAt.add(const Duration(minutes: 4)),
     );
     expect(reviewCase.interval.observedEndedAt, wallTime);
-  });
-
-  test('共享远端跨设备保留待核对与暂缓状态，核对后同步结果和统计', () async {
-    final task = await createTask('跨设备核对');
-    final started = await focusRepository.startSession(
-      taskId: task.id,
-      mode: FocusChainMode.regular,
-      duration: const Duration(minutes: 10),
-    );
-    wallTime = wallTime.add(const Duration(minutes: 1));
-    monotonicTime += const Duration(minutes: 1);
-    await focusRepository.getSession(started.id);
-    wallTime = wallTime.add(const Duration(hours: 1));
-    monotonicTime += const Duration(seconds: 1);
-    await focusRepository.getSession(started.id);
-    wallTime = wallTime.add(const Duration(minutes: 9));
-    monotonicTime += const Duration(minutes: 9);
-    final completed = (await focusRepository.getSession(started.id))!;
-    expect(completed.status, FocusSessionStatus.completed);
-    expect(
-      completed.effectiveSeconds,
-      const Duration(minutes: 9, seconds: 59).inSeconds,
-    );
-    await taskRepository.sync();
-    await focusRepository.sync();
-
-    final secondDatabase = PactaDatabase(NativeDatabase.memory());
-    databases.add(secondDatabase);
-    final secondTaskRepository = LocalTaskRepository(
-      database: secondDatabase,
-      userId: 'clock-user',
-      remote: taskRemote,
-      now: () => wallTime,
-    );
-    taskRepositories.add(secondTaskRepository);
-    final secondMonotonicTime = Duration.zero;
-    final secondFocusRepository = _newFocusRepository(
-      database: secondDatabase,
-      remote: focusRemote,
-      wallTime: () => wallTime,
-      monotonicTime: () => secondMonotonicTime,
-      register: focusRepositories.add,
-    );
-    await secondTaskRepository.sync();
-    await secondFocusRepository.sync();
-
-    final remoteCase =
-        (await secondFocusRepository.getClockReviewCases()).single;
-    expect(remoteCase.interval.observedStartedAt, isNotNull);
-    expect(remoteCase.interval.observedEndedAt, isNotNull);
-    expect(remoteCase.interval.measuredDurationSeconds, 1);
-    await secondFocusRepository.deferClockReviewCase(remoteCase.id);
-    await secondFocusRepository.sync();
-    await focusRepository.sync();
-    expect(
-      (await focusRepository.getClockReviewCases()).single.isDeferred,
-      isTrue,
-    );
-
-    final syncedDeferred = await focusRemote.pull(userId: 'clock-user');
-    final deferredPayload = syncedDeferred.sources
-        .where((source) => source.entityId == started.id)
-        .map((source) => source.payload)
-        .map((payload) => payload)
-        .last;
-    expect(deferredPayload, contains('"clock_review_status":"deferred"'));
-    expect(deferredPayload, contains('"observed_started_at":'));
-    expect(deferredPayload, contains('"observed_ended_at":'));
-
-    await secondFocusRepository.resolveClockReviewCase(
-      caseId: remoteCase.id,
-      decision: FocusClockReviewDecision.acceptMonotonicEstimate,
-    );
-    await secondFocusRepository.sync();
-    await focusRepository.sync();
-    expect(await focusRepository.getClockReviewCases(), isEmpty);
-    final resolved = (await focusRepository.getSession(started.id))!;
-    expect(resolved.effectiveSeconds, const Duration(minutes: 10).inSeconds);
-    expect(
-      resolved.effectiveIntervals[1].clockReviewStatus,
-      FocusClockReviewStatus.resolved,
-    );
-    final metrics = await focusRepository.getDashboardMetrics(
-      timeZoneId: 'Etc/UTC',
-    );
-    expect(metrics.focusProgressSecondsByTask[task.id], 10 * 60);
   });
 }
 

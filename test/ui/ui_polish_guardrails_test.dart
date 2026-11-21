@@ -1,3 +1,8 @@
+import 'dart:io';
+
+import 'package:analyzer/dart/analysis/utilities.dart';
+import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -6,7 +11,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/board/focus_national_calendar_card.dart';
 import 'package:pacta/src/focus/focus_models.dart';
-import 'package:pacta/src/focus/focus_month_page.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
@@ -429,7 +433,6 @@ void main() {
                           repository: tasks,
                           goal: goal,
                           focusProgressSecondsByTask: null,
-                          pendingReviewTaskIds: const <String>{},
                         ),
                     ],
                   ),
@@ -597,7 +600,6 @@ void main() {
       state: state,
       createdAt: createdAt,
       updatedAt: createdAt,
-      hasPendingReview: false,
       currentConsecutiveDays: 0,
       bestConsecutiveDays: 0,
     );
@@ -813,7 +815,7 @@ void main() {
       );
     });
 
-    testWidgets('计划日历、专注月历与融合卡片今天格都是单层描边加独立今角标', (tester) async {
+    testWidgets('计划日历、看板热力月历与融合卡片今天格都是单层描边加独立今角标', (tester) async {
       tester.view.physicalSize = const Size(420, 1400);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
@@ -918,53 +920,6 @@ void main() {
         );
         expect(_todayLabelBackdrops(tester), 0, reason: '计划日历的今字不得被填充胶囊包住');
 
-        // 专注月历：今天默认选中，热力底色保留。
-        await tester.pumpWidget(
-          MaterialApp(
-            theme: pactaTheme(Brightness.light),
-            home: Scaffold(
-              body: FocusMonthPage(
-                repository: focus,
-                accountTimeZoneIds: () =>
-                    Stream<String?>.value('Asia/Shanghai'),
-                now: () => today,
-              ),
-            ),
-          ),
-        );
-        await tester.pumpAndSettle();
-        // 专注月历默认不选中任何一天：先真的点一次今天，才验证「今天 + 选中」。
-        final monthCell = find.byKey(const ValueKey('focus-month-day-15'));
-        expect(monthCell, findsOneWidget);
-        await tester.tap(monthCell);
-        await tester.pumpAndSettle();
-        final monthDecoration =
-            tester
-                    .widget<Ink>(
-                      find
-                          .descendant(of: monthCell, matching: find.byType(Ink))
-                          .first,
-                    )
-                    .decoration!
-                as BoxDecoration;
-        expect(
-          monthDecoration.color,
-          colors.heat1Background,
-          reason: '13 分钟落在热力 1 档，选中不覆写底色',
-        );
-        expect((monthDecoration.border! as Border).top.width, 2);
-        expect(_borderLayers(tester, monthCell), 1);
-        expect(
-          find.descendant(of: monthCell, matching: find.text('今')),
-          findsOneWidget,
-        );
-        expect(_todayLabelBackdrops(tester), 0, reason: '专注月历的今字不得被填充胶囊包住');
-        expect(
-          tester.widget<Text>(find.text('今')).style?.color,
-          colors.heat1Foreground,
-          reason: 'heat1 浅绿底上的今字用高对比业务前景，不是蓝字',
-        );
-
         // 融合卡片：同一格同样是单层描边 + 今角标 + 热力底色。
         await tester.pumpWidget(
           MaterialApp(
@@ -977,7 +932,6 @@ void main() {
                   displayTimeZoneId: 'Asia/Shanghai',
                   now: () => today,
                   onOpenNationalFocus: () {},
-                  onOpenFocusMonth: () {},
                   onRetryProjection: () {},
                 ),
               ),
@@ -1034,7 +988,9 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
       final colors = PactaCalendarColors.light;
-      // 现有调用方真正传入的两种标记：5dp 安排圆点与 10dp 完成勾。
+      // 现行调用方已把状态标记收进底部指示轨（5dp 圆点 / 8dp 完成勾）；
+      // 这里对已弃用的右上角槽按 10dp 上限压测，旧调用方与极端标记也不得
+      // 把「今」挤出窄格。
       final markers = <(String, Widget)>[
         (
           'dot',
@@ -1413,7 +1369,6 @@ void main() {
       state: state,
       createdAt: DateTime.utc(2026, 11, 18, 1),
       updatedAt: DateTime.utc(2026, 11, 18, 1),
-      hasPendingReview: false,
       currentConsecutiveDays: 0,
       bestConsecutiveDays: 0,
     );
@@ -1586,7 +1541,7 @@ void main() {
       }
     });
 
-    testWidgets('有置顶目标时置顶区块整体位于融合卡之上', (tester) async {
+    testWidgets('有置顶目标时并进融合卡顶槽，热力月历仍在其下', (tester) async {
       _useView(tester, const Size(360, 1200));
       final fixture = await _BoardPhase3Fixture.create(
         cards: treeCards(),
@@ -1596,9 +1551,18 @@ void main() {
         await tester.pumpWidget(fixture.app());
         await tester.pumpAndSettle();
 
-        final pinnedTitle = find.text('置顶目标');
-        expect(pinnedTitle, findsOneWidget);
+        // 今天仍有待确认节点 → 默认页签是国策状态；置顶目标在那枚紧凑
+        // 胶囊后面，不再是压在月历上方的独立超高区块。
         expect(find.text('还没有置顶目标'), findsNothing);
+        expect(find.text('置顶目标 (1)'), findsOneWidget);
+        expect(
+          find.byKey(ValueKey('board-pinned-goal-${fixture.goalId}')),
+          findsNothing,
+        );
+        final pinnedTab = find.byKey(const ValueKey('board-top-slot-pinned'));
+        await tester.tap(pinnedTab);
+        await tester.pumpAndSettle();
+
         final pinnedCard = find.byKey(
           ValueKey('board-pinned-goal-${fixture.goalId}'),
         );
@@ -1607,15 +1571,21 @@ void main() {
         final cardRect = tester.getRect(
           find.byKey(const ValueKey('board-focus-national-card')),
         );
+        final heatTitle = tester.getRect(
+          find.descendant(
+            of: find.byKey(const ValueKey('board-focus-national-card')),
+            matching: find.text('专注热力月历'),
+          ),
+        );
         expect(
-          tester.getRect(pinnedTitle).bottom,
-          lessThanOrEqualTo(cardRect.top),
-          reason: '「置顶目标」标题必须在融合卡之上',
+          tester.getRect(pinnedCard).top,
+          greaterThan(cardRect.top),
+          reason: '置顶目标在融合卡顶槽内，而不是卡外上方的独立区块',
         );
         expect(
           tester.getRect(pinnedCard).bottom,
-          lessThanOrEqualTo(cardRect.top),
-          reason: '置顶目标卡片整体在融合卡之上',
+          lessThanOrEqualTo(heatTitle.top),
+          reason: '顶槽仍在热力月历之上，月历保持首屏主角',
         );
         expect(find.text('2026年11月'), findsOneWidget);
         expect(
@@ -1692,7 +1662,6 @@ void main() {
                           repository: tasks,
                           goal: goal,
                           focusProgressSecondsByTask: null,
-                          pendingReviewTaskIds: const <String>{},
                         ),
                     ],
                   ),
@@ -2050,7 +2019,6 @@ void main() {
               displayTimeZoneId: zone,
               now: () => now,
               onOpenNationalFocus: () {},
-              onOpenFocusMonth: () {},
               onRetryProjection: () {},
             ),
           ),
@@ -2072,26 +2040,6 @@ void main() {
         tester.widget<Text>(find.text('今')).style?.color,
         colors.heat3Foreground,
         reason: '深绿 heat3 上的今字用白色业务前景，而不是蓝字配绿底',
-      );
-
-      await tester.pumpWidget(
-        MaterialApp(
-          theme: pactaTheme(Brightness.light),
-          home: Scaffold(
-            body: FocusMonthPage(
-              repository: _Phase4FocusRepository(seconds: {15: 780}),
-              accountTimeZoneIds: () => Stream<String?>.value(zone),
-              now: () => DateTime.utc(2026, 11, 15, 2),
-            ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('今'), findsOneWidget);
-      expect(
-        _todayLabelBackdrops(tester),
-        0,
-        reason: '专注月历：今字之上不得出现带填充色的 Container/DecoratedBox',
       );
 
       await tester.pumpWidget(
@@ -2289,6 +2237,337 @@ void main() {
       }
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Phase 5 T07：全站图标尺度、死页残留与去冗余的机械守卫
+  // ---------------------------------------------------------------------------
+  group('Phase 5 T07 机械守卫', () {
+    test('lib/src 里显式 Icon 尺寸只取 PactaIconSizes 常量', () {
+      final violations = <String>[];
+      for (final file in _libSources()) {
+        final path = _relativePath(file);
+        final source = file.readAsStringSync();
+        for (final entry in _iconSizeEntries(source)) {
+          final location = '$path:${_lineOf(source, entry.offset)}';
+          // 唯一白名单：计划日历底部 8dp 指示槽里的完成勾。它必须完整落在
+          // 8dp 槽内，放大到 micro(14) 会上下各溢出 1dp。
+          final size = entry.size;
+          if (path == _calendarIndicatorSlotSource &&
+              size is IntegerLiteral &&
+              size.value == 8 &&
+              entry.arguments.contains('plan-day-check-')) {
+            continue;
+          }
+          // PactaCheckCircle 只把变量透传给 Icon：两个档位常量本身来自
+          // PactaIconSizes，下面另有断言锁住这层来源。
+          if (path == _checkCircleSource &&
+              size is SimpleIdentifier &&
+              size.name == 'effectiveVisualSize') {
+            continue;
+          }
+          if (size is PrefixedIdentifier &&
+              size.prefix.name == _iconSizesClass) {
+            continue;
+          }
+          violations.add('$location -> ${size?.toSource() ?? 'null'}');
+        }
+      }
+      expect(
+        violations,
+        isEmpty,
+        reason:
+            '图标尺寸只从 $_iconSizesClass 取：12/13/16/18/20/24/32/40/48 '
+            '之类的散值会让同一层级的图标在亮暗、窄宽屏之间各写一套。'
+            '违规：$violations',
+      );
+      // 透传变量的那一处必须仍然源自共享尺度常量。
+      final checkCircle = File(_checkCircleSource).readAsStringSync();
+      expect(
+        checkCircle.contains(
+          'static const double compactVisualSize = PactaIconSizes.sm;',
+        ),
+        isTrue,
+      );
+      expect(
+        checkCircle.contains(
+          'static const double interactiveVisualSize = PactaIconSizes.md;',
+        ),
+        isTrue,
+      );
+    });
+
+    test('lib/src 不再引入裸 fontSize（今微字是唯一白名单）', () {
+      final violations = <String>[];
+      for (final file in _libSources()) {
+        final path = _relativePath(file);
+        final source = file.readAsStringSync();
+        for (final entry in _fontSizeEntries(source)) {
+          final literal = entry.value;
+          final whitelisted =
+              path == _todayLabelSource &&
+              literal is IntegerLiteral &&
+              literal.value == 10;
+          if (whitelisted) continue;
+          violations.add(
+            '$path:${_lineOf(source, entry.offset)} -> ${literal.toSource()}',
+          );
+        }
+      }
+      expect(
+        violations,
+        isEmpty,
+        reason:
+            '字号只能从主题字阶派生；「今」微字是唯一白名单，'
+            '它自己的 10dp 由 pacta_calendar_colors_test 锁定。'
+            '违规：$violations',
+      );
+    });
+
+    test('lib/src 不再残留已删除的页面与兼容转换器', () {
+      const removed = <String>[
+        'FocusMonthPage',
+        'focus_month_page.dart',
+        'NationalFocusReconciliationPage',
+        'national_focus_reconciliation_page.dart',
+        'LegacyCloudSnapshotConverter',
+        'legacy_cloud_snapshot.dart',
+      ];
+      final violations = <String>[];
+      for (final file in _libSources()) {
+        final path = _relativePath(file);
+        final source = file.readAsStringSync();
+        for (final token in removed) {
+          var index = source.indexOf(token);
+          while (index >= 0) {
+            violations.add('$path:${_lineOf(source, index)} -> $token');
+            index = source.indexOf(token, index + token.length);
+          }
+        }
+      }
+      expect(violations, isEmpty, reason: '旧兼容死页已彻底删除，任何引用都会把读者带回已废弃路径。');
+    });
+
+    test('通知与设备权限页不再有仅本设备免责声明，机制说明留在行内 ⓘ', () {
+      final source = File(
+        'lib/src/notifications/focus_notification_settings_page.dart',
+      ).readAsStringSync();
+      expect(
+        source.contains('这些提醒仅保存在本设备'),
+        isFalse,
+        reason: '页面底部的设备同步免责声明必须彻底删除，也不留只为它服务的间距',
+      );
+      expect(
+        source.contains('national-focus-reminder-time-note'),
+        isTrue,
+        reason: '「不影响国策检查点」这类机制说明挂在行内 ⓘ 上',
+      );
+      expect(source.contains('不影响国策检查点'), isTrue);
+      for (final removed in <String>[
+        '直接向系统请求通知授权',
+        '已允许；提醒按设定时刻送达',
+        '系统可能限制后台运行',
+        '默认关闭。',
+      ]) {
+        expect(
+          source.contains(removed),
+          isFalse,
+          reason: '与状态胶囊重复的副标题必须删除：$removed',
+        );
+      }
+      // 明确的可操作提示必须保留，不能被一起去冗余。
+      expect(source.contains('未授予通知权限'), isTrue);
+      expect(source.contains('桌面端保活运行，无需电池优化'), isTrue);
+    });
+
+    test('看板顶槽与计划日历的核心契约常量不被回退', () {
+      final board = File(_boardCardSource).readAsStringSync();
+      expect(
+        board.contains('static const _pinnedSlotLimit = 2;'),
+        isTrue,
+        reason: '单栏顶槽最多展示 2 条置顶目标',
+      );
+      expect(
+        board.contains('goals.take(_pinnedSlotLimit)'),
+        isTrue,
+        reason: '截断必须走同一个常量，第 3 条以后仍留给「查看全部 N 个」',
+      );
+      expect(
+        _stringLiterals(board).where((value) => value == '国策记录'),
+        isEmpty,
+        reason: '顶部国策卡已经承担状态，底部不再有重复的「国策记录」区块',
+      );
+
+      final plan = File(_planCalendarSource).readAsStringSync();
+      expect(plan.contains('centerTodayLabel: true'), isTrue);
+      expect(plan.contains('reserveBottomSlot: true'), isTrue);
+      expect(
+        plan.contains('heat0Background'),
+        isTrue,
+        reason: '普通日必须取与看板热力月历一致的 heat0 中性底块',
+      );
+    });
+
+    testWidgets('计划日历所有日格启用居中今字与底部指示轨，普通日取 heat0 中性底块', (tester) async {
+      _useView(tester, const Size(360, 1200));
+      final colors = PactaCalendarColors.light;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: pactaTheme(Brightness.light),
+          home: Scaffold(
+            body: PlanCalendarView(
+              // 无任何安排：整月都必须是普通日，才量得到「今天也不覆写底块」。
+              repository: _Phase4ScheduleRepository(const <Schedule>[]),
+              goals: const <Goal>[],
+              displayTimeZoneId: 'Asia/Shanghai',
+              now: () => DateTime.utc(2026, 11, 18, 2),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final boxes = tester
+          .widgetList<PactaCalendarDayBox>(find.byType(PactaCalendarDayBox))
+          .toList();
+      expect(boxes, isNotEmpty, reason: '11 月网格必须渲染出日格');
+      for (final box in boxes) {
+        expect(
+          box.centerTodayLabel,
+          isTrue,
+          reason: '每个日格的「今」都居中置顶，与看板热力月历同一套几何',
+        );
+        expect(
+          box.reserveBottomSlot,
+          isTrue,
+          reason: '底部 8dp 指示轨恒定保留，日期数字不会因状态上下跳动',
+        );
+      }
+      // 17 日无安排、非今天：普通日必须带 heat0 中性底块，不能留白。
+      final neutral = boxes.firstWhere((box) => box.dayNumber == '17');
+      expect(neutral.backgroundColor, colors.heat0Background);
+      // 今天同样保留底块：今天只改变描边与独立「今」微字。
+      final today = boxes.firstWhere((box) => box.dayNumber == '18');
+      expect(today.today, isTrue);
+      expect(today.backgroundColor, colors.heat0Background);
+      expect(tester.takeException(), isNull);
+    });
+  });
+}
+
+// -----------------------------------------------------------------------------
+// 源码扫描工具：守卫读真实 lib/src 源文件，而不是维护第二份“应该长什么样”。
+// -----------------------------------------------------------------------------
+
+/// 计划日历底部 8dp 指示槽里的完成勾：唯一允许的裸图标尺寸。
+const _calendarIndicatorSlotSource = 'lib/src/plan/plan_calendar_view.dart';
+
+/// 「今」微字：唯一允许的裸 fontSize。
+const _todayLabelSource = 'lib/src/ui/pacta_calendar_day_cell.dart';
+
+const _boardCardSource = 'lib/src/board/focus_national_calendar_card.dart';
+const _planCalendarSource = 'lib/src/plan/plan_calendar_view.dart';
+const _checkCircleSource = 'lib/src/ui/pacta_check_circle.dart';
+const _iconSizesClass = 'PactaIconSizes';
+
+/// lib/src 下所有视觉契约源码（生成代码同样不该出现裸尺寸）。
+List<File> _libSources() =>
+    Directory('lib/src')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((file) => _relativePath(file).endsWith('.dart'))
+        .toList(growable: false);
+
+String _relativePath(File file) => file.path.replaceAll('\\', '/');
+
+/// 解析出源码里每一处显式 Icon(..., size: ...)。
+List<_IconSize> _iconSizeEntries(String source) {
+  final visitor = _IconSizeVisitor();
+  parseString(content: source, throwIfDiagnostics: false).unit.accept(visitor);
+  return visitor.entries;
+}
+
+/// 解析出源码里每一处 fontSize: ...。
+List<_FontSize> _fontSizeEntries(String source) {
+  final visitor = _FontSizeVisitor();
+  parseString(content: source, throwIfDiagnostics: false).unit.accept(visitor);
+  return visitor.entries;
+}
+
+/// 源码里所有不带插值的字符串字面量（插值串是另一段动态文本，不参与比较）。
+List<String> _stringLiterals(String source) {
+  final visitor = _StringLiteralVisitor();
+  parseString(content: source, throwIfDiagnostics: false).unit.accept(visitor);
+  return visitor.values;
+}
+
+int _lineOf(String source, int offset) =>
+    '\n'.allMatches(source.substring(0, offset)).length + 1;
+
+class _IconSize {
+  _IconSize(this.offset, this.size, this.arguments);
+
+  final int offset;
+  final Expression? size;
+  final String arguments;
+}
+
+class _IconSizeVisitor extends RecursiveAstVisitor<void> {
+  final entries = <_IconSize>[];
+
+  @override
+  void visitInstanceCreationExpression(InstanceCreationExpression node) {
+    if (node.constructorName.type.name.lexeme == 'Icon') {
+      _collect(node.argumentList);
+    }
+    super.visitInstanceCreationExpression(node);
+  }
+
+  @override
+  void visitMethodInvocation(MethodInvocation node) {
+    // 未解析的调用可能被解析成方法调用（非 const 上下文里的 Icon(...)）。
+    if (node.methodName.name == 'Icon') _collect(node.argumentList);
+    super.visitMethodInvocation(node);
+  }
+
+  void _collect(ArgumentList arguments) {
+    for (final argument in arguments.arguments) {
+      if (argument is! NamedExpression || argument.name.label.name != 'size') {
+        continue;
+      }
+      entries.add(
+        _IconSize(argument.offset, argument.expression, arguments.toSource()),
+      );
+    }
+  }
+}
+
+class _FontSize {
+  _FontSize(this.offset, this.value);
+
+  final int offset;
+  final Expression value;
+}
+
+class _FontSizeVisitor extends RecursiveAstVisitor<void> {
+  final entries = <_FontSize>[];
+
+  @override
+  void visitNamedExpression(NamedExpression node) {
+    if (node.name.label.name == 'fontSize') {
+      entries.add(_FontSize(node.offset, node.expression));
+    }
+    super.visitNamedExpression(node);
+  }
+}
+
+class _StringLiteralVisitor extends RecursiveAstVisitor<void> {
+  final values = <String>[];
+
+  @override
+  void visitSimpleStringLiteral(SimpleStringLiteral node) {
+    values.add(node.value);
+    super.visitSimpleStringLiteral(node);
+  }
 }
 
 /// 固定逻辑尺寸与像素比，测试结束时自动还原。

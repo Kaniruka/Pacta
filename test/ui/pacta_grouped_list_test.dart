@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/theme/pacta_fonts.dart';
+import 'package:pacta/src/theme/pacta_icon_sizes.dart';
 import 'package:pacta/src/theme/pacta_spacing.dart';
 import 'package:pacta/src/theme/pacta_surfaces.dart';
 import 'package:pacta/src/theme/pacta_theme.dart';
@@ -236,6 +237,12 @@ void main() {
           reason: '${brightness.name} ${tone.name} 前景对比度',
         );
         expect(find.byIcon(Icons.check), findsOneWidget);
+        // 胶囊内图标是全站最小档 14dp；旧的 13dp 散值不得回流。
+        expect(
+          tester.widget<Icon>(find.byIcon(Icons.check)).size,
+          PactaIconSizes.micro,
+        );
+        expect(PactaIconSizes.micro, 14);
       }
     }
   });
@@ -272,6 +279,17 @@ void main() {
     expect(find.text('已同步'), findsOneWidget);
     expect(find.byIcon(Icons.person_outline), findsOneWidget);
     expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+    // 左侧图标 24dp、右侧箭头 20dp，都从主题层取档位。
+    expect(
+      tester.widget<Icon>(find.byIcon(Icons.person_outline)).size,
+      PactaIconSizes.md,
+    );
+    expect(
+      tester.widget<Icon>(find.byIcon(Icons.chevron_right)).size,
+      PactaIconSizes.compact,
+    );
+    expect(PactaIconSizes.md, 24);
+    expect(PactaIconSizes.compact, 20);
     expect(
       tester.getSize(find.byKey(tileKey)).height,
       greaterThanOrEqualTo(48),

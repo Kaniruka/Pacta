@@ -16,6 +16,8 @@ import 'package:pacta/src/focus/chain_signals_repository.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_statistics.dart';
 import 'package:pacta/src/tasks/task_database.dart' show PactaDatabase;
+import 'package:pacta/src/theme/pacta_icon_sizes.dart';
+import 'package:pacta/src/theme/pacta_surfaces.dart';
 
 /// The Focus Marker is shared by the Elite and Regular Focus Chains, so the
 /// overview exposes exactly one entry point for it.
@@ -115,55 +117,6 @@ void main() {
       findsNWidgets(2),
     );
     expect(find.text('不应保存的改动'), findsNothing);
-    await _disposeWidget(tester);
-  });
-
-  testWidgets('marker edits leave each chain record independent', (
-    tester,
-  ) async {
-    await _pumpOverview(
-      tester,
-      repository,
-      records: [
-        FocusChainRecord(
-          mode: FocusChainMode.elite,
-          currentConsecutive: 7,
-          bestConsecutive: 12,
-          updatedAt: DateTime(2026),
-        ),
-        FocusChainRecord(
-          mode: FocusChainMode.regular,
-          currentConsecutive: 3,
-          bestConsecutive: 5,
-          hasPendingReview: true,
-          updatedAt: DateTime(2026),
-        ),
-      ],
-      statistics: const {
-        FocusChainMode.elite: FocusSessionStatistics(
-          totalDurationSeconds: 3600,
-          acceptedSessionCount: 2,
-        ),
-        FocusChainMode.regular: FocusSessionStatistics(
-          totalDurationSeconds: 125,
-          acceptedSessionCount: 2,
-        ),
-      },
-    );
-    expect(find.text('12'), findsOneWidget);
-    expect(find.text('5'), findsOneWidget);
-    expect(find.text('记录待核对'), findsOneWidget);
-
-    await _editAndSave(tester, markerEditKey, '坐到书桌前');
-
-    expect(find.text('坐到书桌前'), findsOneWidget);
-    expect(find.text('12'), findsOneWidget);
-    expect(find.text('5'), findsOneWidget);
-    expect(find.text('记录待核对'), findsOneWidget);
-    expect(find.text('1小时00分00秒'), findsOneWidget);
-    expect(find.text('30分00秒'), findsOneWidget);
-    expect(find.text('2分05秒'), findsOneWidget);
-    expect(find.text('1分03秒'), findsOneWidget);
     await _disposeWidget(tester);
   });
 
@@ -309,23 +262,6 @@ void main() {
     await _disposeWidget(tester);
   });
 
-  testWidgets('预约链待核对时不挂入口提示，只显示核对状态', (tester) async {
-    await _pumpOverview(
-      tester,
-      repository,
-      appointmentRecord: AppointmentChainRecord(
-        currentConsecutive: 2,
-        bestConsecutive: 4,
-        hasPendingReview: true,
-        updatedAt: DateTime(2026),
-      ),
-    );
-    expect(find.text('记录待核对'), findsOneWidget);
-    expect(find.byKey(appointmentNoteKey), findsNothing);
-    expect(find.text(appointmentEntryRule), findsNothing);
-    await _disposeWidget(tester);
-  });
-
   testWidgets('预约入口句进入语义：读屏读得到，不只在视觉提示里', (tester) async {
     final semantics = tester.ensureSemantics();
     await _pumpOverview(tester, repository);
@@ -411,12 +347,16 @@ void main() {
     await _disposeWidget(tester);
   });
 
-  testWidgets('说明图标不高于正文：12dp 图标，提示用悬停/点按', (tester) async {
+  testWidgets('说明图标不高于正文：micro 档图标，提示用悬停/点按', (tester) async {
     await _pumpOverview(tester, repository);
     final glyphs = tester.widgetList<Icon>(find.byIcon(Icons.info_outline));
     expect(glyphs, isNotEmpty);
     for (final glyph in glyphs) {
-      expect(glyph.size, 12, reason: '说明图标应与辅助文本同级，不抢标题的视觉重量');
+      expect(
+        glyph.size,
+        PactaIconSizes.micro,
+        reason: '说明图标应与辅助文本同级，不抢标题的视觉重量',
+      );
     }
     await _disposeWidget(tester);
   });
@@ -494,6 +434,7 @@ Future<void> _pumpCard(
 ) async {
   await tester.pumpWidget(
     MaterialApp(
+      theme: ThemeData(extensions: const [PactaSurfaces.light]),
       home: Scaffold(
         body: SingleChildScrollView(
           child: FocusChainOverview(
@@ -554,6 +495,12 @@ Future<void> _pumpOverview(
           seedColor: const Color(0xff385a52),
           brightness: brightness,
         ),
+        // 分组列表从主题扩展取卡片与 hairline；组件测试也要带上同一套令牌。
+        extensions: [
+          brightness == Brightness.dark
+              ? PactaSurfaces.dark
+              : PactaSurfaces.light,
+        ],
       ),
       home: Scaffold(
         body: SingleChildScrollView(

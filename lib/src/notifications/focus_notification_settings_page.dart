@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../theme/pacta_surfaces.dart';
 import '../ui/pacta_grouped_list.dart';
@@ -445,11 +446,6 @@ class _FocusNotificationSettingsPageState
                           const SizedBox(height: PactaSpacing.md),
                           _buildMessage(theme),
                         ],
-                        const SizedBox(height: PactaSpacing.lg),
-                        Text(
-                          '这些提醒仅保存在本设备，不随云备份同步。',
-                          style: theme.textTheme.bodySmall,
-                        ),
                       ],
                     ),
                   ),
@@ -467,7 +463,7 @@ class _FocusNotificationSettingsPageState
       children: [
         Icon(
           Icons.info_outline,
-          size: 16,
+          size: PactaIconSizes.sm,
           color: theme.colorScheme.onSurfaceVariant,
         ),
         const SizedBox(width: PactaSpacing.sm),
@@ -495,9 +491,8 @@ class _FocusNotificationSettingsPageState
             ? Icons.notifications_active_outlined
             : Icons.notifications_off_outlined,
         title: '系统通知权限',
-        subtitle: _notificationsAllowed
-            ? '已允许通知；专注、国策与每日提醒可以送达。'
-            : '尚未允许通知；提醒仍保存在本机，但无法送达。',
+        // 已允许时状态胶囊已经给出结论，副标题只在缺权限时说明下一步动作。
+        subtitle: _notificationsAllowed ? null : '未授予通知权限；点按前往系统设置开启。',
         statusBadge: PactaStatusBadge(
           label: _notificationsAllowed ? '已开启' : '未开启',
           tone: _notificationsAllowed
@@ -511,7 +506,6 @@ class _FocusNotificationSettingsPageState
           tileKey: const Key('request-notification-permission'),
           leadingIcon: Icons.notifications_outlined,
           title: '申请系统通知权限',
-          subtitle: '直接向系统请求通知授权',
           onTap: _updating ? null : _requestNotifications,
         ),
       if (_isAndroid)
@@ -519,9 +513,7 @@ class _FocusNotificationSettingsPageState
           tileKey: const Key('allow-exact-alarms'),
           leadingIcon: Icons.alarm_on_outlined,
           title: '精确提醒（闹钟）',
-          subtitle: _exactAlarmsAllowed
-              ? '已允许；提醒按设定时刻送达。'
-              : '未允许；系统可能延迟送达，点按即可允许。',
+          subtitle: _exactAlarmsAllowed ? null : '未允许；系统可能延迟送达，点按即可允许。',
           statusBadge: PactaStatusBadge(
             label: _exactAlarmsAllowed ? '已允许' : '待开启',
             tone: _exactAlarmsAllowed
@@ -538,8 +530,8 @@ class _FocusNotificationSettingsPageState
               : Icons.battery_alert_outlined,
           title: '后台运行',
           subtitle: _ignoringBatteryOptimizations
-              ? '已加入电池优化白名单；锁屏或切到其他应用后倒计时与提醒仍会继续。'
-              : '系统可能限制后台运行；加入白名单后倒计时与提醒更稳定。',
+              ? null
+              : '未加入电池优化白名单；点按加入后锁屏也能继续倒计时。',
           statusBadge: PactaStatusBadge(
             label: _ignoringBatteryOptimizations ? '已加白名单' : '建议开启',
             tone: _ignoringBatteryOptimizations
@@ -605,9 +597,13 @@ class _FocusNotificationSettingsPageState
           PactaSettingsTile(
             tileKey: const Key('national-focus-reminder-time'),
             title: '提醒时间（北京时间）',
-            subtitle: '不影响国策检查点',
+            // 机制说明不是每次都要读：折进行内 ⓘ，需要时点开读全文，
+            // 设置行本身保持一行高。
             trailing: _timeTrailing(
               preferences.nationalFocusReminderMinutesAfterMidnight,
+              note:
+                  '不影响国策检查点：这个时间只决定提醒何时发出，'
+                  '国策仍按北京时间 04:00 结算。',
             ),
             onTap: _updating ? null : _setNationalFocusReminderTime,
           ),
@@ -616,14 +612,16 @@ class _FocusNotificationSettingsPageState
             value: preferences.dailyOpenReminderEnabled,
             onChanged: _updating ? null : _setDailyOpenReminderEnabled,
             title: const Text('每天打开 Pacta'),
-            subtitle: const Text('默认关闭。按本机当地时间每天提醒一次，点按打开看板。'),
+            subtitle: const Text('提醒后点按通知直接打开看板。'),
           ),
           PactaSettingsTile(
             tileKey: const Key('daily-open-reminder-time'),
             title: '提醒时间（本机时间）',
+            // 非桌面端的时间值本身就是答案；只有桌面端存在「退出后不送达」
+            // 这条非显而易见的限制需要写清楚。
             subtitle: _isWindowsDesktop
                 ? '仅在 Pacta 正在运行（含隐藏到托盘）时送达；完全退出后不会提醒。'
-                : '每天按本机当地时间提醒',
+                : null,
             trailing: _timeTrailing(
               preferences.dailyOpenReminderMinutesAfterMidnight,
             ),
@@ -632,8 +630,11 @@ class _FocusNotificationSettingsPageState
         ],
       );
 
-  /// 行尾时间值 + 箭头：整行仍是唯一命中区，时间只是它的右侧读数。
-  Widget _timeTrailing(int minutesAfterMidnight) {
+  /// 行尾时间值 + 行内说明 + 箭头：整行仍是唯一命中区，时间只是它的右侧读数。
+  ///
+  /// [note] 非空时多一枚 [PactaIconSizes.micro] 的「ⓘ」：机制说明挂在
+  /// tooltip 里，不再常驻成副标题把设置行撑成两行。
+  Widget _timeTrailing(int minutesAfterMidnight, {String? note}) {
     final theme = Theme.of(context);
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -644,10 +645,23 @@ class _FocusNotificationSettingsPageState
             color: theme.colorScheme.primary,
           ),
         ),
+        if (note != null) ...[
+          const SizedBox(width: PactaSpacing.xs),
+          Tooltip(
+            key: const Key('national-focus-reminder-time-note'),
+            triggerMode: TooltipTriggerMode.tap,
+            message: note,
+            child: Icon(
+              Icons.info_outline,
+              size: PactaIconSizes.micro,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
         const SizedBox(width: PactaSpacing.xs),
         Icon(
           Icons.chevron_right,
-          size: 20,
+          size: PactaIconSizes.compact,
           color: theme.colorScheme.onSurfaceVariant,
         ),
       ],

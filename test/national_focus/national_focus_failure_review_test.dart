@@ -1,4 +1,3 @@
-import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
@@ -117,58 +116,6 @@ void main() {
       expect(after.currentConsecutiveDays, card.currentConsecutiveDays);
       expect(after.bestConsecutiveDays, card.bestConsecutiveDays);
     }
-  });
-
-  test('回顾状态与既有裁定字段互不影响，裁定语义保持原样', () async {
-    final batchId = await createFailedBatch();
-    await (database.update(database.localNationalFocusFailures)
-          ..where((row) => row.userId.equals('user-a'))
-          ..where((row) => row.batchId.equals(batchId)))
-        .write(
-          const LocalNationalFocusFailuresCompanion(
-            reviewDisposition: Value('pending_review'),
-          ),
-        );
-
-    var failures = await repository.getFailures();
-    expect(failures.every((failure) => failure.isPendingReview), isTrue);
-    expect(failures.every((failure) => failure.isReviewed), isFalse);
-
-    await repository.markFailureReviewed(batchId: batchId);
-    failures = await repository.getFailures();
-    expect(failures.every((failure) => failure.isReviewed), isTrue);
-    expect(
-      failures.every((failure) => failure.isPendingReview),
-      isTrue,
-      reason: '裁定待核对是另一个概念，标记回顾不得改变它。',
-    );
-
-    var rows = await database.select(database.localNationalFocusFailures).get();
-    expect(
-      rows.every((row) => row.reviewDisposition == 'pending_review'),
-      isTrue,
-    );
-
-    await (database.update(database.localNationalFocusFailures)
-          ..where((row) => row.userId.equals('user-a'))
-          ..where((row) => row.batchId.equals(batchId)))
-        .write(
-          const LocalNationalFocusFailuresCompanion(
-            reviewDisposition: Value('accepted'),
-          ),
-        );
-    final afterArbitration = await repository.getFailures();
-    expect(
-      afterArbitration.every((failure) => failure.isReviewed),
-      isTrue,
-      reason: '裁定落定不得清掉已有的回顾标记。',
-    );
-    expect(
-      afterArbitration.every((failure) => failure.isPendingReview),
-      isFalse,
-    );
-    rows = await database.select(database.localNationalFocusFailures).get();
-    expect(rows.every((row) => row.reviewedAt != null), isTrue);
   });
 
   test('回顾后可补充或清空说明，说明与回顾状态互不牵连', () async {

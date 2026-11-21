@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../focus/focus_repository.dart';
 import '../ui/pacta_date_format.dart';
+import '../ui/pacta_error_text.dart';
 
 import 'cloud_auto_upload.dart';
 import 'cloud_snapshot_history_page.dart';
@@ -441,7 +442,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
       if (mounted && widget.repository == repository) {
         setState(
           () => _message =
-              '同步未完成：${error is StateError ? error.message : '请检查网络与登录状态。'} 请重新查看云端数据后再选择方向。',
+              '同步未完成：${_snapshotFailureText(error)} 请重新查看云端数据后再选择方向。',
         );
       }
     } finally {
@@ -475,14 +476,16 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
               const SizedBox(height: 8),
               Text(
                 '自动上传已停止：$reason',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: Theme.of(context).colorScheme.error),
               ),
             ],
             if (_resultError case final error?) ...[
               const SizedBox(height: 8),
               Text(
                 error,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: Theme.of(context).colorScheme.error),
               ),
             ],
             if (cloud != null) ...[
@@ -585,10 +588,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
               Text('云端数据更新：${formatPactaDateTimeSeconds(cloud.dataUpdatedAt)}'),
               Text('云端记录：${cloud.rowCount} 条'),
               Text('来源：${cloud.deviceName}'),
-              if (cloud.isLegacy)
-                const Text('发现旧版云端记录，将转换为整份数据；原设备和上传时间未记录。')
-              else
-                Text('上传时间：${formatPactaDateTimeSeconds(cloud.uploadedAt)}'),
+              Text('上传时间：${formatPactaDateTimeSeconds(cloud.uploadedAt)}'),
               const SizedBox(height: 8),
               Text(_age(cloud.dataUpdatedAt, local.dataUpdatedAt)),
             ],
@@ -737,3 +737,29 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
     ),
   );
 }
+
+/// 云快照失败的用户可见文案。
+///
+/// [CloudSnapshotRepository] 用英文 `StateError` 表达内部校验（快照不存在、
+/// 表集合不合法、某列值类型异常）。这些是实现细节，不直接摊到屏上：常见
+/// 几种换成可继续操作的中文；其余仍先经 [formatUserError] 脱敏（PostgREST、
+/// socket 等会换成统一中文），最后仍只剩英文时给通用提示。
+String _snapshotFailureText(Object error) {
+  if (error is StateError) {
+    final message = error.message.trim();
+    final lower = message.toLowerCase();
+    if (lower.contains('cloud snapshot does not exist')) {
+      return '云端快照已不存在，请重新上传本机数据。';
+    }
+    if (lower.contains('snapshot table set is invalid')) {
+      return '云端快照的数据结构不受支持，请重新上传本机数据。';
+    }
+    if (lower.contains('invalid value type')) {
+      return '云端快照中有字段的值类型无法识别，请重新上传本机数据。';
+    }
+  }
+  final formatted = formatUserError(error);
+  return _containsChinese(formatted) ? formatted : '请检查网络与登录状态。';
+}
+
+bool _containsChinese(String text) => RegExp(r'[\u4e00-\u9fff]').hasMatch(text);

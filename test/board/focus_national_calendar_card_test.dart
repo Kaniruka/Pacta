@@ -39,7 +39,6 @@ class _Harness {
   bool failing;
 
   var openedTree = 0;
-  var openedMonth = 0;
   var retries = 0;
 
   Widget build({
@@ -60,7 +59,6 @@ class _Harness {
               displayTimeZoneId: displayTimeZoneId,
               now: () => _now,
               onOpenNationalFocus: () => openedTree += 1,
-              onOpenFocusMonth: () => openedMonth += 1,
               onRetryProjection: () => retries += 1,
             ),
           ),
@@ -294,7 +292,6 @@ void main() {
         _card('lit', NationalFocusCardState.lit),
         _card('pending', NationalFocusCardState.pendingTodayConfirmation),
         _card('out', NationalFocusCardState.extinguished),
-        _card('review', NationalFocusCardState.lit, hasPendingReview: true),
       ],
     );
     await tester.pumpWidget(harness.build());
@@ -305,7 +302,6 @@ void main() {
     expect(find.text('点亮 1'), findsOneWidget);
     expect(find.text('待确认 1'), findsOneWidget);
     expect(find.text('熄灭 1'), findsOneWidget);
-    expect(find.text('1 个节点待核对，未计入上方汇总。'), findsOneWidget);
     expect(find.text('点击查看国策树及具体节点状态 →'), findsOneWidget);
     // 今日选中时数字只在顶部出现一次：日期详情既不重复胶囊，也不重复
     // 「点亮 X · 待确认 Y · 熄灭 Z」这一行。
@@ -343,11 +339,13 @@ void main() {
     expect(find.text('国策树尚无节点'), findsOneWidget);
     expect(find.text('暂无国策'), findsNothing);
 
-    // 同一次切换里历史日与未来日仍保留各自诚实的结论。
+    // 同一次切换里历史日与未来日仍保留各自诚实的结论：标题随选中日
+    // 变成「X月X日国策记录」，日期详情不再重复第二个结论区块。
     await tester.tap(find.byKey(const ValueKey('board-focus-day-9')));
     await tester.pumpAndSettle();
-    expect(find.text('国策记录'), findsOneWidget);
+    expect(find.text('11月9日国策记录'), findsOneWidget);
     expect(find.text('未知'), findsOneWidget);
+    expect(find.text('国策记录'), findsNothing);
     await tester.tap(find.byKey(const ValueKey('board-focus-day-20')));
     await tester.pumpAndSettle();
     expect(find.text('未到结算'), findsOneWidget);
@@ -456,7 +454,6 @@ void main() {
                 displayTimeZoneId: _zone,
                 now: () => _now,
                 onOpenNationalFocus: () {},
-                onOpenFocusMonth: () {},
                 onRetryProjection: () {},
               ),
             ),
@@ -500,7 +497,6 @@ void main() {
                 displayTimeZoneId: _zone,
                 now: () => _now,
                 onOpenNationalFocus: () {},
-                onOpenFocusMonth: () {},
                 onRetryProjection: () {},
               ),
             ),
@@ -564,7 +560,6 @@ void main() {
               displayTimeZoneId: _zone,
               now: () => _now,
               onOpenNationalFocus: () {},
-              onOpenFocusMonth: () {},
               onRetryProjection: () {},
             ),
           ),
@@ -612,7 +607,9 @@ void main() {
     await tester.pumpWidget(harness.build());
     await tester.pumpAndSettle();
 
-    expect(find.text('今日失败记录'), findsOneWidget);
+    // 今日失败行并入顶部动态状态卡（最多 3 条 + 溢出提示），日期详情
+    // 不再单开「今日失败记录」区块。
+    expect(find.text('今日失败记录'), findsNothing);
     expect(find.text('先写第一步 · 未完成今日确认'), findsOneWidget);
     // 顶部「今日国策状态」仍负责实时计数；详情只补失败追溯，不复述数字。
     expect(find.text('熄灭 1'), findsOneWidget);
@@ -1003,22 +1000,18 @@ FocusMonthMetrics _metrics(
   );
 }
 
-NationalFocusCard _card(
-  String id,
-  NationalFocusCardState state, {
-  bool hasPendingReview = false,
-}) => NationalFocusCard(
-  id: id,
-  name: id,
-  triggerCondition: id,
-  action: '行动',
-  isInTree: true,
-  state: state,
-  createdAt: DateTime.utc(2026, 9, 1),
-  updatedAt: DateTime.utc(2026, 9, 1),
-  hasPendingReview: hasPendingReview,
-  currentConsecutiveDays: 5,
-);
+NationalFocusCard _card(String id, NationalFocusCardState state) =>
+    NationalFocusCard(
+      id: id,
+      name: id,
+      triggerCondition: id,
+      action: '行动',
+      isInTree: true,
+      state: state,
+      createdAt: DateTime.utc(2026, 9, 1),
+      updatedAt: DateTime.utc(2026, 9, 1),
+      currentConsecutiveDays: 5,
+    );
 
 NationalFocusFailure _failure({
   required String id,

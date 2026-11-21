@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../theme/pacta_spacing.dart';
 import '../ui/pacta_card_header.dart';
 import '../ui/pacta_disclosure_section.dart';
 import '../ui/pacta_error_text.dart';
@@ -60,7 +61,6 @@ class _NationalFocusCardLibraryPageState
     if (confirmed != true) return;
     try {
       final result = await widget.repository.deleteCard(card.id);
-      syncNationalFocusInBackground(widget.repository);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -81,7 +81,6 @@ class _NationalFocusCardLibraryPageState
   Future<void> _restoreCard(NationalFocusCard card) async {
     try {
       await widget.repository.restoreDeletedCard(card.id);
-      syncNationalFocusInBackground(widget.repository);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -173,9 +172,9 @@ class _LibraryCardList extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
           child: ListView.separated(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+            padding: PactaSpacing.pageInsets(context).copyWith(bottom: 100),
             itemCount: cards.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
+            separatorBuilder: (_, _) => const SizedBox(height: PactaSpacing.md),
             itemBuilder: (context, index) => _LibraryCard(
               card: cards[index],
               onDetails: () => Navigator.of(context).push(
@@ -188,25 +187,17 @@ class _LibraryCardList extends StatelessWidget {
                   ),
                 ),
               ),
-              onEdit: cards[index].hasPendingReview
-                  ? null
-                  : () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => NationalFocusCardEditorPage(
-                          repository: repository,
-                          card: cards[index],
-                        ),
-                      ),
-                    ),
-              onRename: cards[index].hasPendingReview
-                  ? null
-                  : () => onRename(cards[index]),
-              onPlace: cards[index].hasPendingReview
-                  ? null
-                  : () => onPlace(cards[index]),
-              onDelete: cards[index].hasPendingReview
-                  ? null
-                  : () => onDelete(cards[index]),
+              onEdit: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => NationalFocusCardEditorPage(
+                    repository: repository,
+                    card: cards[index],
+                  ),
+                ),
+              ),
+              onRename: () => onRename(cards[index]),
+              onPlace: () => onPlace(cards[index]),
+              onDelete: () => onDelete(cards[index]),
             ),
           ),
         ),
@@ -255,14 +246,12 @@ class _DeletedNationalFocusCardList extends StatelessWidget {
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
           child: ListView.separated(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+            padding: PactaSpacing.pageInsets(context).copyWith(bottom: 100),
             itemCount: cards.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 12),
+            separatorBuilder: (_, _) => const SizedBox(height: PactaSpacing.md),
             itemBuilder: (context, index) => _DeletedLibraryCard(
               card: cards[index],
-              onRestore: cards[index].hasPendingReview
-                  ? null
-                  : () => onRestore(cards[index]),
+              onRestore: () => onRestore(cards[index]),
             ),
           ),
         ),
@@ -357,7 +346,6 @@ class _NationalFocusCardEditorPageState
         await widget.repository.updateCard(cardId: existing.id, draft: draft);
         card = await widget.repository.getCard(existing.id);
       }
-      syncNationalFocusInBackground(widget.repository);
       if (mounted) Navigator.of(context).pop(card);
     } catch (error) {
       if (mounted) setState(() => _error = formatUserError(error));
@@ -377,7 +365,7 @@ class _NationalFocusCardEditorPageState
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+              padding: PactaSpacing.pageInsets(context, top: PactaSpacing.xl),
               children: [
                 Text(
                   widget.card?.activeStrengtheningLevel != null
@@ -449,7 +437,13 @@ class _NationalFocusCardEditorPageState
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            // 底部固定操作区与表单用同一条页边距：保存按钮的左右缘必须
+            // 与输入框严格对齐。
+            padding: PactaSpacing.pageInsets(
+              context,
+              top: PactaSpacing.sm,
+              bottom: PactaSpacing.md,
+            ),
             child: SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
@@ -615,10 +609,6 @@ class _LibraryCard extends StatelessWidget {
                     value: card.exceptionNotes!,
                   ),
                 ],
-                if (card.hasPendingReview) ...[
-                  const SizedBox(height: 12),
-                  const NationalFocusReviewNotice(),
-                ],
                 const SizedBox(height: 12),
                 _NationalFocusRecordSummary(card: card),
                 const SizedBox(height: 12),
@@ -669,10 +659,6 @@ class _DeletedLibraryCard extends StatelessWidget {
           ],
           const SizedBox(height: 12),
           _NationalFocusRecordSummary(card: card),
-          if (card.hasPendingReview) ...[
-            const SizedBox(height: 12),
-            const NationalFocusReviewNotice(),
-          ],
           const SizedBox(height: 8),
           Text(
             '恢复后会回到卡片库；树位置和点亮状态需要重新选择。',
@@ -733,57 +719,63 @@ class NationalFocusCardDetailPage extends StatelessWidget {
             : '当前规则 · 强化等级 ${card.activeStrengtheningLevel}';
         return Scaffold(
           appBar: AppBar(title: const Text('国策卡详情')),
-          body: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-            children: [
-              Text(card.state.label, style: theme.textTheme.labelMedium),
-              const SizedBox(height: 6),
-              // 名称与连续点亮胶囊同排：短名称时胶囊紧跟右侧，长名称自动换行。
-              Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                runSpacing: 6,
+          // 推入式二级页统一居中并限制正文宽度：宽屏下与页面级卡片同一条
+          // 阅读线，左右边距改回对称的 PactaSpacing.pageInsets。
+          body: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: ListView(
+                padding: PactaSpacing.pageInsets(context),
                 children: [
-                  Text(card.name, style: theme.textTheme.headlineSmall),
-                  NationalFocusStreakTags(
-                    currentConsecutiveDays: card.currentConsecutiveDays,
-                    bestConsecutiveDays: card.bestConsecutiveDays,
+                  Text(card.state.label, style: theme.textTheme.labelMedium),
+                  const SizedBox(height: 6),
+                  // 名称与连续点亮胶囊同排：短名称时胶囊紧跟右侧，长名称自动换行。
+                  Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      Text(card.name, style: theme.textTheme.headlineSmall),
+                      NationalFocusStreakTags(
+                        currentConsecutiveDays: card.currentConsecutiveDays,
+                        bestConsecutiveDays: card.bestConsecutiveDays,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
+                  NationalFocusFieldText(
+                    label: ruleLabel,
+                    value: card.effectiveAction,
+                  ),
+                  if (exceptionNotes.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _ExceptionNotesSection(notes: exceptionNotes),
+                  ],
+                  const SizedBox(height: 24),
+                  Text('记录', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: 4),
+                  // 连续天数已在名称旁的胶囊里，记录区只留累计成功日与内化进度。
+                  _NationalFocusRecordSummary(card: card, showStreaks: false),
+                  if (cascadeSourceLabel != null) ...[
+                    const SizedBox(height: 16),
+                    _CascadeStatusNote(
+                      sourceLabel: cascadeSourceLabel!,
+                      lightBlocked: lightBlocked,
+                    ),
+                  ],
+                  const SizedBox(height: 24),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: FilledButton.tonalIcon(
+                      onPressed: () => _editCard(context, card),
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text('编辑卡片'),
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 22),
-              NationalFocusFieldText(
-                label: ruleLabel,
-                value: card.effectiveAction,
-              ),
-              if (exceptionNotes.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                _ExceptionNotesSection(notes: exceptionNotes),
-              ],
-              const SizedBox(height: 24),
-              Text('记录', style: theme.textTheme.titleSmall),
-              const SizedBox(height: 4),
-              // 连续天数已在名称旁的胶囊里，记录区只留累计成功日与内化进度。
-              _NationalFocusRecordSummary(card: card, showStreaks: false),
-              if (cascadeSourceLabel != null) ...[
-                const SizedBox(height: 16),
-                _CascadeStatusNote(
-                  sourceLabel: cascadeSourceLabel!,
-                  lightBlocked: lightBlocked,
-                ),
-              ],
-              const SizedBox(height: 24),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: FilledButton.tonalIcon(
-                  onPressed: card.hasPendingReview
-                      ? null
-                      : () => _editCard(context, card),
-                  icon: const Icon(Icons.edit_outlined),
-                  label: const Text('编辑卡片'),
-                ),
-              ),
-            ],
+            ),
           ),
         );
       },
@@ -880,7 +872,6 @@ Future<void> _renameNationalFocusCard(
   if (name == null || !context.mounted) return;
   try {
     await repository.renameCard(cardId: card.id, name: name);
-    syncNationalFocusInBackground(repository);
   } catch (error) {
     if (context.mounted) {
       ScaffoldMessenger.of(context)

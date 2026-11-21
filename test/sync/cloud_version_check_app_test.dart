@@ -708,7 +708,6 @@ void main() {
             succeededAt: DateTime.utc(2026),
             localFingerprint: null,
             cloudRevision: 2,
-            legacyToken: legacy ? 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' : null,
           ),
         );
         await tester.pumpWidget(
@@ -913,8 +912,6 @@ class _Remote implements CloudSnapshotRemote {
     if (fail) throw StateError('offline');
     return CloudSnapshotMetadata(
       revision: revision,
-      isLegacy: legacy,
-      legacyToken: legacy ? token : null,
       deviceId: 'other',
       deviceName: deviceName,
       dataUpdatedAt: DateTime.utc(2020),

@@ -6,6 +6,8 @@ import 'package:pacta/src/tasks/task_database.dart' show PactaDatabase;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 
+import '../support/focus_session_seed.dart';
+
 /// 七个候选城市的日分摊必须由 IANA 时区规则决定，而不是固定偏移：
 /// 同一段 UTC 时间在夏令时切换前后可能落在不同的本地日期。
 void main() {
@@ -50,7 +52,8 @@ void main() {
   test('3 月 8 日美国夏令时开始：洛杉矶仍在 3/7，纽约已到 3/8', () async {
     // 07:30Z–08:00Z：纽约 03:30 EDT（切换发生在 07:00Z），
     // 洛杉矶 23:30 PST（切换要到 10:00Z），因此两地日期不同。
-    await focusRemote.upsertSessions(
+    await seedFocusSessions(
+      database,
       userId: 'user-a',
       sessions: [
         _settledSession(
@@ -62,7 +65,7 @@ void main() {
       ],
     );
     now = DateTime.utc(2026, 3, 8, 12);
-    await focus.sync();
+    await focus.settleDueSessions();
 
     const expected = {
       'Asia/Shanghai': '2026-03-08',
@@ -84,7 +87,8 @@ void main() {
 
   test('11 月 1 日美国夏令时结束：洛杉矶回到 10/31，纽约已到 11/1', () async {
     // 06:30Z–07:00Z：纽约 01:30 EST（06:00Z 回落），洛杉矶 23:30 PDT。
-    await focusRemote.upsertSessions(
+    await seedFocusSessions(
+      database,
       userId: 'user-a',
       sessions: [
         _settledSession(
@@ -96,7 +100,7 @@ void main() {
       ],
     );
     now = DateTime.utc(2026, 11, 1, 12);
-    await focus.sync();
+    await focus.settleDueSessions();
 
     const expected = {
       'Asia/Shanghai': '2026-11-01',

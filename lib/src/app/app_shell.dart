@@ -461,8 +461,8 @@ class _AppShellState extends ConsumerState<AppShell>
                 color: Theme.of(context).colorScheme.errorContainer,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
+                    horizontal: PactaSpacing.lg,
+                    vertical: PactaSpacing.md,
                   ),
                   child: Row(
                     children: [
@@ -470,15 +470,16 @@ class _AppShellState extends ConsumerState<AppShell>
                         Icons.pause_circle_outline,
                         color: Theme.of(context).colorScheme.onErrorContainer,
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: PactaSpacing.md),
                       Expanded(
                         child: Text(
                           '此用户已停用。新业务操作和同步已暂停；本机保留的流程仍按原时间线继续，恢复后再同步。',
-                          style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onErrorContainer,
-                          ),
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onErrorContainer,
+                              ),
                         ),
                       ),
                     ],

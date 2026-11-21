@@ -277,38 +277,6 @@ class SchedulePromotionResult {
   final bool alreadyPromoted;
 }
 
-class ScheduleMigrationStatus {
-  const ScheduleMigrationStatus({
-    required this.hasCompletedMigration,
-    required this.isRolledBack,
-    required this.canRollback,
-    required this.promotedCount,
-    required this.sourceBlockCount,
-    this.migrationId,
-    this.completedAt,
-  });
-
-  final bool hasCompletedMigration;
-  final bool isRolledBack;
-  final bool canRollback;
-  final int promotedCount;
-  final int sourceBlockCount;
-  final String? migrationId;
-  final DateTime? completedAt;
-}
-
-class ScheduleRollbackResult {
-  const ScheduleRollbackResult({
-    required this.migrationId,
-    required this.removedSchedules,
-    required this.restoredBlocks,
-  });
-
-  final String migrationId;
-  final int removedSchedules;
-  final int restoredBlocks;
-}
-
 /// Fields the user edits on a schedule.
 class ScheduleDraft {
   const ScheduleDraft({

@@ -627,7 +627,31 @@ Future<List<String>> _runScenario({
   // 9. 看板只保留摘要：置顶目标 + 下一项，不展开任务、没有管理入口。
   await openDestination('看板');
   expect(find.byType(BoardPage), findsOneWidget);
-  expectOnScreen(find.text('置顶目标'), reason: '看板置顶摘要应在视口内');
+  // 单栏（< 960dp）把置顶摘要收进顶槽胶囊，页签文案带条数；宽屏双栏的
+  // 左栏直接是裸「置顶目标」标题。两种布局都要能读到摘要与下一项。
+  final boardPinnedTab = find.byKey(const ValueKey('board-top-slot-pinned'));
+  final Finder boardPinnedMarker;
+  if (boardPinnedTab.evaluate().isNotEmpty) {
+    await tester.ensureVisible(boardPinnedTab);
+    await pumpUi();
+    expectOnScreen(boardPinnedTab, reason: '看板顶槽切换胶囊应在视口内');
+    expect(
+      find.textContaining('置顶目标 ('),
+      findsOneWidget,
+      reason: '单栏页签文案带置顶条数',
+    );
+    await tester.tap(boardPinnedTab);
+    await pumpUi();
+    boardPinnedMarker = find
+        .descendant(
+          of: find.byType(BoardPage),
+          matching: find.textContaining('置顶目标'),
+        )
+        .first;
+  } else {
+    boardPinnedMarker = pageText(BoardPage, '置顶目标');
+  }
+  expectOnScreen(boardPinnedMarker, reason: '看板置顶摘要应在视口内');
   expect(find.text('下一项：补充证据'), findsOneWidget);
   expect(find.text('补充证据'), findsNothing, reason: '看板不展开任务列表');
   expect(find.text('添加任务'), findsNothing);
@@ -635,7 +659,7 @@ Future<List<String>> _runScenario({
   expect(find.text('还没有置顶目标'), findsNothing);
   await shot(
     '14-board-summary-only',
-    marker: pageText(BoardPage, '置顶目标'),
+    marker: boardPinnedMarker,
     about: '看板置顶摘要',
   );
 

@@ -9,7 +9,6 @@ class CloudSyncResult {
     required this.succeededAt,
     required this.localFingerprint,
     required this.cloudRevision,
-    this.legacyToken,
   });
 
   final DateTime succeededAt;
@@ -17,7 +16,6 @@ class CloudSyncResult {
   /// Null means the historical local baseline is unknown, never unchanged.
   final String? localFingerprint;
   final int cloudRevision;
-  final String? legacyToken;
 }
 
 /// Business data has already transferred successfully. Retrying the transfer
@@ -57,7 +55,6 @@ class CloudSyncResultStore {
         succeededAt: DateTime.parse(value['succeededAt'] as String).toUtc(),
         localFingerprint: value['localFingerprint'] as String?,
         cloudRevision: value['cloudRevision'] as int,
-        legacyToken: value['legacyToken'] as String?,
       );
     } on FormatException {
       return null;
@@ -81,7 +78,6 @@ class CloudSyncResultStore {
         'succeededAt': result.succeededAt.toUtc().toIso8601String(),
         'localFingerprint': result.localFingerprint,
         'cloudRevision': result.cloudRevision,
-        'legacyToken': result.legacyToken,
       }),
     );
     if (!saved) throw StateError('同步已完成，但本机同步记录未保存，请重新检查数据。');

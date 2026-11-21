@@ -62,52 +62,7 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
-
-  testWidgets('待核对节点不进入确定状态汇总并保留上次确认值', (tester) async {
-    final repository = _NationalFocusRepositoryWithCards([
-      _card('lit', NationalFocusCardState.lit),
-      _card('pending', NationalFocusCardState.pendingTodayConfirmation),
-      _card('extinguished', NationalFocusCardState.extinguished),
-      _card('uncertain', NationalFocusCardState.lit, hasPendingReview: true),
-    ]);
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: NationalFocusSummaryCard(
-            repository: repository,
-            onOpenTree: () {},
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('点亮 1 · 确认 1 · 熄灭 1'), findsOneWidget);
-    expect(find.text('1 个节点待核对，未计入上方汇总。'), findsOneWidget);
-    expect(find.text('uncertain · 上次确认：连续 5 天'), findsOneWidget);
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(milliseconds: 1));
-  });
 }
-
-NationalFocusCard _card(
-  String id,
-  NationalFocusCardState state, {
-  bool hasPendingReview = false,
-}) => NationalFocusCard(
-  name: id,
-  id: id,
-  triggerCondition: id,
-  action: '行动',
-  isInTree: true,
-  state: state,
-  createdAt: DateTime.utc(2026, 9, 1),
-  updatedAt: DateTime.utc(2026, 9, 1),
-  hasPendingReview: hasPendingReview,
-  currentConsecutiveDays: 5,
-);
 
 class _NationalFocusRepositoryWithCards
     extends UnavailableNationalFocusRepository {

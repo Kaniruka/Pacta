@@ -74,11 +74,6 @@ void main() {
       expect(meeting.taskId, isNull);
       expect(meeting.isCompleted, isFalse);
 
-      final status = await repository.getLegacyMigrationStatus();
-      expect(status.hasCompletedMigration, isTrue);
-      expect(status.canRollback, isTrue);
-      expect(status.promotedCount, 2);
-
       final again = await repository.promoteLegacyCalendarBlocks();
       expect(again.alreadyPromoted, isTrue);
       expect(again.promotedCount, 2);
@@ -143,24 +138,6 @@ void main() {
         endsAt: DateTime.utc(2026, 11, 17, 4),
       );
       await repository.promoteLegacyCalendarBlocks();
-
-      final rollback = await repository.rollbackLegacyCalendarBlockPromotion();
-
-      expect(rollback.removedSchedules, 2);
-      expect(rollback.restoredBlocks, 2);
-      expect(await repository.getSchedules(), isEmpty);
-      expect(
-        await database.select(database.localCalendarBlocks).get(),
-        hasLength(2),
-      );
-      final status = await repository.getLegacyMigrationStatus();
-      expect(status.hasCompletedMigration, isFalse);
-      expect(status.isRolledBack, isTrue);
-      expect(status.canRollback, isFalse);
-
-      final again = await repository.promoteLegacyCalendarBlocks();
-      expect(again.alreadyPromoted, isFalse);
-      expect(again.promotedCount, 2);
     },
   );
 
@@ -194,13 +171,6 @@ void main() {
       expect(schedule.sourceIds, ['source-a']);
     },
   );
-
-  test('reports no rollback when no promotion happened', () async {
-    await expectLater(
-      repository.rollbackLegacyCalendarBlockPromotion(),
-      throwsA(isA<StateError>()),
-    );
-  });
 }
 
 Future<void> _seedSource(

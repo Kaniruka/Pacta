@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../theme/pacta_spacing.dart';
 import '../ui/pacta_date_format.dart';
 import 'national_focus_ai_access.dart';
 
@@ -263,7 +264,7 @@ class _NationalFocusAiAnalysisPageState
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 800),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+              padding: PactaSpacing.pageInsets(context, top: PactaSpacing.md),
               children: [
                 Card(
                   color: Theme.of(context).colorScheme.primaryContainer,
@@ -597,7 +598,13 @@ class _NationalFocusAiAnalysisPageState
       );
     }
     return Column(
-      children: [for (final grant in _grants) _grantCard(context, grant)],
+      children: [
+        // 卡片外边距为零：多张授权卡之间补一档 8dp，避免上下贴成一整块。
+        for (final (index, grant) in _grants.indexed) ...[
+          if (index > 0) const SizedBox(height: PactaSpacing.sm),
+          _grantCard(context, grant),
+        ],
+      ],
     );
   }
 

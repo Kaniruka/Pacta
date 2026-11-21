@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/app_providers.dart';
 import '../tasks/task_models.dart';
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_error_text.dart';
 import 'chain_signals_card.dart';
@@ -318,7 +319,7 @@ class _FocusSetupDialogState extends ConsumerState<FocusSetupDialog> {
             onPressed: _busy ? null : _start,
             child: _busy
                 ? const SizedBox.square(
-                    dimension: 18,
+                    dimension: PactaIconSizes.sm,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Text('开始倒计时'),
@@ -381,7 +382,11 @@ class _SetupInstructions extends StatelessWidget {
               ),
             ),
             const SizedBox(width: PactaSpacing.sm),
-            Icon(Icons.info_outline, size: 16, color: colors.onSurfaceVariant),
+            Icon(
+              Icons.info_outline,
+              size: PactaIconSizes.micro,
+              color: colors.onSurfaceVariant,
+            ),
           ],
         ),
       ),

@@ -216,28 +216,35 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
 
   Widget _body(BuildContext context) {
     final theme = Theme.of(context);
-    return ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Text('云端备份', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 4),
-        Text(
-          '最近 $cloudSnapshotHistoryLimit 份成功上传，含最新一份。'
-          '恢复到旧版本不会上传或覆盖云端。',
-          style: theme.textTheme.bodySmall,
+    // 与其余二级页同一版心：宽屏居中收到 800dp，窄屏用统一页边距。
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 800),
+        child: ListView(
+          padding: PactaSpacing.pageInsets(context),
+          children: [
+            Text('云端备份', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              '最近 $cloudSnapshotHistoryLimit 份成功上传，含最新一份。'
+              '恢复到旧版本不会上传或覆盖云端。',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            ..._cloudSection(context),
+            const SizedBox(height: 24),
+            Text('本机恢复点', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              '每次恢复前自动保存在本机，与云端备份分开，可随时找回；离线也能找回。',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            ..._pointsSection(context),
+          ],
         ),
-        const SizedBox(height: 8),
-        ..._cloudSection(context),
-        const SizedBox(height: 24),
-        Text('本机恢复点', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 4),
-        Text(
-          '每次恢复前自动保存在本机，与云端备份分开，可随时找回；离线也能找回。',
-          style: theme.textTheme.bodySmall,
-        ),
-        const SizedBox(height: 8),
-        ..._pointsSection(context),
-      ],
+      ),
     );
   }
 

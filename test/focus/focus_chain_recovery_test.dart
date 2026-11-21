@@ -94,6 +94,8 @@ void main() {
     await _openFocusChain(tester, fixture);
     expect(find.text('1 条持续许可'), findsOneWidget);
 
+    await tester.ensureVisible(find.byKey(_allowanceManage));
+    await _boundedSettle(tester);
     await tester.tap(find.byKey(_allowanceManage));
     await _boundedSettle(tester);
     expect(find.byType(PrecedentRulesPage), findsOneWidget);

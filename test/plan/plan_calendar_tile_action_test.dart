@@ -6,6 +6,7 @@ import 'package:pacta/src/plan/plan_calendar_view.dart';
 import 'package:pacta/src/schedules/schedule_models.dart';
 import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
+import 'package:pacta/src/theme/pacta_icon_sizes.dart';
 import 'package:pacta/src/theme/pacta_theme.dart';
 
 const _user = 'plan-calendar-tile-actions';
@@ -56,6 +57,28 @@ void main() {
     expect(find.text('标记未完成'), findsOneWidget);
     await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
+    await host.unmount(tester);
+  });
+
+  testWidgets('月切换、新建与日程行操作图标取统一尺度', (tester) async {
+    await host.addSchedule(title: '图标尺度');
+    await host.pump(tester);
+
+    double iconSize(Finder scope) => tester
+        .widget<Icon>(
+          find.descendant(of: scope, matching: find.byType(Icon)).first,
+        )
+        .size!;
+    expect(iconSize(find.byTooltip('上个月')), PactaIconSizes.md);
+    expect(iconSize(find.byTooltip('下个月')), PactaIconSizes.md);
+    expect(
+      iconSize(find.widgetWithText(FilledButton, '新建安排')),
+      PactaIconSizes.sm,
+    );
+    expect(
+      iconSize(find.byType(PopupMenuButton<String>)),
+      PactaIconSizes.compact,
+    );
     await host.unmount(tester);
   });
 

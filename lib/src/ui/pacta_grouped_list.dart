@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/pacta_fonts.dart';
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../theme/pacta_status_colors.dart';
 import '../theme/pacta_surfaces.dart';
@@ -108,7 +109,9 @@ enum PactaStatusBadgeTone { neutral, primary, success, warning, error }
 /// 紧凑圆角状态胶囊：中性/主色/成功/提醒/错误五种语义。
 ///
 /// 背景与前景成对取自 [ColorScheme]、[PactaStatusColors]，对比度 ≥ 4.5:1；
-/// 图标只是冗余提示，文字始终保留，状态不只靠颜色表达。
+/// 图标固定取 [PactaIconSizes.micro]（14dp）：胶囊是行内辅助信息，图标不得
+/// 撑高行距，也不与正文抢视觉权重。图标只是冗余提示，文字始终保留，
+/// 状态不只靠颜色表达。
 class PactaStatusBadge extends StatelessWidget {
   const PactaStatusBadge({
     super.key,
@@ -158,7 +161,7 @@ class PactaStatusBadge extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 13, color: foreground),
+            Icon(icon, size: PactaIconSizes.micro, color: foreground),
             const SizedBox(width: 4),
           ],
           Text(
@@ -176,6 +179,10 @@ class PactaStatusBadge extends StatelessWidget {
 }
 
 /// 设置分组里的一整行：图标 + 标题 + 副标题 + 状态胶囊/值文本 + 箭头。
+///
+/// 图标尺度固定：左侧 [leadingIcon] 取 [PactaIconSizes.md]（24dp，与列表
+/// 图标位一致），右侧 [Icons.chevron_right] 取 [PactaIconSizes.compact]
+/// （20dp）；两者都不在调用方另写像素值。
 ///
 /// 行高至少 48dp，整行可点；[tileKey] 只挂在内部的 [ListTile] 上，避免同一个
 /// Key 同时出现在 [PactaSettingsTile] 与 [ListTile] 两个节点。
@@ -233,6 +240,7 @@ class PactaSettingsTile extends StatelessWidget {
                 ? null
                 : Icon(
                     leadingIcon,
+                    size: PactaIconSizes.md,
                     color: enabled ? colors.onSurfaceVariant : null,
                   )),
         title: Text(title),
@@ -251,7 +259,11 @@ class PactaSettingsTile extends StatelessWidget {
         if (showChevron) const SizedBox(width: 4),
       ],
       if (showChevron)
-        Icon(Icons.chevron_right, size: 20, color: colors.onSurfaceVariant),
+        Icon(
+          Icons.chevron_right,
+          size: PactaIconSizes.compact,
+          color: colors.onSurfaceVariant,
+        ),
     ];
     if (children.isEmpty) return null;
     return Row(mainAxisSize: MainAxisSize.min, children: children);

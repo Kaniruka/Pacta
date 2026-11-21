@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
+import 'package:pacta/src/auth/user_lifecycle.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_models.dart';
@@ -15,20 +16,25 @@ import '../support/fake_auth_repository.dart';
 const _user = 'board-goal-reorder-user';
 
 class _Harness {
-  _Harness(this.database, this.tasks, this.focus);
+  _Harness(this.database, this.tasks, this.focus, this.lifecycle);
 
   final PactaDatabase database;
   final LocalTaskRepository tasks;
   final LocalFocusRepository focus;
 
+  /// 账号状态可切换：用来验证停用后置顶写入只提示、不崩。
+  final _ToggleLifecycleAccess lifecycle;
+
   static _Harness create() {
     final database = PactaDatabase(NativeDatabase.memory());
+    final lifecycle = _ToggleLifecycleAccess();
     return _Harness(
       database,
       LocalTaskRepository(
         database: database,
         userId: _user,
         remote: InMemoryTaskRemote(),
+        lifecycleAccess: lifecycle,
       ),
       LocalFocusRepository(
         database: database,
@@ -36,6 +42,7 @@ class _Harness {
         remote: InMemoryFocusRemote(),
         cloudSyncEnabled: false,
       ),
+      lifecycle,
     );
   }
 
@@ -52,6 +59,13 @@ class _Harness {
       ),
     );
     await tester.pumpAndSettle();
+    // 单栏顶槽默认页签由国策状态决定（这里没有国策节点，默认国策状态）：
+    // 置顶目标在胶囊后面，先切过去再测拖动与长按。
+    final pinnedTab = find.byKey(const ValueKey('board-top-slot-pinned'));
+    if (pinnedTab.evaluate().isNotEmpty) {
+      await tester.tap(pinnedTab);
+      await tester.pumpAndSettle();
+    }
   }
 
   Future<void> dispose(WidgetTester tester) async {
@@ -203,4 +217,77 @@ void main() {
       await harness.dispose(tester);
     }
   });
+
+  testWidgets('停用账号取消置顶：只弹可读提示，不丢未捕获异常', (tester) async {
+    final harness = _Harness.create();
+    try {
+      final goal = await harness.tasks.createGoal(
+        const GoalDraft(
+          title: '发布',
+          classification: TaskClassification.regular,
+        ),
+      );
+      await harness.tasks.setGoalPinned(goal.id, isPinned: true);
+      await harness.pump(tester);
+      harness.lifecycle.suspended = true;
+
+      await tester.longPress(find.text('发布'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('取消置顶'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('用户已停用，恢复前不能创建或修改业务数据。'), findsOneWidget);
+      expect((await harness.tasks.getGoals()).single.isPinned, isTrue);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await harness.dispose(tester);
+    }
+  });
+
+  testWidgets('停用账号重排置顶：只弹可读提示，顺序保持不变', (tester) async {
+    final harness = _Harness.create();
+    try {
+      final first = await harness.tasks.createGoal(
+        const GoalDraft(
+          title: '甲目标',
+          classification: TaskClassification.regular,
+        ),
+      );
+      final second = await harness.tasks.createGoal(
+        const GoalDraft(
+          title: '乙目标',
+          classification: TaskClassification.regular,
+        ),
+      );
+      await harness.tasks.setGoalPinned(first.id, isPinned: true);
+      await harness.tasks.setGoalPinned(second.id, isPinned: true);
+      await harness.pump(tester);
+      harness.lifecycle.suspended = true;
+
+      tester
+          .widget<PactaHoldReorderList>(find.byType(PactaHoldReorderList))
+          .onReorder(0, 1);
+      await tester.pumpAndSettle();
+
+      expect(find.text('用户已停用，恢复前不能创建或修改业务数据。'), findsOneWidget);
+      final goals = await harness.tasks.getGoals();
+      expect(goals.map((goal) => goal.id).toList(), [first.id, second.id]);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await harness.dispose(tester);
+    }
+  });
+}
+
+/// 可切换的账号状态门禁：默认活跃，停用后所有写操作被拒。
+class _ToggleLifecycleAccess implements UserLifecycleAccess {
+  bool suspended = false;
+
+  @override
+  Future<bool> isSuspended() async => suspended;
+
+  @override
+  Future<void> requireActive() async {
+    if (suspended) throw const UserOperationsSuspendedException();
+  }
 }

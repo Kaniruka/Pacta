@@ -118,26 +118,12 @@ void main() {
           'event-2',
         });
 
-        final status = await repository.getLegacyMigrationStatus();
-        expect(status.hasCompletedMigration, isTrue);
-        expect(status.sourceBlockCount, 2);
-        expect(status.promotedCount, 2);
-
         final runs = await database
             .select(database.localScheduleMigrations)
             .get();
         expect(runs, hasLength(1));
         expect(runs.single.backupPayload, contains('event-1'));
 
-        final rollback = await repository
-            .rollbackLegacyCalendarBlockPromotion();
-        expect(rollback.removedSchedules, 2);
-        expect(rollback.restoredBlocks, 2);
-        expect(await repository.getSchedules(), isEmpty);
-        expect(
-          await database.select(database.localCalendarBlocks).get(),
-          hasLength(2),
-        );
         await repository.dispose();
       } finally {
         await database.close();

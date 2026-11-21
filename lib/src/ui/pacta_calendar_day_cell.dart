@@ -18,11 +18,12 @@ import '../theme/pacta_fonts.dart';
 /// “有安排未全完 5dp 圆点 / 全完成勾 / 国策失败细短杠”等状态，不参与背景
 /// 语义。
 ///
-/// 热力月历传 [centerTodayLabel] + [reserveBottomSlot]：'今' 居中置顶成为
-/// 独立的一行微字，底部恒定保留 8dp 指示轨。于是同一行里“无状态日”“只有
-/// 安排日”“有失败日”“双态日”的日期数字基线完全一致，状态变化不会让日期
-/// 数字上下跳动。计划日历保持两个默认 false：'今' 左对齐、右侧放日程点/勾，
-/// 下方保留农历副标签。
+/// 看板热力月历与计划日历都传 [centerTodayLabel] + [reserveBottomSlot]：
+/// '今' 居中置顶成为独立的一行微字，底部恒定保留 8dp 指示轨。于是同一行里
+/// “无状态日”“只有安排日”“有失败日”“双态日”的日期数字基线完全一致，
+/// 状态变化不会让日期数字上下跳动。未完成圆点与全部完成勾都放进底部居中
+/// 槽；计划日历在槽上方另留固定高度的农历副标签行。默认 false 时仍保留
+/// 左对齐 '今' + 右上角标记的紧凑排版，供只需要标记的调用方使用。
 class PactaCalendarDayBox extends StatelessWidget {
   const PactaCalendarDayBox({
     super.key,
@@ -57,7 +58,8 @@ class PactaCalendarDayBox extends StatelessWidget {
   /// 农历、节气或节假日等副标签。
   final Widget? subLabel;
 
-  /// 右上角标记：安排圆点、完成勾。热力月历不再使用它（改到底部指示轨）。
+  /// 右上角标记槽：只为紧凑排版保留。现行看板热力月历与计划日历都传
+  /// null，安排圆点与完成勾一律走底部指示轨。
   final Widget? topRightMarker;
 
   /// 底部状态标记：安排微点、国策失败细短杠等，不参与背景语义。
@@ -73,8 +75,8 @@ class PactaCalendarDayBox extends StatelessWidget {
   /// 命中区域/渲染盒的 Key，便于测试与页面定位。
   final Key? cellKey;
 
-  /// '今' 是否居中置顶独占一行（热力月历）；默认 false 表示沿用左对齐、
-  /// 右侧留给 [topRightMarker] 的计划日历排版。
+  /// '今' 是否居中置顶独占一行（热力月历）；默认 false 表示沿用左对齐的
+  /// 紧凑排版。
   final bool centerTodayLabel;
 
   /// 是否恒定保留底部 8dp 指示轨（热力月历）。为 true 时即使当天没有任何

@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
+import 'package:pacta/src/auth/user_lifecycle.dart';
+import 'package:pacta/src/focus/focus_chain_history.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/theme/pacta_spacing.dart';
-import 'package:pacta/src/tasks/task_database.dart';
+import 'package:pacta/src/tasks/task_database.dart' show PactaDatabase;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
 
@@ -112,7 +114,7 @@ void main() {
     await _disposeWidget(tester);
   });
 
-  testWidgets('专注历史页的连续记录卡片相隔 8dp', (tester) async {
+  testWidgets('专注历史页的连胜节点卡片相隔 8dp 并按 #1 -> #2 串联', (tester) async {
     final fixture = await _Fixture.create();
     addTearDown(fixture.dispose);
     for (var index = 0; index < 2; index++) {
@@ -129,6 +131,13 @@ void main() {
     await tester.tap(find.byKey(_historyEntry));
     await tester.pumpAndSettle();
 
+    // 默认停在精锐链，先切到已经有记录的普通链。
+    await tester.tap(find.text('普通链'));
+    await tester.pumpAndSettle();
+    expect(find.text('当前连续 2 次'), findsOneWidget);
+    expect(find.text('#1'), findsOneWidget);
+    expect(find.text('#2'), findsOneWidget);
+
     final cards = find.descendant(
       of: find.byType(FocusHistoryPage),
       matching: find.byType(Card),
@@ -137,6 +146,237 @@ void main() {
     final first = tester.getRect(cards.at(0));
     final second = tester.getRect(cards.at(1));
     expect(second.top - first.bottom, PactaSpacing.sm);
+
+    // 序号徽章落在卡片左侧的同一条纵向连接线上。
+    final badge1 = tester.getRect(find.text('#1'));
+    final badge2 = tester.getRect(find.text('#2'));
+    expect(badge1.center.dx, badge2.center.dx);
+    expect(badge1.right, lessThan(first.left));
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('专注历史三段切换：空态按选中链给出提示', (tester) async {
+    final fixture = await _Fixture.create();
+    addTearDown(fixture.dispose);
+    await _mount(tester, fixture);
+    await _openDestination(tester, '专注链');
+    await tester.tap(find.byKey(_historyEntry));
+    await tester.pumpAndSettle();
+
+    expect(find.text('精锐链还没有连胜记录。'), findsOneWidget);
+    expect(find.text('完成或结束专注后，记录会显示在这里。'), findsOneWidget);
+
+    await tester.tap(find.text('预约链'));
+    await tester.pumpAndSettle();
+    expect(find.text('预约链还没有连胜记录。'), findsOneWidget);
+    expect(find.text('完成或结束预约准备后，记录会显示在这里。'), findsOneWidget);
+    expect(find.text('精锐链还没有连胜记录。'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('断链节点保留编辑失败原因动作', (tester) async {
+    final fixture = await _Fixture.create();
+    addTearDown(fixture.dispose);
+    final session = await fixture.focus.startSession(
+      taskId: fixture.taskIds.first,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    await fixture.focus.abandonSession(
+      sessionId: session.id,
+      failureReason: '被消息打断',
+    );
+    await _mount(tester, fixture);
+    await _openDestination(tester, '专注链');
+    await tester.tap(find.byKey(_historyEntry));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('普通链'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('断链'), findsOneWidget);
+    expect(find.textContaining('原因：被消息打断'), findsOneWidget);
+    expect(find.textContaining('之后重新从 #1 起算'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('编辑失败原因'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '需要照顾家人');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('原因：需要照顾家人'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('最新记录就是断链时：当前连续归零、最高连胜保留、时间轴收尾在断链', (tester) async {
+    final fixture = await _Fixture.create();
+    addTearDown(fixture.dispose);
+    await fixture.focus.startSession(
+      taskId: fixture.taskIds.first,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    fixture.now = fixture.now.add(const Duration(minutes: 25));
+    await fixture.focus.settleDueSessions();
+    final broken = await fixture.focus.startSession(
+      taskId: fixture.taskIds.first,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    fixture.now = fixture.now.add(const Duration(minutes: 3));
+    await fixture.focus.abandonSession(
+      sessionId: broken.id,
+      failureReason: '被电话打断',
+    );
+
+    await _mount(tester, fixture);
+    await _openDestination(tester, '专注链');
+    await tester.tap(find.byKey(_historyEntry));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('普通链'));
+    await tester.pumpAndSettle();
+
+    final timeline = buildFocusChainHistory(
+      sessions: await fixture.focus.getSessions(),
+    ).timelineFor(FocusChainType.regular);
+    expect(timeline.isCurrentlyBroken, isTrue, reason: '最新一条已结算记录就是失败');
+    expect(timeline.currentStreak, 0);
+    expect(timeline.bestStreak, 1);
+
+    // 摘要卡是「标签 + 数值」两段文本：当前连续归零，最高连胜与段数保留。
+    expect(find.text('当前连续'), findsOneWidget);
+    expect(find.text('0 次'), findsOneWidget);
+    expect(find.text('最高连胜'), findsOneWidget);
+    expect(find.text('1 次'), findsOneWidget);
+    expect(find.text('1 段'), findsOneWidget);
+    expect(find.text('断链'), findsOneWidget);
+    expect(find.text('#1'), findsOneWidget);
+    expect(find.text('#2'), findsNothing, reason: '断链后不继续编号');
+    expect(find.text('连续 1 次'), findsOneWidget);
+    expect(find.textContaining('原因：被电话打断'), findsOneWidget);
+    // 断链卡排在完成节点之后：最新状态在段尾收束。
+    expect(
+      tester.getRect(find.text('断链')).top,
+      greaterThan(tester.getRect(find.text('#1')).top),
+    );
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('节点备注写入失败只弹可读提示，不丢未捕获异常', (tester) async {
+    final fixture = await _Fixture.create(suspendedWrites: true);
+    addTearDown(fixture.dispose);
+    await fixture.focus.startSession(
+      taskId: fixture.taskIds.first,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    fixture.now = fixture.now.add(const Duration(minutes: 25));
+    await fixture.focus.settleDueSessions();
+    await _mount(tester, fixture);
+    await _openDestination(tester, '专注链');
+    await tester.tap(find.byKey(_historyEntry));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('普通链'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('编辑节点备注'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '停用后不应写入');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    // 停用账号：写入被拒，页面留下一条可读提示，异常不外泄。
+    expect(find.text('用户已停用，恢复前不能创建或修改业务数据。'), findsOneWidget);
+    expect(find.byType(FocusHistoryPage), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('失败原因写入失败只弹可读提示，不丢未捕获异常', (tester) async {
+    final fixture = await _Fixture.create(suspendedWrites: true);
+    addTearDown(fixture.dispose);
+    final session = await fixture.focus.startSession(
+      taskId: fixture.taskIds.first,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    await fixture.focus.abandonSession(
+      sessionId: session.id,
+      failureReason: '被消息打断',
+    );
+    await _mount(tester, fixture);
+    await _openDestination(tester, '专注链');
+    await tester.tap(find.byKey(_historyEntry));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('普通链'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('编辑失败原因'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '需要照顾家人');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('用户已停用，恢复前不能创建或修改业务数据。'), findsOneWidget);
+    expect(find.textContaining('原因：被消息打断'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('时钟待核对只挂轻量徽标：不占链号也不出现旧多端文案', (tester) async {
+    tester.view.physicalSize = const Size(420, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      PactaApp(
+        authRepository: FakeAuthRepository()
+          ..signedInUser = 'clock-review-history',
+        focusRepositoryFactory: (_) => _ClockReviewHistoryRepository(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await _openDestination(tester, '专注链');
+    await tester.tap(find.byKey(_historyEntry));
+    await tester.pumpAndSettle();
+
+    expect(find.text('时钟待核对'), findsOneWidget);
+    expect(find.text('#1'), findsOneWidget, reason: '待核对记录不占序号');
+    expect(find.text('当前连续 1 次'), findsOneWidget);
+    for (final obsolete in ['多端冲突', '重复记录', 'pendingReview', '待复核']) {
+      expect(find.textContaining(obsolete), findsNothing);
+    }
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('完成节点保留编辑节点备注动作', (tester) async {
+    final fixture = await _Fixture.create();
+    addTearDown(fixture.dispose);
+    await fixture.focus.startSession(
+      taskId: fixture.taskIds.first,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    fixture.now = fixture.now.add(const Duration(minutes: 25));
+    await fixture.focus.settleDueSessions();
+    await _mount(tester, fixture);
+    await _openDestination(tester, '专注链');
+    await tester.tap(find.byKey(_historyEntry));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('普通链'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('#1'), findsOneWidget);
+    await tester.tap(find.byTooltip('编辑节点备注'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '这次坐得很稳');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    final nodes = await fixture.focus.getNodes();
+    expect(nodes.single.note, '这次坐得很稳');
     expect(tester.takeException(), isNull);
     await _disposeWidget(tester);
   });
@@ -190,7 +430,7 @@ class _Fixture {
   DateTime get now => clock.value;
   set now(DateTime value) => clock.value = value;
 
-  static Future<_Fixture> create() async {
+  static Future<_Fixture> create({bool suspendedWrites = false}) async {
     const userId = 'focus-chain-layout';
     final database = PactaDatabase(NativeDatabase.memory());
     final clock = _Clock(DateTime(2026, 11, 15, 9));
@@ -205,13 +445,21 @@ class _Fixture {
             throw MissingPluginException('卡片间距用例不读写设备偏好'),
       ),
     );
-    final focus = LocalFocusRepository(
-      database: database,
-      userId: userId,
-      remote: InMemoryFocusRemote(),
-      cloudSyncEnabled: false,
-      now: () => clock.value,
-    );
+    final LocalFocusRepository focus = suspendedWrites
+        ? _SuspendedWriteFocusRepository(
+            database: database,
+            userId: userId,
+            remote: InMemoryFocusRemote(),
+            cloudSyncEnabled: false,
+            now: () => clock.value,
+          )
+        : LocalFocusRepository(
+            database: database,
+            userId: userId,
+            remote: InMemoryFocusRemote(),
+            cloudSyncEnabled: false,
+            now: () => clock.value,
+          );
     final goal = await tasks.createGoal(
       const GoalDraft(title: '卡片间距验收', classification: TaskClassification.both),
     );
@@ -247,3 +495,65 @@ class _Clock {
 
   DateTime value;
 }
+
+/// 停用账号的写入替身：备注与失败原因写回都被拒，读路径保持真实。
+class _SuspendedWriteFocusRepository extends LocalFocusRepository {
+  _SuspendedWriteFocusRepository({
+    required super.database,
+    required super.userId,
+    required super.remote,
+    super.cloudSyncEnabled,
+    super.now,
+  });
+
+  @override
+  Future<void> updateNodeNote({
+    required String nodeId,
+    required String note,
+  }) async => throw const UserOperationsSuspendedException();
+
+  @override
+  Future<void> updateFailureReason({
+    required String sessionId,
+    required String failureReason,
+  }) async => throw const UserOperationsSuspendedException();
+}
+
+/// 固定返回一条完成记录与一条时钟待核对记录的历史仓储。
+class _ClockReviewHistoryRepository extends UnavailableFocusRepository {
+  @override
+  Stream<List<FocusSession>> watchSessions() => Stream.value([
+    _session(id: 'completed', at: DateTime.utc(2026, 11, 15, 9)),
+    _session(
+      id: 'clock-review',
+      at: DateTime.utc(2026, 11, 15, 10),
+      clockReviewStatus: FocusClockReviewStatus.pending,
+    ),
+  ]);
+}
+
+FocusSession _session({
+  required String id,
+  required DateTime at,
+  FocusClockReviewStatus? clockReviewStatus,
+}) => FocusSession(
+  id: id,
+  taskId: 'task-1',
+  mode: FocusChainMode.elite,
+  durationSeconds: 1500,
+  startedAt: at.subtract(const Duration(minutes: 25)),
+  endsAt: at,
+  status: FocusSessionStatus.completed,
+  completedAt: at,
+  effectiveSeconds: 1500,
+  effectiveIntervals: clockReviewStatus == null
+      ? const []
+      : [
+          FocusTimeInterval(
+            startedAt: at.subtract(const Duration(minutes: 25)),
+            endedAt: at,
+            measuredDurationSeconds: 1500,
+            clockReviewStatus: clockReviewStatus,
+          ),
+        ],
+);

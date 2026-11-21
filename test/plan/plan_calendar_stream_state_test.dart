@@ -137,6 +137,31 @@ void main() {
     expect(find.text('暂时不能读取安排。'), findsNothing);
   });
 
+  testWidgets('安排与农历加载前后日期数字基线不跳动', (tester) async {
+    final repository = _DeferredSchedules();
+    addTearDown(() async {
+      await repository.events.close();
+    });
+
+    await tester.pumpWidget(_calendar(repository));
+    await tester.pump();
+    final dayCell = find.byKey(const ValueKey('plan-day-2026-11-15'));
+    double numberCenterDy() => tester
+        .getRect(find.descendant(of: dayCell, matching: find.text('15')).first)
+        .center
+        .dy;
+    final before = numberCenterDy();
+
+    repository.events.add([_row('加载后出现的安排')]);
+    await tester.pumpAndSettle();
+    expect(find.text('加载后出现的安排'), findsOneWidget);
+    expect(
+      (numberCenterDy() - before).abs(),
+      lessThanOrEqualTo(0.5),
+      reason: '底部指示槽与固定副标签行让数字基线在加载前后不跳动',
+    );
+  });
+
   testWidgets('换月窗口立刻清掉上一窗口的行，旧窗口迟到事件不回显', (tester) async {
     final november = StreamController<List<Schedule>>();
     final december = StreamController<List<Schedule>>();

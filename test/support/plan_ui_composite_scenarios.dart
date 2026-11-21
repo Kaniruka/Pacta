@@ -480,11 +480,12 @@ Future<void> runUnsupportedCalendarScenario(
   );
   await openPlanCalendar(tester, fixture);
 
-  // 360 宽下每个日期格必须是 ≥48×48 的真命中区，且年月整段单行可读。
+  // 360 宽七列每列 48dp，统一 2dp 间隙后内层日格为 44×64dp：
+  // 44dp 宽仍满足 Apple HIG 最小触控，年月整段单行可读。
   final today = find.byKey(const ValueKey('plan-day-2026-11-15'));
   expect(today, findsOneWidget);
   final todaySize = tester.getSize(today);
-  expect(todaySize.width, greaterThanOrEqualTo(48), reason: '日期命中区宽度');
+  expect(todaySize.width, greaterThanOrEqualTo(44), reason: '日期命中区宽度');
   expect(todaySize.height, greaterThanOrEqualTo(48), reason: '日期命中区高度');
   final monthParagraph = tester.renderObject<RenderParagraph>(
     find.byKey(const ValueKey('plan-month-label')),

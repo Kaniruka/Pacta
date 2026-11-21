@@ -137,7 +137,8 @@ class _AdminUserLifecycleCardState extends State<AdminUserLifecycleCard> {
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 _message!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: Theme.of(context).colorScheme.error),
               ),
             ),
           Align(

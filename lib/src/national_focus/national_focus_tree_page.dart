@@ -4,15 +4,17 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../focus/focus_time_zones.dart';
+import '../theme/pacta_fonts.dart';
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../theme/pacta_status_colors.dart';
+import '../theme/pacta_surfaces.dart';
 import '../ui/pacta_error_text.dart';
 import '../ui/pacta_page_header.dart';
 import 'national_focus_checkpoints.dart';
 import 'national_focus_library_page.dart';
 import 'national_focus_failure_pages.dart';
 import 'national_focus_models.dart';
-import 'national_focus_reconciliation_page.dart';
 import 'national_focus_repository.dart';
 import 'national_focus_shared_widgets.dart';
 import 'national_focus_view_preferences.dart';
@@ -169,10 +171,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     if (mounted) setState(() {});
   }
 
-  void _syncInBackground() {
-    syncNationalFocusInBackground(widget.repository);
-  }
-
   Future<void> _confirmToday() async {
     if (_confirming) return;
     // Confirming is a real reminder-related use, so ask once if still needed.
@@ -189,7 +187,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
         expectedConfirmationCheckpoint: windowEnd,
       );
       if (count > 0) _recordTodayConfirmation();
-      _syncInBackground();
       if (count > 0 && mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('已确认 $count 个国策节点今日继续有效。')));
@@ -265,7 +262,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
       final updated = refreshed.where((item) => item.id == card.id).firstOrNull;
       if (updated == null || updated.state == stateBefore) break;
       handled++;
-      _syncInBackground();
     }
     return handled;
   }
@@ -284,7 +280,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
         [
           for (final card in cards)
             if (card.state == NationalFocusCardState.pendingTodayConfirmation &&
-                !card.hasPendingReview &&
                 (card.exceptionNotes?.trim().isNotEmpty ?? false) &&
                 !_hasExtinguishedAncestor(card, byId))
               card,
@@ -324,7 +319,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
       if (card.state == NationalFocusCardState.pendingTodayConfirmation) {
         _recordTodayConfirmation();
       }
-      _syncInBackground();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -380,7 +374,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
       } catch (_) {
         // The next read still reflects the latest readable tree.
       }
-      _syncInBackground();
       if (mounted) setState(() {});
       return;
     }
@@ -393,7 +386,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
         failureReason: reason,
         expectedConfirmationCheckpoint: expectedCheckpoint,
       );
-      _syncInBackground();
       if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('已熄灭「${card.name}」。')));
@@ -515,7 +507,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     try {
       await widget.repository.placeCard(cardId: card.id, parentId: parentId);
       final placedCard = await widget.repository.getCard(card.id);
-      _syncInBackground();
       if (!mounted) return;
       setState(() => _placementCard = null);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -580,7 +571,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     setState(() => _error = null);
     try {
       await widget.repository.moveCardToLibrary(card.id);
-      _syncInBackground();
       if (mounted) {
         final message = descendantCount == 0
             ? '已将「${card.name}」移入卡片库。'
@@ -717,12 +707,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                               ],
                             ),
                           ),
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-                          child: NationalFocusReviewPrompt(
-                            repository: widget.repository,
-                          ),
-                        ),
                         if (_placementCard case final card?)
                           Padding(
                             padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
@@ -761,7 +745,10 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                           message: '先在卡片库创建国策卡，再回到这里选择顶层或父节点。',
                           action: FilledButton.icon(
                             onPressed: _openLibrary,
-                            icon: const Icon(Icons.library_books_outlined),
+                            icon: const Icon(
+                              Icons.library_books_outlined,
+                              size: PactaIconSizes.sm,
+                            ),
                             label: const Text('打开卡片库'),
                           ),
                         ),
@@ -842,17 +829,14 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     final isBlocked =
         blockedParentIds.contains(card.id) ||
         (placementContainsActiveCard && targetBranchIsExtinguished);
-    final reviewBlocked = card.hasPendingReview;
     final selecting = _placementCard != null;
     final branch = _NationalFocusTreeNode(
       card: card,
       path: path,
       detailed: _detailed,
       selecting: selecting,
-      blocked: isBlocked || reviewBlocked,
-      onSelect: selecting && !isBlocked && !reviewBlocked
-          ? () => _placeAt(card.id)
-          : null,
+      blocked: isBlocked,
+      onSelect: selecting && !isBlocked ? () => _placeAt(card.id) : null,
       onOpen: selecting
           ? null
           : () => _openNodeActions(
@@ -918,16 +902,16 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   }
 
   double get _treeNodeWidth {
-    return _detailed ? 210 : 148;
+    return _detailed ? _detailedNodeWidth : 148;
   }
 
-  /// 节点高度：详细视图要放下两行名称 + 两行规则，随字号缩放留足余量。
+  /// 节点高度：详细视图要放下状态条 + 两行名称 + 两行规则 + 底部信息栏。
   ///
-  /// 1x 时详细视图内容约 126dp（图标 40 + 名称 40 + 规则 32 + 间距与内边距），
-  /// 148dp 留出呼吸位；2x 时内容约 198dp，仍在 296dp 之内，不会出现
-  /// RenderFlex overflow。
+  /// 1x 时内容约 137dp，[_detailedNodeHeight] 的 160dp 留出呼吸位；2x 时
+  /// 内容约 243dp，仍在 320dp 之内，不会出现 RenderFlex overflow。
   double get _nodeHeight =>
-      (_detailed ? 148.0 : 100.0) * MediaQuery.textScalerOf(context).scale(1);
+      (_detailed ? _detailedNodeHeight : 100.0) *
+      MediaQuery.textScalerOf(context).scale(1);
 
   int _treeDepth(
     List<NationalFocusCard> roots,
@@ -993,7 +977,7 @@ class _TreePageHeader extends StatelessWidget {
             title: '国策树',
             trailing: TextButton.icon(
               onPressed: pendingCount == 0 || confirming ? null : onConfirm,
-              icon: const Icon(Icons.done_all),
+              icon: const Icon(Icons.done_all, size: PactaIconSizes.sm),
               label: Text('全部确认 ($pendingCount)'),
             ),
           ),
@@ -1019,7 +1003,10 @@ class _TreePageHeader extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(detailed ? '详细视图' : '简洁视图'),
-                        const Icon(Icons.arrow_drop_down),
+                        const Icon(
+                          Icons.arrow_drop_down,
+                          size: PactaIconSizes.md,
+                        ),
                       ],
                     ),
                   ),
@@ -1029,13 +1016,16 @@ class _TreePageHeader extends StatelessWidget {
                 message: '卡片库',
                 child: TextButton.icon(
                   onPressed: onLibrary,
-                  icon: const Icon(Icons.library_books_outlined),
+                  icon: const Icon(
+                    Icons.library_books_outlined,
+                    size: PactaIconSizes.sm,
+                  ),
                   label: const Text('卡片库'),
                 ),
               ),
               PopupMenuButton<String>(
                 tooltip: '更多',
-                icon: const Icon(Icons.more_vert),
+                icon: const Icon(Icons.more_vert, size: PactaIconSizes.md),
                 onSelected: (value) {
                   if (value == 'ai') {
                     onOpenAiAnalysis?.call();
@@ -1072,10 +1062,8 @@ class _NodeActionsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final reviewBlocked = card.hasPendingReview;
-    final String? blockedReason = reviewBlocked
-        ? '请先完成核对后再操作。'
-        : lightBlocked && card.state != NationalFocusCardState.lit
+    final String? blockedReason =
+        lightBlocked && card.state != NationalFocusCardState.lit
         ? (cascadeSourceLabel == null
               ? '请先点亮父节点。'
               : '因「$cascadeSourceLabel」连带熄灭；父节点恢复后仍需单独点亮。')
@@ -1087,7 +1075,7 @@ class _NodeActionsSheet extends StatelessWidget {
       String? subtitle,
       bool enabled = true,
     }) => ListTile(
-      leading: Icon(icon),
+      leading: Icon(icon, size: PactaIconSizes.md),
       title: Text(title),
       subtitle: subtitle == null ? null : Text(subtitle),
       enabled: enabled,
@@ -1111,7 +1099,6 @@ class _NodeActionsSheet extends StatelessWidget {
               ),
             ],
           ),
-          if (reviewBlocked) const NationalFocusReviewNotice(),
           const SizedBox(height: 12),
           Text(card.effectiveAction, style: theme.textTheme.bodyLarge),
           const SizedBox(height: 16),
@@ -1122,9 +1109,8 @@ class _NodeActionsSheet extends StatelessWidget {
                   key: const ValueKey('national-focus-primary-state-action'),
                   style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
                   onPressed:
-                      !reviewBlocked &&
-                          (card.state == NationalFocusCardState.lit ||
-                              !lightBlocked)
+                      (card.state == NationalFocusCardState.lit ||
+                          !lightBlocked)
                       ? () => onAction(
                           card.state == NationalFocusCardState.lit
                               ? _NodeAction.extinguish
@@ -1135,6 +1121,7 @@ class _NodeActionsSheet extends StatelessWidget {
                     card.state == NationalFocusCardState.lit
                         ? Icons.lightbulb_outline
                         : Icons.lightbulb,
+                    size: PactaIconSizes.sm,
                   ),
                   label: Text(switch (card.state) {
                     NationalFocusCardState.lit => '熄灭',
@@ -1154,10 +1141,11 @@ class _NodeActionsSheet extends StatelessWidget {
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size(0, 48),
                     ),
-                    onPressed: reviewBlocked
-                        ? null
-                        : () => onAction(_NodeAction.extinguish),
-                    icon: const Icon(Icons.lightbulb_outline),
+                    onPressed: () => onAction(_NodeAction.extinguish),
+                    icon: const Icon(
+                      Icons.lightbulb_outline,
+                      size: PactaIconSizes.sm,
+                    ),
                     label: const Text('熄灭'),
                   ),
                 ),
@@ -1174,19 +1162,19 @@ class _NodeActionsSheet extends StatelessWidget {
             _NodeAction.addChild,
             Icons.add_circle_outline,
             '添加子节点',
-            enabled: !reviewBlocked,
+            enabled: true,
           ),
           action(
             _NodeAction.relocate,
             Icons.drive_file_move_outline,
             '调整树中位置',
-            enabled: !reviewBlocked,
+            enabled: true,
           ),
           action(
             _NodeAction.library,
             Icons.library_add_outlined,
             '移入卡片库',
-            enabled: !reviewBlocked,
+            enabled: true,
           ),
         ],
       ),
@@ -1214,60 +1202,89 @@ class _NationalFocusTreeNode extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final status = card.state.label;
+    final onTap = selecting ? onSelect : onOpen;
+    return Semantics(
+      button: true,
+      enabled: selecting ? !blocked : true,
+      label:
+          '节点 $path，${card.name}，$status'
+          '${card.isTopLevel ? '，根节点' : ''}'
+          '${card.isInternalized ? '，已内化' : ''}'
+          '${selecting
+              ? blocked
+                    ? '，不能选作父节点：此节点当前无效'
+                    : '，选择为父节点'
+              : '，打开操作'}',
+      child: detailed
+          ? _NationalFocusNodeCard(
+              card: card,
+              selecting: selecting,
+              blocked: blocked,
+              onTap: onTap,
+            )
+          // 简洁视图严格只留圆形状态图标 + 名称：没有卡片底色、外框和投影。
+          : Material(
+              type: MaterialType.transparency,
+              child: _NationalFocusSimpleNode(card: card, onTap: onTap),
+            ),
+    );
+  }
+}
+
+/// 简洁视图节点：圆形状态图标 + 名称，不占卡片底色、外框与投影。
+class _NationalFocusSimpleNode extends StatelessWidget {
+  const _NationalFocusSimpleNode({required this.card, required this.onTap});
+
+  final NationalFocusCard card;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final statusIcon = card.hasPendingReview
-        ? Icons.sync_problem_outlined
-        : switch (card.state) {
-            NationalFocusCardState.lit => Icons.lightbulb,
-            NationalFocusCardState.pendingTodayConfirmation =>
-              Icons.hourglass_top,
-            NationalFocusCardState.extinguished => Icons.lightbulb_outline,
-          };
-    final status = card.hasPendingReview
-        ? '待核对，${card.state.label}'
-        : card.state.label;
-    final iconBackground = card.hasPendingReview
-        ? colors.errorContainer
-        : switch (card.state) {
-            NationalFocusCardState.lit => PactaStatusColors.of(
-              context,
-            ).successContainer,
-            NationalFocusCardState.pendingTodayConfirmation =>
-              colors.tertiaryContainer,
-            NationalFocusCardState.extinguished =>
-              colors.surfaceContainerHighest,
-          };
-    final content = InkWell(
-      onTap: selecting ? onSelect : onOpen,
+    final status = PactaStatusColors.of(context);
+    return InkWell(
+      onTap: onTap,
       borderRadius: BorderRadius.circular(_nodeCardRadius),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(
+          horizontal: PactaSpacing.sm,
+          vertical: PactaSpacing.xs,
+        ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 40,
-              height: 40,
+              width: PactaIconSizes.hero,
+              height: PactaIconSizes.hero,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: iconBackground,
+                color: switch (card.state) {
+                  NationalFocusCardState.lit => status.successContainer,
+                  NationalFocusCardState.pendingTodayConfirmation =>
+                    colors.tertiaryContainer,
+                  NationalFocusCardState.extinguished =>
+                    colors.surfaceContainerHighest,
+                },
                 border: Border.all(color: colors.outlineVariant),
               ),
               child: Icon(
-                statusIcon,
-                size: 24,
-                color: card.hasPendingReview
-                    ? colors.onErrorContainer
-                    : switch (card.state) {
-                        NationalFocusCardState.lit => PactaStatusColors.of(
-                          context,
-                        ).onSuccessContainer,
-                        NationalFocusCardState.pendingTodayConfirmation =>
-                          colors.onTertiaryContainer,
-                        NationalFocusCardState.extinguished =>
-                          colors.onSurfaceVariant,
-                      },
+                switch (card.state) {
+                  NationalFocusCardState.lit => Icons.lightbulb,
+                  NationalFocusCardState.pendingTodayConfirmation =>
+                    Icons.hourglass_top,
+                  NationalFocusCardState.extinguished =>
+                    Icons.lightbulb_outline,
+                },
+                size: PactaIconSizes.md,
+                color: switch (card.state) {
+                  NationalFocusCardState.lit => status.onSuccessContainer,
+                  NationalFocusCardState.pendingTodayConfirmation =>
+                    colors.onTertiaryContainer,
+                  NationalFocusCardState.extinguished =>
+                    colors.onSurfaceVariant,
+                },
               ),
             ),
             const SizedBox(height: 3),
@@ -1278,42 +1295,9 @@ class _NationalFocusTreeNode extends StatelessWidget {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-            // 详细视图固定两行规则：不再按字号把规则压回 1 行，默认字号也
-            // 能读到「条件 → 行动」的完整一句。
-            if (detailed) ...[
-              const SizedBox(height: 3),
-              Text(
-                card.effectiveAction,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
           ],
         ),
       ),
-    );
-    return Semantics(
-      button: true,
-      enabled: selecting ? !blocked : true,
-      label:
-          '节点 $path，${card.name}，$status${selecting
-              ? blocked
-                    ? card.hasPendingReview
-                          ? '，不能选作父节点：待核对状态需先完成核对'
-                          : '，不能选作父节点：此节点当前无效'
-                    : '，选择为父节点'
-              : '，打开操作'}',
-      child: detailed
-          ? _NationalFocusNodeCard(
-              card: card,
-              selecting: selecting,
-              blocked: blocked,
-              child: content,
-            )
-          // 简洁视图严格只留圆形状态图标 + 名称：没有卡片底色、外框和投影。
-          : Material(type: MaterialType.transparency, child: content),
     );
   }
 }
@@ -1324,24 +1308,45 @@ class _NationalFocusTreeNode extends StatelessWidget {
 /// 信息单元而不是独立卡片，16dp 让相邻节点的边界更利落。
 const double _nodeCardRadius = 16;
 
-/// 详细视图的节点卡片：按状态着色，底色必须与画布表面 surfaceContainerLow
-/// 明确分层（亮色近似白 / 浅绿 / 浅琥珀，暗色对应深柔色）。
+/// 详细视图卡片宽度。
+///
+/// 抬头行要同时放下状态图标井、最多两行名称与右侧状态微标；148dp 的简洁
+/// 宽度会把名称压成每行两三个字，228dp 是这套结构的最小可用宽度。
+const double _detailedNodeWidth = 228;
+
+/// 详细视图卡片的基准高度：1x 内容约 137dp，160dp 留出呼吸位，随
+/// `textScaler` 线性放大后 2x 仍有 70dp 以上余量，绝不出现 RenderFlex 溢出。
+const double _detailedNodeHeight = 160;
+
+/// 顶部状态色条厚度：贴顶铺满，卡片的 antiAlias 裁切让两端跟随圆角。
+const double _statusStripeHeight = 3;
+
+/// 详细视图状态图标井的直径（井内图标取 [PactaIconSizes.sm]）。
+const double _statusWellSize = PactaIconSizes.lg;
+
+/// 详细视图的节点卡片：左对齐的 M3 状态卡。
+///
+/// 结构固定为「顶部 3dp 状态条 → 图标井 + 名称 + 状态微标 → 恒两行国策规则 →
+/// 底部信息栏」。底色以 [PactaSurfaces.card] 为基底混入状态色，亮暗两种主题
+/// 下都比画布 surfaceContainerLow 更亮，再配合 1–2dp 状态描边，每张卡都明显
+/// 浮在画布之上，而不是陷进去。
 class _NationalFocusNodeCard extends StatelessWidget {
   const _NationalFocusNodeCard({
     required this.card,
     required this.selecting,
     required this.blocked,
-    required this.child,
+    required this.onTap,
   });
 
   final NationalFocusCard card;
   final bool selecting;
   final bool blocked;
-  final Widget child;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final palette = _NationalFocusNodePalette.resolve(
       context,
       card,
@@ -1353,8 +1358,8 @@ class _NationalFocusNodeCard extends StatelessWidget {
       // 画布内卡片用零外边距：节点盒子的高度是布局契约，不能被 Card 的
       // 默认 4dp 边距悄悄吃掉。
       margin: EdgeInsets.zero,
-      elevation: 1,
-      shadowColor: colors.shadow.withValues(alpha: 0.18),
+      elevation: 2,
+      shadowColor: colors.shadow.withValues(alpha: palette.shadowAlpha),
       surfaceTintColor: Colors.transparent,
       color: palette.fill,
       clipBehavior: Clip.antiAlias,
@@ -1362,72 +1367,319 @@ class _NationalFocusNodeCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(_nodeCardRadius),
         side: BorderSide(color: palette.border, width: palette.borderWidth),
       ),
-      child: child,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          onTap: onTap,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: _statusStripeHeight,
+                child: ColoredBox(color: palette.stripe),
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _NationalFocusNodeIconWell(palette: palette),
+                          const SizedBox(width: PactaSpacing.sm),
+                          Expanded(
+                            child: Text(
+                              card.name,
+                              textAlign: TextAlign.start,
+                              style: theme.textTheme.titleSmall,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          _NationalFocusNodeBadge(
+                            icon: palette.statusIcon,
+                            label: palette.statusLabel,
+                            background: palette.badgeBackground,
+                            foreground: palette.badgeForeground,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      // 恒两行规则：详细视图的阅读契约，不按字号压回一行。
+                      // 规则用次级前景色，名称与规则之间才有清楚的层次。
+                      Text(
+                        card.effectiveAction,
+                        textAlign: TextAlign.start,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const Spacer(),
+                      Wrap(
+                        alignment: WrapAlignment.spaceBetween,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [
+                          _NationalFocusNodeBadge(
+                            icon: Icons.repeat,
+                            label: '连续 ${card.currentConsecutiveDays} 天',
+                            background: colors.surfaceContainerHighest,
+                            foreground: colors.onSurfaceVariant,
+                          ),
+                          if (card.isTopLevel)
+                            _NationalFocusNodeBadge(
+                              label: '根',
+                              background: Colors.transparent,
+                              foreground: colors.onSurface,
+                              border: colors.outline,
+                            ),
+                          if (card.isInternalized)
+                            _NationalFocusNodeBadge(
+                              icon: Icons.verified_outlined,
+                              label: '已内化',
+                              background: colors.secondaryContainer,
+                              foreground: colors.onSecondaryContainer,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
 
-/// 详细视图卡片的三段语义：底、边、边宽。
+/// 状态图标井：圆底 + 状态色图标，是每张详细卡片的第一眼锚点。
+class _NationalFocusNodeIconWell extends StatelessWidget {
+  const _NationalFocusNodeIconWell({required this.palette});
+
+  final _NationalFocusNodePalette palette;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: _statusWellSize,
+    height: _statusWellSize,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: palette.iconBackground,
+    ),
+    child: Icon(
+      palette.statusIcon,
+      size: PactaIconSizes.sm,
+      color: palette.iconForeground,
+    ),
+  );
+}
+
+/// 详细视图的紧凑微标：状态、根节点、连续天数与已内化共用一套字级。
+class _NationalFocusNodeBadge extends StatelessWidget {
+  const _NationalFocusNodeBadge({
+    required this.label,
+    required this.background,
+    required this.foreground,
+    this.icon,
+    this.border,
+  });
+
+  final String label;
+  final IconData? icon;
+  final Color background;
+  final Color foreground;
+  final Color? border;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final borderColor = border;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+        border: borderColor == null
+            ? null
+            : Border.all(color: borderColor, width: 1),
+      ),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(icon == null ? 6 : 4, 1, 6, 1),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: PactaIconSizes.micro, color: foreground),
+              const SizedBox(width: 2),
+            ],
+            Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.fade,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: foreground,
+                fontWeight: PactaFonts.semibold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 详细视图卡片的配色语义：底、边、边宽，以及状态条、图标井与微标用色。
 @immutable
 class _NationalFocusNodePalette {
   const _NationalFocusNodePalette({
     required this.fill,
     required this.border,
     required this.borderWidth,
+    required this.stripe,
+    required this.iconBackground,
+    required this.iconForeground,
+    required this.badgeBackground,
+    required this.badgeForeground,
+    required this.statusIcon,
+    required this.statusLabel,
+    required this.shadowAlpha,
   });
 
   final Color fill;
   final Color border;
   final double borderWidth;
+  final Color stripe;
+  final Color iconBackground;
+  final Color iconForeground;
+  final Color badgeBackground;
+  final Color badgeForeground;
+  final IconData statusIcon;
+  final String statusLabel;
+  final double shadowAlpha;
 
-  /// 底色规则：状态容器色按比例调进 ColorScheme.surfaceContainerLowest。
+  /// 底色规则：状态容器色按比例混进 [PactaSurfaces.card]。
   ///
-  /// 调进最亮 / 最暗的表面而不是直接铺容器色，是为了既保住状态语义，又让
-  /// 卡片与画布 surfaceContainerLow 拉开一档——亮色卡片近乎白、暗色卡片
-  /// 明显更暗，正文始终保持 AA 对比度。
+  /// 不再混进 ColorScheme.surfaceContainerLowest：暗色下它比画布
+  /// surfaceContainerLow（#1B1D23）更暗，卡片会「陷进」画布；亮色下它又与
+  /// 画布几乎同色。以卡片提升基底（亮 #FFFFFF / 暗 #1C2129）为底混状态色，
+  /// 暗色卡片亮度约为画布的 1.35–1.5 倍，亮色卡片亮度不低于画布，正文对
+  /// 卡片底色始终保持在 8:1 以上。
   static _NationalFocusNodePalette resolve(
     BuildContext context,
     NationalFocusCard card, {
     required bool selecting,
     required bool blocked,
   }) {
-    final colors = Theme.of(context).colorScheme;
-    final surface = colors.surfaceContainerLowest;
-    Color tint(Color container, double amount) =>
-        Color.alphaBlend(container.withValues(alpha: amount), surface);
-    if (selecting && !blocked) {
-      return _NationalFocusNodePalette(
-        fill: colors.secondaryContainer,
-        border: colors.primary,
-        borderWidth: 1.5,
-      );
-    }
-    if (card.hasPendingReview) {
-      return _NationalFocusNodePalette(
-        fill: tint(colors.errorContainer, 0.55),
-        border: colors.error.withValues(alpha: 0.55),
-        borderWidth: 1,
-      );
-    }
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final dark = theme.brightness == Brightness.dark;
+    // 卡片提升基底取 PactaSurfaces.card；裸 ThemeData（部分隔离用例）没有该
+    // 扩展时按亮度回落到同一套语义表面，绝不回落到 surfaceContainerLowest。
+    final surfaces =
+        theme.extension<PactaSurfaces>() ??
+        (dark ? PactaSurfaces.dark : PactaSurfaces.light);
     final status = PactaStatusColors.of(context);
-    return switch (card.state) {
-      NationalFocusCardState.lit => _NationalFocusNodePalette(
-        fill: tint(status.successContainer, 0.55),
-        border: status.successContainer,
-        borderWidth: 1,
-      ),
-      NationalFocusCardState.pendingTodayConfirmation =>
-        _NationalFocusNodePalette(
-          fill: tint(colors.tertiaryContainer, 0.6),
-          border: colors.tertiary.withValues(alpha: 0.55),
-          borderWidth: 1,
-        ),
-      // 熄灭态用最纯的高亮表面 + 明显细边：亮色是纯白配冷蓝灰画布，
-      // 一眼就是画布上的一张卡。
-      NationalFocusCardState.extinguished => _NationalFocusNodePalette(
-        fill: surface,
+    Color lift(Color tint, double amount) =>
+        Color.alphaBlend(tint.withValues(alpha: amount), surfaces.card);
+    _NationalFocusNodePalette build({
+      required Color stripe,
+      required Color fill,
+      required Color border,
+      required Color well,
+      required Color wellForeground,
+      required Color badge,
+      required Color badgeForeground,
+      double width = 1.2,
+    }) => _NationalFocusNodePalette(
+      fill: fill,
+      border: border,
+      // 根节点用更粗的外框：在画布上一眼就能认出树根，而不是普通子节点。
+      borderWidth: card.isTopLevel ? math.max(width, 2) : width,
+      stripe: stripe,
+      iconBackground: well,
+      iconForeground: wellForeground,
+      badgeBackground: badge,
+      badgeForeground: badgeForeground,
+      statusIcon: switch (card.state) {
+        NationalFocusCardState.lit => Icons.lightbulb,
+        NationalFocusCardState.pendingTodayConfirmation => Icons.hourglass_top,
+        NationalFocusCardState.extinguished => Icons.lightbulb_outline,
+      },
+      statusLabel: card.state.label,
+      shadowAlpha: dark ? 0.34 : 0.18,
+    );
+    if (selecting && !blocked) {
+      return build(
+        stripe: colors.primary,
+        fill: lift(colors.primaryContainer, dark ? 0.7 : 0.3),
+        border: colors.primary,
+        well: colors.primaryContainer,
+        wellForeground: colors.onPrimaryContainer,
+        badge: colors.primaryContainer,
+        badgeForeground: colors.onPrimaryContainer,
+        width: 1.5,
+      );
+    }
+    if (selecting) {
+      // 放置中但当前不可选：中性表面 + 灰边，跟可选的蓝卡一眼分开。
+      return build(
+        stripe: colors.outline,
+        fill: lift(colors.surfaceContainerHighest, dark ? 0.7 : 0.5),
         border: colors.outlineVariant,
-        borderWidth: 1,
+        well: colors.surfaceContainerHighest,
+        wellForeground: colors.onSurfaceVariant,
+        badge: colors.surfaceContainerHighest,
+        badgeForeground: colors.onSurfaceVariant,
+      );
+    }
+    return switch (card.state) {
+      // 点亮：翠绿容器色混进提亮基底，绿色状态条压在最上沿。
+      NationalFocusCardState.lit => build(
+        stripe: Color.lerp(
+          status.successContainer,
+          status.onSuccessContainer,
+          dark ? 0.75 : 0.6,
+        )!,
+        fill: lift(status.successContainer, dark ? 0.7 : 0.35),
+        border: Color.lerp(
+          status.successContainer,
+          status.onSuccessContainer,
+          dark ? 0.45 : 0.4,
+        )!,
+        well: status.successContainer,
+        wellForeground: status.onSuccessContainer,
+        badge: status.successContainer,
+        badgeForeground: status.onSuccessContainer,
+      ),
+      // 待确认：暖琥珀容器色 + tertiary 描边，和点亮态完全不同色相。
+      NationalFocusCardState.pendingTodayConfirmation => build(
+        stripe: colors.tertiary,
+        fill: lift(colors.tertiaryContainer, dark ? 0.7 : 0.4),
+        border: colors.tertiary,
+        well: colors.tertiaryContainer,
+        wellForeground: colors.onTertiaryContainer,
+        badge: colors.tertiaryContainer,
+        badgeForeground: colors.onTertiaryContainer,
+      ),
+      // 熄灭：清晰高于画布的中性表面 + 鲜明中性描边，绝不回到更暗的
+      // surfaceContainerLowest。
+      NationalFocusCardState.extinguished => build(
+        stripe: colors.outline,
+        fill: dark ? lift(colors.surfaceContainerHighest, 0.85) : surfaces.card,
+        border: colors.outline,
+        well: colors.surfaceContainerHighest,
+        wellForeground: colors.onSurfaceVariant,
+        badge: colors.surfaceContainerHighest,
+        badgeForeground: colors.onSurfaceVariant,
       ),
     };
   }
@@ -1581,7 +1833,11 @@ class _TopLevelPosition extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              Icon(Icons.vertical_align_top, color: colors.onSurfaceVariant),
+              Icon(
+                Icons.vertical_align_top,
+                size: PactaIconSizes.md,
+                color: colors.onSurfaceVariant,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -1600,7 +1856,11 @@ class _TopLevelPosition extends StatelessWidget {
                 ),
               ),
               if (isSelecting)
-                const Icon(Icons.chevron_right, semanticLabel: '放到顶层'),
+                const Icon(
+                  Icons.chevron_right,
+                  size: PactaIconSizes.compact,
+                  semanticLabel: '放到顶层',
+                ),
             ],
           ),
         ),
@@ -1624,13 +1884,14 @@ class _PlacementBanner extends StatelessWidget {
         children: [
           Icon(
             Icons.touch_app_outlined,
+            size: PactaIconSizes.md,
             color: Theme.of(context).colorScheme.onPrimaryContainer,
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               '为「${card.name}」选择位置：点顶层或一个节点。',
-              style: TextStyle(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onPrimaryContainer,
               ),
             ),
@@ -1638,7 +1899,7 @@ class _PlacementBanner extends StatelessWidget {
           IconButton(
             tooltip: '取消选择位置',
             onPressed: onCancel,
-            icon: const Icon(Icons.close),
+            icon: const Icon(Icons.close, size: PactaIconSizes.md),
           ),
         ],
       ),

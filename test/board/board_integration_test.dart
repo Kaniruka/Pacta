@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -11,10 +13,12 @@ import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart' hide FocusSession;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:pacta/src/theme/pacta_spacing.dart';
 import 'package:pacta/src/ui/pacta_page_header.dart';
 
 import '../support/fake_auth_repository.dart';
 import '../support/plan_navigation.dart';
+import '../support/focus_session_seed.dart';
 
 void main() {
   for (final activeDays in [0, 1, 7]) {
@@ -62,7 +66,8 @@ void main() {
       for (var day = 0; day < activeDays; day++) {
         final start = DateTime(2026, 11, 12 - day, 8);
         final end = start.add(const Duration(minutes: 13));
-        await remote.upsertSessions(
+        await seedFocusSessions(
+          database,
           userId: user,
           sessions: [
             FocusSession(
@@ -83,7 +88,7 @@ void main() {
           ],
         );
       }
-      await focus.sync();
+      await focus.settleDueSessions();
       if (activeDays > 0) {
         final card = await tree.createCard(
           const NationalFocusCardDraft(
@@ -131,6 +136,12 @@ void main() {
             find.byKey(const ValueKey('board-focus-national-card')),
           );
           if (tester.getSize(find.byType(BoardPage)).width >= 960) {
+            // 宽屏双栏不出现顶槽切换胶囊：置顶摘要留在左栏。
+            expect(
+              find.byKey(const ValueKey('board-top-slot-pinned')),
+              findsNothing,
+              reason: '两栏布局不重复渲染顶槽置顶视图',
+            );
             // 有置顶目标时宽屏两栏：左侧置顶摘要，右侧 420dp 融合卡，
             // 两栏顶部对齐；页头仍横跨整页。
             final pinnedTitle = tester.getRect(find.text('置顶目标'));
@@ -148,13 +159,32 @@ void main() {
               reason: '宽屏两栏顶部对齐',
             );
           } else {
-            // 单栏：置顶摘要在上，融合卡紧随其后。
-            expect(
-              fusedCard.top,
-              greaterThan(
-                tester.getRect(find.textContaining('下一项：准备材料')).bottom,
-              ),
+            // 单栏：置顶目标并进融合卡顶槽的胶囊切换，不再压成独立超高
+            // 区块。先切到置顶目标确认下一项完整可读，再切回国策状态让
+            // 后续断言看到今日计数。
+            final pinnedTab = find.byKey(
+              const ValueKey('board-top-slot-pinned'),
             );
+            await tester.ensureVisible(pinnedTab);
+            await tester.pumpAndSettle();
+            await tester.tap(pinnedTab);
+            await tester.pumpAndSettle();
+            final pinnedSummary = find.textContaining('下一项：准备材料');
+            expect(pinnedSummary, findsOneWidget);
+            expect(
+              tester.getRect(pinnedSummary).top,
+              greaterThan(fusedCard.top),
+              reason: '置顶目标在融合卡顶槽内，而不是融合卡上方的独立区块',
+            );
+            expect(
+              tester.getRect(pinnedSummary).bottom,
+              lessThan(tester.getRect(find.text('专注热力月历')).top),
+              reason: '顶槽仍在热力月历之上，月历保持首屏主角',
+            );
+            await tester.tap(
+              find.byKey(const ValueKey('board-top-slot-status')),
+            );
+            await tester.pumpAndSettle();
           }
           // 卡片顶部：当前展示月份 + 今日国策实时状态。
           expect(find.text('2026年11月'), findsOneWidget);
@@ -290,7 +320,8 @@ void main() {
         disposition == FocusRecordDisposition.accepted ? 9 : 10,
       );
       final end = start.add(const Duration(minutes: 13));
-      await remote.upsertSessions(
+      await seedFocusSessions(
+        database,
         userId: 'readable',
         sessions: [
           FocusSession(
@@ -311,7 +342,7 @@ void main() {
         ],
       );
     }
-    await focus.sync();
+    await focus.settleDueSessions();
     try {
       await tester.pumpWidget(
         PactaApp(
@@ -323,12 +354,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await openPlan(tester);
-      for (final fact in [
-        '120 分钟',
-        '已专注 13分00秒',
-        '待核对（争议部分暂不计入专注统计）',
-        '截止 2026-11-15 18:30',
-      ]) {
+      for (final fact in ['120 分钟', '已专注 13分00秒', '截止 2026-11-15 18:30']) {
         final text = find.textContaining(fact);
         expect(text, findsOneWidget);
         final paragraph = tester.renderObject<RenderParagraph>(text);
@@ -592,4 +618,244 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
   });
+
+  testWidgets('宽屏置顶摘要与回顾提示之间保留 8dp，卡片不贴边', (tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final database = PactaDatabase(NativeDatabase.memory());
+    const user = 'board-pinned-gap';
+    final now = DateTime(2026, 11, 12, 10);
+    final tasks = LocalTaskRepository(
+      database: database,
+      userId: user,
+      remote: InMemoryTaskRemote(),
+      now: () => now,
+    );
+    final focus = LocalFocusRepository(
+      database: database,
+      userId: user,
+      remote: InMemoryFocusRemote(),
+      now: () => now,
+      cloudSyncEnabled: false,
+    );
+    final tree = LocalNationalFocusRepository(
+      database: database,
+      userId: user,
+      cloudSyncEnabled: false,
+      now: () => now,
+    );
+    final goal = await tasks.createGoal(
+      const GoalDraft(
+        title: '置顶目标',
+        classification: TaskClassification.regular,
+      ),
+    );
+    final task = await tasks.createTask(
+      goal.id,
+      const TaskDraft(
+        title: '准备材料',
+        classification: TaskClassification.regular,
+      ),
+    );
+    await tasks.setGoalPinned(goal.id, isPinned: true);
+    await seedFocusSessions(
+      database,
+      userId: user,
+      sessions: [
+        FocusSession(
+          id: 'clock-review-gap',
+          taskId: task.id,
+          mode: FocusChainMode.regular,
+          durationSeconds: 1500,
+          startedAt: DateTime(2026, 11, 12, 9),
+          endsAt: DateTime(2026, 11, 12, 9, 25),
+          completedAt: DateTime(2026, 11, 12, 9, 25),
+          status: FocusSessionStatus.completed,
+          effectiveSeconds: 1500,
+          effectiveIntervals: [
+            FocusTimeInterval(
+              startedAt: DateTime(2026, 11, 12, 9),
+              endedAt: DateTime(2026, 11, 12, 9, 25),
+              measuredDurationSeconds: 1500,
+              clockReviewStatus: FocusClockReviewStatus.pending,
+            ),
+          ],
+          reviewDisposition: FocusRecordDisposition.accepted,
+        ),
+      ],
+    );
+
+    try {
+      await tester.pumpWidget(
+        PactaApp(
+          authRepository: FakeAuthRepository()..signedInUser = user,
+          taskRepositoryFactory: (_) => tasks,
+          focusRepositoryFactory: (_) => focus,
+          nationalFocusRepositoryFactory: (_) => tree,
+          displayClock: () => now,
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 宽屏双栏：左栏是置顶摘要，回顾提示紧随其后。
+      final pinnedCard = find.byKey(ValueKey('board-pinned-goal-${goal.id}'));
+      final promptText = find.textContaining('段专注时间待核对');
+      expect(pinnedCard, findsOneWidget);
+      expect(promptText, findsOneWidget);
+      final promptCard = find
+          .ancestor(of: promptText, matching: find.byType(Card))
+          .first;
+      expect(
+        tester.getRect(promptCard).top - tester.getRect(pinnedCard).bottom,
+        greaterThanOrEqualTo(PactaSpacing.sm),
+        reason: 'CardThemeData.margin 为零：摘要与提示之间至少留 8dp',
+      );
+      expect(tester.takeException(), isNull);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await focus.dispose();
+      await tree.dispose();
+      await database.close();
+    }
+  });
+
+  testWidgets('跨 960dp 与 2 倍字号重排：置顶目标随布局切换并重算默认页签', (tester) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final database = PactaDatabase(NativeDatabase.memory());
+    const user = 'board-late-cards';
+    final now = DateTime(2026, 11, 12, 10);
+    final tasks = LocalTaskRepository(
+      database: database,
+      userId: user,
+      remote: InMemoryTaskRemote(),
+      now: () => now,
+    );
+    final focus = LocalFocusRepository(
+      database: database,
+      userId: user,
+      remote: InMemoryFocusRemote(),
+      now: () => now,
+      cloudSyncEnabled: false,
+    );
+    // 广播流：看板与常驻的国策树页会各自订阅同一份卡片投影。
+    final cards = StreamController<List<NationalFocusCard>>.broadcast();
+    final tree = _LateTreeRepository(cards.stream);
+    final goal = await tasks.createGoal(
+      const GoalDraft(
+        title: '季度目标',
+        classification: TaskClassification.regular,
+      ),
+    );
+    await tasks.createTask(
+      goal.id,
+      const TaskDraft(
+        title: '准备材料',
+        classification: TaskClassification.regular,
+      ),
+    );
+    await tasks.setGoalPinned(goal.id, isPinned: true);
+
+    // 卡片未到达时页面停在无限动画的加载态：只能有限推进，不能 pumpAndSettle。
+    Future<void> pumpFrames() async {
+      for (var frame = 0; frame < 20; frame++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+    }
+
+    try {
+      await tester.pumpWidget(
+        PactaApp(
+          authRepository: FakeAuthRepository()..signedInUser = user,
+          taskRepositoryFactory: (_) => tasks,
+          focusRepositoryFactory: (_) => focus,
+          nationalFocusRepositoryFactory: (_) => tree,
+          displayClock: () => now,
+        ),
+      );
+      await pumpFrames();
+
+      // 1200dp / 1x：两栏，置顶摘要在左栏，顶槽不重复渲染胶囊。
+      expect(find.text('置顶目标'), findsOneWidget);
+      expect(find.byKey(const ValueKey('board-top-slot-pinned')), findsNothing);
+      expect(
+        find.byKey(ValueKey('board-pinned-goal-${goal.id}')),
+        findsOneWidget,
+      );
+
+      // 2 倍字号把同一宽度压回单栏：置顶目标并进顶槽胶囊。
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      await pumpFrames();
+      expect(
+        find.byKey(const ValueKey('board-top-slot-pinned')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('board-top-slot-status')),
+        findsOneWidget,
+      );
+      // 国策卡片尚未到达：默认页签仍是国策状态，不预先替用户选置顶。
+      expect(
+        find.byKey(ValueKey('board-pinned-goal-${goal.id}')),
+        findsNothing,
+      );
+
+      cards.add([_litCard('late-card')]);
+      await pumpFrames();
+      // 异步迟到的卡片触发默认页签重算：全部确认 → 直接落在置顶目标。
+      expect(
+        find.byKey(ValueKey('board-pinned-goal-${goal.id}')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('下一项：准备材料'), findsOneWidget);
+
+      // 回到 1x：重新两栏，摘要在左栏，顶槽胶囊消失。
+      tester.platformDispatcher.textScaleFactorTestValue = 1;
+      await pumpFrames();
+      expect(find.byKey(const ValueKey('board-top-slot-pinned')), findsNothing);
+      expect(
+        find.byKey(ValueKey('board-pinned-goal-${goal.id}')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    } finally {
+      await cards.close();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 400));
+      await database.close();
+    }
+  });
 }
+
+class _LateTreeRepository extends UnavailableNationalFocusRepository {
+  _LateTreeRepository(this.cards);
+
+  final Stream<List<NationalFocusCard>> cards;
+
+  @override
+  Stream<List<NationalFocusCard>> watchTreeCards() => cards;
+
+  @override
+  Stream<List<NationalFocusFailure>> watchFailures() => Stream.value(const []);
+
+  @override
+  Future<void> settleDueCheckpoints() async {}
+}
+
+NationalFocusCard _litCard(String id) => NationalFocusCard(
+  id: id,
+  name: '迟到节点',
+  triggerCondition: '开始前',
+  action: '写一步',
+  isInTree: true,
+  state: NationalFocusCardState.lit,
+  createdAt: DateTime.utc(2026, 9, 1),
+  updatedAt: DateTime.utc(2026, 9, 1),
+  currentConsecutiveDays: 5,
+);

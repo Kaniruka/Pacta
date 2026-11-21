@@ -7,120 +7,6 @@ import 'calendar_models.dart';
 import 'calendar_repository.dart';
 import 'manual_calendar_import.dart';
 
-class CalendarAgendaCard extends StatelessWidget {
-  const CalendarAgendaCard({super.key, required this.repository});
-
-  final CalendarRepository repository;
-
-  @override
-  Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final from = DateTime(now.year, now.month, now.day);
-    final to = from.add(const Duration(days: 1));
-    return StreamBuilder<CalendarAgenda>(
-      stream: repository.watchAgenda(from: from, to: to),
-      builder: (context, snapshot) {
-        final agenda = snapshot.data;
-        return Card(
-          margin: EdgeInsets.zero,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('今日日历', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 12),
-                if (agenda?.isStale == true)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Semantics(
-                      liveRegion: true,
-                      label: '日历块尚未更新，已保留本地缓存。',
-                      child: const Text('日历块尚未更新，已保留本地缓存。'),
-                    ),
-                  ),
-                if (snapshot.connectionState == ConnectionState.waiting &&
-                    agenda == null)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: LinearProgressIndicator(),
-                  )
-                else if (snapshot.hasError)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Text('日历块暂时无法读取；任务和专注仍可使用。'),
-                  )
-                else if ((agenda?.blocks ?? const []).isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(2, 4, 2, 12),
-                    child: Text('今天没有导入的安排。'),
-                  )
-                else ...[
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text(
-                      '今日占用 ${_durationLabel(agenda!.occupiedDuration)}',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                  for (final block in agenda.blocks.take(5))
-                    _CalendarBlockTile(block: block),
-                  if (agenda.blocks.length > 5)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 16, bottom: 8),
-                      child: Text('还有 ${agenda.blocks.length - 5} 项'),
-                    ),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _CalendarBlockTile extends StatelessWidget {
-  const _CalendarBlockTile({required this.block});
-
-  final CalendarBlock block;
-
-  @override
-  Widget build(BuildContext context) {
-    final time = block.allDay
-        ? _allDayLabel(block)
-        : '${_formatTime(context, block.startsAt)}–${_formatTime(context, block.endsAt)}';
-    final status = block.allDay
-        ? '全天提醒'
-        : block.availability == CalendarAvailability.free
-        ? '空闲'
-        : '占用';
-    final sources = block.sourceNames.toSet().join('、');
-    return ListTile(
-      key: ValueKey(block.eventIdentity),
-      dense: true,
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(
-        block.allDay
-            ? Icons.event_note_outlined
-            : block.occupiesTime
-            ? Icons.event_busy_outlined
-            : Icons.event_available_outlined,
-      ),
-      title: Text(
-        block.title,
-        style: Theme.of(context).textTheme.bodyMedium,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: Text(
-        '$time · $status${sources.isEmpty ? '' : ' · $sources'}',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-    );
-  }
-}
-
 class CalendarSourcesPage extends StatefulWidget {
   const CalendarSourcesPage({
     super.key,
@@ -235,7 +121,7 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 800),
             child: ListView(
-              padding: const EdgeInsets.all(20),
+              padding: PactaSpacing.pageInsets(context),
               children: [
                 const Card(
                   child: Padding(
@@ -352,30 +238,4 @@ class _CalendarSourcesPageState extends State<CalendarSourcesPage> {
       ),
     );
   }
-}
-
-String _formatTime(BuildContext context, DateTime value) =>
-    TimeOfDay.fromDateTime(value.toLocal()).format(context);
-
-String _allDayLabel(CalendarBlock block) {
-  final start = block.allDayStartDate!;
-  final endExclusive = DateTime.parse(
-    '${block.allDayEndDateExclusive}T00:00:00Z',
-  );
-  final lastDate = endExclusive.subtract(const Duration(days: 1));
-  final last = _dateLabel(lastDate);
-  return start == last ? '$start · 全天' : '$start 至 $last · 全天';
-}
-
-String _dateLabel(DateTime value) =>
-    '${value.year.toString().padLeft(4, '0')}-'
-    '${value.month.toString().padLeft(2, '0')}-'
-    '${value.day.toString().padLeft(2, '0')}';
-
-String _durationLabel(Duration duration) {
-  final hours = duration.inHours;
-  final minutes = duration.inMinutes.remainder(60);
-  if (hours == 0) return '$minutes 分钟';
-  if (minutes == 0) return '$hours 小时';
-  return '$hours 小时 $minutes 分钟';
 }

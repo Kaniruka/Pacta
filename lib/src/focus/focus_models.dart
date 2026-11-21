@@ -232,8 +232,6 @@ class FocusDashboardMetrics {
     required this.recentActivity,
     required this.totalAcceptedFocusSeconds,
     required this.displayTimeZoneId,
-    this.hasPendingReview = false,
-    this.pendingReviewTaskIds = const {},
   });
 
   final Map<String, int> focusProgressSecondsByTask;
@@ -242,8 +240,6 @@ class FocusDashboardMetrics {
 
   /// 账号资料里的显示时区；日分摊按它计算。没有设备级分支。
   final String displayTimeZoneId;
-  final bool hasPendingReview;
-  final Set<String> pendingReviewTaskIds;
 }
 
 /// Effective focus time of one visible month, allocated by the account display
@@ -421,38 +417,9 @@ class FocusSession {
   bool get isPaused => status == FocusSessionStatus.paused;
   bool get isUnfinished => status.isUnfinished;
   bool get isFailed => status.isFailed;
-  bool get isPendingReview =>
-      reviewDisposition == FocusRecordDisposition.pendingReview;
   bool get isEarlyCompleted =>
       status == FocusSessionStatus.completed &&
       completionType == FocusSessionCompletionType.precedentRule;
-
-  FocusSession copyWithReviewDisposition({
-    required FocusRecordDisposition disposition,
-    required DateTime reviewedAt,
-  }) => FocusSession(
-    id: id,
-    taskId: taskId,
-    mode: mode,
-    durationSeconds: durationSeconds,
-    startedAt: startedAt,
-    endsAt: endsAt,
-    status: status,
-    completedAt: completedAt,
-    effectiveSeconds: effectiveSeconds,
-    completionType: completionType,
-    completionRuleText: completionRuleText,
-    pausedAt: pausedAt,
-    pausedSeconds: pausedSeconds,
-    pauseRuleText: pauseRuleText,
-    failureReason: failureReason,
-    appointmentId: appointmentId,
-    effectiveIntervals: effectiveIntervals,
-    reviewDisposition: disposition,
-    reviewDispositionUpdatedAt: reviewedAt,
-    configurationBasisSourceId: configurationBasisSourceId,
-    outcomeBasisSourceId: outcomeBasisSourceId,
-  );
 }
 
 /// Immutable state captured when one installation changes a Focus Session or
@@ -549,29 +516,6 @@ class AppointmentPreparation {
   bool get isActive => status.isActive;
   bool get isSucceeded => status == AppointmentPreparationStatus.succeeded;
   bool get isFailed => status == AppointmentPreparationStatus.failed;
-  bool get isPendingReview =>
-      reviewDisposition == FocusRecordDisposition.pendingReview;
-
-  AppointmentPreparation copyWithReviewDisposition({
-    required FocusRecordDisposition disposition,
-    required DateTime reviewedAt,
-  }) => AppointmentPreparation(
-    id: id,
-    taskId: taskId,
-    mode: mode,
-    durationSeconds: durationSeconds,
-    startedAt: startedAt,
-    endsAt: endsAt,
-    status: status,
-    settledAt: settledAt,
-    updatedAt: updatedAt,
-    sessionId: sessionId,
-    failureReason: failureReason,
-    reviewDisposition: disposition,
-    reviewDispositionUpdatedAt: reviewedAt,
-    configurationBasisSourceId: configurationBasisSourceId,
-    preparationSeconds: preparationSeconds,
-  );
 
   AppointmentPreparation copyWithConfiguration({
     required String taskId,
@@ -603,13 +547,11 @@ class AppointmentChainRecord {
     required this.currentConsecutive,
     required this.bestConsecutive,
     required this.updatedAt,
-    this.hasPendingReview = false,
   });
 
   final int currentConsecutive;
   final int bestConsecutive;
   final DateTime updatedAt;
-  final bool hasPendingReview;
 }
 
 class FocusNode {
@@ -638,12 +580,10 @@ class FocusChainRecord {
     required this.currentConsecutive,
     required this.bestConsecutive,
     required this.updatedAt,
-    this.hasPendingReview = false,
   });
 
   final FocusChainMode mode;
   final int currentConsecutive;
   final int bestConsecutive;
   final DateTime updatedAt;
-  final bool hasPendingReview;
 }

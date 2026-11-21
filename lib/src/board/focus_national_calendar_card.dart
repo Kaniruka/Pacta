@@ -5,7 +5,6 @@ import 'package:timezone/timezone.dart' as timezone;
 
 import '../focus/effective_duration_text.dart';
 import '../focus/focus_models.dart';
-import '../focus/focus_month_page.dart' show PactaFocusHeatLegend;
 import '../focus/focus_repository.dart';
 import '../focus/focus_time_zones.dart';
 import '../national_focus/national_focus_models.dart';
@@ -14,23 +13,32 @@ import '../plan/plan_calendar_view.dart' show scheduleTimeLabel, schedulesOnDay;
 import '../profile/account_time_zone.dart';
 import '../schedules/schedule_models.dart';
 import '../schedules/schedule_repository.dart';
+import '../tasks/task_models.dart';
+import '../tasks/task_repository.dart';
 import '../theme/pacta_calendar_colors.dart';
 import '../theme/pacta_fonts.dart';
+import '../theme/pacta_icon_sizes.dart';
+import '../theme/pacta_spacing.dart';
 import '../theme/pacta_surfaces.dart';
 import '../ui/pacta_calendar_day_cell.dart';
 import '../ui/pacta_check_circle.dart';
+import '../ui/pacta_focus_heat_legend.dart';
 import '../ui/pacta_grouped_list.dart';
+import '../ui/pacta_hold_action_reorder.dart';
+import 'board_pinned_goal_actions.dart';
 import 'national_focus_summary_card.dart';
 
 /// 看板「专注与国策」融合卡片。
 ///
-/// 一张卡同时回答三件事，全部来自既有的只读投影（不新增表、不改
+/// 一张卡同时回答四件事，全部来自既有的只读投影（不新增表、不改
 /// Cloud Snapshot）：
-/// 1. 今日国策实时状态（[NationalFocusRepository.watchTreeCards] + 周期
-///    检查点结算），点击进入国策树；
-/// 2. 专注热力月历（[FocusRepository.watchMonthMetrics]，5 档绿色），
+/// 1. 顶槽：随日历选中日切换的国策状态（[NationalFocusRepository.watchTreeCards]
+///    + 周期检查点结算），点击进入国策树；
+/// 2. 单栏时顶槽是一枚紧凑分段胶囊：国策状态 ⇄ 置顶目标 (N)。置顶目标
+///    不再作为独立超高区块压在月历上方，热力月历因此仍高居首屏；
+/// 3. 专注热力月历（[FocusRepository.watchMonthMetrics]，5 档绿色），
 ///    可切月、点选任意日；
-/// 3. 日期详情：当天有效专注时长 + 国策记录。今天取实时状态、未来日期明确
+/// 4. 日期详情：当天有效专注时长 + 只读安排。今天取实时状态、未来日期明确
 ///    标为“未到结算”、历史日期只认真实的失败记录，没有记录时严格显示
 ///    “未知”，绝不把未知推断成“全部确认/已点亮”。
 ///
@@ -48,11 +56,14 @@ class FocusNationalCalendarCard extends StatefulWidget {
     required this.displayTimeZoneId,
     required this.now,
     required this.onOpenNationalFocus,
-    required this.onOpenFocusMonth,
     required this.onRetryProjection,
     this.scheduleRepository,
     this.accountFailed = false,
     this.initialMonth,
+    this.pinnedGoals = const <Goal>[],
+    this.pinnedGoalsFailed = false,
+    this.goalRepository,
+    this.onOpenPlan,
   });
 
   final FocusRepository focusRepository;
@@ -61,11 +72,10 @@ class FocusNationalCalendarCard extends StatefulWidget {
   /// 账号显示时区；null 表示账号资料尚未解析完成（门禁，不发查询）。
   final String? displayTimeZoneId;
 
-  /// 与计划日历、专注月历共用的注入时钟。
+  /// 与计划日历、看板热力月历共用的注入时钟。
   final DateTime Function() now;
 
   final VoidCallback onOpenNationalFocus;
-  final VoidCallback onOpenFocusMonth;
 
   /// 只读重试：由看板重新订阅整块投影，不写任何数据。
   final VoidCallback onRetryProjection;
@@ -79,13 +89,37 @@ class FocusNationalCalendarCard extends StatefulWidget {
   /// 只读安排来源；为 null 时卡片不订阅、也不渲染安排区块。
   final ScheduleRepository? scheduleRepository;
 
+  /// 单栏顶槽里的置顶目标（宽屏双栏由看板左栏自己渲染，这里传空表）。
+  ///
+  /// 有置顶目标（或 [pinnedGoalsFailed]）时顶槽才出现「国策状态 ⇄ 置顶目标」
+  /// 胶囊；一个都没有时整条切换栏与置顶视图都不占空间。
+  final List<Goal> pinnedGoals;
+
+  /// 目标列表读取失败：切换栏只写「置顶目标」，置顶视图必须给出可见失败。
+  final bool pinnedGoalsFailed;
+
+  /// 置顶目标的写入来源：按住拖动排序与长按取消置顶都走它。
+  ///
+  /// 为 null 时置顶视图只读列出前两条，不提供重排/操作入口。
+  final TaskRepository? goalRepository;
+
+  /// 置顶视图底部的「查看全部 N 个 →」出口（计划页）。
+  final VoidCallback? onOpenPlan;
+
   @override
   State<FocusNationalCalendarCard> createState() =>
       _FocusNationalCalendarCardState();
 }
 
+/// 顶槽页签：动态选中日国策状态 / 置顶目标。
+enum _TopSlotTab { status, pinned }
+
 class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
   static const _weekdayLabels = ['一', '二', '三', '四', '五', '六', '日'];
+
+  /// 单栏顶槽最多展示的置顶目标条数（Q8 #3）：再多的目标只经「查看全部」
+  /// 去计划页看，热力月历因此不会被置顶列表压到首屏之外。
+  static const _pinnedSlotLimit = 2;
 
   StreamSubscription<FocusMonthMetrics>? _monthSubscription;
   StreamSubscription<List<NationalFocusCard>>? _cardsSubscription;
@@ -109,6 +143,14 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
   List<NationalFocusFailure> _failures = const [];
   bool _failuresFailed = false;
   bool _hasBuilt = false;
+
+  /// 顶槽当前页签与「用户已手动选过」标记。
+  ///
+  /// 默认页签只在用户尚未手动切换前按 Q8 #1 规则决定；一旦用户点过胶囊，
+  /// 流刷新与月份重读都不再改写他的选择。点选日历日期时若正停在置顶目标
+  /// 页签，会自动切回国策状态（Q8 #2），那也算一次用户选择。
+  _TopSlotTab _topSlotTab = _TopSlotTab.status;
+  bool _topSlotTabChosen = false;
 
   /// 只读安排：仓储、账号时区或月份一变就整份丢弃并重新订阅；代次保证
   /// 上一账号/上一时区/上一月的迟到事件不会回显到屏上。
@@ -142,6 +184,40 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
   DateTime get _currentMonthInZone {
     final today = _todayInZone;
     return DateTime.utc(today.year, today.month);
+  }
+
+  static bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  /// 顶槽与日期详情共用的选中日：月份还没解析时按账号时区里的今天兜底，
+  /// 两处永远指向同一天，不会一个说 12 日、另一个说今天。
+  DateTime get _selectedDate {
+    final month = _month ?? _currentMonthInZone;
+    final day = _selectedDay ?? _defaultDayFor(month, _metrics);
+    return DateTime.utc(month.year, month.month, day);
+  }
+
+  /// 顶槽是否需要切换栏：有置顶目标，或目标列表读取失败。
+  ///
+  /// 两者都没有时整条胶囊消失，顶槽直接就是动态国策状态，零多余 chrome。
+  bool get _showTopSlotSwitch =>
+      widget.pinnedGoals.isNotEmpty || widget.pinnedGoalsFailed;
+
+  /// Q8 #1 默认页签：国策树有节点、今日待确认数为 0 且目标读取正常时，
+  /// 优先展示置顶目标；其余情况默认国策状态。
+  _TopSlotTab get _defaultTopSlotTab {
+    if (!_showTopSlotSwitch) return _TopSlotTab.status;
+    final cards = _cards;
+    if (_cardsFailed || cards == null) return _TopSlotTab.status;
+    final counts = NationalFocusStatusCounts.fromCards(cards);
+    if (counts.isEmpty || counts.pendingCount != 0) return _TopSlotTab.status;
+    return _TopSlotTab.pinned;
+  }
+
+  /// 用户尚未手动切换前，跟随最新数据重算默认页签。
+  void _syncTopSlotDefault() {
+    if (_topSlotTabChosen) return;
+    _topSlotTab = _defaultTopSlotTab;
   }
 
   @override
@@ -188,6 +264,27 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
       _selectedDay = null;
       _restartMonth();
     }
+    if (_pinnedGoalsChanged(oldWidget.pinnedGoals, widget.pinnedGoals) ||
+        oldWidget.pinnedGoalsFailed != widget.pinnedGoalsFailed) {
+      // 置顶目标迟到或增减：用户没手动选过时重算默认页签；一个置顶目标
+      // 都不剩时顶槽必须回到国策状态，不能停在空的置顶视图上。
+      _apply(() {
+        if (!_showTopSlotSwitch) {
+          _topSlotTab = _TopSlotTab.status;
+        } else {
+          _syncTopSlotDefault();
+        }
+      });
+    }
+  }
+
+  bool _pinnedGoalsChanged(List<Goal> previous, List<Goal> next) {
+    if (identical(previous, next)) return false;
+    if (previous.length != next.length) return true;
+    for (var index = 0; index < previous.length; index++) {
+      if (previous[index].id != next[index].id) return true;
+    }
+    return false;
   }
 
   @override
@@ -220,10 +317,12 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
       (cards) => _apply(() {
         _cards = cards;
         _cardsFailed = false;
+        _syncTopSlotDefault();
       }),
       onError: (Object error, StackTrace stackTrace) => _apply(() {
         _cards = null;
         _cardsFailed = true;
+        _syncTopSlotDefault();
       }),
     );
   }
@@ -435,7 +534,7 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // 年月只在热力月历的切换器里出现一次：卡片头不再重复一枚月份
-          // 按钮，进入完整月历的唯一入口是「日期详情」的「完整月历 →」。
+          // 按钮，也不再提供独立的「完整月历」二级页。
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
             child: Text('专注与国策', style: theme.textTheme.titleMedium),
@@ -447,7 +546,7 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
                 children: [
                   Icon(
                     Icons.error_outline,
-                    size: 18,
+                    size: PactaIconSizes.sm,
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
                   const SizedBox(width: 8),
@@ -455,10 +554,12 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
                 ],
               ),
             ),
-          // 今日国策状态：左右 16dp，与标题同一版心。
+          // 顶槽：动态选中日国策状态；单栏有置顶目标时先出现一枚紧凑胶囊
+          // 切换栏。置顶目标因此不再压出一个独立超高区块，热力月历仍在上
+          // 面一屏可见。左右 16dp，与标题同一版心。
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _buildTodayNationalFocus(context),
+            child: _buildTopSlot(context),
           ),
           const SizedBox(height: 16),
           // 热力月历：标题行 16dp、七列网格只留 8dp。360dp 手机下卡片
@@ -486,16 +587,190 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
   }
 
   // ---------------------------------------------------------------------
-  // 今日国策实时状态
+  // 顶槽：动态选中日国策状态 ⇄ 置顶目标
   // ---------------------------------------------------------------------
 
-  Widget _buildTodayNationalFocus(BuildContext context) {
+  Widget _buildTopSlot(BuildContext context) {
+    final showSwitch = _showTopSlotSwitch;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (showSwitch) ...[
+          _buildTopSlotSwitch(context),
+          const SizedBox(height: 8),
+        ],
+        if (showSwitch && _topSlotTab == _TopSlotTab.pinned)
+          _buildPinnedSlot(context)
+        else
+          _buildSelectedDayNationalFocus(context),
+      ],
+    );
+  }
+
+  /// 紧凑分段胶囊：两枚标签始终并排，极端字号下由 Wrap 换行而不是溢出。
+  Widget _buildTopSlotSwitch(BuildContext context) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        _TopSlotPill(
+          key: const ValueKey('board-top-slot-status'),
+          label: '国策状态',
+          selected: _topSlotTab == _TopSlotTab.status,
+          onTap: () => _selectTopSlot(_TopSlotTab.status),
+        ),
+        _TopSlotPill(
+          key: const ValueKey('board-top-slot-pinned'),
+          // 目标列表读取失败时不写条数：那是「不知道」，不是 0 个。
+          label: widget.pinnedGoalsFailed
+              ? '置顶目标'
+              : '置顶目标 (${widget.pinnedGoals.length})',
+          selected: _topSlotTab == _TopSlotTab.pinned,
+          onTap: () => _selectTopSlot(_TopSlotTab.pinned),
+        ),
+      ],
+    );
+  }
+
+  void _selectTopSlot(_TopSlotTab tab) {
+    setState(() {
+      _topSlotTabChosen = true;
+      _topSlotTab = tab;
+    });
+  }
+
+  /// 动态选中日国策状态：今天取实时计数，历史只认真实失败记录，未来明确
+  /// 未到结算；三者绝不互相推断。
+  Widget _buildSelectedDayNationalFocus(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final date = _selectedDate;
+    final today = _todayInZone;
+    final isToday = _sameDay(date, today);
+    final isFuture = date.isAfter(today);
+    final failures = _failuresOn(date);
     final cards = _cards;
     final counts = cards == null
         ? null
         : NationalFocusStatusCounts.fromCards(cards);
+    final title = isToday
+        ? '今日国策状态'
+        : isFuture
+        ? '${date.month}月${date.day}日国策状态'
+        : '${date.month}月${date.day}日国策记录';
+    // 胶囊必须与真实状态一致：失败/加载/成功、未知/失败、未到结算各自
+    // 可读，绝不在读取失败时继续亮绿色成功色。
+    final Widget badge;
+    if (isToday) {
+      if (_cardsFailed) {
+        badge = const PactaStatusBadge(
+          label: '读取失败',
+          tone: PactaStatusBadgeTone.warning,
+        );
+      } else if (cards == null) {
+        badge = const PactaStatusBadge(
+          label: '读取中',
+          tone: PactaStatusBadgeTone.neutral,
+        );
+      } else {
+        badge = const PactaStatusBadge(
+          label: '实时状态',
+          tone: PactaStatusBadgeTone.success,
+        );
+      }
+    } else if (isFuture) {
+      badge = const PactaStatusBadge(
+        label: '未到结算',
+        tone: PactaStatusBadgeTone.neutral,
+      );
+    } else if (failures.isEmpty) {
+      badge = const PactaStatusBadge(
+        label: '未知',
+        tone: PactaStatusBadgeTone.neutral,
+      );
+    } else {
+      final extinguishing = failures.any(
+        (failure) =>
+            failure.cause == NationalFocusFailureCause.activeExtinguish,
+      );
+      badge = PactaStatusBadge(
+        label: '有失败记录',
+        tone: extinguishing
+            ? PactaStatusBadgeTone.error
+            : PactaStatusBadgeTone.warning,
+      );
+    }
+
+    final body = <Widget>[];
+    if (isToday) {
+      if (_cardsFailed) {
+        body.add(Text('国策状态暂不可用。', style: theme.textTheme.bodyMedium));
+      } else if (counts == null) {
+        body.add(Text('正在读取国策状态…', style: theme.textTheme.bodyMedium));
+      } else if (counts.isEmpty) {
+        body.add(Text('国策树尚无节点', style: theme.textTheme.bodyMedium));
+      } else {
+        body.add(
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              PactaStatusBadge(
+                label: '点亮 ${counts.litCount}',
+                tone: PactaStatusBadgeTone.success,
+              ),
+              PactaStatusBadge(
+                label: '待确认 ${counts.pendingCount}',
+                tone: PactaStatusBadgeTone.warning,
+              ),
+              PactaStatusBadge(
+                label: '熄灭 ${counts.extinguishedCount}',
+                tone: PactaStatusBadgeTone.neutral,
+              ),
+            ],
+          ),
+        );
+      }
+      // 今天真落有检查点失败时补失败行（最多 3 条 + 溢出提示），保留追溯
+      // 能力；否则一行都不加，实时计数只在上面出现一次。
+      if (failures.isNotEmpty) {
+        body.add(const SizedBox(height: 8));
+        for (final line in _failureLines(failures)) {
+          body.add(
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(line, style: theme.textTheme.bodySmall),
+            ),
+          );
+        }
+      }
+    } else if (isFuture) {
+      body.add(Text('未来日期还没有结算数据，不预先推断结果。', style: theme.textTheme.bodyMedium));
+    } else {
+      // 历史日期：没有真实失败记录就只能是「未知」，失败流读不到时也说
+      // 读不到——绝不把「无记录」推断成「全部确认」。
+      body.add(
+        Text(
+          _failuresFailed
+              ? '暂时不能读取国策失败记录，历史日期一律标记为未知。'
+              : failures.isEmpty
+              ? '历史日期只显示实际有数据支持的记录；没有记录时明确标记为未知。'
+              : '按账号显示时区归到这一天；检查点仍固定北京时间 04:00。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        ),
+      );
+      for (final line in _failureLines(failures)) {
+        body.add(
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(line, style: theme.textTheme.bodySmall),
+          ),
+        );
+      }
+    }
+
     return Material(
       color: scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(16),
@@ -512,68 +787,13 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
               Row(
                 children: [
                   Expanded(
-                    child: Text('今日国策状态', style: theme.textTheme.titleSmall),
+                    child: Text(title, style: theme.textTheme.titleSmall),
                   ),
-                  // 胶囊必须与真实状态一致：失败/加载/成功三态各自可读，绝不
-                  // 在读取失败时继续亮绿色成功色。
-                  if (_cardsFailed)
-                    const PactaStatusBadge(
-                      label: '读取失败',
-                      tone: PactaStatusBadgeTone.warning,
-                    )
-                  else if (_cards == null)
-                    const PactaStatusBadge(
-                      label: '读取中',
-                      tone: PactaStatusBadgeTone.neutral,
-                    )
-                  else
-                    const PactaStatusBadge(
-                      label: '实时状态',
-                      tone: PactaStatusBadgeTone.success,
-                    ),
+                  badge,
                 ],
               ),
               const SizedBox(height: 10),
-              if (_cardsFailed)
-                Text('国策状态暂不可用。', style: theme.textTheme.bodyMedium)
-              else if (counts == null)
-                Text('正在读取国策状态…', style: theme.textTheme.bodyMedium)
-              else if (counts.isEmpty)
-                Text('国策树尚无节点', style: theme.textTheme.bodyMedium)
-              else
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    PactaStatusBadge(
-                      label: '点亮 ${counts.litCount}',
-                      tone: PactaStatusBadgeTone.success,
-                    ),
-                    PactaStatusBadge(
-                      label: '待确认 ${counts.pendingCount}',
-                      tone: PactaStatusBadgeTone.warning,
-                    ),
-                    PactaStatusBadge(
-                      label: '熄灭 ${counts.extinguishedCount}',
-                      tone: PactaStatusBadgeTone.neutral,
-                    ),
-                  ],
-                ),
-              if (counts != null && counts.allPendingReview)
-                const Padding(
-                  padding: EdgeInsets.only(top: 6),
-                  child: Text('国策状态均待核对。'),
-                ),
-              if (counts != null && counts.pendingReview.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    '${counts.pendingReview.length} 个节点待核对，未计入上方汇总。',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-                ),
+              ...body,
               const SizedBox(height: 8),
               Text(
                 '点击查看国策树及具体节点状态 →',
@@ -585,6 +805,136 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
           ),
         ),
       ),
+    );
+  }
+
+  /// 顶槽置顶视图：最多两条，保留按住拖动排序与长按操作菜单。
+  Widget _buildPinnedSlot(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final goals = widget.pinnedGoals;
+    final visible = goals.take(_pinnedSlotLimit).toList(growable: false);
+    final repository = widget.goalRepository;
+    final children = <Widget>[
+      if (widget.pinnedGoalsFailed)
+        Row(
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: PactaIconSizes.compact,
+              color: scheme.error,
+            ),
+            const SizedBox(width: 8),
+            const Expanded(child: Text('暂时不能读取目标列表。')),
+            const SizedBox(width: 8),
+            OutlinedButton(
+              key: const ValueKey('board-top-slot-pinned-retry'),
+              onPressed: widget.onRetryProjection,
+              child: const Text('重试'),
+            ),
+          ],
+        )
+      else if (visible.isEmpty)
+        Text(
+          '还没有置顶目标。',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: scheme.onSurfaceVariant,
+          ),
+        )
+      else if (repository == null)
+        // 只读多置顶：CardThemeData 外边距为零，两张卡直接贴在一起会变成
+        // 一整块；用与可拖拽列表同一档 8dp 间距分开。
+        for (final (index, goal) in visible.indexed) ...[
+          if (index > 0) const SizedBox(height: PactaSpacing.sm),
+          _pinnedGoalTile(context, goal),
+        ]
+      else
+        PactaHoldReorderList(
+          itemCount: visible.length,
+          itemSpacing: 8,
+          proxyBorderRadius: PactaSpacing.cardRadius,
+          onReorder: _reorderPinned,
+          onHoldMenu: (index) => _openPinnedActions(context, visible[index]),
+          itemBuilder: (context, index) =>
+              _pinnedGoalTile(context, visible[index]),
+        ),
+      if (goals.length > _pinnedSlotLimit)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            key: const ValueKey('board-top-slot-pinned-all'),
+            onPressed: widget.onOpenPlan,
+            style: TextButton.styleFrom(
+              minimumSize: const Size(0, 40),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+            ),
+            child: Text('查看全部 ${goals.length} 个 →'),
+          ),
+        ),
+    ];
+    return Material(
+      color: scheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        ),
+      ),
+    );
+  }
+
+  Widget _pinnedGoalTile(BuildContext context, Goal goal) {
+    return Card(
+      key: ValueKey('board-pinned-goal-${goal.id}'),
+      margin: EdgeInsets.zero,
+      child: ListTile(
+        dense: true,
+        leading: const Icon(Icons.push_pin, size: PactaIconSizes.compact),
+        title: Text(goal.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          goal.nextTask == null ? '暂无任务' : '下一项：${goal.nextTask!.title}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+    );
+  }
+
+  /// 只重排可见的前两条，但写回的是全部置顶 ID：原第 3..N 个按原序接在
+  /// 后面，绝不因为顶槽只显示两条就把后面的置顶目标挤掉。
+  void _reorderPinned(int oldIndex, int newIndex) {
+    final repository = widget.goalRepository;
+    if (repository == null) return;
+    final ids = [for (final goal in widget.pinnedGoals) goal.id];
+    final head = ids.take(_pinnedSlotLimit).toList();
+    if (head.length < 2 || oldIndex < 0 || oldIndex >= head.length) return;
+    final moved = head.removeAt(oldIndex);
+    final target = newIndex < 0
+        ? 0
+        : newIndex > head.length
+        ? head.length
+        : newIndex;
+    head.insert(target, moved);
+    unawaited(
+      savePinnedGoalOrder(
+        context: context,
+        repository: repository,
+        orderedGoalIds: <String>[...head, ...ids.skip(head.length)],
+      ),
+    );
+  }
+
+  void _openPinnedActions(BuildContext context, Goal goal) {
+    final repository = widget.goalRepository;
+    if (repository == null) return;
+    openPinnedGoalActions(
+      context,
+      goal: goal,
+      repository: repository,
+      onOpenPlan: widget.onOpenPlan,
     );
   }
 
@@ -615,11 +965,14 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
                     onPressed: month == null
                         ? null
                         : () => _showMonth(month.year, month.month - 1),
-                    icon: const Icon(Icons.chevron_left),
+                    icon: const Icon(
+                      Icons.chevron_left,
+                      size: PactaIconSizes.md,
+                    ),
                   ),
-                  // 完整年月，与 FocusMonthPage / PlanCalendarView 的
-                  // 「2026年11月」一致；窄屏或 2 倍字号下由外层 Wrap 换行、
-                  // 文本自身省略，绝不把卡片撑破。
+                  // 完整年月，与 PlanCalendarView 的「2026年11月」一致；
+                  // 窄屏或 2 倍字号下由外层 Wrap 换行、文本自身省略，绝不
+                  // 把卡片撑破。
                   Flexible(
                     child: Text(
                       month == null ? '月份待确认' : '${month.year}年${month.month}月',
@@ -635,7 +988,10 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
                     onPressed: month == null
                         ? null
                         : () => _showMonth(month.year, month.month + 1),
-                    icon: const Icon(Icons.chevron_right),
+                    icon: const Icon(
+                      Icons.chevron_right,
+                      size: PactaIconSizes.md,
+                    ),
                   ),
                 ],
               ),
@@ -653,7 +1009,11 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
             child: Row(
               children: [
-                Icon(Icons.error_outline, size: 20, color: scheme.error),
+                Icon(
+                  Icons.error_outline,
+                  size: PactaIconSizes.compact,
+                  color: scheme.error,
+                ),
                 const SizedBox(width: 10),
                 const Expanded(child: Text('暂时不能读取专注投影。')),
                 const SizedBox(width: 8),
@@ -818,7 +1178,16 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
             foregroundColor: foreground,
             minHeight: 48,
             borderRadius: 12,
-            onTap: () => setState(() => _selectedDay = day),
+            // Q8 #2：正停在「置顶目标」页签时点任意日期格，立即切回
+            // 「国策状态」，让用户马上看到所选日期的结论；这也算一次手动
+            // 选择，后续流刷新不再改写页签。
+            onTap: () => setState(() {
+              _selectedDay = day;
+              if (_topSlotTab == _TopSlotTab.pinned) {
+                _topSlotTabChosen = true;
+                _topSlotTab = _TopSlotTab.status;
+              }
+            }),
             // 热力月历的固定形态：'今' 居中置顶、底部恒定 8dp 指示轨，
             // 右上角不再挂任何标记。
             centerTodayLabel: true,
@@ -886,23 +1255,9 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final metrics = _metrics;
-    final header = Wrap(
-      alignment: WrapAlignment.spaceBetween,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 8,
-      children: [
-        Text('日期详情', style: theme.textTheme.titleSmall),
-        TextButton(
-          key: const ValueKey('board-focus-open-month'),
-          onPressed: month == null ? null : widget.onOpenFocusMonth,
-          style: TextButton.styleFrom(
-            minimumSize: const Size(0, 48),
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-          ),
-          child: const Text('完整月历 →'),
-        ),
-      ],
-    );
+    // 完整月历二级页已删除：日期详情只回答「这一天的专注时长与安排」，
+    // 国策结论统一由卡片顶部的动态选中日状态卡给出，这里不再复述。
+    final header = Text('日期详情', style: theme.textTheme.titleSmall);
     // 失败必须先于加载判定：_restartMonth 出错时把 _metrics 置空且
     // _loading=false，若这里先看 metrics 就会把失败永久说成「正在读取」。
     if (_error != null) {
@@ -913,7 +1268,11 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
           const SizedBox(height: 4),
           Row(
             children: [
-              Icon(Icons.error_outline, size: 20, color: scheme.error),
+              Icon(
+                Icons.error_outline,
+                size: PactaIconSizes.compact,
+                color: scheme.error,
+              ),
               const SizedBox(width: 10),
               const Expanded(child: Text('暂时不能读取这一天的专注记录。')),
               const SizedBox(width: 8),
@@ -951,23 +1310,8 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
         date.month == today.month &&
         date.day == today.day;
     final daySeconds = metrics.activeSecondsOn(date);
-    final failures = _failuresOn(date);
-    // 今天：实时汇总只在卡片顶部的「今日国策状态」里出现一次，这里不再
-    // 复述点亮/待确认/熄灭；只有真的落有检查点失败时才补一行失败记录，
-    // 保留追溯能力而零重复。未来日与历史日仍由国策记录区块给结论。
-    final nationalFocusSection = isToday
-        ? <Widget>[
-            if (failures.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text('今日失败记录', style: theme.textTheme.bodyMedium),
-              for (final line in _failureLines(failures))
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(line, style: theme.textTheme.bodySmall),
-                ),
-            ],
-          ]
-        : _recordSection(context, _nationalFocusRecordFor(date, today));
+    // 点亮/待确认/熄灭、失败行、历史未知与未来未结算全部只在顶部动态
+    // 状态卡里出现一次；日期详情不再重复「国策记录」区块。
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -993,44 +1337,9 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
             color: daySeconds > 0 ? scheme.primary : scheme.onSurfaceVariant,
           ),
         ),
-        ...nationalFocusSection,
         ..._buildScheduleSection(context, date: date, isToday: isToday),
       ],
     );
-  }
-
-  /// 「国策记录」结论区块：未来日明确未结算，历史日只认真实失败记录。
-  List<Widget> _recordSection(
-    BuildContext context,
-    _DayNationalFocusRecord record,
-  ) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
-    return [
-      const SizedBox(height: 10),
-      Row(
-        children: [
-          Expanded(child: Text('国策记录', style: theme.textTheme.bodyMedium)),
-          PactaStatusBadge(
-            key: const ValueKey('board-focus-day-record'),
-            label: record.label,
-            tone: record.tone,
-          ),
-        ],
-      ),
-      const SizedBox(height: 4),
-      Text(
-        record.note,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: scheme.onSurfaceVariant,
-        ),
-      ),
-      for (final line in record.details)
-        Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(line, style: theme.textTheme.bodySmall),
-        ),
-    ];
   }
 
   /// 紧凑只读「安排」区块：只列标题、完成状态与账号时区里的实际时刻。
@@ -1071,7 +1380,11 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
       else if (failed)
         Row(
           children: [
-            Icon(Icons.error_outline, size: 18, color: scheme.error),
+            Icon(
+              Icons.error_outline,
+              size: PactaIconSizes.sm,
+              color: scheme.error,
+            ),
             const SizedBox(width: 8),
             const Expanded(child: Text('暂时不能读取安排。')),
             const SizedBox(width: 8),
@@ -1109,7 +1422,7 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: schedule.isCompleted
-                        ? const TextStyle(
+                        ? theme.textTheme.bodyMedium?.copyWith(
                             decoration: TextDecoration.lineThrough,
                           )
                         : null,
@@ -1124,23 +1437,6 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
             ),
           ),
     ];
-  }
-
-  /// 选中日的国策记录：未来明确未结算、历史只认真实失败记录。
-  ///
-  /// 今天不走这里：今日汇总已在卡片顶部展示，重复一次只会制造两个数字。
-  _DayNationalFocusRecord _nationalFocusRecordFor(
-    DateTime date,
-    DateTime today,
-  ) {
-    if (date.isAfter(today)) {
-      return const _DayNationalFocusRecord(
-        label: '未到结算',
-        tone: PactaStatusBadgeTone.neutral,
-        note: '未来日期还没有结算数据，不预先推断结果。',
-      );
-    }
-    return _historyRecord(date);
   }
 
   /// 某一天（卡片内部用 UTC 日期值表示）在这份只读安排里的行。
@@ -1160,55 +1456,69 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
     if (failures.length > 3) '等 ${failures.length} 个节点',
   ];
 
-  _DayNationalFocusRecord _historyRecord(DateTime date) {
-    final failures = _failuresOn(date);
-    if (failures.isEmpty) {
-      return _DayNationalFocusRecord(
-        label: '未知',
-        tone: PactaStatusBadgeTone.neutral,
-        note: _failuresFailed
-            ? '暂时不能读取国策失败记录，历史日期一律标记为未知。'
-            : '历史日期只显示实际有数据支持的记录；没有记录时明确标记为未知。',
-      );
-    }
-    final extinguishing = failures.any(
-      (failure) => failure.cause == NationalFocusFailureCause.activeExtinguish,
-    );
-    final details = <String>[
-      for (final failure in failures.take(3))
-        '${_failureCardName(failure)} · ${failure.cause.label}',
-      if (failures.length > 3) '等 ${failures.length} 个节点',
-    ];
-    return _DayNationalFocusRecord(
-      label: '有失败记录',
-      tone: extinguishing
-          ? PactaStatusBadgeTone.error
-          : PactaStatusBadgeTone.warning,
-      note: '按账号显示时区归到这一天；检查点仍固定北京时间 04:00。',
-      details: details,
-    );
-  }
-
   String _failureCardName(NationalFocusFailure failure) {
     for (final snapshot in failure.treeSnapshot) {
       if (snapshot.id == failure.cardId) return snapshot.name;
     }
-    return failure.cardId;
+    // 卡片已被移除时快照里没有名字：不把内部 UUID 当成用户可见名称。
+    return '已移除的国策卡';
   }
 }
 
-/// 一天的国策记录结论：徽标文案、语气、诚实说明与可选的节点明细。
-@immutable
-class _DayNationalFocusRecord {
-  const _DayNationalFocusRecord({
+/// 分段胶囊的一枚标签：选中态用主色容器，未选中态保持中性表面。
+///
+/// 胶囊是顶槽的页签，不是主操作：高度 34dp、横向 12dp 内边距，选中不只
+/// 靠颜色表达——[Semantics] 同时给出 selected 状态。
+class _TopSlotPill extends StatelessWidget {
+  const _TopSlotPill({
+    super.key,
     required this.label,
-    required this.tone,
-    required this.note,
-    this.details = const [],
+    required this.selected,
+    required this.onTap,
   });
 
   final String label;
-  final PactaStatusBadgeTone tone;
-  final String note;
-  final List<String> details;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: Material(
+        color: selected
+            ? scheme.primaryContainer
+            : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(999),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: onTap,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 34),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              child: Center(
+                widthFactor: 1,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    color: selected
+                        ? scheme.onPrimaryContainer
+                        : scheme.onSurfaceVariant,
+                    fontWeight: selected ? PactaFonts.semibold : null,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

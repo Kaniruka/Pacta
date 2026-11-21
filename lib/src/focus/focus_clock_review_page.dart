@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme/pacta_icon_sizes.dart';
+import '../theme/pacta_spacing.dart';
 import '../ui/pacta_date_format.dart';
 import '../ui/pacta_error_text.dart';
 import 'focus_models.dart';
@@ -85,10 +87,13 @@ class _FocusClockReviewPageState extends State<FocusClockReviewPage> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 800),
               child: ListView.separated(
-                padding: const EdgeInsets.all(16),
+                padding: PactaSpacing.pageInsets(
+                  context,
+                  bottom: PactaSpacing.lg,
+                ),
                 itemCount: cases.length,
                 separatorBuilder: (context, index) =>
-                    const SizedBox(height: 12),
+                    const SizedBox(height: PactaSpacing.md),
                 itemBuilder: (context, index) =>
                     _reviewCard(context, cases[index]),
               ),
@@ -109,14 +114,14 @@ class _FocusClockReviewPageState extends State<FocusClockReviewPage> {
     final busy = _busyCaseIds.contains(reviewCase.id);
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(PactaSpacing.lg),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                const Icon(Icons.schedule, size: 20),
-                const SizedBox(width: 8),
+                const Icon(Icons.schedule, size: PactaIconSizes.compact),
+                const SizedBox(width: PactaSpacing.sm),
                 Expanded(
                   child: Text(
                     '设备时钟$direction',
@@ -151,7 +156,7 @@ class _FocusClockReviewPageState extends State<FocusClockReviewPage> {
                 children: [
                   TextButton.icon(
                     onPressed: () => _defer(reviewCase),
-                    icon: const Icon(Icons.snooze),
+                    icon: const Icon(Icons.snooze, size: PactaIconSizes.sm),
                     label: const Text('稍后处理'),
                   ),
                   FilledButton.tonal(

@@ -93,13 +93,16 @@ class _Host {
     Brightness brightness = Brightness.light,
     CalendarAlmanac? almanac,
     DateTime? today,
+    double textScale = 1,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     tester.platformDispatcher.platformBrightnessTestValue = brightness;
+    tester.platformDispatcher.textScaleFactorTestValue = textScale;
     await tester.pumpWidget(
       MaterialApp(
         theme: pactaTheme(brightness),
@@ -185,6 +188,40 @@ Color? _selectedRingColor(WidgetTester tester, DateTime day) {
   return _borderColor(decoration?.border as Border?);
 }
 
+/// 日期格里的公历数字颜色。
+Color? _dayNumberColor(WidgetTester tester, DateTime day) {
+  final finder = find.descendant(
+    of: find.byKey(_dayKey(day)),
+    matching: find.text('${day.day}'),
+  );
+  return tester.widget<Text>(finder.first).style?.color;
+}
+
+/// 日期格第二行的农历/节气短标签颜色；没有副标签时返回 null。
+Color? _subLabelColor(WidgetTester tester, DateTime day) {
+  final finder = find.descendant(
+    of: find.byKey(_dayKey(day)),
+    matching: find.byWidgetPredicate(
+      (widget) =>
+          widget is Text &&
+          widget.data != null &&
+          widget.data != '${day.day}' &&
+          widget.data != '今',
+    ),
+  );
+  if (finder.evaluate().isEmpty) return null;
+  return tester.widget<Text>(finder.first).style?.color;
+}
+
+Rect _dayNumberRect(WidgetTester tester, DateTime day) => tester.getRect(
+  find
+      .descendant(
+        of: find.byKey(_dayKey(day)),
+        matching: find.text('${day.day}'),
+      )
+      .first,
+);
+
 Future<void> _tapDay(WidgetTester tester, DateTime day) async {
   await tester.tap(find.byKey(_dayKey(day)));
   await tester.pumpAndSettle();
@@ -232,8 +269,10 @@ void main() {
       expect(find.byKey(_dotKey(allComplete)), findsNothing);
       expect(_cellColor(tester, mixed), colors.hasPlansBackground);
       expect(find.byKey(_dotKey(mixed)), findsOneWidget);
-      expect(_cellColor(tester, noPlans), isNull);
+      expect(_cellColor(tester, noPlans), colors.heat0Background);
       expect(_cellBorder(tester, noPlans), isNull);
+      expect(_dayNumberColor(tester, noPlans), colors.heat0Foreground);
+      expect(_subLabelColor(tester, noPlans), colors.heat0Foreground);
       expect(find.byKey(_dotKey(noPlans)), findsNothing);
 
       var data = tester
@@ -255,7 +294,7 @@ void main() {
         reason: '今天回到未选中仍保留黄色底',
       );
       expect(_borderColor(_cellBorder(tester, today)), colors.todayBorder);
-      expect(_cellColor(tester, noPlans), isNull);
+      expect(_cellColor(tester, noPlans), colors.heat0Background);
       expect(_borderColor(_cellBorder(tester, noPlans)), colors.selectedBorder);
       expect(_borderWidth(_cellBorder(tester, noPlans)), 2);
       expect(_borderedLayerCount(tester, noPlans), 0);
@@ -270,9 +309,11 @@ void main() {
       );
       expect(find.byKey(_checkKey(allComplete)), findsOneWidget);
 
+      // 360dp 七列每列 51.43dp，统一 2dp 外间隙后日格仍有 47.43dp 宽、
+      // 64dp 高；视觉间隙与看板热力月历一致，且不产生任何溢出。
       final cellRect = tester.getRect(find.byKey(_dayKey(hasPlans)));
-      expect(cellRect.width, greaterThanOrEqualTo(48));
-      expect(cellRect.height, greaterThanOrEqualTo(48));
+      expect(cellRect.width, closeTo(360 / 7 - 4, 0.01));
+      expect(cellRect.height, greaterThanOrEqualTo(64));
 
       await host.pump(
         tester,
@@ -293,6 +334,9 @@ void main() {
       );
       expect(_cellColor(tester, hasPlans), colors.hasPlansBackground);
       expect(_cellColor(tester, allComplete), colors.allCompleteBackground);
+      expect(_cellColor(tester, noPlans), colors.heat0Background);
+      expect(_dayNumberColor(tester, noPlans), colors.heat0Foreground);
+      expect(_subLabelColor(tester, noPlans), colors.heat0Foreground);
       expect(
         Theme.of(tester.element(find.byType(PlanCalendarView))).brightness,
         Brightness.dark,
@@ -386,7 +430,7 @@ void main() {
       await host.dispose(tester);
     }
   });
-  testWidgets('真实 PactaApp 在 360 宽下日格命中区不小于 48dp', (tester) async {
+  testWidgets('真实 PactaApp 在 360 宽下统一间隙后日格仍不小于 44×64dp', (tester) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -431,8 +475,10 @@ void main() {
       await tester.tap(find.text('日历'));
       await settle();
       final rect = tester.getRect(find.byKey(_dayKey(DateTime(2026, 11, 18))));
-      expect(rect.width, greaterThanOrEqualTo(48));
-      expect(rect.height, greaterThanOrEqualTo(48));
+      // 页面在 360dp 下给日历 12dp 页边距：(360-24)/7 = 48dp 列宽，
+      // 再让出 2dp×2 的视觉间隙后仍有 44×64dp 的命中区，且零溢出。
+      expect(rect.width, greaterThanOrEqualTo(44 - 0.01));
+      expect(rect.height, greaterThanOrEqualTo(64));
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 1));
@@ -440,6 +486,169 @@ void main() {
       await schedules.dispose().timeout(limit, onTimeout: () {});
       await tasks.dispose().timeout(limit, onTimeout: () {});
       await database.close().timeout(limit, onTimeout: () {});
+    }
+  });
+
+  testWidgets('普通日统一 heat0 底块、统一间隙与底部居中指示槽', (tester) async {
+    final host = _Host.create();
+    try {
+      final mixed = DateTime(2026, 11, 16);
+      final allComplete = DateTime(2026, 11, 17);
+      final today = DateTime(2026, 11, 18);
+      final ordinary = DateTime(2026, 11, 19);
+      final hasPlans = DateTime(2026, 11, 20);
+      final completed = DateTime(2026, 11, 21);
+      final ordinaryEnd = DateTime(2026, 11, 22);
+      await host.addSchedule(mixed, title: '已完成一项', completed: true);
+      await host.addSchedule(mixed, title: '未完成一项');
+      await host.addSchedule(allComplete, title: '全部完成', completed: true);
+      await host.addSchedule(hasPlans, title: '只有未完成');
+      await host.addSchedule(completed, title: '另一天完成', completed: true);
+      await host.pump(tester, today, size: const Size(364, 1200), today: today);
+      const colors = PactaCalendarColors.light;
+
+      // 普通有效日也铺中性 heat0 底块（不再是 null/白底），公历数字与
+      // 农历副标签都取 heat0 前景。
+      expect(_cellColor(tester, ordinary), colors.heat0Background);
+      expect(_dayNumberColor(tester, ordinary), colors.heat0Foreground);
+      expect(_subLabelColor(tester, ordinary), colors.heat0Foreground);
+      expect(_cellColor(tester, ordinaryEnd), colors.heat0Background);
+
+      // 七列统一 2dp 外间隙：364/7 = 52dp 列宽，日格 48dp，相邻列间隔 4dp。
+      final week = <DateTime>[
+        mixed,
+        allComplete,
+        today,
+        ordinary,
+        hasPlans,
+        completed,
+        ordinaryEnd,
+      ];
+      final widths = <double>[];
+      final heights = <double>[];
+      final centers = <double>[];
+      for (final day in week) {
+        final rect = tester.getRect(find.byKey(_dayKey(day)));
+        widths.add(rect.width);
+        heights.add(rect.height);
+        centers.add(_dayNumberRect(tester, day).center.dy);
+      }
+      for (final width in widths) {
+        expect(width, closeTo(364 / 7 - 4, 0.01), reason: '统一 2dp 外间隙');
+      }
+      // 未选中的日格必须完全等高；今天/选中日只多出 2dp 描边的上下内缩
+      // （4dp），内容中心不变，指示槽本身高度恒定。
+      final staticHeights = {
+        for (var index = 0; index < week.length; index++)
+          if (week[index] != today) heights[index],
+      };
+      expect(staticHeights.length, 1, reason: '恒定底部指示槽让无描边日格等高：$heights');
+      expect(
+        heights[week.indexOf(today)] - staticHeights.first,
+        closeTo(4, 0.01),
+        reason: '选中/今天只多出 2dp 描边内缩：$heights',
+      );
+      final lowestCenter = centers.reduce((a, b) => a < b ? a : b);
+      final highestCenter = centers.reduce((a, b) => a > b ? a : b);
+      expect(
+        highestCenter - lowestCenter,
+        lessThanOrEqualTo(0.5),
+        reason: '有无状态点的日期数字基线必须齐平：$centers',
+      );
+      expect(
+        tester.getRect(find.byKey(_dayKey(allComplete))).left -
+            tester.getRect(find.byKey(_dayKey(mixed))).right,
+        closeTo(4, 0.01),
+        reason: '相邻日格视觉间隙为 2dp + 2dp',
+      );
+
+      // '今' 独占 12dp 顶栏并水平居中，位于公历数字上方。
+      final todayCell = tester.getRect(find.byKey(_dayKey(today)));
+      final todayLabel = tester.getRect(
+        find.descendant(
+          of: find.byKey(_dayKey(today)),
+          matching: find.text('今'),
+        ),
+      );
+      final todayNumber = _dayNumberRect(tester, today);
+      expect(todayLabel.center.dx, closeTo(todayCell.center.dx, 0.5));
+      expect(todayLabel.top, greaterThanOrEqualTo(todayCell.top));
+      expect(todayLabel.bottom, lessThanOrEqualTo(todayNumber.top));
+
+      // 未完成圆点：5dp，落在底部指示槽的水平中心，且位于日期数字下方。
+      final dot = tester.getRect(find.byKey(_dotKey(mixed)));
+      final mixedCell = tester.getRect(find.byKey(_dayKey(mixed)));
+      final mixedNumber = _dayNumberRect(tester, mixed);
+      expect(dot.size, const Size(5, 5));
+      expect(dot.center.dx, closeTo(mixedCell.center.dx, 0.5));
+      expect(dot.top, greaterThanOrEqualTo(mixedNumber.bottom - 0.01));
+      expect(dot.bottom, lessThanOrEqualTo(mixedCell.bottom));
+      expect(_markerColor(tester, mixed), colors.hasPlansForeground);
+
+      // 全部完成勾：8dp，完整落在 8dp 槽内（不会上下各溢出 1dp）。
+      final check = tester.getRect(find.byKey(_checkKey(allComplete)));
+      final completeCell = tester.getRect(find.byKey(_dayKey(allComplete)));
+      final completeNumber = _dayNumberRect(tester, allComplete);
+      expect(check.size, const Size(8, 8));
+      expect(check.center.dx, closeTo(completeCell.center.dx, 0.5));
+      expect(check.top, greaterThanOrEqualTo(completeNumber.bottom - 0.01));
+      expect(check.bottom, lessThanOrEqualTo(completeCell.bottom));
+      expect(
+        tester.widget<Icon>(find.byKey(_checkKey(allComplete))).color,
+        colors.allCompleteForeground,
+      );
+
+      // 普通日没有点/勾，但仍保留同样的底部槽：格子高度与今天/完成日一致。
+      expect(find.byKey(_dotKey(ordinary)), findsNothing);
+      expect(find.byKey(_checkKey(ordinary)), findsNothing);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await host.dispose(tester);
+    }
+  });
+
+  testWidgets('320/360 宽与亮暗主题零溢出，农历副标签固定单行', (tester) async {
+    final host = _Host.create();
+    try {
+      final today = DateTime(2026, 2, 17);
+      await host.addSchedule(DateTime(2026, 2, 18), title: '假期安排');
+      for (final brightness in Brightness.values) {
+        for (final width in <double>[320, 360]) {
+          await host.pump(
+            tester,
+            today,
+            size: Size(width, 1000),
+            brightness: brightness,
+            almanac: _assetAlmanac(),
+            today: today,
+            textScale: 2,
+          );
+          expect(
+            tester.takeException(),
+            isNull,
+            reason: '$width × $brightness 不允许溢出',
+          );
+          final label = tester.widget<Text>(
+            find.descendant(
+              of: find.byKey(_dayKey(today)),
+              matching: find.text('春节'),
+            ),
+          );
+          expect(label.maxLines, 1);
+          expect(label.softWrap, isFalse);
+          expect(label.overflow, TextOverflow.ellipsis);
+          final columnWidth = width / 7;
+          final cell = tester.getRect(find.byKey(_dayKey(today)));
+          expect(
+            cell.width,
+            closeTo(columnWidth - (columnWidth >= 46 ? 4 : 2), 0.01),
+            reason: '$width 宽下统一间隙后的日格宽度',
+          );
+          expect(cell.height, greaterThanOrEqualTo(64));
+        }
+      }
+    } finally {
+      await host.dispose(tester);
     }
   });
 
@@ -457,6 +666,10 @@ void main() {
         (colors.hasPlansBackground, colors.holidayForeground),
         (colors.allCompleteBackground, colors.holidayForeground),
         (colors.selectedBackground, colors.holidayForeground),
+        // 普通有效日铺 heat0 中性底块：公历数字、农历副标签与 '今' 微字
+        // 都必须在这个新底块上达到 AA。
+        (colors.heat0Background, colors.heat0Foreground),
+        (colors.heat0Background, colors.todayLabelColor),
       ]) {
         final ratio = _contrast(pair.$1, pair.$2);
         expect(
@@ -471,6 +684,7 @@ void main() {
         colors.selectedBackground,
         colors.allCompleteBackground,
         colors.holidayBackground,
+        colors.heat0Background,
       ]) {
         final ratio = _contrast(colors.todayBorder, background);
         expect(

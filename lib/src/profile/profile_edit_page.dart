@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_error_text.dart';
 import '../ui/pacta_grouped_list.dart';
@@ -370,7 +371,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                 radius: 44,
                 backgroundImage: avatar == null ? null : MemoryImage(avatar),
                 child: avatar == null
-                    ? const Icon(Icons.person_outline, size: 32)
+                    ? const Icon(Icons.person_outline, size: PactaIconSizes.lg)
                     : null,
               ),
             ),
@@ -430,7 +431,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                 const SizedBox(width: PactaSpacing.xs),
                 Icon(
                   Icons.info_outline,
-                  size: 18,
+                  size: PactaIconSizes.sm,
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ],

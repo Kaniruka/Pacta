@@ -180,7 +180,8 @@ class _AdminPasswordResetCardState extends State<AdminPasswordResetCard> {
               child: Text(
                 _message!,
                 style: _hasError
-                    ? TextStyle(color: Theme.of(context).colorScheme.error)
+                    ? Theme.of(context).textTheme.bodyMedium
+                          ?.copyWith(color: Theme.of(context).colorScheme.error)
                     : null,
               ),
             ),

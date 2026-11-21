@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../app/app_providers.dart';
 import '../focus/focus_clock_review_page.dart';
 import '../focus/focus_models.dart';
-import '../focus/focus_month_page.dart';
 import '../focus/focus_repository.dart';
 import '../national_focus/national_focus_models.dart';
 import '../national_focus/national_focus_repository.dart';
@@ -17,9 +16,11 @@ import '../profile/profile_repository.dart';
 import '../schedules/schedule_repository.dart';
 import '../tasks/task_models.dart';
 import '../tasks/task_repository.dart';
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_hold_action_reorder.dart';
 import '../ui/pacta_page_header.dart';
+import 'board_pinned_goal_actions.dart';
 import 'focus_national_calendar_card.dart';
 
 class _FocusClockReviewPrompt extends StatelessWidget {
@@ -40,14 +41,20 @@ class _FocusClockReviewPrompt extends StatelessWidget {
           child: Card(
             color: Theme.of(context).colorScheme.tertiaryContainer,
             child: ListTile(
-              leading: const Icon(Icons.schedule_outlined),
+              leading: const Icon(
+                Icons.schedule_outlined,
+                size: PactaIconSizes.md,
+              ),
               title: Text('${cases.length} 段专注时间待核对'),
               subtitle: Text(
                 deferredCount == 0
                     ? '时钟变化后的区间保留待核对，不会直接判为失败。'
                     : '$deferredCount 段已暂缓；可靠时间仍可继续使用。',
               ),
-              trailing: const Icon(Icons.chevron_right),
+              trailing: const Icon(
+                Icons.chevron_right,
+                size: PactaIconSizes.compact,
+              ),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => FocusClockReviewPage(repository: repository),
@@ -90,10 +97,16 @@ class _FailureReviewPrompt extends StatelessWidget {
             color: Theme.of(context).colorScheme.tertiaryContainer,
             child: ListTile(
               key: const ValueKey('board-failure-review-hint'),
-              leading: const Icon(Icons.history_toggle_off),
+              leading: const Icon(
+                Icons.history_toggle_off,
+                size: PactaIconSizes.md,
+              ),
               title: Text('${pendingBatches.length} 组国策失败待回顾'),
               subtitle: const Text('稍后再看也可以；回顾只做标记，不改动当时的失败结果。'),
-              trailing: const Icon(Icons.chevron_right),
+              trailing: const Icon(
+                Icons.chevron_right,
+                size: PactaIconSizes.compact,
+              ),
               // 直达 10 号已有的失败记录页，而不是只切换主导航；
               // 完整回顾仍在那一页里进入冻结树二级页。
               onTap: () => Navigator.of(context).push(
@@ -136,22 +149,6 @@ class _BoardPageState extends ConsumerState<BoardPage> {
     setState(() => _projectionGeneration += 1);
   }
 
-  /// 看板只提供入口：投影、时区门禁、错误重试都由月历页自己负责，
-  /// 这里不复制它的读取或写入路径。owner 与时钟在打开时绑定，
-  /// 账号变化由路由自己退出，避免显示上一个账号的月份。
-  void _openFocusMonth() {
-    Navigator.of(context).push<void>(
-      MaterialPageRoute<void>(
-        builder: (_) => _FocusMonthRoute(
-          ownerUserId: ref.read(authUserIdProvider),
-          repository: ref.read(focusRepositoryProvider),
-          profileRepository: ref.read(profileRepositoryProvider),
-          now: ref.read(displayClockProvider),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final taskRepository = ref.watch(taskRepositoryProvider);
@@ -182,7 +179,6 @@ class _BoardPageState extends ConsumerState<BoardPage> {
         scheduleRepository: scheduleRepository,
         onOpenNationalFocus: widget.onOpenNationalFocus,
         onOpenPlan: widget.onOpenPlan,
-        onOpenFocusMonth: _openFocusMonth,
         goals: projection.goals,
         accountFailed: projection.accountFailed,
         goalsFailed: projection.goalsFailed,
@@ -339,40 +335,6 @@ class _BoardProjectionScopeState extends State<_BoardProjectionScope> {
   }
 }
 
-/// 只读月历路由：owner 变化时退出，不把上一个账号的投影留在屏幕上。
-class _FocusMonthRoute extends ConsumerWidget {
-  const _FocusMonthRoute({
-    required this.ownerUserId,
-    required this.repository,
-    required this.profileRepository,
-    required this.now,
-  });
-
-  final String? ownerUserId;
-  final FocusRepository repository;
-  final ProfileRepository profileRepository;
-  final DateTime Function() now;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    if (ref.watch(authUserIdProvider) != ownerUserId) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) {
-          Navigator.of(context).popUntil((route) => route.isFirst);
-        }
-      });
-      return const SizedBox.shrink();
-    }
-    return FocusMonthPage(
-      repository: repository,
-      accountTimeZoneIds: () => profileRepository.watchProfile().map(
-        (profile) => profile.displayTimeZoneId,
-      ),
-      now: now,
-    );
-  }
-}
-
 class _BoardContent extends StatelessWidget {
   const _BoardContent({
     required this.displayTimeZoneId,
@@ -384,7 +346,6 @@ class _BoardContent extends StatelessWidget {
     required this.scheduleRepository,
     required this.onOpenNationalFocus,
     required this.onOpenPlan,
-    required this.onOpenFocusMonth,
     required this.goals,
     required this.accountFailed,
     required this.goalsFailed,
@@ -405,7 +366,6 @@ class _BoardContent extends StatelessWidget {
   final ScheduleRepository scheduleRepository;
   final VoidCallback onOpenNationalFocus;
   final VoidCallback onOpenPlan;
-  final VoidCallback onOpenFocusMonth;
   final List<Goal> goals;
 
   /// 账号资料读取失败：时区退回统一兜底值，卡片里要说明这一点。
@@ -426,12 +386,13 @@ class _BoardContent extends StatelessWidget {
       title: '看板',
       trailing: TextButton.icon(
         onPressed: onOpenPlan,
-        icon: const Icon(Icons.event_note_outlined),
+        icon: const Icon(Icons.event_note_outlined, size: PactaIconSizes.sm),
         label: const Text('打开计划'),
       ),
     );
-    // 空置顶目标完全隐藏：没有置顶、也没有读取失败时，整块「置顶目标」
-    // 标题、「管理」入口与空卡片都不存在，融合卡直接贴着页头。
+    // 宽屏左栏的置顶摘要：没有置顶、也没有读取失败时，整块「置顶目标」
+    // 标题、「管理」入口与空卡片都不存在，融合卡直接贴着页头。单栏不用
+    // 这个区块——置顶目标并进了融合卡顶槽的胶囊切换。
     final showPinnedSection = pinned.isNotEmpty || goalsFailed;
     final pinnedSection = showPinnedSection
         ? _PinnedGoalSummarySection(
@@ -454,25 +415,31 @@ class _BoardContent extends StatelessWidget {
         ),
       ],
     );
-    // 原「国策状态」「近期专注活动」以及独立的「今日安排」融合为一张：
-    // 今日国策实时状态直达国策树，热力月历与日期详情直达完整月历，当天
-    // 安排只读地并进日期详情，不再各占一张卡。
-    final fusedCard = FocusNationalCalendarCard(
-      focusRepository: focusRepository,
-      nationalFocusRepository: nationalFocusRepository,
-      scheduleRepository: scheduleRepository,
-      displayTimeZoneId: zoneResolved ? displayTimeZoneId : null,
-      now: now,
-      accountFailed: accountFailed,
-      onOpenNationalFocus: onOpenNationalFocus,
-      onOpenFocusMonth: onOpenFocusMonth,
-      onRetryProjection: onRetryProjection,
-    );
     return LayoutBuilder(
       builder: (context, constraints) {
         final twoColumn =
             constraints.maxWidth >= 960 &&
             MediaQuery.textScalerOf(context).scale(1) < 1.6;
+        // 原「国策状态」「近期专注活动」以及独立的「今日安排」融合为一张：
+        // 顶槽随选中日给出国策状态（单栏时再与置顶目标共用一枚胶囊）、
+        // 热力月历与日期详情就地展开，当天安排只读地并进日期详情。
+        //
+        // 单栏：置顶目标并进顶槽，不再压出一块独立超高区块，热力月历因此
+        // 仍高居首屏；宽屏：左栏保留独立置顶摘要，右栏融合卡不重复渲染。
+        final fusedCard = FocusNationalCalendarCard(
+          focusRepository: focusRepository,
+          nationalFocusRepository: nationalFocusRepository,
+          scheduleRepository: scheduleRepository,
+          displayTimeZoneId: zoneResolved ? displayTimeZoneId : null,
+          now: now,
+          accountFailed: accountFailed,
+          onOpenNationalFocus: onOpenNationalFocus,
+          onRetryProjection: onRetryProjection,
+          pinnedGoals: twoColumn ? const <Goal>[] : pinned,
+          pinnedGoalsFailed: !twoColumn && goalsFailed,
+          goalRepository: twoColumn ? null : repository,
+          onOpenPlan: onOpenPlan,
+        );
         return ListView(
           padding: EdgeInsets.fromLTRB(gutter, PactaSpacing.lg, gutter, 28),
           children: [
@@ -487,7 +454,13 @@ class _BoardContent extends StatelessWidget {
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [pinnedSection!, prompts],
+                            children: [
+                              pinnedSection!,
+                              // 卡片外边距为零：置顶摘要与回顾提示之间补一档
+                              // 8dp，两张卡片不再上下贴边。
+                              const SizedBox(height: PactaSpacing.sm),
+                              prompts,
+                            ],
                           ),
                         ),
                         const SizedBox(width: 24),
@@ -518,12 +491,9 @@ class _BoardContent extends StatelessWidget {
                       ],
                     )
             else ...[
-              // 单栏顺序：置顶（若有）→ 回顾提示 → 融合卡。无置顶时没有
-              // 任何占位，融合卡紧贴页头；提示为空时高度为 0。
-              if (pinnedSection != null) ...[
-                pinnedSection,
-                const SizedBox(height: 16),
-              ],
+              // 单栏顺序：回顾提示 → 融合卡。置顶目标已经并进融合卡顶槽的
+              // 胶囊切换，不再单独占位；无置顶时顶槽直接是国策状态，
+              // 提示为空时高度为 0，融合卡紧贴页头。
               prompts,
               fusedCard,
             ],
@@ -536,8 +506,9 @@ class _BoardContent extends StatelessWidget {
 
 /// 置顶目标摘要：标题 + 下一项任务。
 ///
-/// 只有「有置顶目标」或「目标列表读取失败」时才由看板构建本区块：
-/// 空置顶目标不再渲染标题、管理入口或空卡片，也不伪造占位任务。
+/// 宽屏双栏的左栏摘要：只有「有置顶目标」或「目标列表读取失败」时才由
+/// 看板构建本区块；空置顶目标不再渲染标题、管理入口或空卡片，也不伪造
+/// 占位任务。单栏时改由融合卡顶槽的胶囊切换承载前两条置顶。
 /// 与计划页共用同一列 `local_goals.sort_order`：按住拖动即时写回，
 /// 两处看到的顺序始终一致；按住原地不动则打开操作面板。
 class _PinnedGoalSummarySection extends StatelessWidget {
@@ -557,38 +528,29 @@ class _PinnedGoalSummarySection extends StatelessWidget {
   final bool failed;
   final VoidCallback onRetry;
 
-  Future<void> _reorder(int oldIndex, int newIndex) async {
+  Future<void> _reorder(
+    BuildContext context,
+    int oldIndex,
+    int newIndex,
+  ) async {
     final ids = [for (final goal in goals) goal.id];
     final moved = ids.removeAt(oldIndex);
     // PactaHoldReorderList 的 newIndex 已是 post-removal 下标。
     ids.insert(newIndex, moved);
-    await repository.reorderPinnedGoals(ids);
+    // 停用账号或排序参数不合法时只提示，不把异常丢进拖拽回调。
+    await savePinnedGoalOrder(
+      context: context,
+      repository: repository,
+      orderedGoalIds: ids,
+    );
   }
 
   void _openActions(BuildContext context, Goal goal) {
-    unawaited(
-      showPactaActionSheet(
-        context,
-        title: goal.title,
-        subtitle: goal.nextTask == null
-            ? '暂无任务'
-            : '下一项：${goal.nextTask!.title}',
-        actions: [
-          PactaActionItem(
-            id: 'open-plan',
-            label: '在计划中查看',
-            icon: Icons.event_note_outlined,
-            onTap: onOpenPlan,
-          ),
-          PactaActionItem(
-            id: 'unpin-goal',
-            label: '取消置顶',
-            icon: Icons.push_pin_outlined,
-            onTap: () =>
-                unawaited(repository.setGoalPinned(goal.id, isPinned: false)),
-          ),
-        ],
-      ),
+    openPinnedGoalActions(
+      context,
+      goal: goal,
+      repository: repository,
+      onOpenPlan: onOpenPlan,
     );
   }
 
@@ -620,7 +582,8 @@ class _PinnedGoalSummarySection extends StatelessWidget {
             // 严丝合缝，不会把顶部间距一起框进高亮里。
             itemSpacing: 8,
             proxyBorderRadius: PactaSpacing.cardRadius,
-            onReorder: _reorder,
+            onReorder: (oldIndex, newIndex) =>
+                unawaited(_reorder(context, oldIndex, newIndex)),
             onHoldMenu: (index) => _openActions(context, goals[index]),
             itemBuilder: (context, index) {
               final goal = goals[index];
@@ -628,7 +591,10 @@ class _PinnedGoalSummarySection extends StatelessWidget {
                 key: ValueKey('board-pinned-goal-${goal.id}'),
                 margin: EdgeInsets.zero,
                 child: ListTile(
-                  leading: const Icon(Icons.push_pin, size: 20),
+                  leading: const Icon(
+                    Icons.push_pin,
+                    size: PactaIconSizes.compact,
+                  ),
                   title: Text(
                     goal.title,
                     maxLines: 2,
@@ -664,7 +630,7 @@ class _BoardReadFailure extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
-          const Icon(Icons.error_outline, size: 20),
+          const Icon(Icons.error_outline, size: PactaIconSizes.compact),
           const SizedBox(width: 10),
           Expanded(child: Text(message)),
           const SizedBox(width: 8),

@@ -476,10 +476,6 @@ Future<void> _expectRetention(
     expect(schedules.single.origin, ScheduleOrigin.legacyCalendarBlock);
     expect(schedules.single.sourceEventId, 'event-1');
     expect(schedules.single.eventIdentity, 'event-1:20261116');
-    final status = await scheduleRepository.getLegacyMigrationStatus();
-    expect(status.hasCompletedMigration, isTrue);
-    expect(status.promotedCount, 1);
-    expect(status.sourceBlockCount, 1);
     // Promotion copies; the read-only calendar rows stay.
     final blocks = await database.select(database.localCalendarBlocks).get();
     expect(blocks.where((block) => block.userId == 'user-a').length, 1);

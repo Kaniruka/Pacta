@@ -5,6 +5,7 @@ import 'package:pacta/main.dart';
 import 'package:pacta/src/national_focus/national_focus_ai_access.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
+import 'package:pacta/src/theme/pacta_spacing.dart';
 
 import '../support/fake_auth_repository.dart';
 
@@ -342,7 +343,50 @@ void main() {
     expect(find.text('撤销此连接'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('多张授权卡之间保留 8dp 间距，不贴成一整块', (tester) async {
+    final now = DateTime.now().toUtc();
+    final grants = _FakeNationalFocusAiGrantRepository()
+      ..grants.addAll([
+        _grant('grant-a', 'Codex CLI', now),
+        _grant('grant-b', 'Claude Code', now),
+      ]);
+    await tester.pumpWidget(
+      PactaApp(
+        authRepository: FakeAuthRepository()..signedInUser = 'user@example.com',
+        nationalFocusMcpUrl: mcpUrl,
+        nationalFocusAiGrantRepositoryFactory: (_) => grants,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final page = await _openMyAiPage(tester);
+    await _scrollUntilVisible(tester, page, find.textContaining('范围：'));
+
+    final scopes = find.textContaining('范围：');
+    expect(scopes, findsNWidgets(2));
+    final firstCard = find
+        .ancestor(of: scopes.at(0), matching: find.byType(Card))
+        .first;
+    final secondCard = find
+        .ancestor(of: scopes.at(1), matching: find.byType(Card))
+        .first;
+    expect(
+      tester.getRect(secondCard).top - tester.getRect(firstCard).bottom,
+      greaterThanOrEqualTo(PactaSpacing.sm),
+      reason: 'CardThemeData.margin 为零：多张授权卡之间必须靠 SizedBox 分开',
+    );
+    expect(tester.takeException(), isNull);
+  });
 }
+
+NationalFocusAiGrant _grant(String id, String clientName, DateTime now) =>
+    NationalFocusAiGrant(
+      id: id,
+      clientName: clientName,
+      scope: 'national_focus:read',
+      createdAt: now,
+      expiresAt: now.add(const Duration(minutes: 30)),
+    );
 
 class _FakeNationalFocusAiGrantRepository
     implements NationalFocusAiGrantRepository {
@@ -409,10 +453,6 @@ class _EmptyNationalFocusRepository implements NationalFocusRepository {
 
   @override
   Stream<List<NationalFocusFailure>> watchFailures() => Stream.value(const []);
-
-  @override
-  Stream<NationalFocusReviewState> watchNationalFocusReviewState() =>
-      Stream.value(const NationalFocusReviewState());
 
   @override
   Future<void> settleDueCheckpoints() async {}

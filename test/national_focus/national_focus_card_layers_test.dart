@@ -265,48 +265,6 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('待核对状态阻断弹层操作与详情编辑入口', (tester) async {
-    final now = DateTime.utc(2026, 11, 13, 9);
-    final pending = NationalFocusCard(
-      id: 'pending-review-card',
-      name: '待核对卡片',
-      triggerCondition: '',
-      action: '待核对规则',
-      isInTree: true,
-      state: NationalFocusCardState.lit,
-      hasPendingReview: true,
-      createdAt: now,
-      updatedAt: now,
-    );
-    final pendingRepository = _PendingReviewRepository(pending);
-    addTearDown(pendingRepository.dispose);
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: NationalFocusTreePage(repository: pendingRepository),
-        ),
-      ),
-    );
-    await pumpUi(tester);
-    await openNode(tester, pending);
-
-    expect(inSheet(find.text('请先完成核对后再操作。')), findsOneWidget);
-    final firstAction = tester.widget<FilledButton>(
-      inSheet(find.byType(FilledButton)).first,
-    );
-    expect(firstAction.onPressed, isNull);
-
-    await tester.tap(inSheet(find.text('查看详情')));
-    await tester.pumpAndSettle();
-    final editEntry = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, '编辑卡片'),
-    );
-    expect(editEntry.onPressed, isNull);
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(seconds: 1));
-  });
-
   for (final brightness in [Brightness.light, Brightness.dark]) {
     testWidgets('窄屏 ${brightness.name} 主题下弹层、详情与编辑页可操作', (tester) async {
       tester.view.physicalSize = const Size(320, 700);
@@ -560,17 +518,4 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
-}
-
-class _PendingReviewRepository extends UnavailableNationalFocusRepository {
-  _PendingReviewRepository(this.card);
-
-  final NationalFocusCard card;
-
-  @override
-  Stream<List<NationalFocusCard>> watchTreeCards() => Stream.value([card]);
-
-  @override
-  Stream<List<NationalFocusCard>> watchLibraryCards() =>
-      Stream.value(const <NationalFocusCard>[]);
 }

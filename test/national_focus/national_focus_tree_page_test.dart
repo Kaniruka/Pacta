@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
@@ -10,6 +11,8 @@ import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_shared_widgets.dart';
 import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
 import 'package:pacta/src/tasks/task_database.dart';
+import 'package:pacta/src/theme/pacta_icon_sizes.dart';
+import 'package:pacta/src/theme/pacta_theme.dart';
 
 void main() {
   late PactaDatabase database;
@@ -1379,86 +1382,172 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
-  testWidgets('放置时待核对父节点禁用', (tester) async {
+
+  testWidgets('国策树内图标尺寸全部收口到 PactaIconSizes', (tester) async {
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
-      await tester.pump(const Duration(seconds: 1));
     });
-    final pending = NationalFocusCard(
-      name: '待核对父节点',
-      id: 'pending-parent',
-      triggerCondition: '待核对父节点',
-      action: '行动',
-      isInTree: true,
-      state: NationalFocusCardState.extinguished,
-      hasPendingReview: true,
-      createdAt: now,
-      updatedAt: now,
-    );
-    final library = NationalFocusCard(
-      name: '待放置卡片',
-      id: 'library-card',
-      triggerCondition: '待放置卡片',
-      action: '行动',
-      isInTree: false,
-      state: NationalFocusCardState.extinguished,
-      createdAt: now,
-      updatedAt: now,
-    );
-    final fake = _PendingPlacementRepository(pending, library);
+    tester.view.physicalSize = const Size(800, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final allowed = <double>[
+      PactaIconSizes.micro,
+      PactaIconSizes.sm,
+      PactaIconSizes.compact,
+      PactaIconSizes.md,
+      PactaIconSizes.lg,
+      PactaIconSizes.hero,
+      PactaIconSizes.heroLarge,
+    ];
+    void expectSemanticIcons(Finder scope, String label) {
+      final icons = tester.widgetList<Icon>(
+        find.descendant(of: scope, matching: find.byType(Icon)),
+      );
+      expect(icons, isNotEmpty, reason: '$label 至少要有一个图标');
+      for (final icon in icons) {
+        expect(
+          icon.size,
+          isNotNull,
+          reason: '$label 的图标必须显式取 PactaIconSizes，不能落回默认 24dp',
+        );
+        expect(
+          allowed,
+          contains(icon.size),
+          reason: '$label 的图标尺寸 ${icon.size} 不在语义尺度里',
+        );
+      }
+    }
+
+    final card = await createPlacedCard();
     await tester.pumpWidget(
       MaterialApp(
+        home: Scaffold(body: NationalFocusTreePage(repository: repository)),
+      ),
+    );
+    await pumpNationalFocusUi(tester);
+    final page = find.byType(NationalFocusTreePage);
+    expectSemanticIcons(page, '简洁视图');
+    await tester.tap(find.text('简洁视图'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('详细视图').last);
+    await tester.pumpAndSettle();
+    expectSemanticIcons(page, '详细视图');
+    await openNode(tester, card);
+    expectSemanticIcons(find.byType(BottomSheet), '节点面板');
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('详细视图在窄屏两倍字号下保留状态条、根微标与两行规则', (tester) async {
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+    tester.view.physicalSize = const Size(320, 900);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final card = await createPlacedCard();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: pactaTheme(Brightness.dark),
         home: Scaffold(
-          body: NationalFocusTreePage(repository: fake, now: () => now),
+          body: NationalFocusTreePage(repository: repository, now: () => now),
         ),
       ),
     );
     await pumpNationalFocusUi(tester);
-    await tester.tap(find.byTooltip('卡片库'));
-    await pumpNationalFocusUi(tester);
-    await tester.tap(find.text('放入国策树'));
-    await pumpNationalFocusUi(tester);
-    final node = find.byKey(
-      const ValueKey('national-focus-node-pending-parent'),
-    );
-    final semantics = find.descendant(
-      of: node,
-      matching: find.byType(Semantics),
+    await tester.tap(find.text('简洁视图'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('详细视图').last);
+    await tester.pumpAndSettle();
+
+    final cardFinder = find.byKey(ValueKey('national-focus-card-${card.id}'));
+    expect(cardFinder, findsOneWidget);
+    expect(
+      find.descendant(of: cardFinder, matching: find.byType(ColoredBox)),
+      findsOneWidget,
+      reason: '详细卡片顶部保留 3dp 状态条',
     );
     expect(
-      tester.widget<Semantics>(semantics.first).properties.enabled,
-      isFalse,
+      find.descendant(of: cardFinder, matching: find.text('根')),
+      findsOneWidget,
+      reason: '顶层节点用 根 微标区分于子节点',
     );
     expect(
-      tester.widget<Semantics>(semantics.first).properties.label,
-      contains('待核对'),
+      find.descendant(of: cardFinder, matching: find.text('连续 0 天')),
+      findsOneWidget,
     );
-    expect(
-      tester.widget<Semantics>(semantics.first).properties.label,
-      contains('待核对状态需先完成核对'),
+    final rule = tester.widget<Text>(
+      find.descendant(
+        of: cardFinder,
+        matching: find.text(card.effectiveAction),
+      ),
     );
-    await tester.tap(node);
-    await pumpNationalFocusUi(tester);
-    expect(fake.placeCalls, 0);
+    expect(rule.maxLines, 2, reason: '两倍字号下规则仍固定两行');
+    expect(rule.textAlign, TextAlign.start);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
-}
 
-class _PendingPlacementRepository extends UnavailableNationalFocusRepository {
-  _PendingPlacementRepository(this.pending, this.library);
-  final NationalFocusCard pending;
-  final NationalFocusCard library;
-  int placeCalls = 0;
+  testWidgets('详细视图根节点同时已内化：2 倍字号底栏三徽标不溢出、不截断', (tester) async {
+    tester.view.physicalSize = const Size(320, 900);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final card = await createPlacedCard();
+    // 180 个成功日是内化的判定线；直接改列，避免 180 次点亮拖慢用例。
+    await (database.update(database.localNationalFocusCards)
+          ..where((row) => row.id.equals(card.id)))
+        .write(LocalNationalFocusCardsCompanion(successfulDays: Value(180)));
+    final internalized = await repository.getCard(card.id);
+    expect(internalized.isTopLevel, isTrue);
+    expect(internalized.isInternalized, isTrue);
 
-  @override
-  Stream<List<NationalFocusCard>> watchTreeCards() => Stream.value([pending]);
-  @override
-  Stream<List<NationalFocusCard>> watchLibraryCards() =>
-      Stream.value([library]);
-  @override
-  Future<void> placeCard({required String cardId, String? parentId}) async {
-    placeCalls++;
-  }
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: pactaTheme(Brightness.light),
+        home: Scaffold(
+          body: NationalFocusTreePage(repository: repository, now: () => now),
+        ),
+      ),
+    );
+    await pumpNationalFocusUi(tester);
+    await tester.tap(find.text('简洁视图'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('详细视图').last);
+    await tester.pumpAndSettle();
+
+    final cardFinder = find.byKey(ValueKey('national-focus-card-${card.id}'));
+    expect(cardFinder, findsOneWidget);
+    final cardRect = tester.getRect(cardFinder);
+    // 底栏三枚徽标同时在：连续天数 + 根 + 已内化。
+    for (final label in ['连续 0 天', '根', '已内化']) {
+      final labelFinder = find.descendant(
+        of: cardFinder,
+        matching: find.text(label),
+      );
+      expect(labelFinder, findsOneWidget, reason: '$label 徽标必须完整渲染');
+      final rect = tester.getRect(labelFinder);
+      expect(rect.left, greaterThanOrEqualTo(cardRect.left));
+      expect(rect.right, lessThanOrEqualTo(cardRect.right));
+      expect(rect.top, greaterThanOrEqualTo(cardRect.top));
+      expect(rect.bottom, lessThanOrEqualTo(cardRect.bottom));
+    }
+    // Wrap 允许换行，但整张卡不得溢出：溢出会以 RenderFlex 异常上报。
+    expect(tester.takeException(), isNull);
+    // 页面持有周期计时器：先卸树再结束用例，避免残留 Timer 断言。
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(seconds: 1));
+  });
 }

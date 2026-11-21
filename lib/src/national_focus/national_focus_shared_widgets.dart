@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -7,13 +6,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../theme/pacta_fonts.dart';
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_status_colors.dart';
 import 'national_focus_repository.dart';
 import 'national_focus_strengthening_page.dart';
-
-void syncNationalFocusInBackground(NationalFocusRepository repository) {
-  unawaited(repository.sync().catchError((Object _) {}));
-}
 
 Future<void> pushStrengtheningManager({
   required BuildContext context,
@@ -329,7 +325,7 @@ class NationalFocusTreeCanvasState extends State<NationalFocusTreeCanvas> {
                   child: IconButton(
                     tooltip: '适应屏幕',
                     onPressed: () => _fit(viewport, fitAll: true),
-                    icon: const Icon(Icons.fit_screen),
+                    icon: const Icon(Icons.fit_screen, size: PactaIconSizes.md),
                   ),
                 ),
               ),
@@ -339,36 +335,6 @@ class NationalFocusTreeCanvasState extends State<NationalFocusTreeCanvas> {
       );
     },
   );
-}
-
-class NationalFocusReviewNotice extends StatelessWidget {
-  const NationalFocusReviewNotice({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.errorContainer,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Row(
-          children: [
-            Icon(Icons.sync_problem, color: colors.onErrorContainer),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                '同步操作存在分歧，状态和统计待核对；核对前暂不能修改这张卡。',
-                style: TextStyle(color: colors.onErrorContainer),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 class NationalFocusFieldText extends StatelessWidget {
@@ -479,7 +445,7 @@ class _StreakPill extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, size: 12, color: foreground),
+                Icon(icon, size: PactaIconSizes.micro, color: foreground),
                 const SizedBox(width: 3),
                 Text(
                   label,
@@ -519,7 +485,11 @@ class NationalFocusTreeMessage extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(icon, size: 40, color: Theme.of(context).colorScheme.primary),
+          Icon(
+            icon,
+            size: PactaIconSizes.hero,
+            color: Theme.of(context).colorScheme.primary,
+          ),
           const SizedBox(height: 12),
           Text(
             title,

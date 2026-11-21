@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../tasks/task_models.dart';
+import '../theme/pacta_icon_sizes.dart';
 import '../ui/pacta_error_text.dart';
 import 'focus_models.dart';
 import 'focus_repository.dart';
@@ -232,7 +233,7 @@ class _PrecedentRulePickerDialogState
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: _busy ? null : _createAndUse,
-            icon: const Icon(Icons.add),
+            icon: const Icon(Icons.add, size: PactaIconSizes.sm),
             label: const Text('新建并使用'),
           ),
         ],

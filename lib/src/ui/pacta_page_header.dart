@@ -11,6 +11,9 @@ import '../theme/pacta_spacing.dart';
 /// 多大，五个页面的页头都保持同一高度。尾部操作宽度超过内容区 65% 时由
 /// [FittedBox] 等比缩小；这只是极窄屏/大字号下的防溢出兜底，正常字号不缩放。
 /// 标题只允许单行省略，标题 y 坐标由页面顶部内边距与行高决定。
+///
+/// 尾部图标按钮的图标尺寸取 `PactaIconSizes`（页头次级入口用 `compact`、
+/// 主操作用 `md`），页面不在此另写像素值。
 class PactaPageHeader extends StatelessWidget {
   const PactaPageHeader({super.key, required this.title, this.trailing});
 
