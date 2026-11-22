@@ -8,7 +8,7 @@
 -- Rollback-only probe for the merged whole-snapshot version 2 protocol.
 -- Run against an isolated Supabase project after applying
 -- 202611150001_cloud_snapshot_schema_v2.sql (and the migrations it builds on).
--- Requires one active administrator identity; every step is asserted and the
+-- Requires one isolated active user identity; every step is asserted and the
 -- whole script rolls back. No production project is contacted.
 --
 -- After the merge, version 2 is a single complete shape: the owned schedule
@@ -21,12 +21,26 @@ do $setup$
 declare
   owner_id uuid;
 begin
-  select user_id into owner_id
-  from public.app_admins
-  order by user_id
+  -- 管理员名单已随 202611220001_remove_legacy_admin_schema 移除：这里只要求
+  -- 任意一名活跃用户，an isolated active test user is required.
+  select account.id into owner_id
+  from auth.users as account
+  where not exists (
+      select 1
+      from public.user_suspension_periods as suspension
+      where suspension.user_id = account.id
+        and suspension.restored_at is null
+    )
+    and not exists (
+      select 1
+      from public.user_purge_receipts as purge
+      where purge.user_id = account.id
+        and purge.status in ('pending', 'completed')
+    )
+  order by account.created_at desc, account.id
   limit 1;
   if owner_id is null then
-    raise exception 'an isolated active administrator is required';
+    raise exception 'an isolated active test user is required';
   end if;
   delete from public.cloud_business_snapshot_upload_requests where user_id = owner_id;
   delete from public.cloud_business_snapshot_history where user_id = owner_id;

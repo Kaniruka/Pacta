@@ -90,19 +90,15 @@ class AcceptanceProject:
                 print('APPLIED ' + path.name.split('_', 1)[0], flush=True)
 
         keys = self.keys()
-        admin = self.create_user(keys, 'rls-admin')
+        owner = self.create_user(keys, 'rls-owner')
         try:
-            self.management(
-                '/database/query',
-                {'query': "insert into public.app_admins(user_id) values ('" + admin['id'] + "');"},
-            )
             self.management(
                 '/database/query',
                 {'query': (ROOT / 'supabase/tests/cloud_business_snapshots.sql').read_text()},
             )
             print('PASS rollback-only cloud_business_snapshots.sql (RLS/CAS)', flush=True)
         finally:
-            self.delete_user(keys, admin['id'])
+            self.delete_user(keys, owner['id'])
 
         self.run_live_read_probe(keys)
 

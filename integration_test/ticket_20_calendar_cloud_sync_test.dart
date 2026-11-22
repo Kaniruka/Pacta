@@ -54,8 +54,8 @@ void main() {
   final hasSupabaseConfiguration = [
     'SUPABASE_URL',
     'SUPABASE_PUBLISHABLE_KEY',
-    'TEST_ADMIN_EMAIL',
-    'TEST_ADMIN_PASSWORD',
+    'TEST_USER_EMAIL',
+    'TEST_USER_PASSWORD',
   ].every((key) => env[key]?.isNotEmpty ?? false);
 
   testWidgets(
@@ -63,8 +63,8 @@ void main() {
     (tester) async {
       final url = env['SUPABASE_URL']!;
       final publishableKey = env['SUPABASE_PUBLISHABLE_KEY']!;
-      final email = env['TEST_ADMIN_EMAIL']!;
-      final password = env['TEST_ADMIN_PASSWORD']!;
+      final email = env['TEST_USER_EMAIL']!;
+      final password = env['TEST_USER_PASSWORD']!;
 
       SupabaseClient? androidClient;
       SupabaseClient? windowsClient;
@@ -155,7 +155,7 @@ void main() {
         androidClient = SupabaseClient(url, publishableKey);
         windowsClient = SupabaseClient(url, publishableKey);
         try {
-          remoteStage = 'admin sign-in';
+          remoteStage = 'user sign-in';
           await androidClient!.auth.signInWithPassword(
             email: email,
             password: password,

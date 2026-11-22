@@ -3,10 +3,11 @@
 -- original version rather than the current one), request-ledger limits, cross-user
 -- RLS and lifecycle clearing. Run against an isolated Supabase project after
 -- applying 202611130001_cloud_snapshot_history.sql. Every step is asserted and
--- nothing is skipped: the purge probe requires one administrator and one
--- non-administrator identity. Identity selection, seeding and result checks run
--- in the trusted session (reset role); the authenticated role is used only for
--- RLS checks, so the script never reads auth.users as a client role.
+-- nothing is skipped: the purge probe requires two isolated active identities.
+-- Identity selection, seeding and result checks run in the trusted session
+-- (reset role); the authenticated role is used only for RLS checks and the
+-- service_role only for the project-owner purge RPC, so the script never reads
+-- auth.users or the purge ledger as a client role.
 begin;
 
 do $setup$
@@ -14,12 +15,26 @@ declare
   owner_id uuid;
   other_id uuid;
 begin
-  select user_id into owner_id
-  from public.app_admins
-  order by user_id
+  -- 管理员名单已随 202611220001_remove_legacy_admin_schema 移除：这里只要求
+  -- 任意一名活跃用户，an isolated active test user is required.
+  select account.id into owner_id
+  from auth.users as account
+  where not exists (
+      select 1
+      from public.user_suspension_periods as suspension
+      where suspension.user_id = account.id
+        and suspension.restored_at is null
+    )
+    and not exists (
+      select 1
+      from public.user_purge_receipts as purge
+      where purge.user_id = account.id
+        and purge.status in ('pending', 'completed')
+    )
+  order by account.created_at desc, account.id
   limit 1;
   if owner_id is null then
-    raise exception 'an isolated active administrator is required';
+    raise exception 'an isolated active test user is required';
   end if;
   -- Make this test repeatable; rollback restores any prior state.
   delete from public.cloud_business_snapshot_upload_requests where user_id = owner_id;
@@ -423,7 +438,7 @@ declare
   definition text;
 begin
   definition := pg_get_functiondef(
-    'public.admin_delete_user_business_data(uuid)'::regprocedure
+    'public.purge_user_business_data(uuid)'::regprocedure
   );
   if position('cloud_business_snapshot_history' in definition) = 0 then
     raise exception 'purge_does_not_delete_snapshot_history';
@@ -442,22 +457,33 @@ begin
   select account.id into target_id
   from auth.users as account
   where account.id <> owner_id
-    and account.id not in (select admin.user_id from public.app_admins as admin)
-  order by account.created_at desc
+    and not exists (
+      select 1
+      from public.user_suspension_periods as suspension
+      where suspension.user_id = account.id
+        and suspension.restored_at is null
+    )
+    and not exists (
+      select 1
+      from public.user_purge_receipts as purge
+      where purge.user_id = account.id
+        and purge.status in ('pending', 'completed')
+    )
+  order by account.created_at desc, account.id
   limit 1;
   if target_id is null then
-    raise exception 'purge probe requires an isolated non-administrator identity';
+    raise exception 'purge probe requires a second isolated active identity';
   end if;
   perform set_config('history_test.purge_target', target_id::text, true);
 end
 $pick_purge_target$;
 
--- 种入待清除的历史与台账，并准备好已过保留期的停用记录；这些都在可信会话
--- 内完成，因此不依赖 service_role 的表权限，也不读取受保护的用户表给客户端。
+-- 种入待清除的历史与台账，并准备好已过保留期的停用记录；身份选择与种入都在
+-- 可信会话内完成，因此不读取受保护的用户表给客户端。随后仅用 service_role
+-- 写入 pending 回执并执行清除 RPC。
 do $seed_purge_target$
 declare
   target_id uuid := current_setting('history_test.purge_target')::uuid;
-  owner_id uuid := current_setting('history_test.owner_id')::uuid;
 begin
   delete from public.cloud_business_snapshot_upload_requests where user_id = target_id;
   delete from public.cloud_business_snapshot_history where user_id = target_id;
@@ -480,19 +506,28 @@ begin
   ) values (
     target_id, 'seed-request', 1, md5('{}'::jsonb::text)
   );
-  insert into public.user_suspension_periods (user_id, suspended_at, suspended_by)
-  values (target_id, now() - interval '31 days', owner_id)
+  -- 停用记录只写时间：suspended_by 列已随遗留管理员架构移除。
+  insert into public.user_suspension_periods (user_id, suspended_at)
+  values (target_id, now() - interval '31 days')
   on conflict (user_id) where restored_at is null do update
     set suspended_at = excluded.suspended_at;
 end
 $seed_purge_target$;
 
+-- 项目主流程：service_role 先写入 pending 回执，再调用清除 RPC。这取代了原有的
+-- admin_begin_user_purge + admin_delete_user_business_data 组合。
 set local role service_role;
-select public.admin_begin_user_purge(
+insert into public.user_purge_receipts (
+  user_id, status, requested_at, business_data_deleted, completed_at
+)
+values (
   current_setting('history_test.purge_target')::uuid,
-  current_setting('history_test.owner_id')::uuid
+  'pending',
+  now(),
+  false,
+  null
 );
-select public.admin_delete_user_business_data(
+select public.purge_user_business_data(
   current_setting('history_test.purge_target')::uuid
 );
 reset role;
@@ -513,6 +548,15 @@ begin
   if history_left <> 0 or ledger_left <> 0 or snapshot_left <> 0 then
     raise exception 'purge_left_cloud_backups_behind_history_%_ledger_%_snapshot_%',
       history_left, ledger_left, snapshot_left;
+  end if;
+  if not exists (
+    select 1
+    from public.user_purge_receipts as purge
+    where purge.user_id = target_id
+      and purge.status = 'pending'
+      and purge.business_data_deleted
+  ) then
+    raise exception 'purge_did_not_mark_business_data_deleted';
   end if;
 end
 $purge_probe$;

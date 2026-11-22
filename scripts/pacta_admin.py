@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """Pacta 项目主直连终端工具（Windows PowerShell 可用）。
 
-本工具以 Supabase 项目主（Project Owner）身份直连管理接口，不需要任何
-管理员占位账号、邮箱密码登录或 app_admins 资格。配置只从进程环境变量与
-仓库根目录 .env 读取 SUPABASE_URL 与 SUPABASE_SECRET_KEY（兼容旧名
-SUPABASE_SERVICE_ROLE_KEY），密钥只存在于当前进程内，绝不写入日志、JSON
-输出或任何文件。
+本工具以 Supabase 项目主（Project Owner）身份直连管理接口，配置只从进程
+环境变量与仓库根目录 .env 读取 SUPABASE_URL 与 SUPABASE_SECRET_KEY（兼容
+旧名 SUPABASE_SERVICE_ROLE_KEY），密钥只存在于当前进程内，绝不写入日志、
+JSON 输出或任何文件。
 
 Supabase 请求头规则（官方规范）：
 
@@ -38,8 +37,7 @@ Supabase 请求头规则（官方规范）：
                 只读取 SUPABASE_URL 与 SUPABASE_SECRET_KEY（或旧名
                 SUPABASE_SERVICE_ROLE_KEY）。成对引号会被去掉；引号内的 #
                 保留，引号外以空白开头的 # 视为行内注释。客户端使用的
-                SUPABASE_PUBLISHABLE_KEY / SUPABASE_ANON_KEY 与
-                TEST_ADMIN_EMAIL / TEST_ADMIN_PASSWORD 一律忽略。
+                SUPABASE_PUBLISHABLE_KEY / SUPABASE_ANON_KEY 一律忽略。
 
 退出码：0 成功；1 云端/网络错误；2 配置错误；3 权限不足；4 用户取消；
 130 终端中断。
@@ -267,7 +265,7 @@ def load_config(
 
     Precedence is explicit: process environment first, dotenv fills the rest.
     Only SUPABASE_URL and the project-owner secret key are read. Client
-    publishable/anon keys and TEST_ADMIN_* credentials are never consulted.
+    publishable/anon keys are never consulted.
     """
 
     environment = dict(os.environ) if environ is None else dict(environ)
@@ -293,8 +291,7 @@ def load_config(
             '或进程环境变量中配置：\n'
             '  SUPABASE_URL=https://<project-ref>.supabase.co\n'
             '  SUPABASE_SECRET_KEY=<Supabase Dashboard -> Project Settings -> API Keys 中的 secret key>\n'
-            '项目主 CLI 直连 Supabase 管理接口，不读取客户端 publishable/anon key，'
-            '也不使用 TEST_ADMIN_* 登录信息。'
+            '项目主 CLI 直连 Supabase 管理接口，不读取客户端 publishable/anon key。'
         )
 
     if not url.lower().startswith(('https://', 'http://')):
@@ -708,7 +705,6 @@ class UserRecord:
     history_count: int = 0
     upload_request_count: int = 0
     mcp: McpGrants = field(default_factory=McpGrants)
-    legacy_admin: bool = False
 
     @property
     def display_target(self) -> str:
@@ -989,17 +985,6 @@ class SupabaseAdminClient:
                     index[user_id] = row
         return index
 
-    def _id_set(self, table: str, user_ids: Sequence[str]) -> set[str]:
-        found: set[str] = set()
-        for batch in _chunks(user_ids):
-            path = f'/rest/v1/{table}?select=user_id&user_id={_in_values(batch)}'
-            found.update(
-                str(row.get('user_id'))
-                for row in self._rest_list(path, f'读取 {table} 失败')
-                if row.get('user_id')
-            )
-        return found
-
     def list_users(self) -> list[UserRecord]:
         raw_users = self._list_auth_users()
         if not raw_users:
@@ -1023,7 +1008,6 @@ class SupabaseAdminClient:
         )
         mcp = self._mcp_index(user_ids)
         profiles = self._profile_index(user_ids)
-        legacy_admins = self._id_set('app_admins', user_ids)
 
         records: list[UserRecord] = []
         for row in raw_users:
@@ -1050,7 +1034,6 @@ class SupabaseAdminClient:
                     history_count=history_counts.get(user_id, 0),
                     upload_request_count=upload_counts.get(user_id, 0),
                     mcp=mcp.get(user_id, McpGrants()),
-                    legacy_admin=user_id in legacy_admins,
                 )
             )
         return records
@@ -1287,7 +1270,6 @@ class SupabaseAdminClient:
             'user_id': user_id,
             'status': 'pending',
             'requested_at': _now_iso(),
-            'requested_by': None,
             'eligibility_id': eligibility_id,
             'business_data_deleted': False,
             'completed_at': None,
@@ -1315,14 +1297,13 @@ class SupabaseAdminClient:
             raise ApiError('注销回执缺少完成时间，未确认完成。')
         return purged_at
 
-    def delete_user(self, user_id: str, *, legacy_admin: bool = False) -> dict[str, Any]:
-        """Permanently purge any user, including active users and old admins.
+    def delete_user(self, user_id: str) -> dict[str, Any]:
+        """Permanently purge any user, including active users.
 
-        The four-step contract is the database migration's own:
-        pending receipt -> admin_delete_user_business_data -> Auth Admin
-        delete -> admin_complete_user_purge. This path deliberately does not
-        call admin_begin_user_purge, whose app_admins and 30-day guards would
-        reject exactly the accounts a project owner must be able to remove.
+        The four-step contract is the database migration's own: pending
+        receipt -> purge_user_business_data -> Auth Admin delete ->
+        complete_user_purge. The CLI prepares the pending receipt itself, so
+        no waiting period or extra guard can block removing the target.
         """
 
         receipt = self._get_purge_receipt(user_id)
@@ -1332,7 +1313,6 @@ class SupabaseAdminClient:
                 'user_id': user_id,
                 'status': 'completed',
                 'purged_at': purged_at,
-                'legacy_admin': legacy_admin,
                 'receipt_created': False,
                 'receipt_reused': True,
             }
@@ -1351,13 +1331,13 @@ class SupabaseAdminClient:
             and receipt.get('business_data_deleted') is True
         ):
             self._rpc(
-                'admin_delete_user_business_data',
+                'purge_user_business_data',
                 {'p_user_id': user_id},
                 '清除云端业务数据失败',
             )
         self._delete_auth_user(user_id)
         completed = self._rpc(
-            'admin_complete_user_purge',
+            'complete_user_purge',
             {'p_user_id': user_id},
             '记录彻底注销回执失败',
         )
@@ -1368,7 +1348,6 @@ class SupabaseAdminClient:
             'user_id': user_id,
             'status': 'completed',
             'purged_at': purged_at,
-            'legacy_admin': legacy_admin,
             'receipt_created': receipt_created,
             'receipt_reused': False,
         }
@@ -1484,8 +1463,6 @@ def render_user_table(
     rows = []
     for index, user in enumerate(users, start=1):
         status = user.status_label(moment)
-        if user.legacy_admin:
-            status = f'{status} · 历史管理员'
         snapshot = (
             f'r{user.snapshot.revision}'
             if user.snapshot is not None and user.snapshot.revision is not None
@@ -1576,7 +1553,6 @@ def summarize_users(users: Sequence[UserRecord]) -> str:
         for user in users
         if user.suspension is not None and user.suspension.is_active
     )
-    legacy = sum(1 for user in users if user.legacy_admin)
     with_snapshot = sum(1 for user in users if user.snapshot is not None)
     pending = sum(
         1
@@ -1584,7 +1560,7 @@ def summarize_users(users: Sequence[UserRecord]) -> str:
         if user.eligibility is not None and user.eligibility.status_label() == '待使用'
     )
     return (
-        f'统计：共 {len(users)} 个账号；已停用 {suspended} 个；历史管理员 {legacy} 个；'
+        f'统计：共 {len(users)} 个账号；已停用 {suspended} 个；'
         f'有云快照 {with_snapshot} 个；注册资格待使用 {pending} 个。'
     )
 
@@ -1621,7 +1597,6 @@ def _user_payload(record: UserRecord) -> dict[str, Any]:
         'created_at': _iso(record.created_at),
         'last_sign_in_at': _iso(record.last_sign_in_at),
         'banned_until': _iso(record.banned_until),
-        'legacy_admin': record.legacy_admin,
         'eligibility': (
             {
                 'identifier': record.eligibility.identifier,
@@ -1915,7 +1890,7 @@ def _resume_purge_target(
     """Resolve a delete target, resuming a purge whose Auth identity is gone.
 
     A previous run may have deleted the Auth identity and stopped before
-    `admin_complete_user_purge`. The UUID still lives in
+    `complete_user_purge`. The UUID still lives in
     `user_purge_receipts`, so a pending/completed receipt supplies enough
     context to finish the remaining steps. Without either an Auth user or a
     receipt the original "user not found" error stands.
@@ -1954,11 +1929,6 @@ def command_delete_user(
             if recovered_receipt is not None
             else f'当前状态：{user.status_label()}'
         ),
-        (
-            '遗留 app_admins：有（随 Auth 身份级联删除）'
-            if user.legacy_admin
-            else '遗留 app_admins：无'
-        ),
     ]
     if recovered_receipt is not None:
         lines.append(
@@ -1966,7 +1936,7 @@ def command_delete_user(
             '只补完剩余步骤，不重复已删除的数据。'
         )
     confirm_target_deletion(io, user, assume_yes)
-    result = client.delete_user(user.user_id, legacy_admin=user.legacy_admin)
+    result = client.delete_user(user.user_id)
     if result.get('receipt_reused'):
         lines.append('已存在 completed 回执，本次未重复删除。')
     elif recovered_receipt is not None:
@@ -1987,7 +1957,6 @@ def command_delete_user(
             'email': user.email,
             'status': result['status'],
             'purged_at': result['purged_at'],
-            'legacy_admin': result.get('legacy_admin', False),
             'receipt_created': result.get('receipt_created', False),
             'receipt_reused': result.get('receipt_reused', False),
             'resumed': recovered_receipt is not None,
@@ -2197,7 +2166,7 @@ def build_parser() -> argparse.ArgumentParser:
         parents=[common],
         description=(
             'Pacta 项目主直连终端工具。读取 SUPABASE_URL 与 SUPABASE_SECRET_KEY，'
-            '不需要管理员账号登录。'
+            '直接调用 GoTrue Admin 与 PostgREST。'
         ),
         epilog=(
             '示例：\n'
@@ -2314,7 +2283,7 @@ def build_parser() -> argparse.ArgumentParser:
     delete = subparsers.add_parser(
         'delete-user',
         parents=[common],
-        help='即时彻底注销任意用户（含活跃用户与旧管理员）',
+        help='即时彻底注销任意用户（含活跃账号）',
     )
     delete.add_argument(
         'target',

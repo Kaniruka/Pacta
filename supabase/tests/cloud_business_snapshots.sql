@@ -7,12 +7,26 @@ declare
   owner_id uuid;
   other_id uuid;
 begin
-  select user_id into owner_id
-  from public.app_admins
-  order by user_id
+  -- 管理员名单已随 202611220001_remove_legacy_admin_schema 移除：这里只要求
+  -- 任意一名活跃用户，an isolated active test user is required.
+  select account.id into owner_id
+  from auth.users as account
+  where not exists (
+      select 1
+      from public.user_suspension_periods as suspension
+      where suspension.user_id = account.id
+        and suspension.restored_at is null
+    )
+    and not exists (
+      select 1
+      from public.user_purge_receipts as purge
+      where purge.user_id = account.id
+        and purge.status in ('pending', 'completed')
+    )
+  order by account.created_at desc, account.id
   limit 1;
   if owner_id is null then
-    raise exception 'an isolated active administrator is required';
+    raise exception 'an isolated active test user is required';
   end if;
   -- Make this test repeatable, with rollback restoring any prior test state.
   delete from public.cloud_business_snapshots where user_id = owner_id;

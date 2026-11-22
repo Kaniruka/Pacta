@@ -196,7 +196,6 @@ def install_user_data(
     history=None,
     uploads=None,
     mcp=(),
-    admins=(),
     profiles=(),
 ):
     """Install the aggregate queries that list_users() always performs."""
@@ -271,12 +270,6 @@ def install_user_data(
         'GET',
         '/rest/v1/profile_accounts?select=',
         ok(list(profiles)),
-        repeat=True,
-    )
-    transport.add(
-        'GET',
-        '/rest/v1/app_admins?select=',
-        ok([{'user_id': user_id} for user_id in admins]),
         repeat=True,
     )
     return transport
@@ -463,9 +456,7 @@ class LoadConfigTest(Harness):
         path = self.root / 'client-only.env'
         path.write_text(
             'SUPABASE_URL=https://project.supabase.co\n'
-            'SUPABASE_PUBLISHABLE_KEY=sb_publishable_public\n'
-            'TEST_ADMIN_EMAIL=admin@example.com\n'
-            'TEST_ADMIN_PASSWORD=admin-password\n',
+            'SUPABASE_PUBLISHABLE_KEY=sb_publishable_public\n',
             encoding='utf-8',
         )
         with self.assertRaises(MODULE.ConfigError) as caught:
@@ -475,7 +466,6 @@ class LoadConfigTest(Harness):
         self.assertIn('Project Settings', message)
         self.assertIn('API Keys', message)
         self.assertNotIn('sb_publishable_public', message)
-        self.assertNotIn('admin-password', message)
         self.assertEqual(caught.exception.exit_code, 2)
 
     def test_missing_url_and_secret_lists_both(self):
@@ -487,14 +477,12 @@ class LoadConfigTest(Harness):
         self.assertIn('SUPABASE_URL', message)
         self.assertIn('SUPABASE_SECRET_KEY', message)
 
-    def test_client_keys_and_test_admin_credentials_are_ignored(self):
+    def test_client_publishable_and_anon_keys_are_ignored(self):
         config = MODULE.load_config(
             self.env_file,
             {
                 'SUPABASE_PUBLISHABLE_KEY': 'sb_publishable_public',
                 'SUPABASE_ANON_KEY': 'legacy-anon',
-                'TEST_ADMIN_EMAIL': 'admin@example.com',
-                'TEST_ADMIN_PASSWORD': 'admin-password',
             },
         )
         self.assertEqual(config.secret_key, SECRET_KEY)
@@ -752,7 +740,6 @@ class FormattingTest(unittest.TestCase):
                 user_id='b',
                 email='b@b.c',
                 suspension=MODULE.Suspension(suspended_at=now),
-                legacy_admin=True,
                 snapshot=MODULE.CloudSnapshot(user_id='b', revision=2),
                 eligibility=MODULE.Eligibility('b@b.c', 'email'),
             ),
@@ -760,7 +747,6 @@ class FormattingTest(unittest.TestCase):
         summary = MODULE.summarize_users(users)
         self.assertIn('共 2 个账号', summary)
         self.assertIn('已停用 1', summary)
-        self.assertIn('历史管理员 1', summary)
         rows = [
             MODULE.Eligibility('a@b.c', 'email'),
             MODULE.Eligibility('b@b.c', 'email', revoked_at=now),
@@ -907,7 +893,6 @@ class UserListTest(Harness):
                     'revoked_at': '2026-01-01T00:00:00+00:00',
                 },
             ],
-            admins=[OTHER_ID],
             profiles=[
                 {
                     'user_id': TARGET_ID,
@@ -937,10 +922,8 @@ class UserListTest(Harness):
         self.assertEqual(first.history_count, 3)
         self.assertEqual(first.upload_request_count, 1)
         self.assertEqual(first.mcp.active, 1)
-        self.assertFalse(first.legacy_admin)
         self.assertIn('已停用', second.status_label())
         self.assertEqual(second.mcp.revoked, 1)
-        self.assertTrue(second.legacy_admin)
 
         self.assertTrue(self.transport.urls_containing('page=1&per_page=100'))
         self.assertTrue(self.transport.urls_containing('&identifier=in.'))
@@ -1061,20 +1044,18 @@ class UserListTest(Harness):
         )
         self.assertEqual(len(MODULE.filter_users(records, '')), 2)
 
-    def test_render_user_table_marks_legacy_admin_and_snapshot(self):
+    def test_render_user_table_marks_snapshot(self):
         records = [
             MODULE.UserRecord(
                 user_id=TARGET_ID,
                 email=TARGET_EMAIL,
                 display_name='小明',
-                legacy_admin=True,
                 snapshot=MODULE.CloudSnapshot(user_id=TARGET_ID, revision=7),
                 eligibility=MODULE.Eligibility(TARGET_EMAIL, 'email'),
             )
         ]
         rendered = '\n'.join(MODULE.render_user_table(records))
         self.assertIn('小明', rendered)
-        self.assertIn('历史管理员', rendered)
         self.assertIn('r7', rendered)
         self.assertIn('待使用', rendered)
 
@@ -1125,7 +1106,6 @@ class InFilterChunkingTest(unittest.TestCase):
             ('/rest/v1/cloud_business_snapshot_upload_requests?select=', [100, 50]),
             ('/rest/v1/national_focus_mcp_grants?select=', [100, 50]),
             ('/rest/v1/profile_accounts?select=', [100, 50]),
-            ('/rest/v1/app_admins?select=', [100, 50]),
         ):
             with self.subTest(fragment=fragment):
                 self.assertEqual(self.batch_sizes(transport, fragment), expected)
@@ -1640,7 +1620,6 @@ class DeleteUserCommandTest(Harness):
         receipt_rows=None,
         receipt_repeat=False,
         eligibility_rows=None,
-        admin_ids=(),
         completed=None,
     ):
         transport = self.transport if transport is None else transport
@@ -1656,7 +1635,6 @@ class DeleteUserCommandTest(Harness):
         install_user_data(
             transport,
             [user_row()] if users is None else list(users),
-            admins=admin_ids,
         )
         transport.add(
             'GET',
@@ -1679,7 +1657,7 @@ class DeleteUserCommandTest(Harness):
         )
         transport.add(
             'POST',
-            '/rest/v1/rpc/admin_delete_user_business_data',
+            '/rest/v1/rpc/purge_user_business_data',
             empty(204),
         )
         transport.add(
@@ -1689,7 +1667,7 @@ class DeleteUserCommandTest(Harness):
         )
         transport.add(
             'POST',
-            '/rest/v1/rpc/admin_complete_user_purge',
+            '/rest/v1/rpc/complete_user_purge',
             ok(
                 completed
                 or {
@@ -1705,8 +1683,8 @@ class DeleteUserCommandTest(Harness):
         return [
             call.url
             for call in self.transport.calls
-            if 'admin_delete_user_business_data' in call.url
-            or 'admin_complete_user_purge' in call.url
+            if 'purge_user_business_data' in call.url
+            or 'complete_user_purge' in call.url
             or f'/auth/v1/admin/users/{TARGET_ID}' in call.url
         ]
 
@@ -1729,12 +1707,12 @@ class DeleteUserCommandTest(Harness):
                 'user_id': TARGET_ID,
                 'status': 'pending',
                 'requested_at': receipt_call.json['requested_at'],
-                'requested_by': None,
                 'eligibility_id': ELIGIBILITY_ID,
                 'business_data_deleted': False,
                 'completed_at': None,
             },
         )
+        self.assertNotIn('requested_by', receipt_call.json)
         self.assertEqual(
             receipt_call.headers['Prefer'],
             'resolution=merge-duplicates,return=representation',
@@ -1744,33 +1722,23 @@ class DeleteUserCommandTest(Harness):
         self.assertEqual(
             urls,
             [
-                f'{PROJECT_URL}/rest/v1/rpc/admin_delete_user_business_data',
+                f'{PROJECT_URL}/rest/v1/rpc/purge_user_business_data',
                 f'{PROJECT_URL}/auth/v1/admin/users/{TARGET_ID}',
-                f'{PROJECT_URL}/rest/v1/rpc/admin_complete_user_purge',
+                f'{PROJECT_URL}/rest/v1/rpc/complete_user_purge',
             ],
         )
         self.assertEqual(
             self.transport.calls_for(
-                '/rest/v1/rpc/admin_delete_user_business_data'
+                '/rest/v1/rpc/purge_user_business_data'
             )[0].json,
             {'p_user_id': TARGET_ID},
         )
         self.assertEqual(
             self.transport.calls_for(
-                '/rest/v1/rpc/admin_complete_user_purge'
+                '/rest/v1/rpc/complete_user_purge'
             )[0].json,
             {'p_user_id': TARGET_ID},
         )
-        self.assertFalse(self.transport.urls_containing('admin_begin_user_purge'))
-
-    def test_delete_legacy_admin_user_is_not_blocked(self):
-        self.install_delete_flow(admin_ids=[TARGET_ID])
-        console = self.console(inputs=[TARGET_EMAIL])
-        outcome = MODULE.command_delete_user(self.client(), console, TARGET_EMAIL)
-        self.assertTrue(outcome.data['legacy_admin'])
-        self.assertIn('遗留 app_admins：有', '\n'.join(outcome.lines))
-        self.assertEqual(outcome.data['status'], 'completed')
-        self.assertFalse(self.transport.urls_containing('admin_begin_user_purge'))
 
     def test_completed_receipt_short_circuits(self):
         self.install_delete_flow(
@@ -1789,7 +1757,7 @@ class DeleteUserCommandTest(Harness):
         self.assertFalse(
             self.transport.urls_containing('/rest/v1/user_purge_receipts?on_conflict=user_id')
         )
-        self.assertFalse(self.transport.urls_containing('admin_delete_user_business_data'))
+        self.assertFalse(self.transport.urls_containing('purge_user_business_data'))
         self.assertFalse(self.transport.urls_containing(f'/auth/v1/admin/users/{TARGET_ID}'))
 
     def test_pending_receipt_is_reused(self):
@@ -1822,7 +1790,7 @@ class DeleteUserCommandTest(Harness):
         outcome = MODULE.command_delete_user(self.client(), console, TARGET_EMAIL)
         self.assertEqual(outcome.data['status'], 'completed')
         self.assertFalse(
-            self.transport.urls_containing('admin_delete_user_business_data')
+            self.transport.urls_containing('purge_user_business_data')
         )
         self.assertTrue(
             self.transport.urls_containing(f'/auth/v1/admin/users/{TARGET_ID}')
@@ -1940,10 +1908,10 @@ class DeleteUserCommandTest(Harness):
         self.assertFalse(outcome.data['receipt_reused'])
         self.assertIn('Auth 身份已删除', '\n'.join(outcome.lines))
         self.assertEqual(
-            transport.urls_containing('admin_delete_user_business_data'), []
+            transport.urls_containing('purge_user_business_data'), []
         )
         complete_calls = transport.calls_for(
-            '/rest/v1/rpc/admin_complete_user_purge'
+            '/rest/v1/rpc/complete_user_purge'
         )
         self.assertEqual(len(complete_calls), 1)
         self.assertEqual(complete_calls[0].json, {'p_user_id': TARGET_ID})
@@ -1967,10 +1935,10 @@ class DeleteUserCommandTest(Harness):
         self.assertTrue(outcome.data['resumed'])
         self.assertIn('已存在 completed 回执', '\n'.join(outcome.lines))
         self.assertEqual(
-            transport.urls_containing('admin_delete_user_business_data'), []
+            transport.urls_containing('purge_user_business_data'), []
         )
         self.assertEqual(
-            transport.urls_containing('admin_complete_user_purge'), []
+            transport.urls_containing('complete_user_purge'), []
         )
 
     def test_resume_normalizes_an_uppercase_uuid(self):
@@ -2006,7 +1974,7 @@ class DeleteUserCommandTest(Harness):
             )
         self.assertIn('找不到 UUID', str(caught.exception))
         self.assertEqual(
-            transport.urls_containing('admin_complete_user_purge'), []
+            transport.urls_containing('complete_user_purge'), []
         )
 
     def test_unknown_email_never_queries_purge_receipts(self):
@@ -2196,11 +2164,11 @@ class MenuTest(Harness):
             '/rest/v1/user_purge_receipts?on_conflict=user_id',
             ok([{'user_id': TARGET_ID, 'status': 'pending', 'completed_at': None}]),
         )
-        self.transport.add('POST', '/rest/v1/rpc/admin_delete_user_business_data', empty())
+        self.transport.add('POST', '/rest/v1/rpc/purge_user_business_data', empty())
         self.transport.add('DELETE', f'/auth/v1/admin/users/{TARGET_ID}', empty())
         self.transport.add(
             'POST',
-            '/rest/v1/rpc/admin_complete_user_purge',
+            '/rest/v1/rpc/complete_user_purge',
             ok(
                 {
                     'user_id': TARGET_ID,
@@ -2422,11 +2390,11 @@ class MainTest(Harness):
             '/rest/v1/user_purge_receipts?on_conflict=user_id',
             ok([{'user_id': TARGET_ID, 'status': 'pending', 'completed_at': None}]),
         )
-        self.transport.add('POST', '/rest/v1/rpc/admin_delete_user_business_data', empty())
+        self.transport.add('POST', '/rest/v1/rpc/purge_user_business_data', empty())
         self.transport.add('DELETE', f'/auth/v1/admin/users/{TARGET_ID}', empty())
         self.transport.add(
             'POST',
-            '/rest/v1/rpc/admin_complete_user_purge',
+            '/rest/v1/rpc/complete_user_purge',
             ok(
                 {
                     'user_id': TARGET_ID,
@@ -2442,7 +2410,7 @@ class MainTest(Harness):
         self.assertEqual(code, 0)
         self.assertIn('逐字输入目标邮箱', prompts[-1])
         self.assertEqual(
-            self.transport.calls_for('/rest/v1/rpc/admin_complete_user_purge')[0].json,
+            self.transport.calls_for('/rest/v1/rpc/complete_user_purge')[0].json,
             {'p_user_id': TARGET_ID},
         )
 
@@ -2459,11 +2427,11 @@ class MainTest(Harness):
             '/rest/v1/user_purge_receipts?on_conflict=user_id',
             ok([{'user_id': TARGET_ID, 'status': 'pending', 'completed_at': None}]),
         )
-        self.transport.add('POST', '/rest/v1/rpc/admin_delete_user_business_data', empty())
+        self.transport.add('POST', '/rest/v1/rpc/purge_user_business_data', empty())
         self.transport.add('DELETE', f'/auth/v1/admin/users/{TARGET_ID}', empty())
         self.transport.add(
             'POST',
-            '/rest/v1/rpc/admin_complete_user_purge',
+            '/rest/v1/rpc/complete_user_purge',
             ok(
                 {
                     'user_id': TARGET_ID,

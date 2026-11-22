@@ -1,6 +1,3 @@
-[functions.admin-reset-user-password]
-verify_jwt = true
-
 # This endpoint accepts only independent opaque OAuth delegates, not Auth JWTs.
 # Discovery/DCR must be public; handler + database authorize every MCP request.
 [functions.national-focus-mcp]
