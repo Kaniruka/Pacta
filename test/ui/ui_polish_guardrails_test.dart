@@ -827,6 +827,11 @@ void main() {
         final tagsWidget = tester.widget<NationalFocusStreakTags>(tags);
         expect(tagsWidget.currentConsecutiveDays, 3);
         expect(tagsWidget.bestConsecutiveDays, 5);
+        expect(
+          tagsWidget.compact,
+          isTrue,
+          reason: '详细卡片头部用紧凑胶囊，默认大号样式只留给详情页与弹层',
+        );
 
         final titleRect = tester.getRect(
           find.descendant(of: cardFinder, matching: find.text('连击卡')),

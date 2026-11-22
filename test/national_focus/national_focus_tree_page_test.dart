@@ -1634,6 +1634,29 @@ void main() {
           greaterThan(iconRect.right),
           reason: '胶囊在图标井右侧的标题列内',
         );
+        // 头部与正文之间的 1dp 柔化分隔线在 2 倍字号下仍完整落在卡内，
+        // 且严格夹在胶囊行与三行规则之间。
+        final dividerRect = tester.getRect(
+          find.byKey(const ValueKey('national-focus-node-rule-divider')),
+        );
+        expect(dividerRect.height, closeTo(1, 0.01));
+        expect(dividerRect.left, greaterThanOrEqualTo(cardRect.left));
+        expect(dividerRect.right, lessThanOrEqualTo(cardRect.right));
+        expect(dividerRect.top, greaterThanOrEqualTo(tagsRect.bottom));
+        expect(
+          dividerRect.bottom,
+          lessThanOrEqualTo(
+            tester
+                .getRect(
+                  find.descendant(
+                    of: cardFinder,
+                    matching: find.text(card.effectiveAction),
+                  ),
+                )
+                .top,
+          ),
+          reason: '分隔线在规则正文之上',
+        );
         final rule = tester.widget<Text>(
           find.descendant(
             of: cardFinder,

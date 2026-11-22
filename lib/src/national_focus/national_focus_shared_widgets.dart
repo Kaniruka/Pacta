@@ -363,18 +363,26 @@ class NationalFocusFieldText extends StatelessWidget {
 
 /// 节点名称旁的连续点亮矢量胶囊：当前连续与历史最高连续。
 ///
-/// 只用 12dp 图标 + 半粗数字，不占额外一行：放进调用方的 [Wrap] 后短名称
-/// 与胶囊同排、长名称自动换行，窄屏也不会溢出。0 天用中性浅灰，点亮中的
-/// 连续天数与历史最高分别取点亮态容器色和主色容器色。
+/// 只用 [PactaIconSizes.micro] 图标 + 半粗数字，不占额外一行：放进调用方的
+/// [Wrap] 后短名称与胶囊同排、长名称自动换行，窄屏也不会溢出。0 天用中性
+/// 浅灰，点亮中的连续天数取点亮态容器色，历史最高取主色容器色。
+///
+/// [compact] 是给国策树详细卡片头部这类高密度位置的收敛档：内边距、图标与
+/// 数字之间的缝隙、行高都压到最小可读尺度，历史最高不再用高饱和的主色容器
+/// （暗色下它亮得像并排的第二颗按钮），改成与「已内化」同源的次色容器，只
+/// 保留 55% 不透明度，读成内嵌元信息。默认 `false`，详情页、弹层等大尺寸
+/// 位置的观感完全不变。
 class NationalFocusStreakTags extends StatelessWidget {
   const NationalFocusStreakTags({
     super.key,
     required this.currentConsecutiveDays,
     required this.bestConsecutiveDays,
+    this.compact = false,
   });
 
   final int currentConsecutiveDays;
   final int bestConsecutiveDays;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -383,7 +391,7 @@ class NationalFocusStreakTags extends StatelessWidget {
     final currentActive = currentConsecutiveDays > 0;
     return Wrap(
       key: const ValueKey('national-focus-streak-tags'),
-      spacing: 6,
+      spacing: compact ? 4 : 6,
       runSpacing: 4,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
@@ -398,14 +406,22 @@ class NationalFocusStreakTags extends StatelessWidget {
           foreground: currentActive
               ? status.onSuccessContainer
               : colors.onSurfaceVariant,
+          compact: compact,
         ),
         _StreakPill(
           key: const ValueKey('national-focus-streak-best'),
           icon: Icons.track_changes,
           label: '${bestConsecutiveDays}d',
           semanticsLabel: '历史最高连续点亮 $bestConsecutiveDays 天',
-          background: colors.primaryContainer,
-          foreground: colors.onPrimaryContainer,
+          // 紧凑档把历史最高降回次色容器：与「已内化」同源，但只留 55%
+          // 不透明度，和点亮态 / 当前连续的色阶拉开层次，不再抢状态色。
+          background: compact
+              ? colors.secondaryContainer.withValues(alpha: 0.55)
+              : colors.primaryContainer,
+          foreground: compact
+              ? colors.onSecondaryContainer
+              : colors.onPrimaryContainer,
+          compact: compact,
         ),
       ],
     );
@@ -420,6 +436,7 @@ class _StreakPill extends StatelessWidget {
     required this.semanticsLabel,
     required this.background,
     required this.foreground,
+    required this.compact,
   });
 
   final IconData icon;
@@ -427,10 +444,19 @@ class _StreakPill extends StatelessWidget {
   final String semanticsLabel;
   final Color background;
   final Color foreground;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final style = Theme.of(context).textTheme.labelSmall;
+    // 字号仍取 labelSmall（语义字阶的最小一档），紧凑档只收行高与内边距：
+    // 图标与字号再往下掉，180d 这类三位数就失去可读性，也会跌破 14dp 的
+    // 图标语义尺度。
+    final textStyle = style?.copyWith(
+      color: foreground,
+      fontWeight: PactaFonts.semibold,
+      height: compact ? 1.25 : style.height,
+    );
     return Tooltip(
       message: semanticsLabel,
       child: Semantics(
@@ -441,19 +467,15 @@ class _StreakPill extends StatelessWidget {
             borderRadius: BorderRadius.circular(999),
           ),
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(6, 1, 8, 1),
+            padding: compact
+                ? const EdgeInsets.fromLTRB(5, 1, 6, 1)
+                : const EdgeInsets.fromLTRB(6, 1, 8, 1),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(icon, size: PactaIconSizes.micro, color: foreground),
-                const SizedBox(width: 3),
-                Text(
-                  label,
-                  style: style?.copyWith(
-                    color: foreground,
-                    fontWeight: PactaFonts.semibold,
-                  ),
-                ),
+                SizedBox(width: compact ? 2 : 3),
+                Text(label, style: textStyle),
               ],
             ),
           ),

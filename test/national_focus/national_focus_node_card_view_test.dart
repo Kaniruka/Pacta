@@ -278,10 +278,26 @@ void main() {
       final nameRect = tester.getRect(
         find.descendant(of: finder, matching: find.text(card.name)),
       );
+      final statusIcon = find.descendant(
+        of: finder,
+        matching: find.byIcon(switch (card.state) {
+          NationalFocusCardState.lit => Icons.lightbulb,
+          NationalFocusCardState.pendingTodayConfirmation =>
+            Icons.hourglass_top,
+          NationalFocusCardState.extinguished => Icons.lightbulb_outline,
+        }),
+      );
+      // 抬头行垂直居中：短名称不再把图标井顶到卡片上缘，标题中线与图标井
+      // 中线严格重合，上下重心一致。
       expect(
-        nameRect.top - cardRect.top,
-        closeTo(8, 0.01),
-        reason: '${card.name} 的标题行直接贴着 8dp 内边距开始，顶部没有额外占位',
+        nameRect.center.dy,
+        closeTo(tester.getRect(statusIcon).center.dy, 0.51),
+        reason: '${card.name} 的标题与图标井垂直居中对齐，抬头不再顶对齐',
+      );
+      expect(
+        nameRect.top,
+        greaterThanOrEqualTo(cardRect.top + 9.99),
+        reason: '${card.name} 的标题行从 9dp 上内边距开始，顶部没有额外占位',
       );
       // 四边等宽：RoundedRectangleBorder 只有一条 BorderSide，四条边同宽。
       final shape =
@@ -295,15 +311,6 @@ void main() {
           reason: '${card.name} 不再渲染状态文字胶囊',
         );
       }
-      final statusIcon = find.descendant(
-        of: finder,
-        matching: find.byIcon(switch (card.state) {
-          NationalFocusCardState.lit => Icons.lightbulb,
-          NationalFocusCardState.pendingTodayConfirmation =>
-            Icons.hourglass_top,
-          NationalFocusCardState.extinguished => Icons.lightbulb_outline,
-        }),
-      );
       expect(statusIcon, findsOneWidget, reason: '状态仍由左侧图标井表达');
       // 语义层仍完整播报状态：视觉去掉文字胶囊不等于对读屏也去掉状态。
       final semantics = tester.widget<Semantics>(
@@ -445,6 +452,40 @@ void main() {
       ),
       findsOneWidget,
     );
+    // 卡片头部用紧凑档：默认大号胶囊留给详情页与弹层。
+    expect(
+      tester
+          .widget<NationalFocusStreakTags>(
+            find.descendant(
+              of: cardKey(done.id),
+              matching: find.byType(NationalFocusStreakTags),
+            ),
+          )
+          .compact,
+      isTrue,
+      reason: '详细卡片头部使用紧凑胶囊，不再像并排的大按钮',
+    );
+    // 历史最高胶囊降回与「已内化」同源的柔和次色：暗色下不再亮成主蓝底。
+    final cardColors = Theme.of(tester.element(cardKey(done.id))).colorScheme;
+    final bestPill = tester.widget<DecoratedBox>(
+      find
+          .descendant(
+            of: find.byKey(const ValueKey('national-focus-streak-best')),
+            matching: find.byType(DecoratedBox),
+          )
+          .first,
+    );
+    final bestFill = (bestPill.decoration as BoxDecoration).color;
+    expect(
+      bestFill,
+      cardColors.secondaryContainer.withValues(alpha: 0.55),
+      reason: '紧凑档历史最高用 55% 次色容器，与 已内化 同源但更轻',
+    );
+    expect(
+      bestFill,
+      isNot(cardColors.primaryContainer),
+      reason: '紧凑档不再用高饱和主色容器，避免像按钮',
+    );
     expect(
       find.descendant(of: cardKey(done.id), matching: find.text('12d')),
       findsOneWidget,
@@ -539,7 +580,7 @@ void main() {
     await pumpTree(tester, repository);
     await switchToDetailed(tester);
 
-    // 0 天 + 非根 + 未内化：整块胶囊行都不渲染，标题与规则之间只留 6dp。
+    // 0 天 + 非根 + 未内化：整块胶囊行都不渲染，标题与规则之间只留 11dp 分隔带。
     expect(
       find.descendant(
         of: cardKey(quiet.id),
@@ -564,8 +605,8 @@ void main() {
     );
     expect(
       quietRuleRect.top - quietHeaderRect.bottom,
-      closeTo(6, 0.01),
-      reason: '没有胶囊时不留空行，规则紧接标题区（只隔 6dp）',
+      closeTo(11, 0.01),
+      reason: '没有胶囊时不留空行，规则紧接标题区（只隔 5 + 1 + 5 的分隔带）',
     );
 
     // 根节点 0 天：既没有 根 胶囊，也不出现连续胶囊，规则仍紧接标题区。
@@ -599,8 +640,8 @@ void main() {
                     .first,
               )
               .bottom,
-      closeTo(6, 0.01),
-      reason: '没有胶囊行时规则紧接标题区（只隔 6dp）',
+      closeTo(11, 0.01),
+      reason: '没有胶囊行时规则紧接标题区（只隔 5 + 1 + 5 的分隔带）',
     );
 
     // 有任何一天记录就渲染详情页同款矢量胶囊（d 后缀 + Tooltip）。
@@ -827,12 +868,29 @@ void main() {
         );
         expect(tagsRect.left, greaterThanOrEqualTo(cardRect.left - 0.01));
         expect(tagsRect.right, lessThanOrEqualTo(cardRect.right + 0.01));
-        expect(nameRect.top - cardRect.top, closeTo(8, 0.01));
-        expect(ruleRect.bottom, lessThan(cardRect.bottom - 6));
+        expect(nameRect.top - cardRect.top, closeTo(9, 0.01));
+        expect(ruleRect.bottom, lessThan(cardRect.bottom));
         expect(
           cardRect.bottom - ruleRect.bottom - (nameRect.top - cardRect.top),
           lessThan(24),
           reason: '底部留白不比顶部多出一大块',
+        );
+        // 柔化分隔线是 1dp 全内宽 hairline：落在胶囊行与规则之间，既不贴顶
+        // （不是旧状态条回流），也不跨出 9dp 内边距。
+        final dividerRect = tester.getRect(
+          find.byKey(const ValueKey('national-focus-node-rule-divider')),
+        );
+        expect(dividerRect.height, closeTo(1, 0.01));
+        expect(dividerRect.width, closeTo(cardRect.width - 24, 0.01));
+        expect(
+          dividerRect.top,
+          greaterThanOrEqualTo(tagsRect.bottom),
+          reason: '分隔线在头部之下',
+        );
+        expect(
+          dividerRect.bottom,
+          lessThanOrEqualTo(ruleRect.top),
+          reason: '分隔线在规则之上',
         );
         expect(tester.takeException(), isNull);
         await tearDownTree(tester);
@@ -887,6 +945,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('国策卡详情'), findsOneWidget);
     expect(find.byType(NationalFocusStreakTags), findsOneWidget);
+    expect(
+      tester
+          .widget<NationalFocusStreakTags>(find.byType(NationalFocusStreakTags))
+          .compact,
+      isFalse,
+      reason: '详情页沿用默认大号胶囊，紧凑档只服务详细卡片头部',
+    );
     expect(find.text('5d'), findsOneWidget);
     expect(find.text('12d'), findsOneWidget);
     expect(find.byTooltip('当前连续点亮 5 天'), findsOneWidget);

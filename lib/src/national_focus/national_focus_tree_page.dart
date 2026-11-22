@@ -1315,9 +1315,14 @@ const double _nodeCardRadius = 16;
 /// 结构的最小可用宽度。
 const double _detailedNodeWidth = 228;
 
-/// 详细视图卡片的基准高度：1x 最坏内容约 138dp（两行名称 + 两行胶囊 +
-/// 三行规则），160dp 留出呼吸位，随 `textScaler` 线性放大后 2x 的最坏组合
-/// 约 255dp，仍在 320dp 之内，绝不出现 RenderFlex 溢出。
+/// 详细视图卡片的基准高度：1x 最坏内容约 157dp（两行名称 + 折成两行的胶囊
+/// + 11dp 分隔带 + 三行规则，外加 9dp 上下内边距），160dp 只留约 3dp 呼吸位；
+/// 2x 时卡片高度随 `textScaler` 线性放大到 320dp，最坏组合约 306dp。任何
+/// 一项再长一点都会先撞上这个高度，改结构前请重算：
+///
+/// 18（上下内边距）+ 80（两行标题 40 + 4 + 两行 16dp 胶囊 + 4，2x 时胶囊
+/// 折成三行约 181）+ 11（5 + 1 + 5 分隔带）+ 48（三行规则，2x 约 96）
+/// ≤ 160 / 320。
 const double _detailedNodeHeight = 160;
 
 /// 详细视图状态图标井的直径（井内图标取 [PactaIconSizes.sm]）。
@@ -1325,10 +1330,11 @@ const double _statusWellSize = PactaIconSizes.lg;
 
 /// 详细视图的节点卡片：左对齐的 M3 状态卡。
 ///
-/// 结构固定为「图标井 + 右列（两行名称 → 连续天数/已内化胶囊，无可展示胶囊
-/// 时整行不渲染）→ 最多三行国策规则」。顶层节点不再有「根」胶囊，根只用更
-/// 粗的外框区分。没有顶部状态条，也没有右上角状态文字胶囊：状态只由左侧
-/// 图标井、卡片填色与四周边框颜色区分。底色以
+/// 结构固定为「图标井 + 右列（两行名称 → 紧凑连续天数/已内化胶囊，无可展示
+/// 胶囊时整行不渲染）→ 1dp 柔化分隔线 → 最多三行国策规则」。抬头行按垂直
+/// 居中排版：短名称不会再把图标井顶到卡片上缘，上下重心自然平衡。顶层节点
+/// 不再有「根」胶囊，根只用更粗的外框区分。没有顶部状态条，也没有右上角
+/// 状态文字胶囊：状态只由左侧图标井、卡片填色与四周边框颜色区分。底色以
 /// [PactaSurfaces.card] 为基底混入状态色，亮暗两种主题下都比画布
 /// surfaceContainerLow 更亮，再配合等宽的 1.2–2dp 四边描边，每张卡都明显浮在
 /// 画布之上，而不是陷进去。
@@ -1380,12 +1386,14 @@ class _NationalFocusNodeCard extends StatelessWidget {
         child: InkWell(
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+            padding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  // 抬头行按中线对齐：短名称时图标井不再把文字顶到卡片上缘，
+                  // 图标井与「标题 + 胶囊」列的重心一致。
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     _NationalFocusNodeIconWell(palette: palette),
                     const SizedBox(width: PactaSpacing.sm),
@@ -1417,6 +1425,7 @@ class _NationalFocusNodeCard extends StatelessWidget {
                                         card.currentConsecutiveDays,
                                     bestConsecutiveDays:
                                         card.bestConsecutiveDays,
+                                    compact: true,
                                   ),
                                 if (card.isInternalized)
                                   _NationalFocusNodeBadge(
@@ -1433,7 +1442,23 @@ class _NationalFocusNodeCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
+                // 头部与正文之间的柔化分隔：1dp outlineVariant 降到 28% 不
+                // 透明度，只交代「状态摘要 / 规则正文」的结构分层，不和三态
+                // 状态色抢注意力。用 DecoratedBox 而不是 Container(color:)：
+                // 详细卡片内必须零 ColoredBox（旧顶部状态条的护栏会把纯色块
+                // 判成状态条回流）。1dp × 204dp 的 hairline 同时低于护栏的
+                // 「≥ 卡宽 90%、≤ 3.5dp」整宽细色带阈值（228 × 0.9 = 205.2dp），
+                // 不会被误判成贴顶色条。
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 5),
+                  child: DecoratedBox(
+                    key: const ValueKey('national-focus-node-rule-divider'),
+                    decoration: BoxDecoration(
+                      color: colors.outlineVariant.withValues(alpha: 0.28),
+                    ),
+                    child: const SizedBox(height: 1, width: double.infinity),
+                  ),
+                ),
                 // 最多三行规则：占满卡片内部整宽，不被右列标题宽度挤压。
                 // 规则用次级前景色，名称与规则之间才有清楚的层次。
                 Text(
@@ -1503,7 +1528,9 @@ class _NationalFocusNodeBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(4, 1, 6, 1),
+        // 与头部紧凑连续天数胶囊同一套内边距、图标缝隙与行高：三枚胶囊
+        // 并排时高度、起点和字重都对齐，不会一枚像按钮、一枚像脚注。
+        padding: const EdgeInsets.fromLTRB(5, 1, 6, 1),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -1517,6 +1544,7 @@ class _NationalFocusNodeBadge extends StatelessWidget {
               style: theme.textTheme.labelSmall?.copyWith(
                 color: foreground,
                 fontWeight: PactaFonts.semibold,
+                height: 1.25,
               ),
             ),
           ],
