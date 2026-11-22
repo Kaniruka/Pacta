@@ -1266,15 +1266,14 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
     final metrics = _metrics;
     // 完整月历二级页已删除：日期详情只回答「这一天的专注时长与安排」，
     // 国策结论统一由卡片顶部的动态选中日状态卡给出，这里不再复述。
-    final header = Text('日期详情', style: theme.textTheme.titleSmall);
     // 失败必须先于加载判定：_restartMonth 出错时把 _metrics 置空且
     // _loading=false，若这里先看 metrics 就会把失败永久说成「正在读取」。
     if (_error != null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          header,
-          const SizedBox(height: 4),
+          _buildDayDetailHeader(context),
+          const SizedBox(height: PactaSpacing.xs),
           Row(
             children: [
               Icon(
@@ -1299,8 +1298,8 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          header,
-          const SizedBox(height: 4),
+          _buildDayDetailHeader(context),
+          const SizedBox(height: PactaSpacing.xs),
           Text(
             '正在读取专注投影…',
             style: theme.textTheme.bodyMedium?.copyWith(
@@ -1324,30 +1323,91 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        header,
-        Text(
-          '${month.month} 月 $day 日${isToday ? ' · 今日' : ''}',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: scheme.onSurfaceVariant,
-          ),
+        // 「日期详情」用谷歌蓝分组标题，日期作为右侧副文本；标题与日期
+        // 各自换行，窄屏 2.0x 字号下也不会溢出或截断。
+        _buildDayDetailHeader(
+          context,
+          dateLabel: '${month.month} 月 $day 日${isToday ? ' · 今日' : ''}',
         ),
-        const SizedBox(height: 4),
-        Text(
-          '有效专注',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: scheme.onSurfaceVariant,
-          ),
-        ),
-        Text(
-          formatEffectiveDuration(daySeconds),
-          key: const ValueKey('board-focus-day-duration'),
-          style: theme.textTheme.headlineSmall?.copyWith(
-            fontWeight: PactaFonts.semibold,
-            color: daySeconds > 0 ? scheme.primary : scheme.onSurfaceVariant,
-          ),
-        ),
+        // 有效专注单独装进柔和 tonal 容器：标签与时长各自成行，不再和
+        // 日期副文本、安排标题挤成一团裸文字。
+        _buildDurationPanel(context, seconds: daySeconds),
         ..._buildScheduleSection(context, date: date, isToday: isToday),
       ],
+    );
+  }
+
+  /// 日期详情分区标题：谷歌蓝 [PactaSectionHeader] + 右侧日期副文本。
+  ///
+  /// 有日期时标题由 [PactaSectionHeader] 的 Expanded 承接剩余宽度，日期最多
+  /// 两行软换行：320dp + 2.0x 字号下日期先换行而不是被省略号截断，标题本身
+  /// 也不会把整行撑破。加载与失败分支没有可确认的日期，因此只渲染标题。
+  Widget _buildDayDetailHeader(BuildContext context, {String? dateLabel}) {
+    final theme = Theme.of(context);
+    final label = dateLabel;
+    return PactaSectionHeader(
+      title: '日期详情',
+      // 外层已经给了 16dp 版心与段前距：这里左侧归零，标题与下方两块
+      // tonal 容器共用同一条左缘；下方 8dp 是标题到内容的呼吸。
+      padding: const EdgeInsets.fromLTRB(0, 0, 0, PactaSpacing.sm),
+      trailing: label == null
+          ? null
+          : Text(
+              label,
+              maxLines: 2,
+              softWrap: true,
+              textAlign: TextAlign.end,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+    );
+  }
+
+  /// 柔和 tonal 容器：「有效专注」与「安排」两块内容共用同一种底与圆角。
+  ///
+  /// 底色固定取 `surfaceContainerLow`，12dp 圆角配 12dp 内边距：亮色下是
+  /// 浅蓝灰、暗色下沉于卡片表面，两块内容因此各自成组，而不是一段长文本。
+  /// 颜色不收参数：token 只在这里出现一次，调用方不会各写一套底色。
+  Widget _tonalPanel({Key? key, required Widget child}) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      key: key,
+      padding: const EdgeInsets.all(PactaSpacing.md),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(PactaSpacing.md),
+      ),
+      child: child,
+    );
+  }
+
+  /// 有效专注：标签在上、时长在下，整块放进 tonal 容器。
+  Widget _buildDurationPanel(BuildContext context, {required int seconds}) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return _tonalPanel(
+      key: const ValueKey('board-focus-day-duration-panel'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '有效专注',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: PactaSpacing.xxs),
+          Text(
+            formatEffectiveDuration(seconds),
+            key: const ValueKey('board-focus-day-duration'),
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: PactaFonts.semibold,
+              color: seconds > 0 ? scheme.primary : scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1371,80 +1431,105 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
         ? const <Schedule>[]
         : _schedulesOn(date, zoneId);
     return [
-      const SizedBox(height: 12),
-      Text(
-        _schedulesLoading || failed
-            ? scheduleTitle
-            : '$scheduleTitle · ${daySchedules.length} 项',
-        style: theme.textTheme.bodyMedium,
-      ),
-      const SizedBox(height: 4),
-      if (_schedulesLoading)
-        Text(
-          '正在读取安排…',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: scheme.onSurfaceVariant,
-          ),
-        )
-      else if (failed)
-        Row(
+      const SizedBox(height: PactaSpacing.md),
+      // 安排整块放进独立的柔和 tonal 容器：标题在上、列表/空态在下，
+      // 中间固定 8dp 呼吸，加载与失败分支也各占一行，绝不与上方挤成一段。
+      _tonalPanel(
+        key: const ValueKey('board-focus-schedule-panel'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Icon(
-              Icons.error_outline,
-              size: PactaIconSizes.sm,
-              color: scheme.error,
+            Text(
+              _schedulesLoading || failed
+                  ? scheduleTitle
+                  : '$scheduleTitle · ${daySchedules.length} 项',
+              style: theme.textTheme.bodyMedium,
             ),
-            const SizedBox(width: 8),
-            const Expanded(child: Text('暂时不能读取安排。')),
-            const SizedBox(width: 8),
-            OutlinedButton(
-              key: const ValueKey('board-focus-schedule-retry'),
-              onPressed: _restartSchedules,
-              child: const Text('重试'),
-            ),
-          ],
-        )
-      else if (daySchedules.isEmpty)
-        Text(
-          isToday ? '今天还没有安排。' : '当天还没有安排。',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: scheme.onSurfaceVariant,
-          ),
-        )
-      else
-        for (final schedule in daySchedules)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
-            child: Row(
-              children: [
-                // 严格只读：compact 指示不接受 onChanged，不可勾选。
-                PactaCheckCircle(
-                  value: schedule.isCompleted,
-                  onChanged: null,
-                  compact: true,
-                  semanticLabel: schedule.isCompleted ? '已完成' : '未完成',
+            const SizedBox(height: PactaSpacing.sm),
+            if (_schedulesLoading)
+              Text(
+                '正在读取安排…',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    schedule.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: schedule.isCompleted
-                        ? theme.textTheme.bodyMedium?.copyWith(
-                            decoration: TextDecoration.lineThrough,
-                          )
-                        : null,
+              )
+            else if (failed)
+              Row(
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: PactaIconSizes.sm,
+                    color: scheme.error,
+                  ),
+                  const SizedBox(width: PactaSpacing.sm),
+                  const Expanded(child: Text('暂时不能读取安排。')),
+                  const SizedBox(width: PactaSpacing.sm),
+                  OutlinedButton(
+                    key: const ValueKey('board-focus-schedule-retry'),
+                    onPressed: _restartSchedules,
+                    child: const Text('重试'),
+                  ),
+                ],
+              )
+            else if (daySchedules.isEmpty)
+              Text(
+                isToday ? '今天还没有安排。' : '当天还没有安排。',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              )
+            else
+              for (final schedule in daySchedules)
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    vertical: PactaSpacing.xxs,
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) => Row(
+                      children: [
+                        // 严格只读：compact 指示不接受 onChanged，不可勾选。
+                        PactaCheckCircle(
+                          value: schedule.isCompleted,
+                          onChanged: null,
+                          compact: true,
+                          semanticLabel: schedule.isCompleted ? '已完成' : '未完成',
+                        ),
+                        const SizedBox(width: PactaSpacing.sm),
+                        Expanded(
+                          child: Text(
+                            schedule.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: schedule.isCompleted
+                                ? theme.textTheme.bodyMedium?.copyWith(
+                                    decoration: TextDecoration.lineThrough,
+                                  )
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(width: PactaSpacing.sm),
+                        // 时刻最多占整行 60%：2.0x 字号下先让时刻收窄并省略，
+                        // 首行永远留给标题，整行不会横向溢出。
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: constraints.maxWidth * 0.6,
+                          ),
+                          child: Text(
+                            scheduleTimeLabel(schedule, zoneId),
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.end,
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  scheduleTimeLabel(schedule, zoneId),
-                  style: theme.textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
+          ],
+        ),
+      ),
     ];
   }
 

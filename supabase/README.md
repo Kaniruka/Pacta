@@ -4,18 +4,23 @@ For Issue #57's independent read-only National Focus MCP authorization,
 deployment and contracts, see [the MCP runbook](functions/national-focus-mcp/README.md).
 
 The Flutter client only receives `SUPABASE_URL` and the publishable/anon key.
-Never put a `service_role` or `sb_secret_` key in `.env` passed to Flutter.
+A local `.env` may also carry `SUPABASE_SECRET_KEY` for the project-owner CLI;
+never pass that file to `--dart-define-from-file` or any client release build.
 
-Apply the migration with the Supabase CLI or the SQL editor. Bootstrap the
-first administrator through a trusted service-role operation after creating
-the user in the Supabase Auth dashboard:
+Apply the migration with the Supabase CLI or the SQL editor. Administration
+does not require an `app_admins` row: the project owner manages users with the
+local CLI [`scripts/pacta_admin.py`](../scripts/pacta_admin.py), which reads
+`SUPABASE_URL` and `SUPABASE_SECRET_KEY` from the process environment or the
+repository `.env`. The CLI never asks for an administrator email or password.
 
-```sql
-insert into public.app_admins (user_id)
-values ('AUTH_USER_UUID');
-```
+`app_admins` remains in the schema because existing RPCs still reference it;
+during the test phase it is a historical / internal RPC structure only. This
+phase follows the frozen-schema rule and does not change any migration or
+table. A future `v4` cleanup window may remove it.
 
-An authenticated administrator can then call the two protected RPCs:
+The two protected RPCs remain available to historical `authenticated`
+administrators, but the project-owner CLI writes `registration_eligibility`
+directly through PostgREST:
 
 ```sql
 select public.admin_grant_registration_eligibility('person@example.com', 'email');
@@ -25,7 +30,8 @@ select public.admin_revoke_registration_eligibility('person@example.com', 'email
 The `auth.users` trigger consumes an unused, unrevoked eligibility in the
 same database transaction as registration. A race or duplicate registration
 therefore cannot consume one qualification twice. The trigger bypasses only
-trusted `service_role` creation, which is used for administrator bootstrap.
+trusted `service_role` creation, which the project-owner CLI uses when it
+creates a user.
 
 ## Email-only registration
 
@@ -38,37 +44,35 @@ eligibility in the same transaction. The email-only constraint is applied by
 Email Auth and user signups are enabled in the cloud project; the database
 eligibility trigger limits successful registration to approved addresses.
 Email confirmation is disabled because the App does not send verification
-messages. Password resets are handled by an administrator after manual
+messages. Password resets are handled by the project owner after manual
 identity verification.
 
-## Administrator password reset
+## Project-owner password reset
 
-Ticket T25 adds `admin-reset-user-password`, a JWT-verified Edge Function for
-administrators who have manually verified a user's identity. Apply
-`202609260002_admin_password_reset_target_lookup.sql`, then deploy the function:
+The project owner resets any user's password from the local CLI through the
+GoTrue Auth Admin API (`PUT /auth/v1/admin/users/{uid}` with `password`). No
+administrator JWT or `app_admins` membership is involved, and the existing
+`user_id` plus all business-data ownership stay unchanged.
+
+The operator confirms that identity was checked outside the App and must tell
+the user the new password through a secure external channel. The App sends no
+account messages and does not claim to validate email ownership. The CLI never
+prints the new password, and Supabase Auth applies its own credential storage.
+
+The legacy `admin-reset-user-password` Edge Function (Ticket T25) remains
+deployed for the frozen deployment surface; the project-owner CLI does not call
+it. Apply `202609260002_admin_password_reset_target_lookup.sql` and deploy the
+function only if another trusted caller still needs that JWT-based path:
 
 ```powershell
 supabase functions deploy admin-reset-user-password
 ```
 
-The function verifies the caller's current Auth JWT and checks `app_admins`
-before looking up the exact target email. The lookup RPC is executable only by
-`service_role`; the function changes the existing Auth user through the Auth
-Admin API, preserving that user's `user_id` and business-data ownership. The
-function's runtime uses Supabase's server-side service-role/secret environment
-variable. Do not copy it into Flutter, `.env`, or source control.
-
-The administrator confirms that identity was checked outside the App and must
-tell the user the new password through a secure external channel. The App sends
-no account messages and does not claim to validate email ownership. No user or
-administrator password is returned by the function or written to Pacta business
-tables; Supabase Auth applies its own credential storage for the new password.
-
 ## User suspension
 
 Ticket T26 adds `202609260003_user_suspension.sql`. Apply it after the preceding
-business-data migrations. It adds administrator management RPCs, a signed-in
-user status RPC, and restrictive write policies for business tables; it never
+business-data migrations. It adds legacy administrator management RPCs, a
+signed-in user status RPC, and restrictive write policies for business tables; it never
 deletes users or business data. A suspension becomes eligible for purge after
 30 days, but this ticket does not perform a purge. Restoring a user ends that
 suspension period, and a later suspension starts a new 30-day period.
@@ -89,31 +93,39 @@ supabase db query --linked -f supabase/tests/user_suspension_access.sql
 
 ## Explicit cloud purge
 
-Ticket T27 adds `20260926075712_user_purge.sql` and the
-`admin-purge-user` Edge Function. Apply the migration after T26, then deploy
-the function:
+Ticket T27 adds `20260926075712_user_purge.sql`. The project-owner CLI performs
+the database contract directly, without the Edge Function:
 
-```powershell
-supabase db push
-supabase functions deploy admin-purge-user
-```
+1. Confirm the target and type its email (or UUID) verbatim.
+2. Insert or reuse a `user_purge_receipts` row as `pending`, binding the
+   consumed `registration_eligibility` row when one exists.
+3. Call `admin_delete_user_business_data(p_user_id)` to delete the legacy
+   business tables in dependency order.
+4. Call `DELETE /auth/v1/admin/users/{uid}` through the Auth Admin API.
+5. Call `admin_complete_user_purge(p_user_id)`; the receipt becomes
+   `completed` and `registration_eligibility.purge_completed_at` is filled so
+   the email can be granted again.
 
-The function verifies the caller's Auth JWT and `app_admins` membership. Its
-service-only RPCs recheck that the target is not an administrator and has been
-continuously suspended for at least 30 days. The operation first deletes all
-current cloud business tables in dependency order, then permanently deletes the
-Auth identity through the Auth Admin API, and records a completed receipt bound
-to the old UUID. A pending operation never counts as a receipt. Retries resume
-the same pending purge so an Auth API or completion-recording failure cannot
-tell a device to clean its cache early. Restoration is blocked while a purge
-is pending.
+This path accepts active, never-suspended users and accounts that still have an
+`app_admins` row: it deliberately does not call `admin_begin_user_purge`, whose
+`app_admins` and 30-day guards would reject exactly those targets.
+`app_admins.user_id` cascades with the Auth identity, so no separate delete is
+needed. A completed receipt is idempotent; a pending receipt is reused so an
+Auth API or completion failure does not tell a device to clean its cache early.
+
+The legacy `admin-purge-user` Edge Function and `admin_begin_user_purge` RPC
+remain deployed for JWT-based callers. Their contract is unchanged: the caller
+must be an `app_admins` member, cannot purge itself or another administrator,
+the target is locked in `auth.users`, and the target must have been continuously
+suspended for 30 days unless `immediate` is explicitly true. A pending operation
+never counts as a receipt.
 
 The public `user_purge_receipt` RPC returns only a completed receipt's old UUID
 and completion time; it does not return email or business data. Offline devices
 use that response to clean only local rows whose owner UUID matches. Ordinary
 authentication, authorization, and network errors do not authorize local
 cleanup. The old UUID receipt remains after Auth deletion; fresh registration
-with the same email requires an explicit new administrator grant and consumes
+with the same email requires an explicit new project-owner grant and consumes
 eligibility for a different Auth UUID.
 
 Run the rollback-only purge probe only against an isolated Supabase project
@@ -138,23 +150,24 @@ locked in `auth.users`, and pending/completed receipts stay idempotent. Only
 an explicit `true` skips the continuous suspension and 30-day wait; `NULL` and
 `false` keep the production rule.
 
+The project-owner CLI does not need this flag: its `delete-user` path prepares
+the pending receipt itself and therefore removes any user immediately, including
+an active user or a former administrator. The Edge Function `admin-purge-user`
+keeps accepting the optional `immediate` boolean for JWT-based callers. Omitted
+means `false`; any non-boolean value is rejected with HTTP 400
+`{"error": "请求参数 immediate 必须为布尔值。"}` before any RPC runs.
+
 Registration eligibility and the receipt ledger behave exactly as before, so an
 immediate purge still records the pending receipt, removes the cloud business
 data, deletes the Auth identity, and only then writes a completed receipt.
 
-Deploy both the database function and the updated Edge Function once:
+Deploy both the database function and the updated Edge Function once if the
+JWT-based path is still used:
 
 ```powershell
 supabase db push
 supabase functions deploy admin-purge-user
 ```
-
-The function accepts an optional `immediate` boolean. Omitted means `false`;
-any non-boolean value is rejected with HTTP 400
-`{"error": "请求参数 immediate 必须为布尔值。"}` before any RPC runs. A cloud
-project that has not received both deployments keeps returning HTTP 409 for a
-target that is still inside the 30-day window; that is the expected signal to
-run the two commands above.
 
 The rollback-only probe `supabase/tests/user_purge_access.sql` now also checks
 that the legacy two-argument signature is gone, that `authenticated` and
@@ -164,57 +177,79 @@ the same way, that an administrator target is still refused with `42501`, and
 that the service-role grant accepts the three-argument signature. The immediate
 block runs inside a savepoint and is rolled back before the original T27 flow.
 
-## Windows terminal administrator tool
+## Project-owner terminal tool
 
 `scripts/pacta_admin.py` is a standard-library-only Python 3 tool for Windows
-PowerShell. It never reads a `service_role` or `sb_secret_` key: it signs in
-as the administrator with the project's public URL, publishable/anon key, email
-and password, obtains a user JWT, verifies `app_admins` membership, and calls
-the same RLS-protected RPCs and Edge Functions as the App.
+PowerShell. It is a **project-owner direct client**: it reads `SUPABASE_URL`
+and `SUPABASE_SECRET_KEY` from the process environment or the repository
+`.env`, then calls GoTrue Admin and PostgREST directly. It never asks for an
+administrator email or password, never parses a user JWT, and never checks
+`app_admins`.
+
+Request headers follow the Supabase key rules:
+
+- `sb_secret_...` (opaque secret key, not a three-part JWT) is sent only in
+  `apikey`. Sending it in `Authorization: Bearer` makes the gateway / GoTrue
+  reject the request as an invalid JWT.
+- A legacy `service_role` JWT (three dot-separated parts) is sent in both
+  `apikey` and `Authorization: Bearer <key>`.
 
 Configuration:
 
 - `--env-file` defaults to the repository root `.env`. Process environment
   variables win; the file only fills missing values. Only `SUPABASE_URL` and
-  `SUPABASE_PUBLISHABLE_KEY` (or the legacy `SUPABASE_ANON_KEY`) are read. A
-  `SUPABASE_SERVICE_ROLE_KEY` found in the file is reported and ignored.
-- `--email` is optional; when omitted the tool prompts for it. The password is
-  read with `getpass` and is never written to source, output or logs.
-- A 401 or an expiring access token refreshes the session once with the stored
-  `refresh_token` and retries the request.
+  `SUPABASE_SECRET_KEY` (or the legacy `SUPABASE_SERVICE_ROLE_KEY`) are read.
+  `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_ANON_KEY`, `TEST_ADMIN_EMAIL` and
+  `TEST_ADMIN_PASSWORD` are ignored.
+- A missing or blank URL/key stops with exit code 2 and names the Supabase
+  Dashboard -> Project Settings -> API Keys location; the value is never
+  printed.
+- A secret key is never written to source, output, JSON, logs or files.
 
-Commands (no command starts the numeric interactive menu):
+Run without arguments to enter the numeric menu (0 exits, 1-11 are the
+capabilities below). Every subcommand also accepts `--json` and `--yes`; in
+JSON mode, commands that would otherwise prompt (suspend, restore,
+reset-password, delete-user, clear-cloud-data) require an explicit `--yes`
+so the output stays machine-readable:
 
 ```powershell
 python scripts/pacta_admin.py
-python scripts/pacta_admin.py users
-python scripts/pacta_admin.py eligibilities
-python scripts/pacta_admin.py grant person@example.com
+python scripts/pacta_admin.py users [--filter TEXT] [--json]
+python scripts/pacta_admin.py create-user person@example.com [--password ...] [--nickname 小明] [--no-eligibility]
+python scripts/pacta_admin.py eligibilities [--filter TEXT]
+python scripts/pacta_admin.py grant person@example.com [--note ...]
 python scripts/pacta_admin.py revoke person@example.com
-python scripts/pacta_admin.py suspend person@example.com
-python scripts/pacta_admin.py restore 00000000-0000-0000-0000-000000000000
-python scripts/pacta_admin.py reset-password person@example.com
-python scripts/pacta_admin.py delete-user person@example.com
-python scripts/pacta_admin.py delete-user person@example.com --immediate
+python scripts/pacta_admin.py suspend person@example.com [--yes]
+python scripts/pacta_admin.py restore person@example.com [--yes]
+python scripts/pacta_admin.py reset-password person@example.com [--password ...] [--yes]
+python scripts/pacta_admin.py delete-user person@example.com [--yes]
+python scripts/pacta_admin.py cloud-data [person@example.com] [--json]
+python scripts/pacta_admin.py clear-cloud-data person@example.com [--yes]
 ```
 
+`users` pages through `GET /auth/v1/admin/users` and joins
+`profile_accounts`, `registration_eligibility`, `user_suspension_periods`,
+`cloud_business_snapshots` (latest revision / schema / row count),
+`cloud_business_snapshot_history`, `cloud_business_snapshot_upload_requests`,
+`national_focus_mcp_grants` and the legacy `app_admins` marker (display only).
+`create-user` ensures a `registration_eligibility` row by default and writes
+the nickname to `profile_accounts`.
+
+`suspend` inserts an active `user_suspension_periods` row and sets a long
+GoTrue `ban_duration`; `restore` ends the active period and clears the ban.
+`reset-password` uses the Auth Admin `PUT` endpoint.
+
 `delete-user` always asks the operator to type the target email (or UUID when
-the account has none) in full (case-insensitive); a mismatch cancels the
-operation. Without
-`--immediate`, a target that is not yet purge-eligible is refused with the
-remaining wait and the `--immediate` hint. `--immediate` only works after the
-migration and the Edge Function above have been deployed; that deployment is an
-explicit operator step, and the script itself never applies migrations.
+the account has none) in full, case-insensitively; `--yes` skips only that
+prompt. It performs the four-step purge documented above and works for active
+users and old `app_admins` accounts.
 
-`reset-password` reads the new password twice with `getpass`, requires 8 to
-256 characters, and asks for the same offline identity verification confirmation
-that the App requires. It sends the same
-`manual_verification_confirmed: true` contract to
-`admin-reset-user-password`.
+`clear-cloud-data` deletes only the snapshot, history and upload-ledger rows;
+the Auth identity, `profile_accounts` row and registration eligibility remain.
 
-Tests never touch a network or a real credential:
-`python -m unittest discover -s scripts -p "test_*.py"` runs the fake-transport
-suite in `scripts/test_pacta_admin.py`.
+Tests never touch a network, a real project-owner key or the workspace `.env`:
+`python -m unittest discover -s scripts -p "test_*.py" -v` runs the
+fake-transport suite in `scripts/test_pacta_admin.py`.
 
 ## Manual whole-data cloud sync — 2026-10-04
 

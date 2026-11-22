@@ -736,6 +736,12 @@ void main() {
               findsNothing,
               reason: '${entry.name} 不再显示右上角状态文字胶囊',
             );
+            // 顶层节点不再渲染「根」胶囊：根只靠 2dp 外框与 Semantics 区分。
+            expect(
+              find.descendant(of: cardFinder, matching: find.text('根')),
+              findsNothing,
+              reason: '${entry.name} 不再渲染 根 胶囊',
+            );
             final semantics = tester.widget<Semantics>(
               find.ancestor(
                 of: cardFinder,
@@ -826,6 +832,27 @@ void main() {
           find.descendant(of: cardFinder, matching: find.text('连击卡')),
         );
         final tagsRect = tester.getRect(tags);
+        final iconRect = tester.getRect(
+          find.descendant(
+            of: cardFinder,
+            matching: find.byIcon(Icons.lightbulb),
+          ),
+        );
+        expect(
+          tagsRect.left,
+          greaterThan(iconRect.right),
+          reason: '连击胶囊在图标井右侧的标题列内，而不是图标下方的整卡宽行',
+        );
+        expect(
+          tagsRect.left,
+          greaterThanOrEqualTo(titleRect.left - 0.01),
+          reason: '连击胶囊与名称共用右列左缘',
+        );
+        expect(
+          find.descendant(of: cardFinder, matching: find.text('根')),
+          findsNothing,
+          reason: '顶层节点不再渲染 根 胶囊',
+        );
         final ruleRect = tester.getRect(
           find.descendant(
             of: cardFinder,
@@ -1676,6 +1703,101 @@ void main() {
           reason: '不再有独立的「今天 · X 项安排」顶卡',
         );
         expect(find.textContaining('今天 · '), findsNothing);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await fixture.dispose(tester);
+      }
+    });
+
+    testWidgets('日期详情用 PactaSectionHeader 与两块 surfaceContainerLow 容器分区', (
+      tester,
+    ) async {
+      _useView(tester, const Size(360, 1200));
+      final fixture = await _BoardPhase3Fixture.create(cards: treeCards());
+      try {
+        await tester.pumpWidget(fixture.app());
+        await tester.pumpAndSettle();
+
+        final cardFinder = find.byKey(
+          const ValueKey('board-focus-national-card'),
+        );
+        final header = find.descendant(
+          of: cardFinder,
+          matching: find.byType(PactaSectionHeader),
+        );
+        expect(header, findsOneWidget, reason: '日期详情使用谷歌蓝分组标题');
+        final headerTitle = find.descendant(
+          of: header,
+          matching: find.text('日期详情'),
+        );
+        expect(headerTitle, findsOneWidget);
+        final colors = Theme.of(tester.element(headerTitle)).colorScheme;
+        expect(
+          tester.widget<Text>(headerTitle).style?.color,
+          colors.primary,
+          reason: '分区标题取主蓝，而不是灰色小字',
+        );
+
+        // 日期副文本在标题右侧同一行，贴右缘但不越过卡片。
+        final cardRect = tester.getRect(cardFinder);
+        final titleRect = tester.getRect(headerTitle);
+        final dateRect = tester.getRect(find.text('11 月 18 日 · 今日'));
+        expect(dateRect.left, greaterThanOrEqualTo(titleRect.right));
+        expect(dateRect.right, lessThanOrEqualTo(cardRect.right));
+        expect(dateRect.top, lessThan(titleRect.bottom), reason: '日期与标题同一行');
+        expect(dateRect.bottom, greaterThan(titleRect.top));
+
+        // 两块柔和 tonal 容器：底色统一 surfaceContainerLow，各自承担一组内容。
+        final durationPanel = find.byKey(
+          const ValueKey('board-focus-day-duration-panel'),
+        );
+        final schedulePanel = find.byKey(
+          const ValueKey('board-focus-schedule-panel'),
+        );
+        for (final panel in [durationPanel, schedulePanel]) {
+          expect(panel, findsOneWidget);
+          final decoration =
+              tester.widget<Container>(panel).decoration! as BoxDecoration;
+          expect(decoration.color, colors.surfaceContainerLow);
+          expect(
+            decoration.borderRadius,
+            BorderRadius.circular(PactaSpacing.md),
+          );
+        }
+        final durationLabel = find.descendant(
+          of: durationPanel,
+          matching: find.text('有效专注'),
+        );
+        expect(durationLabel, findsOneWidget);
+        expect(
+          find.descendant(
+            of: durationPanel,
+            matching: find.byKey(const ValueKey('board-focus-day-duration')),
+          ),
+          findsOneWidget,
+        );
+        final durationLabelRect = tester.getRect(durationLabel);
+        final durationRect = tester.getRect(
+          find.byKey(const ValueKey('board-focus-day-duration')),
+        );
+        expect(
+          durationRect.top,
+          greaterThan(durationLabelRect.bottom),
+          reason: '标签与时长各自成行，不挤成一团',
+        );
+        expect(durationRect.left, closeTo(durationLabelRect.left, 0.01));
+
+        expect(
+          find.descendant(of: schedulePanel, matching: find.text('今日安排 · 1 项')),
+          findsOneWidget,
+        );
+        final scheduleTitleRect = tester.getRect(find.text('今日安排 · 1 项'));
+        final scheduleRowRect = tester.getRect(find.text('与设计评审对齐专注链层级'));
+        expect(
+          scheduleRowRect.top - scheduleTitleRect.bottom,
+          greaterThanOrEqualTo(PactaSpacing.sm - 0.01),
+          reason: '标题与日程列表之间留出 8dp 呼吸',
+        );
         expect(tester.takeException(), isNull);
       } finally {
         await fixture.dispose(tester);
@@ -2739,6 +2861,72 @@ void main() {
           reason: '置顶卡槽上下内边距必须对称（首卡顶距 $topGap、末卡底距 $bottomGap）',
         );
         expect(tester.takeException(), isNull);
+      } finally {
+        await fixture.dispose(tester);
+      }
+    });
+
+    testWidgets('计划页分区小标题统一为谷歌蓝 PactaSectionHeader', (tester) async {
+      _useView(tester, const Size(360, 1200));
+      final fixture = await _BoardPhase3Fixture.create(
+        cards: [phase6Card('plan-header-lit', '根国策')],
+        pinned: true,
+      );
+      // 再建一个未置顶目标，让「置顶」与「其他」两处分区标题同时出现。
+      await fixture.tasks.createGoal(
+        const GoalDraft(
+          title: '未置顶目标',
+          classification: TaskClassification.both,
+        ),
+      );
+      try {
+        await tester.pumpWidget(fixture.app());
+        await tester.pumpAndSettle();
+        await openPlan(tester);
+
+        final pinnedHeader = find.widgetWithText(
+          PactaSectionHeader,
+          '置顶目标 · 长按拖动排序',
+        );
+        final othersHeader = find.widgetWithText(
+          PactaSectionHeader,
+          '其他目标 · 长按拖动排序',
+        );
+        expect(pinnedHeader, findsOneWidget);
+        expect(othersHeader, findsOneWidget);
+
+        final pinnedTitle = find.descendant(
+          of: pinnedHeader,
+          matching: find.text('置顶目标 · 长按拖动排序'),
+        );
+        final colors = Theme.of(tester.element(pinnedTitle)).colorScheme;
+        expect(
+          tester.widget<Text>(pinnedTitle).style?.color,
+          colors.primary,
+          reason: '分区小标题与全站谷歌蓝分组标题一致，不再用灰色小字',
+        );
+        // 标题左缘与目标卡片对齐，不因组件默认 4dp 内缩而错位。
+        final headerRect = tester.getRect(pinnedTitle);
+        final cardRect = tester.getRect(
+          find.byKey(ValueKey('pinned-goal-${fixture.pinnedGoalIds.first}')),
+        );
+        expect(
+          headerRect.left,
+          moreOrLessEquals(cardRect.left, epsilon: 0.5),
+          reason: '分区标题与目标卡片共用同一条左缘',
+        );
+        // 2.0x 字号：标题换行而不是被截断，页面零溢出。
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(
+          find.descendant(
+            of: pinnedHeader,
+            matching: find.text('置顶目标 · 长按拖动排序'),
+          ),
+          findsOneWidget,
+        );
       } finally {
         await fixture.dispose(tester);
       }

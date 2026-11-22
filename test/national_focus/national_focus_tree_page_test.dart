@@ -1442,7 +1442,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('详细视图在窄屏两倍字号下无顶部状态条、有三行规则与根胶囊', (tester) async {
+  testWidgets('详细视图在窄屏两倍字号下无顶部状态条、有三行规则且不再有 根 胶囊', (tester) async {
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
@@ -1475,10 +1475,11 @@ void main() {
       findsNothing,
       reason: '详细卡片不再有顶部 3dp 状态条',
     );
+    // 顶层节点不再有「根」胶囊：根只由更粗的外框与外层 Semantics 表达。
     expect(
       find.descendant(of: cardFinder, matching: find.text('根')),
-      findsOneWidget,
-      reason: '顶层节点用 根 胶囊区分于子节点',
+      findsNothing,
+      reason: '详细卡片彻底移除 根 胶囊',
     );
     // 0 天：连续胶囊整块不渲染，也不留「连续 0 天」文字噪声。
     expect(
@@ -1515,7 +1516,7 @@ void main() {
 
   for (final brightness in Brightness.values) {
     testWidgets(
-      '详细视图最坏节点：180d/180d + 根 + 已内化 + 三行规则在 2 倍字号 ${brightness.name} 下不溢出',
+      '详细视图最坏节点：180d/180d + 已内化 + 三行规则在 2 倍字号 ${brightness.name} 下不溢出',
       (tester) async {
         tester.view.physicalSize = const Size(320, 900);
         tester.view.devicePixelRatio = 1;
@@ -1571,13 +1572,18 @@ void main() {
             findsNothing,
           );
         }
-        // 胶囊行三枚同时在：连续天数（180d ×2）+ 根 + 已内化。
+        // 胶囊行两枚同时在：连续天数（180d ×2）+ 已内化；「根」胶囊已移除。
         expect(
           find.descendant(
             of: cardFinder,
             matching: find.byType(NationalFocusStreakTags),
           ),
           findsOneWidget,
+        );
+        expect(
+          find.descendant(of: cardFinder, matching: find.text('根')),
+          findsNothing,
+          reason: '顶层节点不再渲染 根 胶囊',
         );
         final currentPill = find.descendant(
           of: cardFinder,
@@ -1588,7 +1594,6 @@ void main() {
         final pillFinders = <Finder>[
           currentPill.first,
           currentPill.last,
-          find.descendant(of: cardFinder, matching: find.text('根')),
           find.descendant(of: cardFinder, matching: find.text('已内化')),
         ];
         for (final pillFinder in pillFinders) {
@@ -1599,6 +1604,36 @@ void main() {
           expect(rect.top, greaterThanOrEqualTo(cardRect.top));
           expect(rect.bottom, lessThanOrEqualTo(cardRect.bottom));
         }
+        // 胶囊位于图标井右侧、标题正下方的右列，不回到整卡宽的独立一行。
+        final nameRect = tester.getRect(
+          find.descendant(of: cardFinder, matching: find.text(card.name)),
+        );
+        // 状态图标井里是唯一 18dp 图标：胶囊图标取 micro 档，因此这里能
+        // 稳定拿到图标井右缘，与卡片当前状态无关。
+        final iconRect = tester.getRect(
+          find.descendant(
+            of: cardFinder,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Icon && widget.size == PactaIconSizes.sm,
+            ),
+          ),
+        );
+        final tagsRect = tester.getRect(
+          find.descendant(
+            of: cardFinder,
+            matching: find.byType(NationalFocusStreakTags),
+          ),
+        );
+        expect(
+          tagsRect.top,
+          greaterThanOrEqualTo(nameRect.bottom),
+          reason: '胶囊紧贴标题正下方',
+        );
+        expect(
+          tagsRect.left,
+          greaterThan(iconRect.right),
+          reason: '胶囊在图标井右侧的标题列内',
+        );
         final rule = tester.widget<Text>(
           find.descendant(
             of: cardFinder,

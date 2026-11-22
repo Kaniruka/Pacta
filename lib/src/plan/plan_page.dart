@@ -13,6 +13,7 @@ import '../tasks/task_models.dart';
 import '../tasks/task_repository.dart';
 import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
+import '../ui/pacta_grouped_list.dart';
 import '../ui/pacta_hold_action_reorder.dart';
 import '../ui/pacta_page_header.dart';
 import 'goal_task_cards.dart';
@@ -328,8 +329,12 @@ class _PlanPageState extends ConsumerState<PlanPage> {
         ),
       ],
       if (pinned.isNotEmpty) ...[
-        const SizedBox(height: 12),
-        _sectionLabel(context, '置顶目标 · 长按拖动排序'),
+        // 分区标题统一为谷歌蓝 PactaSectionHeader：左侧归零与目标卡片同一条
+        // 左缘，16dp 顶距 + 8dp 底距由组件自己承担，不再另加 SizedBox。
+        const PactaSectionHeader(
+          title: '置顶目标 · 长按拖动排序',
+          padding: EdgeInsets.fromLTRB(0, PactaSpacing.lg, 0, PactaSpacing.sm),
+        ),
         // 置顶与其他目标各用一份独立列表：跨分组拖动没有意义，
         // 分组内排序又分别落到 local_goals.sort_order 的同一列。
         PactaHoldReorderList(
@@ -361,10 +366,14 @@ class _PlanPageState extends ConsumerState<PlanPage> {
         ),
       ],
       if (others.isNotEmpty) ...[
-        const SizedBox(height: 16),
-        _sectionLabel(
-          context,
-          pinned.isEmpty ? '全部目标 · 长按拖动排序' : '其他目标 · 长按拖动排序',
+        PactaSectionHeader(
+          title: pinned.isEmpty ? '全部目标 · 长按拖动排序' : '其他目标 · 长按拖动排序',
+          padding: const EdgeInsets.fromLTRB(
+            0,
+            PactaSpacing.lg,
+            0,
+            PactaSpacing.sm,
+          ),
         ),
         PactaHoldReorderList(
           itemCount: others.length,
@@ -394,12 +403,6 @@ class _PlanPageState extends ConsumerState<PlanPage> {
       ],
     ];
   }
-
-  Widget _sectionLabel(BuildContext context, String text) => Text(
-    text,
-    style: Theme.of(context).textTheme.labelLarge
-        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
-  );
 
   Widget _goalCard(
     BuildContext context,

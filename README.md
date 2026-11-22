@@ -6,7 +6,7 @@ Pacta 是基于 Flutter 的自我调节应用，用任务、专注链和国策�
 
 1. 克隆仓库并进入项目目录：`git clone https://github.com/Kaniruka/Pacta.git`、`cd Pacta`。
 2. 安装满足 `pubspec.yaml` 要求的 Flutter/Dart SDK，以及目标平台的工具链。运行 `flutter doctor -v` 检查环境；Android 需要 Android SDK，Windows 构建需要 Visual Studio 的 C++ 桌面开发组件。
-3. 获取团队开发用 Supabase 项目的 **Project URL** 和 **publishable key**，在仓库根目录运行 `Copy-Item .env.example .env`，然后填写 `.env` 中的两个变量。`.env` 被 Git 忽略；它仅用于传递可公开的客户端配置，不要放数据库密码、`service_role`/secret key、管理员密码或测试账号密码。
+3. 获取团队开发用 Supabase 项目的 **Project URL** 和 **publishable key**，在仓库根目录运行 `Copy-Item .env.example .env`，然后填写 `.env` 中的两个客户端变量。`.env` 被 Git 忽略；客户端只读 `SUPABASE_URL` 与 `SUPABASE_PUBLISHABLE_KEY`，不要放入数据库密码、管理员密码或测试账号密码。项目主 CLI 可另外从该文件读取 `SUPABASE_SECRET_KEY`（优先放在独立进程环境变量），但**含 secret key 的 `.env` 绝对不能传给 `--dart-define-from-file`**，详见下方「自行部署云端」第 4 步。
 4. 安装依赖并运行应用：
 
    ```powershell
@@ -49,23 +49,17 @@ Pacta 是基于 Flutter 的自我调节应用，用任务、专注链和国策�
 
    `db push` 会把 `supabase/migrations/` 中尚未应用的迁移推送到关联项目。执行前核对 project ref 和预览清单；已有数据的项目应先备份并核对迁移历史。
 
-4. 部署两个管理员 Edge Function：
+4. 账号治理统一在项目主本机终端完成，不需要部署管理员 Edge Function，也不需要写入 `app_admins`：
 
    ```powershell
-   pnpm exec supabase functions deploy admin-reset-user-password
-   pnpm exec supabase functions deploy admin-purge-user
+   python scripts/pacta_admin.py
    ```
 
-   函数代码使用 Supabase 托管运行时注入的服务端环境变量。不要把服务端密钥写入 `.env`、Flutter 构建参数或仓库；函数的授权与生命周期细节见 [Supabase 说明](supabase/README.md)。
+   [`scripts/pacta_admin.py`](scripts/pacta_admin.py) 是**项目主直连**工具：从进程环境变量或仓库 `.env` 读取 `SUPABASE_URL` 与 `SUPABASE_SECRET_KEY`（兼容旧名 `SUPABASE_SERVICE_ROLE_KEY`），直接调用 GoTrue Admin 与 PostgREST，不要求管理员邮箱／密码登录。能力覆盖全量用户与生命周期摘要、新建账号、注册白名单发放／撤销、停用／恢复、重置密码、查看／清理云端业务快照，以及即时彻底注销；交互菜单与同名子命令一一对应，均支持 `--json` 与 `--yes`。命令清单与权限边界见 [Supabase 说明的项目主终端工具](supabase/README.md#project-owner-terminal-tool)。
 
-5. 在 Supabase Auth 后台创建首个管理员用户，确认其邮箱后取得该用户的 UUID。在 SQL Editor 中以项目管理员身份执行以下语句，将**实际 UUID** 替换占位符：
+   > **安全**：`.env` 若写入了 `SUPABASE_SECRET_KEY`，**绝对不能**把该文件传给 `--dart-define-from-file`（包括客户端发布构建）：secret key 无法在客户端二进制里保密，客户端只使用 `SUPABASE_URL` 与 publishable key。该口径与 [`.env.example`](.env.example)、[Supabase 说明](supabase/README.md) 完全一致。
 
-   ```sql
-   insert into public.app_admins (user_id)
-   values ('<管理员的 Auth User UUID>');
-   ```
-
-   然后以此账号登录 Pacta，在管理员界面向指定邮箱发放注册资格。普通用户获得资格后，才能用该邮箱和密码注册。`app_admins` 的首次写入是可信后台操作，普通客户端不能自行授予管理员权限。
+5. 用 `create-user`（或交互菜单）创建第一个账号，再用 `grant` 向其他邮箱发放注册资格。普通用户获得资格后，才能用该邮箱和密码注册；资格被撤销后未消费即失效，已彻底注销的邮箱重新注册会得到全新身份，不继承旧数据。
 
 6. 用至少一个非管理员账号验收注册、登录与数据隔离；在隔离测试项目验证权限和 RLS。相关 SQL 探针位于 `supabase/tests/`，执行前先阅读 [Supabase 说明](supabase/README.md) 中的测试前提。
 
@@ -85,5 +79,5 @@ Android APK 输出位于 `build/app/outputs/flutter-apk/`。**当前 `android/ap
 
 ## 相关资料
 
-- [Supabase 迁移、管理员函数和权限验证](supabase/README.md)
+- [Supabase 迁移、项目主终端工具与权限验证](supabase/README.md)
 - [Supabase CLI 官方部署流程](https://supabase.com/docs/guides/local-development/cli-workflows)与[Edge Function 部署说明](https://supabase.com/docs/guides/functions/deploy)

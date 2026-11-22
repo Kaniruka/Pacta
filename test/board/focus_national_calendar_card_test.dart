@@ -10,6 +10,7 @@ import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/schedules/schedule_models.dart';
 import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/theme/pacta_calendar_colors.dart';
+import 'package:pacta/src/theme/pacta_spacing.dart';
 import 'package:pacta/src/theme/pacta_theme.dart';
 import 'package:pacta/src/ui/pacta_check_circle.dart';
 import 'package:pacta/src/ui/pacta_grouped_list.dart';
@@ -388,6 +389,15 @@ void main() {
       ),
       findsWidgets,
     );
+    // 加载态同样只保留标题：没有可确认的日期就不编造副文本。
+    expect(find.text('日期详情'), findsOneWidget);
+    expect(
+      tester
+          .widget<PactaSectionHeader>(find.byType(PactaSectionHeader))
+          .trailing,
+      isNull,
+    );
+    expect(find.text('正在读取专注投影…'), findsOneWidget);
 
     await tester.pumpWidget(harness.build());
     await tester.pumpAndSettle();
@@ -427,6 +437,14 @@ void main() {
     expect(find.text('暂时不能读取这一天的专注记录。'), findsOneWidget);
     expect(find.text('正在读取专注投影…'), findsNothing);
     expect(find.byKey(const ValueKey('board-focus-day-12')), findsNothing);
+    // 失败态保留分区标题，但不编造日期副文本。
+    expect(find.text('日期详情'), findsOneWidget);
+    expect(
+      tester
+          .widget<PactaSectionHeader>(find.byType(PactaSectionHeader))
+          .trailing,
+      isNull,
+    );
 
     await tester.tap(find.byKey(const ValueKey('board-focus-heat-retry')));
     await tester.pumpAndSettle();
@@ -716,6 +734,217 @@ void main() {
     expect(find.text('暂时不能读取安排。'), findsNothing);
     expect(find.text('今日安排 · 0 项'), findsOneWidget);
     expect(find.text('今天还没有安排。'), findsOneWidget);
+    await _unmount(tester);
+  });
+
+  testWidgets('日期详情用 PactaSectionHeader 与两块 tonal 容器分区', (tester) async {
+    final schedules = _FakeScheduleRepository(
+      rows: [
+        _schedule(
+          'schedule-today',
+          '取快递',
+          startsAt: DateTime.utc(2026, 11, 12, 4),
+          duration: const Duration(hours: 1),
+        ),
+      ],
+    );
+    final harness = _Harness(seconds: {12: 780});
+    await tester.pumpWidget(harness.build(schedules: schedules));
+    await tester.pumpAndSettle();
+
+    final card = find.byType(FocusNationalCalendarCard);
+    final header = find.descendant(
+      of: card,
+      matching: find.byType(PactaSectionHeader),
+    );
+    expect(header, findsOneWidget);
+    final title = find.descendant(of: header, matching: find.text('日期详情'));
+    expect(title, findsOneWidget);
+    final colors = Theme.of(tester.element(title)).colorScheme;
+    expect(
+      tester.widget<Text>(title).style?.color,
+      colors.primary,
+      reason: '「日期详情」是谷歌蓝分组标题，不再用灰色 titleSmall 裸文字',
+    );
+    // 日期作为 header 的右侧副文本，与标题同一行。
+    final date = find.text('11 月 12 日 · 今日');
+    expect(date, findsOneWidget);
+    final titleRect = tester.getRect(title);
+    final dateRect = tester.getRect(date);
+    expect(dateRect.left, greaterThanOrEqualTo(titleRect.right));
+    expect(dateRect.top, lessThan(titleRect.bottom), reason: '日期与标题同一行');
+
+    // 有效专注：独立柔和 tonal 容器，标签在上、时长在下，原 key 不变。
+    final durationPanel = find.byKey(
+      const ValueKey('board-focus-day-duration-panel'),
+    );
+    final duration = find.byKey(const ValueKey('board-focus-day-duration'));
+    expect(durationPanel, findsOneWidget);
+    expect(
+      find.descendant(of: durationPanel, matching: duration),
+      findsOneWidget,
+    );
+    final durationDecoration =
+        tester.widget<Container>(durationPanel).decoration! as BoxDecoration;
+    expect(durationDecoration.color, colors.surfaceContainerLow);
+    expect(
+      durationDecoration.borderRadius,
+      BorderRadius.circular(PactaSpacing.md),
+    );
+    final durationLabel = find.descendant(
+      of: durationPanel,
+      matching: find.text('有效专注'),
+    );
+    expect(durationLabel, findsOneWidget);
+    final durationLabelRect = tester.getRect(durationLabel);
+    final durationRect = tester.getRect(duration);
+    expect(
+      durationRect.top,
+      greaterThan(durationLabelRect.bottom),
+      reason: '标签与时长各自成行，不挤成一团',
+    );
+    expect(durationRect.left, closeTo(durationLabelRect.left, 0.01));
+    expect(tester.widget<Text>(duration).data, '13分00秒');
+
+    // 安排同样在独立 tonal 容器里，标题与列表之间留出 8dp。
+    final schedulePanel = find.byKey(
+      const ValueKey('board-focus-schedule-panel'),
+    );
+    expect(schedulePanel, findsOneWidget);
+    expect(
+      (tester.widget<Container>(schedulePanel).decoration! as BoxDecoration)
+          .color,
+      colors.surfaceContainerLow,
+    );
+    expect(
+      find.descendant(of: schedulePanel, matching: find.text('今日安排 · 1 项')),
+      findsOneWidget,
+    );
+    final scheduleTitleRect = tester.getRect(find.text('今日安排 · 1 项'));
+    final scheduleRowRect = tester.getRect(find.text('取快递'));
+    expect(
+      scheduleRowRect.top - scheduleTitleRect.bottom,
+      greaterThanOrEqualTo(PactaSpacing.sm - 0.01),
+      reason: '标题与日程列表之间留出清晰呼吸间距',
+    );
+    // 两块容器与标题左缘严格对齐。
+    expect(
+      tester.getRect(durationPanel).left,
+      closeTo(titleRect.left, 0.01),
+      reason: 'tonal 容器与分区标题左缘对齐',
+    );
+    expect(tester.getRect(schedulePanel).left, closeTo(titleRect.left, 0.01));
+    await _unmount(tester);
+  });
+
+  testWidgets('320 宽 2 倍字号下日期详情两块 tonal 容器完整落在卡片内', (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final schedules = _FakeScheduleRepository(
+      rows: [
+        _schedule(
+          'schedule-today',
+          '取快递并顺路把上个月的快递单号核对完',
+          startsAt: DateTime.utc(2026, 11, 12, 4),
+          duration: const Duration(hours: 1),
+        ),
+      ],
+    );
+    final harness = _Harness(seconds: {12: 780});
+    await tester.pumpWidget(harness.build(width: 320, schedules: schedules));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('日期详情'), findsOneWidget);
+    expect(find.text('有效专注'), findsOneWidget);
+    expect(find.text('今日安排 · 1 项'), findsOneWidget);
+    final cardRect = tester.getRect(
+      find.byKey(const ValueKey('board-focus-national-card')),
+    );
+    for (final finder in <Finder>[
+      find.text('日期详情'),
+      find.text('11 月 12 日 · 今日'),
+      find.byKey(const ValueKey('board-focus-day-duration')),
+      find.text('今日安排 · 1 项'),
+      find.byKey(const ValueKey('board-focus-schedule-panel')),
+    ]) {
+      final rect = tester.getRect(finder);
+      expect(rect.left, greaterThanOrEqualTo(cardRect.left - 0.01));
+      expect(rect.right, lessThanOrEqualTo(cardRect.right + 0.01));
+    }
+    await _unmount(tester);
+  });
+
+  testWidgets('320 宽 2 倍字号下日期详情失败态仍工整且不溢出', (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final harness = _Harness(failing: true);
+    await tester.pumpWidget(harness.build(width: 320));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('日期详情'), findsOneWidget);
+    expect(find.text('暂时不能读取这一天的专注记录。'), findsOneWidget);
+    expect(
+      tester
+          .widget<PactaSectionHeader>(find.byType(PactaSectionHeader))
+          .trailing,
+      isNull,
+      reason: '失败态不编造日期副文本',
+    );
+    final cardRect = tester.getRect(
+      find.byKey(const ValueKey('board-focus-national-card')),
+    );
+    for (final finder in <Finder>[
+      find.text('日期详情'),
+      find.text('暂时不能读取这一天的专注记录。'),
+      find.byKey(const ValueKey('board-focus-day-detail-retry')),
+    ]) {
+      final rect = tester.getRect(finder);
+      expect(rect.left, greaterThanOrEqualTo(cardRect.left - 0.01));
+      expect(rect.right, lessThanOrEqualTo(cardRect.right + 0.01));
+    }
+    await _unmount(tester);
+  });
+
+  testWidgets('320 宽 2 倍字号下安排失败态仍工整且不溢出', (tester) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final harness = _Harness();
+    await tester.pumpWidget(
+      harness.build(
+        width: 320,
+        schedules: _FakeScheduleRepository(failing: true),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('暂时不能读取安排。'), findsOneWidget);
+    final cardRect = tester.getRect(
+      find.byKey(const ValueKey('board-focus-national-card')),
+    );
+    for (final finder in <Finder>[
+      find.text('今日安排'),
+      find.text('暂时不能读取安排。'),
+      find.byKey(const ValueKey('board-focus-schedule-retry')),
+    ]) {
+      final rect = tester.getRect(finder);
+      expect(rect.left, greaterThanOrEqualTo(cardRect.left - 0.01));
+      expect(rect.right, lessThanOrEqualTo(cardRect.right + 0.01));
+    }
     await _unmount(tester);
   });
 

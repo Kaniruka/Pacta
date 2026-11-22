@@ -1310,14 +1310,14 @@ const double _nodeCardRadius = 16;
 
 /// 详细视图卡片宽度。
 ///
-/// 抬头行要同时放下状态图标井与最多两行名称，其下还要排开连续天数、根与
-/// 已内化胶囊；148dp 的简洁宽度会把名称压成每行两三个字，228dp 是这套结构
-/// 的最小可用宽度。
+/// 抬头行要同时放下状态图标井与最多两行名称，名称正下方还要排开连续天数
+/// 与已内化胶囊；148dp 的简洁宽度会把名称压成每行两三个字，228dp 是这套
+/// 结构的最小可用宽度。
 const double _detailedNodeWidth = 228;
 
-/// 详细视图卡片的基准高度：1x 最坏内容约 116dp，160dp 留出呼吸位，随
-/// `textScaler` 线性放大后 2x 的最坏组合（两行名称 + 3 枚胶囊 + 三行规则）
-/// 约 274dp，仍在 320dp 之内，绝不出现 RenderFlex 溢出。
+/// 详细视图卡片的基准高度：1x 最坏内容约 138dp（两行名称 + 两行胶囊 +
+/// 三行规则），160dp 留出呼吸位，随 `textScaler` 线性放大后 2x 的最坏组合
+/// 约 255dp，仍在 320dp 之内，绝不出现 RenderFlex 溢出。
 const double _detailedNodeHeight = 160;
 
 /// 详细视图状态图标井的直径（井内图标取 [PactaIconSizes.sm]）。
@@ -1325,9 +1325,10 @@ const double _statusWellSize = PactaIconSizes.lg;
 
 /// 详细视图的节点卡片：左对齐的 M3 状态卡。
 ///
-/// 结构固定为「图标井 + 两行名称 → 连续天数/根/已内化胶囊行（无可展示胶囊时
-/// 整行不渲染）→ 最多三行国策规则」。没有顶部状态条，也没有右上角状态文字
-/// 胶囊：状态只由左侧图标井、卡片填色与四周边框颜色区分。底色以
+/// 结构固定为「图标井 + 右列（两行名称 → 连续天数/已内化胶囊，无可展示胶囊
+/// 时整行不渲染）→ 最多三行国策规则」。顶层节点不再有「根」胶囊，根只用更
+/// 粗的外框区分。没有顶部状态条，也没有右上角状态文字胶囊：状态只由左侧
+/// 图标井、卡片填色与四周边框颜色区分。底色以
 /// [PactaSurfaces.card] 为基底混入状态色，亮暗两种主题下都比画布
 /// surfaceContainerLow 更亮，再配合等宽的 1.2–2dp 四边描边，每张卡都明显浮在
 /// 画布之上，而不是陷进去。
@@ -1354,11 +1355,12 @@ class _NationalFocusNodeCard extends StatelessWidget {
       selecting: selecting,
       blocked: blocked,
     );
-    // 胶囊行只在真有内容时出现：0 天 + 非根 + 未内化时整行不渲染，绝不留下
-    // 「连续 0 天」噪声或一截空行。
+    // 胶囊行只在真有内容时出现：0 天且未内化时整行不渲染，绝不留下
+    // 「连续 0 天」噪声或一截空行。顶层节点不再渲染「根」胶囊：根的层次
+    // 只由更粗的外圈（2dp vs 1.2dp）与外层 Semantics 语义标签承担。
     final showStreakTags =
         card.currentConsecutiveDays > 0 || card.bestConsecutiveDays > 0;
-    final showTagRow = showStreakTags || card.isTopLevel || card.isInternalized;
+    final showTagRow = showStreakTags || card.isInternalized;
     return Card(
       key: ValueKey('national-focus-card-${card.id}'),
       // 画布内卡片用零外边距：节点盒子的高度是布局契约，不能被 Card 的
@@ -1387,50 +1389,52 @@ class _NationalFocusNodeCard extends StatelessWidget {
                   children: [
                     _NationalFocusNodeIconWell(palette: palette),
                     const SizedBox(width: PactaSpacing.sm),
+                    // 名称与胶囊共用图标井右侧这一列：胶囊紧接标题正下方，
+                    // 短标题不会再在图标井右侧留下一整条横向空缺。
                     Expanded(
-                      child: Text(
-                        card.name,
-                        textAlign: TextAlign.start,
-                        style: theme.textTheme.titleSmall,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            card.name,
+                            textAlign: TextAlign.start,
+                            style: theme.textTheme.titleSmall,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (showTagRow) ...[
+                            const SizedBox(height: PactaSpacing.xs),
+                            // 胶囊宽度受右列约束：连续天数 + 已内化放不下时
+                            // 由 Wrap 换行，绝不横向顶出卡片。
+                            Wrap(
+                              spacing: PactaSpacing.xs,
+                              runSpacing: PactaSpacing.xs,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                if (showStreakTags)
+                                  NationalFocusStreakTags(
+                                    currentConsecutiveDays:
+                                        card.currentConsecutiveDays,
+                                    bestConsecutiveDays:
+                                        card.bestConsecutiveDays,
+                                  ),
+                                if (card.isInternalized)
+                                  _NationalFocusNodeBadge(
+                                    icon: Icons.verified_outlined,
+                                    label: '已内化',
+                                    background: colors.secondaryContainer,
+                                    foreground: colors.onSecondaryContainer,
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   ],
                 ),
-                if (showTagRow)
-                  // 胶囊紧贴标题区：详情页同款矢量胶囊 + 根 + 已内化。
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Wrap(
-                      spacing: 4,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        if (showStreakTags)
-                          NationalFocusStreakTags(
-                            currentConsecutiveDays: card.currentConsecutiveDays,
-                            bestConsecutiveDays: card.bestConsecutiveDays,
-                          ),
-                        if (card.isTopLevel)
-                          _NationalFocusNodeBadge(
-                            label: '根',
-                            background: Colors.transparent,
-                            foreground: colors.onSurface,
-                            border: colors.outline,
-                          ),
-                        if (card.isInternalized)
-                          _NationalFocusNodeBadge(
-                            icon: Icons.verified_outlined,
-                            label: '已内化',
-                            background: colors.secondaryContainer,
-                            foreground: colors.onSecondaryContainer,
-                          ),
-                      ],
-                    ),
-                  ),
                 const SizedBox(height: 6),
-                // 最多三行规则：详细视图的阅读契约，不按字号压回两行以下。
+                // 最多三行规则：占满卡片内部整宽，不被右列标题宽度挤压。
                 // 规则用次级前景色，名称与规则之间才有清楚的层次。
                 Text(
                   card.effectiveAction,
@@ -1473,45 +1477,38 @@ class _NationalFocusNodeIconWell extends StatelessWidget {
   );
 }
 
-/// 详细视图的紧凑微标：根节点与已内化共用一套字级。
+/// 详细视图的紧凑微标：节点名称正下方的「已内化」胶囊。
 ///
-/// 状态不再用文字微标表达，只由左侧图标井、卡片填色与四周边框承担。
+/// 状态不用文字微标表达，只由左侧图标井、卡片填色与四周边框承担；这里只
+/// 保留内化达标这一条不在状态语义里的信息。
 class _NationalFocusNodeBadge extends StatelessWidget {
   const _NationalFocusNodeBadge({
+    required this.icon,
     required this.label,
     required this.background,
     required this.foreground,
-    this.icon,
-    this.border,
   });
 
+  final IconData icon;
   final String label;
-  final IconData? icon;
   final Color background;
   final Color foreground;
-  final Color? border;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final borderColor = border;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(999),
-        border: borderColor == null
-            ? null
-            : Border.all(color: borderColor, width: 1),
       ),
       child: Padding(
-        padding: EdgeInsets.fromLTRB(icon == null ? 6 : 4, 1, 6, 1),
+        padding: const EdgeInsets.fromLTRB(4, 1, 6, 1),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (icon != null) ...[
-              Icon(icon, size: PactaIconSizes.micro, color: foreground),
-              const SizedBox(width: 2),
-            ],
+            Icon(icon, size: PactaIconSizes.micro, color: foreground),
+            const SizedBox(width: 2),
             Text(
               label,
               maxLines: 1,

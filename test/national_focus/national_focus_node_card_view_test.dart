@@ -321,7 +321,7 @@ void main() {
     await tearDownTree(tester);
   });
 
-  testWidgets('根节点用 根 微标与更粗外框区分于子节点', (tester) async {
+  testWidgets('根节点只靠更粗外框区分，详细卡片不再渲染 根 胶囊', (tester) async {
     final root = _card('root', '根国策', state: NationalFocusCardState.lit);
     final child = _card(
       'child',
@@ -348,12 +348,20 @@ void main() {
     );
     expect(rootShape.borderRadius, childShape.borderRadius);
 
+    // 「根」胶囊已整体移除：根的层次只由 2dp 外框与外层 Semantics 承担。
+    for (final card in [root, child]) {
+      expect(
+        find.descendant(of: cardKey(card.id), matching: find.text('根')),
+        findsNothing,
+        reason: '详细卡片不再渲染 根 胶囊：${card.name}',
+      );
+    }
+    // 0 天且未内化：胶囊行整块不渲染，也不会留下空行。
     expect(
-      find.descendant(of: cardKey(root.id), matching: find.text('根')),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(of: cardKey(child.id), matching: find.text('根')),
+      find.descendant(
+        of: cardKey(root.id),
+        matching: find.byType(NationalFocusStreakTags),
+      ),
       findsNothing,
     );
     expect(tester.takeException(), isNull);
@@ -461,6 +469,51 @@ void main() {
       greaterThanOrEqualTo(doneNameRect.bottom),
       reason: '胶囊行在标题区下方，不再压到底部信息栏',
     );
+    // 胶囊在图标井右侧的标题列内：左缘与名称一致，绝不回到整卡宽的一行。
+    final doneCardRect = tester.getRect(cardKey(done.id));
+    final doneIconRect = tester.getRect(
+      find.descendant(
+        of: cardKey(done.id),
+        matching: find.byIcon(Icons.lightbulb),
+      ),
+    );
+    expect(
+      doneTagsRect.left,
+      greaterThan(doneIconRect.right),
+      reason: '胶囊在图标井右侧，而不是图标下方的整卡宽行',
+    );
+    expect(
+      doneTagsRect.left,
+      closeTo(doneNameRect.left, 0.01),
+      reason: '胶囊与名称共用右列的同一条左缘',
+    );
+    expect(
+      doneTagsRect.right,
+      lessThanOrEqualTo(doneCardRect.right - 10 + 0.01),
+    );
+    final doneInternalizedRect = tester.getRect(
+      find.descendant(of: cardKey(done.id), matching: find.text('已内化')),
+    );
+    expect(
+      doneInternalizedRect.top,
+      greaterThanOrEqualTo(doneNameRect.bottom),
+      reason: '已内化胶囊同样在标题正下方',
+    );
+    expect(doneInternalizedRect.left, greaterThan(doneIconRect.right));
+    expect(
+      doneInternalizedRect.bottom,
+      lessThanOrEqualTo(
+        tester
+            .getRect(
+              find.descendant(
+                of: cardKey(done.id),
+                matching: find.text(done.effectiveAction),
+              ),
+            )
+            .top,
+      ),
+      reason: '胶囊整体位于规则摘要上方',
+    );
     expect(tester.takeException(), isNull);
     await tearDownTree(tester);
   });
@@ -515,10 +568,10 @@ void main() {
       reason: '没有胶囊时不留空行，规则紧接标题区（只隔 6dp）',
     );
 
-    // 根节点 0 天：只有 根 胶囊，仍不出现连续胶囊。
+    // 根节点 0 天：既没有 根 胶囊，也不出现连续胶囊，规则仍紧接标题区。
     expect(
       find.descendant(of: cardKey(root.id), matching: find.text('根')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
       find.descendant(
@@ -526,6 +579,28 @@ void main() {
         matching: find.byType(NationalFocusStreakTags),
       ),
       findsNothing,
+    );
+    expect(
+      tester
+              .getRect(
+                find.descendant(
+                  of: cardKey(root.id),
+                  matching: find.text(root.effectiveAction),
+                ),
+              )
+              .top -
+          tester
+              .getRect(
+                find
+                    .descendant(
+                      of: cardKey(root.id),
+                      matching: find.byType(Row),
+                    )
+                    .first,
+              )
+              .bottom,
+      closeTo(6, 0.01),
+      reason: '没有胶囊行时规则紧接标题区（只隔 6dp）',
     );
 
     // 有任何一天记录就渲染详情页同款矢量胶囊（d 后缀 + Tooltip）。
@@ -641,9 +716,11 @@ void main() {
           ),
           findsOneWidget,
         );
+        // 「根」胶囊已移除：最坏组合只剩连续天数 + 已内化。
         expect(
           find.descendant(of: cardFinder, matching: find.text('根')),
-          findsOneWidget,
+          findsNothing,
+          reason: '顶层节点不再渲染 根 胶囊',
         );
         expect(
           find.descendant(of: cardFinder, matching: find.text('已内化')),
@@ -721,6 +798,35 @@ void main() {
         final cardRect = tester.getRect(cardFinder);
         final nameRect = tester.getRect(nameFinder);
         final ruleRect = tester.getRect(ruleFinder);
+        final tagsRect = tester.getRect(
+          find.descendant(
+            of: cardFinder,
+            matching: find.byType(NationalFocusStreakTags),
+          ),
+        );
+        final iconRect = tester.getRect(
+          find.descendant(
+            of: cardFinder,
+            matching: find.byIcon(Icons.lightbulb),
+          ),
+        );
+        expect(
+          tagsRect.top,
+          greaterThanOrEqualTo(nameRect.bottom),
+          reason: '胶囊紧贴标题正下方',
+        );
+        expect(
+          tagsRect.left,
+          greaterThan(iconRect.right),
+          reason: '胶囊整体在图标井右侧的右列内',
+        );
+        expect(
+          tagsRect.bottom,
+          lessThanOrEqualTo(ruleRect.top),
+          reason: '胶囊在规则摘要上方',
+        );
+        expect(tagsRect.left, greaterThanOrEqualTo(cardRect.left - 0.01));
+        expect(tagsRect.right, lessThanOrEqualTo(cardRect.right + 0.01));
         expect(nameRect.top - cardRect.top, closeTo(8, 0.01));
         expect(ruleRect.bottom, lessThan(cardRect.bottom - 6));
         expect(

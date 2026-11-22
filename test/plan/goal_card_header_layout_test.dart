@@ -7,6 +7,7 @@ import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:pacta/src/ui/pacta_grouped_list.dart';
 
 import '../support/fake_auth_repository.dart';
 import '../support/plan_navigation.dart';
@@ -175,6 +176,38 @@ void main() {
       await harness.pump(tester);
 
       expect(find.text('置顶目标 · 长按拖动排序'), findsOneWidget);
+      // 置顶分区标题是谷歌蓝 PactaSectionHeader：主色、左缘与目标卡对齐。
+      final pinnedHeader = find.widgetWithText(
+        PactaSectionHeader,
+        '置顶目标 · 长按拖动排序',
+      );
+      expect(pinnedHeader, findsOneWidget);
+      final pinnedTitle = find.descendant(
+        of: pinnedHeader,
+        matching: find.text('置顶目标 · 长按拖动排序'),
+      );
+      expect(
+        tester.widget<Text>(pinnedTitle).style?.color,
+        Theme.of(tester.element(pinnedTitle)).colorScheme.primary,
+        reason: '分区小标题取主蓝色，不再用灰色小字',
+      );
+      expect(
+        tester.getRect(pinnedTitle).left,
+        closeTo(
+          tester
+              .getRect(
+                find
+                    .ancestor(
+                      of: find.text(_shortTitle),
+                      matching: find.byType(Card),
+                    )
+                    .first,
+              )
+              .left,
+          0.5,
+        ),
+        reason: '分区标题与目标卡片左缘对齐',
+      );
       final headerRect = tester.getRect(
         find.byKey(ValueKey('goal-header-${goal.id}')),
       );

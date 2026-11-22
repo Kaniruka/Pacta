@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/ui/pacta_check_circle.dart';
+import 'package:pacta/src/ui/pacta_grouped_list.dart';
 import 'package:pacta/src/ui/pacta_page_header.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
@@ -328,8 +329,35 @@ void main() {
       await tester.tap(find.text('置顶目标'));
       await tester.pumpAndSettle();
 
-      expect(find.text('置顶目标 · 长按拖动排序'), findsOneWidget);
-      expect(find.text('其他目标 · 长按拖动排序'), findsOneWidget);
+      // 两处分区小标题都走谷歌蓝 PactaSectionHeader，不再是灰色小字。
+      expect(find.byType(PactaSectionHeader), findsNWidgets(2));
+      final pinnedHeader = find.widgetWithText(
+        PactaSectionHeader,
+        '置顶目标 · 长按拖动排序',
+      );
+      final othersHeader = find.widgetWithText(
+        PactaSectionHeader,
+        '其他目标 · 长按拖动排序',
+      );
+      expect(pinnedHeader, findsOneWidget);
+      expect(othersHeader, findsOneWidget);
+      final pinnedTitle = find.descendant(
+        of: pinnedHeader,
+        matching: find.text('置顶目标 · 长按拖动排序'),
+      );
+      expect(
+        tester.widget<Text>(pinnedTitle).style?.color,
+        Theme.of(tester.element(pinnedTitle)).colorScheme.primary,
+        reason: '分区标题取主蓝色，与全站分组标题一致',
+      );
+      // 标题左缘与目标卡片对齐，组件默认的 4dp 内缩在计划页要归零。
+      final pinnedCard = find
+          .ancestor(of: find.text('目标乙'), matching: find.byType(Card))
+          .first;
+      expect(
+        tester.getRect(pinnedTitle).left,
+        closeTo(tester.getRect(pinnedCard).left, 0.5),
+      );
       expect(
         _top(tester, find.text('目标乙')),
         lessThan(_top(tester, find.text('目标甲'))),
