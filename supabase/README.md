@@ -127,7 +127,11 @@ with the same email requires an explicit new project-owner grant and consumes
 eligibility for a different Auth UUID.
 
 Run the rollback-only purge probe only against an isolated Supabase project
-containing two active registered email users. It inserts business rows,
+containing two active registered email users. Operators and verification agents
+may create disposable isolated test accounts for this via
+`python scripts/pacta_admin.py create-user <email>` and remove them afterwards
+with `python scripts/pacta_admin.py delete-user <email> --yes` (without
+touching real accounts). The probe inserts business rows,
 simulates hard Auth deletion inside a transaction, checks the receipt,
 business-data cascade, old-UUID rejection, and fresh eligibility, then rolls
 back:
