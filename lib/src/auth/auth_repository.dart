@@ -11,27 +11,15 @@ abstract interface class AuthRepository {
 
   Future<void> signOut();
 
-  Future<bool> isAdministrator();
-
-  Future<void> grantEligibility({required String email});
-
-  Future<bool> revokeEligibility({required String email});
-
-  Future<void> adminResetUserPassword({
-    required String targetEmail,
+  /// 普通用户自助修改密码：先用当前密码复核身份，再更新登录密码。
+  ///
+  /// 入口只在账号设置里，管理员动作已彻底下线；两者不共用任何接口。
+  Future<void> changePassword({
+    required String currentPassword,
     required String newPassword,
-    required bool manualVerificationConfirmed,
   });
 
   Future<UserLifecycleStatus> getCurrentUserLifecycle();
-
-  Future<List<ManagedUserLifecycle>> listUserLifecycles();
-
-  Future<void> suspendUser(String userId);
-
-  Future<void> restoreUser(String userId);
-
-  Future<UserPurgeReceipt> purgeUser(String userId);
 
   Future<UserPurgeReceipt?> lookupPurgeReceipt(String oldUserId);
 }

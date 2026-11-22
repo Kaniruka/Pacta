@@ -83,10 +83,19 @@ Deno.serve(async (request: Request) => {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return jsonResponse(400, { error: '请求内容无效。' });
   }
-  const userId = (body as Record<string, unknown>).user_id;
+  const values = body as Record<string, unknown>;
+  const userId = values.user_id;
   if (typeof userId !== 'string' || !uuidPattern.test(userId)) {
     return jsonResponse(400, { error: '目标用户身份无效。' });
   }
+  // Testing-phase bypass of the 30-day suspension wait. Absent means the
+  // strict production rule; a present non-boolean value is a client bug and
+  // must never be coerced.
+  const rawImmediate = values.immediate;
+  if (rawImmediate !== undefined && typeof rawImmediate !== 'boolean') {
+    return jsonResponse(400, { error: '请求参数 immediate 必须为布尔值。' });
+  }
+  const immediate = rawImmediate === true;
 
   const callerClient = createClient(supabaseUrl, publishableKey, {
     auth: {
@@ -121,7 +130,11 @@ Deno.serve(async (request: Request) => {
 
   const { data: startedPurge, error: beginError } = await adminClient.rpc(
     'admin_begin_user_purge',
-    { p_user_id: userId, p_admin_id: callerResult.user.id },
+    {
+      p_user_id: userId,
+      p_admin_id: callerResult.user.id,
+      p_skip_waiting_period: immediate,
+    },
   );
   if (beginError) {
     console.error('admin user purge could not begin');

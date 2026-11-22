@@ -19,15 +19,25 @@ class SourceSnapshotTests(unittest.TestCase):
         self.assertIn('lib/src/focus/focus_chain_history.dart', subject.SOURCE_FILES)
 
     def test_no_removed_legacy_sources_are_tracked(self):
-        # 这些页面与转换器已在 Phase 5 删除；清单若还指向它们，基线会在
-        # source_snapshot 里直接抛 FileNotFoundError。
+        # 这些页面与转换器已删除；清单若还指向它们，基线会在 source_snapshot
+        # 里直接抛 FileNotFoundError。
         removed = (
             'lib/src/focus/focus_month_page.dart',
             'lib/src/national_focus/national_focus_reconciliation_page.dart',
             'lib/src/sync/legacy_cloud_snapshot.dart',
+            'lib/src/profile/focus_statistics_page.dart',
+            'lib/src/auth/admin_password_reset_card.dart',
+            'lib/src/auth/admin_user_lifecycle_card.dart',
         )
         tracked = set(subject.SOURCE_FILES)
         self.assertEqual([], [path for path in removed if path in tracked])
+
+    def test_tracks_self_service_change_password_page(self):
+        # 修改密码是本阶段新增的账号自助页：基线清单必须覆盖它，
+        # 否则渲染输入的快照会缺一块。
+        self.assertIn(
+            'lib/src/profile/change_password_page.dart', subject.SOURCE_FILES
+        )
 
     def test_sha256_missing_path_raises(self):
         with tempfile.TemporaryDirectory() as directory:

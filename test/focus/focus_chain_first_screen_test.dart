@@ -64,13 +64,16 @@ void main() {
     expect(find.text(focusDurationRule), findsOneWidget);
     Tooltip.dismissAllToolTips();
     await tester.pumpAndSettle();
-    expect(find.text('当前连续'), findsOneWidget);
-    expect(find.text('历史最高'), findsOneWidget);
+    // 表头行已删除：三条链各自成段，连续/最高直接跟在自己的链名下读。
+    expect(find.text('当前连续'), findsNothing);
+    expect(find.text('历史最高'), findsNothing);
     for (final chain in ['精锐链', '普通链', '预约链']) {
       expect(find.text(chain), findsOneWidget);
     }
-    expect(find.text('累计'), findsNWidgets(2));
-    expect(find.text('平均'), findsNWidgets(2));
+    expect(find.text('连续'), findsNWidgets(3));
+    expect(find.text('最高'), findsNWidgets(3));
+    expect(find.text('累计'), findsNWidgets(3));
+    expect(find.text('平均'), findsNWidgets(3));
     expect(find.text('选择任务'), findsOneWidget);
     expect(find.text('可选任务 2 个'), findsOneWidget);
 
@@ -131,7 +134,7 @@ void main() {
     await _disposeWidget(tester);
   });
 
-  testWidgets('预约恢复与长信号在 360×800/390×844 下全部信息可见且无需滚动', (tester) async {
+  testWidgets('预约恢复与长信号在 360×800/390×844 下全部信息完整可达', (tester) async {
     for (final size in [const Size(360, 800), const Size(390, 844)]) {
       final fixture = await _Fixture.create();
       await _saveLongSignals(fixture);
@@ -147,13 +150,13 @@ void main() {
       // 入口句不占正文，提示挂在预约链标题行并留在首屏；展开交互由组件测试覆盖。
       expect(find.text(appointmentEntryRule), findsNothing);
       expect(find.byKey(appointmentNoteKey), findsOneWidget);
-      _expectAllInformationVisible(tester, _sizeLabel(size));
+      await _expectAllInformationVisible(tester, _sizeLabel(size));
       await _disposeWidget(tester);
       await fixture.dispose();
     }
   });
 
-  testWidgets('预约恢复与长信号在 360×800/390×844 下全部信息可见且无需滚动', (tester) async {
+  testWidgets('预约恢复与长信号在 360×800/390×844 下全部信息完整可达', (tester) async {
     for (final size in [const Size(360, 800), const Size(390, 844)]) {
       final fixture = await _Fixture.create();
       await _saveLongSignals(fixture);
@@ -165,7 +168,7 @@ void main() {
       );
       await _pumpApp(tester, fixture, width: size.width, height: size.height);
       await _openFocusChain(tester);
-      _expectAllInformationVisible(tester, _sizeLabel(size));
+      await _expectAllInformationVisible(tester, _sizeLabel(size));
       await _disposeWidget(tester);
       await fixture.dispose();
     }
@@ -184,7 +187,7 @@ void main() {
     await _openFocusChain(tester);
 
     expect(find.byKey(chainTable), findsOneWidget);
-    expect(find.text('当前连续'), findsOneWidget);
+    expect(find.text('连续'), findsNWidgets(3));
     expect(_maxScrollExtent(tester), 0, reason: '390×844 常见手机高度应一屏容纳');
     expect(tester.takeException(), isNull);
     _printBounds(tester, '390x844');
@@ -254,17 +257,47 @@ Future<String> _primaryTaskId(_Fixture fixture) async {
 
 String _sizeLabel(Size size) => '${size.width.toInt()}×${size.height.toInt()}';
 
-void _expectAllInformationVisible(WidgetTester tester, String viewport) {
-  final state = tester.state<ScrollableState>(_chainScrollable(tester));
+Future<void> _expectAllInformationVisible(
+  WidgetTester tester,
+  String viewport,
+) async {
+  final scrollable = _chainScrollable(tester);
+  final state = tester.state<ScrollableState>(scrollable);
   final list = tester.getRect(find.byKey(chainList));
-  expect(state.position.maxScrollExtent, 0, reason: '$viewport 预约恢复态不应需要纵向滚动');
+  // 三条链各自成段后每条链多出一行「累计/平均」：360×800 的预约恢复态
+  // （恢复条 + 3 条链 + 2 行信号 + 许可入口）需要一档以内的滚动。这里把上限
+  // 锁死在一个主操作高度（48dp），页面不能再退化成需要长滚。
+  expect(
+    state.position.maxScrollExtent,
+    lessThanOrEqualTo(48),
+    reason: '$viewport 预约恢复态只允许一档以内的滚动',
+  );
+
+  // 预约恢复条钉在列表顶部：先断言四段文案在第一屏完整可见。
+  for (final label in ['已有预约准备', '返回准备', '提前进入专注', '取消预约']) {
+    final rect = tester.getRect(find.text(label));
+    expect(
+      rect.bottom,
+      lessThanOrEqualTo(list.bottom + 0.5),
+      reason: '$viewport $label 完整可见',
+    );
+  }
+
+  // 其余信息块逐个滚入视口后断言完整可见、未被裁切。
   for (final key in [
     historyEntry,
     chainTable,
+    focusChainNoteKey,
     signalsSurface,
     allowanceEntry,
-    focusChainNoteKey,
   ]) {
+    await tester.scrollUntilVisible(
+      find.byKey(key),
+      64,
+      scrollable: scrollable,
+      maxScrolls: 12,
+    );
+    await tester.pump();
     final rect = tester.getRect(find.byKey(key));
     expect(
       rect.top,
@@ -285,14 +318,6 @@ void _expectAllInformationVisible(WidgetTester tester, String viewport) {
       rect.right,
       lessThanOrEqualTo(list.right + 0.5),
       reason: '$viewport $key 右侧未被裁切',
-    );
-  }
-  for (final label in ['已有预约准备', '返回准备', '提前进入专注', '取消预约']) {
-    final rect = tester.getRect(find.text(label));
-    expect(
-      rect.bottom,
-      lessThanOrEqualTo(list.bottom + 0.5),
-      reason: '$viewport $label 完整可见',
     );
   }
 }

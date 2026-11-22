@@ -13,24 +13,9 @@ import '../test/support/fake_auth_repository.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('T27 startup cleanup and explicit admin purge flow', (
-    tester,
-  ) async {
+  testWidgets('T27 启动清理只保留未确认清除的本地数据', (tester) async {
     final database = PactaDatabase(NativeDatabase.memory());
-    final auth = FakeAuthRepository()
-      ..signedInUser = 'ticket-27-admin'
-      ..administrator = true
-      ..managedUsers = [
-        ManagedUserLifecycle(
-          userId: 'eligible-user',
-          email: 'member@example.test',
-          createdAt: DateTime.utc(2026, 8, 1),
-          isSuspended: true,
-          suspendedAt: DateTime.utc(2026, 8, 1),
-          purgeEligibleAt: DateTime.utc(2026, 8, 31),
-          isEligibleForPurge: true,
-        ),
-      ];
+    final auth = FakeAuthRepository()..signedInUser = 'ticket-27-user';
     final cleanup = UserPurgeCleanupRepository(
       authRepository: auth,
       database: database,
@@ -64,27 +49,14 @@ void main() {
       });
       expect(cleanupCompleted, isTrue);
       expect(await _goalCount(database, 'new-user-id'), 1);
-      expect(auth.currentUserId, 'ticket-27-admin');
+      expect(auth.currentUserId, 'ticket-27-user');
 
+      // 管理入口已下线：我的页不再有「用户管理」，也不再有任何「永久清除」
+      // 动作，清除只由启动时的回执核对完成。
       await tester.tap(find.text('我的').last);
       await tester.pumpAndSettle();
-      expect(find.text('member@example.test'), findsOneWidget);
-      await tester.ensureVisible(find.text('永久清除'));
-      await tester.tap(find.text('永久清除'));
-      await tester.pumpAndSettle();
-      expect(find.text('确认不可逆清除'), findsOneWidget);
-      expect(find.textContaining('离线设备'), findsOneWidget);
-      await tester.tap(find.text('取消'));
-      await tester.pumpAndSettle();
-      expect(auth.purgedUserIds, isEmpty);
-
-      await tester.ensureVisible(find.text('永久清除'));
-      await tester.tap(find.text('永久清除'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('清除云端身份'));
-      await tester.pumpAndSettle();
-      expect(auth.purgedUserIds, ['eligible-user']);
-      expect(find.text('member@example.test'), findsNothing);
+      expect(find.text('用户管理'), findsNothing);
+      expect(find.text('永久清除'), findsNothing);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
       await database.close();

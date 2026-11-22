@@ -252,7 +252,7 @@ void main() {
     });
   }
 
-  testWidgets('详细视图顶部 3dp 状态条贴顶满宽并按状态取色', (tester) async {
+  testWidgets('详细视图取消顶部状态条与右上角状态胶囊，状态只由图标井、填色与边框表达', (tester) async {
     final lit = _card('lit', '点亮卡', state: NationalFocusCardState.lit);
     final pending = _card(
       'pending',
@@ -265,37 +265,58 @@ void main() {
     await pumpTree(tester, repository);
     await switchToDetailed(tester);
 
-    Color stripeOf(String id) {
-      final stripe = find.descendant(
-        of: cardKey(id),
-        matching: find.byType(ColoredBox),
-      );
-      expect(stripe, findsOneWidget, reason: '每张详细卡片只有一条顶部状态条');
-      expect(tester.getSize(stripe).height, closeTo(3, 0.01));
+    for (final card in [lit, pending, out]) {
+      final finder = cardKey(card.id);
+      expect(finder, findsOneWidget);
+      // 顶部 3dp 状态条彻底移除：卡片内不再出现任何 ColoredBox。
       expect(
-        tester.getTopLeft(stripe).dy,
-        closeTo(tester.getTopLeft(cardKey(id)).dy, 0.5),
-        reason: '状态条贴住卡片上沿',
+        find.descendant(of: finder, matching: find.byType(ColoredBox)),
+        findsNothing,
+        reason: '${card.name} 没有顶部状态条',
+      );
+      final cardRect = tester.getRect(finder);
+      final nameRect = tester.getRect(
+        find.descendant(of: finder, matching: find.text(card.name)),
       );
       expect(
-        tester.getSize(stripe).width,
-        closeTo(tester.getSize(cardKey(id)).width, 0.01),
-        reason: '状态条满宽铺开',
+        nameRect.top - cardRect.top,
+        closeTo(8, 0.01),
+        reason: '${card.name} 的标题行直接贴着 8dp 内边距开始，顶部没有额外占位',
       );
-      return tester.widget<ColoredBox>(stripe).color;
+      // 四边等宽：RoundedRectangleBorder 只有一条 BorderSide，四条边同宽。
+      final shape =
+          tester.widget<Card>(finder).shape! as RoundedRectangleBorder;
+      expect(shape.side.width, closeTo(2, 0.001), reason: '根节点四边同为 2dp');
+      // 右上角不再有状态文字胶囊，但状态图标井还在。
+      for (final label in const ['点亮', '确认', '熄灭']) {
+        expect(
+          find.descendant(of: finder, matching: find.text(label)),
+          findsNothing,
+          reason: '${card.name} 不再渲染状态文字胶囊',
+        );
+      }
+      final statusIcon = find.descendant(
+        of: finder,
+        matching: find.byIcon(switch (card.state) {
+          NationalFocusCardState.lit => Icons.lightbulb,
+          NationalFocusCardState.pendingTodayConfirmation =>
+            Icons.hourglass_top,
+          NationalFocusCardState.extinguished => Icons.lightbulb_outline,
+        }),
+      );
+      expect(statusIcon, findsOneWidget, reason: '状态仍由左侧图标井表达');
+      // 语义层仍完整播报状态：视觉去掉文字胶囊不等于对读屏也去掉状态。
+      final semantics = tester.widget<Semantics>(
+        find
+            .descendant(of: nodeKey(card.id), matching: find.byType(Semantics))
+            .first,
+      );
+      expect(
+        semantics.properties.label,
+        contains(card.state.label),
+        reason: 'Semantics 仍播报 ${card.state.label}',
+      );
     }
-
-    final litStripe = stripeOf(lit.id);
-    final pendingStripe = stripeOf(pending.id);
-    final outStripe = stripeOf(out.id);
-    // 点亮是绿、待确认是琥珀、熄灭是中性灰：色相完全不同，一眼可分。
-    expect(litStripe.g, greaterThan(litStripe.r));
-    expect(litStripe.g, greaterThan(litStripe.b));
-    expect(pendingStripe.r, greaterThan(pendingStripe.b));
-    expect(pendingStripe.g, greaterThan(pendingStripe.b));
-    expect((outStripe.r - outStripe.g).abs(), lessThan(0.05));
-    expect((outStripe.g - outStripe.b).abs(), lessThan(0.05));
-    expect({litStripe, pendingStripe, outStripe}, hasLength(3));
     expect(tester.takeException(), isNull);
     await tearDownTree(tester);
   });
@@ -319,8 +340,13 @@ void main() {
         tester.widget<Card>(cardKey(root.id)).shape! as RoundedRectangleBorder;
     final childShape =
         tester.widget<Card>(cardKey(child.id)).shape! as RoundedRectangleBorder;
-    expect(rootShape.side.width, greaterThanOrEqualTo(2), reason: '根节点用更粗外框');
-    expect(rootShape.side.width, greaterThan(childShape.side.width));
+    expect(rootShape.side.width, closeTo(2, 0.001), reason: '根节点四条边同为 2dp');
+    expect(
+      childShape.side.width,
+      closeTo(1.2, 0.001),
+      reason: '子节点四条边同为 1.2dp',
+    );
+    expect(rootShape.borderRadius, childShape.borderRadius);
 
     expect(
       find.descendant(of: cardKey(root.id), matching: find.text('根')),
@@ -334,7 +360,46 @@ void main() {
     await tearDownTree(tester);
   });
 
-  testWidgets('内化达标显示 已内化 徽记，连续天数始终在底部信息栏', (tester) async {
+  testWidgets('放置模式下可选子节点用 1.5dp 四边等宽描边', (tester) async {
+    final root = _card('root', '根国策', state: NationalFocusCardState.lit);
+    final child = _card(
+      'child',
+      '子国策',
+      state: NationalFocusCardState.lit,
+      parentId: root.id,
+    );
+    final moving = _card('moving', '待放置卡', state: NationalFocusCardState.lit);
+    final repository = _FixtureRepository([root, child, moving]);
+    addTearDown(repository.dispose);
+    await pumpTree(tester, repository);
+    await switchToDetailed(tester);
+
+    await tester.ensureVisible(nodeKey(moving.id));
+    await tester.tap(nodeKey(moving.id));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('调整树中位置'));
+    await tester.pumpAndSettle();
+
+    // 可选子节点：1.5dp 四条等宽描边；根节点仍是最粗的 2dp。
+    final childShape =
+        tester.widget<Card>(cardKey(child.id)).shape! as RoundedRectangleBorder;
+    expect(
+      childShape.side.width,
+      closeTo(1.5, 0.001),
+      reason: '可选父节点四边同为 1.5dp，没有单边强调',
+    );
+    expect(
+      find.descendant(of: cardKey(child.id), matching: find.byType(ColoredBox)),
+      findsNothing,
+    );
+    final rootShape =
+        tester.widget<Card>(cardKey(root.id)).shape! as RoundedRectangleBorder;
+    expect(rootShape.side.width, closeTo(2, 0.001));
+    expect(tester.takeException(), isNull);
+    await tearDownTree(tester);
+  });
+
+  testWidgets('内化达标显示 已内化 胶囊，连续天数胶囊移到标题下方', (tester) async {
     final done = _card(
       'done',
       '内化卡',
@@ -364,56 +429,310 @@ void main() {
       find.descendant(of: cardKey(almost.id), matching: find.text('已内化')),
       findsNothing,
     );
+    // 连续天数改成详情页同款矢量胶囊，紧贴标题区下方，不再用「连续 X 天」文字。
     expect(
-      find.descendant(of: cardKey(done.id), matching: find.text('连续 12 天')),
+      find.descendant(
+        of: cardKey(done.id),
+        matching: find.byType(NationalFocusStreakTags),
+      ),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: cardKey(almost.id), matching: find.text('连续 3 天')),
+      find.descendant(of: cardKey(done.id), matching: find.text('12d')),
       findsOneWidget,
+    );
+    expect(
+      find.descendant(of: cardKey(almost.id), matching: find.text('3d')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('连续 12 天'), findsNothing);
+    expect(find.textContaining('连续 3 天'), findsNothing);
+    final doneNameRect = tester.getRect(
+      find.descendant(of: cardKey(done.id), matching: find.text(done.name)),
+    );
+    final doneTagsRect = tester.getRect(
+      find.descendant(
+        of: cardKey(done.id),
+        matching: find.byType(NationalFocusStreakTags),
+      ),
+    );
+    expect(
+      doneTagsRect.top,
+      greaterThanOrEqualTo(doneNameRect.bottom),
+      reason: '胶囊行在标题区下方，不再压到底部信息栏',
     );
     expect(tester.takeException(), isNull);
     await tearDownTree(tester);
   });
 
-  testWidgets('详细视图规则固定两行、左对齐，节点高度随字号缩放且 1x/2x 都不溢出', (tester) async {
-    for (final scale in [1.0, 2.0]) {
-      final card = _card('rule-card', '根国策', state: NationalFocusCardState.lit);
-      final repository = _FixtureRepository([card]);
-      await pumpTree(
-        tester,
-        repository,
-        size: const Size(320, 800),
-        textScale: scale,
-      );
-      await switchToDetailed(tester);
+  testWidgets('0 天既不渲染连续胶囊也不留空行，有记录时才显示详情页同款胶囊', (tester) async {
+    final root = _card('root', '根国策', state: NationalFocusCardState.lit);
+    final quiet = _card(
+      'quiet',
+      '安静卡',
+      state: NationalFocusCardState.lit,
+      parentId: root.id,
+    );
+    final active = _card(
+      'active',
+      '有记录卡',
+      state: NationalFocusCardState.lit,
+      parentId: root.id,
+      currentConsecutiveDays: 5,
+      bestConsecutiveDays: 9,
+    );
+    final repository = _FixtureRepository([root, quiet, active]);
+    addTearDown(repository.dispose);
+    await pumpTree(tester, repository);
+    await switchToDetailed(tester);
 
-      final cardFinder = cardKey(card.id);
-      final rule = tester.widget<Text>(
-        find.descendant(
+    // 0 天 + 非根 + 未内化：整块胶囊行都不渲染，标题与规则之间只留 6dp。
+    expect(
+      find.descendant(
+        of: cardKey(quiet.id),
+        matching: find.byType(NationalFocusStreakTags),
+      ),
+      findsNothing,
+      reason: 'current == 0 && best == 0 时不渲染连续胶囊',
+    );
+    expect(
+      find.descendant(of: cardKey(quiet.id), matching: find.text('0d')),
+      findsNothing,
+    );
+    expect(find.textContaining('连续 0 天'), findsNothing, reason: '0 天不再有文字噪声');
+    final quietHeaderRect = tester.getRect(
+      find.descendant(of: cardKey(quiet.id), matching: find.byType(Row)).first,
+    );
+    final quietRuleRect = tester.getRect(
+      find.descendant(
+        of: cardKey(quiet.id),
+        matching: find.text(quiet.effectiveAction),
+      ),
+    );
+    expect(
+      quietRuleRect.top - quietHeaderRect.bottom,
+      closeTo(6, 0.01),
+      reason: '没有胶囊时不留空行，规则紧接标题区（只隔 6dp）',
+    );
+
+    // 根节点 0 天：只有 根 胶囊，仍不出现连续胶囊。
+    expect(
+      find.descendant(of: cardKey(root.id), matching: find.text('根')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: cardKey(root.id),
+        matching: find.byType(NationalFocusStreakTags),
+      ),
+      findsNothing,
+    );
+
+    // 有任何一天记录就渲染详情页同款矢量胶囊（d 后缀 + Tooltip）。
+    final activeTags = find.descendant(
+      of: cardKey(active.id),
+      matching: find.byType(NationalFocusStreakTags),
+    );
+    expect(activeTags, findsOneWidget);
+    expect(
+      find.descendant(of: cardKey(active.id), matching: find.text('5d')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: cardKey(active.id), matching: find.text('9d')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: cardKey(active.id),
+        matching: find.byTooltip('当前连续点亮 5 天'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: cardKey(active.id),
+        matching: find.byTooltip('历史最高连续点亮 9 天'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.getRect(activeTags).top,
+      greaterThanOrEqualTo(
+        tester
+            .getRect(
+              find.descendant(
+                of: cardKey(active.id),
+                matching: find.text(active.name),
+              ),
+            )
+            .bottom,
+      ),
+      reason: '胶囊行紧贴标题区下方',
+    );
+    expect(tester.takeException(), isNull);
+    await tearDownTree(tester);
+  });
+
+  // 最坏节点：2 行长标题 + 180d/180d + 根 + 已内化 + 3 行长规则，320×800 窄屏。
+  for (final brightness in Brightness.values) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('详细视图最坏节点三行规则完整且零溢出 ${scale}x ${brightness.name}', (
+        tester,
+      ) async {
+        final longName = List.filled(6, '在重要工作开始之前保持专注').join();
+        final longAction = List.filled(6, '坐到书桌前先写下今天的第一步再核对昨天的落实情况').join();
+        final card = _card(
+          'worst',
+          longName,
+          state: NationalFocusCardState.lit,
+          action: longAction,
+          currentConsecutiveDays: 180,
+          bestConsecutiveDays: 180,
+          successfulDays: 180,
+        );
+        expect(card.isTopLevel, isTrue);
+        expect(card.isInternalized, isTrue);
+        final repository = _FixtureRepository([card]);
+        addTearDown(repository.dispose);
+        await pumpTree(
+          tester,
+          repository,
+          brightness: brightness,
+          size: const Size(320, 800),
+          textScale: scale,
+        );
+        await switchToDetailed(tester);
+
+        final cardFinder = cardKey(card.id);
+        expect(cardFinder, findsOneWidget);
+        expect(
+          tester.getSize(cardFinder).height,
+          closeTo(160 * scale, 0.01),
+          reason: '详细视图节点高度 160dp 随 textScaler 线性缩放',
+        );
+        expect(
+          find.descendant(of: cardFinder, matching: find.byType(ColoredBox)),
+          findsNothing,
+        );
+        // 最坏胶囊组合同时在场。
+        expect(
+          find.descendant(
+            of: cardFinder,
+            matching: find.byType(NationalFocusStreakTags),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: cardFinder, matching: find.text('180d')),
+          findsNWidgets(2),
+        );
+        expect(
+          find.descendant(
+            of: cardFinder,
+            matching: find.byTooltip('当前连续点亮 180 天'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: cardFinder,
+            matching: find.byTooltip('历史最高连续点亮 180 天'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: cardFinder, matching: find.text('根')),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: cardFinder, matching: find.text('已内化')),
+          findsOneWidget,
+        );
+
+        // 名称仍最多两行；规则升到最多三行并左对齐。
+        final nameFinder = find.descendant(
+          of: cardFinder,
+          matching: find.text(card.name),
+        );
+        final ruleFinder = find.descendant(
           of: cardFinder,
           matching: find.text(card.effectiveAction),
-        ),
-      );
-      expect(rule.maxLines, 2, reason: '${scale}x 字号下规则仍固定两行');
-      expect(rule.overflow, TextOverflow.ellipsis);
-      expect(rule.textAlign, TextAlign.start, reason: '规则左对齐，便于连续扫读');
-      final name = tester.widget<Text>(
-        find.descendant(of: cardFinder, matching: find.text(card.name)),
-      );
-      expect(name.maxLines, 2, reason: '${scale}x 字号下名称最多两行');
-      expect(
-        tester.getSize(cardFinder).height,
-        closeTo(160 * scale, 0.01),
-        reason: '详细视图节点高度 160dp 随 textScaler 线性缩放',
-      );
-      // 规则最多两行时不得垂直溢出，也不能把名称或信息栏挤掉。
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(const Duration(seconds: 1));
-      await repository.dispose();
+        );
+        final name = tester.widget<Text>(nameFinder);
+        final rule = tester.widget<Text>(ruleFinder);
+        expect(name.maxLines, 2);
+        expect(rule.maxLines, 3, reason: '${scale}x 字号下规则最多三行');
+        expect(rule.overflow, TextOverflow.ellipsis);
+        expect(rule.textAlign, TextAlign.start, reason: '规则左对齐，便于连续扫读');
+
+        // 用同一套字级与 textScaler 重排一遍：行数与显示高度一致，才算三行完整可见。
+        final theme = Theme.of(tester.element(cardFinder));
+        final scaler = MediaQuery.textScalerOf(tester.element(cardFinder));
+        TextPainter paint(
+          String text,
+          TextStyle? style,
+          int maxLines,
+          double width,
+        ) {
+          return TextPainter(
+            text: TextSpan(text: text, style: style),
+            textDirection: TextDirection.ltr,
+            textScaler: scaler,
+            maxLines: maxLines,
+          )..layout(maxWidth: width);
+        }
+
+        final namePainter = paint(
+          card.name,
+          theme.textTheme.titleSmall,
+          2,
+          tester.getSize(nameFinder).width,
+        );
+        expect(
+          namePainter.computeLineMetrics(),
+          hasLength(2),
+          reason: '最坏标题恰好占满两行',
+        );
+        expect(
+          tester.getSize(nameFinder).height,
+          closeTo(namePainter.height, 0.51),
+          reason: '两行标题没有被压成一行',
+        );
+        final rulePainter = paint(
+          card.effectiveAction,
+          rule.style,
+          3,
+          tester.getSize(ruleFinder).width,
+        );
+        expect(
+          rulePainter.computeLineMetrics(),
+          hasLength(3),
+          reason: '最坏规则需要三行才放得下',
+        );
+        expect(rulePainter.didExceedMaxLines, isTrue);
+        expect(
+          tester.getSize(ruleFinder).height,
+          closeTo(rulePainter.height, 0.51),
+          reason: '三行规则完整可见，没有被 Expanded 压少',
+        );
+
+        // 几何预算：内容全部落在卡片内，顶部与底部呼吸接近，无大块底部死白。
+        final cardRect = tester.getRect(cardFinder);
+        final nameRect = tester.getRect(nameFinder);
+        final ruleRect = tester.getRect(ruleFinder);
+        expect(nameRect.top - cardRect.top, closeTo(8, 0.01));
+        expect(ruleRect.bottom, lessThan(cardRect.bottom - 6));
+        expect(
+          cardRect.bottom - ruleRect.bottom - (nameRect.top - cardRect.top),
+          lessThan(24),
+          reason: '底部留白不比顶部多出一大块',
+        );
+        expect(tester.takeException(), isNull);
+        await tearDownTree(tester);
+      });
     }
-  });
+  }
 
   testWidgets('node 弹层与卡详情名称旁并排展示当前/最高连续点亮胶囊', (tester) async {
     final card = _card(

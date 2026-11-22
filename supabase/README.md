@@ -126,6 +126,96 @@ rolls back:
 supabase db query --linked -f supabase/tests/user_purge_access.sql
 ```
 
+## Testing-phase immediate purge — Ticket 03
+
+`202611220001_admin_immediate_purge.sql` adds an optional third parameter,
+`p_skip_waiting_period boolean default false`, to `admin_begin_user_purge`.
+The migration drops the old `(uuid, uuid)` signature before creating
+`(uuid, uuid, boolean)`; leaving both overloads would make a two-argument call
+ambiguous for PostgREST. Every existing guard remains: the caller must be an
+administrator, cannot purge itself or another administrator, the target is
+locked in `auth.users`, and pending/completed receipts stay idempotent. Only
+an explicit `true` skips the continuous suspension and 30-day wait; `NULL` and
+`false` keep the production rule.
+
+Registration eligibility and the receipt ledger behave exactly as before, so an
+immediate purge still records the pending receipt, removes the cloud business
+data, deletes the Auth identity, and only then writes a completed receipt.
+
+Deploy both the database function and the updated Edge Function once:
+
+```powershell
+supabase db push
+supabase functions deploy admin-purge-user
+```
+
+The function accepts an optional `immediate` boolean. Omitted means `false`;
+any non-boolean value is rejected with HTTP 400
+`{"error": "请求参数 immediate 必须为布尔值。"}` before any RPC runs. A cloud
+project that has not received both deployments keeps returning HTTP 409 for a
+target that is still inside the 30-day window; that is the expected signal to
+run the two commands above.
+
+The rollback-only probe `supabase/tests/user_purge_access.sql` now also checks
+that the legacy two-argument signature is gone, that `authenticated` and
+`anon` still cannot execute the function, that an active target is refused by
+default and enters `pending` with `true`, that a five-day suspension behaves
+the same way, that an administrator target is still refused with `42501`, and
+that the service-role grant accepts the three-argument signature. The immediate
+block runs inside a savepoint and is rolled back before the original T27 flow.
+
+## Windows terminal administrator tool
+
+`scripts/pacta_admin.py` is a standard-library-only Python 3 tool for Windows
+PowerShell. It never reads a `service_role` or `sb_secret_` key: it signs in
+as the administrator with the project's public URL, publishable/anon key, email
+and password, obtains a user JWT, verifies `app_admins` membership, and calls
+the same RLS-protected RPCs and Edge Functions as the App.
+
+Configuration:
+
+- `--env-file` defaults to the repository root `.env`. Process environment
+  variables win; the file only fills missing values. Only `SUPABASE_URL` and
+  `SUPABASE_PUBLISHABLE_KEY` (or the legacy `SUPABASE_ANON_KEY`) are read. A
+  `SUPABASE_SERVICE_ROLE_KEY` found in the file is reported and ignored.
+- `--email` is optional; when omitted the tool prompts for it. The password is
+  read with `getpass` and is never written to source, output or logs.
+- A 401 or an expiring access token refreshes the session once with the stored
+  `refresh_token` and retries the request.
+
+Commands (no command starts the numeric interactive menu):
+
+```powershell
+python scripts/pacta_admin.py
+python scripts/pacta_admin.py users
+python scripts/pacta_admin.py eligibilities
+python scripts/pacta_admin.py grant person@example.com
+python scripts/pacta_admin.py revoke person@example.com
+python scripts/pacta_admin.py suspend person@example.com
+python scripts/pacta_admin.py restore 00000000-0000-0000-0000-000000000000
+python scripts/pacta_admin.py reset-password person@example.com
+python scripts/pacta_admin.py delete-user person@example.com
+python scripts/pacta_admin.py delete-user person@example.com --immediate
+```
+
+`delete-user` always asks the operator to type the target email (or UUID when
+the account has none) in full (case-insensitive); a mismatch cancels the
+operation. Without
+`--immediate`, a target that is not yet purge-eligible is refused with the
+remaining wait and the `--immediate` hint. `--immediate` only works after the
+migration and the Edge Function above have been deployed; that deployment is an
+explicit operator step, and the script itself never applies migrations.
+
+`reset-password` reads the new password twice with `getpass`, requires 8 to
+256 characters, and asks for the same offline identity verification confirmation
+that the App requires. It sends the same
+`manual_verification_confirmed: true` contract to
+`admin-reset-user-password`.
+
+Tests never touch a network or a real credential:
+`python -m unittest discover -s scripts -p "test_*.py"` runs the fake-transport
+suite in `scripts/test_pacta_admin.py`.
+
 ## Manual whole-data cloud sync — 2026-10-04
 
 Apply `202610040001_cloud_business_snapshots.sql` and

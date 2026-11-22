@@ -4,19 +4,29 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pacta/src/app/app_providers.dart';
+import 'package:pacta/src/focus/focus_chain_page.dart';
 import 'package:pacta/src/focus/focus_models.dart';
+import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/profile/account_time_zone.dart';
 import 'package:pacta/src/profile/avatar_image.dart';
 import 'package:pacta/src/profile/avatar_picker.dart';
+import 'package:pacta/src/profile/change_password_page.dart';
 import 'package:pacta/src/profile/profile_card.dart';
 import 'package:pacta/src/profile/profile_edit_page.dart';
 import 'package:pacta/src/profile/profile_models.dart';
 import 'package:pacta/src/profile/profile_overview.dart';
 import 'package:pacta/src/profile/profile_repository.dart';
+import 'package:pacta/src/tasks/task_models.dart';
+import 'package:pacta/src/tasks/task_repository.dart';
 import 'package:pacta/src/theme/pacta_theme.dart';
 import 'package:pacta/src/ui/pacta_grouped_list.dart';
+
+import '../support/fake_auth_repository.dart';
 
 class _FakeProfileRepository implements ProfileRepository {
   _FakeProfileRepository({ProfileAccount? account})
@@ -271,20 +281,66 @@ FocusSession _completedSession(int effectiveSeconds) {
   );
 }
 
+/// 专注历史页自己读专注与任务仓储：名片这一层只看 [ProfileOverviewSource]。
+/// 这里给出与名片相同的完成记录，另有承载它的任务，页面因此有可展示节点。
+class _HistoryFocusRepository extends UnavailableFocusRepository {
+  @override
+  Stream<List<FocusSession>> watchSessions() =>
+      Stream.value([_completedSession(900)]);
+
+  @override
+  Future<List<AppointmentPreparation>> getAppointments() async => const [];
+}
+
+class _HistoryTaskRepository extends UnavailableTaskRepository {
+  @override
+  Stream<List<Goal>> watchGoals({bool includeDeleted = false}) => Stream.value([
+    Goal(
+      id: 'goal',
+      title: '目标',
+      classification: TaskClassification.both,
+      createdAt: DateTime.utc(2026, 11, 1),
+      updatedAt: DateTime.utc(2026, 11, 1),
+      tasks: [
+        Task(
+          id: 'task',
+          goalId: 'goal',
+          title: '专注任务',
+          classification: TaskClassification.both,
+          estimatedMinutes: 25,
+          deadline: null,
+          isComplete: false,
+          createdAt: DateTime.utc(2026, 11, 1),
+          updatedAt: DateTime.utc(2026, 11, 1),
+        ),
+      ],
+    ),
+  ]);
+}
+
+Finder _editPageScrollable() => find
+    .descendant(of: find.byType(ListView), matching: find.byType(Scrollable))
+    .first;
+
 void main() {
   Future<void> pumpCard(
     WidgetTester tester, {
     required _FakeProfileRepository repository,
     required _FakeOverviewSource overview,
+    List<Override> overrides = const [],
   }) async {
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: MyProfileCard(
-            repository: repository,
-            overview: overview,
-            avatarPicker: _FakeAvatarPicker(_onePixelPng),
-            accountIdentifier: 'person@example.com',
+      ProviderScope(
+        overrides: overrides,
+        child: MaterialApp(
+          theme: pactaTheme(Brightness.light),
+          home: Scaffold(
+            body: MyProfileCard(
+              repository: repository,
+              overview: overview,
+              avatarPicker: _FakeAvatarPicker(_onePixelPng),
+              accountIdentifier: 'person@example.com',
+            ),
           ),
         ),
       ),
@@ -466,18 +522,30 @@ void main() {
     expect(find.text('已内化一'), findsOneWidget);
   });
 
-  testWidgets('点击专注统计组进入已完成专注记录', (tester) async {
+  testWidgets('点击专注统计组进入专注历史', (tester) async {
     final repository = _FakeProfileRepository();
     final overview = _FakeOverviewSource();
-    await pumpCard(tester, repository: repository, overview: overview);
+    await pumpCard(
+      tester,
+      repository: repository,
+      overview: overview,
+      overrides: [
+        focusRepositoryProvider.overrideWithValue(_HistoryFocusRepository()),
+        taskRepositoryProvider.overrideWithValue(_HistoryTaskRepository()),
+      ],
+    );
     await overview.emit(sessions: [_completedSession(900)]);
     await tester.pump();
 
+    // 规范的常规链记录才让名片显示完成次数；统计明细页已彻底删除，
+    // 分组语义与跳转目标一起改成「专注历史」。
     await tester.tap(find.text('完成 1 次'));
     await tester.pumpAndSettle();
 
-    expect(find.text('专注统计明细'), findsOneWidget);
-    expect(find.text('有效时间 15 分钟'), findsOneWidget);
+    expect(find.byType(FocusHistoryPage), findsOneWidget);
+    expect(find.text('专注历史'), findsOneWidget);
+    expect(find.text('专注统计明细'), findsNothing);
+    expect(find.text('专注任务'), findsWidgets);
   });
 
   testWidgets('编辑保存失败只属于编辑页，只读名片继续显示本机资料', (tester) async {
@@ -870,5 +938,63 @@ void main() {
     );
     expect(paragraph.size.width, greaterThan(150));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('注入 auth 时资料编辑页底部提供账号安全与修改密码入口', (tester) async {
+    final repository = _FakeProfileRepository(
+      account: ProfileAccount(userId: 'user-a', displayName: '小林'),
+    );
+    final auth = FakeAuthRepository()..signedInUser = 'user-a';
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: pactaTheme(Brightness.light),
+        home: ProfileEditPage(
+          repository: repository,
+          avatarPicker: _FakeAvatarPicker(null),
+          authRepository: auth,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('账号安全'), findsOneWidget);
+    expect(find.text('修改密码'), findsOneWidget);
+    final entry = find.byKey(const ValueKey('profile-change-password-entry'));
+    expect(entry, findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      entry,
+      160,
+      scrollable: _editPageScrollable(),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ChangePasswordPage), findsOneWidget);
+    expect(find.text('修改密码'), findsOneWidget, reason: '修改密码页标题');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('未注入 auth 时资料编辑页不显示账号安全分组', (tester) async {
+    final repository = _FakeProfileRepository(
+      account: ProfileAccount(userId: 'user-a', displayName: '小林'),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ProfileEditPage(
+          repository: repository,
+          avatarPicker: _FakeAvatarPicker(null),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('账号安全'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('profile-change-password-entry')),
+      findsNothing,
+    );
+    expect(find.byType(PactaSectionHeader), findsOneWidget);
   });
 }

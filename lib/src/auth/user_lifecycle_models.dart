@@ -24,41 +24,6 @@ class UserLifecycleStatus {
       );
 }
 
-class ManagedUserLifecycle {
-  const ManagedUserLifecycle({
-    required this.userId,
-    required this.email,
-    required this.createdAt,
-    required this.isSuspended,
-    required this.isEligibleForPurge,
-    this.suspendedAt,
-    this.restoredAt,
-    this.purgeEligibleAt,
-  });
-
-  final String userId;
-  final String? email;
-  final DateTime createdAt;
-  final bool isSuspended;
-  final DateTime? suspendedAt;
-  final DateTime? restoredAt;
-  final DateTime? purgeEligibleAt;
-  final bool isEligibleForPurge;
-
-  factory ManagedUserLifecycle.fromJson(Map<String, dynamic> json) =>
-      ManagedUserLifecycle(
-        userId: json['user_id'] as String,
-        email: json['email'] as String?,
-        createdAt:
-            _dateTimeFromJson(json['created_at']) ?? DateTime.now().toUtc(),
-        isSuspended: json['is_suspended'] as bool? ?? false,
-        suspendedAt: _dateTimeFromJson(json['suspended_at']),
-        restoredAt: _dateTimeFromJson(json['restored_at']),
-        purgeEligibleAt: _dateTimeFromJson(json['purge_eligible_at']),
-        isEligibleForPurge: json['is_eligible_for_purge'] as bool? ?? false,
-      );
-}
-
 enum UserPurgeStatus { pending, completed }
 
 class UserPurgeReceipt {

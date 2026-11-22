@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../focus/focus_models.dart';
-import '../focus/focus_statistics.dart';
 import '../national_focus/national_focus_models.dart';
 import '../theme/pacta_spacing.dart';
-import 'profile_format.dart';
 import 'profile_overview.dart';
 
 /// National-focus records behind the My-page counter.
@@ -59,63 +56,6 @@ class NationalFocusStatisticsPage extends StatelessWidget {
             padding: PactaSpacing.pageInsets(context, top: PactaSpacing.sm),
             itemCount: entries.length,
             itemBuilder: (context, index) => entries[index],
-          ),
-        );
-      },
-    ),
-  );
-}
-
-/// Accepted focus records behind the My-page counter.
-class FocusStatisticsPage extends StatelessWidget {
-  const FocusStatisticsPage({super.key, required this.overview});
-
-  final ProfileOverviewSource overview;
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('专注统计明细')),
-    body: StreamBuilder<List<FocusSession>>(
-      stream: overview.watchSessions(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const _DetailMessage('专注记录暂时无法读取，请返回后重试。');
-        }
-        final sessions = snapshot.data;
-        if (sessions == null) {
-          return const _DetailMessage('正在读取专注记录…');
-        }
-        final completed = completedSessionsForOverview(sessions);
-        if (completed.isEmpty) {
-          return const _DetailMessage('还没有已完成的专注记录。');
-        }
-        return _ReadableWidth(
-          child: ListView.builder(
-            padding: PactaSpacing.pageInsets(context, top: PactaSpacing.sm),
-            itemCount: completed.length + 1,
-            itemBuilder: (context, index) {
-              if (index == 0) {
-                return _SectionHeader(
-                  title: '已完成专注',
-                  summary: '${completed.length} 次',
-                  description:
-                      '只统计核对结果为已接受的 completed 记录；累计有效时间还包含'
-                      '已接受失败记录的有效时间，不含暂停或排除区间。',
-                );
-              }
-              final session = completed[index - 1];
-              return ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.timer_outlined),
-                title: Text(
-                  '${session.mode.label} · ${formatProfileDate(session.startedAt)}',
-                ),
-                subtitle: Text(
-                  '有效时间 '
-                  '${formatFocusDuration(focusEffectiveSecondsForSession(session))}',
-                ),
-              );
-            },
           ),
         );
       },

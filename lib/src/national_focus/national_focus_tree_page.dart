@@ -905,10 +905,10 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     return _detailed ? _detailedNodeWidth : 148;
   }
 
-  /// 节点高度：详细视图要放下状态条 + 两行名称 + 两行规则 + 底部信息栏。
+  /// 节点高度：详细视图要放下两行名称、详情页同款胶囊行与三行国策规则。
   ///
-  /// 1x 时内容约 137dp，[_detailedNodeHeight] 的 160dp 留出呼吸位；2x 时
-  /// 内容约 243dp，仍在 320dp 之内，不会出现 RenderFlex overflow。
+  /// 1x 时最坏内容约 116dp，[_detailedNodeHeight] 的 160dp 留出呼吸位；2x 时
+  /// 最坏内容约 274dp，仍在 320dp 之内，不会出现 RenderFlex overflow。
   double get _nodeHeight =>
       (_detailed ? _detailedNodeHeight : 100.0) *
       MediaQuery.textScalerOf(context).scale(1);
@@ -1310,26 +1310,27 @@ const double _nodeCardRadius = 16;
 
 /// 详细视图卡片宽度。
 ///
-/// 抬头行要同时放下状态图标井、最多两行名称与右侧状态微标；148dp 的简洁
-/// 宽度会把名称压成每行两三个字，228dp 是这套结构的最小可用宽度。
+/// 抬头行要同时放下状态图标井与最多两行名称，其下还要排开连续天数、根与
+/// 已内化胶囊；148dp 的简洁宽度会把名称压成每行两三个字，228dp 是这套结构
+/// 的最小可用宽度。
 const double _detailedNodeWidth = 228;
 
-/// 详细视图卡片的基准高度：1x 内容约 137dp，160dp 留出呼吸位，随
-/// `textScaler` 线性放大后 2x 仍有 70dp 以上余量，绝不出现 RenderFlex 溢出。
+/// 详细视图卡片的基准高度：1x 最坏内容约 116dp，160dp 留出呼吸位，随
+/// `textScaler` 线性放大后 2x 的最坏组合（两行名称 + 3 枚胶囊 + 三行规则）
+/// 约 274dp，仍在 320dp 之内，绝不出现 RenderFlex 溢出。
 const double _detailedNodeHeight = 160;
-
-/// 顶部状态色条厚度：贴顶铺满，卡片的 antiAlias 裁切让两端跟随圆角。
-const double _statusStripeHeight = 3;
 
 /// 详细视图状态图标井的直径（井内图标取 [PactaIconSizes.sm]）。
 const double _statusWellSize = PactaIconSizes.lg;
 
 /// 详细视图的节点卡片：左对齐的 M3 状态卡。
 ///
-/// 结构固定为「顶部 3dp 状态条 → 图标井 + 名称 + 状态微标 → 恒两行国策规则 →
-/// 底部信息栏」。底色以 [PactaSurfaces.card] 为基底混入状态色，亮暗两种主题
-/// 下都比画布 surfaceContainerLow 更亮，再配合 1–2dp 状态描边，每张卡都明显
-/// 浮在画布之上，而不是陷进去。
+/// 结构固定为「图标井 + 两行名称 → 连续天数/根/已内化胶囊行（无可展示胶囊时
+/// 整行不渲染）→ 最多三行国策规则」。没有顶部状态条，也没有右上角状态文字
+/// 胶囊：状态只由左侧图标井、卡片填色与四周边框颜色区分。底色以
+/// [PactaSurfaces.card] 为基底混入状态色，亮暗两种主题下都比画布
+/// surfaceContainerLow 更亮，再配合等宽的 1.2–2dp 四边描边，每张卡都明显浮在
+/// 画布之上，而不是陷进去。
 class _NationalFocusNodeCard extends StatelessWidget {
   const _NationalFocusNodeCard({
     required this.card,
@@ -1353,6 +1354,11 @@ class _NationalFocusNodeCard extends StatelessWidget {
       selecting: selecting,
       blocked: blocked,
     );
+    // 胶囊行只在真有内容时出现：0 天 + 非根 + 未内化时整行不渲染，绝不留下
+    // 「连续 0 天」噪声或一截空行。
+    final showStreakTags =
+        card.currentConsecutiveDays > 0 || card.bestConsecutiveDays > 0;
+    final showTagRow = showStreakTags || card.isTopLevel || card.isInternalized;
     return Card(
       key: ValueKey('national-focus-card-${card.id}'),
       // 画布内卡片用零外边距：节点盒子的高度是布局契约，不能被 Card 的
@@ -1371,88 +1377,72 @@ class _NationalFocusNodeCard extends StatelessWidget {
         type: MaterialType.transparency,
         child: InkWell(
           onTap: onTap,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(
-                height: _statusStripeHeight,
-                child: ColoredBox(color: palette.stripe),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _NationalFocusNodeIconWell(palette: palette),
-                          const SizedBox(width: PactaSpacing.sm),
-                          Expanded(
-                            child: Text(
-                              card.name,
-                              textAlign: TextAlign.start,
-                              style: theme.textTheme.titleSmall,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          _NationalFocusNodeBadge(
-                            icon: palette.statusIcon,
-                            label: palette.statusLabel,
-                            background: palette.badgeBackground,
-                            foreground: palette.badgeForeground,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      // 恒两行规则：详细视图的阅读契约，不按字号压回一行。
-                      // 规则用次级前景色，名称与规则之间才有清楚的层次。
-                      Text(
-                        card.effectiveAction,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _NationalFocusNodeIconWell(palette: palette),
+                    const SizedBox(width: PactaSpacing.sm),
+                    Expanded(
+                      child: Text(
+                        card.name,
                         textAlign: TextAlign.start,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
+                        style: theme.textTheme.titleSmall,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const Spacer(),
-                      Wrap(
-                        alignment: WrapAlignment.spaceBetween,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 6,
-                        runSpacing: 4,
-                        children: [
-                          _NationalFocusNodeBadge(
-                            icon: Icons.repeat,
-                            label: '连续 ${card.currentConsecutiveDays} 天',
-                            background: colors.surfaceContainerHighest,
-                            foreground: colors.onSurfaceVariant,
-                          ),
-                          if (card.isTopLevel)
-                            _NationalFocusNodeBadge(
-                              label: '根',
-                              background: Colors.transparent,
-                              foreground: colors.onSurface,
-                              border: colors.outline,
-                            ),
-                          if (card.isInternalized)
-                            _NationalFocusNodeBadge(
-                              icon: Icons.verified_outlined,
-                              label: '已内化',
-                              background: colors.secondaryContainer,
-                              foreground: colors.onSecondaryContainer,
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ),
-            ],
+                if (showTagRow)
+                  // 胶囊紧贴标题区：详情页同款矢量胶囊 + 根 + 已内化。
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (showStreakTags)
+                          NationalFocusStreakTags(
+                            currentConsecutiveDays: card.currentConsecutiveDays,
+                            bestConsecutiveDays: card.bestConsecutiveDays,
+                          ),
+                        if (card.isTopLevel)
+                          _NationalFocusNodeBadge(
+                            label: '根',
+                            background: Colors.transparent,
+                            foreground: colors.onSurface,
+                            border: colors.outline,
+                          ),
+                        if (card.isInternalized)
+                          _NationalFocusNodeBadge(
+                            icon: Icons.verified_outlined,
+                            label: '已内化',
+                            background: colors.secondaryContainer,
+                            foreground: colors.onSecondaryContainer,
+                          ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 6),
+                // 最多三行规则：详细视图的阅读契约，不按字号压回两行以下。
+                // 规则用次级前景色，名称与规则之间才有清楚的层次。
+                Text(
+                  card.effectiveAction,
+                  textAlign: TextAlign.start,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1483,7 +1473,9 @@ class _NationalFocusNodeIconWell extends StatelessWidget {
   );
 }
 
-/// 详细视图的紧凑微标：状态、根节点、连续天数与已内化共用一套字级。
+/// 详细视图的紧凑微标：根节点与已内化共用一套字级。
+///
+/// 状态不再用文字微标表达，只由左侧图标井、卡片填色与四周边框承担。
 class _NationalFocusNodeBadge extends StatelessWidget {
   const _NationalFocusNodeBadge({
     required this.label,
@@ -1537,33 +1529,27 @@ class _NationalFocusNodeBadge extends StatelessWidget {
   }
 }
 
-/// 详细视图卡片的配色语义：底、边、边宽，以及状态条、图标井与微标用色。
+/// 详细视图卡片的配色语义：底、四边等宽的边、图标井用色与阴影强度。
+///
+/// 没有状态条与状态微标字段：状态色只经 [fill]、[border] 与图标井表达。
 @immutable
 class _NationalFocusNodePalette {
   const _NationalFocusNodePalette({
     required this.fill,
     required this.border,
     required this.borderWidth,
-    required this.stripe,
     required this.iconBackground,
     required this.iconForeground,
-    required this.badgeBackground,
-    required this.badgeForeground,
     required this.statusIcon,
-    required this.statusLabel,
     required this.shadowAlpha,
   });
 
   final Color fill;
   final Color border;
   final double borderWidth;
-  final Color stripe;
   final Color iconBackground;
   final Color iconForeground;
-  final Color badgeBackground;
-  final Color badgeForeground;
   final IconData statusIcon;
-  final String statusLabel;
   final double shadowAlpha;
 
   /// 底色规则：状态容器色按比例混进 [PactaSurfaces.card]。
@@ -1591,64 +1577,48 @@ class _NationalFocusNodePalette {
     Color lift(Color tint, double amount) =>
         Color.alphaBlend(tint.withValues(alpha: amount), surfaces.card);
     _NationalFocusNodePalette build({
-      required Color stripe,
       required Color fill,
       required Color border,
       required Color well,
       required Color wellForeground,
-      required Color badge,
-      required Color badgeForeground,
       double width = 1.2,
     }) => _NationalFocusNodePalette(
       fill: fill,
       border: border,
       // 根节点用更粗的外框：在画布上一眼就能认出树根，而不是普通子节点。
+      // 四条边同宽，卡片不再有顶部状态条那种单边强调。
       borderWidth: card.isTopLevel ? math.max(width, 2) : width,
-      stripe: stripe,
       iconBackground: well,
       iconForeground: wellForeground,
-      badgeBackground: badge,
-      badgeForeground: badgeForeground,
       statusIcon: switch (card.state) {
         NationalFocusCardState.lit => Icons.lightbulb,
         NationalFocusCardState.pendingTodayConfirmation => Icons.hourglass_top,
         NationalFocusCardState.extinguished => Icons.lightbulb_outline,
       },
-      statusLabel: card.state.label,
       shadowAlpha: dark ? 0.34 : 0.18,
     );
     if (selecting && !blocked) {
+      // 放置中且可选：主色底 + 主色描边，1.5dp 等宽四边。
       return build(
-        stripe: colors.primary,
         fill: lift(colors.primaryContainer, dark ? 0.7 : 0.3),
         border: colors.primary,
         well: colors.primaryContainer,
         wellForeground: colors.onPrimaryContainer,
-        badge: colors.primaryContainer,
-        badgeForeground: colors.onPrimaryContainer,
         width: 1.5,
       );
     }
     if (selecting) {
       // 放置中但当前不可选：中性表面 + 灰边，跟可选的蓝卡一眼分开。
       return build(
-        stripe: colors.outline,
         fill: lift(colors.surfaceContainerHighest, dark ? 0.7 : 0.5),
         border: colors.outlineVariant,
         well: colors.surfaceContainerHighest,
         wellForeground: colors.onSurfaceVariant,
-        badge: colors.surfaceContainerHighest,
-        badgeForeground: colors.onSurfaceVariant,
       );
     }
     return switch (card.state) {
-      // 点亮：翠绿容器色混进提亮基底，绿色状态条压在最上沿。
+      // 点亮：翠绿容器色混进提亮基底，绿色描边圈住四条等宽的边。
       NationalFocusCardState.lit => build(
-        stripe: Color.lerp(
-          status.successContainer,
-          status.onSuccessContainer,
-          dark ? 0.75 : 0.6,
-        )!,
         fill: lift(status.successContainer, dark ? 0.7 : 0.35),
         border: Color.lerp(
           status.successContainer,
@@ -1657,29 +1627,21 @@ class _NationalFocusNodePalette {
         )!,
         well: status.successContainer,
         wellForeground: status.onSuccessContainer,
-        badge: status.successContainer,
-        badgeForeground: status.onSuccessContainer,
       ),
       // 待确认：暖琥珀容器色 + tertiary 描边，和点亮态完全不同色相。
       NationalFocusCardState.pendingTodayConfirmation => build(
-        stripe: colors.tertiary,
         fill: lift(colors.tertiaryContainer, dark ? 0.7 : 0.4),
         border: colors.tertiary,
         well: colors.tertiaryContainer,
         wellForeground: colors.onTertiaryContainer,
-        badge: colors.tertiaryContainer,
-        badgeForeground: colors.onTertiaryContainer,
       ),
       // 熄灭：清晰高于画布的中性表面 + 鲜明中性描边，绝不回到更暗的
       // surfaceContainerLowest。
       NationalFocusCardState.extinguished => build(
-        stripe: colors.outline,
         fill: dark ? lift(colors.surfaceContainerHighest, 0.85) : surfaces.card,
         border: colors.outline,
         well: colors.surfaceContainerHighest,
         wellForeground: colors.onSurfaceVariant,
-        badge: colors.surfaceContainerHighest,
-        badgeForeground: colors.onSurfaceVariant,
       ),
     };
   }

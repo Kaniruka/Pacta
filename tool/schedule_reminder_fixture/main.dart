@@ -616,19 +616,9 @@ class _FixtureAuthRepository implements AuthRepository {
   Future<void> signOut() async {}
 
   @override
-  Future<bool> isAdministrator() async => false;
-
-  @override
-  Future<void> grantEligibility({required String email}) async {}
-
-  @override
-  Future<bool> revokeEligibility({required String email}) async => false;
-
-  @override
-  Future<void> adminResetUserPassword({
-    required String targetEmail,
+  Future<void> changePassword({
+    required String currentPassword,
     required String newPassword,
-    required bool manualVerificationConfirmed,
   }) async {}
 
   @override
@@ -637,22 +627,6 @@ class _FixtureAuthRepository implements AuthRepository {
         isSuspended: false,
         checkedAt: DateTime.utc(2026, 11, 15),
       );
-
-  @override
-  Future<List<ManagedUserLifecycle>> listUserLifecycles() async => const [];
-
-  @override
-  Future<void> suspendUser(String userId) async {}
-
-  @override
-  Future<void> restoreUser(String userId) async {}
-
-  @override
-  Future<UserPurgeReceipt> purgeUser(String userId) async => UserPurgeReceipt(
-    userId: userId,
-    status: UserPurgeStatus.completed,
-    purgedAt: DateTime.utc(2026, 11, 15),
-  );
 
   @override
   Future<UserPurgeReceipt?> lookupPurgeReceipt(String oldUserId) async => null;

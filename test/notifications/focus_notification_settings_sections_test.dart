@@ -70,12 +70,32 @@ void main() {
       findsNothing,
       reason: '整行可点后，ListTile.subtitle 不得再放跳转按钮',
     );
-    final dividers = tester.widgetList<Divider>(find.byType(Divider));
-    expect(dividers, isNotEmpty, reason: '同组相邻行之间仍有 1dp 细分隔线');
-    for (final divider in dividers) {
-      expect(divider.indent, isNull, reason: '不再用缩进分割线把卡片割裂成碎片');
-      expect(divider.endIndent, isNull);
-      expect(divider.thickness, 1);
+    // M3 Expressive 分段卡片：组内相邻行之间不再有 1dp 分隔线，也没有任何
+    // 缩进细线把卡片割裂成碎片；每行各自成段，段间只留 2dp 透明间隙。
+    expect(find.byType(Divider), findsNothing);
+    final firstGroup = find.byType(PactaGroupedList).first;
+    final segments = find.descendant(
+      of: firstGroup,
+      matching: find.byType(Material),
+    );
+    final rowsInGroup = find.descendant(
+      of: firstGroup,
+      matching: find.byType(ListTile),
+    );
+    expect(
+      segments.evaluate().length,
+      rowsInGroup.evaluate().length,
+      reason: '分组内每一行各自成段，段数与行数一致',
+    );
+    expect(segments.evaluate(), isNotEmpty);
+    for (var index = 1; index < segments.evaluate().length; index++) {
+      final previous = tester.getRect(segments.at(index - 1));
+      final current = tester.getRect(segments.at(index));
+      expect(
+        current.top - previous.bottom,
+        moreOrLessEquals(2, epsilon: 0.01),
+        reason: '第 $index 段与上一段之间是 2dp 透明间隙，不是缩进细线',
+      );
     }
 
     // 第二组：后台倒计时与专注流程通知。

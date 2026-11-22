@@ -132,7 +132,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('PactaGroupedList 只在相邻行之间插入 1dp 分隔线', (tester) async {
+  testWidgets('PactaGroupedList 用 M3 分段卡片替代 1dp 分隔线', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: pactaTheme(Brightness.light),
@@ -151,28 +151,111 @@ void main() {
         ),
       ),
     );
-    final dividers = tester.widgetList<Divider>(find.byType(Divider));
-    expect(dividers, hasLength(2));
-    for (final divider in dividers) {
-      expect(divider.height, 1);
-      expect(divider.thickness, 1);
-      expect(divider.color, PactaSurfaces.light.hairline);
-    }
-    final material = tester.widget<Material>(
-      find
-          .descendant(
-            of: find.byType(PactaGroupedList),
-            matching: find.byType(Material),
-          )
-          .first,
+    // 组内不再有任何分隔线：相邻段靠透明间隙分开，不靠 1dp 细线切割。
+    expect(find.byType(Divider), findsNothing);
+
+    final segmentFinder = find.descendant(
+      of: find.byType(PactaGroupedList),
+      matching: find.byType(Material),
     );
-    expect(material.color, PactaSurfaces.light.card);
-    expect(material.clipBehavior, Clip.antiAlias);
-    final shape = material.shape! as RoundedRectangleBorder;
-    expect(shape.borderRadius, BorderRadius.circular(PactaSpacing.cardRadius));
+    final segments = tester.widgetList<Material>(segmentFinder).toList();
+    expect(segments, hasLength(3), reason: '每一行各自成段');
+    for (final material in segments) {
+      expect(material.color, PactaSurfaces.light.card);
+      expect(material.clipBehavior, Clip.antiAlias);
+      expect(material.shape, isA<RoundedRectangleBorder>());
+    }
+    final radii = [
+      for (final material in segments)
+        (material.shape! as RoundedRectangleBorder).borderRadius,
+    ];
+    // 首段只圆顶、段间收敛到 4dp 内圆角、末段只圆底。
+    expect(
+      radii[0],
+      BorderRadius.vertical(
+        top: const Radius.circular(PactaSpacing.cardRadius),
+        bottom: const Radius.circular(4),
+      ),
+    );
+    expect(radii[1], BorderRadius.circular(4));
+    expect(
+      radii[2],
+      BorderRadius.vertical(
+        top: const Radius.circular(4),
+        bottom: const Radius.circular(PactaSpacing.cardRadius),
+      ),
+    );
+
+    // 段间是 2dp 的透明缝：页底色从缝里透出，不是缩进细线或白色直角块。
+    final rects = [
+      for (var index = 0; index < segments.length; index++)
+        tester.getRect(segmentFinder.at(index)),
+    ];
+    for (var index = 1; index < rects.length; index++) {
+      expect(
+        rects[index].top - rects[index - 1].bottom,
+        moreOrLessEquals(2, epsilon: 0.01),
+        reason: '第 $index 段与上一段之间应为 2dp 透明间隙',
+      );
+    }
     expect(find.text('A'), findsOneWidget);
     expect(find.text('B'), findsOneWidget);
     expect(find.text('C'), findsOneWidget);
+  });
+
+  testWidgets('空 children 直接返回 SizedBox.shrink，不读取表面令牌', (tester) async {
+    // 裸 MaterialApp 没有 PactaSurfaces：空分组必须先返回，不触发断言。
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: PactaGroupedList(children: [])),
+      ),
+    );
+    expect(find.byType(PactaGroupedList), findsOneWidget);
+    expect(tester.getSize(find.byType(PactaGroupedList)), Size.zero);
+    expect(find.byType(SizedBox), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('PactaGroupedList 支持自定义内圆角与段间隙', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: pactaTheme(Brightness.light),
+        home: Scaffold(
+          body: PactaGroupedList(
+            innerBorderRadius: 6,
+            itemGap: 4,
+            children: const [
+              ListTile(title: Text('第一段')),
+              ListTile(title: Text('第二段')),
+            ],
+          ),
+        ),
+      ),
+    );
+    final segmentFinder = find.descendant(
+      of: find.byType(PactaGroupedList),
+      matching: find.byType(Material),
+    );
+    final segments = tester.widgetList<Material>(segmentFinder).toList();
+    expect(segments, hasLength(2));
+    expect(
+      (segments.first.shape! as RoundedRectangleBorder).borderRadius,
+      BorderRadius.vertical(
+        top: const Radius.circular(PactaSpacing.cardRadius),
+        bottom: const Radius.circular(6),
+      ),
+    );
+    expect(
+      (segments.last.shape! as RoundedRectangleBorder).borderRadius,
+      BorderRadius.vertical(
+        top: const Radius.circular(6),
+        bottom: const Radius.circular(PactaSpacing.cardRadius),
+      ),
+    );
+    final first = tester.getRect(segmentFinder.at(0));
+    final second = tester.getRect(segmentFinder.at(1));
+    expect(second.top - first.bottom, moreOrLessEquals(4, epsilon: 0.01));
+    expect(find.byType(Divider), findsNothing);
   });
 
   testWidgets('PactaGroupedList 支持自定义底色与圆角', (tester) async {

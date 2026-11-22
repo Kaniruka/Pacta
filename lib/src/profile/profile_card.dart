@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../auth/auth_repository.dart';
+import '../auth/user_lifecycle.dart';
+import '../focus/focus_chain_page.dart';
 import '../focus/focus_models.dart';
 import '../national_focus/national_focus_models.dart';
 import '../theme/pacta_icon_sizes.dart';
@@ -29,12 +32,19 @@ class MyProfileCard extends StatefulWidget {
     required this.overview,
     required this.avatarPicker,
     this.accountIdentifier,
+    this.authRepository,
+    this.lifecycleRepository,
   });
 
   final ProfileRepository repository;
   final ProfileOverviewSource overview;
   final AvatarPicker avatarPicker;
   final String? accountIdentifier;
+
+  /// 账号自助动作的依赖：只有我的页会注入，隔离组件测试保持为空，
+  /// 编辑页因此不会渲染「账号安全」分组。
+  final AuthRepository? authRepository;
+  final UserLifecycleStatusRepository? lifecycleRepository;
 
   @override
   State<MyProfileCard> createState() => _MyProfileCardState();
@@ -104,6 +114,8 @@ class _MyProfileCardState extends State<MyProfileCard> {
         builder: (_) => ProfileEditPage(
           repository: widget.repository,
           avatarPicker: widget.avatarPicker,
+          authRepository: widget.authRepository,
+          lifecycleRepository: widget.lifecycleRepository,
         ),
       ),
     );
@@ -216,10 +228,9 @@ class _MyProfileCardState extends State<MyProfileCard> {
         primary: '完成 ${statistics.completedFocusCount} 次',
         secondary:
             '累计 ${formatFocusDuration(statistics.effectiveFocusSeconds)}',
+        semanticsLabel: '专注历史',
         onTap: () => Navigator.of(context).push<void>(
-          MaterialPageRoute<void>(
-            builder: (_) => FocusStatisticsPage(overview: widget.overview),
-          ),
+          MaterialPageRoute<void>(builder: (_) => const FocusHistoryPage()),
         ),
       );
     },
@@ -308,6 +319,7 @@ class _StatisticsGroup extends StatelessWidget {
     required this.primary,
     required this.secondary,
     required this.onTap,
+    this.semanticsLabel,
   });
 
   final IconData icon;
@@ -316,10 +328,13 @@ class _StatisticsGroup extends StatelessWidget {
   final String secondary;
   final VoidCallback onTap;
 
+  /// 读屏用标签；默认沿用「xx统计明细」，跳转目标换了名字的组自行覆盖。
+  final String? semanticsLabel;
+
   @override
   Widget build(BuildContext context) => Semantics(
     button: true,
-    label: '$label统计明细',
+    label: semanticsLabel ?? '$label统计明细',
     child: InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),

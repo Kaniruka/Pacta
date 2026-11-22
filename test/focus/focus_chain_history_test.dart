@@ -323,6 +323,96 @@ void main() {
       );
     });
   });
+  group('预约链有效时长与首屏同源', () {
+    test('到期完成的预约记录完整准备时长', () {
+      final at = DateTime(2026, 11, 15, 9);
+      final entry = buildFocusChainHistory(
+        appointments: [_appointment('a1', at)],
+      ).timelineFor(FocusChainType.appointment).runs.single.entries.single;
+
+      expect(entry.effectiveSeconds, 15 * 60);
+    });
+
+    test('提前进入专注时，时间轴只记录实际准备耗时', () {
+      final at = DateTime(2026, 11, 15, 9);
+      // 准备自 8:45 开始，8:54 提前进入专注：真实准备 9 分钟。
+      final entry = buildFocusChainHistory(
+        appointments: [
+          _appointment(
+            'a1',
+            at,
+            settledAt: at.subtract(const Duration(minutes: 6)),
+          ),
+        ],
+      ).timelineFor(FocusChainType.appointment).runs.single.entries.single;
+
+      expect(
+        entry.effectiveSeconds,
+        9 * 60,
+        reason: '与首屏累计/平均同源，不能沿用约好的 15 分钟',
+      );
+    });
+
+    test('主动取消按实际经过时间记录，并作为断链收尾', () {
+      final first = DateTime(2026, 11, 15, 8);
+      final second = DateTime(2026, 11, 15, 9);
+      final history = buildFocusChainHistory(
+        appointments: [
+          _appointment('a1', first),
+          _appointment(
+            'a2',
+            second,
+            status: AppointmentPreparationStatus.failed,
+            settledAt: second.subtract(const Duration(minutes: 12)),
+            reason: '临时改变计划',
+          ),
+        ],
+      );
+      final broken = history
+          .timelineFor(FocusChainType.appointment)
+          .runs
+          .single
+          .closingBreaks
+          .single;
+
+      expect(broken.effectiveSeconds, 3 * 60);
+      expect(broken.failureReason, '临时改变计划');
+      expect(broken.isBreak, isTrue);
+    });
+
+    test('时钟回拨产生的负数被钳制为零', () {
+      final at = DateTime(2026, 11, 15, 9);
+      final entry = buildFocusChainHistory(
+        appointments: [
+          _appointment(
+            'a1',
+            at,
+            settledAt: at.subtract(const Duration(minutes: 20)),
+          ),
+        ],
+      ).timelineFor(FocusChainType.appointment).runs.single.entries.single;
+
+      expect(entry.effectiveSeconds, 0);
+    });
+
+    test('非 accepted 的预约残留既不编号也不断链', () {
+      final history = buildFocusChainHistory(
+        appointments: [
+          _appointment(
+            'legacy',
+            DateTime(2026, 11, 15, 9),
+            reviewDisposition: FocusRecordDisposition.duplicate,
+          ),
+          _appointment('a2', DateTime(2026, 11, 15, 10)),
+        ],
+      );
+      final timeline = history.timelineFor(FocusChainType.appointment);
+
+      expect(timeline.runs.single.entries.single.id, 'a2');
+      expect(timeline.runs.single.entries.single.streakLabel, '#1');
+      expect(timeline.currentStreak, 1);
+    });
+  });
 }
 
 FocusSession _session({
@@ -409,6 +499,7 @@ AppointmentPreparation _appointment(
   AppointmentPreparationStatus status = AppointmentPreparationStatus.succeeded,
   String? reason,
   DateTime? settledAt,
+  FocusRecordDisposition reviewDisposition = FocusRecordDisposition.accepted,
 }) => AppointmentPreparation(
   id: id,
   taskId: 'task-1',
@@ -421,4 +512,5 @@ AppointmentPreparation _appointment(
   updatedAt: at,
   failureReason: reason,
   preparationSeconds: 900,
+  reviewDisposition: reviewDisposition,
 );

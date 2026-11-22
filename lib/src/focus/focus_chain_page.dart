@@ -37,6 +37,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
   String? _projectionSignature;
   late Future<List<FocusChainRecord>> _chainRecordsFuture;
   late Future<AppointmentChainRecord> _appointmentChainRecordFuture;
+  late Future<List<AppointmentPreparation>> _appointmentsFuture;
   late Stream<AppointmentPreparation?> _activeAppointmentStream;
   late Future<List<PrecedentRule>> _precedentRulesFuture;
 
@@ -46,6 +47,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
     _activeAppointmentStream = ref
         .read(focusRepositoryProvider)
         .watchActiveAppointment();
+    _appointmentsFuture = ref.read(focusRepositoryProvider).getAppointments();
     _precedentRulesFuture = ref
         .read(focusRepositoryProvider)
         .getPrecedentRules();
@@ -57,6 +59,9 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
         final repository = ref.read(focusRepositoryProvider);
         _activeAppointmentStream = repository.watchActiveAppointment();
         _appointmentChainRecordFuture = repository.getAppointmentChainRecord();
+        // 预约链的“累计/平均”与首屏同源：预约结算、取消或提前进入后
+        // 必须重新读已结算记录，否则统计停在上一份快照。
+        _appointmentsFuture = repository.getAppointments();
       });
     }
   }
@@ -229,11 +234,35 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
                                   if (!appointmentSnapshot.hasData) {
                                     return const LinearProgressIndicator();
                                   }
-                                  return FocusChainOverview(
-                                    repository: signalsRepository,
-                                    records: recordSnapshot.data!,
-                                    appointmentRecord: appointmentSnapshot.data,
-                                    statistics: statistics,
+                                  return FutureBuilder<
+                                    List<AppointmentPreparation>
+                                  >(
+                                    future: _appointmentsFuture,
+                                    builder: (context, appointmentsSnapshot) {
+                                      // 预约链的「累计/平均」与专注链同一统计
+                                      // 类型，读取口径也完全一致：失败就交给
+                                      // 重试卡，不能把未知的准备时长回落成
+                                      // 0分00秒，让用户以为预约从未发生。
+                                      if (appointmentsSnapshot.hasError) {
+                                        return _recordReadError();
+                                      }
+                                      if (!appointmentsSnapshot.hasData) {
+                                        return const LinearProgressIndicator();
+                                      }
+                                      final appointmentStatistics =
+                                          appointmentPreparationStatistics(
+                                            appointmentsSnapshot.data!,
+                                          );
+                                      return FocusChainOverview(
+                                        repository: signalsRepository,
+                                        records: recordSnapshot.data!,
+                                        appointmentRecord:
+                                            appointmentSnapshot.data,
+                                        statistics: statistics,
+                                        appointmentStatistics:
+                                            appointmentStatistics,
+                                      );
+                                    },
                                   );
                                 },
                               );
@@ -306,6 +335,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
             _chainRecordsFuture = repository.getChainRecords();
             _appointmentChainRecordFuture = repository
                 .getAppointmentChainRecord();
+            _appointmentsFuture = repository.getAppointments();
           }),
           child: const Text('重试'),
         ),
@@ -333,6 +363,7 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
     _projectionSignature = signature;
     _chainRecordsFuture = repository.getChainRecords();
     _appointmentChainRecordFuture = repository.getAppointmentChainRecord();
+    _appointmentsFuture = repository.getAppointments();
   }
 
   Future<void> _openTaskPicker() async {
@@ -1302,6 +1333,10 @@ class _FocusHistoryTimeline extends StatelessWidget {
   }
 
   /// 一段连胜：段头写明连续长度，段内节点与断链共用一条连接线。
+  ///
+  /// 连接线不再是一条从段顶贯通到段底的竖线：每一行只画自己的上半 / 下半
+  /// 两截，首行不画上半、末行不画下半，行与行之间用 8dp 桥接行补齐。于是
+  /// 线永远起止于徽章圆心，最后一条气泡下方不会再拖出一截无名竖线。
   Widget _runSection(
     BuildContext context, {
     required FocusChainStreakRun run,
@@ -1310,21 +1345,18 @@ class _FocusHistoryTimeline extends StatelessWidget {
   }) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final surfaces = PactaSurfaces.of(context);
     final header = isNewest && !run.isBroken
         ? '当前连续 ${run.length} 次'
         : '连续 ${run.length} 次';
-    final rows = <Widget>[
+    final rows = <({FocusChainHistoryEntry entry, Widget badge, Widget card})>[
       for (final entry in run.entries)
-        _timelineRow(
-          context,
+        (
           entry: entry,
           badge: _streakBadge(context, entry.streakIndex!),
           card: _completedCard(context, entry, nodesBySession[entry.id]),
         ),
       for (final entry in run.closingBreaks)
-        _timelineRow(
-          context,
+        (
           entry: entry,
           badge: _breakBadge(context),
           card: _breakCard(context, entry),
@@ -1359,45 +1391,95 @@ class _FocusHistoryTimeline extends StatelessWidget {
           ],
         ),
         const SizedBox(height: PactaSpacing.sm),
-        Stack(
-          children: [
-            // 连接线只画一条：它从第一枚徽章贯穿到本段最后一个节点。
-            Positioned(
-              left: 15,
-              top: 0,
-              bottom: 0,
-              child: Container(width: 2, color: surfaces.hairline),
-            ),
-            Column(
-              children: [
-                for (final (index, row) in rows.indexed) ...[
-                  if (index > 0) const SizedBox(height: PactaSpacing.sm),
-                  row,
-                ],
-              ],
-            ),
-          ],
-        ),
+        for (final (index, row) in rows.indexed) ...[
+          if (index > 0) _timelineBridge(context),
+          _timelineRow(
+            context,
+            entry: row.entry,
+            badge: row.badge,
+            card: row.card,
+            isFirst: index == 0,
+            isLast: index == rows.length - 1,
+          ),
+        ],
       ],
     );
   }
 
+  /// 行间桥：一截 8dp 高的竖线，把上一行底部与下一行顶部接起来。
+  ///
+  /// 桥接行与卡片间距同高，所以相邻卡片的间距仍是严格的 8dp；右侧留白，
+  /// 不会多出一条通栏背景或第二个命中区。
+  Widget _timelineBridge(BuildContext context) {
+    final surfaces = PactaSurfaces.of(context);
+    return SizedBox(
+      height: PactaSpacing.sm,
+      child: Row(
+        children: [
+          SizedBox(
+            width: 32,
+            child: Center(
+              child: SizedBox(
+                width: 2,
+                height: PactaSpacing.sm,
+                child: ColoredBox(color: surfaces.hairline),
+              ),
+            ),
+          ),
+          const SizedBox(width: PactaSpacing.sm),
+        ],
+      ),
+    );
+  }
+
+  /// 一截轨道竖线：不可见时留空，可见时铺满所在的上下半格。
+  Widget _timelineLine(BuildContext context, {required bool visible}) {
+    if (!visible) return const SizedBox.shrink();
+    final surfaces = PactaSurfaces.of(context);
+    return Center(
+      child: SizedBox(
+        width: 2,
+        height: double.infinity,
+        child: ColoredBox(color: surfaces.hairline),
+      ),
+    );
+  }
+
+  /// 一行节点：左侧 32dp 轨道内是上下两截连接线 + 居中徽章，右侧是卡片。
+  ///
+  /// 徽章在整行里严格垂直居中，因此它与右侧 [Card] 的中心永远在同一条
+  /// 水平线上；首行不画上半截、末行不画下半截，线只在相邻徽章之间出现。
   Widget _timelineRow(
     BuildContext context, {
     required FocusChainHistoryEntry entry,
     required Widget badge,
     required Widget card,
-  }) => Row(
-    key: ValueKey('focus-history-row-${entry.id}'),
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      SizedBox(
-        width: 32,
-        child: Align(alignment: Alignment.topCenter, child: badge),
-      ),
-      const SizedBox(width: PactaSpacing.sm),
-      Expanded(child: card),
-    ],
+    required bool isFirst,
+    required bool isLast,
+  }) => IntrinsicHeight(
+    child: Row(
+      key: ValueKey('focus-history-row-${entry.id}'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SizedBox(
+          width: 32,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Column(
+                children: [
+                  Expanded(child: _timelineLine(context, visible: !isFirst)),
+                  Expanded(child: _timelineLine(context, visible: !isLast)),
+                ],
+              ),
+              badge,
+            ],
+          ),
+        ),
+        const SizedBox(width: PactaSpacing.sm),
+        Expanded(child: card),
+      ],
+    ),
   );
 
   Widget _streakBadge(BuildContext context, int index) {

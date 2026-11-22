@@ -8,6 +8,7 @@ import 'package:pacta/src/focus/focus_chain_history.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/theme/pacta_spacing.dart';
+import 'package:pacta/src/theme/pacta_surfaces.dart';
 import 'package:pacta/src/tasks/task_database.dart' show PactaDatabase;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
@@ -152,6 +153,135 @@ void main() {
     final badge2 = tester.getRect(find.text('#2'));
     expect(badge1.center.dx, badge2.center.dx);
     expect(badge1.right, lessThan(first.left));
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('时间轴气泡与卡片同心、行间 8dp，连接线起止于圆心', (tester) async {
+    final fixture = await _Fixture.create();
+    addTearDown(fixture.dispose);
+    for (var index = 0; index < 2; index++) {
+      await fixture.focus.startSession(
+        taskId: fixture.taskIds.first,
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 25),
+      );
+      fixture.now = fixture.now.add(const Duration(minutes: 25));
+      await fixture.focus.settleDueSessions();
+    }
+    final broken = await fixture.focus.startSession(
+      taskId: fixture.taskIds.first,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    fixture.now = fixture.now.add(const Duration(minutes: 3));
+    await fixture.focus.abandonSession(
+      sessionId: broken.id,
+      failureReason: '被电话打断',
+    );
+
+    await _mount(tester, fixture);
+    await _openDestination(tester, '专注链');
+    await tester.tap(find.byKey(_historyEntry));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('普通链'));
+    await tester.pumpAndSettle();
+
+    final rows = find.byWidgetPredicate(
+      (widget) =>
+          widget.key is ValueKey<String> &&
+          (widget.key! as ValueKey<String>).value.startsWith(
+            'focus-history-row-',
+          ),
+    );
+    expect(rows, findsNWidgets(3), reason: '#1、#2 与断链节点各占一行');
+    final badges = [
+      find.descendant(of: rows.at(0), matching: find.text('#1')),
+      find.descendant(of: rows.at(1), matching: find.text('#2')),
+      find
+          .descendant(of: rows.at(2), matching: find.byIcon(Icons.link_off))
+          .first,
+    ];
+
+    Rect? previousCard;
+    final badgeCenters = <Offset>[];
+    for (var index = 0; index < badges.length; index++) {
+      final card = find.descendant(
+        of: rows.at(index),
+        matching: find.byType(Card),
+      );
+      expect(card, findsOneWidget, reason: '第 ${index + 1} 行右侧是一张卡片');
+      final cardRect = tester.getRect(card);
+      final badgeRect = tester.getRect(badges[index]);
+      expect(
+        (badgeRect.center.dy - cardRect.center.dy).abs(),
+        lessThanOrEqualTo(1.0),
+        reason: '第 ${index + 1} 行气泡必须与右侧卡片垂直同心',
+      );
+      expect(
+        badgeRect.center.dx,
+        lessThan(cardRect.left),
+        reason: '气泡落在卡片左侧的 32dp 轨道内',
+      );
+      badgeCenters.add(badgeRect.center);
+      if (previousCard != null) {
+        expect(
+          cardRect.top - previousCard.bottom,
+          moreOrLessEquals(PactaSpacing.sm, epsilon: 0.01),
+          reason: '第 ${index + 1} 行与上一行卡片之间仍是 8dp',
+        );
+      }
+      previousCard = cardRect;
+    }
+    expect(
+      badgeCenters.map((center) => center.dx).toSet(),
+      hasLength(1),
+      reason: '三枚气泡共用同一条竖轴',
+    );
+
+    // 连接线：2dp 宽、与气泡同轴，并且只出现在首末气泡之间。
+    final lines = find.byWidgetPredicate(
+      (widget) =>
+          widget is ColoredBox && widget.color == PactaSurfaces.light.hairline,
+    );
+    expect(lines, findsWidgets);
+    final run = find.byWidgetPredicate(
+      (widget) =>
+          widget.key is ValueKey<String> &&
+          (widget.key! as ValueKey<String>).value.startsWith(
+            'focus-history-run-',
+          ),
+    );
+    final runRect = tester.getRect(run);
+    final firstBadge = badgeCenters.first;
+    final lastBadge = badgeCenters.last;
+    final lastCard = tester.getRect(
+      find.descendant(of: rows.at(2), matching: find.byType(Card)),
+    );
+    for (var index = 0; index < lines.evaluate().length; index++) {
+      final line = tester.getRect(lines.at(index));
+      expect(line.width, moreOrLessEquals(2, epsilon: 0.01));
+      expect(
+        (line.center.dx - firstBadge.dx).abs(),
+        lessThanOrEqualTo(0.01),
+        reason: '连接线与气泡同轴',
+      );
+      expect(
+        line.top,
+        greaterThanOrEqualTo(firstBadge.dy - 0.01),
+        reason: '首条气泡上半截没有线',
+      );
+      expect(
+        line.bottom,
+        lessThanOrEqualTo(lastBadge.dy + 0.01),
+        reason: '末条气泡下半截没有线',
+      );
+    }
+    expect(
+      runRect.bottom,
+      moreOrLessEquals(lastCard.bottom, epsilon: 0.01),
+      reason: '最后一张卡下方不再多出一截竖线占位',
+    );
     expect(tester.takeException(), isNull);
     await _disposeWidget(tester);
   });

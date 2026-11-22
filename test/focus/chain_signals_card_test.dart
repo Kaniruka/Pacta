@@ -55,7 +55,14 @@ void main() {
     expect(find.byType(IconButton), findsNWidgets(2));
     expect(find.text('12'), findsOneWidget);
     expect(find.text('1小时30分01秒'), findsOneWidget);
-    expect(find.text('平均'), findsNWidgets(2));
+    // 三条链都带「累计/平均」：预约链不再只有连续次数、没有时长。
+    expect(find.text('累计'), findsNWidgets(3));
+    expect(find.text('平均'), findsNWidgets(3));
+    // 表头行已删除：数字直接跟在自己的链名下读，不再靠表格列对齐。
+    expect(find.text('当前连续'), findsNothing);
+    expect(find.text('历史最高'), findsNothing);
+    expect(find.text('连续'), findsNWidgets(3));
+    expect(find.text('最高'), findsNWidgets(3));
     await _disposeWidget(tester);
   });
 
@@ -188,13 +195,92 @@ void main() {
         expect(find.text(title), findsOneWidget);
       }
       expect(find.text('0'), findsNWidgets(6));
-      expect(find.text('累计'), findsNWidgets(2));
-      expect(find.text('平均'), findsNWidgets(2));
-      expect(find.text('0分00秒'), findsNWidgets(4));
+      expect(find.text('累计'), findsNWidgets(3));
+      expect(find.text('平均'), findsNWidgets(3));
+      expect(find.text('0分00秒'), findsNWidgets(6));
       expect(find.text('尚未设置'), findsNWidgets(2));
       await _disposeWidget(tester);
     },
   );
+
+  testWidgets('三条链是等高的 M3 分段卡片，段间只有 2dp 透明间隙', (tester) async {
+    for (final width in [700.0, 360.0]) {
+      await _pumpOverview(tester, repository, width: width);
+      final table = find.byKey(chainTable);
+      final segments = find.descendant(
+        of: table,
+        matching: find.byType(Material),
+      );
+      final rects = [
+        for (var index = 0; index < segments.evaluate().length; index++)
+          tester.getRect(segments.at(index)),
+      ];
+      expect(rects, hasLength(3), reason: '$width: 三条链各自成段');
+      for (var index = 1; index < rects.length; index++) {
+        expect(
+          rects[index].top - rects[index - 1].bottom,
+          moreOrLessEquals(2, epsilon: 0.01),
+          reason: '$width: 第 $index 段与上一段之间是 2dp 透明间隙',
+        );
+      }
+      expect(find.byType(Divider), findsNothing, reason: '分段靠间隙，不靠细线');
+
+      // 统一内边距 + 统一双行结构：三张卡的外高严格相等。
+      expect(
+        rects[1].height,
+        moreOrLessEquals(rects[0].height, epsilon: 1.0),
+        reason: '$width: 普通链与精锐链等高',
+      );
+      expect(
+        rects[2].height,
+        moreOrLessEquals(rects[0].height, epsilon: 1.0),
+        reason: '$width: 预约链与精锐链等高',
+      );
+      await _disposeWidget(tester);
+    }
+  });
+
+  testWidgets('320dp 2 倍字号下三条链卡片不溢出、不互相挤压', (tester) async {
+    await _pumpOverview(tester, repository, width: 320, scale: 2);
+    expect(tester.takeException(), isNull);
+    for (final label in ['精锐链', '普通链', '预约链']) {
+      expect(find.text(label), findsOneWidget);
+    }
+    expect(find.text('累计'), findsNWidgets(3));
+    expect(find.text('平均'), findsNWidgets(3));
+    expect(
+      tester.getSize(find.byKey(chainTable)).width,
+      lessThanOrEqualTo(320),
+    );
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('预约链累计与平均来自实际准备耗时统计', (tester) async {
+    await _pumpOverview(
+      tester,
+      repository,
+      appointmentStatistics: const FocusSessionStatistics(
+        totalDurationSeconds: 1830,
+        acceptedSessionCount: 2,
+      ),
+    );
+    // 1830s = 30分30秒；平均 915s = 15分15秒。
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('focus-chain-stat-预约链-累计')),
+        matching: find.text('30分30秒'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('focus-chain-stat-预约链-平均')),
+        matching: find.text('15分15秒'),
+      ),
+      findsOneWidget,
+    );
+    await _disposeWidget(tester);
+  });
 
   testWidgets('规则说明折进信息提示：折叠时不占正文，点开才出现', (tester) async {
     await _pumpOverview(tester, repository);
@@ -464,6 +550,7 @@ Future<void> _pumpOverview(
   List<FocusChainRecord>? records,
   Map<FocusChainMode, FocusSessionStatistics>? statistics,
   AppointmentChainRecord? appointmentRecord,
+  FocusSessionStatistics? appointmentStatistics,
   bool showInstructions = false,
 }) async {
   tester.view.devicePixelRatio = 1;
@@ -520,6 +607,7 @@ Future<void> _pumpOverview(
                         records: overviewRecords,
                         appointmentRecord: appointmentRecord,
                         statistics: overviewStatistics,
+                        appointmentStatistics: appointmentStatistics,
                       ),
                       if (showInstructions && repository != null) ...[
                         const SizedBox(height: 12),

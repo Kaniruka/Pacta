@@ -243,7 +243,9 @@ FocusChainHistoryEntry? _appointmentEntry(AppointmentPreparation appointment) {
         ? FocusChainHistoryEntryKind.broken
         : FocusChainHistoryEntryKind.numbered,
     occurredAt: appointment.settledAt ?? appointment.endsAt,
-    effectiveSeconds: appointment.effectivePreparationSeconds,
+    // 与首屏「累计/平均」同源：时间轴单条详情的准备时长也必须走实际耗时，
+    // 不能一边按计划时长、一边按真实结算时刻各算一套。
+    effectiveSeconds: appointmentActualPreparationSeconds(appointment),
     taskId: appointment.taskId,
     failureReason: appointment.failureReason,
   );

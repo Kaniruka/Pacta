@@ -1442,7 +1442,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('详细视图在窄屏两倍字号下保留状态条、根微标与两行规则', (tester) async {
+  testWidgets('详细视图在窄屏两倍字号下无顶部状态条、有三行规则与根胶囊', (tester) async {
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
@@ -1472,82 +1472,147 @@ void main() {
     expect(cardFinder, findsOneWidget);
     expect(
       find.descendant(of: cardFinder, matching: find.byType(ColoredBox)),
-      findsOneWidget,
-      reason: '详细卡片顶部保留 3dp 状态条',
+      findsNothing,
+      reason: '详细卡片不再有顶部 3dp 状态条',
     );
     expect(
       find.descendant(of: cardFinder, matching: find.text('根')),
       findsOneWidget,
-      reason: '顶层节点用 根 微标区分于子节点',
+      reason: '顶层节点用 根 胶囊区分于子节点',
+    );
+    // 0 天：连续胶囊整块不渲染，也不留「连续 0 天」文字噪声。
+    expect(
+      find.descendant(
+        of: cardFinder,
+        matching: find.byType(NationalFocusStreakTags),
+      ),
+      findsNothing,
     );
     expect(
-      find.descendant(of: cardFinder, matching: find.text('连续 0 天')),
-      findsOneWidget,
+      find.descendant(of: cardFinder, matching: find.textContaining('连续 0 天')),
+      findsNothing,
     );
+    // 三态都不再在卡片里放状态文字胶囊。
+    for (final label in const ['点亮', '确认', '熄灭']) {
+      expect(
+        find.descendant(of: cardFinder, matching: find.text(label)),
+        findsNothing,
+        reason: '详细卡片不再渲染 $label 状态文字',
+      );
+    }
     final rule = tester.widget<Text>(
       find.descendant(
         of: cardFinder,
         matching: find.text(card.effectiveAction),
       ),
     );
-    expect(rule.maxLines, 2, reason: '两倍字号下规则仍固定两行');
+    expect(rule.maxLines, 3, reason: '两倍字号下规则升到最多三行');
     expect(rule.textAlign, TextAlign.start);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('详细视图根节点同时已内化：2 倍字号底栏三徽标不溢出、不截断', (tester) async {
-    tester.view.physicalSize = const Size(320, 900);
-    tester.view.devicePixelRatio = 1;
-    tester.platformDispatcher.textScaleFactorTestValue = 2;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-    final card = await createPlacedCard();
-    // 180 个成功日是内化的判定线；直接改列，避免 180 次点亮拖慢用例。
-    await (database.update(database.localNationalFocusCards)
-          ..where((row) => row.id.equals(card.id)))
-        .write(LocalNationalFocusCardsCompanion(successfulDays: Value(180)));
-    final internalized = await repository.getCard(card.id);
-    expect(internalized.isTopLevel, isTrue);
-    expect(internalized.isInternalized, isTrue);
+  for (final brightness in Brightness.values) {
+    testWidgets(
+      '详细视图最坏节点：180d/180d + 根 + 已内化 + 三行规则在 2 倍字号 ${brightness.name} 下不溢出',
+      (tester) async {
+        tester.view.physicalSize = const Size(320, 900);
+        tester.view.devicePixelRatio = 1;
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        final card = await createPlacedCard();
+        // 180 个成功日是内化的判定线；直接改列，避免 180 次点亮拖慢用例。
+        // 连续天数与历史最高同时给到三位数，胶囊行取最宽组合。
+        await (database.update(
+          database.localNationalFocusCards,
+        )..where((row) => row.id.equals(card.id))).write(
+          const LocalNationalFocusCardsCompanion(
+            successfulDays: Value(180),
+            currentConsecutiveDays: Value(180),
+            bestConsecutiveDays: Value(180),
+          ),
+        );
+        final internalized = await repository.getCard(card.id);
+        expect(internalized.isTopLevel, isTrue);
+        expect(internalized.isInternalized, isTrue);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: pactaTheme(Brightness.light),
-        home: Scaffold(
-          body: NationalFocusTreePage(repository: repository, now: () => now),
-        ),
-      ),
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: pactaTheme(brightness),
+            home: Scaffold(
+              body: NationalFocusTreePage(
+                repository: repository,
+                now: () => now,
+              ),
+            ),
+          ),
+        );
+        await pumpNationalFocusUi(tester);
+        await tester.tap(find.text('简洁视图'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('详细视图').last);
+        await tester.pumpAndSettle();
+
+        final cardFinder = find.byKey(
+          ValueKey('national-focus-card-${card.id}'),
+        );
+        expect(cardFinder, findsOneWidget);
+        // 无顶部状态条，也没有状态文字胶囊。
+        expect(
+          find.descendant(of: cardFinder, matching: find.byType(ColoredBox)),
+          findsNothing,
+        );
+        for (final label in const ['点亮', '确认', '熄灭']) {
+          expect(
+            find.descendant(of: cardFinder, matching: find.text(label)),
+            findsNothing,
+          );
+        }
+        // 胶囊行三枚同时在：连续天数（180d ×2）+ 根 + 已内化。
+        expect(
+          find.descendant(
+            of: cardFinder,
+            matching: find.byType(NationalFocusStreakTags),
+          ),
+          findsOneWidget,
+        );
+        final currentPill = find.descendant(
+          of: cardFinder,
+          matching: find.text('180d'),
+        );
+        expect(currentPill, findsNWidgets(2));
+        final cardRect = tester.getRect(cardFinder);
+        final pillFinders = <Finder>[
+          currentPill.first,
+          currentPill.last,
+          find.descendant(of: cardFinder, matching: find.text('根')),
+          find.descendant(of: cardFinder, matching: find.text('已内化')),
+        ];
+        for (final pillFinder in pillFinders) {
+          expect(pillFinder, findsOneWidget, reason: '胶囊必须完整渲染');
+          final rect = tester.getRect(pillFinder);
+          expect(rect.left, greaterThanOrEqualTo(cardRect.left));
+          expect(rect.right, lessThanOrEqualTo(cardRect.right));
+          expect(rect.top, greaterThanOrEqualTo(cardRect.top));
+          expect(rect.bottom, lessThanOrEqualTo(cardRect.bottom));
+        }
+        final rule = tester.widget<Text>(
+          find.descendant(
+            of: cardFinder,
+            matching: find.text(card.effectiveAction),
+          ),
+        );
+        expect(rule.maxLines, 3, reason: '两倍字号下规则最多三行');
+        // Wrap 允许换行，但整张卡不得溢出：溢出会以 RenderFlex 异常上报。
+        expect(tester.takeException(), isNull);
+        // 页面持有周期计时器：先卸树再结束用例，避免残留 Timer 断言。
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 1));
+        await tester.pump(const Duration(seconds: 1));
+      },
     );
-    await pumpNationalFocusUi(tester);
-    await tester.tap(find.text('简洁视图'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('详细视图').last);
-    await tester.pumpAndSettle();
-
-    final cardFinder = find.byKey(ValueKey('national-focus-card-${card.id}'));
-    expect(cardFinder, findsOneWidget);
-    final cardRect = tester.getRect(cardFinder);
-    // 底栏三枚徽标同时在：连续天数 + 根 + 已内化。
-    for (final label in ['连续 0 天', '根', '已内化']) {
-      final labelFinder = find.descendant(
-        of: cardFinder,
-        matching: find.text(label),
-      );
-      expect(labelFinder, findsOneWidget, reason: '$label 徽标必须完整渲染');
-      final rect = tester.getRect(labelFinder);
-      expect(rect.left, greaterThanOrEqualTo(cardRect.left));
-      expect(rect.right, lessThanOrEqualTo(cardRect.right));
-      expect(rect.top, greaterThanOrEqualTo(cardRect.top));
-      expect(rect.bottom, lessThanOrEqualTo(cardRect.bottom));
-    }
-    // Wrap 允许换行，但整张卡不得溢出：溢出会以 RenderFlex 异常上报。
-    expect(tester.takeException(), isNull);
-    // 页面持有周期计时器：先卸树再结束用例，避免残留 Timer 断言。
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(seconds: 1));
-    await tester.pump(const Duration(seconds: 1));
-  });
+  }
 }

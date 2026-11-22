@@ -532,6 +532,75 @@ void main() {
     await _unmount(tester);
   });
 
+  testWidgets('置顶视图上下内边距对称：首卡顶距 10dp、末卡底距 10dp', (tester) async {
+    _useTallView(tester);
+    final harness = _Harness(
+      cards: [_card('a', NationalFocusCardState.lit)],
+      pinned: [_goal('goal-a', '甲目标'), _goal('goal-b', '乙目标')],
+    );
+    await tester.pumpWidget(harness.build());
+    await tester.pumpAndSettle();
+
+    final surface = tester.getRect(
+      find.byKey(const ValueKey('board-top-slot-pinned-surface')),
+    );
+    final first = tester.getRect(
+      find.byKey(const ValueKey('board-pinned-goal-goal-a')),
+    );
+    final last = tester.getRect(
+      find.byKey(const ValueKey('board-pinned-goal-goal-b')),
+    );
+    // 拖拽列表会给每一项（含首项）加 8dp 顶部透明间隔，所以容器上内边距
+    // 必须是 2dp：首卡视觉顶距 = 2 + 8 = 10dp，与末卡底距、左右间距一致。
+    expect(first.top - surface.top, moreOrLessEquals(10, epsilon: 0.5));
+    expect(surface.bottom - last.bottom, moreOrLessEquals(10, epsilon: 0.5));
+    expect(first.left - surface.left, moreOrLessEquals(10, epsilon: 0.5));
+    expect(surface.right - last.right, moreOrLessEquals(10, epsilon: 0.5));
+    expect(
+      (first.top - surface.top) - (surface.bottom - last.bottom),
+      moreOrLessEquals(0, epsilon: 0.5),
+      reason: '上下间距必须对称，不能再是 18dp vs 10dp',
+    );
+    expect(
+      find.byKey(const ValueKey('board-top-slot-pinned-all')),
+      findsNothing,
+      reason: '两个置顶目标时不出现「查看全部」，底距只剩内边距',
+    );
+    await _unmount(tester);
+
+    // 三个置顶目标：首卡顶距仍是 10dp，底部多出「查看全部 3 个 →」入口。
+    final three = _Harness(
+      cards: [_card('a', NationalFocusCardState.lit)],
+      pinned: [
+        _goal('goal-a', '甲目标'),
+        _goal('goal-b', '乙目标'),
+        _goal('goal-c', '丙目标'),
+      ],
+    );
+    await tester.pumpWidget(three.build());
+    await tester.pumpAndSettle();
+    final surfaceThree = tester.getRect(
+      find.byKey(const ValueKey('board-top-slot-pinned-surface')),
+    );
+    final firstThree = tester.getRect(
+      find.byKey(const ValueKey('board-pinned-goal-goal-a')),
+    );
+    expect(
+      firstThree.top - surfaceThree.top,
+      moreOrLessEquals(10, epsilon: 0.5),
+    );
+    expect(
+      firstThree.left - surfaceThree.left,
+      moreOrLessEquals(10, epsilon: 0.5),
+    );
+    expect(
+      find.byKey(const ValueKey('board-top-slot-pinned-all')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+
   testWidgets('停用账号取消置顶只弹可读提示，不丢未捕获异常', (tester) async {
     _useTallView(tester);
     final harness = _Harness(

@@ -66,6 +66,7 @@ SOURCE_FILES = (
     'lib/src/plan/plan_calendar_view.dart',
     'lib/src/plan/plan_page.dart',
     'lib/src/plan/schedule_editor_dialogs.dart',
+    'lib/src/profile/change_password_page.dart',
     'lib/src/profile/my_page.dart',
     'lib/src/profile/profile_card.dart',
     'lib/src/profile/profile_edit_page.dart',

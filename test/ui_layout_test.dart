@@ -5,6 +5,11 @@ import 'package:pacta/src/notifications/focus_notification_settings_page.dart';
 import 'package:pacta/src/ui/pacta_page_header.dart';
 import 'package:pacta/src/focus/focus_models.dart' as focus;
 import 'package:pacta/src/focus/focus_repository.dart';
+import 'package:pacta/src/profile/avatar_image.dart';
+import 'package:pacta/src/profile/change_password_page.dart';
+import 'package:pacta/src/profile/profile_edit_page.dart';
+import 'package:pacta/src/profile/profile_models.dart';
+import 'package:pacta/src/profile/profile_repository.dart';
 
 import 'support/fake_auth_repository.dart';
 
@@ -89,11 +94,15 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('专注历史和用户管理从入口进入可返回的二级页面', (tester) async {
-    final auth = FakeAuthRepository()
-      ..signedInUser = 'layout-user'
-      ..administrator = true;
-    await tester.pumpWidget(PactaApp(authRepository: auth));
+  testWidgets('专注历史与我的一级页面可进入可返回，管理员入口已彻底下线', (tester) async {
+    final auth = FakeAuthRepository()..signedInUser = 'layout-user';
+    await tester.pumpWidget(
+      PactaApp(
+        authRepository: auth,
+        profileRepositoryFactory: (_) =>
+            _LayoutProfileRepository('layout-user'),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(
@@ -119,26 +128,56 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byTooltip('编辑资料'), findsOneWidget);
+    final myScrollable = find
+        .descendant(of: find.byType(MyPage), matching: find.byType(Scrollable))
+        .first;
+    // 管理入口整块下线：分组列表里的「用户管理」与它的 Key 都不再存在。
     await tester.scrollUntilVisible(
-      find.text('用户管理'),
+      find.text('通知与设备权限'),
       160,
-      scrollable: find
-          .descendant(
-            of: find.byType(MyPage),
-            matching: find.byType(Scrollable),
-          )
-          .first,
+      scrollable: myScrollable,
     );
-    await tester.ensureVisible(find.byKey(const ValueKey('admin-users-entry')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('admin-users-entry')));
+    expect(find.text('用户管理'), findsNothing);
+    expect(find.byKey(const ValueKey('admin-users-entry')), findsNothing);
+
+    // 名片「专注」组直达专注历史，不再是已删除的统计明细页。
+    await tester.scrollUntilVisible(
+      find.byTooltip('编辑资料'),
+      -160,
+      scrollable: myScrollable,
+    );
     await tester.pumpAndSettle();
-    expect(find.text('管理员：用户停用与恢复'), findsOneWidget);
-    expect(find.text('管理员：注册资格'), findsOneWidget);
-    expect(find.text('管理员：重置用户密码'), findsOneWidget);
+    await tester.tap(find.text('专注'));
+    await tester.pumpAndSettle();
+    expect(find.byType(FocusHistoryPage), findsOneWidget);
+    expect(find.text('专注历史'), findsOneWidget);
     await tester.pageBack();
     await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('admin-users-entry')), findsOneWidget);
+
+    // 我的 -> 编辑资料 -> 修改密码 -> 返回：全链路零异常。
+    await tester.tap(find.byTooltip('编辑资料'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ProfileEditPage), findsOneWidget);
+    final editScrollable = find
+        .descendant(
+          of: find.byType(ListView),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final entry = find.byKey(const ValueKey('profile-change-password-entry'));
+    await tester.scrollUntilVisible(entry, 160, scrollable: editScrollable);
+    await tester.pumpAndSettle();
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+    expect(find.byType(ChangePasswordPage), findsOneWidget);
+    expect(find.text('修改密码'), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byType(ProfileEditPage), findsOneWidget);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.byType(MyPage), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
@@ -296,6 +335,45 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
   });
+}
+
+/// 已就绪的账号资料仓库：让「我的」名片的编辑入口可用，从而走通
+/// 编辑资料 -> 修改密码 -> 返回的完整链路。
+class _LayoutProfileRepository implements ProfileRepository {
+  _LayoutProfileRepository(this._userId);
+
+  final String _userId;
+
+  ProfileAccount get _account => ProfileAccount(
+    userId: _userId,
+    displayName: '布局用户',
+    updatedAt: DateTime.utc(2026, 11, 1),
+  );
+
+  @override
+  Stream<ProfileAccount> watchProfile() => Stream.value(_account);
+
+  @override
+  Future<ProfileAccount> getProfile() async => _account;
+
+  @override
+  Future<ProfileAccount> saveProfile({
+    required String displayName,
+    ProfileAvatar? avatar,
+    bool clearAvatar = false,
+    String? timeZoneId,
+  }) async => _account;
+
+  @override
+  Future<ProfileAccount> ensureDisplayTimeZone({
+    String? deviceTimeZoneId,
+  }) async => _account;
+
+  @override
+  Future<ProfileAccount> syncProfile() async => _account;
+
+  @override
+  Future<void> dispose() async {}
 }
 
 class _HistoryFocusRepository extends UnavailableFocusRepository {

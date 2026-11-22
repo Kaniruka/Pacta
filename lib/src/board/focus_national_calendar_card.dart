@@ -872,12 +872,21 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
           ),
         ),
     ];
+    // 可拖拽列表会为每一项（含 index == 0）额外加 8dp 顶部透明间隔，
+    // 目的是让拖拽代理与卡片等高、浮起时不超框。顶槽因此把上内边距收到
+    // 2dp：首卡视觉顶距 = 2 + 8 = 10dp，与末卡底距 10dp、左右 10dp 严格
+    // 对称。失败 / 空 / 只读三种分支没有这层 8dp 间隔，继续用 10dp。
+    final usesReorderList =
+        !widget.pinnedGoalsFailed && visible.isNotEmpty && repository != null;
     return Material(
+      key: const ValueKey('board-top-slot-pinned-surface'),
       color: scheme.surfaceContainerLow,
       borderRadius: BorderRadius.circular(16),
       clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.all(10),
+        padding: usesReorderList
+            ? const EdgeInsets.fromLTRB(10, 2, 10, 10)
+            : const EdgeInsets.all(10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: children,

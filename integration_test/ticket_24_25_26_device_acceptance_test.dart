@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:pacta/main.dart';
-import 'package:pacta/src/auth/admin_user_lifecycle_card.dart';
-import 'package:pacta/src/auth/user_lifecycle_models.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
@@ -162,82 +160,6 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await database.close();
     }
-  });
-
-  testWidgets('T25 安卓设备管理员密码重置表单可确认并完成', (tester) async {
-    final repository = FakeAuthRepository()
-      ..signedInUser = 'admin@example.invalid'
-      ..administrator = true;
-
-    await tester.pumpWidget(PactaApp(authRepository: repository));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('我的').last);
-    await tester.pumpAndSettle();
-
-    expect(find.text('管理员：重置用户密码'), findsOneWidget);
-    await tester.ensureVisible(find.byKey(const Key('reset-target-email')));
-    await tester.enterText(
-      find.byKey(const Key('reset-target-email')),
-      'ticket-25-user@example.invalid',
-    );
-    await tester.enterText(
-      find.byKey(const Key('reset-new-password')),
-      'device-test-password',
-    );
-    await tester.enterText(
-      find.byKey(const Key('reset-confirm-password')),
-      'device-test-password',
-    );
-    await tester.ensureVisible(
-      find.byKey(const Key('manual-verification-confirmation')),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const Key('manual-verification-confirmation')));
-    await tester.pump();
-    await tester.ensureVisible(find.widgetWithText(FilledButton, '重置密码'));
-    await tester.tap(find.widgetWithText(FilledButton, '重置密码'));
-    await tester.pumpAndSettle();
-
-    expect(repository.passwordResetEmail, 'ticket-25-user@example.invalid');
-    expect(repository.passwordResetManualVerificationConfirmed, isTrue);
-    expect(find.textContaining('密码已重置'), findsOneWidget);
-    expect(
-      find.byWidgetPredicate(
-        (widget) => widget is Text && widget.data == 'device-test-password',
-      ),
-      findsNothing,
-    );
-  });
-
-  testWidgets('T26 安卓设备管理员可停用并恢复用户且保留数据说明', (tester) async {
-    final repository = FakeAuthRepository()
-      ..managedUsers = [
-        ManagedUserLifecycle(
-          userId: 'ticket-26-device-user',
-          email: 'ticket-26-user@example.invalid',
-          createdAt: DateTime.utc(2026, 9, 1),
-          isSuspended: false,
-          isEligibleForPurge: false,
-        ),
-      ];
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(body: AdminUserLifecycleCard(repository: repository)),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining('本界面不会清除数据'), findsOneWidget);
-    await tester.tap(find.text('停用'));
-    await tester.pumpAndSettle();
-    expect(repository.suspendedUserIds, contains('ticket-26-device-user'));
-    expect(find.textContaining('已停用 ·'), findsOneWidget);
-
-    await tester.tap(find.text('恢复'));
-    await tester.pumpAndSettle();
-    expect(repository.restoredUserIds, contains('ticket-26-device-user'));
-    expect(find.textContaining('正常用户'), findsOneWidget);
   });
 
   testWidgets('T25 Android/Windows 新密码登录仍是原 Supabase 身份', (tester) async {

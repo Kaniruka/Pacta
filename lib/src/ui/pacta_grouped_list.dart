@@ -59,48 +59,87 @@ class PactaSectionHeader extends StatelessWidget {
   }
 }
 
-/// 单一圆角白卡容器，用 1dp 细分隔线切分相邻行。
+/// Google M3 Expressive 分段卡片容器：一组同质内容切成彼此独立的圆角段。
 ///
-/// 直接传入 [ListTile]、[SwitchListTile] 等整行组件即可混排；分隔线只出现
-/// 在相邻两行之间，不包边、不割裂整块表面。与 [Card] 的区别是：这里表达
-/// “同一组设置项”，而不是独立卡片。
+/// 直接传入 [ListTile]、[SwitchListTile] 等整行组件即可混排：
+/// - 单行时就是一张完整的圆角白卡（[borderRadius]）；
+/// - 多行时每行各自成段，段间不再插 1dp 分隔线，而是留出 [itemGap] 的
+///   透明间隙，让页底色从缝里透出来，形成 M3 Expressive 的分段节奏；
+/// - 首段顶角、末段底角取 [borderRadius]（默认 20dp 卡片圆角），相邻段
+///   交界处取 [innerBorderRadius]（默认 4dp），圆角沿分组外轮廓连续收敛。
+///
+/// 与 [Card] 的区别是：这里表达“同一组设置项”，而不是互不相干的独立卡片。
 class PactaGroupedList extends StatelessWidget {
   const PactaGroupedList({
     super.key,
     required this.children,
     this.backgroundColor,
     this.borderRadius = PactaSpacing.cardRadius,
+    this.innerBorderRadius = 4,
+    this.itemGap = 2,
   });
 
   final List<Widget> children;
   final Color? backgroundColor;
+
+  /// 分组两端（首段顶角、末段底角）的圆角。
   final double borderRadius;
+
+  /// 相邻段交界处的内圆角：分段之间靠小圆角收口，而不是靠分隔线切割。
+  final double innerBorderRadius;
+
+  /// 相邻段之间的透明间隙；页底色从这里透出，卡片表面不互相粘连。
+  final double itemGap;
 
   @override
   Widget build(BuildContext context) {
+    // 空分组不占位，也不读取主题扩展：没有 PactaSurfaces 的隔离测试同样安全。
+    if (children.isEmpty) return const SizedBox.shrink();
     final surfaces = PactaSurfaces.of(context);
-    final rows = <Widget>[];
-    for (var index = 0; index < children.length; index++) {
-      if (index > 0) {
-        // hairline 是主题里专门切分同层内容的 1dp 线，比 page 色更清晰
-        // 又不会像描边一样把分组拆散。
-        rows.add(Divider(height: 1, thickness: 1, color: surfaces.hairline));
-      }
-      rows.add(children[index]);
+    final fill = backgroundColor ?? surfaces.card;
+    if (children.length == 1) {
+      return _segment(
+        radius: BorderRadius.circular(borderRadius),
+        color: fill,
+        child: children.single,
+      );
     }
-    return Material(
-      color: backgroundColor ?? surfaces.card,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(borderRadius),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: rows,
-      ),
+    final segments = <Widget>[];
+    for (var index = 0; index < children.length; index++) {
+      if (index > 0) segments.add(SizedBox(height: itemGap));
+      segments.add(
+        _segment(
+          radius: _segmentRadius(index),
+          color: fill,
+          child: children[index],
+        ),
+      );
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: segments,
     );
   }
+
+  /// 首段只圆顶、末段只圆底；中间段四角统一收敛到 [innerBorderRadius]。
+  BorderRadius _segmentRadius(int index) => BorderRadius.vertical(
+    top: Radius.circular(index == 0 ? borderRadius : innerBorderRadius),
+    bottom: Radius.circular(
+      index == children.length - 1 ? borderRadius : innerBorderRadius,
+    ),
+  );
+
+  Widget _segment({
+    required BorderRadius radius,
+    required Color color,
+    required Widget child,
+  }) => Material(
+    color: color,
+    shape: RoundedRectangleBorder(borderRadius: radius),
+    clipBehavior: Clip.antiAlias,
+    child: child,
+  );
 }
 
 /// 状态胶囊的语气；颜色全部取主题语义色，亮暗主题自动切换。

@@ -112,17 +112,6 @@ class UserLifecycleRepository implements UserLifecycleStatusRepository {
     return status;
   }
 
-  Future<List<ManagedUserLifecycle>> listUsers() =>
-      authRepository.listUserLifecycles();
-
-  Future<void> suspendUser(String userId) async {
-    await authRepository.suspendUser(userId);
-  }
-
-  Future<void> restoreUser(String userId) async {
-    await authRepository.restoreUser(userId);
-  }
-
   Future<bool> purgeLocalDataIfConfirmed(String oldUserId) async {
     return UserPurgeCleanupRepository(
       authRepository: authRepository,

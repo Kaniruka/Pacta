@@ -14,6 +14,7 @@ import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
+import 'package:pacta/src/national_focus/national_focus_shared_widgets.dart';
 import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
 import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/notifications/focus_notification_settings_page.dart';
@@ -591,6 +592,8 @@ void main() {
       String id,
       String name, {
       required NationalFocusCardState state,
+      int currentConsecutiveDays = 0,
+      int bestConsecutiveDays = 0,
     }) => NationalFocusCard(
       id: id,
       name: name,
@@ -600,8 +603,8 @@ void main() {
       state: state,
       createdAt: createdAt,
       updatedAt: createdAt,
-      currentConsecutiveDays: 0,
-      bestConsecutiveDays: 0,
+      currentConsecutiveDays: currentConsecutiveDays,
+      bestConsecutiveDays: bestConsecutiveDays,
     );
 
     Future<void> pumpTree(
@@ -636,7 +639,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('简洁视图没有 Card，详细视图按状态着色且规则固定两行', (tester) async {
+    testWidgets('简洁视图没有 Card，详细视图按状态着色、无状态条与胶囊且规则最多三行', (tester) async {
       final lit = card('lit', '点亮卡', state: NationalFocusCardState.lit);
       final pending = card(
         'pending',
@@ -683,13 +686,92 @@ void main() {
               isNot(canvas),
               reason: '${entry.name} 的卡片底色必须与画布 surfaceContainerLow 分层',
             );
+            // 详细卡片是等宽四周边框的 M3 状态卡：状态只由填色、边框色与
+            // 左侧图标井表达，没有顶部 3dp 色条，也没有右上角文字胶囊。
+            final shape = cardWidget.shape! as RoundedRectangleBorder;
+            expect(
+              shape.side.width,
+              greaterThanOrEqualTo(1),
+              reason: '${entry.name} 详细卡片四周必须有等宽描边',
+            );
+            expect(
+              shape.side.color.a,
+              greaterThan(0),
+              reason: '${entry.name} 的边框色必须真的画出来',
+            );
+            final radius = shape.borderRadius as BorderRadius;
+            expect(
+              radius.topLeft,
+              radius.topRight,
+              reason: '${entry.name} 四角同半径',
+            );
+            expect(
+              radius.topLeft,
+              radius.bottomLeft,
+              reason: '${entry.name} 四角同半径',
+            );
+            expect(
+              radius.topLeft,
+              radius.bottomRight,
+              reason: '${entry.name} 四角同半径',
+            );
+            expect(
+              _topStatusStripBands(tester, cardFinder),
+              isEmpty,
+              reason: '${entry.name} 不再有贴顶的整宽 3dp 状态色条',
+            );
+            expect(
+              find.descendant(
+                of: cardFinder,
+                matching: find.byType(ColoredBox),
+              ),
+              findsNothing,
+              reason: '${entry.name} 的卡内没有任何纯色块承担状态条',
+            );
+            expect(
+              find.descendant(
+                of: cardFinder,
+                matching: find.text(entry.state.label),
+              ),
+              findsNothing,
+              reason: '${entry.name} 不再显示右上角状态文字胶囊',
+            );
+            final semantics = tester.widget<Semantics>(
+              find.ancestor(
+                of: cardFinder,
+                matching: find.byWidgetPredicate(
+                  (widget) =>
+                      widget is Semantics &&
+                      (widget.properties.label?.contains('节点 ') ?? false),
+                ),
+              ),
+            );
+            expect(
+              semantics.properties.label,
+              contains(entry.state.label),
+              reason: '${entry.name} 去掉文字胶囊后，状态语义仍要读得出来',
+            );
+            // 0/0 连击整行不渲染：既没有连击胶囊，也不留「连续 0 天」噪声。
+            expect(
+              find.descendant(
+                of: cardFinder,
+                matching: find.byType(NationalFocusStreakTags),
+              ),
+              findsNothing,
+              reason: '${entry.name} 没有连续记录时不渲染连击胶囊',
+            );
+            expect(
+              find.descendant(of: cardFinder, matching: find.text('连续 0 天')),
+              findsNothing,
+              reason: '${entry.name} 不显示 0 天连击噪声',
+            );
             final rule = tester.widget<Text>(
               find.descendant(
                 of: cardFinder,
                 matching: find.text(entry.effectiveAction),
               ),
             );
-            expect(rule.maxLines, 2, reason: '${entry.name} 规则固定两行');
+            expect(rule.maxLines, 3, reason: '${entry.name} 规则最多三行');
           }
           final rules = tester.widgetList<Text>(
             find.descendant(
@@ -700,11 +782,70 @@ void main() {
           expect(rules, isNotEmpty);
           for (final text in rules) {
             expect(text.maxLines, isNot(1), reason: '国策规则不再被压回一行');
-            expect(text.maxLines, 2);
+            expect(text.maxLines, isNot(2), reason: '规则摘要不再被压回两行');
+            expect(text.maxLines, 3, reason: '详细视图规则摘要最多三行');
           }
           await tester.pumpWidget(const SizedBox.shrink());
           await tester.pump(const Duration(seconds: 1));
         }
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 1));
+        await repository.dispose();
+      }
+    });
+
+    testWidgets('非零连击的详细卡片在标题下方、规则上方渲染连击胶囊', (tester) async {
+      final streak = card(
+        'streak',
+        '连击卡',
+        state: NationalFocusCardState.lit,
+        currentConsecutiveDays: 3,
+        bestConsecutiveDays: 5,
+      );
+      final repository = _FocusTreeFixtureRepository([streak]);
+      try {
+        await pumpTree(tester, repository);
+        await switchToDetailed(tester);
+
+        final cardFinder = find.byKey(
+          const ValueKey('national-focus-card-streak'),
+        );
+        expect(cardFinder, findsOneWidget);
+        final tags = find.descendant(
+          of: cardFinder,
+          matching: find.byType(NationalFocusStreakTags),
+        );
+        expect(tags, findsOneWidget, reason: '有连续记录时详情同款连击胶囊必须出现');
+        final tagsWidget = tester.widget<NationalFocusStreakTags>(tags);
+        expect(tagsWidget.currentConsecutiveDays, 3);
+        expect(tagsWidget.bestConsecutiveDays, 5);
+
+        final titleRect = tester.getRect(
+          find.descendant(of: cardFinder, matching: find.text('连击卡')),
+        );
+        final tagsRect = tester.getRect(tags);
+        final ruleRect = tester.getRect(
+          find.descendant(
+            of: cardFinder,
+            matching: find.text(streak.effectiveAction),
+          ),
+        );
+        expect(
+          tagsRect.top,
+          greaterThanOrEqualTo(titleRect.bottom),
+          reason: '连击胶囊位于名称下方',
+        );
+        expect(
+          tagsRect.bottom,
+          lessThanOrEqualTo(ruleRect.top),
+          reason: '连击胶囊位于规则摘要上方',
+        );
+        expect(
+          find.descendant(of: cardFinder, matching: find.text('连续 0 天')),
+          findsNothing,
+        );
         expect(tester.takeException(), isNull);
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());
@@ -2452,6 +2593,228 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Phase 6：组列表 M3 Expressive 分段、看板置顶槽对称、管理员界面彻底下线
+  // ---------------------------------------------------------------------------
+  group('Phase 6 机械守卫', () {
+    NationalFocusCard phase6Card(String id, String name) => NationalFocusCard(
+      id: id,
+      name: name,
+      triggerCondition: '触发条件',
+      action: '坐到书桌前先写下今天的第一步。',
+      isInTree: true,
+      state: NationalFocusCardState.lit,
+      createdAt: DateTime.utc(2026, 11, 18, 1),
+      updatedAt: DateTime.utc(2026, 11, 18, 1),
+    );
+
+    testWidgets('PactaGroupedList 在亮暗双主题下是 M3 Expressive 分段卡片，零 Divider', (
+      tester,
+    ) async {
+      _useView(tester, const Size(400, 900));
+      for (final brightness in Brightness.values) {
+        for (final count in [3, 1]) {
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: pactaTheme(brightness),
+              home: Scaffold(
+                body: ListView(
+                  padding: const EdgeInsets.all(PactaSpacing.cardRadius),
+                  children: [
+                    PactaGroupedList(
+                      children: [
+                        for (var index = 0; index < count; index++)
+                          ListTile(title: Text('第 $index 段')),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          final grouped = find.byType(PactaGroupedList);
+          expect(grouped, findsOneWidget);
+          // 分段靠透明缝隙分开，不靠 1dp 分隔线切割。
+          expect(
+            find.descendant(of: grouped, matching: find.byType(Divider)),
+            findsNothing,
+            reason: '$brightness $count 段分组里不允许出现任何 Divider',
+          );
+
+          // 每段各自是一张独立圆角 Material，而不是一颗大卡里的若干行。
+          final segmentFinder = find.descendant(
+            of: grouped,
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is Material && widget.shape is RoundedRectangleBorder,
+            ),
+          );
+          final segments = tester.widgetList<Material>(segmentFinder).toList();
+          expect(segments, hasLength(count), reason: '每一行各自成段');
+          for (final material in segments) {
+            expect(material.clipBehavior, Clip.antiAlias);
+          }
+          final radii = [
+            for (final material in segments)
+              (material.shape! as RoundedRectangleBorder).borderRadius,
+          ];
+          if (count == 1) {
+            // 单行时就是一张完整的 20dp 圆角卡。
+            expect(
+              radii.single,
+              BorderRadius.circular(20),
+              reason: '单行分组四角统一 20dp',
+            );
+          } else {
+            expect(
+              radii.first,
+              const BorderRadius.vertical(
+                top: Radius.circular(20),
+                bottom: Radius.circular(4),
+              ),
+              reason: '首段顶部 20dp、底部 4dp',
+            );
+            expect(radii[1], BorderRadius.circular(4), reason: '中段四隅统一 4dp');
+            expect(
+              radii.last,
+              const BorderRadius.vertical(
+                top: Radius.circular(4),
+                bottom: Radius.circular(20),
+              ),
+              reason: '末段顶部 4dp、底部 20dp',
+            );
+            final rects = [
+              for (var index = 0; index < segments.length; index++)
+                tester.getRect(segmentFinder.at(index)),
+            ];
+            for (var index = 1; index < rects.length; index++) {
+              expect(
+                rects[index].top - rects[index - 1].bottom,
+                moreOrLessEquals(2, epsilon: 0.01),
+                reason: '第 $index 段与上一段之间是 2dp 透明缝隙',
+              );
+            }
+          }
+          expect(tester.takeException(), isNull);
+        }
+      }
+    });
+
+    testWidgets('看板置顶目标卡槽上下内边距对称，差值不超过 0.5dp', (tester) async {
+      _useView(tester, const Size(360, 1200));
+      final fixture = await _BoardPhase3Fixture.create(
+        cards: [phase6Card('phase6-lit', '根国策')],
+        pinned: true,
+        pinnedGoalCount: 2,
+      );
+      try {
+        await tester.pumpWidget(fixture.app());
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('board-top-slot-pinned')));
+        await tester.pumpAndSettle();
+
+        final surface = tester.getRect(
+          find.byKey(const ValueKey('board-top-slot-pinned-surface')),
+        );
+        final first = tester.getRect(
+          find.byKey(
+            ValueKey('board-pinned-goal-${fixture.pinnedGoalIds.first}'),
+          ),
+        );
+        final last = tester.getRect(
+          find.byKey(
+            ValueKey('board-pinned-goal-${fixture.pinnedGoalIds.last}'),
+          ),
+        );
+        final topGap = first.top - surface.top;
+        final bottomGap = surface.bottom - last.bottom;
+        expect(topGap, greaterThan(0), reason: '首张置顶卡顶部必须留白');
+        expect(bottomGap, greaterThan(0), reason: '末张置顶卡底部必须留白');
+        expect(
+          (topGap - bottomGap).abs(),
+          lessThanOrEqualTo(0.5),
+          reason: '置顶卡槽上下内边距必须对称（首卡顶距 $topGap、末卡底距 $bottomGap）',
+        );
+        expect(tester.takeException(), isNull);
+      } finally {
+        await fixture.dispose(tester);
+      }
+    });
+
+    test('已删除的管理员界面与旧 FocusStatisticsPage 不再回流到 lib/src', () {
+      const removed = <String>[
+        'FocusStatisticsPage',
+        'AdminUsersPage',
+        'AdminEligibilityCard',
+        'AdminPasswordResetCard',
+        'admin_password_reset_card.dart',
+        'AdminUserLifecycleCard',
+        'admin_user_lifecycle_card.dart',
+      ];
+      final violations = <String>[];
+      for (final file in _libSources()) {
+        final path = _relativePath(file);
+        final source = file.readAsStringSync();
+        for (final token in removed) {
+          if (path.contains(token)) violations.add('$path -> 路径包含 $token');
+          for (final offset in _tokenOffsets(source, token)) {
+            violations.add('$path:${_lineOf(source, offset)} -> $token');
+          }
+        }
+      }
+      expect(
+        violations,
+        isEmpty,
+        reason:
+            '管理员管理界面已整体迁出客户端，旧 FocusStatisticsPage 也已由 '
+            'FocusHistoryPage 取代：任何回流都会把读者带回已删除的路径。'
+            '违规：$violations',
+      );
+      expect(
+        File('lib/src/auth/admin_password_reset_card.dart').existsSync(),
+        isFalse,
+        reason: '管理员重置密码界面必须彻底删除',
+      );
+      expect(
+        File('lib/src/auth/admin_user_lifecycle_card.dart').existsSync(),
+        isFalse,
+        reason: '管理员用户停用恢复界面必须彻底删除',
+      );
+    });
+  });
+}
+
+// -----------------------------------------------------------------------------
+// Phase 6 辅助：详细卡片顶部状态条的几何判定
+// -----------------------------------------------------------------------------
+
+/// 国策详细卡片里的整宽细色条（旧顶部 3dp 状态色条的回流形态）。
+///
+/// 只按几何判定、不绑定具体组件：宽 ≥ 卡片宽度的 90% 且高 ≤ 3.5dp。详细卡片
+/// 的正常内容（图标井 32dp、名称两行、连击胶囊、规则摘要、6dp 段落间距）都
+/// 不满足这两个条件，所以任何命中都是状态条回流。
+List<Rect> _topStatusStripBands(WidgetTester tester, Finder cardFinder) {
+  final cardRect = tester.getRect(cardFinder);
+  final bands = <Rect>[];
+  final descendants = find.descendant(
+    of: cardFinder,
+    matching: find.byWidgetPredicate((_) => true),
+  );
+  for (final element in descendants.evaluate()) {
+    final renderObject = element.renderObject;
+    if (renderObject is! RenderBox ||
+        !renderObject.attached ||
+        !renderObject.hasSize) {
+      continue;
+    }
+    final size = renderObject.size;
+    if (size.height > 3.5 || size.width < cardRect.width * 0.9) continue;
+    bands.add(renderObject.localToGlobal(Offset.zero) & size);
+  }
+  return bands;
 }
 
 // -----------------------------------------------------------------------------
@@ -2498,6 +2861,28 @@ List<String> _stringLiterals(String source) {
   final visitor = _StringLiteralVisitor();
   parseString(content: source, throwIfDiagnostics: false).unit.accept(visitor);
   return visitor.values;
+}
+
+/// 按 Dart 标识符边界统计 token 出现位置。
+///
+/// 纯子串扫描会把仍在使用中的 NationalFocusStatisticsPage（国策统计明细）
+/// 误判成已删除的 FocusStatisticsPage；边界判定既锁住回归，又不误伤同后缀的
+/// 合法页面。
+List<int> _tokenOffsets(String source, String token) {
+  const identifierChars =
+      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_\$';
+  final offsets = <int>[];
+  var index = source.indexOf(token);
+  while (index >= 0) {
+    final before = index == 0 ? '' : source[index - 1];
+    final afterIndex = index + token.length;
+    final after = afterIndex >= source.length ? '' : source[afterIndex];
+    final boundedBefore = before.isEmpty || !identifierChars.contains(before);
+    final boundedAfter = after.isEmpty || !identifierChars.contains(after);
+    if (boundedBefore && boundedAfter) offsets.add(index);
+    index = source.indexOf(token, index + token.length);
+  }
+  return offsets;
 }
 
 int _lineOf(String source, int offset) =>
@@ -2591,6 +2976,7 @@ class _BoardPhase3Fixture {
     required this.nationalFocus,
     required this.now,
     required this.goalId,
+    required this.pinnedGoalIds,
   });
 
   static const String user = 'guard-board-phase3';
@@ -2603,9 +2989,13 @@ class _BoardPhase3Fixture {
   final DateTime now;
   final String goalId;
 
+  /// 夹具创建的全部目标 ID（含被置顶的那些），按创建顺序排列。
+  final List<String> pinnedGoalIds;
+
   static Future<_BoardPhase3Fixture> create({
     required List<NationalFocusCard> cards,
     bool pinned = false,
+    int pinnedGoalCount = 1,
   }) async {
     final database = PactaDatabase(NativeDatabase.memory());
     var now = DateTime.utc(2026, 11, 18, 2);
@@ -2629,12 +3019,18 @@ class _BoardPhase3Fixture {
       now: () => now,
     );
     final nationalFocus = _FocusTreeFixtureRepository(cards);
-    final goal = await tasks.createGoal(
-      const GoalDraft(
-        title: '把重要的事情向前推进',
-        classification: TaskClassification.both,
-      ),
-    );
+    final goals = <Goal>[];
+    for (var index = 0; index < pinnedGoalCount; index++) {
+      goals.add(
+        await tasks.createGoal(
+          GoalDraft(
+            title: index == 0 ? '把重要的事情向前推进' : '第二个置顶目标',
+            classification: TaskClassification.both,
+          ),
+        ),
+      );
+    }
+    final goal = goals.first;
     final task = await tasks.createTask(
       goal.id,
       const TaskDraft(
@@ -2650,7 +3046,9 @@ class _BoardPhase3Fixture {
     now = session.endsAt;
     await focus.settleDueSessions();
     if (pinned) {
-      await tasks.setGoalPinned(goal.id, isPinned: true);
+      for (final pinnedGoal in goals) {
+        await tasks.setGoalPinned(pinnedGoal.id, isPinned: true);
+      }
     }
     await schedules.createSchedule(
       ScheduleDraft(
@@ -2679,6 +3077,7 @@ class _BoardPhase3Fixture {
       nationalFocus: nationalFocus,
       now: now,
       goalId: goal.id,
+      pinnedGoalIds: [for (final pinnedGoal in goals) pinnedGoal.id],
     );
   }
 

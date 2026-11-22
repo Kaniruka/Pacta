@@ -7,10 +7,13 @@ import 'dart:ui' as ui;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:pacta/main.dart' show pactaTheme;
+import 'package:pacta/src/app/app_providers.dart';
 import 'package:pacta/src/focus/focus_models.dart';
+import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/profile/avatar_image.dart';
 import 'package:pacta/src/profile/avatar_picker.dart';
@@ -19,6 +22,8 @@ import 'package:pacta/src/profile/profile_overview.dart';
 import 'package:pacta/src/profile/profile_remote.dart';
 import 'package:pacta/src/profile/profile_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart' hide FocusSession;
+import 'package:pacta/src/tasks/task_models.dart';
+import 'package:pacta/src/tasks/task_repository.dart';
 
 /// Offline, rerunnable layout fixture for Issue #94's profile card.
 ///
@@ -158,6 +163,47 @@ class _FixtureOverview implements ProfileOverviewSource {
   Stream<List<FocusSession>> watchSessions() => Stream.value(sessions);
 }
 
+/// 专注历史页自己读专注与任务仓储：这里回放同一批 fixture 记录，让
+/// 「完成 2 次」进入后能干净渲染，不碰真实数据库、也不需要登录会话。
+class _FixtureFocusRepository extends UnavailableFocusRepository {
+  _FixtureFocusRepository(this.sessions);
+
+  final List<FocusSession> sessions;
+
+  @override
+  Stream<List<FocusSession>> watchSessions() => Stream.value(sessions);
+
+  @override
+  Future<List<AppointmentPreparation>> getAppointments() async => const [];
+}
+
+/// 时间轴按 taskId 查任务名：只给 fixture 里的 fixture-task 一个可读标题。
+class _FixtureTaskRepository extends UnavailableTaskRepository {
+  @override
+  Stream<List<Goal>> watchGoals({bool includeDeleted = false}) => Stream.value([
+    Goal(
+      id: 'fixture-goal',
+      title: '离线验收目标',
+      classification: TaskClassification.regular,
+      createdAt: DateTime.utc(2026, 11, 1),
+      updatedAt: DateTime.utc(2026, 11, 1),
+      tasks: [
+        Task(
+          id: 'fixture-task',
+          goalId: 'fixture-goal',
+          title: '离线验收专注任务',
+          classification: TaskClassification.regular,
+          estimatedMinutes: 25,
+          deadline: null,
+          isComplete: false,
+          createdAt: DateTime.utc(2026, 11, 1),
+          updatedAt: DateTime.utc(2026, 11, 1),
+        ),
+      ],
+    ),
+  ]);
+}
+
 NationalFocusCard _card(
   String name, {
   required bool isInTree,
@@ -237,6 +283,11 @@ void main() {
         mimeType: AvatarImageFormat.png.mimeType,
       ),
     );
+    final sessions = [
+      _session('session-a', 1500),
+      _session('session-b', 2700),
+      _session('session-failed', 600, status: FocusSessionStatus.failed),
+    ];
     final overview = _FixtureOverview(
       cards: [
         _card(
@@ -254,32 +305,38 @@ void main() {
           state: NationalFocusCardState.pendingTodayConfirmation,
         ),
       ],
-      sessions: [
-        _session('session-a', 1500),
-        _session('session-b', 2700),
-        _session('session-failed', 600, status: FocusSessionStatus.failed),
-      ],
+      sessions: sessions,
     );
 
     final brightness = _lightMode ? Brightness.light : Brightness.dark;
     await tester.pumpWidget(
       RepaintBoundary(
         key: boundaryKey,
-        child: MaterialApp(
-          theme: pactaTheme(brightness),
-          home: Scaffold(
-            appBar: AppBar(title: const Text('我的')),
-            body: SafeArea(
-              child: ListView(
-                padding: const EdgeInsets.all(20),
-                children: [
-                  MyProfileCard(
-                    repository: profile,
-                    overview: overview,
-                    avatarPicker: _FixtureAvatarPicker(),
-                    accountIdentifier: 'fixture@example.com',
-                  ),
-                ],
+        child: ProviderScope(
+          // 名片里的专注组现在跳 FocusHistoryPage（Consumer），它自己读专注与
+          // 任务仓储：这里注入同一批 fixture 记录，避免测试里出现无根 Provider。
+          overrides: [
+            focusRepositoryProvider.overrideWithValue(
+              _FixtureFocusRepository(sessions),
+            ),
+            taskRepositoryProvider.overrideWithValue(_FixtureTaskRepository()),
+          ],
+          child: MaterialApp(
+            theme: pactaTheme(brightness),
+            home: Scaffold(
+              appBar: AppBar(title: const Text('我的')),
+              body: SafeArea(
+                child: ListView(
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    MyProfileCard(
+                      repository: profile,
+                      overview: overview,
+                      avatarPicker: _FixtureAvatarPicker(),
+                      accountIdentifier: 'fixture@example.com',
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

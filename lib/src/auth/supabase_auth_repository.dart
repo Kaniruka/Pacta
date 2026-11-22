@@ -36,55 +36,75 @@ class SupabaseAuthRepository implements AuthRepository {
   @override
   Future<void> signOut() => _client.auth.signOut();
 
+  /// 普通用户自助修改密码：先用当前密码向 GoTrue 复核身份，再更新密码。
+  ///
+  /// 密码不做 trim：空白字符也是密码的一部分，去掉它等于替用户改写输入。
+  /// 全部校验都在发请求之前完成，界面只需处理 [FormatException] 与
+  /// [StateError] 两种可读结果。
   @override
-  Future<bool> isAdministrator() async {
-    final user = _client.auth.currentUser;
-    if (user == null) return false;
-    final result = await _client
-        .from('app_admins')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .maybeSingle();
-    return result != null;
-  }
-
-  @override
-  Future<void> grantEligibility({required String email}) async {
-    await _client.rpc(
-      'admin_grant_registration_eligibility',
-      params: {'p_identifier': email, 'p_identifier_type': 'email'},
-    );
-  }
-
-  @override
-  Future<bool> revokeEligibility({required String email}) async {
-    return await _client.rpc(
-      'admin_revoke_registration_eligibility',
-      params: {'p_identifier': email, 'p_identifier_type': 'email'},
-    ) as bool;
-  }
-
-  @override
-  Future<void> adminResetUserPassword({
-    required String targetEmail,
+  Future<void> changePassword({
+    required String currentPassword,
     required String newPassword,
-    required bool manualVerificationConfirmed,
   }) async {
-    if (!manualVerificationConfirmed) {
-      throw const FormatException('请先确认已完成人工核实。');
+    if (currentPassword.isEmpty) {
+      throw const FormatException('请输入当前密码。');
     }
-    _requireEmail(targetEmail);
     if (newPassword.length < 8) {
       throw const FormatException('新密码至少需要 8 个字符。');
     }
-    await _client.functions.invoke(
-      'admin-reset-user-password',
-      body: {
-        'email': targetEmail.trim().toLowerCase(),
-        'new_password': newPassword,
-        'manual_verification_confirmed': true,
-      },
-    );
+    if (newPassword.length > 256) {
+      throw const FormatException('新密码长度不能超过 256 个字符。');
+    }
+    if (newPassword == currentPassword) {
+      throw const FormatException('新密码不能与当前密码相同。');
+    }
+
+    final email = _client.auth.currentUser?.email?.trim();
+    if (email == null || email.isEmpty) {
+      throw StateError('当前未登录或缺少账号邮箱，请重新登录后再试。');
+    }
+
+    try {
+      await _client.auth.signInWithPassword(
+        email: email,
+        password: currentPassword,
+      );
+    } on AuthException catch (error) {
+      if (_isInvalidCredentials(error)) {
+        throw const FormatException('当前密码不正确，请重新输入。');
+      }
+      rethrow;
+    }
+
+    try {
+      await _client.auth.updateUser(UserAttributes(password: newPassword));
+    } on AuthException catch (error) {
+      final message = error.message.toLowerCase();
+      if (message.contains('same_password') ||
+          message.contains('different from the old password')) {
+        throw const FormatException('新密码不能与当前密码相同。');
+      }
+      if (message.contains('weak_password') || message.contains('at least')) {
+        throw const FormatException('新密码强度不足或长度不符合要求，请更换后重试。');
+      }
+      rethrow;
+    }
+  }
+
+  /// 只有 GoTrue 明确表示凭据不匹配时才算当前密码错误。
+  ///
+  /// 不能用 400 一概而论：同是 400 的 `user_banned`、`email_not_confirmed`
+  /// 与频率限制都不是「密码打错了」，映射成中文后用户会一直重输正确的密码。
+  bool _isInvalidCredentials(AuthException error) {
+    final code = error.code?.toLowerCase() ?? '';
+    if (code == 'invalid_credentials' || code == 'invalid_grant') {
+      return true;
+    }
+    final message = error.message.toLowerCase();
+    return message.contains('invalid login credentials') ||
+        message.contains('invalid_credentials') ||
+        message.contains('invalid email or password') ||
+        message.contains('invalid_grant');
   }
 
   @override
@@ -93,40 +113,6 @@ class SupabaseAuthRepository implements AuthRepository {
     return UserLifecycleStatus.fromJson(
       Map<String, dynamic>.from(response as Map),
     );
-  }
-
-  @override
-  Future<List<ManagedUserLifecycle>> listUserLifecycles() async {
-    final response = await _client.rpc('admin_list_user_lifecycles');
-    return [
-      for (final row in response as List)
-        ManagedUserLifecycle.fromJson(Map<String, dynamic>.from(row as Map)),
-    ];
-  }
-
-  @override
-  Future<void> suspendUser(String userId) async {
-    await _client.rpc('admin_suspend_user', params: {'p_user_id': userId});
-  }
-
-  @override
-  Future<void> restoreUser(String userId) async {
-    await _client.rpc('admin_restore_user', params: {'p_user_id': userId});
-  }
-
-  @override
-  Future<UserPurgeReceipt> purgeUser(String userId) async {
-    final response = await _client.functions.invoke(
-      'admin-purge-user',
-      body: {'user_id': userId},
-    );
-    final data = response.data;
-    if (data is! Map) throw const FormatException('清除回执格式无效。');
-    final receipt = UserPurgeReceipt.fromJson(Map<String, dynamic>.from(data));
-    if (!receipt.confirmsPurgedUser(userId)) {
-      throw StateError('服务端未确认该用户身份已清除。');
-    }
-    return receipt;
   }
 
   @override
@@ -177,49 +163,15 @@ class UnavailableAuthRepository implements AuthRepository {
   Future<void> signOut() async {}
 
   @override
-  Future<bool> isAdministrator() async => false;
-
-  @override
-  Future<void> grantEligibility({required String email}) async {
-    throw StateError(message);
-  }
-
-  @override
-  Future<bool> revokeEligibility({required String email}) async {
-    throw StateError(message);
-  }
-
-  @override
-  Future<void> adminResetUserPassword({
-    required String targetEmail,
+  Future<void> changePassword({
+    required String currentPassword,
     required String newPassword,
-    required bool manualVerificationConfirmed,
   }) async {
     throw StateError(message);
   }
 
   @override
   Future<UserLifecycleStatus> getCurrentUserLifecycle() async {
-    throw StateError(message);
-  }
-
-  @override
-  Future<List<ManagedUserLifecycle>> listUserLifecycles() async {
-    throw StateError(message);
-  }
-
-  @override
-  Future<void> suspendUser(String userId) async {
-    throw StateError(message);
-  }
-
-  @override
-  Future<void> restoreUser(String userId) async {
-    throw StateError(message);
-  }
-
-  @override
-  Future<UserPurgeReceipt> purgeUser(String userId) async {
     throw StateError(message);
   }
 

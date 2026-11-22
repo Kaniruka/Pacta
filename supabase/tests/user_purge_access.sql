@@ -64,6 +64,134 @@ begin
 end
 $setup$;
 
+-- Testing-phase immediate purge for Ticket 03. An active target and a target
+-- suspended for only five days are both refused by the default strict rule and
+-- accepted only with p_skip_waiting_period => true. Everything below runs
+-- inside a savepoint and is rolled back, so the 30-day T27 flow that follows
+-- starts from a clean target state.
+
+-- Normalize the target before the savepoint so a stale receipt or suspension
+-- from an earlier run cannot short-circuit the main T27 flow after the
+-- savepoint is rolled back. The outer transaction still rolls everything back.
+update public.user_suspension_periods
+set restored_at = now(), restored_by = current_setting('t27.admin_id')::uuid
+where user_id = current_setting('t27.target_id')::uuid
+  and restored_at is null;
+
+delete from public.user_purge_receipts
+where user_id = current_setting('t27.target_id')::uuid;
+
+savepoint t27_immediate_purge_probe;
+
+-- The Edge Function calls this service-only RPC. This call also proves that the
+-- service_role grant accepts the new three-argument signature.
+set local role service_role;
+select public.admin_begin_user_purge(
+  current_setting('t27.target_id')::uuid,
+  current_setting('t27.admin_id')::uuid,
+  true
+);
+reset role;
+
+do $immediate_purge_probe$
+declare
+  admin_id uuid := current_setting('t27.admin_id')::uuid;
+  target_id uuid := current_setting('t27.target_id')::uuid;
+  other_admin_id uuid;
+  receipt jsonb;
+begin
+  if not exists (
+    select 1 from public.user_purge_receipts as purge
+    where purge.user_id = target_id
+      and purge.status = 'pending'
+      and purge.requested_by = admin_id
+      and purge.completed_at is null
+  ) then
+    raise exception 'service_role_immediate_purge_was_not_recorded';
+  end if;
+  if not public.admin_cancel_user_purge(target_id, admin_id) then
+    raise exception 'immediate_purge_probe_could_not_cancel_receipt';
+  end if;
+
+  -- Active target: the strict default still refuses to start a purge.
+  begin
+    perform public.admin_begin_user_purge(target_id, admin_id, false);
+    raise exception 'active_user_purge_allowed_without_immediate_flag';
+  exception
+    when sqlstate '55000' then null;
+  end;
+  if exists (
+    select 1 from public.user_purge_receipts as purge
+    where purge.user_id = target_id
+      and purge.status in ('pending', 'completed')
+  ) then
+    raise exception 'rejected_active_purge_created_a_receipt';
+  end if;
+
+  -- Active target: the explicit testing-phase flag enters pending.
+  receipt := public.admin_begin_user_purge(target_id, admin_id, true);
+  if receipt->>'user_id' <> target_id::text
+     or receipt->>'status' <> 'pending'
+     or receipt->>'purged_at' is not null then
+    raise exception 'immediate_active_purge_did_not_return_pending_receipt';
+  end if;
+  if not public.admin_cancel_user_purge(target_id, admin_id) then
+    raise exception 'immediate_purge_probe_could_not_cancel_active_receipt';
+  end if;
+
+  -- A five-day suspension is still inside the 30-day window.
+  insert into public.user_suspension_periods (user_id, suspended_at, suspended_by)
+  values (target_id, now() - interval '5 days', admin_id);
+
+  begin
+    perform public.admin_begin_user_purge(target_id, admin_id, false);
+    raise exception 'recent_suspension_purge_allowed_without_immediate_flag';
+  exception
+    when sqlstate '55000' then null;
+  end;
+  if exists (
+    select 1 from public.user_purge_receipts as purge
+    where purge.user_id = target_id
+      and purge.status in ('pending', 'completed')
+  ) then
+    raise exception 'rejected_recent_suspension_purge_created_a_receipt';
+  end if;
+
+  receipt := public.admin_begin_user_purge(target_id, admin_id, true);
+  if receipt->>'status' <> 'pending' then
+    raise exception 'immediate_recent_suspension_purge_did_not_return_pending';
+  end if;
+  if not public.admin_cancel_user_purge(target_id, admin_id) then
+    raise exception 'immediate_purge_probe_could_not_cancel_recent_receipt';
+  end if;
+
+  -- Administrator targets stay protected even with the immediate flag.
+  select administrator.user_id into other_admin_id
+  from public.app_admins as administrator
+  where administrator.user_id <> admin_id
+    and not exists (
+      select 1 from public.user_purge_receipts as purge
+      where purge.user_id = administrator.user_id
+        and purge.status in ('pending', 'completed')
+    )
+  order by administrator.user_id
+  limit 1;
+
+  begin
+    if other_admin_id is null then
+      perform public.admin_begin_user_purge(admin_id, admin_id, true);
+    else
+      perform public.admin_begin_user_purge(other_admin_id, admin_id, true);
+    end if;
+    raise exception 'administrator_identity_purge_allowed_in_testing_phase';
+  exception
+    when sqlstate '42501' then null;
+  end;
+end
+$immediate_purge_probe$;
+
+rollback to savepoint t27_immediate_purge_probe;
+
 -- Give the target a consumed eligibility row so the test covers fresh
 -- eligibility issuance after a completed purge.
 delete from public.registration_eligibility
@@ -102,7 +230,9 @@ where user_id = current_setting('t27.target_id')::uuid
   and restored_at is null;
 
 -- The service-only begin RPC verifies the administrator and current retention
--- state. The returned pending state is not a local cleanup receipt.
+-- state. The two-argument call relies on p_skip_waiting_period defaulting to
+-- false, so the strict 30-day rule still applies here. The returned pending
+-- state is not a local cleanup receipt.
 set local role service_role;
 select public.admin_begin_user_purge(
   current_setting('t27.target_id')::uuid,
@@ -467,9 +597,12 @@ $fresh_identity_probe$;
 
 do $privilege_probe$
 begin
+  if to_regprocedure('public.admin_begin_user_purge(uuid, uuid)') is not null then
+    raise exception 'legacy_two_argument_begin_purge_signature_still_exists';
+  end if;
   if has_function_privilege(
     'authenticated',
-    'public.admin_begin_user_purge(uuid, uuid)',
+    'public.admin_begin_user_purge(uuid, uuid, boolean)',
     'execute'
   ) then
     raise exception 'authenticated_can_begin_purge_directly';
@@ -490,7 +623,7 @@ begin
   end if;
   if not has_function_privilege(
     'service_role',
-    'public.admin_begin_user_purge(uuid, uuid)',
+    'public.admin_begin_user_purge(uuid, uuid, boolean)',
     'execute'
   ) then
     raise exception 'service_role_cannot_begin_purge';

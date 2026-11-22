@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../auth/auth_repository.dart';
+import '../auth/user_lifecycle.dart';
 import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_error_text.dart';
@@ -11,6 +13,7 @@ import 'account_time_zone.dart';
 import 'avatar_image.dart';
 import 'avatar_crop_page.dart';
 import 'avatar_picker.dart';
+import 'change_password_page.dart';
 import 'profile_repository.dart';
 
 /// Edits the account display name, avatar and account-level display time zone.
@@ -24,10 +27,17 @@ class ProfileEditPage extends StatefulWidget {
     super.key,
     required this.repository,
     required this.avatarPicker,
+    this.authRepository,
+    this.lifecycleRepository,
   });
 
   final ProfileRepository repository;
   final AvatarPicker avatarPicker;
+
+  /// 账号自助动作的依赖。未注入时（隔离组件测试、无 Supabase 环境）不渲染
+  /// 「账号安全」分组：修改密码必须有可用的登录会话，入口缺省比点开再报错好。
+  final AuthRepository? authRepository;
+  final UserLifecycleStatusRepository? lifecycleRepository;
 
   @override
   State<ProfileEditPage> createState() => _ProfileEditPageState();
@@ -257,6 +267,21 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     }
   }
 
+  /// 修改密码是独立二级页：它有自己的表单与本页无关的失败原因，
+  /// 因此不把输入框塞进资料表单。
+  Future<void> _openChangePassword() async {
+    final authRepository = widget.authRepository;
+    if (authRepository == null) return;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ChangePasswordPage(
+          authRepository: authRepository,
+          lifecycleRepository: widget.lifecycleRepository,
+        ),
+      ),
+    );
+  }
+
   Future<void> _retry() async {
     setState(() => _busy = true);
     try {
@@ -344,6 +369,21 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
               if (_busy) ...[
                 const SizedBox(height: 12),
                 const LinearProgressIndicator(),
+              ],
+              if (widget.authRepository != null) ...[
+                const SizedBox(height: PactaSpacing.xl),
+                const PactaSectionHeader(title: '账号安全'),
+                PactaGroupedList(
+                  children: [
+                    PactaSettingsTile(
+                      tileKey: const ValueKey('profile-change-password-entry'),
+                      leadingIcon: Icons.lock_outline,
+                      title: '修改密码',
+                      subtitle: '验证当前密码后更新登录密码',
+                      onTap: _busy || _picking ? null : _openChangePassword,
+                    ),
+                  ],
+                ),
               ],
             ],
           ),

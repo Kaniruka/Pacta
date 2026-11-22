@@ -110,12 +110,19 @@ class FocusChainOverview extends StatelessWidget {
     required this.records,
     this.appointmentRecord,
     required this.statistics,
+    this.appointmentStatistics,
   });
 
   final ChainSignalsRepository? repository;
   final List<FocusChainRecord> records;
   final AppointmentChainRecord? appointmentRecord;
   final Map<FocusChainMode, FocusSessionStatistics> statistics;
+
+  /// 预约链的实际准备耗时统计；为空时按 0 秒显示，保持隔离组件调用兼容。
+  ///
+  /// 与专注链共用 [FocusSessionStatistics]，所以「累计/平均」的口径与
+  /// 专注历史时间轴完全同源。
+  final FocusSessionStatistics? appointmentStatistics;
 
   @override
   Widget build(BuildContext context) {
@@ -145,62 +152,45 @@ class FocusChainOverview extends StatelessWidget {
   }
 
   Widget _content(BuildContext context, ChainSignalTexts texts) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final columnLabel = theme.textTheme.labelMedium?.copyWith(
-      color: colors.onSurfaceVariant,
-    );
-    Widget header(String text) =>
-        Text(text, textAlign: TextAlign.right, style: columnLabel);
     final elite = _recordFor(FocusChainMode.elite);
     final regular = _recordFor(FocusChainMode.regular);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // 链记录卡：分组白底 + 1dp hairline 分隔，图标井与主次数字分层。
+        // 链记录卡：M3 Expressive 分段卡片。三条链各自成段，段间只留透明
+        // 间隙；表头行已删除，数字直接跟在自己的链名下读，不再靠表格列对齐。
         PactaGroupedList(
           key: const ValueKey('focus-chain-table'),
           children: [
-            // 表头与数据行共用同一行结构与同一组 flex，
-            // 右对齐边界由布局本身保证，不靠各处比例碰巧一致。
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                PactaSpacing.lg,
-                PactaSpacing.xs,
-                PactaSpacing.lg,
-                PactaSpacing.xxs,
-              ),
-              child: _metricRow(
-                leading: const SizedBox.shrink(),
-                current: header('当前连续'),
-                best: header('历史最高'),
-              ),
-            ),
-            _chainBlock(
+            _chainSegment(
               context,
               label: FocusChainMode.elite.label,
               icon: Icons.shield_outlined,
-              record: elite,
+              current: elite?.currentConsecutive ?? 0,
+              best: elite?.bestConsecutive ?? 0,
               statistics: statistics[FocusChainMode.elite],
               // 口径说明只挂在第一组「累计/平均」上：说明的正是这一行数字。
-              footnoteNote: focusDurationRule,
-              footnoteNoteKey: focusChainNoteKey,
+              note: focusDurationRule,
+              noteKey: focusChainNoteKey,
             ),
-            _chainBlock(
+            _chainSegment(
               context,
               label: FocusChainMode.regular.label,
               icon: Icons.all_inclusive,
-              record: regular,
+              current: regular?.currentConsecutive ?? 0,
+              best: regular?.bestConsecutive ?? 0,
               statistics: statistics[FocusChainMode.regular],
             ),
-            _chainBlock(
+            _chainSegment(
               context,
               label: '预约链',
               icon: Icons.schedule_outlined,
-              appointment: appointmentRecord,
+              current: appointmentRecord?.currentConsecutive ?? 0,
+              best: appointmentRecord?.bestConsecutive ?? 0,
+              statistics: appointmentStatistics,
               isAppointment: true,
-              titleNote: appointmentEntryRule,
-              titleNoteKey: appointmentNoteKey,
+              note: appointmentEntryRule,
+              noteKey: appointmentNoteKey,
             ),
           ],
         ),
@@ -225,63 +215,35 @@ class FocusChainOverview extends StatelessWidget {
     );
   }
 
-  /// 三条链共用的列：名称 4 份、当前连续 2 份、历史最高 2 份。
-  Widget _metricRow({
-    required Widget leading,
-    required Widget current,
-    required Widget best,
-  }) => Row(
-    children: [
-      Expanded(flex: 4, child: leading),
-      Expanded(flex: 2, child: current),
-      Expanded(flex: 2, child: best),
-    ],
-  );
-
-  /// One aligned chain row: tinted icon well, name and streak values on one
-  /// line, optional detail underneath, with each explanation attached to the
-  /// row it describes.
-  Widget _chainBlock(
+  /// 一条链的分段卡片：左侧图标井 + 双行信息，右侧双行数值。
+  ///
+  /// 三条链共用同一套内边距与两行结构：链名行 + 「累计/平均」行；右侧是
+  /// 「当前连续 / 历史最高」两行数值。三张卡的高度因此由同一套行高决定，
+  /// 不再需要原来的「当前连续 | 历史最高」表头表格。
+  Widget _chainSegment(
     BuildContext context, {
     required String label,
     required IconData icon,
-    FocusChainRecord? record,
-    FocusSessionStatistics? statistics,
-    AppointmentChainRecord? appointment,
+    required int current,
+    required int best,
+    required FocusSessionStatistics? statistics,
     bool isAppointment = false,
-    String? footnoteNote,
-    Key? footnoteNoteKey,
-    String? titleNote,
-    Key? titleNoteKey,
+    String? note,
+    Key? noteKey,
   }) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final footnoteStyle = theme.textTheme.bodySmall?.copyWith(
+    final captionStyle = theme.textTheme.labelSmall?.copyWith(
       color: colors.onSurfaceVariant,
     );
-    final current =
-        appointment?.currentConsecutive ?? record?.currentConsecutive ?? 0;
-    final best = appointment?.bestConsecutive ?? record?.bestConsecutive ?? 0;
-    final footnotes = _footnoteChildren(
-      label: label,
-      isAppointment: isAppointment,
-      statistics: statistics,
-      style: footnoteStyle,
-    );
-    final hasDetail = footnoteNote != null || footnotes.isNotEmpty;
-    final chainRow = Padding(
-      // 三行共用一个紧凑行高：图标井 32dp + 上下 4dp，正好读成一档 40dp 行。
-      padding: const EdgeInsets.fromLTRB(
-        PactaSpacing.lg,
-        PactaSpacing.xs,
-        PactaSpacing.lg,
-        PactaSpacing.xs,
-      ),
-      child: _metricRow(
-        leading: Row(
+    // 说明与它解释的内容绑在一起：点按链名、行内 ⓘ 或「累计/平均」都能展开。
+    final explainedNote = isAppointment ? null : note;
+    final info = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
           children: [
-            _chainIconWell(context, icon, emphasised: !isAppointment),
-            const SizedBox(width: PactaSpacing.md),
             Flexible(
               child: Text(
                 label,
@@ -292,98 +254,133 @@ class FocusChainOverview extends StatelessWidget {
                 style: theme.textTheme.titleMedium,
               ),
             ),
-            // 提示挂在整行上，图标紧跟链名，与信号卡的标签行同构。
-            if (titleNote != null) ...[
+            // 说明图标紧跟链名：与信号卡的标签行同构，也不和「累计/平均」
+            // 抢同一行的宽度（窄屏下那会直接把时长挤到第二行）。
+            if (note != null) ...[
               const SizedBox(width: PactaSpacing.xs),
               _infoGlyph(context),
             ],
           ],
         ),
-        current: _metricValue(
-          '$current',
-          _primaryValueStyle(theme),
-          '$label当前连续 $current 次',
-        ),
-        best: _metricValue(
-          '$best',
-          _secondaryValueStyle(theme),
-          '$label历史最高 $best 次',
-        ),
-      ),
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (titleNote case final note?)
-          _explained(noteKey: titleNoteKey, note: note, child: chainRow)
-        else
-          chainRow,
-        if (hasDetail)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              PactaSpacing.lg,
-              0,
-              PactaSpacing.lg,
-              PactaSpacing.xs,
-            ),
-            child: _withNote(
-              context,
-              noteKey: footnoteNoteKey,
-              note: footnoteNote,
-              child: footnotes.isEmpty
-                  ? null
-                  : Wrap(
-                      spacing: PactaSpacing.sm,
-                      runSpacing: PactaSpacing.xxs,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: footnotes,
-                    ),
-            ),
-          ),
+        const SizedBox(height: PactaSpacing.xxs),
+        // 「累计/平均」三条链都保留：预约链不再是只有连续次数、没有时长的
+        // 孤岛；说明覆盖整列信息，ⓘ 与数值同属一条提示。
+        _durationRow(context, label: label, statistics: statistics),
       ],
     );
+    final content = Padding(
+      // 纵向 8dp：两条文本行再加 12dp 上下内边距会让三张卡多出 12dp，
+      // 360×800 的预约恢复态首屏因此要多滚一截。
+      padding: const EdgeInsets.symmetric(
+        horizontal: PactaSpacing.lg,
+        vertical: PactaSpacing.sm,
+      ),
+      child: Row(
+        children: [
+          _chainIconWell(context, icon, emphasised: !isAppointment),
+          // 图标井与信息列之间 8dp：12dp 时窄屏上精锐链的长时长会把
+          // 「累计/平均」折成两行，三张卡立刻高矮不一。
+          const SizedBox(width: PactaSpacing.sm),
+          Expanded(
+            child: explainedNote == null
+                ? info
+                : _explained(
+                    noteKey: noteKey,
+                    note: explainedNote,
+                    child: info,
+                  ),
+          ),
+          const SizedBox(width: PactaSpacing.md),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Semantics(
+                label: '$label当前连续 $current 次',
+                excludeSemantics: true,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text('$current', style: _primaryValueStyle(theme)),
+                    const SizedBox(width: PactaSpacing.xxs),
+                    Text('连续', style: captionStyle),
+                  ],
+                ),
+              ),
+              const SizedBox(height: PactaSpacing.xxs),
+              Semantics(
+                label: '$label历史最高 $best 次',
+                excludeSemantics: true,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text('最高', style: captionStyle),
+                    const SizedBox(width: PactaSpacing.xxs),
+                    Text(
+                      '$best',
+                      style: captionStyle?.copyWith(
+                        fontFeatures: const [ui.FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    // 预约链的入口句覆盖整条链：命中区是整行，而不是 14dp 的图标本身。
+    if (isAppointment && note != null) {
+      return _explained(noteKey: noteKey, note: note, child: content);
+    }
+    return content;
   }
 
-  /// 当前连续：主强调数字，字阶更大、字重 600。
+  /// 当前连续：主强调数字，字重 600 + 等宽数字。
+  ///
+  /// 字阶取 titleMedium 而不是 titleLarge：卡片只有两行，主数字再高出一档
+  /// 会把整张卡拉高 4dp，三张卡就吃掉首屏一档间距；强调由字重与等宽数字
+  /// 承担，不再靠压过链名的字阶。
   TextStyle? _primaryValueStyle(ThemeData theme) =>
-      theme.textTheme.titleLarge?.copyWith(
+      theme.textTheme.titleMedium?.copyWith(
         fontFeatures: const [ui.FontFeature.tabularFigures()],
         fontWeight: PactaFonts.semibold,
       );
 
-  /// 历史最高：次级数字，字阶收一档并退到 onSurfaceVariant。
-  TextStyle? _secondaryValueStyle(ThemeData theme) =>
-      theme.textTheme.titleMedium?.copyWith(
-        fontFeatures: const [ui.FontFeature.tabularFigures()],
-        fontWeight: PactaFonts.medium,
-        color: theme.colorScheme.onSurfaceVariant,
-      );
-
-  /// 说明与它解释的那一行绑在一起：点按整行显示提示。
-  Widget _withNote(
+  /// 「累计 / 平均」一行：三条链共用同一结构，只有时长文本不同。
+  ///
+  /// 一行放两段时长：段间距与「标签 / 数值」间距都收到 2dp、字阶取
+  /// labelSmall，给窄屏的长时长多留出一点宽度，尽量不折成第二行。
+  Widget _durationRow(
     BuildContext context, {
-    Key? noteKey,
-    required String? note,
-    Widget? child,
+    required String label,
+    required FocusSessionStatistics? statistics,
   }) {
-    if (note == null) return child ?? const SizedBox.shrink();
-    return _explained(
-      noteKey: noteKey,
-      note: note,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (child case final content?) ...[
-            Flexible(child: content),
-            const SizedBox(width: PactaSpacing.xs),
-          ],
-          _infoGlyph(context),
-        ],
-      ),
+    return Wrap(
+      spacing: PactaSpacing.xxs,
+      runSpacing: PactaSpacing.xxs,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        _DurationMetric(
+          key: ValueKey('focus-chain-stat-$label-累计'),
+          label: '累计',
+          seconds: statistics?.totalDurationSeconds ?? 0,
+        ),
+        _DurationMetric(
+          key: ValueKey('focus-chain-stat-$label-平均'),
+          label: '平均',
+          seconds: statistics?.averageDurationSeconds.round() ?? 0,
+        ),
+      ],
     );
   }
 
-  /// 提示自带独立语义节点：同一容器内的多条提示会并成一个节点，只有一条能被读出。
+  /// 说明与它解释的那一行绑在一起：点按整行显示提示。
   Widget _explained({
     Key? noteKey,
     required String note,
@@ -404,38 +401,6 @@ class FocusChainOverview extends StatelessWidget {
     size: PactaIconSizes.micro,
     color: Theme.of(context).colorScheme.onSurfaceVariant,
   );
-
-  List<Widget> _footnoteChildren({
-    required String label,
-    required bool isAppointment,
-    required FocusSessionStatistics? statistics,
-    required TextStyle? style,
-  }) {
-    return [
-      if (!isAppointment) ...[
-        _DurationMetric(
-          key: ValueKey('focus-chain-stat-$label-累计'),
-          label: '累计',
-          seconds: statistics?.totalDurationSeconds ?? 0,
-        ),
-        _DurationMetric(
-          key: ValueKey('focus-chain-stat-$label-平均'),
-          label: '平均',
-          seconds: statistics?.averageDurationSeconds.round() ?? 0,
-        ),
-      ],
-    ];
-  }
-
-  Widget _metricValue(String value, TextStyle? style, String semanticsLabel) =>
-      Padding(
-        padding: const EdgeInsets.only(left: PactaSpacing.sm),
-        child: Semantics(
-          label: semanticsLabel,
-          excludeSemantics: true,
-          child: Text(value, textAlign: TextAlign.right, style: style),
-        ),
-      );
 }
 
 class _SignalAction extends StatelessWidget {
@@ -554,19 +519,19 @@ class _DurationMetric extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     return Wrap(
-      spacing: PactaSpacing.xs,
+      spacing: PactaSpacing.xxs,
       runSpacing: PactaSpacing.xxs,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         Text(
           label,
-          style: theme.textTheme.bodySmall?.copyWith(
+          style: theme.textTheme.labelSmall?.copyWith(
             color: colors.onSurfaceVariant,
           ),
         ),
         Text(
           formatEffectiveDuration(seconds),
-          style: theme.textTheme.bodySmall?.copyWith(
+          style: theme.textTheme.labelSmall?.copyWith(
             fontFeatures: const [ui.FontFeature.tabularFigures()],
           ),
         ),

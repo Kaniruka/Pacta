@@ -5,22 +5,18 @@ class FakeAuthRepository implements AuthRepository {
   String? signedInUser;
   UserLifecycleStatus? lifecycleStatus;
   Object? lifecycleStatusError;
-  bool administrator = false;
-  List<ManagedUserLifecycle> managedUsers = const [];
-  final suspendedUserIds = <String>[];
-  final restoredUserIds = <String>[];
-  final purgedUserIds = <String>[];
   final purgeReceiptLookupIds = <String>[];
   final lookupPurgeReceipts = <String, UserPurgeReceipt>{};
-  UserPurgeReceipt? purgeReceipt;
   UserPurgeReceipt? lookupPurgeReceiptResult;
-  Object? purgeError;
   Object? purgeReceiptLookupError;
-  Object? passwordResetError;
   Object? signInError;
-  String? passwordResetEmail;
-  String? passwordResetValue;
-  bool? passwordResetManualVerificationConfirmed;
+
+  /// 自助修改密码：只记录调用与入参，错误由 [changePasswordError] 注入，
+  /// 测试因此能区分“界面拦下了”和“仓储被调用了”。
+  int changePasswordCalls = 0;
+  String? lastCurrentPassword;
+  String? lastNewPassword;
+  Object? changePasswordError;
 
   @override
   Stream<String?> get authState => Stream.value(signedInUser);
@@ -49,24 +45,14 @@ class FakeAuthRepository implements AuthRepository {
   }
 
   @override
-  Future<bool> isAdministrator() async => administrator;
-
-  @override
-  Future<void> grantEligibility({required String email}) async {}
-
-  @override
-  Future<bool> revokeEligibility({required String email}) async => false;
-
-  @override
-  Future<void> adminResetUserPassword({
-    required String targetEmail,
+  Future<void> changePassword({
+    required String currentPassword,
     required String newPassword,
-    required bool manualVerificationConfirmed,
   }) async {
-    passwordResetEmail = targetEmail;
-    passwordResetValue = newPassword;
-    passwordResetManualVerificationConfirmed = manualVerificationConfirmed;
-    final error = passwordResetError;
+    changePasswordCalls++;
+    lastCurrentPassword = currentPassword;
+    lastNewPassword = newPassword;
+    final error = changePasswordError;
     if (error != null) throw error;
   }
 
@@ -79,76 +65,6 @@ class FakeAuthRepository implements AuthRepository {
           isSuspended: false,
           checkedAt: DateTime.now().toUtc(),
         );
-  }
-
-  @override
-  Future<List<ManagedUserLifecycle>> listUserLifecycles() async => managedUsers;
-
-  @override
-  Future<void> suspendUser(String userId) async {
-    suspendedUserIds.add(userId);
-    final index = managedUsers.indexWhere((user) => user.userId == userId);
-    if (index == -1) return;
-    final now = DateTime.now().toUtc();
-    final previous = managedUsers[index];
-    managedUsers = [
-      for (var current = 0; current < managedUsers.length; current++)
-        if (current == index)
-          ManagedUserLifecycle(
-            userId: previous.userId,
-            email: previous.email,
-            createdAt: previous.createdAt,
-            isSuspended: true,
-            suspendedAt: now,
-            purgeEligibleAt: now.add(const Duration(days: 30)),
-            isEligibleForPurge: false,
-          )
-        else
-          managedUsers[current],
-    ];
-  }
-
-  @override
-  Future<void> restoreUser(String userId) async {
-    restoredUserIds.add(userId);
-    final index = managedUsers.indexWhere((user) => user.userId == userId);
-    if (index == -1) return;
-    final previous = managedUsers[index];
-    managedUsers = [
-      for (var current = 0; current < managedUsers.length; current++)
-        if (current == index)
-          ManagedUserLifecycle(
-            userId: previous.userId,
-            email: previous.email,
-            createdAt: previous.createdAt,
-            isSuspended: false,
-            restoredAt: DateTime.now().toUtc(),
-            isEligibleForPurge: false,
-          )
-        else
-          managedUsers[current],
-    ];
-  }
-
-  @override
-  Future<UserPurgeReceipt> purgeUser(String userId) async {
-    purgedUserIds.add(userId);
-    final error = purgeError;
-    if (error != null) throw error;
-    final receipt =
-        purgeReceipt ??
-        UserPurgeReceipt(
-          userId: userId,
-          status: UserPurgeStatus.completed,
-          purgedAt: DateTime.now().toUtc(),
-        );
-    if (receipt.confirmsPurgedUser(userId)) {
-      managedUsers = [
-        for (final user in managedUsers)
-          if (user.userId != userId) user,
-      ];
-    }
-    return receipt;
   }
 
   @override
