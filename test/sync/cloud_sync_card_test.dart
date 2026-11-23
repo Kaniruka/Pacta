@@ -451,6 +451,92 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await database.close();
   });
+
+  // 平板/桌面宽度下曾经把标题与状态各分一半 flex：状态短的时候从 50% 分界
+  // 处开始右对齐，看上去飘在卡片中间；状态一换行又会把标题与箭头推离中线。
+  // 这里把 360 / 600 / 840 / 1280 四个宽度的几何关系全部钉死。
+  for (final width in <double>[360, 600, 840, 1280]) {
+    testWidgets('${width.toInt()}dp 下标题、状态与箭头严格同一条水平中线', (tester) async {
+      tester.view.physicalSize = Size(width, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      final database = PactaDatabase(NativeDatabase.memory());
+      final repository = CloudSnapshotRepository(
+        database: database,
+        remote: InMemoryCloudSnapshotRemote(),
+        userId: _userId,
+        deviceId: 'tablet-a',
+        deviceName: '平板',
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CloudSyncCard(
+              repository: repository,
+              onDownloaded: () async {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final title = tester.getRect(find.text('数据同步'));
+      final status = tester.getRect(find.text('尚未同步'));
+      final icon = tester.getRect(find.byIcon(Icons.cloud_sync_outlined));
+      final chevron = tester.getRect(find.byIcon(Icons.chevron_right));
+      final statusText = tester.widget<Text>(find.text('尚未同步'));
+
+      // 时间戳永远单行：换行会把行高撑起来，标题与箭头就不再与它同中线。
+      expect(statusText.maxLines, 1);
+      expect(statusText.softWrap, isFalse);
+      expect(
+        title.left,
+        moreOrLessEquals(icon.right + 12, epsilon: 0.5),
+        reason: '标题始终紧贴左侧图标，不被右侧状态挤压',
+      );
+
+      if (width < 400) {
+        expect(
+          status.left,
+          moreOrLessEquals(title.left, epsilon: 0.5),
+          reason: '窄屏时间戳在标题下一行左对齐',
+        );
+        expect(
+          status.top,
+          greaterThanOrEqualTo(title.bottom - 0.01),
+          reason: '窄屏时间戳在标题下方',
+        );
+      } else {
+        expect(
+          status.center.dy,
+          moreOrLessEquals(title.center.dy, epsilon: 1),
+          reason: '${width.toInt()}dp 下标题与时间戳必须同一条水平中线',
+        );
+        expect(
+          status.center.dy,
+          moreOrLessEquals(chevron.center.dy, epsilon: 1),
+          reason: '时间戳与右箭头同样同中线，不掉到标题上方或下方',
+        );
+        expect(
+          status.right,
+          moreOrLessEquals(chevron.left - 4, epsilon: 0.5),
+          reason: '时间戳右缘紧邻箭头，而不是停在卡片中线靠左',
+        );
+        expect(
+          status.left,
+          greaterThan(title.right),
+          reason: '时间戳排在标题右侧，不与标题重叠',
+        );
+      }
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await database.close();
+    });
+  }
 }
 
 /// 与 App 组合一致的自动上传协调器：开关只在配置了云端连接的卡片里出现。

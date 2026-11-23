@@ -278,6 +278,7 @@ void main() {
     await tester.pump();
     expect(find.textContaining('新加坡 · Asia/Singapore'), findsOneWidget);
     await tester.ensureVisible(find.text('保存'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('保存'));
     await pumpBoard(tester);
 

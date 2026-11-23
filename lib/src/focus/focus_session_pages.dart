@@ -1,16 +1,20 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/app_providers.dart';
 import '../tasks/task_models.dart';
+import '../theme/pacta_fonts.dart';
 import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_date_format.dart';
 import '../ui/pacta_error_text.dart';
+import '../ui/pacta_grouped_list.dart';
 import 'focus_flow_helpers.dart';
 import 'focus_models.dart';
+import 'focus_time_zones.dart';
 
 class AppointmentPreparationPage extends ConsumerStatefulWidget {
   const AppointmentPreparationPage({
@@ -38,6 +42,9 @@ class _AppointmentPreparationPageState
   bool _busy = false;
   String? _error;
 
+  /// 账号显示时区只影响「预计 HH:mm 进入专注」这一行；读不到就回退本地时间。
+  late final Future<String?> _displayTimeZoneId;
+
   @override
   void initState() {
     super.initState();
@@ -47,6 +54,7 @@ class _AppointmentPreparationPageState
     _duration = TextEditingController(
       text: _minutesFor(widget.appointment.durationSeconds).toString(),
     );
+    _displayTimeZoneId = readAccountDisplayTimeZone(ref);
     unawaited(_syncAppointmentNotification(widget.appointment));
     unawaited(_loadTasks());
     unawaited(_refresh());
@@ -260,15 +268,16 @@ class _AppointmentPreparationPageState
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final appointment = _current ?? widget.appointment;
     final now = ref.watch(displayClockProvider)().toUtc();
     final preparationSeconds = appointment.effectivePreparationSeconds;
-    final remainingSeconds = appointment.isActive
-        ? appointment.endsAt
-              .difference(now)
-              .inSeconds
-              .clamp(0, preparationSeconds)
-        : 0;
+    final remaining = appointment.endsAt.difference(now);
+    // 微秒向上取整：刚进入准备页时（如还剩 599.4 秒）仍显示完整的 10:00，
+    // 而不是立刻掉成 09:59；只有真正到达结束时刻才显示 00:00。
+    final remainingSeconds = !appointment.isActive
+        ? 0
+        : _ceilRemainingSeconds(remaining, preparationSeconds);
     final progress = preparationSeconds <= 0
         ? 0.0
         : 1 - (remainingSeconds / preparationSeconds);
@@ -283,29 +292,94 @@ class _AppointmentPreparationPageState
           child: ListView(
             padding: PactaSpacing.pageInsets(context),
             children: [
-              Text(
-                _taskTitle(appointment.taskId),
-                style: Theme.of(context).textTheme.headlineSmall,
-                textAlign: TextAlign.center,
+              Card(
+                key: const ValueKey('appointment-countdown-card'),
+                child: Padding(
+                  // 16dp 而不是 24dp：800×600 这类矮视口里，倒计时卡与配置卡
+                  // 之间必须让「保存配置（不重置准备时间）」无需滚动即可点。
+                  padding: const EdgeInsets.all(PactaSpacing.lg),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        _taskTitle(appointment.taskId),
+                        style: theme.textTheme.titleMedium,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: PactaSpacing.sm),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: PactaSpacing.xs,
+                        runSpacing: PactaSpacing.xs,
+                        children: [
+                          PactaStatusBadge(
+                            label: appointment.isActive
+                                ? '准备阶段'
+                                : appointment.isFailed
+                                ? '预约已取消'
+                                : '已进入专注',
+                            icon: appointment.isActive
+                                ? Icons.hourglass_top
+                                : appointment.isFailed
+                                ? Icons.link_off
+                                : Icons.play_circle_outline,
+                            tone: appointment.isActive
+                                ? PactaStatusBadgeTone.primary
+                                : appointment.isFailed
+                                ? PactaStatusBadgeTone.error
+                                : PactaStatusBadgeTone.success,
+                          ),
+                          if (appointment.isActive)
+                            PactaStatusBadge(
+                              label:
+                                  '本场准备 ${AppointmentPreparationDuration.describe(preparationSeconds)}',
+                              icon: Icons.timelapse,
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: PactaSpacing.lg),
+                      Text(
+                        appointment.isActive
+                            ? formatClock(remainingSeconds)
+                            : '00:00',
+                        style: theme.textTheme.displayLarge?.copyWith(
+                          fontFeatures: const [ui.FontFeature.tabularFigures()],
+                          fontWeight: PactaFonts.semibold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: PactaSpacing.md),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(PactaSpacing.xs),
+                        child: LinearProgressIndicator(
+                          value: progress.clamp(0.0, 1.0),
+                          minHeight: 6,
+                        ),
+                      ),
+                      const SizedBox(height: PactaSpacing.sm),
+                      if (appointment.isActive)
+                        _ExpectedEndClock(
+                          endsAt: appointment.endsAt,
+                          suffix: '进入专注',
+                          timeZoneId: _displayTimeZoneId,
+                        )
+                      else
+                        Text(
+                          appointment.isFailed
+                              ? '预约已取消，预约链当前记录已清零。'
+                              : '预约已成功进入专注。',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                    ],
+                  ),
+                ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                appointment.isActive
-                    ? '本场准备 ${AppointmentPreparationDuration.describe(preparationSeconds)}，结束后自动进入专注，不需要再次点击或执行专注标志。'
-                    : appointment.isFailed
-                    ? '预约已取消，预约链当前记录已清零。'
-                    : '预约已成功进入专注。',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 28),
-              Text(
-                appointment.isActive ? formatClock(remainingSeconds) : '00:00',
-                style: Theme.of(context).textTheme.displayLarge,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              LinearProgressIndicator(value: progress.clamp(0.0, 1.0)),
-              const SizedBox(height: 16),
+              const SizedBox(height: PactaSpacing.sm),
               if (appointment.isActive)
                 Card(
                   child: Padding(
@@ -402,10 +476,6 @@ class _AppointmentPreparationPageState
                   onPressed: canProceed ? _cancelAppointment : null,
                   child: const Text('取消预约并填写失败原因'),
                 ),
-                const Text(
-                  '准备阶段不能暂停，也不限制你在现实中的行为。',
-                  textAlign: TextAlign.center,
-                ),
               ] else
                 FilledButton(
                   onPressed: () => Navigator.of(context).pop(),
@@ -438,10 +508,14 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
   FocusSession? _current;
   bool _busy = false;
 
+  /// 账号显示时区只影响「预计 HH:mm 结束」这一行；读不到就回退本地时间。
+  late final Future<String?> _displayTimeZoneId;
+
   @override
   void initState() {
     super.initState();
     _current = widget.session;
+    _displayTimeZoneId = readAccountDisplayTimeZone(ref);
     unawaited(_syncSessionNotification(widget.session));
     _refresh();
     _timer = Timer.periodic(
@@ -628,92 +702,160 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
     final now = ref.watch(displayClockProvider)().toUtc();
     final reference = session.isPaused ? (session.pausedAt ?? now) : now;
     final remaining = session.endsAt.difference(reference);
-    final remainingSeconds = remaining.inSeconds.clamp(
-      0,
+    // 微秒向上取整：刚进入页面的第 0 秒区间（如还剩 1499.6 秒）仍显示完整的
+    // 25:00，而不是立刻掉成 24:59；只有真正归零才显示 00:00。
+    final remainingSeconds = _ceilRemainingSeconds(
+      remaining,
       session.durationSeconds,
     );
     final progress = session.durationSeconds == 0
         ? 1.0
         : 1 - (remainingSeconds / session.durationSeconds);
     final settled = !session.isUnfinished;
+    final settledText = _settledStatusText(session);
     return Scaffold(
       appBar: AppBar(title: const Text('专注进行中')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 520),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  widget.taskTitle,
-                  style: Theme.of(context).textTheme.headlineSmall,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 8),
-                Text(session.mode.label, textAlign: TextAlign.center),
-                const SizedBox(height: 36),
-                Text(
-                  settled ? '00:00' : formatClock(remainingSeconds),
-                  style: Theme.of(context).textTheme.displayLarge,
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 20),
-                LinearProgressIndicator(value: settled ? 1 : progress),
-                const SizedBox(height: 20),
-                Text(
-                  session.isFailed
-                      ? '本次专注已失败，已保留有效投入时间。任务仍需你单独确认完成。\n失败原因：${session.failureReason ?? '未填写'}'
-                      : session.isEarlyCompleted
-                      ? '本次专注已获准提前完成，已生成一个专注节点并记录有效时间。\n依据：${session.completionRuleText ?? '未记录'}'
-                      : session.status == FocusSessionStatus.completed
-                      ? '本次专注已完成，已生成一个专注节点并记录有效时间。任务仍需你单独确认完成。'
-                      : session.isPaused
-                      ? '本次专注已暂停，暂停时间不计入有效投入。'
-                      : '倒计时归零后自动结算。返回其他页面不会使本次专注失败。',
-                  textAlign: TextAlign.center,
-                ),
-                if (session.isUnfinished) ...[
-                  const SizedBox(height: 24),
-                  Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 12,
-                    runSpacing: 8,
+          child: ListView(
+            padding: PactaSpacing.pageInsets(context),
+            children: [
+              Card(
+                key: const ValueKey('focus-session-countdown-card'),
+                child: Padding(
+                  // 与预约准备页同一套 16dp 内边距节奏：矮视口下按钮仍可点。
+                  padding: const EdgeInsets.all(PactaSpacing.lg),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      OutlinedButton.icon(
-                        onPressed: _busy ? null : _togglePause,
-                        icon: Icon(
-                          session.isPaused ? Icons.play_arrow : Icons.pause,
-                          size: PactaIconSizes.sm,
+                      Text(
+                        widget.taskTitle,
+                        style: Theme.of(context).textTheme.titleMedium,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: PactaSpacing.sm),
+                      Wrap(
+                        alignment: WrapAlignment.center,
+                        spacing: PactaSpacing.xs,
+                        runSpacing: PactaSpacing.xs,
+                        children: [
+                          PactaStatusBadge(
+                            label: session.mode.label,
+                            icon: Icons.timelapse,
+                            tone: PactaStatusBadgeTone.primary,
+                          ),
+                          if (session.isPaused)
+                            const PactaStatusBadge(
+                              label: '已暂停',
+                              icon: Icons.pause_circle_outline,
+                              tone: PactaStatusBadgeTone.warning,
+                            ),
+                          if (settled)
+                            PactaStatusBadge(
+                              label: session.isFailed
+                                  ? '已失败'
+                                  : session.isEarlyCompleted
+                                  ? '提前完成'
+                                  : '已完成',
+                              icon: session.isFailed
+                                  ? Icons.link_off
+                                  : Icons.check_circle_outline,
+                              tone: session.isFailed
+                                  ? PactaStatusBadgeTone.error
+                                  : PactaStatusBadgeTone.success,
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: PactaSpacing.lg),
+                      Text(
+                        settled ? '00:00' : formatClock(remainingSeconds),
+                        style: Theme.of(context).textTheme.displayLarge
+                            ?.copyWith(
+                              fontFeatures: const [
+                                ui.FontFeature.tabularFigures(),
+                              ],
+                              fontWeight: PactaFonts.semibold,
+                            ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: PactaSpacing.md),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(PactaSpacing.xs),
+                        child: LinearProgressIndicator(
+                          value: settled ? 1.0 : progress.clamp(0.0, 1.0),
+                          minHeight: 6,
                         ),
-                        label: Text(session.isPaused ? '继续' : '暂停'),
                       ),
-                      OutlinedButton.icon(
-                        onPressed: _busy ? null : _completeEarly,
-                        icon: const Icon(
-                          Icons.check_circle_outline,
-                          size: PactaIconSizes.sm,
-                        ),
-                        label: const Text('依据规则提前完成'),
-                      ),
-                      TextButton(
-                        onPressed: _busy ? null : _abandon,
-                        child: const Text('放弃本次专注'),
-                      ),
+                      if (!settled) ...[
+                        const SizedBox(height: PactaSpacing.sm),
+                        if (session.isPaused)
+                          Text(
+                            '已暂停 · 预计时间待继续',
+                            style: _expectedEndStyle(context),
+                            textAlign: TextAlign.center,
+                          )
+                        else
+                          _ExpectedEndClock(
+                            endsAt: session.endsAt,
+                            suffix: '结束',
+                            timeZoneId: _displayTimeZoneId,
+                          ),
+                      ],
                     ],
                   ),
-                ],
-                if (settled) ...[
-                  const SizedBox(height: 20),
-                  FilledButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('返回上一页'),
+                ),
+              ),
+              if (settledText != null) ...[
+                const SizedBox(height: PactaSpacing.md),
+                Text(
+                  settledText,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
-                ],
+                  textAlign: TextAlign.center,
+                ),
               ],
-            ),
+              if (session.isUnfinished) ...[
+                const SizedBox(height: PactaSpacing.lg),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: PactaSpacing.md,
+                  runSpacing: PactaSpacing.sm,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _busy ? null : _togglePause,
+                      icon: Icon(
+                        session.isPaused ? Icons.play_arrow : Icons.pause,
+                        size: PactaIconSizes.sm,
+                      ),
+                      label: Text(session.isPaused ? '继续' : '暂停'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _busy ? null : _completeEarly,
+                      icon: const Icon(
+                        Icons.check_circle_outline,
+                        size: PactaIconSizes.sm,
+                      ),
+                      label: const Text('依据规则提前完成'),
+                    ),
+                    TextButton(
+                      onPressed: _busy ? null : _abandon,
+                      child: const Text('放弃本次专注'),
+                    ),
+                  ],
+                ),
+              ],
+              if (settled) ...[
+                const SizedBox(height: PactaSpacing.lg),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('返回上一页'),
+                ),
+              ],
+            ],
           ),
         ),
       ),
@@ -724,3 +866,77 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
 String formatClock(int seconds) => formatPactaClock(seconds);
 
 int _minutesFor(int seconds) => (seconds / 60).ceil();
+
+/// 结算后的状态说明：只保留失败原因、提前完成依据与完成事实。
+///
+/// 不再复述「归零后自动结算」「任务仍需单独确认」这类规则说教：
+/// 规则在开始弹窗里已经讲过，结算页只回答「这一次怎么了」。
+String? _settledStatusText(FocusSession session) {
+  if (session.isFailed) {
+    return '本次专注已失败，已保留有效投入时间。\n'
+        '失败原因：${session.failureReason ?? '未填写'}';
+  }
+  if (session.isEarlyCompleted) {
+    return '已获准提前完成，已生成一个专注节点并记录有效时间。\n'
+        '依据：${session.completionRuleText ?? '未记录'}';
+  }
+  if (session.status == FocusSessionStatus.completed) {
+    return '本次专注已完成，已生成一个专注节点并记录有效时间。';
+  }
+  return null;
+}
+
+TextStyle? _expectedEndStyle(BuildContext context) {
+  final theme = Theme.of(context);
+  return theme.textTheme.bodyMedium?.copyWith(
+    color: theme.colorScheme.onSurfaceVariant,
+    fontFeatures: const [ui.FontFeature.tabularFigures()],
+  );
+}
+
+int _ceilRemainingSeconds(Duration remaining, int maxSeconds) {
+  if (remaining.inMicroseconds <= 0 || maxSeconds <= 0) return 0;
+  return (remaining.inMicroseconds / Duration.microsecondsPerSecond)
+      .ceil()
+      .clamp(0, maxSeconds);
+}
+
+/// 当前账号的显示时区；读不到资料或账号没有有效时区时返回 null。
+///
+/// 这是纯显示层：解析失败只让「预计 HH:mm」退回设备本地时间，
+/// 不参与倒计时计算，也不写回任何偏好。
+Future<String?> readAccountDisplayTimeZone(WidgetRef ref) async {
+  try {
+    final profile = await ref.read(profileRepositoryProvider).getProfile();
+    final zoneId = profile.displayTimeZoneId;
+    return zoneId != null && FocusTimeZones.contains(zoneId) ? zoneId : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// 「预计 HH:mm 结束 / 进入专注」行。
+///
+/// 时区解析完成前先按本地时间渲染同一行，解析完成后原行替换文本，
+/// 行高不跳，倒计时卡不会因为一次异步读取而上下抖动。
+class _ExpectedEndClock extends StatelessWidget {
+  const _ExpectedEndClock({
+    required this.endsAt,
+    required this.suffix,
+    required this.timeZoneId,
+  });
+
+  final DateTime endsAt;
+  final String suffix;
+  final Future<String?> timeZoneId;
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<String?>(
+    future: timeZoneId,
+    builder: (context, snapshot) => Text(
+      '预计 ${formatPactaTimeInZone(endsAt, timeZoneId: snapshot.data)} $suffix',
+      style: _expectedEndStyle(context),
+      textAlign: TextAlign.center,
+    ),
+  );
+}

@@ -13,6 +13,7 @@ import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/tasks/task_database.dart' hide FocusSession;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:pacta/src/ui/pacta_date_format.dart';
 
 const _taskTitle = '整理今天需要完成的长中文任务并记录思路';
 
@@ -180,6 +181,183 @@ void main() {
     expect(tester.takeException(), isNull);
     await h.unmount(tester);
   });
+
+  testWidgets('倒计时卡显示预计结束时间，并去掉冗余说教文案', (tester) async {
+    final h = _Fixture();
+    addTearDown(h.dispose);
+    final task = await h.seed();
+    final session = await h.focus.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    await h.pumpPage(
+      tester,
+      FocusSessionPage(session: session, taskTitle: _taskTitle),
+    );
+
+    expect(
+      find.byKey(const ValueKey('focus-session-countdown-card')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('预计 '), findsOneWidget);
+    expect(find.text('已暂停 · 预计时间待继续'), findsNothing);
+    // 结算规则不再在计时页复述：两句说教都必须消失。
+    expect(find.textContaining('倒计时归零后自动结算'), findsNothing);
+    expect(find.textContaining('任务仍需你单独确认完成'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await h.unmount(tester);
+  });
+
+  testWidgets('暂停时预计结束时间改为「已暂停 · 预计时间待继续」', (tester) async {
+    final h = _Fixture();
+    addTearDown(h.dispose);
+    final task = await h.seed();
+    final session = await h.focus.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    await h.pumpPage(
+      tester,
+      FocusSessionPage(session: session, taskTitle: _taskTitle),
+    );
+    h.now = h.now.add(const Duration(minutes: 3));
+    await h.focus.pauseSession(session.id, ruleText: '需要短暂离开');
+    await _tick(tester);
+
+    expect(find.text('已暂停 · 预计时间待继续'), findsOneWidget);
+    expect(find.textContaining('预计 '), findsNothing);
+    expect(tester.takeException(), isNull);
+    await h.unmount(tester);
+  });
+
+  testWidgets('预约准备页去掉冗余说教，并给出预计进入专注时间', (tester) async {
+    final h = _Fixture();
+    addTearDown(h.dispose);
+    final task = await h.seed();
+    final appointment = await h.focus.startAppointment(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+      preparation: const Duration(minutes: 10),
+    );
+    await h.pumpPage(
+      tester,
+      AppointmentPreparationPage(
+        appointment: appointment,
+        taskTitle: _taskTitle,
+      ),
+    );
+
+    expect(find.textContaining('本场准备 10 分钟'), findsOneWidget);
+    expect(find.textContaining('预计 '), findsOneWidget);
+    expect(find.textContaining('进入专注'), findsWidgets);
+    expect(find.textContaining('不需要再次点击'), findsNothing);
+    expect(find.textContaining('准备阶段不能暂停'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await h.unmount(tester);
+  });
+
+  testWidgets('800×600 矮视口下预约准备页的保存配置按钮无需滚动即可点', (tester) async {
+    final h = _Fixture();
+    addTearDown(h.dispose);
+    final task = await h.seed();
+    final appointment = await h.focus.startAppointment(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+      preparation: const Duration(minutes: 15),
+    );
+    await h.pumpPage(
+      tester,
+      AppointmentPreparationPage(
+        appointment: appointment,
+        taskTitle: _taskTitle,
+      ),
+    );
+    // 桌面矮视口：倒计时卡 + 配置卡必须一屏装得下，否则「保存配置」会被
+    // 挤到 y > 600，tap 只会在屏幕外命中。
+    tester.view.physicalSize = const Size(800, 600);
+    tester.view.devicePixelRatio = 1;
+    await tester.pumpAndSettle();
+
+    final save = find.text('保存配置（不重置准备时间）');
+    final rect = tester.getRect(save);
+    expect(rect.top, greaterThanOrEqualTo(0));
+    expect(rect.bottom, lessThanOrEqualTo(600), reason: '保存配置按钮完整落在视口内');
+    // 页面只有一个纵向滚动容器；配置卡里的输入框各自带一个横向 Scrollable，
+    // 这也正是 scrollUntilVisible 必须显式点名纵向列表的原因。
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Scrollable && widget.axisDirection == AxisDirection.down,
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(save);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.takeException(), isNull);
+    await h.unmount(tester);
+  });
+
+  test('startSession 在全部前置检查之后才采样 startedAt', () async {
+    var now = DateTime.utc(2026, 11, 15, 8);
+    final database = PactaDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final tasks = LocalTaskRepository(
+      database: database,
+      userId: 't09',
+      remote: InMemoryTaskRemote(),
+      cloudSyncEnabled: false,
+      now: () => now,
+    );
+    addTearDown(tasks.dispose);
+    final goal = await tasks.createGoal(
+      const GoalDraft(title: '采样目标', classification: TaskClassification.both),
+    );
+    final task = await tasks.createTask(
+      goal.id,
+      const TaskDraft(title: '采样任务', classification: TaskClassification.both),
+    );
+    // 前置查询（结算、冲突检查）在这套夹具里耗时 3 秒：采样必须发生在它们
+    // 之后，否则 startedAt 会倒退 3 秒，页面一进来就少 3 秒。
+    final focus = _SlowPrecheckFocusRepository(
+      database: database,
+      userId: 't09',
+      remote: InMemoryFocusRemote(),
+      cloudSyncEnabled: false,
+      now: () => now,
+      onSlowQuery: () => now = now.add(const Duration(seconds: 3)),
+    );
+    addTearDown(focus.dispose);
+
+    final session = await focus.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+
+    expect(session.startedAt, now, reason: '前置查询消耗的 3 秒不能算进已开始的专注');
+    expect(session.endsAt, now.add(const Duration(minutes: 25)));
+    expect(session.effectiveIntervals.single.startedAt, session.startedAt);
+  });
+
+  test('formatPactaTimeInZone 按账号时区换算，未知时区退回本地时间', () {
+    final endsAt = DateTime.utc(2026, 11, 15, 8, 25);
+    expect(formatPactaTimeInZone(endsAt, timeZoneId: 'Asia/Shanghai'), '16:25');
+    expect(formatPactaTimeInZone(endsAt, timeZoneId: 'Etc/UTC'), '08:25');
+    final local = endsAt.toLocal();
+    expect(
+      formatPactaTimeInZone(endsAt, timeZoneId: null),
+      '${local.hour.toString().padLeft(2, '0')}:'
+      '${local.minute.toString().padLeft(2, '0')}',
+    );
+    expect(
+      formatPactaTimeInZone(endsAt, timeZoneId: 'Not/AZone'),
+      formatPactaTimeInZone(endsAt, timeZoneId: null),
+    );
+  });
 }
 
 /// 让 250ms 轮询跑完一次数据库读取并重建。
@@ -240,6 +418,26 @@ class _CountingFocusRepository extends LocalFocusRepository {
   Future<FocusSession?> getSession(String sessionId) {
     getSessionCalls++;
     return super.getSession(sessionId);
+  }
+}
+
+/// 慢前置查询的仓储：`getActiveSession` 消耗 3 秒，用来锁住采样时机。
+class _SlowPrecheckFocusRepository extends LocalFocusRepository {
+  _SlowPrecheckFocusRepository({
+    required super.database,
+    required super.userId,
+    required super.remote,
+    super.cloudSyncEnabled,
+    super.now,
+    required this.onSlowQuery,
+  });
+
+  final void Function() onSlowQuery;
+
+  @override
+  Future<FocusSession?> getActiveSession() {
+    onSlowQuery();
+    return super.getActiveSession();
   }
 }
 

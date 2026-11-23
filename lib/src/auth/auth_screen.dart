@@ -110,6 +110,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _isRegistering = false;
+  bool _obscurePassword = true;
   bool _busy = false;
   String? _error;
 
@@ -147,71 +148,141 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     }
   }
 
+  /// 只取 message / code：`AuthException.toString()` 会把 `statusCode` 一起
+  /// 打出来。code 与 message 都要过一遍对照表——GoTrue 的邀请制失败常在
+  /// code 里写 `signup_not_allowed`，而 message 是不含 `eligib` 的英文句子。
+  /// 命中的只有中文文案，`statusCode` / `code` 永远不上屏。
   String _friendlyError(Object error) {
     if (error is AuthException) {
-      if (error.message.toLowerCase().contains('eligib')) {
-        return '该标识没有可用的注册资格，请联系管理员。';
-      }
-      // 只取 message：AuthException.toString() 会连 statusCode / code 一起
-      // 打出来。经 formatUserError 与其它页面共用同一套脱敏口径。
-      return formatUserError(error.message);
+      return describeKnownFailure(error.code ?? '') ??
+          describeKnownFailure(error.message) ??
+          formatUserError(error.message, fallback: '登录未完成，请稍后重试。');
     }
-    // 非鉴权异常（网络/服务端技术错误）统一换成可继续操作的中文提示。
-    return formatUserError(error);
+    return describeKnownFailure(error) ??
+        formatUserError(error, fallback: '登录未完成，请稍后重试。');
+  }
+
+  void _selectMode({required bool registering}) {
+    if (_busy || _isRegistering == registering) return;
+    setState(() {
+      _isRegistering = registering;
+      _error = null;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final width = MediaQuery.sizeOf(context).width;
     return Scaffold(
       body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 440),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(PactaSpacing.xl),
+        child: SingleChildScrollView(
+          padding: EdgeInsets.symmetric(
+            horizontal: PactaSpacing.gutterFor(width),
+            vertical: PactaSpacing.xl,
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
             child: Card(
               child: Padding(
-                padding: const EdgeInsets.all(28),
+                padding: const EdgeInsets.all(PactaSpacing.xl),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(
-                      Icons.anchor_rounded,
-                      size: PactaIconSizes.heroLarge,
-                      color: colors.primary,
+                    Center(
+                      child: Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: colors.primaryContainer,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.anchor_rounded,
+                          size: PactaIconSizes.hero,
+                          color: colors.onPrimaryContainer,
+                        ),
+                      ),
                     ),
                     const SizedBox(height: PactaSpacing.lg),
                     Text(
                       '进入 Pacta',
-                      style: Theme.of(context).textTheme.headlineMedium,
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.headlineSmall,
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _isRegistering ? '使用注册资格创建密码。' : '把注意力带回眼前的一步。',
-                      style: Theme.of(context).textTheme.bodyLarge,
+                    const SizedBox(height: PactaSpacing.xl),
+                    SegmentedButton<bool>(
+                      showSelectedIcon: false,
+                      expandedInsets: EdgeInsets.zero,
+                      segments: const [
+                        ButtonSegment(value: false, label: Text('登录')),
+                        ButtonSegment(value: true, label: Text('受邀注册')),
+                      ],
+                      selected: {_isRegistering},
+                      onSelectionChanged: _busy
+                          ? null
+                          : (selection) =>
+                                _selectMode(registering: selection.first),
                     ),
-                    const SizedBox(height: 28),
+                    if (_isRegistering) ...[
+                      const SizedBox(height: PactaSpacing.md),
+                      Text(
+                        '使用已开通注册资格的邮箱与密码（至少 8 位）激活账号',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: PactaSpacing.lg),
                     TextField(
                       controller: _email,
                       keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(labelText: '邮箱'),
+                      textInputAction: TextInputAction.next,
+                      autocorrect: false,
+                      decoration: const InputDecoration(
+                        labelText: '邮箱',
+                        prefixIcon: Icon(Icons.alternate_email_rounded),
+                      ),
                     ),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: PactaSpacing.md),
                     TextField(
                       controller: _password,
-                      obscureText: true,
-                      decoration: const InputDecoration(labelText: '密码'),
+                      obscureText: _obscurePassword,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => unawaited(_submit()),
+                      decoration: InputDecoration(
+                        labelText: '密码',
+                        prefixIcon: const Icon(Icons.lock_outline_rounded),
+                        suffixIcon: IconButton(
+                          tooltip: _obscurePassword ? '显示密码' : '隐藏密码',
+                          onPressed: () => setState(
+                            () => _obscurePassword = !_obscurePassword,
+                          ),
+                          icon: Icon(
+                            _obscurePassword
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                          ),
+                        ),
+                      ),
                     ),
                     if (_error != null) ...[
-                      const SizedBox(height: 14),
+                      const SizedBox(height: PactaSpacing.md),
                       Text(
                         _error!,
-                        style: Theme.of(context).textTheme.bodyMedium
-                            ?.copyWith(color: colors.error),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: colors.error,
+                        ),
                       ),
                     ],
-                    const SizedBox(height: 22),
+                    const SizedBox(height: PactaSpacing.xl),
                     FilledButton(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(0, 48),
+                      ),
                       onPressed: _busy ? null : _submit,
                       child: _busy
                           ? const SizedBox.square(
@@ -219,17 +290,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : Text(_isRegistering ? '注册' : '登录'),
-                    ),
-                    TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => setState(() {
-                              _isRegistering = !_isRegistering;
-                              _error = null;
-                            }),
-                      child: Text(
-                        _isRegistering ? '已有账号？返回登录' : '没有注册资格？联系管理员。',
-                      ),
                     ),
                   ],
                 ),

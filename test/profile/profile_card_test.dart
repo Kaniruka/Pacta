@@ -12,6 +12,7 @@ import 'package:pacta/src/focus/focus_chain_page.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
+import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/profile/account_time_zone.dart';
 import 'package:pacta/src/profile/avatar_image.dart';
 import 'package:pacta/src/profile/avatar_picker.dart';
@@ -319,7 +320,10 @@ class _HistoryTaskRepository extends UnavailableTaskRepository {
 }
 
 Finder _editPageScrollable() => find
-    .descendant(of: find.byType(ListView), matching: find.byType(Scrollable))
+    .descendant(
+      of: find.byType(ProfileEditPage),
+      matching: find.byType(Scrollable),
+    )
     .first;
 
 void main() {
@@ -607,6 +611,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '小林二号');
     await tester.ensureVisible(find.text('保存'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
 
@@ -669,6 +674,8 @@ void main() {
     });
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '小林');
+    await tester.ensureVisible(find.text('保存'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
 
@@ -709,6 +716,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('选择头像'), findsOneWidget, reason: '移除后入口回到选择态');
 
+    await tester.ensureVisible(find.text('保存'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
 
@@ -732,6 +741,8 @@ void main() {
     await tester.pump();
 
     await tester.enterText(find.byType(TextField), '小林');
+    await tester.ensureVisible(find.text('保存'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
 
@@ -769,6 +780,7 @@ void main() {
     await tester.pump();
     await tester.enterText(find.byType(TextField), '小林');
     await tester.ensureVisible(find.text('保存'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
     expect(find.text('保存失败：云端暂不可用'), findsOneWidget);
@@ -824,7 +836,12 @@ void main() {
     );
     expect(zoneTooltip.triggerMode, TooltipTriggerMode.tap);
     expect(zoneTooltip.message, contains('Asia/Shanghai'));
-    expect(zoneTooltip.message, contains('北京时间 04:00'));
+    expect(zoneTooltip.message, contains('04:00'));
+    expect(
+      zoneTooltip.message,
+      contains('账号时区'),
+      reason: '结算点按账号时区表达，不再写死北京时间',
+    );
     expect(
       tester.widget<Text>(find.text('北京 · Asia/Shanghai')).maxLines,
       1,
@@ -837,6 +854,7 @@ void main() {
 
     await tester.enterText(find.byType(TextField), '小林');
     await tester.ensureVisible(find.text('保存'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
 
@@ -845,10 +863,12 @@ void main() {
   });
 
   testWidgets('城市名单外的合法账号时区不被静默改写', (tester) async {
+    // Europe/Berlin 已进入 17 城可编辑名单，这里改用仍在名单外、但时区数据
+    // 库认识的 IANA 值，继续覆盖「旧设备写入的合法时区不被改写」。
     final repository = _FakeProfileRepository(
       account: const ProfileAccount(
         userId: 'user-a',
-        displayTimeZoneId: 'Europe/Berlin',
+        displayTimeZoneId: 'Asia/Kathmandu',
       ),
     );
     await tester.pumpWidget(
@@ -864,12 +884,13 @@ void main() {
     expect(find.text('当前时区'), findsOneWidget);
     await tester.enterText(find.byType(TextField), '小林');
     await tester.ensureVisible(find.text('保存'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
 
     // 没有改动时区时，保存请求会省略时区（null=保留），因此断言账号最终值
-    // 保持 Berlin，而不是要求一个可选参数被重新发送。
-    expect((await repository.getProfile()).displayTimeZoneId, 'Europe/Berlin');
+    // 保持 Kathmandu，而不是要求一个可选参数被重新发送。
+    expect((await repository.getProfile()).displayTimeZoneId, 'Asia/Kathmandu');
   });
 
   testWidgets('360×800 下选择洛杉矶后摘要完整显示、贴右缘且无异常', (tester) async {
@@ -957,17 +978,20 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('账号安全'), findsOneWidget);
-    expect(find.text('修改密码'), findsOneWidget);
     final entry = find.byKey(const ValueKey('profile-change-password-entry'));
-    expect(entry, findsOneWidget);
-
+    // 名单扩到 17 城后「账号安全」被推到 800×600 首屏之外：先滚到入口，
+    // 再断言分组标题与两条入口都在同一段列表里。
     await tester.scrollUntilVisible(
       entry,
       160,
       scrollable: _editPageScrollable(),
     );
     await tester.pumpAndSettle();
+
+    expect(find.text('账号安全'), findsOneWidget);
+    expect(find.text('修改密码'), findsOneWidget);
+    expect(entry, findsOneWidget);
+
     await tester.tap(entry);
     await tester.pumpAndSettle();
 
@@ -995,6 +1019,109 @@ void main() {
       find.byKey(const ValueKey('profile-change-password-entry')),
       findsNothing,
     );
+    expect(
+      find.byKey(const ValueKey('profile-sign-out-entry')),
+      findsNothing,
+      reason: '没有登录会话时退出登录入口同样不渲染',
+    );
     expect(find.byType(PactaSectionHeader), findsOneWidget);
   });
+
+  testWidgets('退出登录移入编辑资料底部的账号安全分组，先取消提醒再清登录状态', (tester) async {
+    final repository = _FakeProfileRepository(
+      account: ProfileAccount(userId: 'user-a', displayName: '小林'),
+    );
+    final auth = FakeAuthRepository()..signedInUser = 'user-a';
+    final notifications = _RecordingNotificationService();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: pactaTheme(Brightness.light),
+        home: ProfileEditPage(
+          repository: repository,
+          avatarPicker: _FakeAvatarPicker(null),
+          authRepository: auth,
+          notificationService: notifications,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final entry = find.byKey(const ValueKey('profile-sign-out-entry'));
+    await tester.scrollUntilVisible(
+      entry,
+      160,
+      scrollable: _editPageScrollable(),
+    );
+    await tester.pumpAndSettle();
+    expect(entry, findsOneWidget);
+
+    await tester.tap(entry);
+    await tester.pumpAndSettle();
+
+    expect(notifications.releasedUserIds, ['user-a']);
+    expect(auth.signedInUser, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('时区对照展示账号结算点，并随未保存的城市选择实时换算', (tester) async {
+    final repository = _FakeProfileRepository(
+      account: const ProfileAccount(
+        userId: 'user-a',
+        displayTimeZoneId: 'Asia/Shanghai',
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: pactaTheme(Brightness.light),
+        home: ProfileEditPage(
+          repository: repository,
+          avatarPicker: _FakeAvatarPicker(null),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final comparison = find.byKey(
+      const ValueKey('profile-timezone-checkpoint-comparison'),
+    );
+    expect(comparison, findsOneWidget);
+    // 账号结算点固定是账号当地的 04:00；偏移与设备不同时同一句话会补上本机
+    // 时刻。设备时区随宿主变化，因此断言口径与生产实现保持一致。
+    final shanghai = AccountTimeZones.formatCheckpointComparison(
+      accountTimeZoneId: 'Asia/Shanghai',
+      referenceUtc: DateTime.now().toUtc(),
+    );
+    expect(
+      find.descendant(of: comparison, matching: find.text(shanghai)),
+      findsOneWidget,
+    );
+
+    await tester.ensureVisible(find.text('纽约'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('纽约'));
+    await tester.pumpAndSettle();
+
+    final newYork = AccountTimeZones.formatCheckpointComparison(
+      accountTimeZoneId: 'America/New_York',
+      referenceUtc: DateTime.now().toUtc(),
+    );
+    expect(
+      find.descendant(of: comparison, matching: find.text(newYork)),
+      findsOneWidget,
+      reason: '点选城市后对照行立即换算，不必先保存',
+    );
+    expect(find.textContaining('04:00'), findsWidgets);
+    expect(repository.saveCalls, 0, reason: '预览不写账号');
+    expect(tester.takeException(), isNull);
+  });
+}
+
+/// 只记录显式登出时释放了哪个账号的提醒绑定。
+class _RecordingNotificationService extends DisabledFocusNotificationService {
+  final releasedUserIds = <String?>[];
+
+  @override
+  Future<void> releaseUser(String? userId) async {
+    releasedUserIds.add(userId);
+  }
 }

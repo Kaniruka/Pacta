@@ -54,6 +54,7 @@ class FocusNationalCalendarCard extends StatefulWidget {
     required this.focusRepository,
     required this.nationalFocusRepository,
     required this.displayTimeZoneId,
+    this.checkpointTimeZoneId,
     required this.now,
     required this.onOpenNationalFocus,
     required this.onRetryProjection,
@@ -71,6 +72,9 @@ class FocusNationalCalendarCard extends StatefulWidget {
 
   /// 账号显示时区；null 表示账号资料尚未解析完成（门禁，不发查询）。
   final String? displayTimeZoneId;
+
+  /// 国策检查点时区（未设账号时区时回落 Asia/Shanghai）；用于对照设备时间。
+  final String? checkpointTimeZoneId;
 
   /// 与计划日历、看板热力月历共用的注入时钟。
   final DateTime Function() now;
@@ -492,7 +496,8 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
     _restartMonth();
   }
 
-  /// 失败记录按账号显示时区归到自然日；检查点时刻本身仍按北京时间规则结算。
+  /// 失败记录按账号显示时区归到自然日；检查点时刻本身按账号时区当地 04:00
+  /// 结算，设备时区只决定这一行的归类与显示。
   Map<DateTime, List<NationalFocusFailure>> get _failuresByDay {
     final grouped = <DateTime, List<NationalFocusFailure>>{};
     for (final failure in _failures) {
@@ -701,6 +706,12 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
       );
     }
 
+    final checkpointComparison = AccountTimeZones.formatCheckpointComparison(
+      accountTimeZoneId: widget.checkpointTimeZoneId ?? _effectiveZoneId,
+      referenceUtc: _now,
+    );
+    final showCheckpointDiff = checkpointComparison.contains('当前设备时间');
+
     final body = <Widget>[];
     if (isToday) {
       if (_cardsFailed) {
@@ -731,6 +742,17 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
           ),
         );
       }
+      if (showCheckpointDiff && !_cardsFailed && counts != null) {
+        body.add(const SizedBox(height: 6));
+        body.add(
+          Text(
+            checkpointComparison,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        );
+      }
       // 今天真落有检查点失败时补失败行（最多 3 条 + 溢出提示），保留追溯
       // 能力；否则一行都不加，实时计数只在上面出现一次。
       if (failures.isNotEmpty) {
@@ -746,6 +768,17 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
       }
     } else if (isFuture) {
       body.add(Text('未来日期还没有结算数据，不预先推断结果。', style: theme.textTheme.bodyMedium));
+      if (showCheckpointDiff) {
+        body.add(const SizedBox(height: 6));
+        body.add(
+          Text(
+            checkpointComparison,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        );
+      }
     } else {
       // 历史日期：没有真实失败记录就只能是「未知」，失败流读不到时也说
       // 读不到——绝不把「无记录」推断成「全部确认」。
@@ -755,12 +788,23 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
               ? '暂时不能读取国策失败记录，历史日期一律标记为未知。'
               : failures.isEmpty
               ? '历史日期只显示实际有数据支持的记录；没有记录时明确标记为未知。'
-              : '按账号显示时区归到这一天；检查点仍固定北京时间 04:00。',
+              : '按账号时区归到这一天；$checkpointComparison。',
           style: theme.textTheme.bodySmall?.copyWith(
             color: scheme.onSurfaceVariant,
           ),
         ),
       );
+      if (!_failuresFailed && failures.isEmpty && showCheckpointDiff) {
+        body.add(const SizedBox(height: 4));
+        body.add(
+          Text(
+            checkpointComparison,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        );
+      }
       for (final line in _failureLines(failures)) {
         body.add(
           Padding(

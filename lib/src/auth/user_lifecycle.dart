@@ -199,5 +199,5 @@ class UnavailableUserLifecycleStatusRepository
 
   @override
   Future<UserLifecycleStatus> refresh() async =>
-      throw StateError('尚未配置 Supabase。请使用 --dart-define-from-file=.env 启动。');
+      throw StateError('尚未配置云端服务。请使用构建脚本注入客户端配置后启动。');
 }

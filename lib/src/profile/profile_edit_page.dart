@@ -4,8 +4,11 @@ import 'package:flutter/material.dart';
 
 import '../auth/auth_repository.dart';
 import '../auth/user_lifecycle.dart';
+import '../notifications/focus_notification_service.dart';
+import '../theme/pacta_fonts.dart';
 import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
+import '../theme/pacta_surfaces.dart';
 import '../ui/pacta_error_text.dart';
 import '../ui/pacta_grouped_list.dart';
 import '../ui/pacta_hold_action_reorder.dart';
@@ -29,6 +32,7 @@ class ProfileEditPage extends StatefulWidget {
     required this.avatarPicker,
     this.authRepository,
     this.lifecycleRepository,
+    this.notificationService,
   });
 
   final ProfileRepository repository;
@@ -38,6 +42,9 @@ class ProfileEditPage extends StatefulWidget {
   /// 「账号安全」分组：修改密码必须有可用的登录会话，入口缺省比点开再报错好。
   final AuthRepository? authRepository;
   final UserLifecycleStatusRepository? lifecycleRepository;
+
+  /// 明确退出登录时先取消本机已登记的提醒；未注入时只清登录状态。
+  final FocusNotificationService? notificationService;
 
   @override
   State<ProfileEditPage> createState() => _ProfileEditPageState();
@@ -56,6 +63,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   String? _timeZoneId;
   String? _loadedTimeZoneId;
   String? _error;
+  bool _signingOut = false;
 
   @override
   void initState() {
@@ -282,6 +290,37 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     );
   }
 
+  /// 退出登录：与「修改密码」同属账号安全分组，因此放在同一段列表里。
+  ///
+  /// 先取消本机已登记的提醒（明确登出才取消，正常关应用保留未来项），再清
+  /// 登录状态；若编辑页是推入的子页，登出后一并回根路由，避免停在已被登录门
+  /// 替换掉的页面上。
+  Future<void> _signOut() async {
+    final authRepository = widget.authRepository;
+    if (authRepository == null || _signingOut) return;
+    setState(() {
+      _signingOut = true;
+      _error = null;
+    });
+    final navigator = Navigator.of(context);
+    try {
+      await widget.notificationService?.releaseUser(
+        authRepository.currentUserId,
+      );
+      await authRepository.signOut();
+      if (!mounted) return;
+      navigator.popUntil((route) => route.isFirst);
+    } on Object catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = formatUserError(error, fallback: '退出登录未完成，请稍后重试。'),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _signingOut = false);
+    }
+  }
+
   Future<void> _retry() async {
     setState(() => _busy = true);
     try {
@@ -319,73 +358,93 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('编辑资料')),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-            children: [
-              _avatarSection(context),
-              const SizedBox(height: 20),
-              TextField(
-                controller: _nameController,
-                onChanged: (_) => _nameEdited = true,
-                enabled: !_busy,
-                maxLength: maxDisplayNameLength,
-                decoration: const InputDecoration(
-                  labelText: '昵称',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 8),
-              _timeZoneSection(context),
-              if (_error != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  _error!,
-                  style: Theme.of(context).textTheme.bodyMedium
-                      ?.copyWith(color: Theme.of(context).colorScheme.error),
-                ),
-                if (_syncFailed)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: _busy ? null : _retry,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('重试同步'),
+    return PactaSurfaces.wrapIfMissing(
+      context,
+      Scaffold(
+        appBar: AppBar(title: const Text('编辑资料')),
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _avatarSection(context),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: _nameController,
+                    onChanged: (_) => _nameEdited = true,
+                    enabled: !_busy,
+                    maxLength: maxDisplayNameLength,
+                    decoration: const InputDecoration(
+                      labelText: '昵称',
+                      border: OutlineInputBorder(),
                     ),
                   ),
-              ],
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 48,
-                child: FilledButton(
-                  onPressed: _busy || _picking ? null : _save,
-                  child: Text(_busy ? '正在保存…' : '保存'),
-                ),
-              ),
-              if (_busy) ...[
-                const SizedBox(height: 12),
-                const LinearProgressIndicator(),
-              ],
-              if (widget.authRepository != null) ...[
-                const SizedBox(height: PactaSpacing.xl),
-                const PactaSectionHeader(title: '账号安全'),
-                PactaGroupedList(
-                  children: [
-                    PactaSettingsTile(
-                      tileKey: const ValueKey('profile-change-password-entry'),
-                      leadingIcon: Icons.lock_outline,
-                      title: '修改密码',
-                      subtitle: '验证当前密码后更新登录密码',
-                      onTap: _busy || _picking ? null : _openChangePassword,
+                  const SizedBox(height: 8),
+                  _timeZoneSection(context),
+                  if (_error != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _error!,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                    if (_syncFailed)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _busy ? null : _retry,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('重试同步'),
+                        ),
+                      ),
+                  ],
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 48,
+                    child: FilledButton(
+                      onPressed: _busy || _picking ? null : _save,
+                      child: Text(_busy ? '正在保存…' : '保存'),
+                    ),
+                  ),
+                  if (_busy) ...[
+                    const SizedBox(height: 12),
+                    const LinearProgressIndicator(),
+                  ],
+                  if (widget.authRepository != null) ...[
+                    const SizedBox(height: PactaSpacing.xl),
+                    const PactaSectionHeader(title: '账号安全'),
+                    PactaGroupedList(
+                      children: [
+                        PactaSettingsTile(
+                          tileKey: const ValueKey(
+                            'profile-change-password-entry',
+                          ),
+                          leadingIcon: Icons.lock_outline,
+                          title: '修改密码',
+                          subtitle: '验证当前密码后更新登录密码',
+                          onTap: _busy || _picking ? null : _openChangePassword,
+                        ),
+                        // 退出登录跟着账号安全走：浏览型的《我的》不再常驻一颗
+                        // 危险按钮，这里与修改密码成对出现。
+                        PactaSettingsTile(
+                          tileKey: const ValueKey('profile-sign-out-entry'),
+                          leadingIcon: Icons.logout,
+                          title: '退出登录',
+                          subtitle: '取消本机提醒并清空本机的登录状态',
+                          showChevron: false,
+                          enabled: !_busy && !_picking && !_signingOut,
+                          onTap: _signOut,
+                        ),
+                      ],
                     ),
                   ],
-                ),
-              ],
-            ],
+                ],
+              ),
+            ),
           ),
         ),
       ),
@@ -429,7 +488,8 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   /// 账号级时区：各设备共享同一值；这里只放可编辑的常见城市，完整的 IANA
   /// 校验仍由 FocusTimeZones 承担（导入事件的原始时区不因此收窄）。
   ///
-  /// 摘要严格单行，规则（含国策检查点固定北京时间 04:00）折进行内 ⓘ。
+  /// 摘要严格单行，规则（结算点跟着账号时区走）折进行内 ⓘ；选择器下方另有
+  /// 一行账号结算点与本机墙钟的实时对照。
   Widget _timeZoneSection(BuildContext context) {
     final theme = Theme.of(context);
     final selected = _timeZoneId;
@@ -444,7 +504,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     final explanation = <String>[
       '时区 ID：$zoneLabel',
       '时区属于账号资料：各设备显示同一时区，城市按夏令时规则换算。',
-      '国策检查点始终按北京时间 04:00 结算，不随时区移动。',
+      '国策检查点按账号时区的 04:00 结算，时区改变后结算时刻随之移动。',
     ].join('\n');
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -478,21 +538,147 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
             ),
           ),
         ),
-        Wrap(
-          spacing: PactaSpacing.sm,
-          runSpacing: PactaSpacing.sm,
+        PactaGroupedList(
           children: [
-            for (final city in AccountTimeZones.cities)
-              _timeZoneChip(context, city, selected == city.timeZoneId),
-            if (offList)
-              _timeZoneChip(
-                context,
-                DisplayTimeZoneCity(label: '当前时区', timeZoneId: selected!),
-                true,
+            _checkpointComparison(context),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                PactaSpacing.lg,
+                PactaSpacing.md,
+                PactaSpacing.lg,
+                PactaSpacing.md,
               ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (index, group) in _timeZoneGroups(
+                    offList ? selected : null,
+                  ).indexed) ...[
+                    if (index > 0) const SizedBox(height: PactaSpacing.sm),
+                    Text(
+                      group.label,
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                        fontWeight: PactaFonts.medium,
+                      ),
+                    ),
+                    const SizedBox(height: PactaSpacing.xs),
+                    Wrap(
+                      spacing: PactaSpacing.sm,
+                      runSpacing: PactaSpacing.sm,
+                      children: [
+                        for (final city in group.cities)
+                          _timeZoneChip(
+                            context,
+                            city,
+                            selected == city.timeZoneId,
+                          ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ],
         ),
       ],
+    );
+  }
+
+  /// 把 17 个留学城市拆成 4 个大区组，避免所有芯片挤成一团。
+  List<({String label, List<DisplayTimeZoneCity> cities})> _timeZoneGroups(
+    String? offListTimeZoneId,
+  ) {
+    const regionDefs = <(String, Set<String>)>[
+      (
+        '亚太',
+        {
+          'Asia/Shanghai',
+          'Asia/Hong_Kong',
+          'Asia/Singapore',
+          'Asia/Tokyo',
+          'Asia/Seoul',
+        },
+      ),
+      ('澳新', {'Australia/Sydney', 'Australia/Melbourne', 'Pacific/Auckland'}),
+      (
+        '欧洲与 UTC',
+        {'Europe/London', 'Europe/Paris', 'Europe/Berlin', 'Etc/UTC'},
+      ),
+      (
+        '北美',
+        {
+          'America/Toronto',
+          'America/Vancouver',
+          'America/New_York',
+          'America/Chicago',
+          'America/Los_Angeles',
+        },
+      ),
+    ];
+    final byId = <String, DisplayTimeZoneCity>{
+      for (final city in AccountTimeZones.cities) city.timeZoneId: city,
+    };
+    final matched = <String>{};
+    final groups = <({String label, List<DisplayTimeZoneCity> cities})>[];
+    for (final (label, ids) in regionDefs) {
+      final list = <DisplayTimeZoneCity>[
+        for (final city in AccountTimeZones.cities)
+          if (ids.contains(city.timeZoneId)) city,
+      ];
+      if (list.isNotEmpty) {
+        groups.add((label: label, cities: list));
+        matched.addAll(ids);
+      }
+    }
+    final remaining = <DisplayTimeZoneCity>[
+      for (final id in byId.keys)
+        if (!matched.contains(id)) byId[id]!,
+      if (offListTimeZoneId != null)
+        DisplayTimeZoneCity(label: '当前时区', timeZoneId: offListTimeZoneId),
+    ];
+    if (remaining.isNotEmpty) {
+      groups.add((label: '其他时区', cities: remaining));
+    }
+    return groups;
+  }
+
+  /// 账号结算点与本机墙钟的对照。
+  ///
+  /// 芯片选中即预览：`_timeZoneId` 是「当前选择」而不是「已保存值」，所以点
+  /// 一颗尚未保存的城市也会立刻换算。偏移一致时对照行只说账号当地的 04:00，
+  /// 不一致时才补上它落在本机几点——否则用户会以为结算漏了一天。
+  Widget _checkpointComparison(BuildContext context) {
+    final theme = Theme.of(context);
+    final comparison = AccountTimeZones.formatCheckpointComparison(
+      accountTimeZoneId: _timeZoneId,
+      referenceUtc: DateTime.now().toUtc(),
+    );
+    return Padding(
+      key: const ValueKey('profile-timezone-checkpoint-comparison'),
+      padding: const EdgeInsets.symmetric(
+        horizontal: PactaSpacing.lg,
+        vertical: PactaSpacing.md,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.schedule,
+            size: PactaIconSizes.sm,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: PactaSpacing.sm),
+          Expanded(
+            child: Text(
+              comparison,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -500,12 +686,29 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     BuildContext context,
     DisplayTimeZoneCity city,
     bool selected,
-  ) => ChoiceChip(
-    label: Text(city.label),
-    tooltip: city.timeZoneId,
-    selected: selected,
-    onSelected: _busy
-        ? null
-        : (_) => setState(() => _timeZoneId = city.timeZoneId),
-  );
+  ) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return ChoiceChip(
+      label: Text(city.label),
+      tooltip: city.timeZoneId,
+      selected: selected,
+      showCheckmark: false,
+      visualDensity: VisualDensity.compact,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      shape: const StadiumBorder(),
+      selectedColor: colors.primaryContainer,
+      backgroundColor: colors.surfaceContainerLow,
+      side: BorderSide(
+        color: selected ? colors.primary : colors.outlineVariant,
+      ),
+      labelStyle: theme.textTheme.labelLarge?.copyWith(
+        color: selected ? colors.onPrimaryContainer : colors.onSurface,
+        fontWeight: selected ? PactaFonts.medium : PactaFonts.regular,
+      ),
+      onSelected: _busy
+          ? null
+          : (_) => setState(() => _timeZoneId = city.timeZoneId),
+    );
+  }
 }

@@ -14,10 +14,12 @@ class NationalFocusStrengtheningPage extends StatefulWidget {
     super.key,
     required this.repository,
     required this.cardId,
+    this.displayTimeZoneId,
   });
 
   final NationalFocusRepository repository;
   final String cardId;
+  final String? displayTimeZoneId;
 
   @override
   State<NationalFocusStrengtheningPage> createState() =>
@@ -217,10 +219,18 @@ class _NationalFocusStrengtheningPageState
               PactaDisclosureSection(
                 tilePadding: EdgeInsets.zero,
                 title: Text('生效版本记录 · $versionCount'),
-                subtitle: Text(_currentIntervalLabel(card.requirementVersions)),
+                subtitle: Text(
+                  _currentIntervalLabel(
+                    card.requirementVersions,
+                    displayTimeZoneId: widget.displayTimeZoneId,
+                  ),
+                ),
                 children: [
                   for (final version in card.requirementVersions.reversed)
-                    _RequirementVersionTile(version: version),
+                    _RequirementVersionTile(
+                      version: version,
+                      displayTimeZoneId: widget.displayTimeZoneId,
+                    ),
                 ],
               ),
             ],
@@ -541,9 +551,13 @@ class _StrengtheningLevelEditorPageState
 }
 
 class _RequirementVersionTile extends StatelessWidget {
-  const _RequirementVersionTile({required this.version});
+  const _RequirementVersionTile({
+    required this.version,
+    this.displayTimeZoneId,
+  });
 
   final NationalFocusRequirementVersion version;
+  final String? displayTimeZoneId;
 
   @override
   Widget build(BuildContext context) {
@@ -551,11 +565,17 @@ class _RequirementVersionTile extends StatelessWidget {
     final label = levelNumber == null ? '基础要求' : '强化等级 $levelNumber';
     final endText = version.effectiveUntil == null
         ? '当前仍生效'
-        : formatPactaDateTime(version.effectiveUntil!);
+        : formatPactaDateTimeInZone(
+            version.effectiveUntil!,
+            timeZoneId: displayTimeZoneId,
+          );
     final end = version.effectiveUntil == null ? endText : '至 $endText';
     final legacyTrigger = version.effectiveTriggerCondition.trim();
     final exceptionNotes = version.exceptionNotes?.trim();
-    final start = formatPactaDateTime(version.effectiveFrom);
+    final start = formatPactaDateTimeInZone(
+      version.effectiveFrom,
+      timeZoneId: displayTimeZoneId,
+    );
     final versionNumber = version.versionNumber;
     final rule = version.effectiveAction;
     final details = [
@@ -587,10 +607,16 @@ class _InlineError extends StatelessWidget {
   );
 }
 
-String _currentIntervalLabel(List<NationalFocusRequirementVersion> versions) {
+String _currentIntervalLabel(
+  List<NationalFocusRequirementVersion> versions, {
+  String? displayTimeZoneId,
+}) {
   if (versions.isEmpty) return '尚无生效版本记录';
   final current = versions.last;
   final versionNumber = current.versionNumber;
-  final effectiveFrom = formatPactaDateTime(current.effectiveFrom);
+  final effectiveFrom = formatPactaDateTimeInZone(
+    current.effectiveFrom,
+    timeZoneId: displayTimeZoneId,
+  );
   return '当前版本 $versionNumber · 自 $effectiveFrom 生效';
 }

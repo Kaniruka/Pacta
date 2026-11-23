@@ -59,6 +59,22 @@ class PactaSurfaces extends ThemeExtension<PactaSurfaces> {
     return surfaces ?? light;
   }
 
+  /// 独立路由兜底：预览或测试宿主可能只提供裸 [ThemeData]，此时补一层
+  /// [PactaSurfaces]，让分组列表等依赖表面的组件始终有定义；已注入时原样返回。
+  static Widget wrapIfMissing(BuildContext context, Widget child) {
+    final theme = Theme.of(context);
+    if (theme.extension<PactaSurfaces>() != null) return child;
+    return Theme(
+      data: theme.copyWith(
+        extensions: [
+          ...theme.extensions.values,
+          theme.brightness == Brightness.dark ? dark : light,
+        ],
+      ),
+      child: child,
+    );
+  }
+
   /// 按亮度直接取卡片底色。
   ///
   /// 画布内嵌组件（例如只读历史节点）不一定继承注入了 [PactaSurfaces] 的

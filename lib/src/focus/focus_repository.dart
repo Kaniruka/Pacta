@@ -652,6 +652,8 @@ class LocalFocusRepository implements FocusRepository {
       throw StateError('已有进行中的专注，请先返回原流程或处理它的结束操作。');
     }
 
+    // 采样必须是写入前的最后一步：结算、生命周期与冲突检查都排在它之前，
+    // 提前取值会让 startedAt 落后真实起点，准备倒计时一进页面就少 2–3 秒。
     final clockSample = _sampleClock();
     final startedAt = clockSample.wallTime;
     final appointment = AppointmentPreparation(
@@ -952,6 +954,8 @@ class LocalFocusRepository implements FocusRepository {
     final existing = await getActiveSession();
     if (existing != null) return existing;
 
+    // 采样必须是写入前的最后一步：上面的会话/预约/结算查询都可能耗时，
+    // 提前取值会让 startedAt 落后真实起点，倒计时一进页面就少 2–3 秒。
     final clockSample = _sampleClock();
     final startedAt = clockSample.wallTime;
     final session = FocusSession(

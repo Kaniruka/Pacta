@@ -645,8 +645,8 @@ void main() {
     expect(find.textContaining('北京时间 04:00'), findsNothing);
     await tester.tap(find.text('检查点说明'));
     await pumpNationalFocusUi(tester);
-    expect(find.textContaining('固定规则为北京时间 04:00'), findsOneWidget);
-    expect(find.textContaining('Asia/Tokyo 不会移动结算边界'), findsOneWidget);
+    expect(find.textContaining('每日结算：'), findsOneWidget);
+    expect(find.textContaining('结算边界跟随账号时区（Asia/Tokyo）'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(seconds: 1));
@@ -756,7 +756,7 @@ void main() {
     await openRecords(tester);
     await tester.tap(find.text('检查点说明'));
     await pumpNationalFocusUi(tester);
-    expect(find.textContaining('固定规则为北京时间 04:00'), findsOneWidget);
+    expect(find.textContaining('每日结算：'), findsOneWidget);
     await tester.tap(find.textContaining('1 个节点'));
     await pumpNationalFocusUi(tester);
     expect(find.text('查看当时树'), findsOneWidget);
@@ -767,7 +767,7 @@ void main() {
     await tester.pageBack();
     await pumpNationalFocusUi(tester);
     expect(find.text('国策失败记录'), findsOneWidget);
-    expect(find.textContaining('固定规则为北京时间 04:00'), findsOneWidget);
+    expect(find.textContaining('每日结算：'), findsOneWidget);
     expect(find.text('查看当时树'), findsOneWidget);
     expect(find.text('补充说明'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());

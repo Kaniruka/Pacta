@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:timezone/timezone.dart' as timezone;
 
 import '../focus/focus_time_zones.dart';
+import '../profile/account_time_zone.dart';
 import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../theme/pacta_status_colors.dart';
@@ -66,11 +67,15 @@ class NationalFocusFailureHistoryPage extends StatefulWidget {
     super.key,
     required this.repository,
     required this.displayTimeZoneId,
+    this.accountCheckpointTimeZoneId,
     this.nextCheckpointAt,
   });
 
   final NationalFocusRepository repository;
   final String displayTimeZoneId;
+
+  /// 结算用的账号时区；为空时按 [displayTimeZoneId] 推出（再回落到北京时间）。
+  final String? accountCheckpointTimeZoneId;
 
   /// The checkpoint that closes the current National Focus Day. Callers pass
   /// the instant they already display so this page never drifts from the tree.
@@ -142,18 +147,28 @@ class _NationalFocusFailureHistoryPageState
     );
   }
 
+  String get _effectiveDisplayZoneId =>
+      widget.displayTimeZoneId == AccountTimeZones.fallbackId
+      ? (widget.accountCheckpointTimeZoneId ??
+            AccountTimeZones.defaultNationalFocusTimeZoneId)
+      : widget.displayTimeZoneId;
+
   String _formatCheckpoint(DateTime checkpoint) {
-    final local = FocusTimeZones.contains(widget.displayTimeZoneId)
-        ? timezone.TZDateTime.from(
-            checkpoint,
-            FocusTimeZones.location(widget.displayTimeZoneId),
-          )
+    final zoneId = _effectiveDisplayZoneId;
+    final local = FocusTimeZones.contains(zoneId)
+        ? timezone.TZDateTime.from(checkpoint, FocusTimeZones.location(zoneId))
         : checkpoint.toLocal();
     return '${local.year}-${local.month.toString().padLeft(2, '0')}-'
         '${local.day.toString().padLeft(2, '0')} '
         '${local.hour.toString().padLeft(2, '0')}:'
         '${local.minute.toString().padLeft(2, '0')}';
   }
+
+  String get _checkpointZoneId =>
+      widget.accountCheckpointTimeZoneId ??
+      (widget.displayTimeZoneId == AccountTimeZones.fallbackId
+          ? AccountTimeZones.defaultNationalFocusTimeZoneId
+          : AccountTimeZones.checkpointTimeZoneId(widget.displayTimeZoneId));
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -175,9 +190,15 @@ class _NationalFocusFailureHistoryPageState
                 _CheckpointExplanation(
                   nextCheckpointLabel:
                       '下次检查点：'
-                      '${_formatCheckpoint(widget.nextCheckpointAt ?? nextNationalFocusCheckpoint(DateTime.now().toUtc()))}'
-                      ' · ${widget.displayTimeZoneId}',
-                  displayTimeZoneId: widget.displayTimeZoneId,
+                      '${_formatCheckpoint(widget.nextCheckpointAt ?? nextNationalFocusCheckpoint(DateTime.now().toUtc(), timeZoneId: _checkpointZoneId))}'
+                      ' · $_effectiveDisplayZoneId',
+                  checkpointZoneId: _effectiveDisplayZoneId,
+                  checkpointComparison:
+                      AccountTimeZones.formatCheckpointComparison(
+                        accountTimeZoneId: _checkpointZoneId,
+                        referenceUtc:
+                            widget.nextCheckpointAt ?? DateTime.now().toUtc(),
+                      ),
                 ),
                 const SizedBox(height: PactaSpacing.sm),
                 Expanded(
@@ -234,11 +255,15 @@ class _NationalFocusFailureHistoryPageState
 class _CheckpointExplanation extends StatelessWidget {
   const _CheckpointExplanation({
     required this.nextCheckpointLabel,
-    required this.displayTimeZoneId,
+    required this.checkpointZoneId,
+    required this.checkpointComparison,
   });
 
   final String nextCheckpointLabel;
-  final String displayTimeZoneId;
+  final String checkpointZoneId;
+
+  /// 账号时区的 04:00；设备时区不同时并列本机对应时间。
+  final String checkpointComparison;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -249,7 +274,10 @@ class _CheckpointExplanation extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Text('固定规则为北京时间 04:00；显示时区 $displayTimeZoneId 不会移动结算边界。'),
+          child: Text(
+            '$checkpointComparison；结算边界跟随账号时区（$checkpointZoneId），'
+            '不跟随本机时区。',
+          ),
         ),
       ],
     ),

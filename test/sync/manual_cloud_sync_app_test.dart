@@ -260,12 +260,11 @@ void main() {
         // 进行中的同步不再占用常驻摘要；摘要保持上一次成功结果或尚未同步。
         expect(find.text('处理中…'), findsNothing);
         expect(find.text('尚未同步'), findsOneWidget);
-        await tester.scrollUntilVisible(
-          find.text('退出登录'),
-          300,
-          scrollable: find.byType(Scrollable).first,
-        );
-        await tester.tap(find.text('退出登录'));
+        // 退出登录已移入《编辑资料》的「账号安全」分组；这个用例只关心上传
+        // 进行中登出后的反馈抑制，因此直接调用「退出登录」按钮背后的同一个
+        // 仓储动作（编辑页入口由 profile_card_test 覆盖）。
+        expect(find.text('退出登录'), findsNothing, reason: '我的页不再常驻退出按钮');
+        await auth.signOut();
         await tester.pumpAndSettle();
         expect(find.byType(AuthScreen), findsOneWidget);
         cloudRemote.uploadGate!.complete();

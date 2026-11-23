@@ -7,6 +7,7 @@ import '../auth/user_lifecycle.dart';
 import '../focus/focus_chain_page.dart';
 import '../focus/focus_models.dart';
 import '../national_focus/national_focus_models.dart';
+import '../notifications/focus_notification_service.dart';
 import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_error_text.dart';
@@ -34,6 +35,7 @@ class MyProfileCard extends StatefulWidget {
     this.accountIdentifier,
     this.authRepository,
     this.lifecycleRepository,
+    this.notificationService,
   });
 
   final ProfileRepository repository;
@@ -45,6 +47,9 @@ class MyProfileCard extends StatefulWidget {
   /// 编辑页因此不会渲染「账号安全」分组。
   final AuthRepository? authRepository;
   final UserLifecycleStatusRepository? lifecycleRepository;
+
+  /// 明确退出登录时先取消本机的提醒绑定；未注入时只清登录状态。
+  final FocusNotificationService? notificationService;
 
   @override
   State<MyProfileCard> createState() => _MyProfileCardState();
@@ -116,6 +121,7 @@ class _MyProfileCardState extends State<MyProfileCard> {
           avatarPicker: widget.avatarPicker,
           authRepository: widget.authRepository,
           lifecycleRepository: widget.lifecycleRepository,
+          notificationService: widget.notificationService,
         ),
       ),
     );

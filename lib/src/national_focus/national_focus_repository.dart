@@ -6,9 +6,24 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../auth/user_lifecycle.dart';
+import '../profile/account_time_zone.dart';
 import '../tasks/task_database.dart';
 import 'national_focus_checkpoints.dart';
 import 'national_focus_models.dart';
+
+/// 读取本地账号的国策结算检查点时区；无账号或未设置时回落默认国策时区。
+Future<String> readAccountCheckpointTimeZoneId(
+  PactaDatabase database,
+  String? userId,
+) async {
+  if (userId == null) {
+    return AccountTimeZones.defaultNationalFocusTimeZoneId;
+  }
+  final row = await (database.select(
+    database.localProfileAccounts,
+  )..where((entry) => entry.userId.equals(userId))).getSingleOrNull();
+  return AccountTimeZones.checkpointTimeZoneId(row?.timeZoneId);
+}
 
 abstract interface class NationalFocusRepository {
   Stream<List<NationalFocusCard>> watchTreeCards();
@@ -936,6 +951,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   }) async {
     await settleDueCheckpoints();
     await lifecycleAccess.requireActive();
+    final zoneId = await _accountCheckpointTimeZoneId();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
       if (card.deletedAt != null) {
@@ -948,7 +964,10 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
         // A batch confirmation captured its checkpoint window. Settlement above
         // may already have failed the node or started a new day, so the stale
         // window must never relight it.
-        final windowEnd = nextNationalFocusCheckpoint(_trustedNow());
+        final windowEnd = nextNationalFocusCheckpoint(
+          _trustedNow(),
+          timeZoneId: zoneId,
+        );
         if (!windowEnd.isAtSameMomentAs(expectedConfirmationCheckpoint)) {
           throw StateError('确认窗口已跨过检查点；请刷新后重试。');
         }
@@ -1006,6 +1025,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   }) async {
     await settleDueCheckpoints();
     await lifecycleAccess.requireActive();
+    final zoneId = await _accountCheckpointTimeZoneId();
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
       if (card.deletedAt != null) {
@@ -1015,7 +1035,10 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
         throw StateError('卡片不在国策树中。');
       }
       if (expectedConfirmationCheckpoint != null) {
-        final windowEnd = nextNationalFocusCheckpoint(_trustedNow());
+        final windowEnd = nextNationalFocusCheckpoint(
+          _trustedNow(),
+          timeZoneId: zoneId,
+        );
         if (!windowEnd.isAtSameMomentAs(expectedConfirmationCheckpoint)) {
           throw StateError('熄灭窗口已跨过检查点；请刷新后重试。');
         }
@@ -1069,10 +1092,14 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   Future<int> confirmToday({DateTime? expectedConfirmationCheckpoint}) async {
     await settleDueCheckpoints();
     await lifecycleAccess.requireActive();
+    final zoneId = await _accountCheckpointTimeZoneId();
     final confirmedCardIds = <String>[];
     final confirmedCount = await database.transaction(() async {
       if (expectedConfirmationCheckpoint != null) {
-        final windowEnd = nextNationalFocusCheckpoint(_trustedNow());
+        final windowEnd = nextNationalFocusCheckpoint(
+          _trustedNow(),
+          timeZoneId: zoneId,
+        );
         if (!windowEnd.isAtSameMomentAs(expectedConfirmationCheckpoint)) {
           return 0;
         }
@@ -1117,7 +1144,10 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       if (confirmedCardIds.isNotEmpty) {
         await _recordSyncSnapshot(
           operation: 'confirm_today',
-          checkpointAt: nextNationalFocusCheckpoint(_trustedNow()),
+          checkpointAt: nextNationalFocusCheckpoint(
+            _trustedNow(),
+            timeZoneId: zoneId,
+          ),
           confirmedCardIds: confirmedCardIds,
         );
       }
@@ -1134,6 +1164,8 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
   }
 
   Future<void> _settleCheckpointsThrough(DateTime now) async {
+    // 账号时区决定换天：当地 04:00 就是一次检查点，设备时区只影响显示。
+    final zoneId = await _accountCheckpointTimeZoneId();
     final progress = await (database.select(
       database.localNationalFocusMaintenance,
     )..where((row) => row.userId.equals(userId))).getSingleOrNull();
@@ -1143,18 +1175,25 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
           .insert(
             LocalNationalFocusMaintenanceCompanion.insert(
               userId: userId,
-              lastSettledCheckpointAt: nationalFocusCheckpointAtOrBefore(now),
+              lastSettledCheckpointAt: nationalFocusCheckpointAtOrBefore(
+                now,
+                timeZoneId: zoneId,
+              ),
             ),
           );
       await _recordSyncSnapshot(operation: 'initialize_checkpoints');
       return;
     }
 
-    var checkpoint = progress.lastSettledCheckpointAt.toUtc().add(
-      nationalFocusCheckpointPeriod,
+    var lastSettled = progress.lastSettledCheckpointAt.toUtc();
+    var checkpoint = nextNationalFocusCheckpoint(
+      lastSettled,
+      timeZoneId: zoneId,
+      lastSettledCheckpointAt: lastSettled,
     );
     while (!checkpoint.isAfter(now)) {
       await _settleCheckpoint(checkpoint);
+      lastSettled = checkpoint;
       await (database.update(
         database.localNationalFocusMaintenance,
       )..where((row) => row.userId.equals(userId))).write(
@@ -1176,11 +1215,26 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
               failure.cardId,
         ],
       );
-      checkpoint = checkpoint.add(nationalFocusCheckpointPeriod);
+      // 每次都用新的已结算时刻作为锚点：时区改变时不会回拨进度，也不会在
+      // 12 小时内重复结算。
+      checkpoint = nextNationalFocusCheckpoint(
+        lastSettled,
+        timeZoneId: zoneId,
+        lastSettledCheckpointAt: lastSettled,
+      );
     }
   }
 
   DateTime _trustedNow() => _now().toUtc();
+
+  /// 结算用的账号时区：账号资料里的 IANA 值，读不到就按北京时间。
+  ///
+  /// 账号时区随账号同步，不跟随设备；因此同一账号在任何手机上换天时刻一致。
+  Future<String> _accountCheckpointTimeZoneId() =>
+      readAccountCheckpointTimeZoneId(database, userId);
+
+  /// 供界面读取同一份结算时区，避免界面显示的窗口与仓储实际结算的窗口分叉。
+  Future<String> checkpointTimeZoneId() async => _accountCheckpointTimeZoneId();
 
   Future<void> _settleCheckpoint(
     DateTime checkpoint, {

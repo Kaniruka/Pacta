@@ -3,6 +3,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'device_settings_scope.dart';
 
 /// Notification choices belong to this installation and are never synchronized.
+///
+/// `notificationsEnabled` 默认开启：专注常驻通知是产品的默认行为，
+/// 未配置过的设备不需要先手动打开一次开关。
 class FocusDevicePreferences {
   const FocusDevicePreferences({
     required this.notificationsEnabled,
@@ -99,8 +102,10 @@ class FocusDevicePreferencesStore {
       _preferences.getInt(_key(_dailyOpenReminderMinuteKey)),
     );
     return FocusDevicePreferences(
+      // 常驻（进行中专注/预约准备）通知默认开启：这是安装级开关，
+      // 未配置过的设备直接跟随默认值，用户仍可在设备设置里单独关闭。
       notificationsEnabled:
-          _preferences.getBool(_key(_notificationsKey)) ?? false,
+          _preferences.getBool(_key(_notificationsKey)) ?? true,
       backgroundRunningEnabled:
           _preferences.getBool(_key(_backgroundKey)) ?? true,
       nationalFocusReminderEnabled:

@@ -375,36 +375,55 @@ class _FocusChainPageState extends ConsumerState<FocusChainPage> {
       final activeAppointment = activeSession == null
           ? await repository.getActiveAppointment()
           : null;
-      final mode = activeSession == null && activeAppointment == null
-          ? await repository.getLastMode()
-          : FocusChainMode.regular;
+      final recovered = activeSession != null || activeAppointment != null;
+      final mode = recovered
+          ? FocusChainMode.regular
+          : await repository.getLastMode();
       if (!mounted) return;
-      final result =
-          activeSession ??
-          activeAppointment ??
-          await Navigator.of(context).push<Object>(
-            MaterialPageRoute<Object>(
-              builder: (_) => FocusTaskPickerPage(initialMode: mode),
+      // 弹窗刚创建的对象自带任务标题（用户点的就是那张卡），标题随结果一起
+      // 回来；只有从已有流程恢复时才按原逻辑回查一次任务树。
+      final selection = recovered
+          ? _FocusStartSelection.fromObject(activeSession ?? activeAppointment!)
+          : await Navigator.of(context).push<_FocusStartSelection>(
+              MaterialPageRoute<_FocusStartSelection>(
+                builder: (_) => FocusTaskPickerPage(initialMode: mode),
+              ),
+            );
+      if (!mounted || selection == null) return;
+      final taskTitle =
+          selection.taskTitle ??
+          switch (selection) {
+            _FocusSessionStartSelection(:final session) => await _findTaskTitle(
+              session.taskId,
+              '原任务',
             ),
-          );
-      if (!mounted || result == null) return;
-      final goals = await ref
-          .read(taskRepositoryProvider)
-          .getGoals(includeDeleted: true);
+            _FocusAppointmentStartSelection(:final appointment) =>
+              await _findTaskTitle(appointment.taskId, '原预约任务'),
+          };
       if (!mounted) return;
-      if (result is FocusSession) {
-        _openSession(result, findTaskTitle(goals, result.taskId) ?? '原任务');
-      } else if (result is AppointmentPreparation) {
-        await _openAppointment(
-          result,
-          findTaskTitle(goals, result.taskId) ?? '原预约任务',
-        );
+      switch (selection) {
+        case _FocusSessionStartSelection(:final session):
+          _openSession(session, taskTitle);
+        case _FocusAppointmentStartSelection(:final appointment):
+          await _openAppointment(appointment, taskTitle);
       }
       _refreshActiveAppointment();
     } catch (error) {
       if (mounted) showFocusError(context, error);
     } finally {
       if (mounted) setState(() => _openingTaskPicker = false);
+    }
+  }
+
+  /// 只在恢复已有流程时用到：按 taskId 回查标题，读不到就退回占位文案。
+  Future<String> _findTaskTitle(String taskId, String fallback) async {
+    try {
+      final goals = await ref
+          .read(taskRepositoryProvider)
+          .getGoals(includeDeleted: true);
+      return findTaskTitle(goals, taskId) ?? fallback;
+    } catch (_) {
+      return fallback;
     }
   }
 
@@ -867,9 +886,9 @@ class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
           ? await repository.getActiveAppointment()
           : null;
       if (!mounted) return;
+      final recovered = activeSession ?? activeAppointment;
       final result =
-          activeSession ??
-          activeAppointment ??
+          recovered ??
           await showDialog<Object>(
             context: context,
             builder: (_) => FocusSetupDialog(
@@ -880,13 +899,56 @@ class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
               ),
             ),
           );
-      if (mounted && result != null) Navigator.of(context).pop(result);
+      if (!mounted || result == null) return;
+      // 新建的会话／预约就是这张卡本身：标题一并回传，专注链不再为拿一个
+      // 标题重查整个任务树——那段查询与随后的二次推进正是开始后 2–3 秒
+      // 延迟的主要来源，倒计时会因此一进页面就少两秒。
+      final selection = _FocusStartSelection.fromObject(
+        result,
+        taskTitle: recovered == null ? taskDisplayTitle(task) : null,
+      );
+      if (selection == null) return;
+      Navigator.of(context).pop(selection);
     } catch (error) {
       if (mounted) showFocusError(context, error);
     } finally {
       _openingSetup = false;
     }
   }
+}
+
+/// 选择任务页回传给专注链的结果：开始的对象 + 它的任务标题。
+///
+/// 标题为 null 表示对象来自「恢复已有流程」，此时由专注链按 taskId 回查。
+sealed class _FocusStartSelection {
+  const _FocusStartSelection({this.taskTitle});
+
+  final String? taskTitle;
+
+  static _FocusStartSelection? fromObject(Object? value, {String? taskTitle}) =>
+      switch (value) {
+        FocusSession session => _FocusSessionStartSelection(
+          session,
+          taskTitle: taskTitle,
+        ),
+        AppointmentPreparation appointment => _FocusAppointmentStartSelection(
+          appointment,
+          taskTitle: taskTitle,
+        ),
+        _ => null,
+      };
+}
+
+final class _FocusSessionStartSelection extends _FocusStartSelection {
+  const _FocusSessionStartSelection(this.session, {super.taskTitle});
+
+  final FocusSession session;
+}
+
+final class _FocusAppointmentStartSelection extends _FocusStartSelection {
+  const _FocusAppointmentStartSelection(this.appointment, {super.taskTitle});
+
+  final AppointmentPreparation appointment;
 }
 
 /// 任务卡左侧的柔色圆底图标井：精锐 / 普通 / 双模式各一档图标与底色。
@@ -930,9 +992,10 @@ class _TaskTypeWell extends StatelessWidget {
 
 /// 专注历史：按链切换的纵向链式时间轴。
 ///
-/// 顶部三段切换（精锐链 / 普通链 / 预约链），下方把已结算记录回放成
-/// #1 -> #2 -> #3 -> 断链 -> #1 的连胜段：段头写清连续长度，段内用纵向
-/// 连接线与圆形序号徽章串联，失败以「断链」收尾并明确下一段重新从 #1 起算。
+/// 顶部三段切换（精锐链 / 普通链 / 预约链），下方把已结算记录回放成递进的
+/// 连胜段。每段按「倒链」展示：最新在最上，最上方是该段的收尾断链（如果有），
+/// 其后按 #N -> #1 倒序排列；段头写清连续长度，段内用纵向连接线与圆形序号
+/// 徽章串联，断链卡明确下一段重新从 #1 起算。
 /// 现行单设备时钟待核对只挂轻量徽标，不占序号也不断链。
 class FocusHistoryPage extends ConsumerStatefulWidget {
   const FocusHistoryPage({super.key});
@@ -963,6 +1026,13 @@ class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
   FocusRepository? _dataRepository;
   String? _dataSignature;
   late Future<_FocusHistoryData> _dataFuture;
+  String? _displayTimeZoneId;
+
+  Future<void> _refreshDisplayTimeZone() async {
+    final zoneId = await readAccountDisplayTimeZone(ref);
+    if (!mounted || zoneId == _displayTimeZoneId) return;
+    setState(() => _displayTimeZoneId = zoneId);
+  }
 
   Future<_FocusHistoryData> _readData(FocusRepository repository) async {
     List<FocusNode> nodes = const <FocusNode>[];
@@ -1006,6 +1076,7 @@ class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
     _dataRepository = repository;
     _dataSignature = signature;
     _dataFuture = _readData(repository);
+    unawaited(_refreshDisplayTimeZone());
   }
 
   void _reload(FocusRepository repository) {
@@ -1032,26 +1103,38 @@ class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
         gutter,
         PactaSpacing.xs,
       ),
-      child: SegmentedButton<FocusChainType>(
-        key: const ValueKey('focus-history-chain-switch'),
-        showSelectedIcon: false,
-        style: SegmentedButton.styleFrom(
-          minimumSize: const Size(0, 44),
-          visualDensity: VisualDensity.compact,
-          // 800dp 居中块减去两侧 gutter 后只剩 752dp：段内横向 padding 收到
-          // 8dp，三个中文标签才不会把整条胶囊挤到左缘之外。
-          padding: const EdgeInsets.symmetric(horizontal: PactaSpacing.sm),
-        ),
-        segments: [
-          for (final chain in FocusChainType.values)
-            ButtonSegment<FocusChainType>(
-              value: chain,
-              label: Text(chain.label),
+      child: Align(
+        alignment: Alignment.center,
+        child: FittedBox(
+          // 「字比框大」的根因是 compact 密度 + 8dp 内边距把中文标签顶到边框。
+          // 改成标准密度与对称的 12/4 内边距，48dp 最小高度让文字稳稳包在
+          // 胶囊中线；360dp 窄屏或 2 倍字号时由 FittedBox 整体等比收缩，
+          // 不溢出也不截断。
+          fit: BoxFit.scaleDown,
+          child: SegmentedButton<FocusChainType>(
+            key: const ValueKey('focus-history-chain-switch'),
+            showSelectedIcon: false,
+            style: SegmentedButton.styleFrom(
+              minimumSize: const Size(0, 48),
+              visualDensity: VisualDensity.standard,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: const EdgeInsets.symmetric(
+                horizontal: PactaSpacing.md,
+                vertical: PactaSpacing.xs,
+              ),
             ),
-        ],
-        selected: {chain},
-        onSelectionChanged: (selection) =>
-            setState(() => _chain = selection.single),
+            segments: [
+              for (final chain in FocusChainType.values)
+                ButtonSegment<FocusChainType>(
+                  value: chain,
+                  label: Text(chain.label),
+                ),
+            ],
+            selected: {chain},
+            onSelectionChanged: (selection) =>
+                setState(() => _chain = selection.single),
+          ),
+        ),
       ),
     );
   }
@@ -1120,6 +1203,7 @@ class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
                               timeline: history.timelineFor(chain),
                               nodes: data.nodes,
                               taskTitles: taskTitles,
+                              displayTimeZoneId: _displayTimeZoneId,
                               dataNotice: _dataNotice(data),
                               onNodeNoteUpdated: () => _reload(repository),
                             ),
@@ -1152,6 +1236,7 @@ class _FocusHistoryTimeline extends StatelessWidget {
     required this.timeline,
     required this.nodes,
     required this.taskTitles,
+    required this.displayTimeZoneId,
     required this.dataNotice,
     required this.onNodeNoteUpdated,
   });
@@ -1161,6 +1246,7 @@ class _FocusHistoryTimeline extends StatelessWidget {
   final FocusChainTimeline timeline;
   final List<FocusNode> nodes;
   final Map<String, String> taskTitles;
+  final String? displayTimeZoneId;
   final String? dataNotice;
   final VoidCallback onNodeNoteUpdated;
 
@@ -1348,18 +1434,20 @@ class _FocusHistoryTimeline extends StatelessWidget {
     final header = isNewest && !run.isBroken
         ? '当前连续 ${run.length} 次'
         : '连续 ${run.length} 次';
+    // 倒链：每段从上到下都是最新在前——先收尾断链，再 #N -> #1 倒序。
+    // 打开历史页第一眼就是最新记录，不必滚到段尾才看到刚发生的事。
     final rows = <({FocusChainHistoryEntry entry, Widget badge, Widget card})>[
-      for (final entry in run.entries)
-        (
-          entry: entry,
-          badge: _streakBadge(context, entry.streakIndex!),
-          card: _completedCard(context, entry, nodesBySession[entry.id]),
-        ),
-      for (final entry in run.closingBreaks)
+      for (final entry in run.closingBreaks.reversed)
         (
           entry: entry,
           badge: _breakBadge(context),
           card: _breakCard(context, entry),
+        ),
+      for (final entry in run.entries.reversed)
+        (
+          entry: entry,
+          badge: _streakBadge(context, entry.streakIndex!),
+          card: _completedCard(context, entry, nodesBySession[entry.id]),
         ),
     ];
     return Column(
@@ -1379,8 +1467,8 @@ class _FocusHistoryTimeline extends StatelessWidget {
             const SizedBox(width: PactaSpacing.sm),
             Expanded(
               child: Text(
-                '${formatPactaMonthDayTime(run.startedAt)} – '
-                '${formatPactaMonthDayTime(run.endedAt)}',
+                '${formatPactaMonthDayTime(run.startedAt, timeZoneId: displayTimeZoneId)} – '
+                '${formatPactaMonthDayTime(run.endedAt, timeZoneId: displayTimeZoneId)}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: colors.onSurfaceVariant,
                 ),
@@ -1526,6 +1614,37 @@ class _FocusHistoryTimeline extends StatelessWidget {
     );
   }
 
+  /// 专注历史卡片外壳：上下严格同为 `md`，使单行、多行卡片与右侧按钮共用一套对称垂直留白。
+  Widget _historyTimelineCard({
+    required Key cardKey,
+    Key? textColumnKey,
+    required List<Widget> content,
+    Widget? trailing,
+  }) => Card(
+    key: cardKey,
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(
+        PactaSpacing.lg,
+        PactaSpacing.md,
+        PactaSpacing.xs,
+        PactaSpacing.md,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              key: textColumnKey,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: content,
+            ),
+          ),
+          ?trailing,
+        ],
+      ),
+    ),
+  );
+
   Widget _completedCard(
     BuildContext context,
     FocusChainHistoryEntry entry,
@@ -1538,67 +1657,56 @@ class _FocusHistoryTimeline extends StatelessWidget {
       FocusChainType.elite ||
       FocusChainType.regular => entry.basisText == null ? '正常完成' : '获准提前完成',
     };
+    final occurred = formatPactaDateTimeInZone(
+      entry.occurredAt,
+      timeZoneId: displayTimeZoneId,
+    );
     final meta =
-        '$status · ${formatPactaDateTime(entry.occurredAt)} · '
+        '$status · $occurred · '
         '${formatEffectiveDuration(entry.effectiveSeconds)}';
-    return Card(
-      key: ValueKey('focus-history-node-${entry.id}'),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          PactaSpacing.lg,
-          PactaSpacing.sm,
-          PactaSpacing.xs,
-          PactaSpacing.sm,
+    return _historyTimelineCard(
+      cardKey: ValueKey('focus-history-node-${entry.id}'),
+      textColumnKey: const ValueKey('focus-history-card-text'),
+      content: [
+        Text(
+          taskTitles[entry.taskId] ?? '原任务',
+          style: theme.textTheme.titleSmall,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
         ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    taskTitles[entry.taskId] ?? '原任务',
-                    style: theme.textTheme.titleSmall,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: PactaSpacing.xxs),
-                  Text(
-                    meta,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  if (entry.basisText case final basis?) ...[
-                    const SizedBox(height: PactaSpacing.xxs),
-                    Text(
-                      '依据：$basis',
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ],
-              ),
+        const SizedBox(height: PactaSpacing.xxs),
+        Text(
+          meta,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        if (entry.basisText case final basis?) ...[
+          const SizedBox(height: PactaSpacing.xxs),
+          Text(
+            '依据：$basis',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
             ),
-            if (node != null)
-              IconButton(
-                key: ValueKey('focus-history-node-note-${entry.id}'),
-                tooltip: '编辑节点备注',
-                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                icon: const Icon(
-                  Icons.sticky_note_2_outlined,
-                  size: PactaIconSizes.compact,
-                ),
-                onPressed: () => _editNodeNote(context, node),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ],
+      trailing: node == null
+          ? null
+          : IconButton(
+              key: ValueKey('focus-history-node-note-${entry.id}'),
+              tooltip: '编辑节点备注',
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              icon: const Icon(
+                Icons.sticky_note_2_outlined,
+                size: PactaIconSizes.compact,
               ),
-          ],
-        ),
-      ),
+              onPressed: () => _editNodeNote(context, node),
+            ),
     );
   }
 
@@ -1610,119 +1718,97 @@ class _FocusHistoryTimeline extends StatelessWidget {
         ? '准备时长'
         : '有效专注';
     final editable = entry.chain != FocusChainType.appointment;
-    return Card(
-      key: ValueKey('focus-history-break-${entry.id}'),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(
-          PactaSpacing.lg,
-          PactaSpacing.sm,
-          PactaSpacing.xs,
-          PactaSpacing.sm,
-        ),
-        child: Row(
+    return _historyTimelineCard(
+      cardKey: ValueKey('focus-history-break-${entry.id}'),
+      textColumnKey: const ValueKey('focus-history-card-text'),
+      content: [
+        Wrap(
+          spacing: PactaSpacing.sm,
+          runSpacing: PactaSpacing.xxs,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Wrap(
-                    spacing: PactaSpacing.sm,
-                    runSpacing: PactaSpacing.xxs,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      const PactaStatusBadge(
-                        label: '断链',
-                        icon: Icons.link_off,
-                        tone: PactaStatusBadgeTone.error,
-                      ),
-                      Text(
-                        formatPactaDateTime(entry.occurredAt),
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: PactaSpacing.xs),
-                  Text(
-                    '${taskTitles[entry.taskId] ?? '原任务'} · '
-                    '原因：${entry.failureReason ?? '未填写'}',
-                    style: theme.textTheme.bodyMedium,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: PactaSpacing.xxs),
-                  Text(
-                    '$durationLabel '
-                    '${formatEffectiveDuration(entry.effectiveSeconds)}'
-                    ' · 之后重新从 #1 起算',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
+            const PactaStatusBadge(
+              label: '断链',
+              icon: Icons.link_off,
+              tone: PactaStatusBadgeTone.error,
+            ),
+            Text(
+              formatPactaDateTimeInZone(
+                entry.occurredAt,
+                timeZoneId: displayTimeZoneId,
+              ),
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
               ),
             ),
-            if (editable)
-              IconButton(
-                key: ValueKey('focus-history-break-reason-${entry.id}'),
-                tooltip: '编辑失败原因',
-                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                icon: const Icon(
-                  Icons.edit_note_outlined,
-                  size: PactaIconSizes.compact,
-                ),
-                onPressed: () => _editFailureReason(context, entry),
-              ),
           ],
         ),
-      ),
+        const SizedBox(height: PactaSpacing.xs),
+        Text(
+          '${taskTitles[entry.taskId] ?? '原任务'} · '
+          '原因：${entry.failureReason ?? '未填写'}',
+          style: theme.textTheme.bodyMedium,
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: PactaSpacing.xxs),
+        Text(
+          '$durationLabel '
+          '${formatEffectiveDuration(entry.effectiveSeconds)}'
+          ' · 之后重新从 #1 起算',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+      trailing: !editable
+          ? null
+          : IconButton(
+              key: ValueKey('focus-history-break-reason-${entry.id}'),
+              tooltip: '编辑失败原因',
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              icon: const Icon(
+                Icons.edit_note_outlined,
+                size: PactaIconSizes.compact,
+              ),
+              onPressed: () => _editFailureReason(context, entry),
+            ),
     );
   }
 
   Widget _clockReviewCard(BuildContext context, FocusChainHistoryEntry entry) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    return Card(
-      key: ValueKey('focus-history-clock-review-${entry.id}'),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: PactaSpacing.lg,
-          vertical: PactaSpacing.sm,
+    return _historyTimelineCard(
+      cardKey: ValueKey('focus-history-clock-review-${entry.id}'),
+      content: [
+        Text(
+          taskTitles[entry.taskId] ?? '原任务',
+          style: theme.textTheme.titleSmall,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
         ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    taskTitles[entry.taskId] ?? '原任务',
-                    style: theme.textTheme.titleSmall,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: PactaSpacing.xxs),
-                  Text(
-                    '${formatPactaDateTime(entry.occurredAt)} · '
-                    '${formatEffectiveDuration(entry.effectiveSeconds)}',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colors.onSurfaceVariant,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: PactaSpacing.sm),
-            const PactaStatusBadge(
-              label: '时钟待核对',
-              icon: Icons.schedule,
-              tone: PactaStatusBadgeTone.warning,
-            ),
-          ],
+        const SizedBox(height: PactaSpacing.xxs),
+        Text(
+          '${formatPactaDateTimeInZone(entry.occurredAt, timeZoneId: displayTimeZoneId)} · '
+          '${formatEffectiveDuration(entry.effectiveSeconds)}',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
         ),
+      ],
+      trailing: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(width: PactaSpacing.sm),
+          PactaStatusBadge(
+            label: '时钟待核对',
+            icon: Icons.schedule,
+            tone: PactaStatusBadgeTone.warning,
+          ),
+        ],
       ),
     );
   }

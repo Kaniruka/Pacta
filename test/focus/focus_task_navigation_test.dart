@@ -331,7 +331,20 @@ void main() {
     await tester.ensureVisible(find.text('选择任务'));
     await tester.tap(find.text('选择任务'));
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('准备配置'), 200);
+    // 配置卡里的 TextField 自带一个横向 Scrollable，页面因此不止一个
+    // Scrollable；scrollUntilVisible 不指定时会对 find.byType(Scrollable)
+    // 取 single，直接抛 Too many elements。这里锁定纵向的外层列表。
+    await tester.scrollUntilVisible(
+      find.text('准备配置'),
+      200,
+      scrollable: find
+          .byWidgetPredicate(
+            (widget) =>
+                widget is Scrollable &&
+                widget.axisDirection == AxisDirection.down,
+          )
+          .first,
+    );
     await tester.pumpAndSettle();
     expect(find.text('准备配置'), findsOneWidget);
     expect(tester.takeException(), isNull);

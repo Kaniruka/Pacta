@@ -24,9 +24,13 @@ import 'board_pinned_goal_actions.dart';
 import 'focus_national_calendar_card.dart';
 
 class _FocusClockReviewPrompt extends StatelessWidget {
-  const _FocusClockReviewPrompt({required this.repository});
+  const _FocusClockReviewPrompt({
+    required this.repository,
+    this.displayTimeZoneId,
+  });
 
   final FocusRepository repository;
+  final String? displayTimeZoneId;
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +61,10 @@ class _FocusClockReviewPrompt extends StatelessWidget {
               ),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) => FocusClockReviewPage(repository: repository),
+                  builder: (_) => FocusClockReviewPage(
+                    repository: repository,
+                    displayTimeZoneId: displayTimeZoneId,
+                  ),
                 ),
               ),
             ),
@@ -76,10 +83,12 @@ class _FailureReviewPrompt extends StatelessWidget {
   const _FailureReviewPrompt({
     required this.repository,
     required this.displayTimeZoneId,
+    required this.checkpointTimeZoneId,
   });
 
   final NationalFocusRepository repository;
   final String displayTimeZoneId;
+  final String checkpointTimeZoneId;
 
   @override
   Widget build(BuildContext context) {
@@ -114,6 +123,7 @@ class _FailureReviewPrompt extends StatelessWidget {
                   builder: (_) => NationalFocusFailureHistoryPage(
                     repository: repository,
                     displayTimeZoneId: displayTimeZoneId,
+                    accountCheckpointTimeZoneId: checkpointTimeZoneId,
                   ),
                 ),
               ),
@@ -171,6 +181,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
       taskRepository: taskRepository,
       builder: (context, projection) => _BoardContent(
         displayTimeZoneId: projection.displayTimeZoneId,
+        checkpointTimeZoneId: projection.checkpointTimeZoneId,
         zoneResolved: projection.zoneResolved,
         now: ref.read(displayClockProvider),
         repository: taskRepository,
@@ -195,6 +206,7 @@ class _BoardPageState extends ConsumerState<BoardPage> {
 class _BoardProjection {
   const _BoardProjection({
     required this.displayTimeZoneId,
+    required this.checkpointTimeZoneId,
     required this.zoneResolved,
     required this.goals,
     required this.accountFailed,
@@ -202,6 +214,7 @@ class _BoardProjection {
   });
 
   final String displayTimeZoneId;
+  final String checkpointTimeZoneId;
 
   /// 账号时区是否已经解析（首次值或首次错误都算解析完成）。
   ///
@@ -244,6 +257,8 @@ class _BoardProjectionScopeState extends State<_BoardProjectionScope> {
   StreamSubscription<ProfileAccount>? _profileSubscription;
   StreamSubscription<List<Goal>>? _goalsSubscription;
   String _displayTimeZoneId = AccountTimeZones.fallbackId;
+  String _checkpointTimeZoneId =
+      AccountTimeZones.defaultNationalFocusTimeZoneId;
   List<Goal> _goals = const [];
   bool _accountFailed = false;
   bool _goalsFailed = false;
@@ -287,12 +302,16 @@ class _BoardProjectionScopeState extends State<_BoardProjectionScope> {
         final nextZone = AccountTimeZones.effectiveId(
           profile.displayTimeZoneId,
         );
+        final nextCheckpointZone = AccountTimeZones.checkpointTimeZoneId(
+          profile.displayTimeZoneId,
+        );
         _apply(() {
           _accountFailed = false;
           _profileResolved = true;
           // 换时区时只更新门禁与账号时区：融合卡片以 (时区, 月份) 为订阅
           // 身份，自己丢弃上一个时区的投影，屏上不会出现旧数字。
           _displayTimeZoneId = nextZone;
+          _checkpointTimeZoneId = nextCheckpointZone;
         });
       },
       onError: (Object error, StackTrace stackTrace) {
@@ -326,6 +345,7 @@ class _BoardProjectionScopeState extends State<_BoardProjectionScope> {
       context,
       _BoardProjection(
         displayTimeZoneId: _displayTimeZoneId,
+        checkpointTimeZoneId: _checkpointTimeZoneId,
         zoneResolved: _profileResolved,
         goals: _goals,
         accountFailed: _accountFailed,
@@ -338,6 +358,7 @@ class _BoardProjectionScopeState extends State<_BoardProjectionScope> {
 class _BoardContent extends StatelessWidget {
   const _BoardContent({
     required this.displayTimeZoneId,
+    required this.checkpointTimeZoneId,
     required this.zoneResolved,
     required this.now,
     required this.repository,
@@ -353,6 +374,7 @@ class _BoardContent extends StatelessWidget {
   });
 
   final String displayTimeZoneId;
+  final String checkpointTimeZoneId;
 
   /// 账号时区是否已解析；未解析时融合卡片不查询、也不画兜底数字。
   final bool zoneResolved;
@@ -408,10 +430,14 @@ class _BoardContent extends StatelessWidget {
     final prompts = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _FocusClockReviewPrompt(repository: focusRepository),
+        _FocusClockReviewPrompt(
+          repository: focusRepository,
+          displayTimeZoneId: displayTimeZoneId,
+        ),
         _FailureReviewPrompt(
           repository: nationalFocusRepository,
           displayTimeZoneId: displayTimeZoneId,
+          checkpointTimeZoneId: checkpointTimeZoneId,
         ),
       ],
     );
@@ -431,6 +457,7 @@ class _BoardContent extends StatelessWidget {
           nationalFocusRepository: nationalFocusRepository,
           scheduleRepository: scheduleRepository,
           displayTimeZoneId: zoneResolved ? displayTimeZoneId : null,
+          checkpointTimeZoneId: zoneResolved ? checkpointTimeZoneId : null,
           now: now,
           accountFailed: accountFailed,
           onOpenNationalFocus: onOpenNationalFocus,

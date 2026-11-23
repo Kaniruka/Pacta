@@ -20,6 +20,7 @@ class CloudSyncCard extends StatefulWidget {
     this.versionCheck,
     this.focusRepository,
     this.autoUpload,
+    this.accountTimeZoneIdLoader,
   });
 
   final CloudVersionCheck? versionCheck;
@@ -29,6 +30,7 @@ class CloudSyncCard extends StatefulWidget {
   final CloudAutoUploadCoordinator? autoUpload;
   final CloudSnapshotRepository? repository;
   final Future<void> Function() onDownloaded;
+  final Future<String?> Function()? accountTimeZoneIdLoader;
 
   @override
   State<CloudSyncCard> createState() => _CloudSyncCardState();
@@ -168,6 +170,7 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
   String? _message;
   String? _resultError;
   CloudSyncResult? _result;
+  String? _displayTimeZoneId;
   int _resultRequest = 0;
 
   String? _reportedAutoUploadStop;
@@ -178,7 +181,20 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
     widget.versionCheck?.addListener(_versionChanged);
     widget.autoUpload?.addListener(_autoUploadChanged);
     _loadResult();
+    _loadTimeZone();
     _watchFocus();
+  }
+
+  Future<void> _loadTimeZone() async {
+    final loader = widget.accountTimeZoneIdLoader;
+    if (loader == null) return;
+    try {
+      final zone = await loader();
+      if (!mounted) return;
+      setState(() => _displayTimeZoneId = zone);
+    } catch (_) {
+      // 时区读取失败时保持当前值或回落本机时区。
+    }
   }
 
   /// 自动上传被云端版本或请求冲突挡住时提示一次，避免静默不传。
@@ -338,6 +354,8 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
           repository: repository,
           onRestored: widget.onDownloaded,
           onCancelPendingUpload: widget.autoUpload?.cancelPending,
+          accountTimeZoneIdLoader: widget.accountTimeZoneIdLoader,
+          displayTimeZoneId: _displayTimeZoneId,
         ),
       ),
     );
@@ -579,16 +597,22 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('本机数据更新：${formatPactaDateTimeSeconds(local.dataUpdatedAt)}'),
+            Text(
+              '本机数据更新：${formatPactaDateTimeSeconds(local.dataUpdatedAt, timeZoneId: _displayTimeZoneId)}',
+            ),
             Text('本机记录：${local.rowCount} 条'),
             const SizedBox(height: 8),
             if (cloud == null)
               const Text('云端暂无备份。')
             else ...[
-              Text('云端数据更新：${formatPactaDateTimeSeconds(cloud.dataUpdatedAt)}'),
+              Text(
+                '云端数据更新：${formatPactaDateTimeSeconds(cloud.dataUpdatedAt, timeZoneId: _displayTimeZoneId)}',
+              ),
               Text('云端记录：${cloud.rowCount} 条'),
               Text('来源：${cloud.deviceName}'),
-              Text('上传时间：${formatPactaDateTimeSeconds(cloud.uploadedAt)}'),
+              Text(
+                '上传时间：${formatPactaDateTimeSeconds(cloud.uploadedAt, timeZoneId: _displayTimeZoneId)}',
+              ),
               const SizedBox(height: 8),
               Text(_age(cloud.dataUpdatedAt, local.dataUpdatedAt)),
             ],
@@ -642,7 +666,10 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
     final result = _result;
     return result == null
         ? '尚未同步'
-        : formatPactaDateTimeSeconds(result.succeededAt);
+        : formatPactaDateTimeSeconds(
+            result.succeededAt,
+            timeZoneId: _displayTimeZoneId,
+          );
   }
 
   bool _reportedFailure = false;
@@ -687,11 +714,14 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
               // 正下方，也不会因尾部箭头压缩而错位。
               final compact = constraints.maxWidth < 400;
               // 时间戳始终是一行：窄屏下它跟标题同列左对齐，宽屏下右对齐。
-              // 空间真的不够时省略，而不是换行掉到图标下方。
+              // 平板/桌面（≥400dp）下的错位来自「标题与状态各占一半 flex」：
+              // 状态短的时候文本从 50% 分界处开始右对齐，看上去飘在卡片中间。
+              // 这里让状态只按内容取宽、紧贴箭头，剩余宽度全给标题。
               final status = Text(
                 _summary,
                 style: Theme.of(context).textTheme.bodySmall,
                 textAlign: compact ? TextAlign.start : TextAlign.end,
+                softWrap: false,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               );
@@ -700,6 +730,9 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
                 style: Theme.of(context).textTheme.titleMedium,
               );
               return Row(
+                // 标题、状态与箭头严格同一条水平中线：任一侧换行或行高不同
+                // 都不会把另一侧顶偏。
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   const Icon(Icons.cloud_sync_outlined),
                   const SizedBox(width: 12),
@@ -715,10 +748,18 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
                             ],
                           )
                         : Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
                               Expanded(child: heading),
                               const SizedBox(width: 12),
-                              Flexible(child: status),
+                              // 非 flex 子项按内容取宽并夹紧上限：状态贴着
+                              // 箭头右对齐，只有真放不下才省略。
+                              ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: constraints.maxWidth * 0.5,
+                                ),
+                                child: status,
+                              ),
                             ],
                           ),
                   ),

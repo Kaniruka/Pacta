@@ -55,7 +55,7 @@ void main() {
       );
 
       expect(find.text('国策待确认提醒'), findsOneWidget);
-      expect(find.text('提醒时间（北京时间）'), findsOneWidget);
+      expect(find.text('提醒时间（账号时区）'), findsOneWidget);
       expect(find.text('22:00'), findsOneWidget);
       final switchTile = tester.widget<SwitchListTile>(
         find.ancestor(

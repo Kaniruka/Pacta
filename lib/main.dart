@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'src/app/app_providers.dart';
 import 'src/app/pacta_locales.dart';
+import 'src/app/pacta_splash_gate.dart';
 import 'src/auth/auth_repository.dart';
 import 'src/auth/auth_screen.dart';
 import 'src/auth/supabase_auth_repository.dart';
@@ -29,6 +30,7 @@ import 'src/theme/pacta_theme.dart';
 
 export 'src/app/app_providers.dart';
 export 'src/app/app_shell.dart';
+export 'src/app/pacta_splash_gate.dart';
 export 'src/auth/auth_screen.dart';
 export 'src/board/board_page.dart';
 export 'src/focus/focus_chain_page.dart';
@@ -47,12 +49,18 @@ export 'src/ui/pacta_hold_action_reorder.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final sourceDevice = await SourceDeviceInfo.load();
-  final focusNotificationService = FocusNotificationService();
+  final database = PactaDatabase.open();
+  late final FocusNotificationService focusNotificationService;
+  focusNotificationService = FocusNotificationService(
+    accountTimeZoneReader: () => readAccountCheckpointTimeZoneId(
+      database,
+      focusNotificationService.ownerUserId,
+    ),
+  );
   await focusNotificationService.initialize();
   final url = const String.fromEnvironment('SUPABASE_URL');
   final key = const String.fromEnvironment('SUPABASE_PUBLISHABLE_KEY');
   AuthRepository repository = const UnavailableAuthRepository();
-  final database = PactaDatabase.open();
   CloudSnapshotRemote? cloudRemote;
   ProfileRemote profileRemote = const UnavailableProfileRemote();
   NationalFocusAiGrantRepository Function(String userId)?
@@ -193,6 +201,7 @@ class PactaApp extends StatelessWidget {
     this.chainSignalsRepositoryFactory,
     this.profileRepositoryFactory,
     this.deviceTimeZoneIdReader = readDeviceTimeZoneId,
+    this.enableSplash,
   });
 
   /// 覆盖系统语言；为空时按设备首选语言在简体中文、繁体中文、英文之间解析。
@@ -203,6 +212,9 @@ class PactaApp extends StatelessWidget {
   /// Reads this device's IANA zone. It is only a one-time migration input for
   /// the account display time zone, never a display value.
   final Future<String?> Function() deviceTimeZoneIdReader;
+
+  /// 开屏过渡开关：为空时只有真实 app 绑定播放动画，测试绑定直接渲染首屏。
+  final bool? enableSplash;
 
   final CloudSnapshotRepository Function(String userId)?
   cloudSnapshotRepositoryFactory;
@@ -300,9 +312,14 @@ class PactaApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: pactaTheme(Brightness.light),
         darkTheme: pactaTheme(Brightness.dark),
-        home: UserPurgeCleanupLifecycleObserver(
-          cleanupRepository: userPurgeCleanupRepository,
-          child: const AuthGate(),
+        // 开屏层在最外层：冷启动后先看品牌动画，再露出清理观察器与首屏，
+        // 动画结束即整块卸载，不会给首屏留一层透明拦截。
+        home: PactaSplashGate(
+          enableSplash: enableSplash,
+          child: UserPurgeCleanupLifecycleObserver(
+            cleanupRepository: userPurgeCleanupRepository,
+            child: const AuthGate(),
+          ),
         ),
       ),
     );

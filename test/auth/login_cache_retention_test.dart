@@ -22,10 +22,10 @@ void main() {
 
     await tester.enterText(find.byType(TextField).at(0), 'user@example.com');
     await tester.enterText(find.byType(TextField).at(1), 'incorrect-password');
-    await tester.tap(find.text('登录'));
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Invalid login credentials'), findsOneWidget);
+    expect(find.text('邮箱或密码错误，请核对后重试。'), findsOneWidget);
     expect(find.textContaining('statusCode'), findsNothing);
     expect(find.textContaining('invalid_credentials'), findsNothing);
     expect(auth.currentUserId, isNull);
@@ -65,10 +65,10 @@ void main() {
 
     await tester.enterText(find.byType(TextField).at(0), 'user@example.com');
     await tester.enterText(find.byType(TextField).at(1), 'incorrect-password');
-    await tester.tap(find.text('登录'));
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Invalid login credentials'), findsOneWidget);
+    expect(find.text('邮箱或密码错误，请核对后重试。'), findsOneWidget);
     expect(auth.currentUserId, isNull);
 
     auth.signInError = null;

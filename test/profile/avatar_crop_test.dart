@@ -131,6 +131,9 @@ void main() {
               .onPressed,
           isNotNull,
         );
+        // 时区对照行把保存按钮推到 800×600 首屏之外，先滚动到它再点。
+        await tester.ensureVisible(find.widgetWithText(FilledButton, '保存'));
+        await tester.pumpAndSettle();
         await tester.runAsync(() async {
           await tester.tap(find.text('保存'));
           await Future<void>.delayed(const Duration(milliseconds: 300));

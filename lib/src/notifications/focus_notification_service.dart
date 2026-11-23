@@ -32,6 +32,7 @@ class FocusNotificationService {
     this.localTimeZone,
     this.permissionGateway,
     this.windowsNotifications,
+    this.accountTimeZoneReader,
     Timer Function(Duration delay, void Function() callback)? reminderTimers,
   }) : _androidNotifications =
            androidNotifications ?? FlutterLocalNotificationsPlugin(),
@@ -70,6 +71,11 @@ class FocusNotificationService {
   final Future<String> Function()? localTimeZone;
   final DevicePermissionGateway? permissionGateway;
   final WindowsNotificationAdapter? windowsNotifications;
+
+  /// 账号时区（IANA）。国策待确认提醒按该时区的当地墙钟排程；未提供时沿用
+  /// 北京时间，旧调用方与旧测试的行为不变。
+  final Future<String> Function()? accountTimeZoneReader;
+
   final Timer Function(Duration delay, void Function() callback)
   _reminderTimers;
   final _openFlowRequests = StreamController<String>.broadcast();
@@ -233,7 +239,12 @@ class FocusNotificationService {
     try {
       final store = await _settingsStore;
       final preferences = await store.load();
-      if (!preferences.notificationsEnabled) return false;
+      // 常驻倒计时状态通知也依赖通知权限：只开了后台运行开关时同样要申请，
+      // 否则状态栏永远不出现倒计时。
+      if (!preferences.notificationsEnabled &&
+          !preferences.backgroundRunningEnabled) {
+        return false;
+      }
       if (await notificationsAllowed()) return true;
       if (preferences.notificationPermissionRequested) return false;
       if (_staleOwner(generation)) return false;
@@ -1111,6 +1122,7 @@ class FocusNotificationService {
     }
 
     final now = _now().toUtc();
+    final timeZoneId = await _nationalFocusReminderTimeZoneId();
     final lastSentDayKey = state.loadLastSentDayKey();
     final reminder = NationalFocusReminderPlan.next(
       now: now,
@@ -1118,6 +1130,7 @@ class FocusNotificationService {
       hasPendingConfirmations: true,
       lastNotifiedDayKey: lastSentDayKey,
       activeFlow: _currentPlan,
+      timeZoneId: timeZoneId,
     );
     if (reminder == null) {
       await _cancelNationalFocusReminder(state);
@@ -1130,6 +1143,7 @@ class FocusNotificationService {
         preferences,
         state,
         generation,
+        timeZoneId,
       );
       return;
     }
@@ -1139,7 +1153,22 @@ class FocusNotificationService {
       preferences,
       state,
       generation,
+      timeZoneId,
     );
+  }
+
+  /// 国策提醒使用的账号时区；读不到时回到北京时间。
+  Future<String> _nationalFocusReminderTimeZoneId() async {
+    final reader = accountTimeZoneReader;
+    if (reader == null) return NationalFocusReminderPlan.defaultTimeZoneId;
+    try {
+      final zoneId = await reader();
+      return zoneId.trim().isEmpty
+          ? NationalFocusReminderPlan.defaultTimeZoneId
+          : zoneId;
+    } catch (_) {
+      return NationalFocusReminderPlan.defaultTimeZoneId;
+    }
   }
 
   Future<void> _cancelNationalFocusReminder(
@@ -1159,6 +1188,7 @@ class FocusNotificationService {
     FocusDevicePreferences preferences,
     NationalFocusReminderStateStore state,
     int generation,
+    String timeZoneId,
   ) async {
     _windowsNationalFocusReminderTimer?.cancel();
     if (reminder == null) return;
@@ -1188,6 +1218,7 @@ class FocusNotificationService {
       hasPendingConfirmations: _hasPendingNationalFocusConfirmations == true,
       lastNotifiedDayKey: reminder.dayKey,
       activeFlow: _currentPlan,
+      timeZoneId: timeZoneId,
     );
     if (nextReminder != null && nextReminder.scheduledAt.isAfter(_now())) {
       await state.saveScheduled(
@@ -1209,6 +1240,7 @@ class FocusNotificationService {
     FocusDevicePreferences preferences,
     NationalFocusReminderStateStore state,
     int generation,
+    String timeZoneId,
   ) async {
     if (_staleOwner(generation)) return;
     final now = _now().toUtc();
@@ -1228,12 +1260,18 @@ class FocusNotificationService {
         hasPendingConfirmations: true,
         lastNotifiedDayKey: scheduled.dayKey,
         activeFlow: _currentPlan,
+        timeZoneId: timeZoneId,
       );
       if (nextReminder == null) {
         await _cancelNationalFocusReminder(state);
         return;
       }
-      await _scheduleAndroidNationalFocusReminder(nextReminder, state, now);
+      await _scheduleAndroidNationalFocusReminder(
+        nextReminder,
+        state,
+        now,
+        timeZoneId,
+      );
       return;
     }
 
@@ -1248,9 +1286,15 @@ class FocusNotificationService {
           hasPendingConfirmations: true,
           lastNotifiedDayKey: reminder.dayKey,
           activeFlow: _currentPlan,
+          timeZoneId: timeZoneId,
         );
         if (nextReminder != null) {
-          await _scheduleAndroidNationalFocusReminder(nextReminder, state, now);
+          await _scheduleAndroidNationalFocusReminder(
+            nextReminder,
+            state,
+            now,
+            timeZoneId,
+          );
         }
         return;
       }
@@ -1272,12 +1316,14 @@ class FocusNotificationService {
         hasPendingConfirmations: true,
         lastNotifiedDayKey: reminder.dayKey,
         activeFlow: _currentPlan,
+        timeZoneId: timeZoneId,
       );
       if (nextReminder != null) {
         await _scheduleAndroidNationalFocusReminder(
           nextReminder,
           state,
           _now().toUtc(),
+          timeZoneId,
         );
       }
       return;
@@ -1291,13 +1337,19 @@ class FocusNotificationService {
         scheduled.repeatsDaily == !reminder.isDeferred;
     if (isAlreadyScheduled) return;
 
-    await _scheduleAndroidNationalFocusReminder(reminder, state, now);
+    await _scheduleAndroidNationalFocusReminder(
+      reminder,
+      state,
+      now,
+      timeZoneId,
+    );
   }
 
   Future<void> _scheduleAndroidNationalFocusReminder(
     NationalFocusReminderPlan reminder,
     NationalFocusReminderStateStore state,
     DateTime now,
+    String timeZoneId,
   ) async {
     final repeatsDaily = !reminder.isDeferred;
     if (!reminder.scheduledAt.isAfter(now)) {
@@ -1319,12 +1371,14 @@ class FocusNotificationService {
         hasPendingConfirmations: _hasPendingNationalFocusConfirmations == true,
         lastNotifiedDayKey: reminder.dayKey,
         activeFlow: _currentPlan,
+        timeZoneId: timeZoneId,
       );
       if (nextReminder != null) {
         await _scheduleAndroidNationalFocusReminder(
           nextReminder,
           state,
           _now().toUtc(),
+          timeZoneId,
         );
       }
       return;
@@ -1339,7 +1393,7 @@ class FocusNotificationService {
       body: '请确认今日仍有效的国策。',
       scheduledDate: timezone.TZDateTime.from(
         reminder.scheduledAt,
-        _beijingLocation,
+        _locationForTimeZone(timeZoneId),
       ),
       notificationDetails: _nationalFocusReminderDetails(),
       androidScheduleMode: exactAllowed
@@ -1357,20 +1411,14 @@ class FocusNotificationService {
     );
   }
 
-  timezone.Location get _beijingLocation {
-    if (!_timeZonesInitialized) {
-      timezone_data.initializeTimeZones();
-      _timeZonesInitialized = true;
-    }
-    return timezone.getLocation('Asia/Shanghai');
-  }
-
   Future<void> _applyAndroidPlan(FocusDevicePreferences preferences) async {
     final plan = _currentPlan;
+    final notificationsPermitted = await notificationsAllowed();
     final permissionAllowed =
-        preferences.notificationsEnabled && await notificationsAllowed();
+        preferences.notificationsEnabled && notificationsPermitted;
+    // 常驻倒计时只在"后台运行"开关下出现，与事件提醒开关相互独立。
     final showStatus =
-        permissionAllowed && preferences.backgroundRunningEnabled;
+        notificationsPermitted && preferences.backgroundRunningEnabled;
     final expectedPendingIds = <int>{};
     if (permissionAllowed && plan != null) {
       if (plan.isPreparing) {
@@ -1737,13 +1785,17 @@ class FocusNotificationService {
         _statusChannelId,
         '专注状态',
         channelDescription: '显示正在进行的预约或专注倒计时。',
-        importance: Importance.low,
-        priority: Priority.low,
+        importance: Importance.defaultImportance,
+        priority: Priority.defaultPriority,
+        silent: true,
         playSound: false,
         enableVibration: false,
         ongoing: true,
+        autoCancel: false,
         onlyAlertOnce: true,
-        showWhen: false,
+        // Android 只在 showWhen 为 true 时才渲染 usesChronometer 的倒计时，
+        // 这不是"显示时间戳"，而是倒计时的开关。
+        showWhen: endAt != null,
         usesChronometer: endAt != null,
         chronometerCountDown: endAt != null,
         when: endAt?.millisecondsSinceEpoch,
@@ -1751,6 +1803,18 @@ class FocusNotificationService {
       ),
     );
   }
+
+  /// 常驻倒计时通知的平台细节，供测试断言 `showWhen`/`usesChronometer`。
+  @visibleForTesting
+  NotificationDetails statusNotificationDetails({
+    DateTime? endAt,
+    DateTime? timeoutAt,
+    Duration? timeoutAfter,
+  }) => _statusDetails(
+    endAt: endAt,
+    timeoutAt: timeoutAt,
+    timeoutAfter: timeoutAfter,
+  );
 
   NotificationDetails _eventDetails({required String tag}) =>
       NotificationDetails(

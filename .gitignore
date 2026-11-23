@@ -57,6 +57,16 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# Android release signing material and generated dart-define payloads.
+# Both are machine-local secrets: never commit them.
+/android/key.properties
+/android/app/*.jks
+/android/app/*.keystore
+/android/app/*.p12
+*.jks
+*.keystore
+.dart-defines*.json
+
 # Local-only AI development docs and agent entry points.
 # These stay on the developer machine and are never published: the docs tree,
 # shared agent guides, glossary, mission brief and local agent configuration.

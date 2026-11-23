@@ -20,6 +20,8 @@ class CloudSnapshotHistoryPage extends StatefulWidget {
     required this.repository,
     this.onRestored,
     this.onCancelPendingUpload,
+    this.accountTimeZoneIdLoader,
+    this.displayTimeZoneId,
   });
 
   final CloudSnapshotRepository repository;
@@ -27,6 +29,8 @@ class CloudSnapshotHistoryPage extends StatefulWidget {
 
   /// 恢复前取消自动上传队列：恢复结果不得随后被自动上传回云端。
   final Future<void> Function()? onCancelPendingUpload;
+  final Future<String?> Function()? accountTimeZoneIdLoader;
+  final String? displayTimeZoneId;
 
   @override
   State<CloudSnapshotHistoryPage> createState() =>
@@ -41,16 +45,33 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
   String? _pointsError;
   List<CloudSnapshotHistoryEntry> _cloud = const [];
   List<CloudRecoveryPointSummary> _points = const [];
+  String? _displayTimeZoneId;
 
   @override
   void initState() {
     super.initState();
+    _displayTimeZoneId = widget.displayTimeZoneId;
     _load();
   }
 
   Future<void> _load() async {
-    await Future.wait<void>([_loadCloud(), _loadPoints()]);
+    await Future.wait<void>([_loadCloud(), _loadPoints(), _loadTimeZone()]);
   }
+
+  Future<void> _loadTimeZone() async {
+    final loader = widget.accountTimeZoneIdLoader;
+    if (loader == null) return;
+    try {
+      final zone = await loader();
+      if (!mounted) return;
+      setState(() => _displayTimeZoneId = zone);
+    } catch (_) {
+      // 时区读取失败时回退到现有值或本机时区。
+    }
+  }
+
+  String _formatDateTime(DateTime value) =>
+      formatPactaDateTimeInZone(value, timeZoneId: _displayTimeZoneId);
 
   Future<void> _loadCloud() async {
     try {
@@ -108,7 +129,7 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
     final confirmed = await _confirm(
       title: '恢复到该云端备份？',
       body:
-          '将用 ${formatPactaDateTime(entry.uploadedAt)} 来自 '
+          '将用 ${_formatDateTime(entry.uploadedAt)} 来自 '
           '${entry.deviceName} 的 '
           '${entry.rowCount} 条记录替换本机数据。'
           '本机独有记录会被替换，恢复前会自动保存一份本机恢复点。'
@@ -129,7 +150,7 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
     final confirmed = await _confirm(
       title: '找回本机恢复点？',
       body:
-          '将用 ${formatPactaDateTime(point.createdAt)} 保存的 '
+          '将用 ${_formatDateTime(point.createdAt)} 保存的 '
           '${point.rowCount} 条记录'
           '替换本机数据。当前的记录会先另存为新的本机恢复点。'
           '本次操作不会上传或覆盖云端。',
@@ -286,7 +307,7 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
     return _spacedRows([
       for (final entry in _cloud)
         _HistoryTile(
-          title: formatPactaDateTime(entry.uploadedAt),
+          title: _formatDateTime(entry.uploadedAt),
           subtitle: '${entry.deviceName} · ${entry.rowCount} 条记录',
           action: '恢复',
           onPressed: _working ? null : () => _restoreCloud(entry),
@@ -325,7 +346,7 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
     return _spacedRows([
       for (final point in _points)
         _HistoryTile(
-          title: formatPactaDateTime(point.createdAt),
+          title: _formatDateTime(point.createdAt),
           subtitle: '${_reason(point.reason)} · ${point.rowCount} 条记录',
           action: '找回',
           onPressed: _working ? null : () => _restorePoint(point),

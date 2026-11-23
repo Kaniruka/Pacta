@@ -77,6 +77,10 @@ class _AppShellState extends ConsumerState<AppShell>
     _nationalFocusCheckpointScheduler = NationalFocusCheckpointScheduler(
       settleDueCheckpoints: () =>
           ref.read(nationalFocusRepositoryProvider).settleDueCheckpoints(),
+      timeZoneIdReader: () async {
+        final profile = await ref.read(profileRepositoryProvider).getProfile();
+        return AccountTimeZones.checkpointTimeZoneId(profile.displayTimeZoneId);
+      },
     )..start();
     WidgetsBinding.instance.addObserver(this);
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
@@ -245,6 +249,14 @@ class _AppShellState extends ConsumerState<AppShell>
             _reminderTimeZoneId = zone;
             if (previous != null && previous != zone) {
               unawaited(_scheduleReminderSync.reconcileOnce());
+              _nationalFocusCheckpointScheduler.reschedule();
+              unawaited(
+                ref
+                    .read(nationalFocusRepositoryProvider)
+                    .watchTreeCards()
+                    .first
+                    .then(_syncNationalFocusReminder, onError: (Object _) {}),
+              );
             }
           },
           onError: (Object _) {
@@ -364,6 +376,9 @@ class _AppShellState extends ConsumerState<AppShell>
           onOpenSync: () => openAiManualSync(context, ref),
           mcpUrl: ref.read(nationalFocusMcpUrlProvider),
           repository: ref.read(nationalFocusAiGrantRepositoryProvider),
+          accountTimeZoneIdLoader: () async =>
+              (await ref.read(profileRepositoryProvider).getProfile())
+                  .displayTimeZoneId,
         ),
       ),
     );
@@ -438,7 +453,7 @@ class _AppShellState extends ConsumerState<AppShell>
         onNotificationCapabilityUse: () => unawaited(
           _focusNotificationService.ensureNotificationPermissionForUse(),
         ),
-        // 检查点本身固定北京时间 04:00；这里只决定显示用的账号时区。
+        // 展示用账号时区；国策结算检查点按账号显示时区 04:00（未设时回落 Asia/Shanghai）。
         displayTimeZoneLoader: () async {
           final profile = await ref
               .read(profileRepositoryProvider)
@@ -531,6 +546,13 @@ class _AppShellState extends ConsumerState<AppShell>
           ? null
           : NavigationBar(
               selectedIndex: _index,
+              // 窄屏默认只画图标：未选中的目的地居中只显示图标，切换时图标与
+              // 胶囊指示器上移、选中项标题由 Material 3 内置的
+              // `Curves.easeInOutCubicEmphasized` 平滑淡入展开。标签始终在树里
+              // （`FadeTransition(alwaysIncludeSemantics: true)`），因此按标题
+              // 定位目的地的现有测试继续有效。
+              labelBehavior:
+                  NavigationDestinationLabelBehavior.onlyShowSelected,
               onDestinationSelected: (value) => setState(() => _index = value),
               destinations: [
                 for (final item in _destinations)

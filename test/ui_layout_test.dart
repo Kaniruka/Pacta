@@ -66,6 +66,133 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('窄屏底栏只展开选中项标题，五个入口都可切换', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final auth = FakeAuthRepository()..signedInUser = 'layout-user';
+    await tester.pumpWidget(PactaApp(authRepository: auth));
+    await tester.pumpAndSettle();
+
+    // Material 3 原生行为：未选中的目的地只画图标，标题跟随选中动画淡入淡出。
+    final bar = tester.widget<NavigationBar>(find.byType(NavigationBar));
+    expect(
+      bar.labelBehavior,
+      NavigationDestinationLabelBehavior.onlyShowSelected,
+    );
+    expect(bar.destinations, hasLength(5));
+
+    double labelOpacity(String label) {
+      final fades = tester.widgetList<FadeTransition>(
+        find.ancestor(
+          of: find.descendant(
+            of: find.byType(NavigationBar),
+            matching: find.text(label),
+          ),
+          matching: find.byType(FadeTransition),
+        ),
+      );
+      return fades
+          .firstWhere((fade) => fade.alwaysIncludeSemantics)
+          .opacity
+          .value;
+    }
+
+    const labels = ['看板', '计划', '国策树', '专注链', '我的'];
+    expect(labelOpacity('看板'), moreOrLessEquals(1, epsilon: 0.01));
+    for (final label in ['计划', '国策树', '专注链', '我的', '看板']) {
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text(label),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+        labels.indexOf(label),
+        reason: label,
+      );
+      expect(labelOpacity(label), moreOrLessEquals(1, epsilon: 0.01));
+      for (final other in labels.where((item) => item != label)) {
+        expect(
+          labelOpacity(other),
+          lessThan(0.05),
+          reason: '$label 选中时 $other 的标题应收起',
+        );
+      }
+      expect(tester.takeException(), isNull, reason: label);
+    }
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('开屏动画播完即卸载覆盖层且不残留 Ticker', (tester) async {
+    // 测试绑定下默认零等待：未显式开启时直接渲染 child。
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PactaSplashGate(
+          key: const ValueKey('splash-default'),
+          child: const Scaffold(body: Text('主界面')),
+        ),
+      ),
+    );
+    expect(find.byKey(PactaSplashGate.overlayKey), findsNothing);
+    expect(find.text('主界面'), findsOneWidget);
+
+    // 显式开启：620ms 入场 + 260ms 淡出，结束后覆盖层与品牌字标一起消失。
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PactaSplashGate(
+          key: const ValueKey('splash-forced'),
+          enableSplash: true,
+          child: const Scaffold(body: Text('主界面')),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.byKey(PactaSplashGate.overlayKey), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.byKey(PactaSplashGate.overlayKey), findsOneWidget);
+    expect(find.text('Pacta'), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    expect(find.byKey(PactaSplashGate.overlayKey), findsNothing);
+    expect(find.text('Pacta'), findsNothing);
+    expect(find.text('主界面'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('PactaApp 开启开屏后动画完成即展现应用外壳', (tester) async {
+    tester.view.physicalSize = const Size(400, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final auth = FakeAuthRepository()..signedInUser = 'layout-user';
+    await tester.pumpWidget(PactaApp(authRepository: auth, enableSplash: true));
+    await tester.pump();
+    expect(find.byKey(PactaSplashGate.overlayKey), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(PactaSplashGate.overlayKey), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    expect(find.byKey(PactaSplashGate.overlayKey), findsNothing);
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(PactaPageHeader),
+        matching: find.text('看板'),
+      ),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('宽屏以侧边导航访问页面并跟随系统深色', (tester) async {
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1;
@@ -161,7 +288,7 @@ void main() {
     expect(find.byType(ProfileEditPage), findsOneWidget);
     final editScrollable = find
         .descendant(
-          of: find.byType(ListView),
+          of: find.byType(ProfileEditPage),
           matching: find.byType(Scrollable),
         )
         .first;

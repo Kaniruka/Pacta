@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 
+import '../profile/account_time_zone.dart';
 import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../theme/pacta_surfaces.dart';
@@ -31,6 +32,7 @@ class FocusNotificationSettingsPage extends StatefulWidget {
     this.permissionGateway,
     this.batteryOptimizationGateway,
     this.calendarSourcesBuilder,
+    this.accountTimeZoneIdLoader,
   });
 
   final FocusNotificationService service;
@@ -50,6 +52,10 @@ class FocusNotificationSettingsPage extends StatefulWidget {
   /// 由《我的》注入，本页因此不依赖日历模块；为空时该行只解释入口尚未接入。
   final WidgetBuilder? calendarSourcesBuilder;
 
+  /// 账号显示时区（IANA）。提醒时间按账号时区表达，结算点说明也跟着它走；
+  /// 未注入时按账号尚无时区的统一回退值处理，不假设固定北京时间。
+  final Future<String?> Function()? accountTimeZoneIdLoader;
+
   @override
   State<FocusNotificationSettingsPage> createState() =>
       _FocusNotificationSettingsPageState();
@@ -64,6 +70,10 @@ class _FocusNotificationSettingsPageState
   bool _loading = true;
   bool _updating = false;
   String? _message;
+
+  /// 账号时区：提醒时间与结算点说明都按它表达；未设时保留 null，
+  /// 让检查点/提醒说明按默认国策时区（Asia/Shanghai）对齐。
+  String? _accountTimeZoneId;
 
   bool get _isAndroid => widget.isAndroid ?? Platform.isAndroid;
 
@@ -87,15 +97,30 @@ class _FocusNotificationSettingsPageState
 
   Future<void> _load() async {
     final preferences = await widget.service.getPreferences();
+    final accountTimeZoneId = await _readAccountTimeZoneId();
     final permissions = await _readSystemPermissions();
     if (!mounted) return;
     setState(() {
       _preferences = preferences;
+      _accountTimeZoneId = accountTimeZoneId;
       _notificationsAllowed = permissions.$1;
       _exactAlarmsAllowed = permissions.$2;
       _ignoringBatteryOptimizations = permissions.$3;
       _loading = false;
     });
+  }
+
+  /// 账号时区读取失败或未配置时保留 null：国策检查点与提醒说明跟随
+  /// `checkpointTimeZoneId(null)`（Asia/Shanghai），不混成 Etc/UTC。
+  Future<String?> _readAccountTimeZoneId() async {
+    final loader = widget.accountTimeZoneIdLoader;
+    if (loader == null) return null;
+    try {
+      final raw = await loader();
+      return AccountTimeZones.isKnown(raw) ? raw : null;
+    } on Object {
+      return null;
+    }
   }
 
   /// 三个系统权限状态并行读取；桌面端没有电池优化概念，固定为 false。
@@ -222,7 +247,7 @@ class _FocusNotificationSettingsPageState
     if (current == null || _updating) return;
     final selected = await _pickTime(
       current.nationalFocusReminderMinutesAfterMidnight,
-      helpText: '选择提醒时间（北京时间）',
+      helpText: '选择提醒时间（账号时区）',
     );
     if (selected == null || !mounted) return;
     await _applyPreferences(
@@ -419,7 +444,7 @@ class _FocusNotificationSettingsPageState
   Widget build(BuildContext context) {
     final preferences = _preferences;
     final theme = Theme.of(context);
-    return _withPactaSurfaces(
+    return PactaSurfaces.wrapIfMissing(
       context,
       Scaffold(
         appBar: AppBar(title: const Text('通知与设备权限')),
@@ -596,14 +621,12 @@ class _FocusNotificationSettingsPageState
           ),
           PactaSettingsTile(
             tileKey: const Key('national-focus-reminder-time'),
-            title: '提醒时间（北京时间）',
+            title: '提醒时间（账号时区）',
             // 机制说明不是每次都要读：折进行内 ⓘ，需要时点开读全文，
             // 设置行本身保持一行高。
             trailing: _timeTrailing(
               preferences.nationalFocusReminderMinutesAfterMidnight,
-              note:
-                  '不影响国策检查点：这个时间只决定提醒何时发出，'
-                  '国策仍按北京时间 04:00 结算。',
+              note: _nationalFocusReminderNote(),
             ),
             onTap: _updating ? null : _setNationalFocusReminderTime,
           ),
@@ -629,6 +652,20 @@ class _FocusNotificationSettingsPageState
           ),
         ],
       );
+
+  /// 国策提醒的机制说明：提醒时刻只决定何时发出，结算点按账号时区表达。
+  ///
+  /// 纯北京时间不再是账号的既定事实，这里改成账号结算点与本机墙钟的对照，
+  /// 偏移不同时（例如账号东六区、本机东八区）会直接写出设备上的实际时刻。
+  String _nationalFocusReminderNote() {
+    final cityLabel = AccountTimeZones.cityFor(_accountTimeZoneId)?.label;
+    final zoneNote = cityLabel == null ? '' : '账号时区：$cityLabel。';
+    final comparison = AccountTimeZones.formatCheckpointComparison(
+      accountTimeZoneId: _accountTimeZoneId,
+      referenceUtc: DateTime.now().toUtc(),
+    );
+    return '不影响国策检查点：这个时间只决定提醒何时发出，$zoneNote$comparison。';
+  }
 
   /// 行尾时间值 + 行内说明 + 箭头：整行仍是唯一命中区，时间只是它的右侧读数。
   ///
@@ -667,23 +704,4 @@ class _FocusNotificationSettingsPageState
       ],
     );
   }
-}
-
-/// 独立路由兜底：预览或测试宿主可能只提供裸 [ThemeData]，此时补一层
-/// [PactaSurfaces]，让分组列表的卡片与分割线令牌始终有定义；已注入完整
-/// 主题时原样返回，不叠加第二套表面。
-Widget _withPactaSurfaces(BuildContext context, Widget child) {
-  final theme = Theme.of(context);
-  if (theme.extension<PactaSurfaces>() != null) return child;
-  return Theme(
-    data: theme.copyWith(
-      extensions: [
-        ...theme.extensions.values,
-        theme.brightness == Brightness.dark
-            ? PactaSurfaces.dark
-            : PactaSurfaces.light,
-      ],
-    ),
-    child: child,
-  );
 }

@@ -14,9 +14,14 @@ import 'focus_repository.dart';
 /// the synchronized Focus Session source. Resolving accepts the captured
 /// monotonic estimate or retains only intervals whose duration is known.
 class FocusClockReviewPage extends StatefulWidget {
-  const FocusClockReviewPage({super.key, required this.repository});
+  const FocusClockReviewPage({
+    super.key,
+    required this.repository,
+    this.displayTimeZoneId,
+  });
 
   final FocusRepository repository;
+  final String? displayTimeZoneId;
 
   @override
   State<FocusClockReviewPage> createState() => _FocusClockReviewPageState();
@@ -135,8 +140,8 @@ class _FocusClockReviewPageState extends State<FocusClockReviewPage> {
             Text('专注记录：${reviewCase.sessionId}'),
             const SizedBox(height: 4),
             Text(
-              '原始设备时间：${_formatDateTime(interval.observedStartedAt ?? interval.startedAt)}'
-              ' → ${_formatDateTime(interval.observedEndedAt ?? interval.endedAt)}',
+              '原始设备时间：${_formatDateTime(interval.observedStartedAt ?? interval.startedAt, widget.displayTimeZoneId)}'
+              ' → ${_formatDateTime(interval.observedEndedAt ?? interval.endedAt, widget.displayTimeZoneId)}',
             ),
             const SizedBox(height: 4),
             Text(
@@ -189,5 +194,6 @@ class _FocusClockReviewPageState extends State<FocusClockReviewPage> {
   }
 }
 
-String _formatDateTime(DateTime? value) =>
-    value == null ? '未记录' : formatPactaDateTimeSeconds(value);
+String _formatDateTime(DateTime? value, [String? timeZoneId]) => value == null
+    ? '未记录'
+    : formatPactaDateTimeSeconds(value, timeZoneId: timeZoneId);

@@ -256,6 +256,41 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('国策提醒时间按账号时区表达，不再写死北京时间', (tester) async {
+    final service = _StubNotificationService(
+      const FocusDevicePreferences(
+        notificationsEnabled: false,
+        backgroundRunningEnabled: false,
+        nationalFocusReminderEnabled: true,
+        dailyOpenReminderMinutesAfterMidnight: 9 * 60,
+        dailyOpenReminderTimeChosen: true,
+      ),
+    );
+    await _pumpPage(
+      tester,
+      FocusNotificationSettingsPage(
+        service: service,
+        isAndroid: false,
+        permissionGateway: _RecordingPermissionGateway(),
+        batteryOptimizationGateway: _RecordingBatteryGateway(),
+        accountTimeZoneIdLoader: () async => 'Asia/Shanghai',
+      ),
+    );
+
+    // 文案整体改成账号时区口径：页面上不再出现固定「北京时间」的说法。
+    expect(find.textContaining('北京时间'), findsNothing);
+    expect(find.text('提醒时间（账号时区）'), findsOneWidget);
+
+    final note = tester.widget<Tooltip>(
+      find.byKey(const Key('national-focus-reminder-time-note')),
+    );
+    expect(note.message, contains('不影响国策检查点'));
+    expect(note.message, contains('账号时区：北京'));
+    expect(note.message, contains('每日结算'));
+    expect(note.message, contains('04:00'));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('桌面端在权限组内说明无需电池优化白名单', (tester) async {
     final service = FocusNotificationService(
       preferencesStore: FocusDevicePreferencesStore(

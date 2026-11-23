@@ -13,11 +13,13 @@ class NationalFocusAiAnalysisEntry extends StatelessWidget {
     required this.mcpUrl,
     required this.repository,
     this.onOpenSync,
+    this.accountTimeZoneIdLoader,
   });
 
   final String? mcpUrl;
   final NationalFocusAiGrantRepository? repository;
   final VoidCallback? onOpenSync;
+  final Future<String?> Function()? accountTimeZoneIdLoader;
 
   @override
   Widget build(BuildContext context) => Card(
@@ -33,6 +35,7 @@ class NationalFocusAiAnalysisEntry extends StatelessWidget {
             mcpUrl: mcpUrl,
             repository: repository,
             onOpenSync: onOpenSync,
+            accountTimeZoneIdLoader: accountTimeZoneIdLoader,
           ),
         ),
       ),
@@ -46,11 +49,13 @@ class NationalFocusAiAnalysisPage extends StatefulWidget {
     required this.mcpUrl,
     required this.repository,
     this.onOpenSync,
+    this.accountTimeZoneIdLoader,
   });
 
   final String? mcpUrl;
   final NationalFocusAiGrantRepository? repository;
   final VoidCallback? onOpenSync;
+  final Future<String?> Function()? accountTimeZoneIdLoader;
 
   @override
   State<NationalFocusAiAnalysisPage> createState() =>
@@ -73,11 +78,25 @@ class _NationalFocusAiAnalysisPageState
   bool _loading = true;
   bool _working = false;
   String? _workingGrantId;
+  String? _displayTimeZoneId;
 
   @override
   void initState() {
     super.initState();
+    unawaited(_loadTimeZone());
     unawaited(_loadGrants());
+  }
+
+  Future<void> _loadTimeZone() async {
+    final loader = widget.accountTimeZoneIdLoader;
+    if (loader == null) return;
+    try {
+      final zone = await loader();
+      if (!mounted) return;
+      setState(() => _displayTimeZoneId = zone);
+    } catch (_) {
+      // 时区读取失败时回退到本机时区。
+    }
   }
 
   @override
@@ -638,8 +657,12 @@ class _NationalFocusAiAnalysisPageState
             ),
             const SizedBox(height: 12),
             Text('范围：${_scopeLabel(grant.scope)}'),
-            Text('授权时间：${formatPactaDateTime(grant.createdAt)}'),
-            Text('到期时间：${formatPactaDateTime(grant.expiresAt)}'),
+            Text(
+              '授权时间：${formatPactaDateTimeInZone(grant.createdAt, timeZoneId: _displayTimeZoneId)}',
+            ),
+            Text(
+              '到期时间：${formatPactaDateTimeInZone(grant.expiresAt, timeZoneId: _displayTimeZoneId)}',
+            ),
             if (active) ...[
               const SizedBox(height: 12),
               OutlinedButton(

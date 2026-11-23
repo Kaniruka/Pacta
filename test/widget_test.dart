@@ -19,7 +19,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('进入 Pacta'), findsOneWidget);
-    expect(find.text('没有注册资格？联系管理员。'), findsOneWidget);
+    expect(find.text('受邀注册'), findsOneWidget);
     expect(find.text('示例任务'), findsNothing);
   });
 

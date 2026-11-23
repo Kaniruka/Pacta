@@ -1,9 +1,13 @@
+import 'package:timezone/timezone.dart' as timezone;
+
+import '../focus/focus_time_zones.dart';
 import 'focus_notification_plan.dart';
 
 /// The next device-local National Focus reminder that still needs delivery.
 ///
-/// Reminder wall-clock time is interpreted in Beijing time. This plan is only
-/// about notification delivery; it never changes National Focus Checkpoints.
+/// 提醒的墙钟时间按账号时区解释（默认北京时间），所以人在国外、账号仍设成
+/// 北京时区时，提醒落在账号当地的 22:00。时区无效时回到北京时间。这个计划
+/// 只负责通知投递，永远不改变国策检查点。
 class NationalFocusReminderPlan {
   const NationalFocusReminderPlan({
     required this.dayKey,
@@ -11,7 +15,8 @@ class NationalFocusReminderPlan {
     required this.isDeferred,
   });
 
-  static const Duration _beijingOffset = Duration(hours: 8);
+  /// 未指定时区时的提醒时区，即旧的北京时间行为。
+  static const String defaultTimeZoneId = 'Asia/Shanghai';
 
   final String dayKey;
   final DateTime scheduledAt;
@@ -23,20 +28,22 @@ class NationalFocusReminderPlan {
     required bool hasPendingConfirmations,
     String? lastNotifiedDayKey,
     FocusNotificationPlan? activeFlow,
+    String timeZoneId = defaultTimeZoneId,
   }) {
     if (!hasPendingConfirmations) return null;
     if (minuteOfDay < 0 || minuteOfDay >= 24 * 60) {
       throw RangeError.range(minuteOfDay, 0, 24 * 60 - 1, 'minuteOfDay');
     }
 
+    final location = _locationFor(timeZoneId);
     final nowUtc = now.toUtc();
-    var beijingDate = _beijingDate(nowUtc);
-    if (_dateKey(beijingDate) == lastNotifiedDayKey) {
-      beijingDate = beijingDate.add(const Duration(days: 1));
+    var localDate = _dateInZone(nowUtc, location);
+    if (_dateKey(localDate) == lastNotifiedDayKey) {
+      localDate = localDate.add(const Duration(days: 1));
     }
 
-    final dayKey = _dateKey(beijingDate);
-    final reminderAt = _reminderInstant(beijingDate, minuteOfDay);
+    final dayKey = _dateKey(localDate);
+    final reminderAt = _reminderInstant(localDate, minuteOfDay, location);
     var scheduledAt = reminderAt.isAfter(nowUtc) ? reminderAt : nowUtc;
     var isDeferred = false;
 
@@ -54,21 +61,28 @@ class NationalFocusReminderPlan {
     );
   }
 
-  static DateTime _beijingDate(DateTime instantUtc) {
-    final beijing = instantUtc.add(_beijingOffset);
-    return DateTime.utc(beijing.year, beijing.month, beijing.day);
+  static timezone.Location _locationFor(String timeZoneId) =>
+      FocusTimeZones.location(
+        FocusTimeZones.contains(timeZoneId) ? timeZoneId : defaultTimeZoneId,
+      );
+
+  static DateTime _dateInZone(DateTime instantUtc, timezone.Location location) {
+    final local = timezone.TZDateTime.from(instantUtc, location);
+    return DateTime.utc(local.year, local.month, local.day);
   }
 
-  static DateTime _reminderInstant(DateTime beijingDate, int minuteOfDay) {
-    final wallClock = DateTime.utc(
-      beijingDate.year,
-      beijingDate.month,
-      beijingDate.day,
-      minuteOfDay ~/ 60,
-      minuteOfDay % 60,
-    );
-    return wallClock.subtract(_beijingOffset);
-  }
+  static DateTime _reminderInstant(
+    DateTime localDate,
+    int minuteOfDay,
+    timezone.Location location,
+  ) => timezone.TZDateTime(
+    location,
+    localDate.year,
+    localDate.month,
+    localDate.day,
+    minuteOfDay ~/ 60,
+    minuteOfDay % 60,
+  ).toUtc();
 
   static String _dateKey(DateTime date) =>
       '${date.year.toString().padLeft(4, '0')}-'

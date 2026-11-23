@@ -55,7 +55,8 @@ void main() {
     final preferences = await SharedPreferences.getInstance();
     final settings = await FocusDevicePreferencesStore(preferences).load();
 
-    expect(settings.notificationsEnabled, isFalse);
+    // 常驻通知默认开启：未配置过的设备不需要先手动打开一次开关。
+    expect(settings.notificationsEnabled, isTrue);
     expect(settings.backgroundRunningEnabled, isTrue);
     expect(settings.nationalFocusReminderEnabled, isTrue);
     expect(settings.nationalFocusReminderMinutesAfterMidnight, 22 * 60);
@@ -126,7 +127,8 @@ void main() {
 
     final seenByB = await userB.load();
     expect(seenByB.dailyOpenReminderEnabled, isFalse);
-    expect(seenByB.notificationsEnabled, isFalse);
+    // 未设置过的用户读到的是默认值：常驻通知默认开启。
+    expect(seenByB.notificationsEnabled, isTrue);
     expect(seenByB.dailyOpenReminderMinutesAfterMidnight, 9 * 60);
 
     final seenByA = await userA.load();

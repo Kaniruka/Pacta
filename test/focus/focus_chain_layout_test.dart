@@ -115,7 +115,7 @@ void main() {
     await _disposeWidget(tester);
   });
 
-  testWidgets('专注历史页的连胜节点卡片相隔 8dp 并按 #1 -> #2 串联', (tester) async {
+  testWidgets('专注历史页的连胜节点卡片相隔 8dp 且按 #2 -> #1 倒链', (tester) async {
     final fixture = await _Fixture.create();
     addTearDown(fixture.dispose);
     for (var index = 0; index < 2; index++) {
@@ -148,11 +148,118 @@ void main() {
     final second = tester.getRect(cards.at(1));
     expect(second.top - first.bottom, PactaSpacing.sm);
 
-    // 序号徽章落在卡片左侧的同一条纵向连接线上。
+    // 倒链：每段从上到下都是最新在前，#2 落在 #1 之上。
     final badge1 = tester.getRect(find.text('#1'));
     final badge2 = tester.getRect(find.text('#2'));
+    expect(
+      badge2.bottom,
+      lessThanOrEqualTo(badge1.top),
+      reason: '打开历史页第一眼就是最新记录',
+    );
     expect(badge1.center.dx, badge2.center.dx);
     expect(badge1.right, lessThan(first.left));
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('倒链段严格从新到旧：断链在最上，其后 #2、#1', (tester) async {
+    final fixture = await _Fixture.create();
+    addTearDown(fixture.dispose);
+    for (var index = 0; index < 2; index++) {
+      await fixture.focus.startSession(
+        taskId: fixture.taskIds.first,
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 25),
+      );
+      fixture.now = fixture.now.add(const Duration(minutes: 25));
+      await fixture.focus.settleDueSessions();
+    }
+    final broken = await fixture.focus.startSession(
+      taskId: fixture.taskIds.first,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    fixture.now = fixture.now.add(const Duration(minutes: 3));
+    await fixture.focus.abandonSession(
+      sessionId: broken.id,
+      failureReason: '被电话打断',
+    );
+
+    await _mount(tester, fixture);
+    await _openDestination(tester, '专注链');
+    await tester.tap(find.byKey(_historyEntry));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('普通链'));
+    await tester.pumpAndSettle();
+
+    final breakRect = tester.getRect(find.text('断链'));
+    final badge2 = tester.getRect(find.text('#2'));
+    final badge1 = tester.getRect(find.text('#1'));
+    expect(breakRect.top, lessThan(badge2.top), reason: '最新断链排在本段最上方');
+    expect(badge2.bottom, lessThanOrEqualTo(badge1.top), reason: '#2 在 #1 之上');
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('倒链卡片内部上下留白对称（误差 ≤ 0.5dp）', (tester) async {
+    final fixture = await _Fixture.create();
+    addTearDown(fixture.dispose);
+    await fixture.focus.startSession(
+      taskId: fixture.taskIds.first,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    fixture.now = fixture.now.add(const Duration(minutes: 25));
+    await fixture.focus.settleDueSessions();
+    final broken = await fixture.focus.startSession(
+      taskId: fixture.taskIds.first,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    fixture.now = fixture.now.add(const Duration(minutes: 3));
+    await fixture.focus.abandonSession(
+      sessionId: broken.id,
+      failureReason: '被电话打断',
+    );
+
+    await _mount(tester, fixture);
+    await _openDestination(tester, '专注链');
+    await tester.tap(find.byKey(_historyEntry));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('普通链'));
+    await tester.pumpAndSettle();
+
+    final cards = find.descendant(
+      of: find.byType(FocusHistoryPage),
+      matching: find.byType(Card),
+    );
+    expect(cards, findsNWidgets(2));
+    for (var index = 0; index < 2; index++) {
+      final cardFinder = cards.at(index);
+      final cardRect = tester.getRect(cardFinder);
+      // 量左侧文字块（Column）到卡片上下边缘的距离：单个 Text 的行盒会带上
+      // 字体 ascent/descent 的取整误差，量整块内容才是用户看到的留白。
+      final blockRect = tester.getRect(
+        find.descendant(
+          of: cardFinder,
+          matching: find.byKey(const ValueKey('focus-history-card-text')),
+        ),
+      );
+      final upperGap = blockRect.top - cardRect.top;
+      final lowerGap = cardRect.bottom - blockRect.bottom;
+      expect(
+        upperGap,
+        closeTo(lowerGap, 0.5),
+        reason:
+            '第 ${index + 1} 行文字块到卡片顶/底边距离应相等：'
+            '上 $upperGap / 下 $lowerGap',
+      );
+      expect(
+        upperGap,
+        greaterThanOrEqualTo(PactaSpacing.md - 0.5),
+        reason: '文字块不贴边：上下至少留一档 12dp',
+      );
+    }
     expect(tester.takeException(), isNull);
     await _disposeWidget(tester);
   });
@@ -195,12 +302,13 @@ void main() {
           ),
     );
     expect(rows, findsNWidgets(3), reason: '#1、#2 与断链节点各占一行');
+    // 倒链顺序：断链（最新）在最上，其后 #2、#1。
     final badges = [
-      find.descendant(of: rows.at(0), matching: find.text('#1')),
-      find.descendant(of: rows.at(1), matching: find.text('#2')),
       find
-          .descendant(of: rows.at(2), matching: find.byIcon(Icons.link_off))
+          .descendant(of: rows.at(0), matching: find.byIcon(Icons.link_off))
           .first,
+      find.descendant(of: rows.at(1), matching: find.text('#2')),
+      find.descendant(of: rows.at(2), matching: find.text('#1')),
     ];
 
     Rect? previousCard;
@@ -282,6 +390,33 @@ void main() {
       moreOrLessEquals(lastCard.bottom, epsilon: 0.01),
       reason: '最后一张卡下方不再多出一截竖线占位',
     );
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('三链切换胶囊：48dp 高、文字不顶边，360dp 两倍字号不溢出', (tester) async {
+    final fixture = await _Fixture.create();
+    addTearDown(fixture.dispose);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await _mount(tester, fixture, size: const Size(360, 800));
+    await tester.pumpAndSettle();
+    await _openDestination(tester, '专注链');
+    await tester.tap(find.byKey(_historyEntry));
+    await tester.pumpAndSettle();
+
+    final switchFinder = find.byKey(
+      const ValueKey('focus-history-chain-switch'),
+    );
+    expect(switchFinder, findsOneWidget);
+    final rect = tester.getRect(switchFinder);
+    expect(rect.height, greaterThanOrEqualTo(48), reason: '胶囊至少 48dp 高');
+    expect(rect.left, greaterThanOrEqualTo(0));
+    expect(rect.right, lessThanOrEqualTo(360), reason: '360dp 窄屏不横向溢出');
+
+    final label = tester.getRect(find.text('精锐链'));
+    expect(label.top, greaterThan(rect.top), reason: '文字不顶到框的上边缘');
+    expect(label.bottom, lessThan(rect.bottom), reason: '文字不顶到框的下边缘');
     expect(tester.takeException(), isNull);
     await _disposeWidget(tester);
   });
@@ -385,10 +520,10 @@ void main() {
     expect(find.text('#2'), findsNothing, reason: '断链后不继续编号');
     expect(find.text('连续 1 次'), findsOneWidget);
     expect(find.textContaining('原因：被电话打断'), findsOneWidget);
-    // 断链卡排在完成节点之后：最新状态在段尾收束。
+    // 倒链：最新状态在最上方——断链卡排在 #1 之上。
     expect(
       tester.getRect(find.text('断链')).top,
-      greaterThan(tester.getRect(find.text('#1')).top),
+      lessThan(tester.getRect(find.text('#1')).top),
     );
     expect(tester.takeException(), isNull);
     await _disposeWidget(tester);
@@ -512,8 +647,12 @@ void main() {
   });
 }
 
-Future<void> _mount(WidgetTester tester, _Fixture fixture) async {
-  tester.view.physicalSize = const Size(420, 900);
+Future<void> _mount(
+  WidgetTester tester,
+  _Fixture fixture, {
+  Size size = const Size(420, 900),
+}) async {
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(

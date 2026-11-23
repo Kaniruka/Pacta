@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../focus/focus_time_zones.dart';
+import '../profile/account_time_zone.dart';
 import '../theme/pacta_fonts.dart';
 import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
@@ -64,6 +65,11 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
   NationalFocusCard? _placementCard;
   String? _error;
   String _displayTimeZoneId = 'Etc/UTC';
+
+  /// 结算用的账号时区。与仓储读同一份账号值，界面的确认窗口才不会和后台
+  /// 实际结算的窗口错开。
+  String _checkpointTimeZoneId =
+      AccountTimeZones.defaultNationalFocusTimeZoneId;
   late DateTime _now;
   final Set<String> _busyCardIds = {};
   bool _confirming = false;
@@ -76,6 +82,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     super.initState();
     _now = (widget.now?.call() ?? DateTime.now()).toUtc();
     _loadDisplayTimeZone();
+    _loadCheckpointTimeZone();
     _loadView();
     _settlementTimer = Timer.periodic(
       const Duration(minutes: 1),
@@ -159,6 +166,25 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
       // UTC remains a clear fallback if the device zone cannot be read.
     }
   }
+
+  /// 确认窗口与结算窗口必须来自同一个账号时区，因此直接问仓储。
+  Future<void> _loadCheckpointTimeZone() async {
+    final repository = widget.repository;
+    if (repository is! LocalNationalFocusRepository) return;
+    try {
+      final zoneId = await repository.checkpointTimeZoneId();
+      if (!mounted || zoneId == _checkpointTimeZoneId) return;
+      setState(() => _checkpointTimeZoneId = zoneId);
+    } catch (_) {
+      // 读不到账号时区就按北京时间结算，与仓储的回退一致。
+    }
+  }
+
+  /// 结算说明：账号时区的 04:00，设备时区不同时并列显示本机时间。
+  String get _checkpointSummary => AccountTimeZones.formatCheckpointComparison(
+    accountTimeZoneId: _checkpointTimeZoneId,
+    referenceUtc: _now,
+  );
 
   Future<void> _refreshCheckpointState() async {
     _now = (widget.now?.call() ?? DateTime.now()).toUtc();
@@ -268,6 +294,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
 
   DateTime _confirmationWindowEnd() => nextNationalFocusCheckpoint(
     (widget.now?.call() ?? DateTime.now()).toUtc(),
+    timeZoneId: _checkpointTimeZoneId,
   );
 
   bool _isSameConfirmationWindow(DateTime windowEnd) =>
@@ -404,7 +431,11 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
         builder: (_) => NationalFocusFailureHistoryPage(
           repository: widget.repository,
           displayTimeZoneId: _displayTimeZoneId,
-          nextCheckpointAt: nextNationalFocusCheckpoint(_now),
+          accountCheckpointTimeZoneId: _checkpointTimeZoneId,
+          nextCheckpointAt: nextNationalFocusCheckpoint(
+            _now,
+            timeZoneId: _checkpointTimeZoneId,
+          ),
         ),
       ),
     );
@@ -450,6 +481,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                         card: card,
                         lightBlocked: lightBlocked,
                         cascadeSourceLabel: cascadeSourceLabel,
+                        displayTimeZoneId: _displayTimeZoneId,
                       ),
                     ),
                   );
@@ -475,6 +507,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
         builder: (_) => NationalFocusCardLibraryPage(
           repository: widget.repository,
           selectCreatedCard: parentId != null,
+          displayTimeZoneId: _displayTimeZoneId,
         ),
       ),
     );
@@ -682,6 +715,32 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                             padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
                             child: Text('正在更新视图…'),
                           ),
+                        Align(
+                          alignment: Alignment.topCenter,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              maxWidth: PactaSpacing.maxContentWidth,
+                            ),
+                            child: Padding(
+                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  _checkpointSummary,
+                                  key: const ValueKey(
+                                    'national-focus-checkpoint-summary',
+                                  ),
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                      ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                         if (_viewReadFailed || _viewSaveFailed)
                           Padding(
                             padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),

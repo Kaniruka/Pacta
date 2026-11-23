@@ -15,10 +15,14 @@ Future<void> pushStrengtheningManager({
   required BuildContext context,
   required NationalFocusRepository repository,
   required String cardId,
+  String? displayTimeZoneId,
 }) => Navigator.of(context).push<void>(
   MaterialPageRoute<void>(
-    builder: (_) =>
-        NationalFocusStrengtheningPage(repository: repository, cardId: cardId),
+    builder: (_) => NationalFocusStrengtheningPage(
+      repository: repository,
+      cardId: cardId,
+      displayTimeZoneId: displayTimeZoneId,
+    ),
   ),
 );
 

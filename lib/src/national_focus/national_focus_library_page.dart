@@ -13,10 +13,12 @@ class NationalFocusCardLibraryPage extends StatefulWidget {
     super.key,
     required this.repository,
     this.selectCreatedCard = false,
+    this.displayTimeZoneId,
   });
 
   final NationalFocusRepository repository;
   final bool selectCreatedCard;
+  final String? displayTimeZoneId;
 
   @override
   State<NationalFocusCardLibraryPage> createState() =>
@@ -31,8 +33,10 @@ class _NationalFocusCardLibraryPageState
   Future<void> _createCard(BuildContext context) async {
     final created = await Navigator.of(context).push<NationalFocusCard>(
       MaterialPageRoute<NationalFocusCard>(
-        builder: (_) =>
-            NationalFocusCardEditorPage(repository: widget.repository),
+        builder: (_) => NationalFocusCardEditorPage(
+          repository: widget.repository,
+          displayTimeZoneId: widget.displayTimeZoneId,
+        ),
       ),
     );
     if (created != null && context.mounted && widget.selectCreatedCard) {
@@ -112,6 +116,7 @@ class _NationalFocusCardLibraryPageState
             onPlace: (card) => Navigator.of(context).pop(card),
             onDelete: _deleteCard,
             onRename: _renameCard,
+            displayTimeZoneId: widget.displayTimeZoneId,
           ),
           _DeletedNationalFocusCardList(
             repository: widget.repository,
@@ -134,12 +139,14 @@ class _LibraryCardList extends StatelessWidget {
     required this.onPlace,
     required this.onDelete,
     required this.onRename,
+    this.displayTimeZoneId,
   });
 
   final NationalFocusRepository repository;
   final ValueChanged<NationalFocusCard> onPlace;
   final ValueChanged<NationalFocusCard> onDelete;
   final ValueChanged<NationalFocusCard> onRename;
+  final String? displayTimeZoneId;
 
   @override
   Widget build(BuildContext context) => StreamBuilder<List<NationalFocusCard>>(
@@ -184,6 +191,7 @@ class _LibraryCardList extends StatelessWidget {
                     card: cards[index],
                     lightBlocked: false,
                     cascadeSourceLabel: null,
+                    displayTimeZoneId: displayTimeZoneId,
                   ),
                 ),
               ),
@@ -192,6 +200,7 @@ class _LibraryCardList extends StatelessWidget {
                   builder: (_) => NationalFocusCardEditorPage(
                     repository: repository,
                     card: cards[index],
+                    displayTimeZoneId: displayTimeZoneId,
                   ),
                 ),
               ),
@@ -265,10 +274,12 @@ class NationalFocusCardEditorPage extends StatefulWidget {
     super.key,
     required this.repository,
     this.card,
+    this.displayTimeZoneId,
   });
 
   final NationalFocusRepository repository;
   final NationalFocusCard? card;
+  final String? displayTimeZoneId;
 
   @override
   State<NationalFocusCardEditorPage> createState() =>
@@ -305,6 +316,7 @@ class _NationalFocusCardEditorPageState
       context: context,
       repository: widget.repository,
       cardId: card.id,
+      displayTimeZoneId: widget.displayTimeZoneId,
     );
     if (!mounted) return;
     try {
@@ -686,17 +698,22 @@ class NationalFocusCardDetailPage extends StatelessWidget {
     required this.card,
     required this.lightBlocked,
     required this.cascadeSourceLabel,
+    this.displayTimeZoneId,
   });
   final NationalFocusRepository repository;
   final NationalFocusCard card;
   final bool lightBlocked;
   final String? cascadeSourceLabel;
+  final String? displayTimeZoneId;
 
   Future<void> _editCard(BuildContext context, NationalFocusCard card) =>
       Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
-          builder: (_) =>
-              NationalFocusCardEditorPage(repository: repository, card: card),
+          builder: (_) => NationalFocusCardEditorPage(
+            repository: repository,
+            card: card,
+            displayTimeZoneId: displayTimeZoneId,
+          ),
         ),
       );
 

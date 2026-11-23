@@ -97,7 +97,11 @@ void main() {
 
     await tester.tap(find.widgetWithText(ChoiceChip, '伦敦'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    // 时区对照行把保存按钮推到首屏之外，先滚动到它再点。
+    final save = find.widgetWithText(FilledButton, '保存');
+    await tester.ensureVisible(save);
+    await tester.pumpAndSettle();
+    await tester.tap(save);
     await tester.pumpAndSettle();
 
     expect(remote.lastRequestedZone, 'Europe/London');

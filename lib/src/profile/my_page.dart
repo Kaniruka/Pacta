@@ -12,11 +12,15 @@ import '../sync/cloud_sync_card.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_grouped_list.dart';
 import '../ui/pacta_page_header.dart';
+import 'about_pacta_page.dart';
 import 'profile_card.dart';
 
 /// 「我的」只留普通账号能做的事：名片、云同步、国策 AI、通知与设备权限、
-/// 退出登录。管理入口已随管理员动作一起下线，页面因此没有异步身份判定，
+/// 关于 Pacta。管理入口已随管理员动作一起下线，页面因此没有异步身份判定，
 /// 也不再是 StatefulWidget。
+///
+/// 退出登录不再占本页底部的一整行：它是账号安全动作，跟着《编辑资料》的
+/// 「账号安全」分组成对出现，避免在浏览型页面里放一颗常驻的危险按钮。
 class MyPage extends ConsumerWidget {
   const MyPage({super.key});
 
@@ -36,6 +40,9 @@ class MyPage extends ConsumerWidget {
           accountIdentifier: repository.currentUserIdentifier,
           authRepository: repository,
           lifecycleRepository: ref.watch(userLifecycleStatusRepositoryProvider),
+          // 退出登录已移入《编辑资料》的「账号安全」分组：通知服务随依赖一起
+          // 传下去，明确登出时先取消本机的提醒绑定再清登录状态。
+          notificationService: ref.watch(focusNotificationServiceProvider),
         ),
         const SizedBox(height: PactaSpacing.md),
         CloudSyncCard(
@@ -43,6 +50,9 @@ class MyPage extends ConsumerWidget {
           versionCheck: ref.watch(cloudVersionCheckProvider),
           autoUpload: ref.watch(cloudAutoUploadCoordinatorProvider),
           focusRepository: ref.watch(focusRepositoryProvider),
+          accountTimeZoneIdLoader: () async =>
+              (await ref.read(profileRepositoryProvider).getProfile())
+                  .displayTimeZoneId,
           onDownloaded: () async {
             ref.invalidate(taskRepositoryProvider);
             ref.invalidate(focusRepositoryProvider);
@@ -58,6 +68,9 @@ class MyPage extends ConsumerWidget {
           onOpenSync: () => openAiManualSync(context, ref),
           mcpUrl: ref.watch(nationalFocusMcpUrlProvider),
           repository: ref.watch(nationalFocusAiGrantRepositoryProvider),
+          accountTimeZoneIdLoader: () async =>
+              (await ref.read(profileRepositoryProvider).getProfile())
+                  .displayTimeZoneId,
         ),
         const SizedBox(height: PactaSpacing.md),
         // 功能入口合成一块 Google 服务式分组列表：M3 Expressive 分段卡片，
@@ -75,6 +88,11 @@ class MyPage extends ConsumerWidget {
                 MaterialPageRoute<void>(
                   builder: (_) => FocusNotificationSettingsPage(
                     service: ref.read(focusNotificationServiceProvider),
+                    // 提醒时间与结算点说明保留账号原始可空时区：未配置时按
+                    // 默认国策时区（Asia/Shanghai）展示对照，不写死北京时间。
+                    accountTimeZoneIdLoader: () async =>
+                        (await ref.read(profileRepositoryProvider).getProfile())
+                            .displayTimeZoneId,
                     calendarSourcesBuilder: (_) => CalendarSourcesPage(
                       repository: calendarRepository,
                       isAndroid: Platform.isAndroid,
@@ -88,20 +106,16 @@ class MyPage extends ConsumerWidget {
                 ),
               ),
             ),
+            PactaSettingsTile(
+              tileKey: const ValueKey('my-about-entry'),
+              leadingIcon: Icons.info_outline,
+              title: '关于 Pacta',
+              subtitle: '版本、理论出处与开源许可',
+              onTap: () => Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(builder: (_) => const AboutPactaPage()),
+              ),
+            ),
           ],
-        ),
-        const SizedBox(height: PactaSpacing.xl),
-        OutlinedButton.icon(
-          onPressed: () async {
-            final userId = ref.read(authRepositoryProvider).currentUserId;
-            // 明确登出才取消已登记的提醒；正常关应用保留未来项。
-            await ref
-                .read(focusNotificationServiceProvider)
-                .releaseUser(userId);
-            await ref.read(authRepositoryProvider).signOut();
-          },
-          icon: const Icon(Icons.logout),
-          label: const Text('退出登录'),
         ),
         const SizedBox(height: PactaSpacing.xl),
       ],
@@ -130,6 +144,9 @@ void openAiManualSync(BuildContext context, WidgetRef ref) {
                     repository: ref.read(cloudSnapshotRepositoryProvider),
                     versionCheck: ref.read(cloudVersionCheckProvider),
                     autoUpload: ref.read(cloudAutoUploadCoordinatorProvider),
+                    accountTimeZoneIdLoader: () async =>
+                        (await ref.read(profileRepositoryProvider).getProfile())
+                            .displayTimeZoneId,
                     onDownloaded: () async {
                       ref.invalidate(taskRepositoryProvider);
                       ref.invalidate(focusRepositoryProvider);

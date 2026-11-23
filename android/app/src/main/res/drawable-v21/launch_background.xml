@@ -1,12 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
+<!-- Pacta 冷启动首帧（API 21+）。版本限定符的优先级高于无限定符目录，
+     所以本文件会覆盖 drawable/launch_background.xml，两者必须逐字保持一致。
+     柔和浅色底 + 居中品牌图标，与 values/styles.xml 的 LaunchTheme 配合，
+     消除引擎首帧前的纯白闪跳；首帧之后的品牌过渡由
+     lib/src/app/pacta_splash_gate.dart 接管。
+     minSdk 取 flutter.minSdkVersion（本仓库为 24），layer item 的
+     gravity/width/height（API 23 起生效）可用。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="?android:colorBackground" />
-
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#F8FAFC" />
+        </shape>
+    </item>
+    <item
+        android:drawable="@mipmap/ic_launcher"
+        android:gravity="center"
+        android:width="108dp"
+        android:height="108dp" />
 </layer-list>

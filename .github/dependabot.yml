@@ -1,0 +1,90 @@
+version: 2
+
+# Dependency updates for every manifest the repository actually ships:
+#   pub              pubspec.yaml / pubspec.lock (Flutter client)
+#   npm              package.json / pnpm-lock.yaml (Supabase CLI wrapper)
+#   github-actions   .github/workflows/*.yml
+#   pip              Python tooling under scripts/
+# Groups keep the PR queue readable: routine minor/patch bumps arrive together,
+# majors always arrive alone so they can be reviewed one by one.
+
+updates:
+  - package-ecosystem: 'pub'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '08:00'
+      timezone: 'Asia/Shanghai'
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'deps(pub)'
+    labels:
+      - 'dependencies'
+      - 'pub'
+    groups:
+      pub-minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '08:00'
+      timezone: 'Asia/Shanghai'
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'deps(actions)'
+    labels:
+      - 'dependencies'
+      - 'github-actions'
+    groups:
+      actions-minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  - package-ecosystem: 'npm'
+    directory: '/'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '08:00'
+      timezone: 'Asia/Shanghai'
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'deps(npm)'
+    labels:
+      - 'dependencies'
+      - 'npm'
+    groups:
+      npm-minor-and-patch:
+        patterns:
+          - '*'
+        update-types:
+          - 'minor'
+          - 'patch'
+
+  # Python tooling has no pinned manifest yet: scripts/ use only the standard
+  # library. This entry starts producing PRs as soon as a requirements file or
+  # pyproject.toml lands under scripts/.
+  - package-ecosystem: 'pip'
+    directory: '/scripts'
+    schedule:
+      interval: 'weekly'
+      day: 'monday'
+      time: '08:00'
+      timezone: 'Asia/Shanghai'
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'deps(pip)'
+    labels:
+      - 'dependencies'
+      - 'python'

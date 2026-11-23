@@ -1,83 +1,119 @@
+<div align="center">
+
 # Pacta
 
-Pacta 是基于 Flutter 的自我调节应用，用任务、专注链和国策树记录行动与进展。当前承诺支持 Android 和 Windows；客户端使用 Drift/SQLite 保存本地状态，并通过 Supabase Auth、PostgreSQL 和 RLS 同步与隔离用户数据。
+**把每天过成一条可回看的承诺链：任务、专注、国策与日程落在同一条时间线上。**
 
-## 新成员接入
+[![Flutter checks](https://github.com/Kaniruka/Pacta/actions/workflows/flutter-checks.yml/badge.svg?branch=master)](https://github.com/Kaniruka/Pacta/actions/workflows/flutter-checks.yml)
+[![Release](https://github.com/Kaniruka/Pacta/actions/workflows/release.yml/badge.svg)](https://github.com/Kaniruka/Pacta/actions/workflows/release.yml)
+[![version](https://img.shields.io/badge/version-0.3.0%2B3-blue)](pubspec.yaml)
+[![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
-1. 克隆仓库并进入项目目录：`git clone https://github.com/Kaniruka/Pacta.git`、`cd Pacta`。
-2. 安装满足 `pubspec.yaml` 要求的 Flutter/Dart SDK，以及目标平台的工具链。运行 `flutter doctor -v` 检查环境；Android 需要 Android SDK，Windows 构建需要 Visual Studio 的 C++ 桌面开发组件。
-3. 获取团队开发用 Supabase 项目的 **Project URL** 和 **publishable key**，在仓库根目录运行 `Copy-Item .env.example .env`，然后填写 `.env` 中的两个客户端变量。`.env` 被 Git 忽略；客户端只读 `SUPABASE_URL` 与 `SUPABASE_PUBLISHABLE_KEY`，不要放入数据库密码、secret key 或测试账号密码。本机运维可在同一文件中按需启用 `# SUPABASE_ACCESS_TOKEN=`（Supabase CLI 运维/迁移与 `scripts/issue*.py` 验收脚本）与 `# SUPABASE_SECRET_KEY=`（项目主 CLI，优先放在独立进程环境变量），但**含这两项的 `.env` 绝对不能传给 `--dart-define-from-file`**，详见下方「自行部署云端」第 4 步。
-4. 安装依赖并运行应用：
+[简体中文](README.md) · [English](README.en.md)
 
-   ```powershell
-   python scripts/fetch_misans.py
-   flutter pub get
-   flutter devices
-   flutter run -d windows --dart-define-from-file=.env
-   # 或将 windows 换成 flutter devices 显示的 Android 设备 ID
-   ```
+</div>
 
-   首次构建需安装 Python 3 并运行上述脚本，从小米官方下载、校验内置 MiSans 字体；已有正确文件时无需联网。字体许可与说明见 [MiSans](assets/fonts/README.md)。修改 `.env` 后重新运行应用，使新的编译期配置生效。未配置 URL 或 key 时，应用无法连接云端登录与同步。
+Flutter 编写的自我调节应用，支持 Android 与 Windows。本地用 Drift/SQLite 保存全部状态，登录后经 Supabase Auth、PostgreSQL 与 RLS 在设备间同步，数据按用户隔离。
 
-5. 提交代码前运行 `flutter analyze` 和 `flutter test`；Python 侧运行 `python scripts/check_repository_hygiene.py`（仓库卫生检查）与 `python -m unittest discover -s scripts -p "test_*.py"`（与 CI 同一命令）。涉及平台权限、日历或通知的改动，还应在相应设备上验证。
+## 核心模块
 
-## 国策树交互与预览
+| 模块 | 源码 | 作用 |
+| --- | --- | --- |
+| 看板 | `lib/src/board` | 今日承诺、国策提示与专注入口 |
+| 专注链 | `lib/src/focus` | 计时、链路历史、时钟跳变核对 |
+| 国策树 | `lib/src/national_focus` | 国策卡、检查点与提醒 |
+| 计划 | `lib/src/plan`、`lib/src/schedules` | 目标、任务与日程安排 |
+| 我的 | `lib/src/profile`、`lib/src/sync` | 账号、同步状态、Cloud Snapshot 历史 |
 
-样例预览直接运行仓库内入口：`flutter run -t tool/national_focus_reference_demo.dart`（50 节点图片样例）或 `flutter run -t tool/national_focus_ui_review_demo.dart`（4 节点隔离 UI 预览）；两者使用内存数据库，不读取 `.env`。
+## 快速开始
 
-## 自行部署云端
+需要 Flutter 3.47.2 / Dart 3.13.2、Python 3 与 JDK 17；Windows 构建需 Visual Studio 的 C++ 桌面组件，Android 构建需 Android SDK。先跑 `flutter doctor -v`。
 
-以下步骤适用于**新建的、由你管理的云端 Supabase 项目**。先准备 Node.js 20+ 和 pnpm；本仓库的 `package.json` 与 `pnpm-lock.yaml` 锁定了 Supabase CLI。日常客户端开发只需连接已有项目，不需要在本机运行 Docker 或 Supabase 服务。
+```powershell
+git clone https://github.com/Kaniruka/Pacta.git
+cd Pacta
+Copy-Item .env.example .env          # 填 SUPABASE_URL 与 SUPABASE_PUBLISHABLE_KEY
+python scripts/fetch_misans.py       # 首次：从小米官方拉取并校验 MiSans 字体
+python scripts/pacta_build.py run -d windows
+```
 
-1. 创建 Supabase 项目，在 Auth 设置中启用 Email 与用户注册，关闭 **Confirm email**。Pacta 由数据库中的注册资格限制可注册邮箱；应用不发送验证邮件，也不提供自助密码找回。记录该项目的 project ref，并用它替换下方命令中的 `<project-ref>` 占位符。
-2. 从项目 Connect 页面取得 Project URL 与 publishable key，填入本机 `.env`：
+`scripts/pacta_build.py` 是唯一推荐的运行与构建入口：它只把 `SUPABASE_URL`、`SUPABASE_PUBLISHABLE_KEY` 写进临时 JSON（构建结束即删除）再交给 `--dart-define-from-file`，原始 `.env` 永不进入 Flutter 命令行。
 
-   ```dotenv
-   SUPABASE_URL=https://<project-ref>.supabase.co
-   SUPABASE_PUBLISHABLE_KEY=<publishable-key>
-   ```
+| 命令 | 作用 |
+| --- | --- |
+| `python scripts/pacta_build.py` | 交互式菜单（也可显式传 `interactive` 或 `-i`），按提示选择运行、打包或生成签名 |
+| `python scripts/pacta_build.py run -d windows` | 桌面调试；`-d android` 自动取第一台 Android 设备，或 `-d <device-id>` |
+| `python scripts/pacta_build.py run -d emulator-5554 --profile` | 指定设备与构建模式（`--debug`/`--profile`/`--release`） |
+| `python scripts/pacta_build.py build --target apk --release --split-per-abi` | 分 ABI 的 APK |
+| `python scripts/pacta_build.py build --target appbundle --release` | Google Play AAB |
+| `python scripts/pacta_build.py build --target windows --release` | Windows Release |
+| `python scripts/pacta_build.py build --target all --release --require-release-signing` | 全平台，缺正式签名即失败 |
+| `python scripts/pacta_build.py build --target apk --dry-run` | 只打印脱敏执行计划，不执行任何命令 |
+| `python scripts/pacta_build.py init-keystore` | 生成本机 Android Release 签名 |
 
-3. 在仓库根目录安装 CLI、登录并关联目标项目。先预览迁移，再执行数据库迁移：
+白名单之外的键（`SUPABASE_SECRET_KEY`、`SUPABASE_SERVICE_ROLE_KEY`、`SUPABASE_ACCESS_TOKEN`、`TEST_*`、`ANDROID_KEYSTORE_*`）一律不注入、不写入临时文件、不出现在日志里；构建缺少两个客户端键时给出中文报错并以退出码 `2` 结束。
+
+## Android Release 签名
+
+```powershell
+python scripts/pacta_build.py init-keystore
+```
+
+生成两个被 `.gitignore` 忽略的文件：`android/app/upload-keystore.jks` 与 `android/key.properties`（`storeFile=upload-keystore.jks`、24 位随机字母数字密码、`keyAlias=pacta-upload`）。脚本只报告路径与待填写的 Secret 名，从不打印密码；已存在时默认不覆盖，需要 `--force`。
+
+`android/app/build.gradle.kts` 的取值顺序是 `android/key.properties` → 环境变量 `ANDROID_KEYSTORE_PATH` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`。信息齐全才创建 `signingConfigs.release`；本地缺签名时回退 debug 签名并给出明显告警，加 `--require-release-signing`（或 `-PrequireReleaseSigning=true`）则在 Gradle 配置期直接失败。
+
+### GitHub Secrets
+
+| Secret | 内容 |
+| --- | --- |
+| `SUPABASE_URL` | Supabase 项目 URL |
+| `SUPABASE_PUBLISHABLE_KEY` | publishable key |
+| `ANDROID_KEYSTORE_BASE64` | 下一行命令的输出 |
+| `ANDROID_KEYSTORE_PASSWORD` | `key.properties` 的 `storePassword` |
+| `ANDROID_KEY_ALIAS` | `key.properties` 的 `keyAlias`（默认 `pacta-upload`） |
+| `ANDROID_KEY_PASSWORD` | `key.properties` 的 `keyPassword` |
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("android/app/upload-keystore.jks"))
+```
+
+`release.yml` 在 Tag 构建时缺任一签名 Secret 会显式失败；手动 `workflow_dispatch` 缺签名时跳过 Android 任务并说明原因，Windows 产物照常构建。
+
+## 自行部署 Supabase
+
+1. 新建 Supabase 项目，Auth 开启 Email 登录、关闭 **Confirm email**；注册资格由数据库白名单控制，应用不发验证邮件也不做自助找回。
+2. 从项目 Connect 页取得 Project URL 与 publishable key，填入本机 `.env`。
+3. 推送数据库迁移：
 
    ```powershell
    pnpm install --frozen-lockfile
    pnpm exec supabase login
    pnpm exec supabase link --project-ref <project-ref>
-   pnpm exec supabase db push --dry-run
    pnpm exec supabase db push
    ```
 
-   `db push` 会把 `supabase/migrations/` 中尚未应用的迁移推送到关联项目。执行前核对 project ref 和预览清单；已有数据的项目应先备份并核对迁移历史。
+4. `python scripts/pacta_admin.py` 创建第一个账号并发放注册资格。该工具只用 `SUPABASE_SECRET_KEY`（项目主 CLI 权限），**绝不进入客户端**。
+5. 用普通用户验收注册、登录与数据隔离；权限与 RLS 探针位于 `supabase/tests/`。
 
-4. 账号治理统一在项目主本机终端完成，不需要部署任何管理类 Edge Function：
+细节见 [Supabase 说明](supabase/README.md) 与 [Supabase CLI 流程](https://supabase.com/docs/guides/local-development/cli-workflows)。
 
-   ```powershell
-   python scripts/pacta_admin.py
-   ```
+## 版本与 Tag
 
-   [`scripts/pacta_admin.py`](scripts/pacta_admin.py) 是**项目主直连**工具：从进程环境变量或仓库 `.env` 读取 `SUPABASE_URL` 与 `SUPABASE_SECRET_KEY`（兼容旧名 `SUPABASE_SERVICE_ROLE_KEY`），直接调用 GoTrue Admin 与 PostgREST，不需要任何账号登录。能力覆盖全量用户与生命周期摘要、新建账号、注册白名单发放／撤销、停用／恢复、重置密码、查看／清理云端业务快照，以及即时彻底注销；交互菜单与同名子命令一一对应，均支持 `--json` 与 `--yes`。命令清单与权限边界见 [Supabase 说明的项目主终端工具](supabase/README.md#project-owner-terminal-tool)。
+- 唯一真源是 `pubspec.yaml` 的 `version: MAJOR.MINOR.PATCH+BUILD`，`windows/runner/Runner.rc` 的 `#else` 回退宏同步。
+- `MAJOR` 不兼容变更；`MINOR` 新增或重构一级目的地、结构版本升级；`PATCH` 修复与体验收敛；`+BUILD` 单调递增，永不随进位归零。
+- 只在 `master` 发布节点打 `vMAJOR.MINOR.PATCH` Annotated Tag。`release.yml` 校验 Tag 与 `pubspec.yaml` 一致（仅忽略 `+BUILD`），不一致即失败。
+- `0.x` 为测试阶段：接口与数据格式仍会变动，`v0.*` 的 GitHub Release 一律标记为 prerelease。
 
-   > **安全**：`.env` 若按需启用了 `# SUPABASE_ACCESS_TOKEN=`（Personal Access Token，仅本机 Supabase CLI 运维/迁移与验收脚本）或 `# SUPABASE_SECRET_KEY=`（项目主 CLI），**绝对不能**把该文件传给 `--dart-define-from-file`（包括客户端发布构建）：这两项都无法在客户端二进制里保密，客户端只使用 `SUPABASE_URL` 与 publishable key。该口径与 [`.env.example`](.env.example)、[Supabase 说明](supabase/README.md) 完全一致。
-
-5. 用 `create-user`（或交互菜单）创建第一个账号，再用 `grant` 向其他邮箱发放注册资格。普通用户获得资格后，才能用该邮箱和密码注册；资格被撤销后未消费即失效，已彻底注销的邮箱重新注册会得到全新身份，不继承旧数据。
-
-6. 用至少一个普通用户账号验收注册、登录与数据隔离；在隔离测试项目验证权限和 RLS。相关 SQL 探针位于 `supabase/tests/`，执行前先阅读 [Supabase 说明](supabase/README.md) 中的测试前提。
-
-## 构建客户端
-
-构建时仍需传入所部署项目的客户端配置：
+## 提交前检查
 
 ```powershell
-python scripts/fetch_misans.py
-flutter build apk --dart-define-from-file=.env
-flutter build windows --dart-define-from-file=.env
+flutter analyze
+flutter test
+python scripts/check_repository_hygiene.py
+python -m unittest discover -s scripts -p "test_*.py"
 ```
 
-Android APK 输出位于 `build/app/outputs/flutter-apk/`。**当前 `android/app/build.gradle.kts` 的 release 配置仍使用调试签名**；对外发布前，须按 [Flutter Android 发布文档](https://docs.flutter.dev/deployment/android)设置正式签名、核对应用 ID 与版本。Windows 构建产物位于 `build/windows/<架构>/runner/Release/`；分发时需要整个 Release 目录及相应 Visual C++ 运行库，详见 [Flutter Windows 分发文档](https://docs.flutter.dev/platform-integration/windows/building)。本仓库尚未提供安装包制作或自动发布流水线。
+## 许可
 
-版本迭代以 `pubspec.yaml` 中的 `version: MAJOR.MINOR.PATCH+BUILD` 为准，并同步更新 `windows/runner/Runner.rc` 的回退版本宏：破坏性不兼容变更升 `MAJOR`，新增/重构一级功能或升级本地/云端数据结构（如 Drift / Snapshot schema）升 `MINOR`（`PATCH` 归零），缺陷修复与体验微调升 `PATCH`；每次版本变更或分发构建时 `+BUILD` 单调递增且永不归零。正式发布仅在 `master` 节点使用 `vMAJOR.MINOR.PATCH` 格式的 Annotated Tag（特性分支合入后及时清理，日常仅保留 `master`）。
-
-## 相关资料
-
-- [Supabase 迁移、项目主终端工具与权限验证](supabase/README.md)
-- [Supabase CLI 官方部署流程](https://supabase.com/docs/guides/local-development/cli-workflows)与[Edge Function 部署说明](https://supabase.com/docs/guides/functions/deploy)
+[GPL-3.0](LICENSE)。MiSans 字体按小米官方授权分发，说明见 [assets/fonts/README.md](assets/fonts/README.md)。
