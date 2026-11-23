@@ -46,39 +46,40 @@ python scripts/pacta_build.py run -d windows
 | `python scripts/pacta_build.py run -d emulator-5554 --profile` | 指定设备与构建模式（`--debug`/`--profile`/`--release`） |
 | `python scripts/pacta_build.py build --target apk --release --split-per-abi` | 分 ABI 的 APK |
 | `python scripts/pacta_build.py build --target appbundle --release` | Google Play AAB |
-| `python scripts/pacta_build.py build --target windows --release` | Windows Release |
+| `python scripts/pacta_build.py build --target windows --release` | Windows Release（自动打包便携包 `build/Pacta-windows-x64-release.zip` 与安装程序 `build/Pacta-windows-x64-setup.exe`） |
 | `python scripts/pacta_build.py build --target all --release --require-release-signing` | 全平台，缺正式签名即失败 |
 | `python scripts/pacta_build.py build --target apk --dry-run` | 只打印脱敏执行计划，不执行任何命令 |
-| `python scripts/pacta_build.py init-keystore` | 生成本机 Android Release 签名 |
+| `python scripts/pacta_build.py init-keystore` | 生成本机 Android Release 签名，并同步导出 GitHub Secrets 清单 |
+| `python scripts/pacta_build.py github-secrets` | 一键汇总 `.env` 与签名文件，输出 `build/github-actions-secrets.txt`（缺签名会自动生成；追加 `--apply` 可经 `gh secret set` 一键写入 GitHub 仓库） |
 
 白名单之外的键（`SUPABASE_SECRET_KEY`、`SUPABASE_SERVICE_ROLE_KEY`、`SUPABASE_ACCESS_TOKEN`、`TEST_*`、`ANDROID_KEYSTORE_*`）一律不注入、不写入临时文件、不出现在日志里；构建缺少两个客户端键时给出中文报错并以退出码 `2` 结束。
 
 ## Android Release 签名
 
 ```powershell
-python scripts/pacta_build.py init-keystore
+python scripts/pacta_build.py github-secrets
+# 或已登录 gh CLI 时直接一键推送到当前 GitHub 仓库：
+python scripts/pacta_build.py github-secrets --apply
 ```
 
-生成两个被 `.gitignore` 忽略的文件：`android/app/upload-keystore.jks` 与 `android/key.properties`（`storeFile=upload-keystore.jks`、24 位随机字母数字密码、`keyAlias=pacta-upload`）。脚本只报告路径与待填写的 Secret 名，从不打印密码；已存在时默认不覆盖，需要 `--force`。
+脚本会自动检查（缺失时自动生成）两个被 `.gitignore` 忽略的签名文件：`android/app/upload-keystore.jks` 与 `android/key.properties`（`storeFile=upload-keystore.jks`、自动生成的 24 位随机密码，其中 `storePassword` 与 `keyPassword` 默认相同、`keyAlias=pacta-upload`），并将 6 个 GitHub Actions Secrets 完整汇总写入 `build/github-actions-secrets.txt`（同样被 `.gitignore` 忽略），直接打开该文件即可复制全部键值，无需手动找文件或转换 Base64。
 
 `android/app/build.gradle.kts` 的取值顺序是 `android/key.properties` → 环境变量 `ANDROID_KEYSTORE_PATH` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`。信息齐全才创建 `signingConfigs.release`；本地缺签名时回退 debug 签名并给出明显告警，加 `--require-release-signing`（或 `-PrequireReleaseSigning=true`）则在 Gradle 配置期直接失败。
 
 ### GitHub Secrets
 
+`build/github-actions-secrets.txt` 已按 `KEY=VALUE` 列出以下 6 项（或通过 `--apply` 直接写入仓库）：
+
 | Secret | 内容 |
 | --- | --- |
-| `SUPABASE_URL` | Supabase 项目 URL |
-| `SUPABASE_PUBLISHABLE_KEY` | publishable key |
-| `ANDROID_KEYSTORE_BASE64` | 下一行命令的输出 |
-| `ANDROID_KEYSTORE_PASSWORD` | `key.properties` 的 `storePassword` |
-| `ANDROID_KEY_ALIAS` | `key.properties` 的 `keyAlias`（默认 `pacta-upload`） |
-| `ANDROID_KEY_PASSWORD` | `key.properties` 的 `keyPassword` |
+| `SUPABASE_URL` | Supabase 项目 URL（取自 `.env`） |
+| `SUPABASE_PUBLISHABLE_KEY` | publishable key（取自 `.env`） |
+| `ANDROID_KEYSTORE_BASE64` | `android/app/upload-keystore.jks` 的 Base64 编码（脚本已自动转换） |
+| `ANDROID_KEYSTORE_PASSWORD` | `android/key.properties` 的 `storePassword` |
+| `ANDROID_KEY_ALIAS` | `android/key.properties` 的 `keyAlias`（默认 `pacta-upload`） |
+| `ANDROID_KEY_PASSWORD` | `android/key.properties` 的 `keyPassword`（默认与 `storePassword` 相同） |
 
-```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("android/app/upload-keystore.jks"))
-```
-
-`release.yml` 在 Tag 构建时缺任一签名 Secret 会显式失败；手动 `workflow_dispatch` 缺签名时跳过 Android 任务并说明原因，Windows 产物照常构建。
+`release.yml` 在 Tag 构建时缺任一签名 Secret 会显式失败；手动 `workflow_dispatch` 缺签名时跳过 Android 任务并说明原因，Windows 产物（`.zip` 便携包与 `setup.exe` 安装程序）照常构建。
 
 ## 自行部署 Supabase
 

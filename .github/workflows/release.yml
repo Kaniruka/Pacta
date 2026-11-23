@@ -221,25 +221,21 @@ jobs:
           cache: true
       - run: python scripts/fetch_misans.py
       - run: flutter pub get
-      - name: Build Windows release
+      - name: Build and package Windows release (portable zip + setup.exe)
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
-        run: python scripts/pacta_build.py build --target windows --release --skip-fonts --skip-pub-get
-      - name: Package Windows build
-        shell: pwsh
-        run: |
-          $source = 'build/windows/x64/runner/Release'
-          if (-not (Test-Path $source)) { throw "Windows release output missing: $source" }
-          $zip = 'build/Pacta-windows-x64-release.zip'
-          Compress-Archive -Path "$source/*" -DestinationPath $zip -Force
-          Write-Output "packaged $zip"
+        run: >-
+          python scripts/pacta_build.py build --target windows --release
+          --require-windows-installer --skip-fonts --skip-pub-get
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: pacta-windows
           if-no-files-found: error
           retention-days: 14
-          path: build/Pacta-windows-x64-release.zip
+          path: |
+            build/Pacta-windows-x64-release.zip
+            build/Pacta-windows-x64-setup.exe
 
   release:
     name: Publish GitHub Release

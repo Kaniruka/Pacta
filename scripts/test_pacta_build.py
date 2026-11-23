@@ -854,6 +854,122 @@ class InteractiveAndReleaseWorkflowTests(unittest.TestCase):
         ):
             self.assertIn('secrets.' + required_secret, text)
         self.assertIn('--require-release-signing', text)
+        self.assertIn('--require-windows-installer', text)
+        self.assertIn('build/Pacta-windows-x64-release.zip', text)
+        self.assertIn('build/Pacta-windows-x64-setup.exe', text)
+
+    def test_windows_build_packages_portable_zip_and_invokes_iscc_for_setup_exe(self):
+        import zipfile
+
+        release_dir = subject.windows_runner_output_dir(self.repo, 'release')
+        (release_dir / 'data').mkdir(parents=True)
+        (release_dir / 'pacta.exe').write_bytes(b'MZ-fake-pacta')
+        (release_dir / 'flutter_windows.dll').write_bytes(b'DLL-fake')
+        (release_dir / 'data' / 'app.so').write_bytes(b'AOT-fake')
+        (self.repo / 'pubspec.yaml').write_text('name: pacta\nversion: 0.3.0+3\n', encoding='utf-8')
+        iss = self.repo / subject.DEFAULT_WINDOWS_ISS
+        iss.parent.mkdir(parents=True)
+        iss.write_text('; fake iss\n', encoding='utf-8')
+        iscc = self.repo / 'inno' / 'ISCC.exe'
+        iscc.parent.mkdir(parents=True)
+        iscc.write_text('', encoding='utf-8')
+
+        runner = FakeRunner()
+        out, err = io.StringIO(), io.StringIO()
+        code = subject.main(
+            [
+                'build',
+                '--target',
+                'windows',
+                '--release',
+                '--require-windows-installer',
+                '--skip-fonts',
+                '--skip-pub-get',
+            ],
+            runner=runner,
+            environ=dict(self.environ, ISCC_PATH=str(iscc)),
+            out=out,
+            err=err,
+            repo=self.repo,
+        )
+        self.assertEqual(subject.EXIT_OK, code, err)
+        zip_path = subject.windows_portable_zip_path(self.repo, 'release')
+        self.assertTrue(zip_path.is_file())
+        with zipfile.ZipFile(zip_path) as archive:
+            names = set(archive.namelist())
+        self.assertEqual(
+            {'Pacta/pacta.exe', 'Pacta/flutter_windows.dll', 'Pacta/data/app.so'},
+            names,
+        )
+        self.assertEqual(2, len(runner.commands))
+        iscc_cmd = runner.commands[1]
+        self.assertEqual(str(iscc), iscc_cmd[0])
+        self.assertIn('/DMyAppVersion=0.3.0', iscc_cmd)
+        self.assertIn('/DMyOutputBaseFilename=Pacta-windows-x64-setup', iscc_cmd)
+
+    def test_require_windows_installer_fails_when_iscc_missing(self):
+        release_dir = subject.windows_runner_output_dir(self.repo, 'release')
+        release_dir.mkdir(parents=True)
+        (release_dir / 'pacta.exe').write_bytes(b'MZ')
+        with unittest.mock.patch.object(subject, 'find_iscc', return_value=None):
+            out, err = io.StringIO(), io.StringIO()
+            code = subject.main(
+                [
+                    'build',
+                    '--target',
+                    'windows',
+                    '--release',
+                    '--require-windows-installer',
+                    '--skip-fonts',
+                    '--skip-pub-get',
+                ],
+                runner=FakeRunner(),
+                environ=self.environ,
+                out=out,
+                err=err,
+                repo=self.repo,
+            )
+        self.assertEqual(subject.EXIT_FAILED, code)
+        self.assertIn('ISCC.exe', err.getvalue())
+
+    def test_github_secrets_exports_manifest_and_can_apply_via_gh(self):
+        import base64
+
+        keystore = self.repo / subject.DEFAULT_KEYSTORE
+        keystore.parent.mkdir(parents=True, exist_ok=True)
+        keystore.write_bytes(b'fake-keystore-binary')
+        properties = self.repo / subject.DEFAULT_PROPERTIES
+        properties.parent.mkdir(parents=True, exist_ok=True)
+        properties.write_text(
+            'storeFile=upload-keystore.jks\n'
+            'storePassword=StorePass123456\n'
+            'keyAlias=pacta-upload\n'
+            'keyPassword=KeyPass654321\n',
+            encoding='utf-8',
+        )
+
+        runner = FakeRunner()
+        out, err = io.StringIO(), io.StringIO()
+        code = subject.main(
+            ['github-secrets', '--apply'],
+            runner=runner,
+            environ=self.environ,
+            out=out,
+            err=err,
+            repo=self.repo,
+        )
+        self.assertEqual(subject.EXIT_OK, code, err.getvalue())
+        manifest = (self.repo / subject.DEFAULT_GITHUB_SECRETS_FILE).read_text(encoding='utf-8')
+        expected_b64 = base64.b64encode(b'fake-keystore-binary').decode('ascii')
+        self.assertIn('SUPABASE_URL=https://example.supabase.co\n', manifest)
+        self.assertIn('SUPABASE_PUBLISHABLE_KEY=sb_publishable_demo\n', manifest)
+        self.assertIn('ANDROID_KEYSTORE_BASE64=' + expected_b64 + '\n', manifest)
+        self.assertIn('ANDROID_KEYSTORE_PASSWORD=StorePass123456\n', manifest)
+        self.assertIn('ANDROID_KEY_ALIAS=pacta-upload\n', manifest)
+        self.assertIn('ANDROID_KEY_PASSWORD=KeyPass654321\n', manifest)
+        self.assertNotIn('sb_secret_never_inject', manifest)
+        self.assertNotIn('StorePass123456', out.getvalue())
+        self.assertEqual(6, len(runner.commands))
 
 
 if __name__ == '__main__':

@@ -46,39 +46,40 @@ python scripts/pacta_build.py run -d windows
 | `python scripts/pacta_build.py run -d emulator-5554 --profile` | Explicit device and build mode (`--debug`/`--profile`/`--release`) |
 | `python scripts/pacta_build.py build --target apk --release --split-per-abi` | Per-ABI APKs |
 | `python scripts/pacta_build.py build --target appbundle --release` | Google Play AAB |
-| `python scripts/pacta_build.py build --target windows --release` | Windows release |
+| `python scripts/pacta_build.py build --target windows --release` | Windows release (packages both portable `build/Pacta-windows-x64-release.zip` and installer `build/Pacta-windows-x64-setup.exe`) |
 | `python scripts/pacta_build.py build --target all --release --require-release-signing` | Everything, failing on a missing release signature |
 | `python scripts/pacta_build.py build --target apk --dry-run` | Print the redacted plan only, run nothing |
-| `python scripts/pacta_build.py init-keystore` | Generate the local Android release signature |
+| `python scripts/pacta_build.py init-keystore` | Generate the local Android release signature and export the GitHub Secrets manifest |
+| `python scripts/pacta_build.py github-secrets` | Export all 6 GitHub Actions Release secrets to `build/github-actions-secrets.txt` (auto-creating the keystore if missing; add `--apply` to push via `gh secret set`) |
 
 Keys outside the whitelist (`SUPABASE_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ACCESS_TOKEN`, `TEST_*`, `ANDROID_KEYSTORE_*`) are never injected, never written to the temporary file and never logged. A build with either client key missing stops with a clear message and exit code `2`.
 
 ## Android release signing
 
 ```powershell
-python scripts/pacta_build.py init-keystore
+python scripts/pacta_build.py github-secrets
+# or push all 6 secrets directly to GitHub via the gh CLI:
+python scripts/pacta_build.py github-secrets --apply
 ```
 
-Creates two git-ignored files: `android/app/upload-keystore.jks` and `android/key.properties` (`storeFile=upload-keystore.jks`, a random 24-character alphanumeric password, `keyAlias=pacta-upload`). The script reports paths and secret names only, never the passwords, and refuses to overwrite without `--force`.
+Checks (and auto-generates if missing) two git-ignored files: `android/app/upload-keystore.jks` and `android/key.properties` (`storeFile=upload-keystore.jks`, a random 24-character alphanumeric password shared by `storePassword` and `keyPassword`, `keyAlias=pacta-upload`), then writes all 6 GitHub Actions secrets ready for copy-pasting to `build/github-actions-secrets.txt` (also git-ignored).
 
 `android/app/build.gradle.kts` reads `android/key.properties` first, then the environment variables `ANDROID_KEYSTORE_PATH` / `ANDROID_KEYSTORE_PASSWORD` / `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`. Only a complete set creates `signingConfigs.release`; locally, a missing signature falls back to the debug key with a loud warning, while `--require-release-signing` (or `-PrequireReleaseSigning=true`) fails during Gradle configuration.
 
 ### GitHub Secrets
 
+`build/github-actions-secrets.txt` lists all 6 values in `KEY=VALUE` form (or use `--apply` to upload them directly):
+
 | Secret | Value |
 | --- | --- |
-| `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_PUBLISHABLE_KEY` | publishable key |
-| `ANDROID_KEYSTORE_BASE64` | output of the command below |
-| `ANDROID_KEYSTORE_PASSWORD` | `storePassword` from `key.properties` |
-| `ANDROID_KEY_ALIAS` | `keyAlias` from `key.properties` (default `pacta-upload`) |
-| `ANDROID_KEY_PASSWORD` | `keyPassword` from `key.properties` |
+| `SUPABASE_URL` | Supabase project URL (from `.env`) |
+| `SUPABASE_PUBLISHABLE_KEY` | publishable key (from `.env`) |
+| `ANDROID_KEYSTORE_BASE64` | Base64-encoded `android/app/upload-keystore.jks` (auto-encoded by the script) |
+| `ANDROID_KEYSTORE_PASSWORD` | `storePassword` from `android/key.properties` |
+| `ANDROID_KEY_ALIAS` | `keyAlias` from `android/key.properties` (default `pacta-upload`) |
+| `ANDROID_KEY_PASSWORD` | `keyPassword` from `android/key.properties` (defaults to `storePassword`) |
 
-```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("android/app/upload-keystore.jks"))
-```
-
-On tag builds `release.yml` fails explicitly when a signing secret is missing; a manual `workflow_dispatch` without secrets skips the Android job with an explanation and still builds Windows artifacts.
+On tag builds `release.yml` fails explicitly when a signing secret is missing; a manual `workflow_dispatch` without secrets skips the Android job with an explanation and still builds Windows artifacts (`.zip` portable archive and `setup.exe` installer).
 
 ## Deploy your own Supabase
 

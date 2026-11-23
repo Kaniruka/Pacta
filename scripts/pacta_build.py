@@ -33,6 +33,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import base64
 import contextlib
 import dataclasses
 import json
@@ -46,6 +47,7 @@ import subprocess
 import sys
 import tempfile
 from typing import Iterable, Iterator, Mapping, Optional, Sequence, TextIO
+import zipfile
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -78,6 +80,20 @@ PROPERTIES_HEADER = (
 
 GRADLE_REQUIRE_SIGNING_ENV = 'ORG_GRADLE_PROJECT_requireReleaseSigning'
 SIGNING_REQUIRED_ENV = 'PACTA_REQUIRE_RELEASE_SIGNING'
+
+DEFAULT_WINDOWS_ISS = 'windows/packaging/pacta.iss'
+WINDOWS_SETUP_BASENAME = 'Pacta-windows-x64-setup'
+WINDOWS_SETUP_FILENAME = WINDOWS_SETUP_BASENAME + '.exe'
+WINDOWS_ZIP_TEMPLATE = 'Pacta-windows-x64-{}.zip'
+DEFAULT_GITHUB_SECRETS_FILE = 'build/github-actions-secrets.txt'
+GITHUB_RELEASE_SECRET_KEYS = (
+    'SUPABASE_URL',
+    'SUPABASE_PUBLISHABLE_KEY',
+    'ANDROID_KEYSTORE_BASE64',
+    'ANDROID_KEYSTORE_PASSWORD',
+    'ANDROID_KEY_ALIAS',
+    'ANDROID_KEY_PASSWORD',
+)
 
 _KEY_PATTERN = re.compile(r'^[A-Za-z_][A-Za-z0-9_.]*$')
 _ESCAPES = {'n': '\n', 'r': '\r', 't': '\t', '\\': '\\', '"': '"', "'": "'"}
@@ -494,6 +510,191 @@ def _run_steps(steps: Sequence[Sequence[str]], context: Context) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Windows portable ZIP & Inno Setup (setup.exe) packaging
+# ---------------------------------------------------------------------------
+
+
+def read_app_version(repo: Path) -> str:
+    """Read `MAJOR.MINOR.PATCH` from `pubspec.yaml` (strips `+BUILD` suffix)."""
+    pubspec = repo / 'pubspec.yaml'
+    if not pubspec.is_file():
+        return '0.0.0'
+    try:
+        text = pubspec.read_text(encoding='utf-8')
+    except OSError:
+        return '0.0.0'
+    for line in text.splitlines():
+        if line.startswith('version:'):
+            raw = line.split(':', 1)[1].strip()
+            version = raw.split('+', 1)[0].strip()
+            if version:
+                return version
+    return '0.0.0'
+
+
+def windows_runner_output_dir(repo: Path, mode: str = 'release') -> Path:
+    folder = {'release': 'Release', 'profile': 'Profile', 'debug': 'Debug'}.get(
+        mode.lower(), 'Release'
+    )
+    return repo / 'build' / 'windows' / 'x64' / 'runner' / folder
+
+
+def windows_portable_zip_path(repo: Path, mode: str = 'release') -> Path:
+    return repo / 'build' / WINDOWS_ZIP_TEMPLATE.format(mode.lower())
+
+
+def windows_setup_exe_path(repo: Path) -> Path:
+    return repo / 'build' / WINDOWS_SETUP_FILENAME
+
+
+def package_windows_portable_zip(repo: Path, *, mode: str = 'release') -> Path:
+    """Bundle the Flutter Windows runner output directory into a portable `.zip`."""
+    source_dir = windows_runner_output_dir(repo, mode)
+    if not source_dir.is_dir():
+        raise BuildError('未找到 Windows 构建产物目录：{}'.format(source_dir))
+    files = sorted(path for path in source_dir.rglob('*') if path.is_file())
+    if not files:
+        raise BuildError('Windows 构建产物目录为空：{}'.format(source_dir))
+    target_zip = windows_portable_zip_path(repo, mode)
+    target_zip.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(target_zip, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        for file_path in files:
+            relative = file_path.relative_to(source_dir).as_posix()
+            archive.write(file_path, arcname='Pacta/' + relative)
+    return target_zip
+
+
+def find_iscc(
+    *,
+    environ: Optional[Mapping[str, str]] = None,
+    which=None,
+    platform: Optional[str] = None,
+    search_roots: Optional[Sequence[Path]] = None,
+) -> Optional[Path]:
+    """Locate Inno Setup's `ISCC.exe`: `ISCC_PATH`, `PATH`, then standard roots."""
+    environ = os.environ if environ is None else environ
+    platform = sys.platform if platform is None else platform
+    which = shutil.which if which is None else which
+
+    explicit = (environ.get('ISCC_PATH') or '').strip()
+    if explicit:
+        candidate = Path(explicit)
+        if candidate.is_file():
+            return candidate
+
+    for binary in ('ISCC', 'iscc', 'ISCC.exe'):
+        found = which(binary)
+        if found:
+            return Path(found)
+
+    if search_roots is None:
+        roots: list = []
+        if platform.startswith('win'):
+            for variable, fallback in (
+                ('LOCALAPPDATA', ''),
+                ('ProgramFiles(x86)', r'C:\Program Files (x86)'),
+                ('ProgramFiles', r'C:\Program Files'),
+            ):
+                value = (environ.get(variable) or fallback).strip()
+                if not value:
+                    continue
+                base = Path(value)
+                if variable == 'LOCALAPPDATA':
+                    roots.append(base / 'Programs' / 'Inno Setup 6')
+                else:
+                    roots.append(base / 'Inno Setup 6')
+            user_profile = (environ.get('USERPROFILE') or '').strip()
+            if user_profile:
+                roots.append(
+                    Path(user_profile) / 'scoop' / 'apps' / 'innosetup' / 'current'
+                )
+            roots.append(Path(r'D:\Programs\UserScoop\apps\innosetup\current'))
+        search_roots = roots
+
+    for root in search_roots:
+        for name in ('ISCC.exe', 'iscc'):
+            candidate = Path(root) / name
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def iscc_command(
+    iscc: Path,
+    *,
+    iss_script: Path,
+    source_dir: Path,
+    output_dir: Path,
+    app_version: str,
+    output_base_filename: str = WINDOWS_SETUP_BASENAME,
+) -> list:
+    return [
+        str(iscc),
+        '/Qp',
+        '/DMyAppVersion={}'.format(app_version),
+        '/DMySourceDir={}'.format(source_dir),
+        '/DMyOutputDir={}'.format(output_dir),
+        '/DMyOutputBaseFilename={}'.format(output_base_filename),
+        str(iss_script),
+    ]
+
+
+def _package_windows_artifacts(arguments, context: Context, *, mode: str) -> None:
+    if getattr(arguments, 'skip_windows_package', False):
+        return
+    if arguments.target not in ('windows', 'all'):
+        return
+
+    require_installer = bool(getattr(arguments, 'require_windows_installer', False))
+    source_dir = windows_runner_output_dir(context.repo, mode)
+    if not source_dir.is_dir():
+        if require_installer:
+            raise BuildError('未找到 Windows 构建产物目录：{}'.format(source_dir))
+        return
+
+    zip_path = package_windows_portable_zip(context.repo, mode=mode)
+    print('[pacta] 已生成 Windows 便携包：{}'.format(zip_path), file=context.out)
+
+    iss_script = context.repo / DEFAULT_WINDOWS_ISS
+    iscc = find_iscc(environ=context.environ)
+    if iscc is None:
+        if require_installer:
+            raise BuildError(
+                '未找到 Inno Setup 编译器（ISCC.exe）。请安装 Inno Setup 6 '
+                '（`winget install --id JRSoftware.InnoSetup`）或设置 ISCC_PATH。'
+            )
+        print(
+            '[pacta] 提示：未检测到 Inno Setup (ISCC.exe)，已跳过 setup.exe 安装包生成。',
+            file=context.out,
+        )
+        return
+    if not iss_script.is_file():
+        if require_installer:
+            raise BuildError('未找到 Inno Setup 脚本：{}'.format(iss_script))
+        return
+
+    output_dir = context.repo / 'build'
+    command = iscc_command(
+        iscc,
+        iss_script=iss_script,
+        source_dir=source_dir,
+        output_dir=output_dir,
+        app_version=read_app_version(context.repo),
+    )
+    result = context.runner.run(command, cwd=context.repo, env=None)
+    if result.returncode != 0:
+        raise BuildError(
+            'Windows 安装包构建失败（退出码 {}）：{}'.format(
+                result.returncode, format_command(command)
+            )
+        )
+    print(
+        '[pacta] 已生成 Windows 安装程序：{}'.format(windows_setup_exe_path(context.repo)),
+        file=context.out,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Subcommands
 # ---------------------------------------------------------------------------
 
@@ -536,6 +737,17 @@ def handle_build(arguments, context: Context) -> int:
             commands=planned,
             require_release_signing=require_release_signing,
         )
+        if arguments.target in ('windows', 'all') and not getattr(
+            arguments, 'skip_windows_package', False
+        ):
+            print(
+                '[dry-run] Windows 产物打包：便携包 {} 与安装程序 {}（Inno Setup {}）'.format(
+                    windows_portable_zip_path(context.repo, mode),
+                    windows_setup_exe_path(context.repo),
+                    context.repo / DEFAULT_WINDOWS_ISS,
+                ),
+                file=context.out,
+            )
         return EXIT_OK
 
     _run_steps(steps, context)
@@ -555,6 +767,7 @@ def handle_build(arguments, context: Context) -> int:
                         result.returncode, format_command(command)
                     )
                 )
+    _package_windows_artifacts(arguments, context, mode=mode)
     return EXIT_OK
 
 
@@ -771,6 +984,10 @@ def handle_init_keystore(arguments, context: Context) -> int:
             ),
             file=context.out,
         )
+        if keystore.is_file() and properties.is_file() and not getattr(arguments, 'dry_run', False):
+            _try_export_github_secrets_summary(
+                arguments, context, keystore=keystore, properties=properties
+            )
         return EXIT_OK
 
     keytool = find_keytool(environ=context.environ)
@@ -831,20 +1048,209 @@ def handle_init_keystore(arguments, context: Context) -> int:
     print('  properties：{}'.format(properties), file=context.out)
     print('  alias     ：{}（密码已写入上方 properties，不在此输出）'.format(alias), file=context.out)
     _report_ignore_status(context, (keystore, properties))
-    print(
-        '后续在 GitHub 仓库 Settings -> Secrets and variables -> Actions 配置：\n'
-        '  SUPABASE_URL\n'
-        '  SUPABASE_PUBLISHABLE_KEY\n'
-        '  ANDROID_KEYSTORE_BASE64\n'
-        '  ANDROID_KEYSTORE_PASSWORD\n'
-        '  ANDROID_KEY_ALIAS\n'
-        '  ANDROID_KEY_PASSWORD\n'
-        'PowerShell 导出口令库（生成 ANDROID_KEYSTORE_BASE64 的值）：\n'
-        '  [Convert]::ToBase64String([IO.File]::ReadAllBytes("{}"))'.format(
-            str(keystore).replace('\\', '/')
+    _try_export_github_secrets_summary(arguments, context, keystore=keystore, properties=properties)
+    return EXIT_OK
+
+
+def _try_export_github_secrets_summary(
+    arguments,
+    context: Context,
+    *,
+    keystore: Path,
+    properties: Path,
+) -> None:
+    """Write `build/github-actions-secrets.txt` after `init-keystore` when possible."""
+    try:
+        secrets_map = collect_github_release_secrets(
+            arguments,
+            context,
+            keystore=keystore,
+            properties=properties,
+            require_supabase=False,
+        )
+        output_path = write_github_secrets_file(
+            context.repo,
+            secrets_map=secrets_map,
+            keystore=keystore,
+            properties=properties,
+        )
+        print(
+            '[pacta] 已同步生成 GitHub Actions Secrets 填写清单（含 {}）：\n'
+            '  {}\n'
+            '  （可直接打开该文件复制，或执行 `python scripts/pacta_build.py github-secrets --apply` 一键写入 GitHub）'.format(
+                ', '.join(GITHUB_RELEASE_SECRET_KEYS), output_path
+            ),
+            file=context.out,
+        )
+    except BuildError:
+        print(
+            '后续可执行 `python scripts/pacta_build.py github-secrets` 一键生成 GitHub Secrets 填写清单。',
+            file=context.out,
+        )
+
+
+def collect_github_release_secrets(
+    arguments,
+    context: Context,
+    *,
+    keystore: Path,
+    properties: Path,
+    require_supabase: bool = True,
+) -> dict:
+    """Gather all 6 GitHub Actions Release secrets from `.env` + `key.properties` + keystore."""
+    defines, _, env_file = _resolve_defines(arguments, context)
+    if require_supabase:
+        _require_defines(defines, env_file=env_file)
+
+    if not properties.is_file():
+        raise BuildError(
+            '未找到签名属性文件 {}。请先运行 `python scripts/pacta_build.py init-keystore`。'.format(
+                properties
+            )
+        )
+    if not keystore.is_file():
+        raise BuildError(
+            '未找到签名密钥库 {}。请先运行 `python scripts/pacta_build.py init-keystore`。'.format(
+                keystore
+            )
+        )
+
+    prop_values = parse_dotenv(properties.read_text(encoding='utf-8-sig'))
+    store_password = (prop_values.get('storePassword') or '').strip()
+    key_alias = (prop_values.get('keyAlias') or '').strip()
+    key_password = (prop_values.get('keyPassword') or store_password).strip()
+    if not store_password or not key_alias or not key_password:
+        raise BuildError(
+            '{} 缺少 storePassword / keyAlias / keyPassword 字段。'.format(properties)
+        )
+
+    keystore_b64 = base64.b64encode(keystore.read_bytes()).decode('ascii')
+    return {
+        'SUPABASE_URL': defines.get('SUPABASE_URL', '<请先在 .env 填写 SUPABASE_URL>'),
+        'SUPABASE_PUBLISHABLE_KEY': defines.get(
+            'SUPABASE_PUBLISHABLE_KEY', '<请先在 .env 填写 SUPABASE_PUBLISHABLE_KEY>'
         ),
-        file=context.out,
+        'ANDROID_KEYSTORE_BASE64': keystore_b64,
+        'ANDROID_KEYSTORE_PASSWORD': store_password,
+        'ANDROID_KEY_ALIAS': key_alias,
+        'ANDROID_KEY_PASSWORD': key_password,
+    }
+
+
+def write_github_secrets_file(
+    repo: Path,
+    *,
+    secrets_map: Mapping[str, str],
+    keystore: Path,
+    properties: Path,
+    output: Optional[Path] = None,
+) -> Path:
+    target = _resolve_repo_path(repo, str(output or DEFAULT_GITHUB_SECRETS_FILE))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        '# Pacta GitHub Actions Release Secrets 一键填写清单',
+        '# 生成工具：python scripts/pacta_build.py github-secrets',
+        '# 注意：本文件位于 git 忽略目录，包含正式签名凭据，请勿提交或外传！',
+        '#',
+        '# 本机签名文件位置：',
+        '#   密钥库 (keystore)  : {}'.format(keystore),
+        '#   属性文件 (含密码)   : {}'.format(properties),
+        '#',
+        '# 在 GitHub 仓库 Settings -> Secrets and variables -> Actions 依次新建以下 6 个 Repository secrets：',
+        '# （或者直接运行 `python scripts/pacta_build.py github-secrets --apply` 通过 gh CLI 一键写入 GitHub）',
+        '',
+    ]
+    for key in GITHUB_RELEASE_SECRET_KEYS:
+        lines.append('{}={}'.format(key, secrets_map.get(key, '')))
+    target.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+    return target
+
+
+def handle_github_secrets(arguments, context: Context) -> int:
+    keystore = _resolve_repo_path(
+        context.repo, getattr(arguments, 'keystore', DEFAULT_KEYSTORE)
     )
+    properties = _resolve_repo_path(
+        context.repo, getattr(arguments, 'properties', DEFAULT_PROPERTIES)
+    )
+    output_arg = getattr(arguments, 'output', DEFAULT_GITHUB_SECRETS_FILE)
+    output_path = _resolve_repo_path(context.repo, output_arg)
+    apply_to_gh = bool(getattr(arguments, 'apply', False))
+
+    if not keystore.is_file() or not properties.is_file():
+        print(
+            '[pacta] 尚未检测到本机 Android Release 签名文件，正在自动生成...',
+            file=context.out,
+        )
+        init_args = _shared_namespace(
+            arguments,
+            command='init-keystore',
+            keystore=str(keystore),
+            properties=str(properties),
+            alias=DEFAULT_ALIAS,
+            dname=DEFAULT_DNAME,
+            store_password=None,
+            key_password=None,
+            force=True,
+        )
+        rc = handle_init_keystore(init_args, context)
+        if rc != EXIT_OK:
+            return rc
+
+    if getattr(arguments, 'dry_run', False):
+        print(
+            '[dry-run] 将从 .env、{} 与 {} 汇总 6 个 GitHub Secrets 并写入 {}。'.format(
+                properties, keystore, output_path
+            ),
+            file=context.out,
+        )
+        if apply_to_gh:
+            print(
+                '[dry-run] 将调用 `gh secret set <NAME>` 同步：{}'.format(
+                    ', '.join(GITHUB_RELEASE_SECRET_KEYS)
+                ),
+                file=context.out,
+            )
+        return EXIT_OK
+
+    secrets_map = collect_github_release_secrets(
+        arguments,
+        context,
+        keystore=keystore,
+        properties=properties,
+        require_supabase=apply_to_gh,
+    )
+    written = write_github_secrets_file(
+        context.repo,
+        secrets_map=secrets_map,
+        keystore=keystore,
+        properties=properties,
+        output=output_path,
+    )
+    print('[pacta] 已生成 GitHub Actions Release Secrets 清单：', file=context.out)
+    print('  清单文件（打开即可复制全部 6 项）：{}'.format(written), file=context.out)
+    print('  签名密钥库位置                  ：{}'.format(keystore), file=context.out)
+    print('  签名属性文件（含 store/key 密码）：{}'.format(properties), file=context.out)
+    for key in GITHUB_RELEASE_SECRET_KEYS:
+        value = secrets_map.get(key, '')
+        state = (
+            mask(value)
+            if value and not value.startswith('<')
+            else '<缺失：请先在 .env 配置>'
+        )
+        print('  - {:26s} = {}'.format(key, state), file=context.out)
+
+    if apply_to_gh:
+        for key in GITHUB_RELEASE_SECRET_KEYS:
+            command = tool_command('gh', 'secret', 'set', key, '--body', secrets_map[key])
+            result = context.runner.run(command, cwd=context.repo, echo=False)
+            if result.returncode != 0:
+                raise BuildError(
+                    '`gh secret set {}` 失败（退出码 {}）。请确认已执行 `gh auth login`。'.format(
+                        key, result.returncode
+                    )
+                )
+            print('[pacta] 已推送 GitHub Secret：{}'.format(key), file=context.out)
     return EXIT_OK
 
 
@@ -925,11 +1331,13 @@ def handle_interactive(arguments, context: Context) -> int:
         '\n请选择操作：\n'
         '  1) 运行 Windows 桌面版 (Debug)\n'
         '  2) 运行 Android 设备/模拟器 (Debug)\n'
-        '  3) 构建 Windows Release\n'
+        '  3) 构建 Windows Release（自动打包 .zip 便携包与 setup.exe 安装程序）\n'
         '  4) 构建 Android Release APK\n'
         '  5) 构建 Android Release AAB (Google Play)\n'
         '  6) 构建全平台 Release (Windows + APK + AAB，强制正式签名)\n'
         '  7) 生成本机 Android Release 签名 (init-keystore)\n'
+        '  8) 一键导出 GitHub Actions Release Secrets 填写清单 (build/github-actions-secrets.txt)\n'
+        '  9) 一键将 6 个 Release Secrets 推送到当前 GitHub 仓库 (gh secret set)\n'
         '  0) 退出',
         file=context.out,
     )
@@ -937,7 +1345,7 @@ def handle_interactive(arguments, context: Context) -> int:
     read_input = context.input_fn if callable(context.input_fn) else input
     while True:
         try:
-            choice = str(read_input('请输入编号 [1-7, 0/q 退出]: ')).strip().lower()
+            choice = str(read_input('请输入编号 [1-9, 0/q 退出]: ')).strip().lower()
         except EOFError:
             print('[pacta] 已退出。', file=context.out)
             return EXIT_OK
@@ -1018,7 +1426,31 @@ def handle_interactive(arguments, context: Context) -> int:
                 ),
                 context,
             )
-        print('[pacta] 无效编号 "{}"，请输入 1-7 或 0/q。'.format(choice), file=context.err)
+        if choice == '8':
+            return handle_github_secrets(
+                _shared_namespace(
+                    arguments,
+                    command='github-secrets',
+                    keystore=DEFAULT_KEYSTORE,
+                    properties=DEFAULT_PROPERTIES,
+                    output=DEFAULT_GITHUB_SECRETS_FILE,
+                    apply=False,
+                ),
+                context,
+            )
+        if choice == '9':
+            return handle_github_secrets(
+                _shared_namespace(
+                    arguments,
+                    command='github-secrets',
+                    keystore=DEFAULT_KEYSTORE,
+                    properties=DEFAULT_PROPERTIES,
+                    output=DEFAULT_GITHUB_SECRETS_FILE,
+                    apply=True,
+                ),
+                context,
+            )
+        print('[pacta] 无效编号 "{}"，请输入 1-9 或 0/q。'.format(choice), file=context.err)
 
 
 def _add_mode_arguments(parser, *, default_mode: str) -> None:
@@ -1097,6 +1529,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help='缺失正式 Release 签名时让 Gradle 在配置期直接失败',
     )
+    build_parser_.add_argument(
+        '--require-windows-installer',
+        action='store_true',
+        default=False,
+        help='Windows 构建缺失 Inno Setup (ISCC.exe) 时直接失败',
+    )
+    build_parser_.add_argument(
+        '--skip-windows-package',
+        action='store_true',
+        default=False,
+        help='跳过 Windows 便携包 zip 与 setup.exe 安装程序打包',
+    )
 
     keystore_parser = subparsers.add_parser(
         'init-keystore', help='generate the local Android release keystore'
@@ -1110,6 +1554,26 @@ def build_parser() -> argparse.ArgumentParser:
     keystore_parser.add_argument('--key-password', default=None)
     keystore_parser.add_argument('--force', action='store_true', default=False)
 
+    secrets_parser = subparsers.add_parser(
+        'github-secrets',
+        help='export all 6 GitHub Actions Release secrets (auto-creating keystore if missing)',
+    )
+    _add_shared_arguments(secrets_parser, defaults=False)
+    secrets_parser.add_argument('--keystore', default=DEFAULT_KEYSTORE, metavar='PATH')
+    secrets_parser.add_argument('--properties', default=DEFAULT_PROPERTIES, metavar='PATH')
+    secrets_parser.add_argument(
+        '--output',
+        default=DEFAULT_GITHUB_SECRETS_FILE,
+        metavar='PATH',
+        help='output file path (default: %s)' % DEFAULT_GITHUB_SECRETS_FILE,
+    )
+    secrets_parser.add_argument(
+        '--apply',
+        action='store_true',
+        default=False,
+        help='push all 6 secrets directly to GitHub via `gh secret set`',
+    )
+
     return parser
 
 
@@ -1117,6 +1581,7 @@ HANDLERS = {
     'build': handle_build,
     'run': handle_run,
     'init-keystore': handle_init_keystore,
+    'github-secrets': handle_github_secrets,
     'interactive': handle_interactive,
 }
 
