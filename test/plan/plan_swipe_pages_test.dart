@@ -1,4 +1,5 @@
 import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -196,6 +197,147 @@ void main() {
         findsWidgets,
         reason: '选中日生效',
       );
+    } finally {
+      await harness.dispose(tester);
+    }
+  });
+
+  testWidgets('Windows 精确触控板双指横滑切页，斜滑不切换', (tester) async {
+    final harness = _Harness(PactaDatabase(NativeDatabase.memory()));
+    try {
+      await harness.pump(tester);
+      await openPlan(tester);
+      final center = tester.getCenter(find.byType(PageView));
+
+      // 斜滑：纵向分量压过横向，留在目标页。
+      var gesture = await tester.createGesture(
+        kind: PointerDeviceKind.trackpad,
+      );
+      await gesture.panZoomStart(center);
+      for (var step = 1; step <= 4; step++) {
+        await gesture.panZoomUpdate(
+          center,
+          pan: Offset(-50.0 * step, -50.0 * step),
+        );
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await gesture.panZoomEnd();
+      await tester.pumpAndSettle();
+      expect(_calendarOnScreen(tester), isFalse, reason: '斜滑不切页');
+
+      // 纯横向：目标 -> 日历。
+      gesture = await tester.createGesture(kind: PointerDeviceKind.trackpad);
+      await gesture.panZoomStart(center);
+      for (var step = 1; step <= 4; step++) {
+        await gesture.panZoomUpdate(center, pan: Offset(-50.0 * step, 0));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await gesture.panZoomEnd();
+      await tester.pumpAndSettle();
+      expect(_calendarOnScreen(tester), isTrue, reason: '双指横滑切到日历');
+      expect(_selectedSegment(tester).toString(), contains('calendar'));
+    } finally {
+      await harness.dispose(tester);
+    }
+  });
+
+  testWidgets('1280x800 宽屏留白区鼠标横拖跟手切页', (tester) async {
+    final harness = _Harness(PactaDatabase(NativeDatabase.memory()));
+    try {
+      await harness.pump(tester, size: const Size(1280, 800));
+      await openPlan(tester);
+      final pagerRect = tester.getRect(find.byType(PageView));
+      final blankPoint = Offset(pagerRect.left + 4, pagerRect.center.dy);
+      final controller = tester
+          .widget<PageView>(find.byType(PageView))
+          .controller!;
+
+      final gesture = await tester.startGesture(
+        blankPoint,
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump(const Duration(milliseconds: 16));
+      for (var step = 0; step < 5; step++) {
+        await gesture.moveBy(const Offset(-40, 0));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(controller.page, greaterThan(0.05), reason: '拖动过程中页面跟手位移，不是松手才跳');
+      expect(controller.page, lessThan(0.95));
+
+      await tester.pump(const Duration(milliseconds: 200));
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(_calendarOnScreen(tester), isTrue, reason: '留白处横拖翻到日历');
+      expect(controller.page, 1.0);
+    } finally {
+      await harness.dispose(tester);
+    }
+  });
+
+  testWidgets('Shift+滚轮与方向键/Ctrl+Tab 切页，两端钳位', (tester) async {
+    final harness = _Harness(PactaDatabase(NativeDatabase.memory()));
+    try {
+      await harness.pump(tester, size: const Size(1280, 800));
+      await openPlan(tester);
+      final center = tester.getCenter(find.byType(PageView));
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: center,
+          scrollDelta: const Offset(0, 100),
+          kind: PointerDeviceKind.mouse,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(_calendarOnScreen(tester), isTrue, reason: 'Shift+滚轮进日历');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.pumpAndSettle();
+      expect(_calendarOnScreen(tester), isFalse, reason: '← 回目标页');
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(_calendarOnScreen(tester), isTrue, reason: 'Ctrl+Tab 进日历');
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(_calendarOnScreen(tester), isTrue, reason: '末端不循环');
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(_calendarOnScreen(tester), isFalse, reason: 'Ctrl+Shift+Tab 回目标');
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    } finally {
+      await harness.dispose(tester);
+    }
+  });
+
+  testWidgets('看板前置时 →/Ctrl+Tab 不会误切后台计划页', (tester) async {
+    final harness = _Harness(PactaDatabase(NativeDatabase.memory()));
+    try {
+      await harness.pump(tester, size: const Size(1280, 800));
+      await openPlan(tester);
+      await tester.tap(find.text('日历'));
+      await tester.pumpAndSettle();
+      expect(_calendarOnScreen(tester), isTrue);
+
+      await openBoard(tester);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await tester.pumpAndSettle();
+
+      await openPlan(tester);
+      expect(_calendarOnScreen(tester), isTrue, reason: '后台计划页的可见性守卫挡住隐藏页快捷键');
+      expect(_selectedSegment(tester).toString(), contains('calendar'));
     } finally {
       await harness.dispose(tester);
     }

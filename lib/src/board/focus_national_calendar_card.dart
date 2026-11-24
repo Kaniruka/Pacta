@@ -25,6 +25,7 @@ import '../ui/pacta_check_circle.dart';
 import '../ui/pacta_focus_heat_legend.dart';
 import '../ui/pacta_grouped_list.dart';
 import '../ui/pacta_hold_action_reorder.dart';
+import '../ui/pacta_horizontal_pager.dart';
 import 'board_pinned_goal_actions.dart';
 import 'national_focus_summary_card.dart';
 
@@ -616,23 +617,31 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
           // 顶槽左右滑动：国策状态 ⇄ 置顶目标。高度随内容自适应，不用固定
           // 高度的 PageView 裁切置顶卡；横向识别器只在超过 touch slop 的
           // 明确横拖时才赢竞技场，长按菜单与垂直拖拽排序保持原样。
-          GestureDetector(
-            key: const ValueKey('board-top-slot-swipe'),
-            behavior: HitTestBehavior.deferToChild,
-            onHorizontalDragStart: (_) => _topSlotDragDistance = 0,
-            onHorizontalDragUpdate: (details) =>
-                _topSlotDragDistance += details.delta.dx,
-            onHorizontalDragCancel: () => _topSlotDragDistance = 0,
-            onHorizontalDragEnd: _endTopSlotSwipe,
-            child: AnimatedSize(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.topCenter,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                switchInCurve: Curves.easeOut,
-                switchOutCurve: Curves.easeIn,
-                child: content,
+          PactaHorizontalPagerScope(
+            enabled: showSwitch,
+            pageCount: 2,
+            currentPage: _topSlotTab == _TopSlotTab.status ? 0 : 1,
+            onStepPage: _stepTopSlot,
+            child: GestureDetector(
+              key: const ValueKey('board-top-slot-swipe'),
+              // 透明边距也要能直接横拖：deferToChild 会让卡片外的留白
+              // 变成死区，桌面鼠标因此只能从内容上起手。
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragStart: (_) => _topSlotDragDistance = 0,
+              onHorizontalDragUpdate: (details) =>
+                  _topSlotDragDistance += details.delta.dx,
+              onHorizontalDragCancel: () => _topSlotDragDistance = 0,
+              onHorizontalDragEnd: _endTopSlotSwipe,
+              child: AnimatedSize(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  child: content,
+                ),
               ),
             ),
           )
@@ -684,6 +693,15 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
       _topSlotTabChosen = true;
       _topSlotTab = tab;
     });
+  }
+
+  /// 滚轮/快捷键的一步切换：只在两枚胶囊同时存在时按页序钳位，不循环。
+  void _stepTopSlot(int step) {
+    if (!_showTopSlotSwitch) return;
+    final int current = _topSlotTab == _TopSlotTab.status ? 0 : 1;
+    final int next = (current + step).clamp(0, 1);
+    if (next == current) return;
+    _selectTopSlot(next == 0 ? _TopSlotTab.status : _TopSlotTab.pinned);
   }
 
   /// 动态选中日国策状态：今天取实时计数，历史只认真实失败记录，未来明确

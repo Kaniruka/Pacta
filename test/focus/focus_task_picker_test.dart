@@ -1,5 +1,6 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/app/app_providers.dart';
@@ -176,13 +177,135 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   });
+
+  group('桌面分页交互', () {
+    testWidgets('1280x800 宽屏左留白鼠标横拖切换筛选', (tester) async {
+      await _pumpPicker(tester, goals: _goals(), size: const Size(1280, 800));
+      expect(_selectedFilter(tester), <TaskClassification?>{null});
+
+      // 页头与列表都收在 960dp 阅读线内：x=60 落在左侧留白，仍然能起手。
+      await tester.dragFrom(
+        const Offset(60, 400),
+        const Offset(-300, 0),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(_selectedFilter(tester), <TaskClassification?>{
+        TaskClassification.elite,
+      });
+
+      await tester.dragFrom(
+        const Offset(60, 400),
+        const Offset(300, 0),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pumpAndSettle();
+      expect(_selectedFilter(tester), <TaskClassification?>{null});
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Windows 精确触控板双指横滑翻页，斜滑不翻页', (tester) async {
+      await _pumpPicker(tester, goals: _goals(), size: const Size(1280, 800));
+
+      var gesture = await tester.createGesture(
+        kind: PointerDeviceKind.trackpad,
+      );
+      await gesture.panZoomStart(const Offset(640, 400));
+      for (var step = 1; step <= 4; step++) {
+        await gesture.panZoomUpdate(
+          const Offset(640, 400),
+          pan: Offset(-50.0 * step, -50.0 * step),
+        );
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await gesture.panZoomEnd();
+      await tester.pumpAndSettle();
+      expect(_selectedFilter(tester), <TaskClassification?>{
+        null,
+      }, reason: '斜滑不翻页');
+
+      gesture = await tester.createGesture(kind: PointerDeviceKind.trackpad);
+      await gesture.panZoomStart(const Offset(640, 400));
+      for (var step = 1; step <= 4; step++) {
+        await gesture.panZoomUpdate(
+          const Offset(640, 400),
+          pan: Offset(-50.0 * step, 0),
+        );
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await gesture.panZoomEnd();
+      await tester.pumpAndSettle();
+      expect(_selectedFilter(tester), <TaskClassification?>{
+        TaskClassification.elite,
+      });
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Shift+滚轮、横向滚轮与快捷键切换筛选', (tester) async {
+      await _pumpPicker(tester, goals: _goals(), size: const Size(1280, 800));
+      final pager = find.byKey(const ValueKey('focus-task-picker-pager'));
+      final center = tester.getCenter(pager);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: center,
+          scrollDelta: const Offset(0, 100),
+          kind: PointerDeviceKind.mouse,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(_selectedFilter(tester), <TaskClassification?>{
+        TaskClassification.elite,
+      });
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: center,
+          scrollDelta: const Offset(-100, 0),
+          kind: PointerDeviceKind.mouse,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(_selectedFilter(tester), <TaskClassification?>{null});
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pumpAndSettle();
+      expect(_selectedFilter(tester), <TaskClassification?>{
+        TaskClassification.elite,
+      });
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(_selectedFilter(tester), <TaskClassification?>{
+        TaskClassification.regular,
+      });
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(_selectedFilter(tester), <TaskClassification?>{
+        TaskClassification.regular,
+      }, reason: '末端 Ctrl+Tab 不循环');
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+      expect(_selectedFilter(tester), <TaskClassification?>{
+        TaskClassification.elite,
+      });
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      expect(tester.takeException(), isNull);
+    });
+  });
 }
 
 Future<void> _pumpPicker(
   WidgetTester tester, {
   required List<Goal> goals,
+  Size size = const Size(480, 900),
 }) async {
-  tester.view.physicalSize = const Size(480, 900);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(

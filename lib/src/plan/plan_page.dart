@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,6 +16,7 @@ import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_grouped_list.dart';
 import '../ui/pacta_hold_action_reorder.dart';
+import '../ui/pacta_horizontal_pager.dart';
 import '../ui/pacta_page_header.dart';
 import 'goal_task_cards.dart';
 import 'goal_view_preferences.dart';
@@ -64,6 +66,16 @@ class _PlanPageState extends ConsumerState<PlanPage> {
     initialPage: _pageOf(_view),
   );
 
+  /// 手势跟手的拖动现场：起点页、起点像素与累计位移。
+  ///
+  /// 跟手位移用 PageView 自己的 pixels 表达，松手时只要真实页码没到目标页就
+  /// 补一段 240ms 吸附动画——半页位置不会被 `.round()` 误判成「已经到位」。
+  bool _isDragging = false;
+  int _dragStartPage = 0;
+  double _dragStartPixels = 0;
+  double _dragDx = 0;
+  double _dragDy = 0;
+
   @override
   void dispose() {
     _pageController.dispose();
@@ -81,14 +93,6 @@ class _PlanPageState extends ConsumerState<PlanPage> {
     _ => _PlanView.calendar,
   };
 
-  /// 内容区横向拖动累计量（dp）：判定阈值用，不做跟手位移。
-  double _dragDx = 0;
-  double _dragDy = 0;
-
-  int get _currentPage => _pageController.hasClients
-      ? (_pageController.page?.round() ?? _pageOf(_view))
-      : _pageOf(_view);
-
   /// 原始指针位移：水平识别器只上报 dx，斜率判定必须自己累计 dy。
   void _onPointerDown(PointerDownEvent event) {
     _dragDx = 0;
@@ -100,31 +104,118 @@ class _PlanPageState extends ConsumerState<PlanPage> {
     _dragDy += event.delta.dy;
   }
 
+  /// Windows 精确触控板的双指横滑只发 pan/zoom 事件，没有 PointerMove。
+  void _onPointerPanZoomStart(PointerPanZoomStartEvent event) {
+    _dragDx = 0;
+    _dragDy = 0;
+  }
+
+  void _onPointerPanZoomUpdate(PointerPanZoomUpdateEvent event) {
+    _dragDx += event.panDelta.dx;
+    _dragDy += event.panDelta.dy;
+  }
+
+  /// 跟手随动：页内 Listener 先累计位移，同一帧的 drag update 随后到达。
+  ///
+  /// 斜滑（|dx| 未超过 1.5|dy|）不跟手，避免上下滚动时页面左右晃。
+  void _onHorizontalDragUpdate(DragUpdateDetails details) {
+    if (!_isDragging) return;
+    if (_dragDx.abs() <= _dragDy.abs() * 1.5) return;
+    if (!_pageController.hasClients) return;
+    final ScrollPosition position = _pageController.position;
+    if (!position.hasContentDimensions) return;
+    _pageController.jumpTo(
+      (_dragStartPixels - _dragDx)
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble(),
+    );
+  }
+
+  void _onHorizontalDragStart(DragStartDetails details) {
+    _isDragging = true;
+    _dragStartPage = _pageOf(_view);
+    _dragStartPixels =
+        _pageController.hasClients && _pageController.position.hasPixels
+        ? _pageController.position.pixels
+        : 0.0;
+  }
+
   /// 定案门槛：水平位移 >24dp 且 |dx| > 1.5|dy| 才翻页。
   /// 斜滑、短拖、以及点按造成的微小位移都停在原页。
   void _onHorizontalDragEnd(DragEndDetails details) {
-    final dx = _dragDx;
-    final dy = _dragDy.abs();
+    final double dx = _dragDx;
+    final double dy = _dragDy.abs();
+    final int startPage = _dragStartPage;
+    _isDragging = false;
     _dragDx = 0;
     _dragDy = 0;
-    if (dx.abs() <= 24 || dx.abs() <= dy * 1.5) return;
-    final target = dx < 0 ? _currentPage + 1 : _currentPage - 1;
-    if (target < 0 || target > 1) return;
-    _selectView(_viewOfPage(target));
+    if (dx.abs() <= 24 || dx.abs() <= dy * 1.5) {
+      _settleToPage(startPage);
+      return;
+    }
+    final int target = (startPage + (dx < 0 ? 1 : -1)).clamp(0, 1);
+    _settleToPage(target);
+  }
+
+  /// 取消未必来自一次已成立的横拖：普通点按也会走到这里（识别器还在
+  /// 「可能」状态就被抬起），此时没有起点页可回，直接清位移即可。
+  void _onHorizontalDragCancel() {
+    final bool wasDragging = _isDragging;
+    final int startPage = _dragStartPage;
+    _isDragging = false;
+    _dragDx = 0;
+    _dragDy = 0;
+    if (!wasDragging) return;
+    _settleToPage(startPage);
+  }
+
+  /// 收尾吸附：先同步分段按钮，再按真实页码决定是否补吸附动画。
+  void _settleToPage(int target) {
+    final _PlanView next = _viewOfPage(target);
+    if (_view != next) setState(() => _view = next);
+    if (!_pageController.hasClients) return;
+    final double targetPage = target.toDouble();
+    final double current = _pageController.page ?? targetPage;
+    if ((current - targetPage).abs() > 0.001) {
+      _pageController.animateToPage(
+        target,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  /// 滚轮/快捷键的一步翻页：两端钳位，不循环。
+  void _stepView(int step) {
+    final int current = _pageOf(_view);
+    final int next = (current + step).clamp(0, 1);
+    if (next == current) return;
+    _selectView(_viewOfPage(next));
   }
 
   void _selectView(_PlanView next) {
     if (_view == next) return;
     setState(() => _view = next);
     if (!_pageController.hasClients) return;
-    final target = _pageOf(next);
-    final current = _pageController.page?.round();
-    if (current == target) return;
+    final int target = _pageOf(next);
+    final double targetPage = target.toDouble();
+    final double current = _pageController.page ?? targetPage;
+    // 跟手滑到中途时页码可能已经取整到目标页，但视觉上仍在两页之间；
+    // 必须按真实像素判断，否则吸附动画会被跳过。
+    if ((current - targetPage).abs() < 0.001) return;
     _pageController.animateToPage(
       target,
       duration: const Duration(milliseconds: 240),
       curve: Curves.easeOutCubic,
     );
+  }
+
+  /// 拖动中的中途页码不改写分段按钮：收尾统一由 [_settleToPage] 同步。
+  void _onPageChanged(int page) {
+    if (_isDragging) return;
+    final _PlanView next = _viewOfPage(page);
+    if (_view == next) return;
+    setState(() => _view = next);
   }
 
   @override
@@ -173,100 +264,136 @@ class _PlanPageState extends ConsumerState<PlanPage> {
               final calendarGutter = PactaSpacing.isWide(width)
                   ? gutter
                   : PactaSpacing.md;
-              return Column(
-                // 宽屏下让页头铺满内容宽度，标题才与其它目的地一样靠左。
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: EdgeInsets.fromLTRB(
-                      gutter,
-                      PactaSpacing.lg,
-                      gutter,
-                      0,
-                    ),
-                    child: PactaPageHeader(
-                      title: '计划',
-                      trailing: SegmentedButton<_PlanView>(
-                        segments: const [
-                          ButtonSegment(
-                            value: _PlanView.goals,
-                            icon: Icon(Icons.flag_outlined),
-                            label: Text('目标'),
+              // 分页作用域铺满整个页面宽度：宽屏左右留白也能滚轮/快捷键切页。
+              return PactaHorizontalPagerScope(
+                pageCount: 2,
+                currentPage: _pageOf(_view),
+                onStepPage: _stepView,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // 页头只在 960dp 阅读线内居中，正文与标题保持同一条左缘。
+                    Align(
+                      alignment: Alignment.topCenter,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: PactaSpacing.maxContentWidth,
+                        ),
+                        child: Padding(
+                          padding: EdgeInsets.fromLTRB(
+                            gutter,
+                            PactaSpacing.lg,
+                            gutter,
+                            0,
                           ),
-                          ButtonSegment(
-                            value: _PlanView.calendar,
-                            icon: Icon(Icons.calendar_month_outlined),
-                            label: Text('日历'),
-                          ),
-                        ],
-                        selected: {_view},
-                        onSelectionChanged: (selection) =>
-                            _selectView(selection.first),
-                      ),
-                    ),
-                  ),
-                  // 头部留在滑动区之外：分段控件与标题不随页面移动。
-                  Expanded(
-                    // 手势只在这一层：拖动累计到阈值才翻页，点按仍落到格子和按钮上。
-                    child: Listener(
-                      onPointerDown: _onPointerDown,
-                      onPointerMove: _onPointerMove,
-                      child: GestureDetector(
-                        onHorizontalDragEnd: _onHorizontalDragEnd,
-                        child: PageView.builder(
-                          controller: _pageController,
-                          // 拖动由上面的门槛接管；这里只保留页码吸附与程序化跳转。
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: 2,
-                          onPageChanged: (page) =>
-                              setState(() => _view = _viewOfPage(page)),
-                          itemBuilder: (context, page) => page == 0
-                              ? ListView(
-                                  padding: EdgeInsets.fromLTRB(
-                                    gutter,
-                                    PactaSpacing.md,
-                                    gutter,
-                                    PactaSpacing.xl,
-                                  ),
-                                  children: _buildGoals(
-                                    context,
-                                    taskRepository,
-                                    goals,
-                                    displayTimeZoneId,
-                                  ),
-                                )
-                              // 宽屏下日历不跟着铺满 960：格宽过大时日期反而
-                              // 更难扫读，内容收在 720 以内并居中。
-                              : Align(
-                                  alignment: Alignment.topCenter,
-                                  child: ConstrainedBox(
-                                    constraints: const BoxConstraints(
-                                      maxWidth: 720,
-                                    ),
-                                    child: ListView(
-                                      padding: EdgeInsets.fromLTRB(
-                                        calendarGutter,
-                                        PactaSpacing.md,
-                                        calendarGutter,
-                                        PactaSpacing.xl,
-                                      ),
-                                      children: [
-                                        _buildCalendar(
-                                          context,
-                                          taskRepository,
-                                          scheduleRepository,
-                                          goals,
-                                          displayTimeZoneId,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
+                          child: PactaPageHeader(
+                            title: '计划',
+                            trailing: SegmentedButton<_PlanView>(
+                              segments: const [
+                                ButtonSegment(
+                                  value: _PlanView.goals,
+                                  icon: Icon(Icons.flag_outlined),
+                                  label: Text('目标'),
                                 ),
+                                ButtonSegment(
+                                  value: _PlanView.calendar,
+                                  icon: Icon(Icons.calendar_month_outlined),
+                                  label: Text('日历'),
+                                ),
+                              ],
+                              selected: {_view},
+                              onSelectionChanged: (selection) =>
+                                  _selectView(selection.first),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                    // 头部留在滑动区之外：分段控件与标题不随页面移动。
+                    Expanded(
+                      // 手势整层接管：鼠标、触控与触控板都能全窗宽跟手横滑。
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onHorizontalDragStart: _onHorizontalDragStart,
+                        onHorizontalDragUpdate: _onHorizontalDragUpdate,
+                        onHorizontalDragCancel: _onHorizontalDragCancel,
+                        onHorizontalDragEnd: _onHorizontalDragEnd,
+                        // Listener 在识别器更深一层：同一帧先累计位移，
+                        // 跟手更新随后才到，阈值与斜率判定因此都拿到完整位移。
+                        child: Listener(
+                          behavior: HitTestBehavior.translucent,
+                          onPointerDown: _onPointerDown,
+                          onPointerMove: _onPointerMove,
+                          onPointerPanZoomStart: _onPointerPanZoomStart,
+                          onPointerPanZoomUpdate: _onPointerPanZoomUpdate,
+                          child: PageView.builder(
+                            controller: _pageController,
+                            // 拖动与吸附由本页接管：PageView 只做位置容器。
+                            pageSnapping: false,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: 2,
+                            onPageChanged: _onPageChanged,
+                            itemBuilder: (context, page) => page == 0
+                                ? PactaPagerWheelCatcher(
+                                    child: Align(
+                                      alignment: Alignment.topCenter,
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                          maxWidth:
+                                              PactaSpacing.maxContentWidth,
+                                        ),
+                                        child: ListView(
+                                          padding: EdgeInsets.fromLTRB(
+                                            gutter,
+                                            PactaSpacing.md,
+                                            gutter,
+                                            PactaSpacing.xl,
+                                          ),
+                                          children: _buildGoals(
+                                            context,
+                                            taskRepository,
+                                            goals,
+                                            displayTimeZoneId,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                // 宽屏下日历不跟着铺满 960：格宽过大时日期反而
+                                // 更难扫读，内容收在 720 以内并居中。
+                                : PactaPagerWheelCatcher(
+                                    child: Align(
+                                      alignment: Alignment.topCenter,
+                                      child: ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                          maxWidth: 720,
+                                        ),
+                                        child: ListView(
+                                          padding: EdgeInsets.fromLTRB(
+                                            calendarGutter,
+                                            PactaSpacing.md,
+                                            calendarGutter,
+                                            PactaSpacing.xl,
+                                          ),
+                                          children: [
+                                            _buildCalendar(
+                                              context,
+                                              taskRepository,
+                                              scheduleRepository,
+                                              goals,
+                                              displayTimeZoneId,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               );
             },
           );

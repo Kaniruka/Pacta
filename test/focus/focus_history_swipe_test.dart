@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' hide FocusNode;
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/app/app_providers.dart';
@@ -156,15 +157,196 @@ void main() {
     expect(find.text('当前连续 1 次'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('1280x800 宽屏左留白鼠标横拖也能切链', (tester) async {
+    final focus = _HistoryFocusRepository();
+    addTearDown(focus.close);
+    await _pumpHistory(tester, focus, size: const Size(1280, 800));
+    focus.emitSessions(_regularSessions());
+    await tester.pumpAndSettle();
+    expect(_pagerController(tester).page, 1.0, reason: '默认落在普通链');
+
+    // 阅读线只有 800dp：x 落在最左侧留白里，页面依旧能接住鼠标横拖。
+    final pagerRect = tester.getRect(
+      find.byKey(const ValueKey('focus-history-pager')),
+    );
+    final blankPoint = Offset(pagerRect.left + 4, pagerRect.center.dy);
+    await tester.dragFrom(
+      blankPoint,
+      const Offset(-300, 0),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(_selectedChain(tester), <FocusChainType>{
+      FocusChainType.appointment,
+    });
+    expect(_pagerController(tester).page, 2.0);
+
+    await tester.dragFrom(
+      blankPoint,
+      const Offset(300, 0),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(_selectedChain(tester), <FocusChainType>{FocusChainType.regular});
+    expect(_pagerController(tester).page, 1.0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Shift+滚轮与横向滚轮切链，竖直滚轮不抢', (tester) async {
+    final focus = _HistoryFocusRepository();
+    addTearDown(focus.close);
+    await _pumpHistory(tester, focus, size: const Size(1280, 800));
+    focus.emitSessions(_regularSessions());
+    await tester.pumpAndSettle();
+    final pager = find.byKey(const ValueKey('focus-history-pager'));
+    final center = tester.getCenter(pager);
+
+    // 普通竖直滚轮交给时间轴列表，不切链。
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: center,
+        scrollDelta: const Offset(0, 120),
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(_pagerController(tester).page, 1.0, reason: '竖直滚轮不抢分页');
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: center,
+        scrollDelta: const Offset(0, 100),
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(_selectedChain(tester), <FocusChainType>{
+      FocusChainType.appointment,
+    });
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: center,
+        scrollDelta: const Offset(-100, 0),
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(_selectedChain(tester), <FocusChainType>{FocusChainType.regular});
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('方向键与 Ctrl+Tab 切链，两端钳位', (tester) async {
+    final focus = _HistoryFocusRepository();
+    addTearDown(focus.close);
+    await _pumpHistory(tester, focus, size: const Size(1280, 800));
+    focus.emitSessions(_regularSessions());
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(_selectedChain(tester), <FocusChainType>{
+      FocusChainType.appointment,
+    });
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(_pagerController(tester).page, 2.0, reason: '末端 → 不循环');
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(_selectedChain(tester), <FocusChainType>{FocusChainType.regular});
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(_selectedChain(tester), <FocusChainType>{
+      FocusChainType.appointment,
+    });
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(_selectedChain(tester), <FocusChainType>{FocusChainType.regular});
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('输入框与上方弹窗都不让背景链翻页', (tester) async {
+    final focus = _HistoryFocusRepository();
+    addTearDown(focus.close);
+    await _pumpHistory(
+      tester,
+      focus,
+      size: const Size(1280, 800),
+      leading: const Material(
+        color: Colors.transparent,
+        child: SizedBox(
+          height: 56,
+          child: TextField(key: ValueKey('history-leading-field')),
+        ),
+      ),
+    );
+    focus.emitSessions(_regularSessions());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey('history-leading-field')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('history-leading-field')),
+      '正在输入',
+    );
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(_pagerController(tester).page, 1.0, reason: '输入中不抢方向键');
+
+    // 弹窗盖在页面上：背景页不是当前路由，方向键不应切链。
+    final pageContext = tester.element(find.byType(FocusHistoryPage));
+    unawaited(
+      showDialog<void>(
+        context: pageContext,
+        builder: (context) => const AlertDialog(title: Text('历史页上的弹窗')),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('历史页上的弹窗'), findsOneWidget);
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(_pagerController(tester).page, 1.0, reason: '弹窗盖住时不切链');
+
+    await tester.tapAt(const Offset(4, 4));
+    await tester.pumpAndSettle();
+    expect(find.text('历史页上的弹窗'), findsNothing);
+    // 弹窗关掉后焦点仍在输入框：方向键继续归文本编辑器。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(_pagerController(tester).page, 1.0, reason: '输入框仍持有焦点');
+
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(_selectedChain(tester), <FocusChainType>{
+      FocusChainType.appointment,
+    });
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Future<void> _pumpHistory(
   WidgetTester tester,
-  _HistoryFocusRepository focus,
-) async {
-  tester.view.physicalSize = const Size(480, 1000);
+  _HistoryFocusRepository focus, {
+  Size size = const Size(480, 1000),
+  Widget? leading,
+}) async {
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
+  const page = FocusHistoryPage();
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
@@ -175,7 +357,14 @@ Future<void> _pumpHistory(
       ],
       child: MaterialApp(
         theme: pactaTheme(Brightness.light),
-        home: const FocusHistoryPage(),
+        home: leading == null
+            ? page
+            : Column(
+                children: [
+                  leading,
+                  const Expanded(child: page),
+                ],
+              ),
       ),
     ),
   );

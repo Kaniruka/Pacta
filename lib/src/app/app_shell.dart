@@ -532,7 +532,10 @@ class _AppShellState extends ConsumerState<AppShell>
               alignment: Alignment.topCenter,
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxWidth: _index == _nationalFocusIndex
+                  // 国策树与计划页自己按 960dp 阅读线内居中：外壳不再先裁一层，
+                  // 分页视图才能铺满整窗宽度接住鼠标横拖与触控板横滑。
+                  maxWidth:
+                      _index == _nationalFocusIndex || _index == _planIndex
                       ? double.infinity
                       : PactaSpacing.maxContentWidth,
                 ),

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/auth/user_lifecycle.dart';
 import 'package:pacta/src/board/focus_national_calendar_card.dart';
@@ -826,6 +827,175 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('写周报'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+
+  testWidgets('顶槽透明边距也能直接横拖：空白处仍命中手势层', (tester) async {
+    _useTallView(tester);
+    final harness = _Harness(
+      cards: [_card('a', NationalFocusCardState.pendingTodayConfirmation)],
+      pinned: [_goal('goal-a', '写周报')],
+    );
+    await tester.pumpWidget(harness.build());
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(_pinnedTab));
+    await tester.pumpAndSettle();
+    final swipeArea = find.byKey(const ValueKey('board-top-slot-swipe'));
+    expect(
+      tester.widget<GestureDetector>(swipeArea).behavior,
+      HitTestBehavior.opaque,
+      reason: '顶槽手势层自带命中区，空白边距不是死区',
+    );
+    final surface = tester.getRect(
+      find.byKey(const ValueKey('board-top-slot-pinned-surface')),
+    );
+    // 起点落在 10dp 内边距：不在任何置顶卡或按钮上，纯边距起手。
+    final blankPoint = Offset(surface.left + 4, surface.center.dy);
+    expect(
+      tester
+          .getRect(find.byKey(const ValueKey('board-pinned-goal-goal-a')))
+          .contains(blankPoint),
+      isFalse,
+      reason: '起点在卡片外的 10dp 内边距里',
+    );
+
+    // 从空白边距起手的鼠标横拖同样切回国策状态。
+    await tester.dragFrom(
+      blankPoint,
+      const Offset(160, 0),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('board-today-national-focus')),
+      findsOneWidget,
+      reason: '透明边距起手也能横拖切页',
+    );
+    expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+
+  testWidgets('顶槽精确触控板双指横滑切页', (tester) async {
+    _useTallView(tester);
+    final harness = _Harness(
+      cards: [_card('a', NationalFocusCardState.pendingTodayConfirmation)],
+      pinned: [_goal('goal-a', '写周报')],
+    );
+    await tester.pumpWidget(harness.build());
+    await tester.pumpAndSettle();
+    final anchorPoint = tester.getCenter(
+      find.byKey(const ValueKey('board-today-national-focus')),
+    );
+
+    // 纯横向 pan：国策状态 -> 置顶目标。
+    final gesture = await tester.createGesture(
+      kind: PointerDeviceKind.trackpad,
+    );
+    await gesture.panZoomStart(anchorPoint);
+    for (var step = 1; step <= 4; step++) {
+      await gesture.panZoomUpdate(anchorPoint, pan: Offset(-40.0 * step, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await gesture.panZoomEnd();
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('board-top-slot-pinned-surface')),
+      findsOneWidget,
+      reason: '双指横滑切到置顶目标',
+    );
+    expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+
+  testWidgets('顶槽 Shift+滚轮与快捷键切换页签，两端不循环', (tester) async {
+    _useTallView(tester);
+    final harness = _Harness(
+      cards: [_card('a', NationalFocusCardState.pendingTodayConfirmation)],
+      pinned: [_goal('goal-a', '写周报')],
+    );
+    await tester.pumpWidget(harness.build());
+    await tester.pumpAndSettle();
+    final swipeArea = find.byKey(const ValueKey('board-top-slot-swipe'));
+
+    // 首端向上滚：不越界。
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: tester.getCenter(swipeArea),
+        scrollDelta: const Offset(0, -100),
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('board-today-national-focus')),
+      findsOneWidget,
+      reason: '首端不回绕',
+    );
+
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: tester.getCenter(swipeArea),
+        scrollDelta: const Offset(0, 100),
+        kind: PointerDeviceKind.mouse,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('board-top-slot-pinned-surface')),
+      findsOneWidget,
+      reason: 'Shift+滚轮向下切到置顶目标',
+    );
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+
+    // 键盘：← 回国策状态；→ 回置顶目标；末端继续 → 不循环。
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('board-today-national-focus')),
+      findsOneWidget,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('board-today-national-focus')),
+      findsOneWidget,
+      reason: '首端 ← 不循环',
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('board-top-slot-pinned-surface')),
+      findsOneWidget,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('board-top-slot-pinned-surface')),
+      findsOneWidget,
+      reason: '末端 → 不循环',
+    );
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('board-top-slot-pinned-surface')),
+      findsOneWidget,
+      reason: 'Ctrl+Tab 在末端仍停在置顶目标',
+    );
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('board-today-national-focus')),
+      findsOneWidget,
+      reason: 'Ctrl+Shift+Tab 回到国策状态',
+    );
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     expect(tester.takeException(), isNull);
     await _unmount(tester);
   });

@@ -91,6 +91,7 @@ SOURCE_FILES = (
     'lib/src/ui/pacta_error_text.dart',
     'lib/src/ui/pacta_focus_heat_legend.dart',
     'lib/src/ui/pacta_grouped_list.dart',
+    'lib/src/ui/pacta_horizontal_pager.dart',
     'lib/src/ui/pacta_hold_action_reorder.dart',
     'lib/src/ui/pacta_page_header.dart',
 )

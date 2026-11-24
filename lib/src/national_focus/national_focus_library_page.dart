@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../theme/pacta_spacing.dart';
+import '../theme/pacta_theme.dart';
 import '../ui/pacta_card_header.dart';
 import '../ui/pacta_disclosure_section.dart';
 import '../ui/pacta_error_text.dart';
 import '../ui/pacta_grouped_list.dart';
+import '../ui/pacta_horizontal_pager.dart';
 import 'national_focus_models.dart';
 import 'national_focus_repository.dart';
 import 'national_focus_shared_widgets.dart';
@@ -27,7 +31,90 @@ class NationalFocusCardLibraryPage extends StatefulWidget {
 }
 
 class _NationalFocusCardLibraryPageState
-    extends State<NationalFocusCardLibraryPage> {
+    extends State<NationalFocusCardLibraryPage>
+    with SingleTickerProviderStateMixin {
+  static const _pageTransition = Duration(milliseconds: 240);
+
+  /// 页签与分页共用一套索引：点按 TabBar、横拖、触控板、滚轮与快捷键都落
+  /// 到这里，指示条与页面永远指向同一页。
+  late final TabController _tabController = TabController(
+    length: 2,
+    vsync: this,
+  );
+  late final PageController _pageController = PageController();
+
+  int _activeIndex = 0;
+  int? _animatingToIndex;
+  bool _animatingTab = false;
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  /// 程序化切页期间以目标页为准：跨页途中不能被中途页改写高亮。
+  int get _settledIndex => _animatingTab && _animatingToIndex != null
+      ? _animatingToIndex!
+      : _activeIndex;
+
+  void _selectTab(int index) {
+    final int target = index.clamp(0, 1);
+    if (_activeIndex != target) setState(() => _activeIndex = target);
+    if (_tabController.index != target && !_tabController.indexIsChanging) {
+      _tabController.animateTo(target);
+    }
+    final PageController controller = _pageController;
+    if (!controller.hasClients) return;
+    final double targetPage = target.toDouble();
+    final double current = controller.page ?? targetPage;
+    if ((current - targetPage).abs() < 0.001) return;
+    _animatingToIndex = target;
+    _animatingTab = true;
+    unawaited(
+      controller
+          .animateToPage(
+            target,
+            duration: _pageTransition,
+            curve: Curves.easeOutCubic,
+          )
+          .whenComplete(() {
+            if (!mounted || _animatingToIndex != target) return;
+            _animatingToIndex = null;
+            _animatingTab = false;
+          }),
+    );
+  }
+
+  /// 滚轮/快捷键的一步切页：两端钳位，不循环。
+  void _stepTab(int step) {
+    final int next = (_settledIndex + step).clamp(0, 1);
+    if (next == _settledIndex) return;
+    _selectTab(next);
+  }
+
+  void _onPageChanged(int index) {
+    if (_animatingTab) return;
+    if (_activeIndex != index) setState(() => _activeIndex = index);
+    if (_tabController.index != index && !_tabController.indexIsChanging) {
+      _tabController.index = index;
+    }
+  }
+
+  /// 拖动中让指示条 1:1 跟手：TabBar 的位置就是 index + offset。
+  bool _syncIndicator(ScrollNotification notification) {
+    if (notification.depth != 0) return false;
+    final ScrollMetrics metrics = notification.metrics;
+    if (metrics is! PageMetrics) return false;
+    final double? page = metrics.page;
+    if (page == null) return false;
+    // TabController 自己在做页签切换动画时 offset 不可写。
+    if (_tabController.indexIsChanging) return false;
+    _tabController.offset = (page - _tabController.index).clamp(-1.0, 1.0);
+    return false;
+  }
+
   Future<void> _createCard(BuildContext context) async {
     final created = await Navigator.of(context).push<NationalFocusCard>(
       MaterialPageRoute<NationalFocusCard>(
@@ -95,37 +182,59 @@ class _NationalFocusCardLibraryPageState
   }
 
   @override
-  Widget build(BuildContext context) => DefaultTabController(
-    length: 2,
-    child: Scaffold(
-      appBar: AppBar(
-        title: const Text('国策卡片库'),
-        bottom: const TabBar(
-          tabs: [
-            Tab(text: '卡片库'),
-            Tab(text: '已删除'),
-          ],
-        ),
-      ),
-      body: TabBarView(
-        children: [
-          _LibraryCardList(
-            repository: widget.repository,
-            onPlace: (card) => Navigator.of(context).pop(card),
-            onDelete: _deleteCard,
-            displayTimeZoneId: widget.displayTimeZoneId,
-          ),
-          _DeletedNationalFocusCardList(
-            repository: widget.repository,
-            onRestore: _restoreCard,
-          ),
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('国策卡片库'),
+      bottom: TabBar(
+        controller: _tabController,
+        onTap: _selectTab,
+        tabs: const [
+          Tab(text: '卡片库'),
+          Tab(text: '已删除'),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _createCard(context),
-        icon: const Icon(Icons.add),
-        label: const Text('新建国策卡'),
+    ),
+    // 分页作用域铺满整窗：横拖、触控板、Shift+滚轮与快捷键共用一套页签。
+    body: PactaHorizontalPagerScope(
+      pageCount: 2,
+      currentPage: _settledIndex,
+      onStepPage: _stepTab,
+      child: ScrollConfiguration(
+        // 桌面按住鼠标横拖也能切页；触控板与触控笔同权。
+        behavior: const PactaScrollBehavior(),
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _syncIndicator,
+          child: PageView(
+            key: const ValueKey('national-focus-library-pager'),
+            controller: _pageController,
+            // 吸附由 PactaPageScrollPhysics 承担，宽屏慢拖也翻页。
+            pageSnapping: false,
+            physics: const PactaPageScrollPhysics(),
+            onPageChanged: _onPageChanged,
+            children: [
+              PactaPagerWheelCatcher(
+                child: _LibraryCardList(
+                  repository: widget.repository,
+                  onPlace: (card) => Navigator.of(context).pop(card),
+                  onDelete: _deleteCard,
+                  displayTimeZoneId: widget.displayTimeZoneId,
+                ),
+              ),
+              PactaPagerWheelCatcher(
+                child: _DeletedNationalFocusCardList(
+                  repository: widget.repository,
+                  onRestore: _restoreCard,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
+    ),
+    floatingActionButton: FloatingActionButton.extended(
+      onPressed: () => _createCard(context),
+      icon: const Icon(Icons.add),
+      label: const Text('新建国策卡'),
     ),
   );
 }

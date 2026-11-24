@@ -15,6 +15,7 @@ import '../theme/pacta_theme.dart';
 import '../ui/pacta_date_format.dart';
 import '../ui/pacta_error_text.dart';
 import '../ui/pacta_grouped_list.dart';
+import '../ui/pacta_horizontal_pager.dart';
 import '../ui/pacta_page_header.dart';
 import 'chain_signals_card.dart';
 import 'effective_duration_text.dart';
@@ -797,75 +798,102 @@ class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
     final goalsStream = _watchGoals(ref.watch(taskRepositoryProvider));
     return Scaffold(
       appBar: AppBar(title: const Text('选择任务')),
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(
-            maxWidth: PactaSpacing.maxContentWidth,
-          ),
-          child: Column(
-            children: [
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  gutter,
-                  PactaSpacing.sm,
-                  gutter,
-                  PactaSpacing.sm,
+      // 分页作用域铺满整窗：左右留白处也能横拖、滚轮与快捷键切页。
+      body: PactaHorizontalPagerScope(
+        pageCount: _filters.length,
+        currentPage: _filters.indexOf(
+          _animatingFilter ? _animatingToFilter : _filter,
+        ),
+        onStepPage: _stepFilter,
+        child: Column(
+          children: [
+            Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: PactaSpacing.maxContentWidth,
                 ),
-                child: SegmentedButton<TaskClassification?>(
-                  segments: const [
-                    ButtonSegment<TaskClassification?>(
-                      value: null,
-                      label: Text('全部'),
-                    ),
-                    ButtonSegment<TaskClassification?>(
-                      value: TaskClassification.elite,
-                      label: Text('精锐'),
-                    ),
-                    ButtonSegment<TaskClassification?>(
-                      value: TaskClassification.regular,
-                      label: Text('普通'),
-                    ),
-                  ],
-                  selected: {_filter},
-                  onSelectionChanged: (values) => _selectFilter(values.single),
-                ),
-              ),
-              Expanded(
-                child: StreamBuilder<List<Goal>>(
-                  // 流在翻页前后保持同一实例：三页共用一次读取，切页不会
-                  // 先闪一帧空列表再重新加载。
-                  stream: goalsStream,
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) {
-                      return const Center(child: Text('任务读取失败，请返回后重试。'));
-                    }
-                    if (!snapshot.hasData) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    final goals = snapshot.data!;
-                    return ScrollConfiguration(
-                      // 桌面按住鼠标横拖也能翻页；触控板与触控笔同权。
-                      behavior: const PactaScrollBehavior(),
-                      child: PageView(
-                        key: const ValueKey('focus-task-picker-pager'),
-                        controller: _pageController,
-                        onPageChanged: _selectFilterPage,
-                        children: [
-                          for (final (index, filter) in _filters.indexed)
-                            _taskPage(
-                              goals: goals,
-                              filter: filter,
-                              index: index,
-                              gutter: gutter,
-                            ),
-                        ],
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    gutter,
+                    PactaSpacing.sm,
+                    gutter,
+                    PactaSpacing.sm,
+                  ),
+                  child: SegmentedButton<TaskClassification?>(
+                    segments: const [
+                      ButtonSegment<TaskClassification?>(
+                        value: null,
+                        label: Text('全部'),
                       ),
-                    );
-                  },
+                      ButtonSegment<TaskClassification?>(
+                        value: TaskClassification.elite,
+                        label: Text('精锐'),
+                      ),
+                      ButtonSegment<TaskClassification?>(
+                        value: TaskClassification.regular,
+                        label: Text('普通'),
+                      ),
+                    ],
+                    selected: {_filter},
+                    onSelectionChanged: (values) =>
+                        _selectFilter(values.single),
+                  ),
                 ),
               ),
-            ],
-          ),
+            ),
+            Expanded(
+              child: StreamBuilder<List<Goal>>(
+                // 流在翻页前后保持同一实例：三页共用一次读取，切页不会
+                // 先闪一帧空列表再重新加载。
+                stream: goalsStream,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return PactaPagerWheelCatcher(
+                      child: Center(child: Text('任务读取失败，请返回后重试。')),
+                    );
+                  }
+                  if (!snapshot.hasData) {
+                    return PactaPagerWheelCatcher(
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  final goals = snapshot.data!;
+                  return ScrollConfiguration(
+                    // 桌面按住鼠标横拖也能翻页；触控板与触控笔同权。
+                    behavior: const PactaScrollBehavior(),
+                    child: PageView(
+                      key: const ValueKey('focus-task-picker-pager'),
+                      controller: _pageController,
+                      // 吸附改由 PactaPageScrollPhysics 承担：宽屏慢拖也翻页。
+                      pageSnapping: false,
+                      physics: const PactaPageScrollPhysics(),
+                      onPageChanged: _selectFilterPage,
+                      children: [
+                        for (final (index, filter) in _filters.indexed)
+                          PactaPagerWheelCatcher(
+                            child: Align(
+                              alignment: Alignment.topCenter,
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  maxWidth: PactaSpacing.maxContentWidth,
+                                ),
+                                child: _taskPage(
+                                  goals: goals,
+                                  filter: filter,
+                                  index: index,
+                                  gutter: gutter,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -964,6 +992,16 @@ class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
     final filter = _filters[index];
     if (_filter == filter) return;
     setState(() => _filter = filter);
+  }
+
+  /// 滚轮/快捷键的一步切页：三档筛选按页序钳位，两端不循环。
+  void _stepFilter(int step) {
+    final active = _animatingFilter ? _animatingToFilter : _filter;
+    final int current = _filters.indexOf(active);
+    if (current < 0) return;
+    final int next = (current + step).clamp(0, _filters.length - 1);
+    if (next == current) return;
+    _selectFilter(_filters[next]);
   }
 
   bool _matchesFilter(Task task, TaskClassification? filter) {
@@ -1253,6 +1291,21 @@ class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
     setState(() => _chain = chain);
   }
 
+  /// 滚轮/快捷键的一步换链：按链序钳位，两端不循环。
+  void _stepChain(FocusChainType fallback, int step) {
+    final active = _animatingChain && _animatingToChain != null
+        ? _animatingToChain!
+        : (_chain ?? fallback);
+    final int current = FocusChainType.values.indexOf(active);
+    if (current < 0) return;
+    final int next = (current + step).clamp(
+      0,
+      FocusChainType.values.length - 1,
+    );
+    if (next == current) return;
+    _selectChain(FocusChainType.values[next]);
+  }
+
   Widget _chainSwitch(BuildContext context, FocusChainType chain) {
     final gutter = PactaSpacing.gutterFor(MediaQuery.sizeOf(context).width);
     return Padding(
@@ -1348,49 +1401,75 @@ class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
                   final pageController = _pageController ??= PageController(
                     initialPage: FocusChainType.values.indexOf(chain),
                   );
-                  // 三链切换、统计摘要与时间轴同受 800dp 居中约束：桌面宽屏
-                  // 不再把时间轴拉成 1248dp 的通栏。
-                  return Align(
-                    alignment: Alignment.topCenter,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 800),
-                      child: Column(
-                        children: [
-                          _chainSwitch(context, chain),
-                          Expanded(
-                            child: ScrollConfiguration(
-                              // 桌面按住鼠标横拖也能换链；触控板与触控笔同权。
-                              behavior: const PactaScrollBehavior(),
-                              child: PageView.builder(
-                                key: const ValueKey('focus-history-pager'),
-                                controller: pageController,
-                                itemCount: FocusChainType.values.length,
-                                onPageChanged: _onChainPageChanged,
-                                itemBuilder: (context, index) {
-                                  final pageChain =
-                                      FocusChainType.values[index];
-                                  return _FocusHistoryTimeline(
-                                    // 每链独立保存滚动位置，来回滑动不串位。
-                                    key: PageStorageKey<String>(
-                                      'focus-history-page-${pageChain.name}',
+                  // 分页作用域铺满整窗：宽屏左右留白也能横拖、滚轮与快捷键换链；
+                  // 正文仍收在 800dp 阅读线内居中，桌面宽屏不会拉成通栏。
+                  return PactaHorizontalPagerScope(
+                    pageCount: FocusChainType.values.length,
+                    currentPage: FocusChainType.values.indexOf(
+                      _animatingChain && _animatingToChain != null
+                          ? _animatingToChain!
+                          : chain,
+                    ),
+                    onStepPage: (step) => _stepChain(chain, step),
+                    child: Column(
+                      children: [
+                        Align(
+                          alignment: Alignment.topCenter,
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 800),
+                            child: _chainSwitch(context, chain),
+                          ),
+                        ),
+                        Expanded(
+                          child: ScrollConfiguration(
+                            // 桌面按住鼠标横拖也能换链；触控板与触控笔同权。
+                            behavior: const PactaScrollBehavior(),
+                            child: PageView.builder(
+                              key: const ValueKey('focus-history-pager'),
+                              controller: pageController,
+                              // 吸附改由 PactaPageScrollPhysics 承担：
+                              // 宽屏慢拖不再被半屏门槛挡回去。
+                              pageSnapping: false,
+                              physics: const PactaPageScrollPhysics(),
+                              itemCount: FocusChainType.values.length,
+                              onPageChanged: _onChainPageChanged,
+                              itemBuilder: (context, index) {
+                                final pageChain = FocusChainType.values[index];
+                                return PactaPagerWheelCatcher(
+                                  child: Align(
+                                    alignment: Alignment.topCenter,
+                                    child: ConstrainedBox(
+                                      constraints: const BoxConstraints(
+                                        maxWidth: 800,
+                                      ),
+                                      child: _FocusHistoryTimeline(
+                                        // 每链独立保存滚动位置，来回滑动不串位。
+                                        key: PageStorageKey<String>(
+                                          'focus-history-page-'
+                                          '${pageChain.name}',
+                                        ),
+                                        repository: repository,
+                                        chain: pageChain,
+                                        timeline: history.timelineFor(
+                                          pageChain,
+                                        ),
+                                        nodes: data.nodes,
+                                        taskTitles: taskTitles,
+                                        displayTimeZoneId: _displayTimeZoneId,
+                                        dataNotice: _dataNotice(data),
+                                        onNodeNoteUpdated: () =>
+                                            _reload(repository),
+                                        onSessionUpdated: () =>
+                                            _reload(repository),
+                                      ),
                                     ),
-                                    repository: repository,
-                                    chain: pageChain,
-                                    timeline: history.timelineFor(pageChain),
-                                    nodes: data.nodes,
-                                    taskTitles: taskTitles,
-                                    displayTimeZoneId: _displayTimeZoneId,
-                                    dataNotice: _dataNotice(data),
-                                    onNodeNoteUpdated: () =>
-                                        _reload(repository),
-                                    onSessionUpdated: () => _reload(repository),
-                                  );
-                                },
-                              ),
+                                  ),
+                                );
+                              },
                             ),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   );
                 },
