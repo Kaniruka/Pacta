@@ -423,9 +423,8 @@ void main() {
       await _pumpApp(tester, harness);
       await _openNationalFocusTab(tester);
       await _openLibrary(tester);
-      await tester.tap(find.byTooltip('卡片操作'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('查看详情'));
+      // 整卡是详情入口：点标题、规则或留白都进同一个阅读页。
+      await tester.tap(find.text('先写第一步'));
       await tester.pumpAndSettle();
       expect(find.text('国策卡详情'), findsOneWidget);
 
