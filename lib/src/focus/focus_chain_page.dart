@@ -1206,6 +1206,7 @@ class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
                               displayTimeZoneId: _displayTimeZoneId,
                               dataNotice: _dataNotice(data),
                               onNodeNoteUpdated: () => _reload(repository),
+                              onSessionUpdated: () => _reload(repository),
                             ),
                           ),
                         ],
@@ -1239,6 +1240,7 @@ class _FocusHistoryTimeline extends StatelessWidget {
     required this.displayTimeZoneId,
     required this.dataNotice,
     required this.onNodeNoteUpdated,
+    required this.onSessionUpdated,
   });
 
   final FocusRepository repository;
@@ -1249,6 +1251,9 @@ class _FocusHistoryTimeline extends StatelessWidget {
   final String? displayTimeZoneId;
   final String? dataNotice;
   final VoidCallback onNodeNoteUpdated;
+
+  /// 一条已结算记录被事后改判时需要重读的数据（节点已删除、时间轴已变）。
+  final VoidCallback onSessionUpdated;
 
   @override
   Widget build(BuildContext context) {
@@ -1695,7 +1700,22 @@ class _FocusHistoryTimeline extends StatelessWidget {
           ),
         ],
       ],
-      trailing: node == null
+      trailing: _completedCardActions(context, entry, node),
+    );
+  }
+
+  /// 已完成卡片的尾部动作。
+  ///
+  /// 精锐链与普通链把「编辑节点备注」和危险的「判定为失败」收进同一个
+  /// 菜单：右侧只留一个 48×48dp 命中区，窄屏与两倍字号下标题不会被两个
+  /// 图标挤成两行。预约链没有事后改判的语义，保持原来的单颗备注按钮。
+  Widget? _completedCardActions(
+    BuildContext context,
+    FocusChainHistoryEntry entry,
+    FocusNode? node,
+  ) {
+    if (entry.chain == FocusChainType.appointment) {
+      return node == null
           ? null
           : IconButton(
               key: ValueKey('focus-history-node-note-${entry.id}'),
@@ -1706,7 +1726,34 @@ class _FocusHistoryTimeline extends StatelessWidget {
                 size: PactaIconSizes.compact,
               ),
               onPressed: () => _editNodeNote(context, node),
-            ),
+            );
+    }
+    final colors = Theme.of(context).colorScheme;
+    // PopupMenuButton 的内建 IconButton 自带 48×48dp 最小命中区。
+    return PopupMenuButton<String>(
+      key: ValueKey('focus-history-node-menu-${entry.id}'),
+      tooltip: '更多操作',
+      icon: const Icon(Icons.more_vert, size: PactaIconSizes.compact),
+      onSelected: (value) {
+        switch (value) {
+          case 'note':
+            if (node != null) unawaited(_editNodeNote(context, node));
+          case 'fail':
+            unawaited(_markSessionFailed(context, entry));
+        }
+      },
+      itemBuilder: (context) => [
+        if (node != null)
+          const PopupMenuItem<String>(value: 'note', child: Text('编辑节点备注')),
+        PopupMenuItem<String>(
+          value: 'fail',
+          child: Text(
+            '判定为失败',
+            style: Theme.of(context).textTheme.bodyLarge
+                ?.copyWith(color: colors.error),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1856,6 +1903,33 @@ class _FocusHistoryTimeline extends StatelessWidget {
       if (!context.mounted) return;
       showFocusError(context, error);
     }
+  }
+
+  /// 把一条已完成记录单向改判为失败。
+  ///
+  /// 仓储负责回收专注节点并按完整历史重算链记录；这里只负责提示代价、
+  /// 提交与刷新时间轴。写入失败只弹脱敏提示，异常不从按钮里逃出去。
+  Future<void> _markSessionFailed(
+    BuildContext context,
+    FocusChainHistoryEntry entry,
+  ) async {
+    final reason = await showFocusFailureReasonDialog(
+      context,
+      description: markFailedConsequenceHint,
+    );
+    if (reason == null || !context.mounted) return;
+    try {
+      await repository.markSessionFailed(
+        sessionId: entry.id,
+        failureReason: reason,
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      showFocusError(context, error);
+      return;
+    }
+    if (!context.mounted) return;
+    onSessionUpdated();
   }
 }
 

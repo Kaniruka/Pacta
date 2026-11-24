@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 
 import '../auth/user_lifecycle.dart';
 import '../tasks/task_database.dart' as db;
+import 'focus_chain_history.dart';
 import 'focus_models.dart';
 import 'focus_time_zones.dart';
 
@@ -225,6 +226,17 @@ abstract interface class FocusRepository {
     required String ruleText,
   });
   Future<FocusSession> abandonSession({
+    required String sessionId,
+    required String failureReason,
+  });
+
+  /// 把一条已结算的「已完成」记录单向改判为失败（事后判定失败）。
+  ///
+  /// 与 [abandonSession] 共用同一核心逻辑；区别只在于会话已经结算：
+  /// 有效区间、有效秒数与完成时刻原样保留，任务累计进度不重复累加，
+  /// 但完成态的两个副产品必须回收——专注节点被删除，链记录按完整历史
+  /// 回放重算，使界面上的连胜段与链记录永远同源。
+  Future<FocusSession> markSessionFailed({
     required String sessionId,
     required String failureReason,
   });
@@ -1469,6 +1481,22 @@ class LocalFocusRepository implements FocusRepository {
   Future<FocusSession> abandonSession({
     required String sessionId,
     required String failureReason,
+  }) => _failSession(sessionId: sessionId, failureReason: failureReason);
+
+  @override
+  Future<FocusSession> markSessionFailed({
+    required String sessionId,
+    required String failureReason,
+  }) => _failSession(sessionId: sessionId, failureReason: failureReason);
+
+  /// 判失败的唯一实现：进行中放弃与事后改判走同一条单向路径。
+  ///
+  /// 结算先于判失败执行，这一步正是 00:00 竞态的修复点：倒计时恰好在用户
+  /// 填完原因的那一刻归零时，会话会先被自动结算为完成，随后在同一事务里
+  /// 改成失败——用户写下的原因不会变成一条「不能改为失败」的异常。
+  Future<FocusSession> _failSession({
+    required String sessionId,
+    required String failureReason,
   }) async {
     final reason = _requiredFailureReason(failureReason);
     await _settleDueSessions();
@@ -1478,8 +1506,12 @@ class LocalFocusRepository implements FocusRepository {
     await database.transaction(() async {
       final row = await _sessionRow(sessionId);
       if (row == null) throw StateError('专注会话不存在或已不属于当前用户。');
+      // 幂等：已经是失败时原样返回，既不覆写原失败原因，也不再累加进度。
       if (row.status == 'failed') return;
-      if (row.status == 'completed') throw StateError('正常完成的专注不能改为失败。');
+      if (row.status == 'completed') {
+        await _failCompletedSession(row, reason, now);
+        return;
+      }
       final intervals = _closeCurrentInterval(
         row,
         now,
@@ -1525,6 +1557,78 @@ class LocalFocusRepository implements FocusRepository {
     await _refreshClockWatchdog();
     await _publish();
     return (await getSession(sessionId))!;
+  }
+
+  /// 把一条已结算为「已完成」的会话改判为失败。
+  ///
+  /// 与进行中放弃的区别：有效区间、有效秒数与完成时刻都是既成事实，原样
+  /// 保留；任务累计进度已经加过一次，绝不重复累加。真正要回收的是完成态
+  /// 的副产品——该会话生成的专注节点，以及被这条记录撑高的链连击。
+  Future<void> _failCompletedSession(
+    db.FocusSession row,
+    String reason,
+    DateTime now,
+  ) async {
+    await (database.update(database.focusSessions)
+          ..where((session) => session.userId.equals(userId))
+          ..where((session) => session.id.equals(row.id)))
+        .write(
+          db.FocusSessionsCompanion(
+            status: const Value('failed'),
+            failureReason: Value(reason),
+            completionRuleText: const Value(null),
+            pausedAt: const Value(null),
+          ),
+        );
+    // 节点是完成态的产物：改判后链上不能再留一个「成功节点」。
+    // 远端跟随 focus_nodes 的表级快照同步，本地删掉即为权威结果。
+    await (database.delete(database.focusNodes)
+          ..where((node) => node.userId.equals(userId))
+          ..where((node) => node.sessionId.equals(row.id)))
+        .go();
+    await _recomputeChainRecordFromHistory(row.mode, now);
+    await _queue('focus_session', row.id, now);
+  }
+
+  /// 用完整历史回放重算一条链的当前连击与最高连胜。
+  ///
+  /// 改判可能落在历史中段：只把当前值归零会让最高连胜与断链后重起的当前
+  /// 值同时失真。回放口径与专注历史页完全一致（同一个
+  /// [buildFocusChainHistory]），所以界面上的连胜段与链记录永远同源。
+  Future<void> _recomputeChainRecordFromHistory(
+    String mode,
+    DateTime updatedAt,
+  ) async {
+    final rows =
+        await (database.select(database.focusSessions)
+              ..where((session) => session.userId.equals(userId))
+              ..where((session) => session.mode.equals(mode)))
+            .get();
+    final timeline = buildFocusChainHistory(
+      sessions: [for (final row in rows) _sessionFromRow(row)],
+    ).timelineFor(FocusChainType.fromMode(FocusChainMode.fromStorage(mode)));
+    final existing =
+        await (database.select(database.focusChainRecords)
+              ..where((record) => record.userId.equals(userId))
+              ..where((record) => record.mode.equals(mode)))
+            .getSingleOrNull();
+    // 时间戳只前进不后退：同步以 updated_at 判新旧，回退等于自证过期。
+    final recordUpdatedAt =
+        existing != null && existing.updatedAt.isAfter(updatedAt)
+        ? existing.updatedAt
+        : updatedAt;
+    await database
+        .into(database.focusChainRecords)
+        .insertOnConflictUpdate(
+          db.FocusChainRecordsCompanion.insert(
+            userId: userId,
+            mode: mode,
+            currentConsecutive: Value(timeline.currentStreak),
+            bestConsecutive: Value(timeline.bestStreak),
+            updatedAt: recordUpdatedAt,
+          ),
+        );
+    await _queue('focus_chain', mode, recordUpdatedAt);
   }
 
   @override
@@ -3497,6 +3601,12 @@ class UnavailableFocusRepository implements FocusRepository {
 
   @override
   Future<FocusSession> abandonSession({
+    required String sessionId,
+    required String failureReason,
+  }) => _unavailable();
+
+  @override
+  Future<FocusSession> markSessionFailed({
     required String sessionId,
     required String failureReason,
   }) => _unavailable();

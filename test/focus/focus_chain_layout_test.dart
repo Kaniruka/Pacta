@@ -546,7 +546,9 @@ void main() {
     await tester.tap(find.text('普通链'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('编辑节点备注'));
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('编辑节点备注'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '停用后不应写入');
     await tester.tap(find.widgetWithText(FilledButton, '保存'));
@@ -634,7 +636,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('#1'), findsOneWidget);
-    await tester.tap(find.byTooltip('编辑节点备注'));
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('编辑节点备注'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), '这次坐得很稳');
     await tester.tap(find.widgetWithText(FilledButton, '保存'));
@@ -642,6 +646,97 @@ void main() {
 
     final nodes = await fixture.focus.getNodes();
     expect(nodes.single.note, '这次坐得很稳');
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('已完成记录可在历史页事后判定为失败，并重算链连击', (tester) async {
+    final fixture = await _Fixture.create();
+    addTearDown(fixture.dispose);
+    final sessionIds = <String>[];
+    for (var index = 0; index < 2; index++) {
+      final session = await fixture.focus.startSession(
+        taskId: fixture.taskIds.first,
+        mode: FocusChainMode.regular,
+        duration: const Duration(minutes: 25),
+      );
+      sessionIds.add(session.id);
+      fixture.now = fixture.now.add(const Duration(minutes: 25));
+      await fixture.focus.settleDueSessions();
+    }
+    await _mount(tester, fixture);
+    await _openDestination(tester, '专注链');
+    await tester.tap(find.byKey(_historyEntry));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('普通链'));
+    await tester.pumpAndSettle();
+    expect(find.text('当前连续 2 次'), findsOneWidget);
+    expect(await fixture.focus.getNodes(), hasLength(2));
+
+    // 最新一条（#2）改判失败：只剩 #1 成段，断链把当前连胜清掉。
+    await tester.tap(find.byTooltip('更多操作').first);
+    await tester.pumpAndSettle();
+    expect(find.text('编辑节点备注'), findsOneWidget);
+    await tester.tap(find.text('判定为失败'));
+    await tester.pumpAndSettle();
+    expect(find.text('填写失败原因'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), '其实并没有真的专注');
+    await tester.tap(find.widgetWithText(FilledButton, '确认改判'));
+    await tester.pumpAndSettle();
+
+    final failed = (await fixture.focus.getSession(sessionIds.last))!;
+    expect(failed.isFailed, isTrue);
+    expect(failed.failureReason, '其实并没有真的专注');
+    expect(failed.effectiveSeconds, 25 * 60, reason: '有效专注时长原样保留');
+    expect(await fixture.focus.getNodes(), hasLength(1), reason: '节点随改判一起移除');
+    final record = (await fixture.focus.getChainRecords()).singleWhere(
+      (entry) => entry.mode == FocusChainMode.regular,
+    );
+    expect(record.currentConsecutive, 0);
+    expect(record.bestConsecutive, 1);
+
+    final summary = find.byKey(const ValueKey('focus-history-summary'));
+    expect(
+      find.descendant(of: summary, matching: find.text('0 次')),
+      findsOneWidget,
+      reason: '当前连续归零',
+    );
+    expect(
+      find.descendant(of: summary, matching: find.text('1 次')),
+      findsOneWidget,
+      reason: '最高连胜按完整历史收敛到 1',
+    );
+    expect(find.text('连续 1 次'), findsOneWidget, reason: '最新一段只剩 #1');
+    expect(find.text('断链'), findsOneWidget);
+    expect(find.textContaining('原因：其实并没有真的专注'), findsOneWidget);
+    expect(
+      find.byKey(ValueKey('focus-history-node-menu-${sessionIds.last}')),
+      findsNothing,
+      reason: '改判后的记录不再挂在已完成卡片上',
+    );
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('预约链的已完成卡片不提供事后改判入口', (tester) async {
+    final fixture = await _Fixture.create();
+    addTearDown(fixture.dispose);
+    await fixture.focus.startAppointment(
+      taskId: fixture.taskIds.first,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    fixture.now = fixture.now.add(const Duration(minutes: 15));
+    await fixture.focus.settleDueAppointments();
+
+    await _mount(tester, fixture);
+    await _openDestination(tester, '专注链');
+    await tester.tap(find.byKey(_historyEntry));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('预约成功'), findsOneWidget);
+    expect(find.text('判定为失败'), findsNothing, reason: '预约链没有事后改判语义');
+    expect(find.byTooltip('更多操作'), findsNothing);
     expect(tester.takeException(), isNull);
     await _disposeWidget(tester);
   });
