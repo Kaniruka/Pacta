@@ -330,7 +330,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('focus-history-entry')));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('编辑节点备注'));
+    // 已完成卡片把备注与「判定为失败」收进同一个菜单：先开菜单再选条目。
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('编辑节点备注'));
     await tester.pumpAndSettle();
     expect(
       tester.widget<TextField>(find.byType(TextField)).controller!.text,
@@ -340,7 +343,10 @@ void main() {
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('编辑节点备注'));
+    // 已完成卡片把备注与「判定为失败」收进同一个菜单：先开菜单再选条目。
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('编辑节点备注'));
     await tester.pumpAndSettle();
     expect(
       tester.widget<TextField>(find.byType(TextField)).controller!.text,

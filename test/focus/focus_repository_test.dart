@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pacta/src/focus/focus_chain_history.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart' hide FocusSyncSource;
@@ -273,6 +274,222 @@ void main() {
           .firstWhere((session) => session.id == failed.id)
           .failureReason,
       '注意力被打断',
+    );
+  });
+
+  test('已完成记录事后改判失败：保留有效时长、移除节点且不重复累加进度', () async {
+    now = DateTime.utc(2026, 10, 1, 9);
+    final task = await createTask('事后改判');
+    final session = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    now = session.endsAt;
+    await focusRepository.settleDueSessions();
+    final completed = (await focusRepository.getSession(session.id))!;
+    expect(completed.status, FocusSessionStatus.completed);
+    expect(completed.effectiveSeconds, 1500);
+    expect(await focusRepository.getNodes(), hasLength(1));
+    expect(
+      (await taskRepository.getGoals())
+          .single
+          .tasks
+          .single
+          .focusProgressSeconds,
+      1500,
+    );
+
+    final failed = await focusRepository.markSessionFailed(
+      sessionId: session.id,
+      failureReason: '事后回想并没有真的专注',
+    );
+
+    expect(failed.status, FocusSessionStatus.failed);
+    expect(failed.failureReason, '事后回想并没有真的专注');
+    expect(failed.effectiveSeconds, 1500, reason: '有效时长不因改判而改变');
+    expect(failed.completedAt, completed.completedAt, reason: '完成时刻原样保留');
+    expect(
+      failed.effectiveIntervals.length,
+      completed.effectiveIntervals.length,
+      reason: '区间不重算',
+    );
+    expect(await focusRepository.getNodes(), isEmpty, reason: '专注节点随改判一起移除');
+    expect(
+      (await taskRepository.getGoals())
+          .single
+          .tasks
+          .single
+          .focusProgressSeconds,
+      1500,
+      reason: '任务进度已经加过一次，改判不得再累加',
+    );
+    final record = (await focusRepository.getChainRecords()).singleWhere(
+      (entry) => entry.mode == FocusChainMode.regular,
+    );
+    expect(record.currentConsecutive, 0);
+    expect(record.bestConsecutive, 0, reason: '唯一一条记录改判后已没有连胜段，最高连胜必须按历史收敛');
+  });
+
+  test('改判落在历史中段时按完整历史重算当前与最高连击', () async {
+    now = DateTime.utc(2026, 10, 2, 9);
+    final task = await createTask('历史中段改判');
+    final sessionIds = <String>[];
+    for (var index = 0; index < 3; index++) {
+      final session = await focusRepository.startSession(
+        taskId: task.id,
+        mode: FocusChainMode.elite,
+        duration: const Duration(minutes: 10),
+      );
+      sessionIds.add(session.id);
+      now = now.add(const Duration(minutes: 10));
+      await focusRepository.settleDueSessions();
+    }
+    var record = (await focusRepository.getChainRecords()).singleWhere(
+      (entry) => entry.mode == FocusChainMode.elite,
+    );
+    expect(record.currentConsecutive, 3);
+    expect(record.bestConsecutive, 3);
+
+    // 中间那条改判失败：最早的 #1 成为一段，最新的一条重新从 #1 起算。
+    await focusRepository.markSessionFailed(
+      sessionId: sessionIds[1],
+      failureReason: '中间那次其实走神了',
+    );
+
+    record = (await focusRepository.getChainRecords()).singleWhere(
+      (entry) => entry.mode == FocusChainMode.elite,
+    );
+    final timeline = buildFocusChainHistory(
+      sessions: await focusRepository.getSessions(),
+    ).timelineFor(FocusChainType.elite);
+    expect(record.currentConsecutive, 1, reason: '断链后当前段只剩最新的 1 条');
+    expect(record.bestConsecutive, 1, reason: '最高连胜按回放结果收敛到 1');
+    expect(record.currentConsecutive, timeline.currentStreak);
+    expect(record.bestConsecutive, timeline.bestStreak, reason: '链记录与时间轴同源');
+    expect(await focusRepository.getNodes(), hasLength(2));
+  });
+
+  test('已失败的会话再次改判保持原失败原因且不重复扣减', () async {
+    now = DateTime.utc(2026, 10, 3, 9);
+    final task = await createTask('重复改判');
+    final session = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    now = session.endsAt;
+    await focusRepository.settleDueSessions();
+    await focusRepository.markSessionFailed(
+      sessionId: session.id,
+      failureReason: '第一次改判',
+    );
+
+    final repeated = await focusRepository.markSessionFailed(
+      sessionId: session.id,
+      failureReason: '第二次不应覆盖',
+    );
+
+    expect(repeated.failureReason, '第一次改判');
+    expect(repeated.effectiveSeconds, 1500);
+    expect(
+      (await taskRepository.getGoals())
+          .single
+          .tasks
+          .single
+          .focusProgressSeconds,
+      1500,
+    );
+    expect(await focusRepository.getNodes(), isEmpty);
+  });
+
+  test('倒计时归零后填写放弃原因不再报错，改为事后判定失败', () async {
+    now = DateTime.utc(2026, 10, 4, 9);
+    final task = await createTask('到点竞态');
+    final session = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.elite,
+      duration: const Duration(minutes: 25),
+    );
+    // 用户填原因的这一拍正好跨过 00:00：结算先跑，会话已经是 completed。
+    now = session.endsAt.add(const Duration(milliseconds: 200));
+
+    final failed = await focusRepository.abandonSession(
+      sessionId: session.id,
+      failureReason: '最后一秒已经走神',
+    );
+
+    expect(failed.status, FocusSessionStatus.failed);
+    expect(failed.failureReason, '最后一秒已经走神');
+    expect(failed.effectiveSeconds, 1500);
+    expect(await focusRepository.getNodes(), isEmpty);
+    expect(
+      (await taskRepository.getGoals())
+          .single
+          .tasks
+          .single
+          .focusProgressSeconds,
+      1500,
+      reason: '自然结算已经记过一次有效时间',
+    );
+  });
+
+  test('提前完成的记录也可事后改判失败，并清掉下必为例依据', () async {
+    now = DateTime.utc(2026, 10, 5, 9);
+    final task = await createTask('提前完成改判');
+    final session = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    now = now.add(const Duration(minutes: 10));
+    await focusRepository.completeEarlySession(
+      sessionId: session.id,
+      ruleText: '允许提前收尾',
+    );
+
+    final failed = await focusRepository.markSessionFailed(
+      sessionId: session.id,
+      failureReason: '其实没有达成目标',
+    );
+
+    expect(failed.isFailed, isTrue);
+    expect(failed.completionRuleText, isNull, reason: '改判后不再引用下必为例');
+    expect(failed.isEarlyCompleted, isFalse);
+    expect(failed.effectiveSeconds, 600);
+  });
+
+  test('事后改判必须有失败原因，进行中的会话同样可以判失败', () async {
+    now = DateTime.utc(2026, 10, 6, 9);
+    final task = await createTask('改判校验');
+    final session = await focusRepository.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+
+    await expectLater(
+      focusRepository.markSessionFailed(
+        sessionId: session.id,
+        failureReason: '   ',
+      ),
+      throwsA(isA<ArgumentError>()),
+    );
+
+    now = now.add(const Duration(minutes: 5));
+    final failed = await focusRepository.markSessionFailed(
+      sessionId: session.id,
+      failureReason: '临时被打断',
+    );
+    expect(failed.status, FocusSessionStatus.failed);
+    expect(failed.effectiveSeconds, 300);
+    expect(
+      (await taskRepository.getGoals())
+          .single
+          .tasks
+          .single
+          .focusProgressSeconds,
+      300,
     );
   });
 

@@ -71,7 +71,8 @@ void main() {
     await _boundedSettle(tester);
     expect(find.byType(FocusSessionPage), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(OutlinedButton, '暂停'));
+    // 进行中操作区已重构：暂停变成上排左侧的 tonal 填充按钮。
+    await tester.tap(find.byKey(const ValueKey('focus-session-pause-button')));
     await _boundedSettle(tester);
     expect(find.text('选择下必为例'), findsOneWidget);
 

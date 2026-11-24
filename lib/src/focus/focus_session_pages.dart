@@ -508,6 +508,10 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
   FocusSession? _current;
   bool _busy = false;
 
+  /// 前台主动结束正在进行：这段时间里的状态跳变由本次操作负责，
+  /// 轮询不得再补发一条系统结束通知。
+  bool _settlingByUserAction = false;
+
   /// 账号显示时区只影响「预计 HH:mm 结束」这一行；读不到就回退本地时间。
   late final Future<String?> _displayTimeZoneId;
 
@@ -539,7 +543,11 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
     if (previous?.status != session.status ||
         previous?.endsAt != session.endsAt ||
         previous?.pausedAt != session.pausedAt) {
-      if (previous?.isUnfinished == true && !session.isUnfinished) {
+      // 只有自然到点才补一条结束通知：提前完成、放弃与事后改判都是用户在
+      // 前台亲手结束的，页面已经给出结果，再推一条系统通知就是重复。
+      if (previous?.isUnfinished == true &&
+          !session.isUnfinished &&
+          !_settlingByUserAction) {
         unawaited(
           ref
               .read(focusNotificationServiceProvider)
@@ -631,23 +639,19 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
     );
     if (confirmed != true || !mounted) return;
     setState(() => _busy = true);
+    _settlingByUserAction = true;
     try {
       _current = await ref
           .read(focusRepositoryProvider)
           .completeEarlySession(sessionId: session.id, ruleText: ruleText);
-      await ref
-          .read(focusNotificationServiceProvider)
-          .sessionEnded(
-            sessionId: session.id,
-            appointmentId: session.appointmentId,
-            taskTitle: widget.taskTitle,
-            status: _current!.status,
-          );
+      // 主动结束只做收尾：清掉进行中的常驻通知与待发倒计时闹钟，
+      // 不再补发 sessionEnded（自然到点由 _refresh 负责）。
       await _syncSessionNotification(_current);
       if (mounted) setState(() {});
     } catch (error) {
       if (mounted) _showError(error);
     } finally {
+      _settlingByUserAction = false;
       if (mounted) setState(() => _busy = false);
     }
   }
@@ -657,27 +661,52 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
     if (session == null || !session.isUnfinished || _busy) return;
     final reason = await showTextEditor(
       context,
-      title: '放弃本次专注',
+      title: '放弃专注',
       label: '失败原因',
       initial: '',
       required: true,
     );
     if (reason == null || !mounted) return;
     setState(() => _busy = true);
+    _settlingByUserAction = true;
     try {
+      // 填原因与归零可能只差一拍：abandonSession 现在先结算再判失败，
+      // 已经到点的会话会被直接改成失败，而不是抛「不能改为失败」。
       _current = await ref
           .read(focusRepositoryProvider)
           .abandonSession(sessionId: session.id, failureReason: reason);
-      await ref
-          .read(focusNotificationServiceProvider)
-          .sessionEnded(
-            sessionId: session.id,
-            appointmentId: session.appointmentId,
-            taskTitle: widget.taskTitle,
-            status: _current!.status,
-          );
       await _syncSessionNotification(_current);
       if (mounted) setState(() {});
+    } catch (error) {
+      if (mounted) _showError(error);
+    } finally {
+      _settlingByUserAction = false;
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 已结算页的事后改判：只对「已完成」开放，失败态没有第二次入口。
+  Future<void> _markFailed() async {
+    final session = _current;
+    if (session == null || session.isUnfinished || session.isFailed || _busy) {
+      return;
+    }
+    final reason = await showFocusFailureReasonDialog(
+      context,
+      description: markFailedConsequenceHint,
+    );
+    if (reason == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      _current = await ref
+          .read(focusRepositoryProvider)
+          .markSessionFailed(sessionId: session.id, failureReason: reason);
+      await _syncSessionNotification(_current);
+      if (!mounted) return;
+      setState(() {});
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已判定为失败：专注节点已移除，链连击已重算。')));
     } catch (error) {
       if (mounted) _showError(error);
     } finally {
@@ -820,32 +849,48 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
               ],
               if (session.isUnfinished) ...[
                 const SizedBox(height: PactaSpacing.lg),
-                Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: PactaSpacing.md,
-                  runSpacing: PactaSpacing.sm,
+                // 上排：暂停/继续与提前完成等宽并排，两个动作一眼可比。
+                Row(
                   children: [
-                    OutlinedButton.icon(
-                      onPressed: _busy ? null : _togglePause,
-                      icon: Icon(
-                        session.isPaused ? Icons.play_arrow : Icons.pause,
-                        size: PactaIconSizes.sm,
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        key: const ValueKey('focus-session-pause-button'),
+                        onPressed: _busy ? null : _togglePause,
+                        icon: Icon(
+                          session.isPaused ? Icons.play_arrow : Icons.pause,
+                          size: PactaIconSizes.sm,
+                        ),
+                        label: Text(session.isPaused ? '继续' : '暂停'),
                       ),
-                      label: Text(session.isPaused ? '继续' : '暂停'),
                     ),
-                    OutlinedButton.icon(
-                      onPressed: _busy ? null : _completeEarly,
-                      icon: const Icon(
-                        Icons.check_circle_outline,
-                        size: PactaIconSizes.sm,
+                    const SizedBox(width: PactaSpacing.sm),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        key: const ValueKey(
+                          'focus-session-early-complete-button',
+                        ),
+                        onPressed: _busy ? null : _completeEarly,
+                        icon: const Icon(
+                          Icons.check_circle_outline,
+                          size: PactaIconSizes.sm,
+                        ),
+                        label: const Text('提前完成'),
                       ),
-                      label: const Text('依据规则提前完成'),
-                    ),
-                    TextButton(
-                      onPressed: _busy ? null : _abandon,
-                      child: const Text('放弃本次专注'),
                     ),
                   ],
+                ),
+                // 下排：放弃是破坏性动作，单独一行、错误色，命中区仍 48dp。
+                const SizedBox(height: PactaSpacing.sm),
+                Center(
+                  child: TextButton(
+                    key: const ValueKey('focus-session-abandon-button'),
+                    onPressed: _busy ? null : _abandon,
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(0, 48),
+                      foregroundColor: Theme.of(context).colorScheme.error,
+                    ),
+                    child: const Text('放弃专注'),
+                  ),
                 ),
               ],
               if (settled) ...[
@@ -854,6 +899,21 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
                   onPressed: () => Navigator.of(context).pop(),
                   child: const Text('返回上一页'),
                 ),
+                // 已结算页面还能改判一次：只对「已完成」出现，失败态收起入口。
+                if (!session.isFailed) ...[
+                  const SizedBox(height: PactaSpacing.sm),
+                  Center(
+                    child: TextButton(
+                      key: const ValueKey('focus-session-mark-failed-button'),
+                      onPressed: _busy ? null : _markFailed,
+                      style: TextButton.styleFrom(
+                        minimumSize: const Size(0, 48),
+                        foregroundColor: Theme.of(context).colorScheme.error,
+                      ),
+                      child: const Text('判定为失败'),
+                    ),
+                  ),
+                ],
               ],
             ],
           ),
@@ -864,6 +924,97 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
 }
 
 String formatClock(int seconds) => formatPactaClock(seconds);
+
+/// 事后判定失败的后果说明：节点会被删除、链连击会重算，有效时长保留。
+const markFailedConsequenceHint = '将删除本次生成的专注节点并重算链连击，有效专注时长仍保留。';
+
+/// 事后判定失败的必填原因输入。
+///
+/// 标题固定为「填写失败原因」、主按钮为「确认改判」：入口本身已经叫「判定
+/// 为失败」，对话框里再复述同一个词会让同一屏出现两个同名按钮，既难点也
+/// 容易让读屏与测试混淆。
+Future<String?> showFocusFailureReasonDialog(
+  BuildContext context, {
+  required String description,
+}) => showDialog<String>(
+  context: context,
+  builder: (_) => _FocusFailureReasonDialog(description: description),
+);
+
+class _FocusFailureReasonDialog extends StatefulWidget {
+  const _FocusFailureReasonDialog({required this.description});
+
+  final String description;
+
+  @override
+  State<_FocusFailureReasonDialog> createState() =>
+      _FocusFailureReasonDialogState();
+}
+
+class _FocusFailureReasonDialogState extends State<_FocusFailureReasonDialog> {
+  late final TextEditingController _reason;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _reason = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final value = _reason.text.trim();
+    if (value.isEmpty) {
+      setState(() => _error = '请填写失败原因。');
+      return;
+    }
+    if (value.length > 200) {
+      setState(() => _error = '失败原因不能超过 200 字。');
+      return;
+    }
+    Navigator.of(context).pop(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('填写失败原因'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            widget.description,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: PactaSpacing.sm),
+          TextField(
+            controller: _reason,
+            autofocus: true,
+            maxLines: 3,
+            maxLength: 200,
+            decoration: InputDecoration(labelText: '失败原因', errorText: _error),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(onPressed: _save, child: const Text('确认改判')),
+      ],
+    );
+  }
+}
 
 int _minutesFor(int seconds) => (seconds / 60).ceil();
 

@@ -13,6 +13,7 @@ import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/tasks/task_database.dart' hide FocusSession;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:pacta/src/theme/pacta_spacing.dart';
 import 'package:pacta/src/ui/pacta_date_format.dart';
 
 const _taskTitle = '整理今天需要完成的长中文任务并记录思路';
@@ -145,6 +146,178 @@ void main() {
     h.now = h.now.add(const Duration(seconds: 2));
     await tester.pump(const Duration(seconds: 2));
     expect(h.focus.getSessionCalls, callsAfterSettle);
+    expect(tester.takeException(), isNull);
+    await h.unmount(tester);
+  });
+
+  testWidgets('进行中操作区上下两层：暂停与提前完成等宽同行，放弃独占下一行', (tester) async {
+    final h = _Fixture();
+    addTearDown(h.dispose);
+    final task = await h.seed();
+    final session = await h.focus.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    await h.pumpPage(
+      tester,
+      FocusSessionPage(session: session, taskTitle: _taskTitle),
+    );
+
+    const pauseKey = ValueKey('focus-session-pause-button');
+    const earlyKey = ValueKey('focus-session-early-complete-button');
+    const abandonKey = ValueKey('focus-session-abandon-button');
+    expect(find.text('暂停'), findsOneWidget);
+    expect(find.text('提前完成'), findsOneWidget);
+    expect(find.text('放弃专注'), findsOneWidget);
+    expect(find.text('依据规则提前完成'), findsNothing, reason: '旧文案收短为「提前完成」');
+
+    final pause = tester.getRect(find.byKey(pauseKey));
+    final early = tester.getRect(find.byKey(earlyKey));
+    final abandon = tester.getRect(find.byKey(abandonKey));
+    expect(
+      pause.top,
+      moreOrLessEquals(early.top, epsilon: 0.5),
+      reason: '两颗按钮同一排',
+    );
+    expect(pause.bottom, moreOrLessEquals(early.bottom, epsilon: 0.5));
+    expect(
+      pause.width,
+      moreOrLessEquals(early.width, epsilon: 0.5),
+      reason: 'Expanded 两颗等宽',
+    );
+    expect(
+      early.left - pause.right,
+      moreOrLessEquals(PactaSpacing.sm, epsilon: 0.5),
+      reason: '中间只留一档 8dp',
+    );
+    expect(abandon.top, greaterThan(pause.bottom), reason: '放弃独占下一行');
+    expect(abandon.height, greaterThanOrEqualTo(48), reason: '命中区不小于 48dp');
+    expect(abandon.center.dx, moreOrLessEquals(210, epsilon: 1), reason: '居中');
+
+    final theme = Theme.of(tester.element(find.byKey(abandonKey)));
+    expect(
+      tester
+          .widget<TextButton>(find.byKey(abandonKey))
+          .style
+          ?.foregroundColor
+          ?.resolve(<WidgetState>{}),
+      theme.colorScheme.error,
+      reason: '破坏性动作走错误色文字',
+    );
+    expect(tester.takeException(), isNull);
+    await h.unmount(tester);
+  });
+
+  testWidgets('已结算页面可事后判定失败：节点移除、链重算、入口收起', (tester) async {
+    final h = _Fixture();
+    addTearDown(h.dispose);
+    final task = await h.seed();
+    final session = await h.focus.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    await h.pumpPage(
+      tester,
+      FocusSessionPage(session: session, taskTitle: _taskTitle),
+    );
+    h.now = session.endsAt;
+    await _tick(tester);
+    await _tick(tester);
+    expect(find.text('00:00'), findsOneWidget);
+    expect(await h.focus.getNodes(), hasLength(1));
+
+    const markFailedKey = ValueKey('focus-session-mark-failed-button');
+    expect(find.byKey(markFailedKey), findsOneWidget);
+    await tester.tap(find.byKey(markFailedKey));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('填写失败原因'), findsOneWidget);
+    expect(find.textContaining('将删除本次生成的专注节点'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '事后发现并没有真的专注');
+    await tester.tap(find.widgetWithText(FilledButton, '确认改判'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final failed = (await h.focus.getSession(session.id))!;
+    expect(failed.isFailed, isTrue);
+    expect(failed.failureReason, '事后发现并没有真的专注');
+    expect(failed.effectiveSeconds, 1500, reason: '有效专注时长原样保留');
+    expect(await h.focus.getNodes(), isEmpty, reason: '专注节点已移除');
+    final record = (await h.focus.getChainRecords()).singleWhere(
+      (entry) => entry.mode == FocusChainMode.regular,
+    );
+    expect(record.currentConsecutive, 0);
+    expect(record.bestConsecutive, 0, reason: '链连击按完整历史重算');
+    expect(find.byKey(markFailedKey), findsNothing, reason: '失败态不再提供二次改判');
+    expect(find.textContaining('本次专注已失败'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await h.unmount(tester);
+  });
+
+  testWidgets('前台主动放弃只清常驻通知，不再补发系统结束通知', (tester) async {
+    final h = _Fixture();
+    addTearDown(h.dispose);
+    final task = await h.seed();
+    final session = await h.focus.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    await h.pumpPage(
+      tester,
+      FocusSessionPage(session: session, taskTitle: _taskTitle),
+    );
+    final syncsAfterOpen = h.notifications.syncCalls;
+
+    h.now = h.now.add(const Duration(minutes: 3));
+    await tester.tap(
+      find.byKey(const ValueKey('focus-session-abandon-button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('放弃专注'), findsWidgets, reason: '弹窗标题与按钮同名');
+    await tester.enterText(find.byType(TextField), '被临时会议打断');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect((await h.focus.getSession(session.id))?.isFailed, isTrue);
+    expect(h.notifications.sessionEndedCalls, 0, reason: '前台主动结束不再补发系统通知');
+    expect(
+      h.notifications.syncCalls,
+      greaterThan(syncsAfterOpen),
+      reason: '仍要清掉进行中的常驻通知与待发闹钟',
+    );
+    expect(tester.takeException(), isNull);
+    await h.unmount(tester);
+  });
+
+  testWidgets('自然到点仍然推送一次结束通知', (tester) async {
+    final h = _Fixture();
+    addTearDown(h.dispose);
+    final task = await h.seed();
+    final session = await h.focus.startSession(
+      taskId: task.id,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    await h.pumpPage(
+      tester,
+      FocusSessionPage(session: session, taskTitle: _taskTitle),
+    );
+    expect(h.notifications.sessionEndedCalls, 0);
+
+    h.now = session.endsAt;
+    await _tick(tester);
+    await _tick(tester);
+
+    expect(find.text('00:00'), findsOneWidget);
+    expect(h.notifications.sessionEndedCalls, 1, reason: '自然结算由轮询补发且只发一次');
     expect(tester.takeException(), isNull);
     await h.unmount(tester);
   });

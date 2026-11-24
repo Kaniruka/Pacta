@@ -249,14 +249,20 @@ void main() {
       expect((await h.focus.getSession(started.id))?.isActive, isTrue);
 
       h.advance(const Duration(minutes: 10));
-      await tester.tap(find.text('依据规则提前完成'));
+      await tester.tap(find.text('提前完成'));
       await _boundedSettle(tester);
       await tester.tap(find.byType(RadioListTile<String>));
       await tester.pump();
       await tester.tap(find.text('选择依据'));
       await _boundedSettle(tester);
       expect(find.text('确认提前完成？'), findsOneWidget);
-      await tester.tap(find.text('提前完成'));
+      // 页面按钮也叫「提前完成」：确认必须在弹窗内点，不能靠文本唯一性。
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('提前完成'),
+        ),
+      );
       await _boundedSettle(tester);
 
       final settled = (await h.focus.getSession(started.id))!;
