@@ -130,6 +130,8 @@ class PactaHoldReorderList extends StatefulWidget {
     this.itemExtent,
     this.itemSpacing = 0,
     this.proxyBorderRadius = PactaSpacing.cardRadius,
+    this.proxyBaseColor,
+    this.proxyBackgroundColor,
     this.holdDelay = const Duration(milliseconds: 350),
     this.moveThreshold = 8.0,
   });
@@ -155,6 +157,21 @@ class PactaHoldReorderList extends StatefulWidget {
 
   /// 拖拽代理高亮描边与阴影的圆角，应等于卡片本身的圆角。
   final double proxyBorderRadius;
+
+  /// 拖拽代理内层的实底：从动画 `t = 0` 起就铺满这张颜色。
+  ///
+  /// 默认 `null`，内层保持完全透明：外层列表项自带实底 [Card]（目标卡、
+  /// 看板置顶卡）时不需要再铺一层。嵌套列表的每一项本身透明（例如目标卡
+  /// 里的任务行）时必须配置它，否则动画刚产生 elevation 的那几帧阴影会从
+  /// 透明区域透出来，在卡片下方形成孤立暗块。
+  final Color? proxyBaseColor;
+
+  /// 拖拽代理浮起后的底色，与 [proxyBaseColor] 按动画曲线插值。
+  ///
+  /// 只有配置了它，内层才会铺色；它必须是完全不透明的颜色，代理整体
+  /// （描边、填充与阴影）才不会出现透明穿透。默认 `null` 时保持
+  /// [Colors.transparent]，与既有外层列表完全兼容。
+  final Color? proxyBackgroundColor;
 
   final Duration holdDelay;
   final double moveThreshold;
@@ -232,10 +249,16 @@ class _PactaHoldReorderListState extends State<PactaHoldReorderList> {
   /// 真正的高亮由 [PactaHoldReorderListener] 在卡片本体内绘制；这里保留
   /// 列表元素本身（Flutter 用 GlobalKey 复用元素），展开/折叠等 State 不会
   /// 在拖拽期间被重建。
+  ///
+  /// `pacta-hold-reorder-proxy-surface` + [MaterialType.transparency] 是硬
+  /// 不变量：外层一旦带上任何底色或投影，[itemSpacing] 区域就会出现直角块。
+  /// 需要实底时只能经由 [proxyBaseColor]/[proxyBackgroundColor] 交给内层。
   Widget _buildProxy(Widget child, int index, Animation<double> animation) {
     return _PactaReorderProxyScope(
       animation: animation,
       borderRadius: widget.proxyBorderRadius,
+      baseColor: widget.proxyBaseColor,
+      backgroundColor: widget.proxyBackgroundColor,
       child: Material(
         key: const ValueKey('pacta-hold-reorder-proxy-surface'),
         type: MaterialType.transparency,
@@ -446,13 +469,24 @@ class _PactaHoldReorderListenerState extends State<PactaHoldReorderListener> {
     // 只有拖拽代理子树能读到这个作用域：浮起阴影与高亮描边加在卡片本体，
     // 外层的 itemSpacing 仍由透明 Material 承载，绝不会被边框一起包住。
     final colors = Theme.of(context).colorScheme;
+    final backgroundColor = proxy.backgroundColor;
     return AnimatedBuilder(
       animation: proxy.animation,
       builder: (context, child) {
         final curve = Curves.easeInOut.transform(proxy.animation.value);
+        // 配置了浮起底色就从 [proxyBaseColor] 插值到它：t = 0 时已经是卡片
+        // 本色，动画刚产生 elevation 的那几帧阴影不会从透明区域透出来。
+        // 未配置时保持完全透明，外层自带实底 Card 的列表行为不变。
+        final fill = backgroundColor == null
+            ? Colors.transparent
+            : Color.lerp(
+                proxy.baseColor ?? Colors.transparent,
+                backgroundColor,
+                curve,
+              )!;
         return Material(
           key: const ValueKey('pacta-hold-reorder-proxy-highlight'),
-          color: Colors.transparent,
+          color: fill,
           elevation: lerpDouble(0, 6, curve)!,
           shadowColor: colors.shadow.withValues(alpha: 0.25),
           surfaceTintColor: Colors.transparent,
@@ -496,6 +530,8 @@ class _PactaReorderProxyScope extends InheritedWidget {
   const _PactaReorderProxyScope({
     required this.animation,
     required this.borderRadius,
+    required this.baseColor,
+    required this.backgroundColor,
     required super.child,
   });
 
@@ -505,13 +541,21 @@ class _PactaReorderProxyScope extends InheritedWidget {
   /// 高亮描边与阴影的圆角。
   final double borderRadius;
 
+  /// 内层实底；`null` 表示不铺底色。
+  final Color? baseColor;
+
+  /// 内层浮起后的底色；`null` 表示内层保持完全透明。
+  final Color? backgroundColor;
+
   static _PactaReorderProxyScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<_PactaReorderProxyScope>();
 
   @override
   bool updateShouldNotify(_PactaReorderProxyScope oldWidget) =>
       animation != oldWidget.animation ||
-      borderRadius != oldWidget.borderRadius;
+      borderRadius != oldWidget.borderRadius ||
+      baseColor != oldWidget.baseColor ||
+      backgroundColor != oldWidget.backgroundColor;
 }
 
 /// 只在指针已被本节点 Listener 认领时才进入 GestureArena 的长按识别器。
