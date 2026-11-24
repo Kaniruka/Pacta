@@ -385,6 +385,173 @@ void main() {
     expect(_CollapsibleCardState.created, 1);
     expect(find.text('已收起'), findsOneWidget);
   });
+
+  testWidgets('配置实底代理：外层仍透明，内层 12dp 实底随动画抬升', (tester) async {
+    const base = Color(0xffffffff);
+    const lift = Color(0xffe3eaf5);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: pactaTheme(Brightness.light),
+        home: Scaffold(
+          body: PactaHoldReorderList(
+            itemCount: 2,
+            proxyBorderRadius: 12,
+            proxyBaseColor: base,
+            proxyBackgroundColor: lift,
+            onReorder: (_, _) {},
+            itemBuilder: (context, index) => SizedBox(
+              key: ValueKey('opaque-item-$index'),
+              height: 64,
+              child: ListTile(title: Text('任务 $index')),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byKey(const ValueKey('opaque-item-0'))),
+      kind: PointerDeviceKind.touch,
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await gesture.moveBy(const Offset(0, 20));
+    await tester.pump(const Duration(milliseconds: 120));
+
+    final surface = find.byKey(
+      const ValueKey('pacta-hold-reorder-proxy-surface'),
+    );
+    expect(surface, findsOneWidget);
+    expect(tester.widget<Material>(surface).type, MaterialType.transparency);
+
+    final highlightFinder = find.byKey(
+      const ValueKey('pacta-hold-reorder-proxy-highlight'),
+    );
+    expect(highlightFinder, findsOneWidget);
+    final highlight = tester.widget<Material>(highlightFinder);
+    final shape = highlight.shape! as RoundedRectangleBorder;
+    expect(shape.borderRadius, BorderRadius.circular(12));
+    expect(highlight.elevation, greaterThan(0));
+    // 抬起过程中的任何一帧都必须是不透明实底，否则阴影会从透明区域透出来。
+    expect(
+      highlight.color!.a,
+      greaterThanOrEqualTo(0.999),
+      reason: '拖拽代理内层必须铺满不透明底色',
+    );
+    expect(highlight.color, isNot(base), reason: '动画已抬升到浮起色调');
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(surface, findsNothing);
+    expect(highlightFinder, findsNothing);
+  });
+
+  testWidgets('动画 0.0 / 0.5 / 1.0：代理实底始终不透明且为 12dp 圆角', (tester) async {
+    const base = Color(0xffffffff);
+    const lift = Color(0xffe3eaf5);
+    final list = PactaHoldReorderList(
+      itemCount: 1,
+      proxyBorderRadius: 12,
+      proxyBaseColor: base,
+      proxyBackgroundColor: lift,
+      onReorder: (_, _) {},
+      itemBuilder: (context, index) =>
+          const SizedBox(key: ValueKey('matrix-item'), height: 64),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: pactaTheme(Brightness.light),
+        home: Scaffold(body: list),
+      ),
+    );
+
+    final decorator = tester
+        .widget<ReorderableListView>(find.byType(ReorderableListView))
+        .proxyDecorator!;
+    Widget proxyAt(double t) => decorator(
+      PactaHoldReorderListener(
+        index: 0,
+        child: const SizedBox(height: 64, width: 320),
+      ),
+      0,
+      AlwaysStoppedAnimation<double>(t),
+    );
+
+    // 外层必须始终是透明 Material：实底只能由内层承担。
+    final surface = (proxyAt(0.5) as InheritedWidget).child as Material;
+    expect(surface.type, MaterialType.transparency);
+    expect(surface.key, const ValueKey('pacta-hold-reorder-proxy-surface'));
+
+    for (final t in <double>[0, 0.5, 1]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: pactaTheme(Brightness.light),
+          home: Scaffold(
+            body: Align(alignment: Alignment.topLeft, child: proxyAt(t)),
+          ),
+        ),
+      );
+      await tester.pump();
+      final highlight = tester.widget<Material>(
+        find.byKey(const ValueKey('pacta-hold-reorder-proxy-highlight')),
+      );
+      final shape = highlight.shape! as RoundedRectangleBorder;
+      expect(shape.borderRadius, BorderRadius.circular(12), reason: 't=$t');
+      expect(
+        highlight.color!.a,
+        greaterThanOrEqualTo(0.999),
+        reason: 't=$t 必须是不透明实底，不能出现透明穿透',
+      );
+      if (t == 0) {
+        expect(highlight.color, base, reason: 't=0 就是卡片本色');
+        expect(highlight.elevation, 0);
+      }
+      if (t == 1) expect(highlight.color, lift, reason: 't=1 抵达浮起色调');
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('只配置 proxyBaseColor 时内层保持完全透明，兼容外层实底 Card', (tester) async {
+    final list = PactaHoldReorderList(
+      itemCount: 1,
+      proxyBaseColor: const Color(0xffffffff),
+      onReorder: (_, _) {},
+      itemBuilder: (context, index) =>
+          const SizedBox(key: ValueKey('base-only-item'), height: 64),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: pactaTheme(Brightness.light),
+        home: Scaffold(body: list),
+      ),
+    );
+    final decorator = tester
+        .widget<ReorderableListView>(find.byType(ReorderableListView))
+        .proxyDecorator!;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: pactaTheme(Brightness.light),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: decorator(
+              PactaHoldReorderListener(
+                index: 0,
+                child: const SizedBox(height: 64, width: 320),
+              ),
+              0,
+              const AlwaysStoppedAnimation<double>(0.5),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final highlight = tester.widget<Material>(
+      find.byKey(const ValueKey('pacta-hold-reorder-proxy-highlight')),
+    );
+    expect(highlight.color, Colors.transparent);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 /// 用于验证拖拽代理复用元素：静态计数只在真正创建 State 时递增。

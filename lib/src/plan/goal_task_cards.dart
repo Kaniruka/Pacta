@@ -13,9 +13,36 @@ import '../tasks/task_repository.dart';
 import '../theme/pacta_fonts.dart';
 import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
+import '../theme/pacta_surfaces.dart';
 import '../ui/pacta_check_circle.dart';
 import '../ui/pacta_date_format.dart';
 import '../ui/pacta_hold_action_reorder.dart';
+
+/// 未完成任务行的圆角：拖拽代理、按住水波纹与空态起手行共用同一个 12dp。
+const double _taskRowRadius = 12;
+
+/// 任务行拖拽代理的实底：与卡片自身底色同值，且强制完全不透明。
+///
+/// 任务行本身没有 [Card]：没有实底时，拖拽动画刚产生 elevation 的那几帧
+/// 阴影会从透明区域透出来，在目标卡上留下孤立暗块。
+Color _taskProxyBaseColor(BuildContext context) {
+  final theme = Theme.of(context);
+  // cardTheme 是卡片底色的唯一来源；宿主没注入主题扩展时按亮度取同一份
+  // 语义令牌，绝不让断言把组件树打穿。
+  final base = theme.cardTheme.color ?? PactaSurfaces.cardFor(theme.brightness);
+  return base.withValues(alpha: 1);
+}
+
+/// 浮起后的代理底色：卡片实底上叠一档 surfaceContainerHigh 的抬升色调。
+///
+/// 结果强制 alpha = 1：动画 t = 0..1 全程都是不透明填充，不会有透明穿透。
+Color _taskProxyLiftColor(BuildContext context, Color base) {
+  final tint = Theme.of(context).colorScheme.surfaceContainerHigh;
+  return Color.alphaBlend(
+    tint.withValues(alpha: 0.42),
+    base,
+  ).withValues(alpha: 1);
+}
 
 class GoalCard extends StatefulWidget {
   const GoalCard({
@@ -98,7 +125,7 @@ class GoalCardState extends State<GoalCard> {
     return InkWell(
       key: const ValueKey('goal-empty-task-hint'),
       onTap: _addTask,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(_taskRowRadius),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: 48),
         child: Row(
@@ -128,6 +155,8 @@ class GoalCardState extends State<GoalCard> {
   Widget build(BuildContext context) {
     final goal = widget.goal;
     final theme = Theme.of(context);
+    // 任务行是透明的：拖拽代理必须自带与卡片同值的实底，阴影才不会穿透。
+    final proxyBaseColor = _taskProxyBaseColor(context);
     final completedCount = goal.tasks.where((task) => task.isComplete).length;
     final openTasks = [
       for (final task in goal.tasks)
@@ -286,6 +315,15 @@ class GoalCardState extends State<GoalCard> {
                       // 行距由 TaskTile 自身决定：间距加在列表里会让首条任务
                       // 比后续任务多一段顶部空隙。
                       itemSpacing: 0,
+                      // 任务行没有 Card：代理内层用与卡片同值的实底铺满
+                      // 12dp 圆角本体。外层 Material 仍是 transparent，间距
+                      // 区不会被框进高亮（见 pacta_hold_action_reorder）。
+                      proxyBorderRadius: _taskRowRadius,
+                      proxyBaseColor: proxyBaseColor,
+                      proxyBackgroundColor: _taskProxyLiftColor(
+                        context,
+                        proxyBaseColor,
+                      ),
                       itemBuilder: (context, index) => KeyedSubtree(
                         key: ValueKey('task-${openTasks[index].id}'),
                         child: _taskTile(openTasks[index]),
@@ -350,6 +388,11 @@ class TaskTile extends ConsumerWidget {
     return ListTile(
       isThreeLine: hasMeta && hasDescription,
       contentPadding: EdgeInsets.zero,
+      // 按住水波纹与高亮从按下首帧起就按 12dp 圆角裁切：与拖拽代理同一边界，
+      // 行高与 contentPadding 完全不受影响。
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.all(Radius.circular(_taskRowRadius)),
+      ),
       titleAlignment: hasSubtitle
           ? ListTileTitleAlignment.top
           : ListTileTitleAlignment.center,
