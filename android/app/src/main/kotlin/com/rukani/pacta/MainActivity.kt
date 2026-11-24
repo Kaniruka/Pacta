@@ -1,18 +1,23 @@
 package com.rukani.pacta
 
 import android.Manifest
+import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.PowerManager
 import android.provider.CalendarContract
 import android.provider.MediaStore
 import android.provider.Settings
 import androidx.core.app.ActivityCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.InputStream
 import java.security.MessageDigest
@@ -23,16 +28,41 @@ class MainActivity : FlutterActivity() {
     private val sourceDeviceInfoChannelName = "com.pacta/source_device_info"
     private val profileAvatarChannelName = "com.pacta/profile_avatar"
     private val devicePermissionsChannelName = "com.pacta/device_permissions"
+    private val focusTimerChannelName = "com.pacta/focus_timer_service"
     private val permissionRequestCode = 4720
     private val avatarPickRequestCode = 4721
     private val calendarExecutor = Executors.newSingleThreadExecutor()
     private var permissionResult: MethodChannel.Result? = null
     private var avatarPickResult: MethodChannel.Result? = null
+    private var focusTimerChannel: MethodChannel? = null
+
+    /// 冷启动时 Dart 侧还没建立 channel，点击负载先留在这里等
+    /// `takePendingLaunchPayload` 取走，避免首次点按丢失导航。
+    private var pendingFocusTimerPayload: String? = null
 
     companion object {
         // The client rejects anything above 5 MB before upload; read a byte past
         // it so an oversized selection is reported instead of silently truncated.
         private const val MAX_AVATAR_SELECTION_BYTES = 5 * 1024 * 1024 + 1
+
+        /// 五个 `*_v2` 渠道：旧版 v1 渠道的重要性创建后不可改，只能删除重建。
+        private val FOCUS_CHANNEL_IDS = listOf(
+            "pacta_focus_status_v2",
+            "pacta_focus_events_v2",
+            "pacta_national_focus_reminders_v2",
+            "pacta_daily_open_reminders_v2",
+            "pacta_schedule_reminders_v2",
+        )
+
+        /// 事件渠道：进入专注 / 专注结束必须能弹出并响铃。
+        private const val EVENT_CHANNEL_ID = "pacta_focus_events_v2"
+
+        /// 提醒渠道：国策、每日打开与普通日程提醒。
+        private val REMINDER_CHANNEL_IDS = listOf(
+            "pacta_national_focus_reminders_v2",
+            "pacta_daily_open_reminders_v2",
+            "pacta_schedule_reminders_v2",
+        )
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -96,9 +126,199 @@ class MainActivity : FlutterActivity() {
                     openBatteryOptimizationSettings()
                     result.success(null)
                 }
+                "getNotificationChannelHealth" -> result.success(notificationChannelHealth())
+                "openNotificationChannelSettings" -> {
+                    val arguments = call.arguments as? Map<*, *>
+                    val channelId = arguments?.get("channelId") as? String
+                    if (channelId.isNullOrBlank()) {
+                        result.error("invalid-arguments", "通知渠道参数无效。", null)
+                    } else {
+                        openNotificationChannelSettings(channelId)
+                        result.success(null)
+                    }
+                }
                 else -> result.notImplemented()
             }
         }
+        val focusTimer = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            focusTimerChannelName,
+        )
+        focusTimer.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "start" -> startFocusTimerService(call, result)
+                "update" -> startFocusTimerService(call, result)
+                "stop" -> stopFocusTimerService(result)
+                "takePendingLaunchPayload" -> {
+                    // 冷启动的点击只在 Dart 首次问询时交付一次，避免重复导航。
+                    val payload = pendingFocusTimerPayload
+                    pendingFocusTimerPayload = null
+                    result.success(payload)
+                }
+                else -> result.notImplemented()
+            }
+        }
+        focusTimerChannel = focusTimer
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // 进程被通知点按拉起时 Dart 尚未运行：先留存负载，等 initialize() 取走。
+        val launchPayload = intent?.getStringExtra(FocusTimerForegroundService.EXTRA_PAYLOAD)
+        if (!launchPayload.isNullOrEmpty()) {
+            pendingFocusTimerPayload = launchPayload
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        val payload = intent.getStringExtra(FocusTimerForegroundService.EXTRA_PAYLOAD)
+        if (payload.isNullOrEmpty()) return
+        pendingFocusTimerPayload = payload
+        val channel = focusTimerChannel ?: return
+        // Dart 已在前台时直接推事件；没有接收方时保留负载给下次冷启动读取。
+        channel.invokeMethod(
+            "notificationTapped",
+            payload,
+            object : MethodChannel.Result {
+                override fun success(result: Any?) {
+                    if (pendingFocusTimerPayload == payload) pendingFocusTimerPayload = null
+                }
+
+                override fun error(code: String, message: String?, details: Any?) = Unit
+
+                override fun notImplemented() = Unit
+            },
+        )
+    }
+
+    /// 启动/更新专注进度前台服务。系统拒绝时报告错误，调用方回退到静态通知。
+    private fun startFocusTimerService(call: MethodCall, result: MethodChannel.Result) {
+        val arguments = call.arguments as? Map<*, *>
+        if (arguments == null) {
+            result.error("invalid-arguments", "专注计时参数无效。", null)
+            return
+        }
+        val action = if (call.method == "update") {
+            FocusTimerForegroundService.ACTION_UPDATE
+        } else {
+            FocusTimerForegroundService.ACTION_START
+        }
+        val intent = Intent(this, FocusTimerForegroundService::class.java).apply {
+            this.action = action
+            putExtra(
+                FocusTimerForegroundService.EXTRA_NOTIFICATION_ID,
+                (arguments["notificationId"] as? Number)?.toInt()
+                    ?: FocusTimerForegroundService.DEFAULT_NOTIFICATION_ID,
+            )
+            putExtra(
+                FocusTimerForegroundService.EXTRA_TITLE_PREFIX,
+                arguments["titlePrefix"] as? String ?: "",
+            )
+            putExtra(
+                FocusTimerForegroundService.EXTRA_TASK_TITLE,
+                arguments["taskTitle"] as? String ?: "",
+            )
+            putExtra(
+                FocusTimerForegroundService.EXTRA_MODE_LABEL,
+                arguments["modeLabel"] as? String ?: "",
+            )
+            putExtra(
+                FocusTimerForegroundService.EXTRA_STARTED_AT_MS,
+                (arguments["startedAtMs"] as? Number)?.toLong() ?: 0L,
+            )
+            putExtra(
+                FocusTimerForegroundService.EXTRA_ENDS_AT_MS,
+                (arguments["endsAtMs"] as? Number)?.toLong() ?: 0L,
+            )
+            putExtra(
+                FocusTimerForegroundService.EXTRA_TOTAL_SECONDS,
+                (arguments["totalSeconds"] as? Number)?.toInt() ?: 0,
+            )
+            putExtra(
+                FocusTimerForegroundService.EXTRA_PAYLOAD,
+                arguments["payload"] as? String ?: "",
+            )
+        }
+        try {
+            ContextCompat.startForegroundService(this, intent)
+            result.success(null)
+        } catch (error: Exception) {
+            result.error(
+                "focus-timer-service-failed",
+                "无法启动专注计时服务。",
+                null,
+            )
+        }
+    }
+
+    /// 停止计时服务。
+    ///
+    /// 没有服务在跑时直接返回：停止是空操作，不能为了发 STOP 冷启动前台服务，
+    /// 否则每次启动应用都会闪一张"剩余 00:00"的通知。
+    private fun stopFocusTimerService(result: MethodChannel.Result) {
+        if (!FocusTimerForegroundService.running) {
+            result.success(null)
+            return
+        }
+        val intent = Intent(this, FocusTimerForegroundService::class.java).apply {
+            action = FocusTimerForegroundService.ACTION_STOP
+        }
+        try {
+            ContextCompat.startForegroundService(this, intent)
+            result.success(null)
+        } catch (error: Exception) {
+            stopService(intent)
+            result.success(null)
+        }
+    }
+
+    /// 五个 `*_v2` 渠道的健康状态。
+    ///
+    /// 只读：被降级或阻断的渠道放进 `degradedChannels`，页面据此给出直达系统
+    /// 设置的入口。未创建的渠道（API < 26、尚未发布过通知）按健康处理，避免
+    /// 首次启动就误报。
+    private fun notificationChannelHealth(): Map<String, Any> {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return mapOf("healthy" to true, "degradedChannels" to emptyList<String>())
+        }
+        val manager = getSystemService(NotificationManager::class.java)
+            ?: return mapOf("healthy" to true, "degradedChannels" to emptyList<String>())
+        val notificationsEnabled = NotificationManagerCompat.from(this).areNotificationsEnabled()
+        val degraded = mutableListOf<String>()
+        for (channelId in FOCUS_CHANNEL_IDS) {
+            val channel = manager.getNotificationChannel(channelId) ?: continue
+            val blocked = !notificationsEnabled ||
+                channel.importance == NotificationManager.IMPORTANCE_NONE
+            val needsHighImportance = channelId == EVENT_CHANNEL_ID ||
+                REMINDER_CHANNEL_IDS.contains(channelId)
+            val degradedImportance = needsHighImportance &&
+                channel.importance < NotificationManager.IMPORTANCE_HIGH
+            val secret = channel.lockscreenVisibility == android.app.Notification.VISIBILITY_SECRET
+            if (blocked || degradedImportance || secret) degraded.add(channelId)
+        }
+        return mapOf(
+            "healthy" to degraded.isEmpty(),
+            "degradedChannels" to degraded,
+        )
+    }
+
+    /// 直达单个渠道的系统设置页；没有该屏幕的机型回退到应用通知设置。
+    private fun openNotificationChannelSettings(channelId: String) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val intent = Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                .putExtra(Settings.EXTRA_CHANNEL_ID, channelId)
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                startActivity(intent)
+                return
+            } catch (error: Exception) {
+                // 部分定制系统删掉了渠道级设置页，退回应用通知设置。
+            }
+        }
+        openNotificationSettings()
     }
 
     // Android 13+ uses the system photo picker and older releases use the

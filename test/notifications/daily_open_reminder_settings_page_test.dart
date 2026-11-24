@@ -28,7 +28,8 @@ void main() {
     expect(find.text('提醒时间（本机时间）'), findsOneWidget);
     expect(find.text('09:00'), findsOneWidget);
     expect(fixture.switchValue(tester), isFalse);
-    expect(find.text('仅在 Pacta 正在运行（含隐藏到托盘）时送达；完全退出后不会提醒。'), findsOneWidget);
+    // 每日提醒已迁入 Windows 通知中心：进程退出后仍会按时送达。
+    expect(find.text('写入 Windows 系统通知中心；Pacta 完全退出后仍会按时送达。'), findsOneWidget);
   }, skip: !Platform.isWindows);
 
   testWidgets('the first enable asks for a time and keeps the choice', (

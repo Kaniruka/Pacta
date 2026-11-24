@@ -16,6 +16,7 @@ import 'daily_open_reminder_state.dart';
 import 'device_permission_gateway.dart';
 import 'focus_device_preferences.dart';
 import 'focus_notification_plan.dart';
+import 'focus_timer_service_gateway.dart';
 import 'national_focus_reminder_plan.dart';
 import 'national_focus_reminder_state.dart';
 import 'schedule_reminder_plan.dart';
@@ -33,6 +34,7 @@ class FocusNotificationService {
     this.permissionGateway,
     this.windowsNotifications,
     this.accountTimeZoneReader,
+    this.timerServiceGateway,
     Timer Function(Duration delay, void Function() callback)? reminderTimers,
   }) : _androidNotifications =
            androidNotifications ?? FlutterLocalNotificationsPlugin(),
@@ -47,12 +49,22 @@ class FocusNotificationService {
   static const _sessionEndNotificationId = 2203;
   static const _nationalFocusReminderNotificationId = 2204;
   static const _dailyOpenReminderNotificationId = 2205;
-  static const _statusChannelId = 'pacta_focus_status';
-  static const _eventChannelId = 'pacta_focus_events';
+  // v2：渠道的重要性创建后不可改，升级强提醒只能换新 id 并重建。
+  static const _statusChannelId = 'pacta_focus_status_v2';
+  static const _eventChannelId = 'pacta_focus_events_v2';
   static const _nationalFocusReminderChannelId =
-      'pacta_national_focus_reminders';
-  static const _dailyOpenReminderChannelId = 'pacta_daily_open_reminders';
-  static const _scheduleReminderChannelId = 'pacta_schedule_reminders';
+      'pacta_national_focus_reminders_v2';
+  static const _dailyOpenReminderChannelId = 'pacta_daily_open_reminders_v2';
+  static const _scheduleReminderChannelId = 'pacta_schedule_reminders_v2';
+
+  /// 旧 v1 渠道：创建时按"默认重要性"落地，无法原地升级，初始化时删掉。
+  static const _legacyChannelIds = <String>[
+    'pacta_focus_status',
+    'pacta_focus_events',
+    'pacta_national_focus_reminders',
+    'pacta_daily_open_reminders',
+    'pacta_schedule_reminders',
+  ];
   static const _ownedNotificationIds = {
     _statusNotificationId,
     _appointmentStatusNotificationId,
@@ -71,6 +83,9 @@ class FocusNotificationService {
   final Future<String> Function()? localTimeZone;
   final DevicePermissionGateway? permissionGateway;
   final WindowsNotificationAdapter? windowsNotifications;
+
+  /// 专注进度前台服务的可测试边界；为空时按平台取生产实现。
+  final FocusTimerServiceGateway? timerServiceGateway;
 
   /// 账号时区（IANA）。国策待确认提醒按该时区的当地墙钟排程；未提供时沿用
   /// 北京时间，旧调用方与旧测试的行为不变。
@@ -109,6 +124,7 @@ class FocusNotificationService {
   WindowsNotificationAdapter? _resolvedWindowsNotifications;
   bool _windowsNotificationsInitialized = false;
   bool _windowsScheduleReady = false;
+  FocusTimerServiceGateway? _resolvedTimerServiceGateway;
   final Map<int, _WindowsScheduledEvent> _windowsFocusScheduled = {};
   final Map<int, ScheduleReminderPlan> _plannedScheduleReminders = {};
   _ScheduleReminderSnapshot? _lastScheduleSnapshot;
@@ -180,12 +196,105 @@ class FocusNotificationService {
       ),
       onDidReceiveNotificationResponse: handleNotificationResponse,
     );
+    await _ensureAndroidChannels();
+    await _attachFocusTimerChannel();
     final launchDetails = await _androidNotifications
         .getNotificationAppLaunchDetails();
     final response = launchDetails?.notificationResponse;
     if (launchDetails?.didNotificationLaunchApp == true && response != null) {
       handleNotificationResponse(response);
     }
+  }
+
+  /// 删掉 5 个 v1 渠道并预创建 5 个 v2 渠道。
+  ///
+  /// 渠道重要性一旦创建就不可修改，所以"升级为强提醒"只能换 id：旧渠道删掉
+  /// 之后系统设置里不会同时留下两套语义冲突的开关。预创建让用户在第一条通知
+  /// 出现之前就能看到并使用最终的重要性、声音与锁屏可见性。
+  Future<void> _ensureAndroidChannels() async {
+    final android = _androidNotifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (android == null) return;
+    for (final channelId in _legacyChannelIds) {
+      try {
+        await android.deleteNotificationChannel(channelId: channelId);
+      } catch (_) {
+        // 删除一个从未创建过的渠道不是状态变化。
+      }
+    }
+    for (final channel in _androidChannels()) {
+      try {
+        await android.createNotificationChannel(channel);
+      } catch (_) {
+        // 宿主不支持渠道管理时，通知自身仍会按详情里的语义创建渠道。
+      }
+    }
+  }
+
+  /// 5 个 v2 渠道的声明，与各通知细节里的重要性保持一一对应。
+  List<AndroidNotificationChannel> _androidChannels() => const [
+    AndroidNotificationChannel(
+      _statusChannelId,
+      '专注状态',
+      description: '显示正在进行的预约或专注倒计时。',
+      importance: Importance.defaultImportance,
+      playSound: false,
+      enableVibration: false,
+      showBadge: false,
+    ),
+    AndroidNotificationChannel(
+      _eventChannelId,
+      '专注转换提醒',
+      description: '预约进入专注或专注会话结束时提醒。',
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
+    ),
+    AndroidNotificationChannel(
+      _nationalFocusReminderChannelId,
+      '国策待确认',
+      description: '有国策待确认时提醒。',
+      importance: Importance.high,
+      playSound: true,
+      enableVibration: true,
+    ),
+    AndroidNotificationChannel(
+      _dailyOpenReminderChannelId,
+      '每日打开提醒',
+      description: '每天在本机当地时间提醒打开 Pacta 看板。',
+      importance: Importance.high,
+      playSound: true,
+      enableVibration: true,
+    ),
+    AndroidNotificationChannel(
+      _scheduleReminderChannelId,
+      '日程提醒',
+      description: '普通日程到点时提醒；不开始专注，也不改变链记录。',
+      importance: Importance.high,
+      playSound: true,
+      enableVibration: true,
+    ),
+  ];
+
+  /// 连接前台服务通道：点按实时进度通知回到进行中的会话，冷启动补取负载。
+  Future<void> _attachFocusTimerChannel() async {
+    final gateway = _timerService;
+    if (gateway is! MethodChannelFocusTimerServiceGateway) return;
+    gateway.attach(onTapped: _handleFocusTimerPayload);
+    _handleFocusTimerPayload(await gateway.takePendingLaunchPayload());
+  }
+
+  void _handleFocusTimerPayload(String? payload) {
+    if (payload == null || payload.isEmpty) return;
+    // 复用同一条响应路径：普通会话负载与日程提醒负载的解析规则保持一致。
+    handleNotificationResponse(
+      NotificationResponse(
+        notificationResponseType: NotificationResponseType.selectedNotification,
+        payload: payload,
+      ),
+    );
   }
 
   Future<dynamic> _handleWindowsCall(MethodCall call) async {
@@ -302,6 +411,11 @@ class FocusNotificationService {
 
   DevicePermissionGateway get _permissions =>
       permissionGateway ?? createDevicePermissionGateway();
+
+  /// Android 上是真实的前台服务通道，其余平台是空实现。
+  FocusTimerServiceGateway get _timerService =>
+      timerServiceGateway ??
+      (_resolvedTimerServiceGateway ??= createFocusTimerServiceGateway());
 
   /// The Windows OS scheduling adapter, or null when this process may not use
   /// one (not Windows, not initialized yet, or the OS registration failed).
@@ -519,6 +633,9 @@ class FocusNotificationService {
       importance: Importance.high,
       priority: Priority.high,
       category: AndroidNotificationCategory.reminder,
+      visibility: NotificationVisibility.public,
+      playSound: true,
+      enableVibration: true,
       autoCancel: true,
     ),
   );
@@ -674,14 +791,22 @@ class FocusNotificationService {
     _hasPendingNationalFocusConfirmations = false;
     _windowsTicker?.cancel();
     _windowsNationalFocusReminderTimer?.cancel();
+    _windowsNationalFocusReminderTimer = null;
     _dailyOpenReminderTimer?.cancel();
     _dailyOpenReminderTimer = null;
+    await _stopFocusTimer();
     if (Platform.isAndroid) {
       await _cancelPendingAndroidNotifications(_ownedNotificationIds);
       await _androidNotifications.cancel(id: _statusNotificationId);
       await _androidNotifications.cancel(id: _appointmentStatusNotificationId);
     } else if (Platform.isWindows) {
       await _windowsChannel.invokeMethod<void>('clearStatus');
+      final adapter = await _scheduleAdapter();
+      if (adapter != null) {
+        // 登出/清理同样要撤掉系统通知中心里的提醒，避免离线期间误发。
+        await adapter.cancel(_nationalFocusReminderNotificationId);
+        await adapter.cancel(_dailyOpenReminderNotificationId);
+      }
     }
     await (await _reminderStateStore).clearScheduled();
     await (await _dailyReminderStateStore).clearScheduled();
@@ -691,6 +816,10 @@ class FocusNotificationService {
     _windowsTicker?.cancel();
     _windowsNationalFocusReminderTimer?.cancel();
     _dailyOpenReminderTimer?.cancel();
+    final timerGateway = _resolvedTimerServiceGateway;
+    if (timerGateway is MethodChannelFocusTimerServiceGateway) {
+      timerGateway.detach();
+    }
     if (Platform.isWindows) _windowsChannel.setMethodCallHandler(null);
     await _resolvedWindowsNotifications?.dispose();
     _resolvedWindowsNotifications = null;
@@ -760,9 +889,17 @@ class FocusNotificationService {
   }
 
   Future<void> _cancelOwnedNotifications() async {
+    // 切号与登出不经过 clear()：前台进度服务必须先停下，否则上一位用户的
+    // 倒计时通知会留在通知栏，下一位用户登录后还会看到它。
+    await _stopFocusTimer();
     try {
       if (Platform.isAndroid) {
         await _cancelPendingAndroidNotifications(_ownedNotificationIds);
+        // 已展示的状态通知不在"待投递"队列里，必须单独撤下（与 clear() 一致）。
+        await _androidNotifications.cancel(id: _statusNotificationId);
+        await _androidNotifications.cancel(
+          id: _appointmentStatusNotificationId,
+        );
       }
       final adapter = await _scheduleAdapter();
       if (adapter != null) {
@@ -778,6 +915,9 @@ class FocusNotificationService {
           for (final id in [
             _appointmentTransitionNotificationId,
             _sessionEndNotificationId,
+            // 切号/登出：上一位用户的 2204 与 2205 必须一起离开系统通知中心。
+            _nationalFocusReminderNotificationId,
+            _dailyOpenReminderNotificationId,
           ]) {
             await adapter.cancel(id);
           }
@@ -936,6 +1076,12 @@ class FocusNotificationService {
   ) async {
     _dailyOpenReminderTimer?.cancel();
     _dailyOpenReminderTimer = null;
+    // 系统通知中心持有的是 2205 本身：切号/登出必须显式撤掉它，否则下一位
+    // 用户会在同一台设备上收到上一位用户的提醒。
+    final adapter = await _scheduleAdapter();
+    if (adapter != null) {
+      await adapter.cancel(_dailyOpenReminderNotificationId);
+    }
     if (Platform.isAndroid) {
       await _androidNotifications.cancel(id: _dailyOpenReminderNotificationId);
     }
@@ -950,12 +1096,28 @@ class FocusNotificationService {
     int generation,
   ) async {
     if (_staleOwner(generation)) return;
+    final adapter = await _scheduleAdapter();
+    if (_staleOwner(generation)) return;
     final scheduled = state.loadScheduled();
     final unchanged =
         scheduled != null &&
         scheduled.dayKey == plan.dayKey &&
         scheduled.scheduledAt.isAtSameMomentAs(plan.scheduledAt) &&
         scheduled.timeZoneId == timeZoneId;
+
+    if (adapter != null) {
+      // Windows 通知中心可以跨进程存活：优先交给 OS，完全退出后仍会送达。
+      await _scheduleWindowsDailyOpenReminder(
+        adapter,
+        plan,
+        timeZoneId,
+        state,
+        unchanged,
+      );
+      return;
+    }
+
+    // 没有 OS 适配器（单元测试或桥不可用）时才退回进程内 Timer。
     if (unchanged && _dailyOpenReminderTimer?.isActive == true) return;
 
     if (!unchanged) {
@@ -975,6 +1137,39 @@ class FocusNotificationService {
     _dailyOpenReminderTimer = _reminderTimers(
       delay.isNegative ? Duration.zero : delay,
       () => _queueDailyOpenReminderDelivery(dayKey),
+    );
+  }
+
+  /// 把每日提醒写进 Windows 通知中心；相同计划不重复注册。
+  Future<void> _scheduleWindowsDailyOpenReminder(
+    WindowsNotificationAdapter adapter,
+    DailyOpenReminderPlan plan,
+    String timeZoneId,
+    DailyOpenReminderStateStore state,
+    bool unchanged,
+  ) async {
+    // 交给 OS 之后进程内不再持有计时器，避免同一天提醒两次。
+    _dailyOpenReminderTimer?.cancel();
+    _dailyOpenReminderTimer = null;
+    if (unchanged &&
+        (await adapter.pendingIds()).contains(
+          _dailyOpenReminderNotificationId,
+        )) {
+      return;
+    }
+    await adapter.schedule(
+      id: _dailyOpenReminderNotificationId,
+      title: '打开 Pacta',
+      body: '查看今天的看板。',
+      at: plan.scheduledAt,
+      payload: 'daily-open-reminder:${plan.dayKey}',
+    );
+    await state.saveScheduled(
+      DailyOpenReminderSchedule(
+        dayKey: plan.dayKey,
+        scheduledAt: plan.scheduledAt,
+        timeZoneId: timeZoneId,
+      ),
     );
   }
 
@@ -1175,6 +1370,11 @@ class FocusNotificationService {
     NationalFocusReminderStateStore state,
   ) async {
     _windowsNationalFocusReminderTimer?.cancel();
+    _windowsNationalFocusReminderTimer = null;
+    final adapter = await _scheduleAdapter();
+    if (adapter != null) {
+      await adapter.cancel(_nationalFocusReminderNotificationId);
+    }
     if (Platform.isAndroid) {
       await _androidNotifications.cancel(
         id: _nationalFocusReminderNotificationId,
@@ -1191,7 +1391,10 @@ class FocusNotificationService {
     String timeZoneId,
   ) async {
     _windowsNationalFocusReminderTimer?.cancel();
+    _windowsNationalFocusReminderTimer = null;
     if (reminder == null) return;
+    if (_staleOwner(generation)) return;
+    final adapter = await _scheduleAdapter();
     if (_staleOwner(generation)) return;
 
     final now = _now().toUtc();
@@ -1203,9 +1406,11 @@ class FocusNotificationService {
           repeatsDaily: false,
         ),
       );
-      _windowsNationalFocusReminderTimer = Timer(
+      await _armWindowsNationalFocusReminder(
+        adapter,
         reminder.scheduledAt.difference(now),
-        () => unawaited(_queueNationalFocusReminderReconciliation()),
+        reminder.scheduledAt,
+        reminder.dayKey,
       );
       return;
     }
@@ -1228,11 +1433,36 @@ class FocusNotificationService {
           repeatsDaily: false,
         ),
       );
-      _windowsNationalFocusReminderTimer = Timer(
+      await _armWindowsNationalFocusReminder(
+        adapter,
         nextReminder.scheduledAt.difference(_now()),
-        () => unawaited(_queueNationalFocusReminderReconciliation()),
+        nextReminder.scheduledAt,
+        nextReminder.dayKey,
       );
     }
+  }
+
+  /// 下一次国策提醒：有 OS 适配器就写进通知中心，否则退回进程内 Timer。
+  Future<void> _armWindowsNationalFocusReminder(
+    WindowsNotificationAdapter? adapter,
+    Duration delay,
+    DateTime scheduledAt,
+    String dayKey,
+  ) async {
+    if (adapter != null) {
+      await adapter.schedule(
+        id: _nationalFocusReminderNotificationId,
+        title: '国策待确认',
+        body: '请确认今日仍有效的国策。',
+        at: scheduledAt,
+        payload: 'national-focus-reminder:$dayKey',
+      );
+      return;
+    }
+    _windowsNationalFocusReminderTimer = Timer(
+      delay,
+      () => unawaited(_queueNationalFocusReminderReconciliation()),
+    );
   }
 
   Future<void> _applyAndroidNationalFocusReminder(
@@ -1443,16 +1673,16 @@ class FocusNotificationService {
     });
 
     if (!showStatus || plan == null) {
+      // 结束、关闭开关或登出：前台服务与静态状态通知都必须一起消失。
+      await _stopFocusTimer();
       await _androidNotifications.cancel(id: _statusNotificationId);
       await _androidNotifications.cancel(id: _appointmentStatusNotificationId);
     } else if (plan.isPreparing) {
-      await _showAndroidStatus(
-        id: _statusNotificationId,
-        title: '预约准备中',
-        body: '${plan.taskTitle} · ${plan.modeLabel}',
-        endAt: plan.stageEndsAt,
-        timeoutAt: plan.stageEndsAt,
-        payload: plan.notificationPayload,
+      // 准备窗口本身就是一段倒计时：交给前台服务按秒刷新进度条。
+      await _startFocusTimer(
+        plan,
+        titlePrefix: '预约准备中',
+        endsAt: plan.stageEndsAt!,
       );
       final transitionAt = plan.stageEndsAt!;
       if (transitionAt.isAfter(_now())) {
@@ -1481,7 +1711,7 @@ class FocusNotificationService {
         );
         await _scheduleAndroidNotification(
           id: _sessionEndNotificationId,
-          title: '专注已结束',
+          title: '专注已完成',
           body: '任务：${plan.taskTitle}',
           at: plan.focusEndsAt,
           payload: plan.notificationPayload,
@@ -1493,6 +1723,8 @@ class FocusNotificationService {
         );
       }
     } else if (plan.isPaused) {
+      // 暂停时不再计时：撤下前台服务，换一张带静态进度条的暂停通知。
+      await _stopFocusTimer();
       await _androidNotifications.cancel(id: _appointmentStatusNotificationId);
       await _androidNotifications.cancel(id: _statusNotificationId);
       final secondsRemaining = plan.remainingSecondsAt(_now());
@@ -1500,23 +1732,24 @@ class FocusNotificationService {
         id: _statusNotificationId,
         title: '专注已暂停',
         body: '${plan.taskTitle} · 剩余 ${_formatClock(secondsRemaining)}',
-        notificationDetails: _statusDetails(),
+        notificationDetails: _statusDetails(
+          showProgress: true,
+          maxProgress: plan.progressTotalSeconds,
+          progress: plan.elapsedSecondsAt(_now()),
+        ),
         payload: plan.notificationPayload,
       );
     } else {
-      await _androidNotifications.cancel(id: _appointmentStatusNotificationId);
-      await _showAndroidStatus(
-        id: _statusNotificationId,
-        title: '专注中',
-        body: '${plan.taskTitle} · ${plan.modeLabel}',
-        endAt: plan.focusEndsAt,
-        timeoutAt: plan.focusEndsAt,
-        payload: plan.notificationPayload,
+      await _startFocusTimer(
+        plan,
+        titlePrefix: '专注中',
+        endsAt: plan.focusEndsAt,
       );
+      await _androidNotifications.cancel(id: _appointmentStatusNotificationId);
       if (plan.focusEndsAt.isAfter(_now())) {
         await _scheduleAndroidNotification(
           id: _sessionEndNotificationId,
-          title: '专注已结束',
+          title: '专注已完成',
           body: '任务：${plan.taskTitle}',
           at: plan.focusEndsAt,
           payload: plan.notificationPayload,
@@ -1527,6 +1760,51 @@ class FocusNotificationService {
           ),
         );
       }
+    }
+  }
+
+  /// 启动或刷新动态进度前台服务。
+  ///
+  /// Android 12+ 在后台启动前台服务可能被系统拒绝，此时回退到静态进度通知：
+  /// 用户仍然看到进度与剩余时间，只是不再按秒刷新。
+  Future<void> _startFocusTimer(
+    FocusNotificationPlan plan, {
+    required String titlePrefix,
+    required DateTime endsAt,
+  }) async {
+    try {
+      await _timerService.startOrUpdate(
+        FocusTimerRequest(
+          notificationId: _statusNotificationId,
+          titlePrefix: titlePrefix,
+          taskTitle: plan.taskTitle,
+          modeLabel: plan.modeLabel,
+          startedAt: plan.startedAt ?? _now(),
+          endsAt: endsAt,
+          totalSeconds: plan.progressTotalSeconds,
+          payload: plan.notificationPayload,
+        ),
+      );
+    } catch (_) {
+      await _showAndroidStatus(
+        id: _statusNotificationId,
+        title: titlePrefix,
+        body: '${plan.taskTitle} · ${plan.modeLabel}',
+        endAt: endsAt,
+        timeoutAt: endsAt,
+        payload: plan.notificationPayload,
+        showProgress: true,
+        maxProgress: plan.progressTotalSeconds,
+        progress: plan.elapsedSecondsAt(_now()),
+      );
+    }
+  }
+
+  Future<void> _stopFocusTimer() async {
+    try {
+      await _timerService.stop();
+    } catch (_) {
+      // 服务本来就不在运行时停止是幂等的。
     }
   }
 
@@ -1676,7 +1954,7 @@ class FocusNotificationService {
       if (!plan.isPaused && plan.focusEndsAt.isAfter(now)) {
         desired[_sessionEndNotificationId] = _WindowsScheduledEvent(
           at: plan.focusEndsAt,
-          title: '专注已结束',
+          title: '专注已完成',
           body: '任务：${plan.taskTitle}',
           payload: plan.notificationPayload,
         );
@@ -1735,6 +2013,9 @@ class FocusNotificationService {
     required DateTime? timeoutAt,
     Duration? timeoutAfter,
     required String payload,
+    bool showProgress = false,
+    int maxProgress = 0,
+    int progress = 0,
   }) => _androidNotifications.show(
     id: id,
     title: title,
@@ -1743,6 +2024,9 @@ class FocusNotificationService {
       endAt: endAt,
       timeoutAt: timeoutAt,
       timeoutAfter: timeoutAfter,
+      showProgress: showProgress,
+      maxProgress: maxProgress,
+      progress: progress,
     ),
     payload: payload,
   );
@@ -1755,6 +2039,9 @@ class FocusNotificationService {
       importance: Importance.high,
       priority: Priority.high,
       category: AndroidNotificationCategory.reminder,
+      visibility: NotificationVisibility.public,
+      playSound: true,
+      enableVibration: true,
       autoCancel: true,
       onlyAlertOnce: true,
     ),
@@ -1765,9 +2052,12 @@ class FocusNotificationService {
       _dailyOpenReminderChannelId,
       '每日打开提醒',
       channelDescription: '每天在本机当地时间提醒打开 Pacta 看板。',
-      importance: Importance.defaultImportance,
-      priority: Priority.defaultPriority,
+      importance: Importance.high,
+      priority: Priority.high,
       category: AndroidNotificationCategory.reminder,
+      visibility: NotificationVisibility.public,
+      playSound: true,
+      enableVibration: true,
       autoCancel: true,
     ),
   );
@@ -1776,6 +2066,9 @@ class FocusNotificationService {
     DateTime? endAt,
     DateTime? timeoutAt,
     Duration? timeoutAfter,
+    bool showProgress = false,
+    int maxProgress = 0,
+    int progress = 0,
   }) {
     final timeout =
         timeoutAfter?.inMilliseconds ??
@@ -1793,6 +2086,10 @@ class FocusNotificationService {
         ongoing: true,
         autoCancel: false,
         onlyAlertOnce: true,
+        visibility: NotificationVisibility.public,
+        showProgress: showProgress,
+        maxProgress: maxProgress,
+        progress: progress,
         // Android 只在 showWhen 为 true 时才渲染 usesChronometer 的倒计时，
         // 这不是"显示时间戳"，而是倒计时的开关。
         showWhen: endAt != null,
@@ -1810,10 +2107,16 @@ class FocusNotificationService {
     DateTime? endAt,
     DateTime? timeoutAt,
     Duration? timeoutAfter,
+    bool showProgress = false,
+    int maxProgress = 0,
+    int progress = 0,
   }) => _statusDetails(
     endAt: endAt,
     timeoutAt: timeoutAt,
     timeoutAfter: timeoutAfter,
+    showProgress: showProgress,
+    maxProgress: maxProgress,
+    progress: progress,
   );
 
   NotificationDetails _eventDetails({required String tag}) =>
@@ -1822,9 +2125,14 @@ class FocusNotificationService {
           _eventChannelId,
           '专注转换提醒',
           channelDescription: '预约进入专注或专注会话结束时提醒。',
-          importance: Importance.high,
-          priority: Priority.high,
-          category: AndroidNotificationCategory.event,
+          // 进入专注与自然完成是必须打断用户的时刻：最高重要性 + alarm 类别，
+          // 锁屏上也完整可见，不能被降级成静默更新。
+          importance: Importance.max,
+          priority: Priority.max,
+          category: AndroidNotificationCategory.alarm,
+          visibility: NotificationVisibility.public,
+          playSound: true,
+          enableVibration: true,
           autoCancel: true,
           onlyAlertOnce: true,
           tag: tag,
