@@ -7,11 +7,11 @@ import 'package:pacta/src/auth/user_lifecycle.dart';
 import 'package:pacta/src/focus/focus_chain_history.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
-import 'package:pacta/src/theme/pacta_spacing.dart';
-import 'package:pacta/src/theme/pacta_surfaces.dart';
 import 'package:pacta/src/tasks/task_database.dart' show PactaDatabase;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:pacta/src/theme/pacta_spacing.dart';
+import 'package:pacta/src/theme/pacta_surfaces.dart';
 
 import '../support/fake_auth_repository.dart';
 

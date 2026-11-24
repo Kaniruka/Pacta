@@ -8,8 +8,8 @@ import 'package:pacta/main.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
-import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
+import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
 import 'package:pacta/src/tasks/task_database.dart' hide FocusSession;
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
@@ -17,8 +17,8 @@ import 'package:pacta/src/theme/pacta_spacing.dart';
 import 'package:pacta/src/ui/pacta_page_header.dart';
 
 import '../support/fake_auth_repository.dart';
-import '../support/plan_navigation.dart';
 import '../support/focus_session_seed.dart';
+import '../support/plan_navigation.dart';
 
 void main() {
   for (final activeDays in [0, 1, 7]) {

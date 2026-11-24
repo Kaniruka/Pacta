@@ -7,8 +7,8 @@ import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_grouped_list.dart';
 import 'chain_signals_repository.dart';
-import 'focus_models.dart';
 import 'effective_duration_text.dart';
+import 'focus_models.dart';
 import 'focus_statistics.dart';
 
 /// 时长统计口径：指标卡提示、设备测试与文案测试共用这一句，避免各写一份。

@@ -1,16 +1,16 @@
 import 'dart:async';
 
-import 'package:drift/native.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:pacta/src/focus/focus_repository.dart';
-import 'package:pacta/src/focus/focus_models.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:drift/drift.dart' hide isNull;
+import 'package:drift/native.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:pacta/src/focus/focus_models.dart';
+import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
 import 'package:pacta/src/sync/cloud_sync_result.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   late PactaDatabase database;

@@ -1,12 +1,12 @@
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pacta/src/schedules/schedule_models.dart';
 import 'package:pacta/src/schedules/schedule_repeat.dart';
 import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;

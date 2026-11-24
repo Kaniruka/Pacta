@@ -1,7 +1,7 @@
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';

@@ -11,7 +11,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/auth/user_lifecycle.dart';
 import 'package:pacta/src/focus/focus_models.dart';
@@ -23,6 +22,7 @@ import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../test/support/fake_auth_repository.dart';

@@ -136,7 +136,7 @@ class RepositoryHygieneTest(unittest.TestCase):
         self.assertIn('OK', stdout)
 
     def test_root_local_documents_fail(self):
-        names = ('AGENTS.md', 'CLAUDE.md', 'GLOSSARY.md', 'MISSION.md')
+        names = ('AGENTS.md', 'CLAUDE.md', 'GLOSSARY.md', 'MISSION.md', 'CODING_STANDARDS.md')
         for name in names:
             self.write(name)
             self.stage(name)
@@ -228,6 +228,96 @@ class RepositoryHygieneTest(unittest.TestCase):
 
         self.assertEqual(returncode, 2, stderr)
         self.assertIn('cannot read the Git index', stderr)
+
+
+    def test_root_coding_standards_fails(self):
+        self.write('CODING_STANDARDS.md')
+        self.stage('CODING_STANDARDS.md')
+
+        returncode, stdout, stderr = self.run_checker()
+
+        self.assertEqual(returncode, 1, stderr)
+        self.assert_reports(stderr, 'CODING_STANDARDS.md', 'at the repository root')
+
+    def test_markdown_links_to_local_documents_fail(self):
+        self.write(
+            'README.md',
+            '\n'.join((
+                '[spec](docs/spec-current.md)',
+                '[plan](.scratch/plan.md#s1)',
+                '[agents](AGENTS.md)',
+                '[glossary](GLOSSARY.md)',
+                '![standards](CODING_STANDARDS.md)',
+            ))
+            + '\n',
+        )
+        self.stage('README.md')
+
+        returncode, stdout, stderr = self.run_checker()
+
+        self.assertEqual(returncode, 1, stderr)
+        self.assert_reports(
+            stderr,
+            'README.md:1',
+            'docs/spec-current.md',
+            'README.md:2',
+            '.scratch/plan.md#s1',
+            'README.md:3',
+            'AGENTS.md',
+            'README.md:4',
+            'GLOSSARY.md',
+            'README.md:5',
+            'CODING_STANDARDS.md',
+        )
+
+    def test_markdown_reference_definitions_are_checked(self):
+        self.write('README.md', '[spec]: docs/spec-current.md\n')
+        self.stage('README.md')
+
+        returncode, stdout, stderr = self.run_checker()
+
+        self.assertEqual(returncode, 1, stderr)
+        self.assert_reports(stderr, 'README.md:1', 'docs/spec-current.md')
+
+    def test_nested_markdown_relative_link_fails(self):
+        self.write('supabase/README.md', '[guide](../docs/guide.md)\n')
+        self.stage('supabase/README.md')
+
+        returncode, stdout, stderr = self.run_checker()
+
+        self.assertEqual(returncode, 1, stderr)
+        self.assert_reports(stderr, 'supabase/README.md:1', '../docs/guide.md')
+
+    def test_external_anchors_nested_docs_and_fenced_examples_pass(self):
+        self.write('packages/panel/docs/readme.md')
+        self.write(
+            'README.md',
+            '\n'.join((
+                '# Docs',
+                '',
+                '[Supabase](https://supabase.com/docs/guides/functions)',
+                '[mail](mailto:maintainers@example.invalid)',
+                '[docs](#docs)',
+                '[panel](packages/panel/docs/readme.md)',
+                '![badge](https://example.invalid/badge.svg "build")',
+                '',
+                '```markdown',
+                '[example](docs/example.md)',
+                '[example](.scratch/plan.md)',
+                '```',
+                '',
+                '~~~',
+                '[example](../AGENTS.md)',
+                '~~~',
+            ))
+            + '\n',
+        )
+        self.stage('README.md', 'packages')
+
+        returncode, stdout, stderr = self.run_checker()
+
+        self.assertEqual(returncode, 0, stderr)
+        self.assertIn('OK', stdout)
 
 
 if __name__ == '__main__':

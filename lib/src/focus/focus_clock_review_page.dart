@@ -4,8 +4,8 @@ import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_date_format.dart';
 import '../ui/pacta_error_text.dart';
-import 'focus_models.dart';
 import 'effective_duration_text.dart';
+import 'focus_models.dart';
 import 'focus_repository.dart';
 
 /// User entry for clock-adjusted Focus Session intervals.

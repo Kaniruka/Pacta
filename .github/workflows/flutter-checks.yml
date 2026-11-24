@@ -22,6 +22,12 @@ jobs:
       - run: python scripts/check_repository_hygiene.py
       # Python tooling tests need no Flutter toolchain, device or network.
       - run: python -m unittest discover -s scripts -p "test_*.py"
+      # Edge Functions are plain TypeScript: Node strips the types itself, so the
+      # MCP contract tests need no bundler, transpiler or Supabase runtime.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: node --test supabase/functions/national-focus-mcp/handler.test.ts supabase/functions/national-focus-mcp/history.test.ts
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.47.2'
@@ -29,5 +35,7 @@ jobs:
           cache: true
       - run: python scripts/fetch_misans.py
       - run: flutter pub get
+      # Formatting drift fails before the analyzer, so review diffs stay mechanical.
+      - run: dart format --output=none --set-exit-if-changed lib test integration_test test_driver
       - run: flutter analyze
       - run: flutter test

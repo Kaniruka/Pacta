@@ -1,6 +1,5 @@
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:drift/native.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/sync/cloud_auto_upload.dart';
@@ -12,6 +11,7 @@ import 'package:pacta/src/sync/cloud_sync_result.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const _userId = 'user-a';
 const _autoUploadSubtitle = '今日确认成功后上传一次；关闭即停止待上传请求。';

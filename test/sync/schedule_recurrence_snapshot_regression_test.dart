@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pacta/src/schedules/schedule_models.dart';
 import 'package:pacta/src/schedules/schedule_repeat.dart';
 import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// r3 复审的公开快照回归：分段改写后的墓碑必须能随整份快照往返，
 /// 不可用的时区与不存在的日历日必须在替换本机数据之前整体拒绝。

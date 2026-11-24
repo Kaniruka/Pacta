@@ -1,25 +1,25 @@
 import 'dart:async';
 
 import 'package:drift/native.dart';
-import 'package:pacta/src/tasks/task_repository.dart';
-import 'package:pacta/src/tasks/task_models.dart';
-import 'package:pacta/src/focus/focus_repository.dart';
-import 'package:pacta/src/focus/focus_models.dart';
-import 'package:pacta/src/notifications/focus_notification_service.dart';
-import 'package:pacta/src/national_focus/national_focus_repository.dart';
-import 'package:pacta/src/calendar/calendar_provider.dart';
-import 'package:pacta/src/calendar/calendar_repository.dart';
-import 'package:pacta/src/sync/cloud_sync_result.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/auth/user_lifecycle.dart';
 import 'package:pacta/src/auth/user_lifecycle_models.dart';
+import 'package:pacta/src/calendar/calendar_provider.dart';
+import 'package:pacta/src/calendar/calendar_repository.dart';
+import 'package:pacta/src/focus/focus_models.dart';
+import 'package:pacta/src/focus/focus_repository.dart';
+import 'package:pacta/src/national_focus/national_focus_repository.dart';
+import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/sync/cloud_snapshot_history.dart';
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
+import 'package:pacta/src/sync/cloud_sync_result.dart';
 import 'package:pacta/src/tasks/task_database.dart' hide FocusSession;
+import 'package:pacta/src/tasks/task_models.dart';
+import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../support/fake_auth_repository.dart';
 

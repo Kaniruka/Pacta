@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
-import 'package:pacta/src/notifications/focus_notification_settings_page.dart';
-import 'package:pacta/src/ui/pacta_page_header.dart';
 import 'package:pacta/src/focus/focus_models.dart' as focus;
 import 'package:pacta/src/focus/focus_repository.dart';
+import 'package:pacta/src/notifications/focus_notification_settings_page.dart';
 import 'package:pacta/src/profile/avatar_image.dart';
 import 'package:pacta/src/profile/change_password_page.dart';
 import 'package:pacta/src/profile/profile_edit_page.dart';
 import 'package:pacta/src/profile/profile_models.dart';
 import 'package:pacta/src/profile/profile_repository.dart';
+import 'package:pacta/src/ui/pacta_page_header.dart';
 
 import 'support/fake_auth_repository.dart';
 

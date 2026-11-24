@@ -1,8 +1,8 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/services.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/notifications/focus_device_preferences.dart';
 import 'package:pacta/src/notifications/focus_notification_service.dart';

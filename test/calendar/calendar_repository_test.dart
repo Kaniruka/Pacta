@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:drift/native.dart';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/calendar/calendar_models.dart';
 import 'package:pacta/src/calendar/calendar_repository.dart';

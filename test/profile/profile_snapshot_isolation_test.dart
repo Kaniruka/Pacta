@@ -5,11 +5,11 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/auth/user_lifecycle_models.dart';
 import 'package:pacta/src/profile/avatar_image.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pacta/src/profile/profile_remote.dart';
 import 'package:pacta/src/profile/profile_repository.dart';
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeProfileRemote implements ProfileRemote {
   RemoteProfile? stored;

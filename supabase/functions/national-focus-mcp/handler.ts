@@ -9,7 +9,11 @@ export interface Store {
 }
 export interface Config { issuer: string; store: Store }
 export class StoreError extends Error {
-  constructor(public code: string) { super('Service operation failed'); }
+  code: string;
+  constructor(code: string) {
+    super('Service operation failed');
+    this.code = code;
+  }
 }
 const object = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v);

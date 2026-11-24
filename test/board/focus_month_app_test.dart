@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
-import 'package:pacta/src/ui/pacta_check_circle.dart';
 import 'package:pacta/src/auth/auth_repository.dart';
 import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
@@ -13,10 +12,11 @@ import 'package:pacta/src/schedules/schedule_models.dart';
 import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/tasks/task_models.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:pacta/src/ui/pacta_check_circle.dart';
 
 import '../support/fake_auth_repository.dart';
-import '../support/test_database.dart';
 import '../support/focus_session_seed.dart';
+import '../support/test_database.dart';
 
 /// Public App navigation evidence for ticket 12: the Board entry, the two
 /// calendars staying independent, pinned order/next task and account/zone

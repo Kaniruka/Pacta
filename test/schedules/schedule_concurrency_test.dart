@@ -3,12 +3,12 @@ import 'dart:async';
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pacta/src/schedules/schedule_models.dart';
 import 'package:pacta/src/schedules/schedule_repeat.dart';
 import 'package:pacta/src/schedules/schedule_repository.dart';
 import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 一个可见日期的重复实例只能有一条，且计划页的订阅要看得见别的写入路径。
 ///
