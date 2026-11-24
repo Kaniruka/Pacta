@@ -45,12 +45,14 @@ void main() {
         await tester.tap(
           find.byKey(ValueKey('national-focus-node-${card.id}')),
         );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('查看详情'));
       } else {
-        await tester.tap(find.byTooltip('卡片操作'));
+        // 整卡是详情入口：点标题、规则或留白都进同一个阅读页。
+        await tester.tap(find.text('阅读'));
       }
       await tester.pumpAndSettle();
-      await tester.tap(find.text('查看详情'));
-      await tester.pumpAndSettle();
+      expect(find.text('国策卡详情'), findsOneWidget);
       // Current card information uses the three-field vocabulary and no
       // longer surfaces the legacy trigger condition or scope.
       expect(find.text('触发条件'), findsNothing);

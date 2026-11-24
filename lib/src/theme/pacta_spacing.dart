@@ -30,6 +30,9 @@ abstract final class PactaSpacing {
   /// 卡片圆角：页面级卡片统一用一个值，避免每处各写一遍。
   static const double cardRadius = 20;
 
+  /// 分区卡片的内边距：详情页里并列的规则区／记录区共用同一个 16dp 内缘。
+  static const EdgeInsets cardInsets = EdgeInsets.all(lg);
+
   /// 底部固定操作区的顶部圆角。
   static const double actionBarRadius = 20;
 

@@ -365,19 +365,36 @@ class _NationalFocusCardReadOnlyPage extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 22),
-              NationalFocusFieldText(
-                label: '国策规则',
-                value: card.effectiveAction,
-              ),
-              if ((card.exceptionNotes ?? '').trim().isNotEmpty) ...[
-                const SizedBox(height: PactaSpacing.lg),
-                NationalFocusFieldText(
-                  label: '例外与判例',
-                  value: card.exceptionNotes!.trim(),
+              // 与可编辑详情页完全对齐的两段卡片：规则区在上、记录区在下，
+              // 同一档内边距与同一档卡片间隙，只读页也不会读成一段长文本。
+              Card(
+                key: const ValueKey('national-focus-readonly-rules-card'),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: PactaSpacing.lg,
+                    vertical: PactaSpacing.md,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      NationalFocusFieldText(
+                        label: '国策规则',
+                        value: card.effectiveAction,
+                      ),
+                      if ((card.exceptionNotes ?? '').trim().isNotEmpty) ...[
+                        const SizedBox(height: PactaSpacing.lg),
+                        NationalFocusFieldText(
+                          label: '例外与判例',
+                          value: card.exceptionNotes!.trim(),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-              ],
+              ),
               const SizedBox(height: PactaSpacing.lg),
               Card(
+                key: const ValueKey('national-focus-readonly-records-card'),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: PactaSpacing.lg,

@@ -4,6 +4,7 @@ import '../theme/pacta_spacing.dart';
 import '../ui/pacta_card_header.dart';
 import '../ui/pacta_disclosure_section.dart';
 import '../ui/pacta_error_text.dart';
+import '../ui/pacta_grouped_list.dart';
 import 'national_focus_models.dart';
 import 'national_focus_repository.dart';
 import 'national_focus_shared_widgets.dart';
@@ -27,9 +28,6 @@ class NationalFocusCardLibraryPage extends StatefulWidget {
 
 class _NationalFocusCardLibraryPageState
     extends State<NationalFocusCardLibraryPage> {
-  Future<void> _renameCard(NationalFocusCard card) =>
-      _renameNationalFocusCard(context, widget.repository, card);
-
   Future<void> _createCard(BuildContext context) async {
     final created = await Navigator.of(context).push<NationalFocusCard>(
       MaterialPageRoute<NationalFocusCard>(
@@ -115,7 +113,6 @@ class _NationalFocusCardLibraryPageState
             repository: widget.repository,
             onPlace: (card) => Navigator.of(context).pop(card),
             onDelete: _deleteCard,
-            onRename: _renameCard,
             displayTimeZoneId: widget.displayTimeZoneId,
           ),
           _DeletedNationalFocusCardList(
@@ -138,14 +135,12 @@ class _LibraryCardList extends StatelessWidget {
     required this.repository,
     required this.onPlace,
     required this.onDelete,
-    required this.onRename,
     this.displayTimeZoneId,
   });
 
   final NationalFocusRepository repository;
   final ValueChanged<NationalFocusCard> onPlace;
   final ValueChanged<NationalFocusCard> onDelete;
-  final ValueChanged<NationalFocusCard> onRename;
   final String? displayTimeZoneId;
 
   @override
@@ -195,16 +190,6 @@ class _LibraryCardList extends StatelessWidget {
                   ),
                 ),
               ),
-              onEdit: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => NationalFocusCardEditorPage(
-                    repository: repository,
-                    card: cards[index],
-                    displayTimeZoneId: displayTimeZoneId,
-                  ),
-                ),
-              ),
-              onRename: () => onRename(cards[index]),
               onPlace: () => onPlace(cards[index]),
               onDelete: () => onDelete(cards[index]),
             ),
@@ -537,114 +522,113 @@ class _StrengtheningEntry extends StatelessWidget {
 
 class _LibraryCard extends StatelessWidget {
   const _LibraryCard({
-    required this.onEdit,
     required this.onDetails,
     required this.card,
     required this.onPlace,
     required this.onDelete,
-    required this.onRename,
   });
 
   final NationalFocusCard card;
   final VoidCallback? onPlace;
   final VoidCallback? onDelete;
-  final VoidCallback? onRename;
-  final VoidCallback? onEdit;
   final VoidCallback onDetails;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final strengtheningLevel = card.activeStrengtheningLevel;
+    final hasExceptionNotes = (card.exceptionNotes ?? '').trim().isNotEmpty;
     return Card(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (strengtheningLevel != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Text(
-                '当前要求 · 强化等级 $strengtheningLevel',
-                style: theme.textTheme.labelLarge,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        // 整卡是详情入口：读者点标题、规则或留白都进同一个阅读页。
+        onTap: onDetails,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (strengtheningLevel != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Text(
+                  '当前要求 · 强化等级 $strengtheningLevel',
+                  style: theme.textTheme.labelLarge,
+                ),
               ),
-            ),
-          // 48dp 的弹出菜单按钮会把单行标题垂直居中，标题距卡片顶部被撑到
-          // 约 29dp；统一头部把标题视觉顶距固定为 16dp，并保留 48×48dp
-          // 命中区。有强化等级说明时由头部内部 8dp 补偿衔接，不叠加。
-          PactaCardHeader(
-            title: card.name,
-            padding: EdgeInsets.fromLTRB(
-              16,
-              strengtheningLevel == null ? 8 : 0,
-              8,
-              16,
-            ),
-            trailing: PopupMenuButton<String>(
-              tooltip: '卡片操作',
-              onSelected: (value) {
-                if (value == 'details') {
-                  onDetails();
-                } else if (value == 'edit') {
-                  onEdit?.call();
-                } else {
-                  onRename?.call();
-                }
-              },
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: 'details', child: Text('查看详情')),
-                PopupMenuItem(
-                  value: 'edit',
-                  enabled: onEdit != null,
-                  child: const Text('编辑卡片'),
-                ),
-                PopupMenuItem(
-                  value: 'rename',
-                  enabled: onRename != null,
-                  child: const Text('修改名称'),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                NationalFocusFieldText(
-                  label: '国策规则',
-                  value: card.effectiveAction,
-                ),
-                if (card.exceptionNotes != null) ...[
-                  const SizedBox(height: 12),
-                  NationalFocusFieldText(
-                    label: '例外与判例',
-                    value: card.exceptionNotes!,
+            // 48dp 的弹出菜单按钮会把单行标题垂直居中，标题距卡片顶部被撑到
+            // 约 29dp；统一头部把标题视觉顶距固定为 16dp，并保留 48×48dp
+            // 命中区。有强化等级说明时由头部内部 8dp 补偿衔接，不叠加。
+            PactaCardHeader(
+              title: card.name,
+              padding: EdgeInsets.fromLTRB(
+                16,
+                strengtheningLevel == null ? 8 : 0,
+                8,
+                16,
+              ),
+              trailing: PopupMenuButton<String>(
+                tooltip: '卡片操作',
+                onSelected: (value) {
+                  if (value == 'details') {
+                    onDetails();
+                  } else if (value == 'delete') {
+                    onDelete?.call();
+                  }
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(value: 'details', child: Text('查看详情')),
+                  PopupMenuItem(
+                    value: 'delete',
+                    enabled: onDelete != null,
+                    child: Text(
+                      '删除',
+                      style: TextStyle(color: theme.colorScheme.error),
+                    ),
                   ),
                 ],
-                const SizedBox(height: 12),
-                _NationalFocusRecordSummary(card: card),
-                const SizedBox(height: 12),
-                Wrap(
-                  alignment: WrapAlignment.end,
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    TextButton.icon(
-                      onPressed: onDelete,
-                      icon: const Icon(Icons.delete_outline),
-                      label: const Text('删除'),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // 列表只负责识别这张卡：规则最多三行，判例收成徽标，全文
+                  // 留给详情页，滚动时不再被长文本撑成一屏一张卡。
+                  Text('国策规则', style: theme.textTheme.titleSmall),
+                  const SizedBox(height: PactaSpacing.xs),
+                  Text(
+                    card.effectiveAction.isEmpty ? '未设置' : card.effectiveAction,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                  if (hasExceptionNotes) ...[
+                    const SizedBox(height: PactaSpacing.sm),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: PactaStatusBadge(
+                        label: '含判例',
+                        icon: Icons.menu_book_outlined,
+                      ),
                     ),
-                    FilledButton.tonalIcon(
+                  ],
+                  const SizedBox(height: PactaSpacing.md),
+                  _NationalFocusRecordSummary(card: card, compact: true),
+                  const SizedBox(height: PactaSpacing.md),
+                  // 删除只留在溢出菜单：底栏不再并排一颗重复的危险按钮。
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.tonalIcon(
                       onPressed: onPlace,
                       icon: const Icon(Icons.account_tree_outlined),
                       label: const Text('放入国策树'),
                     ),
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -657,38 +641,54 @@ class _DeletedLibraryCard extends StatelessWidget {
   final VoidCallback? onRestore;
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(card.name, style: Theme.of(context).textTheme.titleMedium),
-          NationalFocusFieldText(label: '国策规则', value: card.effectiveAction),
-          if (card.exceptionNotes != null) ...[
-            const SizedBox(height: 12),
-            NationalFocusFieldText(label: '例外与判例', value: card.exceptionNotes!),
-          ],
-          const SizedBox(height: 12),
-          _NationalFocusRecordSummary(card: card),
-          const SizedBox(height: 8),
-          Text(
-            '恢复后会回到卡片库；树位置和点亮状态需要重新选择。',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton.tonalIcon(
-              onPressed: onRestore,
-              icon: const Icon(Icons.restore),
-              label: const Text('恢复到卡片库'),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final hasExceptionNotes = (card.exceptionNotes ?? '').trim().isNotEmpty;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(card.name, style: theme.textTheme.titleMedium),
+            const SizedBox(height: PactaSpacing.sm),
+            // 已删除列表与卡片库保持同一档信息密度：三行规则 + 判例徽标。
+            Text('国策规则', style: theme.textTheme.titleSmall),
+            const SizedBox(height: PactaSpacing.xs),
+            Text(
+              card.effectiveAction.isEmpty ? '未设置' : card.effectiveAction,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyLarge,
             ),
-          ),
-        ],
+            if (hasExceptionNotes) ...[
+              const SizedBox(height: PactaSpacing.sm),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: PactaStatusBadge(
+                  label: '含判例',
+                  icon: Icons.menu_book_outlined,
+                ),
+              ),
+            ],
+            const SizedBox(height: PactaSpacing.md),
+            _NationalFocusRecordSummary(card: card, compact: true),
+            const SizedBox(height: PactaSpacing.sm),
+            Text('恢复后会回到卡片库；树位置和点亮状态需要重新选择。', style: theme.textTheme.bodySmall),
+            const SizedBox(height: PactaSpacing.sm),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.tonalIcon(
+                onPressed: onRestore,
+                icon: const Icon(Icons.restore),
+                label: const Text('恢复到卡片库'),
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class NationalFocusCardDetailPage extends StatelessWidget {
@@ -761,19 +761,48 @@ class NationalFocusCardDetailPage extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 22),
-                  NationalFocusFieldText(
-                    label: ruleLabel,
-                    value: card.effectiveAction,
+                  // 规则区与记录区各自成卡：亮暗模式下都靠 M3 Card 的容器色
+                  // 和 16dp 间隙划界，读者不会把「要求什么」和「记录了什么」
+                  // 读成同一段文字。
+                  Card(
+                    key: const ValueKey('national-focus-detail-rules-card'),
+                    child: Padding(
+                      padding: PactaSpacing.cardInsets,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          NationalFocusFieldText(
+                            label: ruleLabel,
+                            value: card.effectiveAction,
+                          ),
+                          if (exceptionNotes.isNotEmpty) ...[
+                            const SizedBox(height: PactaSpacing.sm),
+                            _ExceptionNotesSection(notes: exceptionNotes),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
-                  if (exceptionNotes.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    _ExceptionNotesSection(notes: exceptionNotes),
-                  ],
-                  const SizedBox(height: 24),
-                  Text('记录', style: theme.textTheme.titleSmall),
-                  const SizedBox(height: 4),
-                  // 连续天数已在名称旁的胶囊里，记录区只留累计成功日与内化进度。
-                  _NationalFocusRecordSummary(card: card, showStreaks: false),
+                  const SizedBox(height: PactaSpacing.lg),
+                  Card(
+                    key: const ValueKey('national-focus-detail-records-card'),
+                    child: Padding(
+                      padding: PactaSpacing.cardInsets,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text('记录', style: theme.textTheme.titleSmall),
+                          const SizedBox(height: PactaSpacing.sm),
+                          // 连续天数已在名称旁的胶囊里，记录区只留累计成功日
+                          // 与内化进度。
+                          _NationalFocusRecordSummary(
+                            card: card,
+                            showStreaks: false,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                   if (cascadeSourceLabel != null) ...[
                     const SizedBox(height: 16),
                     _CascadeStatusNote(
@@ -840,6 +869,7 @@ class _NationalFocusRecordSummary extends StatelessWidget {
   const _NationalFocusRecordSummary({
     required this.card,
     this.showStreaks = true,
+    this.compact = false,
   });
 
   final NationalFocusCard card;
@@ -847,9 +877,36 @@ class _NationalFocusRecordSummary extends StatelessWidget {
   /// 详情页名称旁已用 [NationalFocusStreakTags] 展示连续天数，记录区不再重复。
   final bool showStreaks;
 
+  /// 列表卡片的紧凑档：一行「成功日 / 内化」加一条进度条，不再铺三行。
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
     final progress = card.internalizationProgress.clamp(0.0, 100.0);
+    if (compact) {
+      final theme = Theme.of(context);
+      final style = theme.textTheme.bodySmall?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text('成功日 ${card.successfulDays} 天', style: style),
+              ),
+              Text('内化 ${progress.toStringAsFixed(1)}%', style: style),
+            ],
+          ),
+          const SizedBox(height: PactaSpacing.xs),
+          Semantics(
+            label: '内化进度 ${progress.toStringAsFixed(1)}%',
+            child: LinearProgressIndicator(value: progress / 100),
+          ),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -877,69 +934,3 @@ class _NationalFocusRecordSummary extends StatelessWidget {
 
 String? _requiredFieldError(String? value, String label) =>
     value == null || value.trim().isEmpty ? '请输入$label。' : null;
-Future<void> _renameNationalFocusCard(
-  BuildContext context,
-  NationalFocusRepository repository,
-  NationalFocusCard card,
-) async {
-  final name = await showDialog<String>(
-    context: context,
-    builder: (_) => _RenameCardDialog(name: card.name),
-  );
-  if (name == null || !context.mounted) return;
-  try {
-    await repository.renameCard(cardId: card.id, name: name);
-  } catch (error) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(formatUserError(error))));
-    }
-  }
-}
-
-class _RenameCardDialog extends StatefulWidget {
-  const _RenameCardDialog({required this.name});
-  final String name;
-  @override
-  State<_RenameCardDialog> createState() => _RenameCardDialogState();
-}
-
-class _RenameCardDialogState extends State<_RenameCardDialog> {
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.name,
-  );
-  final _formKey = GlobalKey<FormState>();
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: const Text('修改卡片名称'),
-    content: Form(
-      key: _formKey,
-      child: TextFormField(
-        controller: _controller,
-        autofocus: true,
-        decoration: const InputDecoration(labelText: '卡片名称'),
-        validator: (value) => _requiredFieldError(value, '卡片名称'),
-      ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('取消'),
-      ),
-      FilledButton(
-        onPressed: () {
-          if (_formKey.currentState!.validate()) {
-            Navigator.of(context).pop(_controller.text.trim());
-          }
-        },
-        child: const Text('保存'),
-      ),
-    ],
-  );
-}

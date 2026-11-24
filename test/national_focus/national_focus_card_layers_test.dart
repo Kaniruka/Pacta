@@ -9,6 +9,7 @@ import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_strengthening_page.dart';
 import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
 import 'package:pacta/src/tasks/task_database.dart';
+import 'package:pacta/src/theme/pacta_spacing.dart';
 
 /// Lightweight layering of the national focus card surfaces: node sheet,
 /// detail, card editor and strengthening management. Each test drives the
@@ -304,7 +305,7 @@ void main() {
     });
   }
 
-  testWidgets('卡片库不再直接提供强化管理，改从编辑卡片进入', (tester) async {
+  testWidgets('卡片库整卡进入详情，强化管理仍只从编辑卡片进入', (tester) async {
     final card = await repository.createCard(
       const NationalFocusCardDraft(name: '库卡', action: '库规则'),
     );
@@ -317,9 +318,10 @@ void main() {
     // The direct library entry for strengthening management is gone.
     expect(find.textContaining('强化等级 0/5'), findsNothing);
     expect(find.text('管理强化要求'), findsNothing);
-    expect(find.byTooltip('卡片操作'), findsOneWidget);
-    await tester.tap(find.byTooltip('卡片操作'));
+    // 整卡就是详情入口：不经过溢出菜单。
+    await tester.tap(find.text(card.name));
     await tester.pumpAndSettle();
+    expect(find.text('国策卡详情'), findsOneWidget);
     expect(find.text('管理强化要求'), findsNothing);
     await tester.tap(find.text('编辑卡片'));
     await tester.pumpAndSettle();
@@ -328,6 +330,100 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('国策强化要求'), findsOneWidget);
     expect((await repository.getCard(card.id)).id, card.id);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+  testWidgets('详情页规则区与记录区各自成一张 M3 Card', (tester) async {
+    final card = await createTreeCard(exceptionNotes: '当天取消安排记不适用。');
+    await pumpTree(tester);
+    await openNode(tester, card);
+    await tester.tap(find.text('查看详情'));
+    await tester.pumpAndSettle();
+
+    final rules = find.byKey(
+      const ValueKey('national-focus-detail-rules-card'),
+    );
+    final records = find.byKey(
+      const ValueKey('national-focus-detail-records-card'),
+    );
+    expect(rules, findsOneWidget);
+    expect(records, findsOneWidget);
+    expect(
+      find.descendant(of: rules, matching: find.text('国策规则')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: rules, matching: find.text('例外与判例')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: records, matching: find.text('记录')),
+      findsOneWidget,
+    );
+    expect(find.descendant(of: rules, matching: find.text('记录')), findsNothing);
+    // 两张卡片之间留一档 16dp 间隙：边界靠容器色与间距，不靠分割线。
+    expect(
+      tester.getRect(records).top - tester.getRect(rules).bottom,
+      moreOrLessEquals(PactaSpacing.lg, epsilon: 0.01),
+    );
+    expect(find.byType(Divider), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('卡片库列表规则三行省略，长判例收成含判例徽标且底栏无重复删除', (tester) async {
+    final longRule = List.filled(4, '坐到书桌前先写下今天的第一步，再核对昨天没有落地的部分。').join();
+    const notes = '出差时顺延；当天取消安排记不适用。';
+    await repository.createCard(
+      NationalFocusCardDraft(
+        name: '长规则卡',
+        action: longRule,
+        exceptionNotes: notes,
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: NationalFocusCardLibraryPage(repository: repository)),
+    );
+    await pumpUi(tester);
+
+    final rule = tester.widget<Text>(find.text(longRule));
+    expect(rule.maxLines, 3);
+    expect(rule.overflow, TextOverflow.ellipsis);
+    // 判例正文不铺出：列表只留一个轻徽标，全文在详情页。
+    expect(find.text('含判例'), findsOneWidget);
+    expect(find.textContaining('出差时顺延'), findsNothing);
+
+    final cardSurface = find
+        .ancestor(of: find.text('长规则卡'), matching: find.byType(Card))
+        .first;
+    expect(
+      find.descendant(of: cardSurface, matching: find.text('放入国策树')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: cardSurface, matching: find.text('删除')),
+      findsNothing,
+      reason: '底栏不再并排一颗重复的删除按钮',
+    );
+
+    // 溢出菜单只剩查看详情与危险样式的删除。
+    await tester.tap(find.byTooltip('卡片操作'));
+    await tester.pumpAndSettle();
+    expect(find.text('查看详情'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
+    final deleteItem = tester.widget<Text>(find.text('删除'));
+    expect(
+      deleteItem.style?.color,
+      Theme.of(tester.element(find.text('删除'))).colorScheme.error,
+    );
+    expect(find.text('编辑卡片'), findsNothing);
+    expect(find.text('修改名称'), findsNothing);
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));

@@ -123,6 +123,24 @@ void main() {
     expect(find.text('编辑卡片'), findsNothing);
     expect(find.byType(FilledButton), findsNothing);
     expect(find.text('点亮'), findsOneWidget, reason: '只展示当前状态标签');
+    // 规则区与记录区各自成一张 Card，和可编辑详情页的两段边界完全对齐。
+    final rules = find.byKey(
+      const ValueKey('national-focus-readonly-rules-card'),
+    );
+    final records = find.byKey(
+      const ValueKey('national-focus-readonly-records-card'),
+    );
+    expect(rules, findsOneWidget);
+    expect(records, findsOneWidget);
+    expect(
+      find.descendant(of: rules, matching: find.text('国策规则')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: records, matching: find.text('记录')),
+      findsOneWidget,
+    );
+    expect(find.descendant(of: rules, matching: find.text('记录')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

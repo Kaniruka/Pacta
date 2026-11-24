@@ -238,8 +238,8 @@ void main() {
     }
   }
 
-  testWidgets('卡片库更多菜单改名保持规则与树外状态', (tester) async {
-    final card = await repository.createCard(
+  testWidgets('卡片库溢出菜单只剩查看详情与删除，删除走确认框', (tester) async {
+    await repository.createCard(
       const NationalFocusCardDraft(
         name: '库卡原名',
         triggerCondition: '开始前',
@@ -250,18 +250,24 @@ void main() {
       MaterialApp(home: NationalFocusCardLibraryPage(repository: repository)),
     );
     await pumpNationalFocusUi(tester);
+    // 改名与编辑都收进详情页，列表卡片上不再重复这两个入口。
+    expect(find.text('编辑卡片'), findsNothing);
+    expect(find.text('修改名称'), findsNothing);
     await tester.tap(find.byTooltip('卡片操作'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('修改名称'));
+    expect(find.text('查看详情'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
+    expect(find.text('编辑卡片'), findsNothing);
+    expect(find.text('修改名称'), findsNothing);
+    await tester.tap(find.text('删除'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField), '库卡新名');
-    await tester.tap(find.text('保存'));
+    expect(find.text('删除国策卡？'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
     await pumpNationalFocusUi(tester);
-    final renamed = await repository.getCard(card.id);
-    expect(renamed.name, '库卡新名');
-    expect(renamed.effectiveAction, '执行动作');
-    expect(renamed.isInTree, isFalse);
-    expect(find.text('库卡新名'), findsOneWidget);
+    expect(await repository.getLibraryCards(), isEmpty);
+    // 没有失败快照引用时是永久删除：不会留在已删除列表里。
+    expect(await repository.getDeletedCards(), isEmpty);
+    expect(find.text('库卡原名'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
