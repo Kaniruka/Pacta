@@ -151,4 +151,176 @@ void main() {
     ).firstMatch(pubspec.readAsStringSync());
     expect(match?.group(1), pactaAppVersion);
   });
+
+  group('版本同步机械守卫', () {
+    const pubspec = 'name: pacta\nversion: 9.8.7+6\n';
+    const runnerRc = '''
+#define VERSION_AS_NUMBER 9,8,7,6
+#define VERSION_AS_STRING "9.8.7+6"
+''';
+    const pactaIss = '#define MyAppVersion "9.8.7"';
+    const readme = 'version-9.8.7%2B6-blue';
+    const readmeEn = 'version-9.8.7%2B6-blue';
+    const appVersion = '9.8.7+6';
+
+    test('有效样本零违规，破坏任一同步点各自产生可区分的违规', () {
+      expect(
+        _findVersionSyncViolations(
+          pubspecContent: pubspec,
+          runnerRcContent: runnerRc,
+          pactaIssContent: pactaIss,
+          readmeContent: readme,
+          readmeEnContent: readmeEn,
+          appVersion: appVersion,
+        ),
+        isEmpty,
+      );
+
+      final mutations = <String, List<String>>{
+        'appVersion': _findVersionSyncViolations(
+          pubspecContent: pubspec,
+          runnerRcContent: runnerRc,
+          pactaIssContent: pactaIss,
+          readmeContent: readme,
+          readmeEnContent: readmeEn,
+          appVersion: '9.8.7+5',
+        ),
+        'VERSION_AS_NUMBER': _findVersionSyncViolations(
+          pubspecContent: pubspec,
+          runnerRcContent: runnerRc.replaceFirst('9,8,7,6', '9,8,7,5'),
+          pactaIssContent: pactaIss,
+          readmeContent: readme,
+          readmeEnContent: readmeEn,
+          appVersion: appVersion,
+        ),
+        'VERSION_AS_STRING': _findVersionSyncViolations(
+          pubspecContent: pubspec,
+          runnerRcContent: runnerRc.replaceFirst(
+            'VERSION_AS_STRING "9.8.7+6"',
+            'VERSION_AS_STRING "9.8.7+5"',
+          ),
+          pactaIssContent: pactaIss,
+          readmeContent: readme,
+          readmeEnContent: readmeEn,
+          appVersion: appVersion,
+        ),
+        'MyAppVersion': _findVersionSyncViolations(
+          pubspecContent: pubspec,
+          runnerRcContent: runnerRc,
+          pactaIssContent: pactaIss.replaceFirst('9.8.7', '9.8.6'),
+          readmeContent: readme,
+          readmeEnContent: readmeEn,
+          appVersion: appVersion,
+        ),
+        'README.md badge': _findVersionSyncViolations(
+          pubspecContent: pubspec,
+          runnerRcContent: runnerRc,
+          pactaIssContent: pactaIss,
+          readmeContent: readme.replaceFirst('9.8.7', '9.8.6'),
+          readmeEnContent: readmeEn,
+          appVersion: appVersion,
+        ),
+        'README.en.md badge': _findVersionSyncViolations(
+          pubspecContent: pubspec,
+          runnerRcContent: runnerRc,
+          pactaIssContent: pactaIss,
+          readmeContent: readme,
+          readmeEnContent: readmeEn.replaceFirst('9.8.7', '9.8.6'),
+          appVersion: appVersion,
+        ),
+      };
+
+      for (final entry in mutations.entries) {
+        expect(entry.value, isNotEmpty, reason: '破坏 ${entry.key} 后必须报告版本漂移');
+      }
+      expect(
+        mutations.values.map((violations) => violations.single).toSet(),
+        hasLength(mutations.length),
+        reason: '每个同步点缺失都必须给出可区分的违规文本',
+      );
+    });
+
+    test('真实仓库的版本同步点全部一致', () {
+      final pubspecFile = File('pubspec.yaml');
+      final runnerRcFile = File('windows/runner/Runner.rc');
+      final pactaIssFile = File('windows/packaging/pacta.iss');
+      final readmeFile = File('README.md');
+      final readmeEnFile = File('README.en.md');
+      for (final file in <File>[
+        pubspecFile,
+        runnerRcFile,
+        pactaIssFile,
+        readmeFile,
+        readmeEnFile,
+      ]) {
+        expect(file.existsSync(), isTrue, reason: '缺少同步源文件 ${file.path}');
+      }
+
+      final violations = _findVersionSyncViolations(
+        pubspecContent: pubspecFile.readAsStringSync(),
+        runnerRcContent: runnerRcFile.readAsStringSync(),
+        pactaIssContent: pactaIssFile.readAsStringSync(),
+        readmeContent: readmeFile.readAsStringSync(),
+        readmeEnContent: readmeEnFile.readAsStringSync(),
+        appVersion: pactaAppVersion,
+      );
+      expect(violations, isEmpty);
+    });
+  });
+}
+
+/// 版本同步机械守卫：以 pubspec.yaml 的版本为真源，逐项核对客户端常量、
+/// Windows 资源回退宏、安装包展示版本与两份 README badge。
+List<String> _findVersionSyncViolations({
+  required String pubspecContent,
+  required String runnerRcContent,
+  required String pactaIssContent,
+  required String readmeContent,
+  required String readmeEnContent,
+  required String appVersion,
+}) {
+  final match = RegExp(
+    r'^version:\s*(\d+)\.(\d+)\.(\d+)\+(\d+)',
+    multiLine: true,
+  ).firstMatch(pubspecContent);
+  if (match == null) {
+    return <String>['pubspec.yaml 缺少 MAJOR.MINOR.PATCH+BUILD 形式的 version'];
+  }
+  final major = match.group(1)!;
+  final minor = match.group(2)!;
+  final patch = match.group(3)!;
+  final build = match.group(4)!;
+  final fullVersion = '$major.$minor.$patch+$build';
+  final shortVersion = '$major.$minor.$patch';
+  final violations = <String>[];
+
+  if (appVersion != fullVersion) {
+    violations.add('pactaAppVersion=$appVersion 应为 $fullVersion');
+  }
+  if (!runnerRcContent.contains(
+    '#define VERSION_AS_NUMBER $major,$minor,$patch,$build',
+  )) {
+    violations.add(
+      'windows/runner/Runner.rc 缺少 VERSION_AS_NUMBER '
+      '$major,$minor,$patch,$build',
+    );
+  }
+  if (!runnerRcContent.contains('#define VERSION_AS_STRING "$fullVersion"')) {
+    violations.add(
+      'windows/runner/Runner.rc 缺少 VERSION_AS_STRING "$fullVersion"',
+    );
+  }
+  if (!pactaIssContent.contains('#define MyAppVersion "$shortVersion"')) {
+    violations.add(
+      'windows/packaging/pacta.iss 的 MyAppVersion 应为 $shortVersion',
+    );
+  }
+  final badge = 'version-$major.$minor.$patch%2B$build-blue';
+  if (!readmeContent.contains(badge)) {
+    violations.add('README.md 缺少 $badge badge');
+  }
+  if (!readmeEnContent.contains(badge)) {
+    violations.add('README.en.md 缺少 $badge badge');
+  }
+  return violations;
 }
