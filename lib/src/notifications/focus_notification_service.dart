@@ -991,11 +991,16 @@ class FocusNotificationService {
   }
 
   Future<void> _applyCurrentPlan() async {
+    // 计划属于捕获它的 owner：读取设置的 await 期间用户可能已经切号或登出，
+    // 迟到的计划不能替上一位（或下一位）用户重新拉起计时与提醒。
+    await _awaitOwnerSettled();
+    final generation = _ownerGeneration;
     final preferences = await (await _settingsStore).load();
+    if (_staleOwner(generation)) return;
     if (Platform.isWindows) {
       await _applyWindowsPlan(preferences);
     } else if (Platform.isAndroid) {
-      await _applyAndroidPlan(preferences);
+      await _applyAndroidPlan(preferences, generation: generation);
     }
     await _queueNationalFocusReminderReconciliation();
     await _queueDailyOpenReminderReconciliation();
@@ -1398,6 +1403,47 @@ class FocusNotificationService {
     if (_staleOwner(generation)) return;
 
     final now = _now().toUtc();
+    if (adapter != null) {
+      // 进程不在场时 OS 已经替我们送达了 2204：通知中心不再持有这个 id，而
+      // 本地还留着"已排程"标记就说明是关闭期间的这次投递。只推进状态并在
+      // 系统队列里排下一天，绝不再补一张即时 toast，否则同一天提醒两次。
+      final scheduled = state.loadScheduled();
+      final pendingIds = await adapter.pendingIds();
+      if (_staleOwner(generation)) return;
+      if (scheduled != null &&
+          !scheduled.scheduledAt.isAfter(now) &&
+          !pendingIds.contains(_nationalFocusReminderNotificationId)) {
+        await state.markSent(scheduled.dayKey);
+        final advanced = NationalFocusReminderPlan.next(
+          now: _now(),
+          minuteOfDay: preferences.nationalFocusReminderMinutesAfterMidnight,
+          hasPendingConfirmations:
+              _hasPendingNationalFocusConfirmations == true,
+          lastNotifiedDayKey: scheduled.dayKey,
+          activeFlow: _currentPlan,
+          timeZoneId: timeZoneId,
+        );
+        if (advanced == null || !advanced.scheduledAt.isAfter(_now())) {
+          await _cancelNationalFocusReminder(state);
+          return;
+        }
+        await state.saveScheduled(
+          NationalFocusReminderSchedule(
+            dayKey: advanced.dayKey,
+            scheduledAt: advanced.scheduledAt,
+            repeatsDaily: false,
+          ),
+        );
+        await _armWindowsNationalFocusReminder(
+          adapter,
+          advanced.scheduledAt.difference(_now()),
+          advanced.scheduledAt,
+          advanced.dayKey,
+        );
+        return;
+      }
+    }
+
     if (reminder.scheduledAt.isAfter(now)) {
       await state.saveScheduled(
         NationalFocusReminderSchedule(
@@ -1641,9 +1687,17 @@ class FocusNotificationService {
     );
   }
 
-  Future<void> _applyAndroidPlan(FocusDevicePreferences preferences) async {
+  Future<void> _applyAndroidPlan(
+    FocusDevicePreferences preferences, {
+    int? generation,
+  }) async {
+    final gen = generation ?? _ownerGeneration;
     final plan = _currentPlan;
+    // 计划也有身份：切号会清空 _currentPlan，另一次 sync() 会替换它。任何一次
+    // await 之后都要重新确认，否则恢复执行时会按过期计划重排通知。
+    bool stale() => _staleOwner(gen) || !identical(plan, _currentPlan);
     final notificationsPermitted = await notificationsAllowed();
+    if (stale()) return;
     final permissionAllowed =
         preferences.notificationsEnabled && notificationsPermitted;
     // 常驻倒计时只在"后台运行"开关下出现，与事件提醒开关相互独立。
@@ -1671,6 +1725,9 @@ class FocusNotificationService {
       _nationalFocusReminderNotificationId,
       _dailyOpenReminderNotificationId,
     });
+    // 从这里开始只剩副作用：拉起/停掉前台服务、展示与排程通知。owner 或计划
+    // 变过就整段放弃，晚到的计划不能再给新会话叠一张倒计时。
+    if (stale()) return;
 
     if (!showStatus || plan == null) {
       // 结束、关闭开关或登出：前台服务与静态状态通知都必须一起消失。

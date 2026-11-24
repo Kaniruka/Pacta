@@ -56,6 +56,9 @@ class FocusTimerForegroundService : Service() {
 
         request = incoming
         foregroundStarted = enterForeground(incoming)
+        // 进入前台失败时系统已经在 enterForeground 里收尾：此时再画一张通知或
+        // 启动 ticker，只会在通知栏闪一下谁也不会更新的幽灵倒计时。
+        if (!foregroundStarted) return START_NOT_STICKY
         post(incoming)
         handler.removeCallbacks(ticker)
         handler.postDelayed(ticker, TICK_INTERVAL_MS)
@@ -110,9 +113,13 @@ class FocusTimerForegroundService : Service() {
     private fun buildNotification(current: FocusTimerRequest): Notification {
         val now = System.currentTimeMillis()
         val maxProgress = if (current.totalSeconds > 0) current.totalSeconds else 1
-        val elapsedSeconds = ((now - current.startedAtMs) / 1000L).coerceAtLeast(0L)
-        val progress = elapsedSeconds.coerceAtMost(maxProgress.toLong()).toInt()
+        // 暂停后恢复的会话把 endsAtMs 整体后移了暂停时长，拿 startedAtMs 相减
+        // 会把暂停的时间也算成"专注过"。进度只能按"分母 - 剩余"反推，先算剩余
+        // 再夹到 [0, 分母]，通知栏才不会一次跳满。
         val remainingSeconds = ((current.endsAtMs - now) / 1000L).coerceAtLeast(0L)
+        val progress = (maxProgress.toLong() - remainingSeconds)
+            .coerceIn(0L, maxProgress.toLong())
+            .toInt()
         val clock = formatClock(remainingSeconds)
         val title = if (current.titlePrefix.isBlank()) {
             "剩余 $clock"

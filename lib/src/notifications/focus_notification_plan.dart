@@ -89,12 +89,20 @@ class FocusNotificationPlan {
   }
 
   /// 已经过去的秒数；暂停时冻结在暂停时刻，进度条不会自己往前爬。
+  ///
+  /// 恢复后的会话把 [focusEndsAt] 整体向后平移了暂停时长，直接拿
+  /// [startedAt] 相减会把暂停的时间也算成"专注过"，进度条一次跳满。改为
+  /// 用分母减去剩余时间反推，暂停只体现为结束时刻后移，不再污染进度。
   int elapsedSecondsAt(DateTime now) {
     final start = startedAt;
     if (start == null) return 0;
-    final reference = isPaused ? pausedAt ?? now : now;
-    final elapsed = reference.difference(start).inSeconds;
-    return elapsed.clamp(0, progressTotalSeconds);
+    if (isPaused) {
+      final frozen = pausedAt ?? now;
+      return frozen.difference(start).inSeconds.clamp(0, progressTotalSeconds);
+    }
+    final targetEnd = isPreparing ? (stageEndsAt ?? focusEndsAt) : focusEndsAt;
+    final remaining = targetEnd.difference(now).inSeconds;
+    return (progressTotalSeconds - remaining).clamp(0, progressTotalSeconds);
   }
 
   int remainingSecondsAt(DateTime now) {

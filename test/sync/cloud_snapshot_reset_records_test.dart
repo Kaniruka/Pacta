@@ -212,6 +212,47 @@ void main() {
     expect(await repository.loadSyncResult(), isNull);
   });
 
+  test('事务内的预检放弃重置时不清除原有同步基线', () async {
+    await repository.uploadLocal(
+      expectedRevision: 0,
+      expectedFingerprint: (await repository.captureLocalState()).fingerprint,
+    );
+    expect(await repository.loadSyncResult(), isNotNull);
+
+    // 恢复点落盘之后、事务预检之前本机被别处改动：整次重置必须放弃。
+    final racing = CloudSnapshotRepository(
+      database: database,
+      remote: remote,
+      userId: 'user-a',
+      deviceId: 'device-a',
+      deviceName: 'Phone A',
+      now: () => DateTime.utc(2026, 11, 20, 4),
+      recoveryPointStore: _DriftingRecoveryPointStore(
+        DriftCloudRecoveryPointStore(database),
+        database,
+      ),
+    );
+    final before = await racing.captureLocalState();
+
+    await expectLater(
+      racing.resetAllRecords(expectedFingerprint: before.fingerprint),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          '本机数据在确认期间发生变化，请重新检查后再重置。',
+        ),
+      ),
+    );
+
+    expect(
+      await racing.loadSyncResult(),
+      isNotNull,
+      reason: '一次被中止的重置不能洗掉上一条基线，否则下回确认会误判成与云端一致',
+    );
+    expect(await _count(database, 'focus_sessions', 'user-a'), 1);
+  });
+
   test('未结束的预约或专注阻止重置，且不改表也不留恢复点', () async {
     await database.customStatement(
       "UPDATE focus_appointments SET status = 'active' WHERE id = 'appointment-1'",
@@ -329,6 +370,30 @@ class _NeutralizingRecoveryPointStore implements CloudRecoveryPointStore {
 
   @override
   Future<CloudRecoveryPoint?> load(String userId, String pointId) async => null;
+}
+
+/// 恢复点落盘之后再把本机数据改掉：把"事务内预检放弃"这条路径跑起来。
+class _DriftingRecoveryPointStore implements CloudRecoveryPointStore {
+  _DriftingRecoveryPointStore(this._delegate, this._database);
+
+  final CloudRecoveryPointStore _delegate;
+  final PactaDatabase _database;
+
+  @override
+  Future<void> save(CloudRecoveryPoint point) async {
+    await _delegate.save(point);
+    await _database.customStatement(
+      "UPDATE local_goals SET title = '别处改过的标题' WHERE id = 'goal-keep'",
+    );
+  }
+
+  @override
+  Future<List<CloudRecoveryPointSummary>> list(String userId) =>
+      _delegate.list(userId);
+
+  @override
+  Future<CloudRecoveryPoint?> load(String userId, String pointId) =>
+      _delegate.load(userId, pointId);
 }
 
 int _seconds(DateTime value) => value.toUtc().millisecondsSinceEpoch ~/ 1000;

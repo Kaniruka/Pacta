@@ -906,9 +906,6 @@ class CloudSnapshotRepository {
       throw StateError('本机恢复点未正确保存，已取消重置。');
     }
     _throwIfCancelled(isCancelled);
-    // 清空后的本机既不再与云端一致，也不该继续声称"已处理某个云版本"；
-    // 清除失败说明存储不可写，此时仍不替换任何业务行。
-    await _clearSyncResult();
     await database.transaction(() async {
       // 事务内、删除前再检查一次：预检与删除之间用户可能已经切换账号、
       // 开始了一次专注，或在别处改了数据。此时必须整体放弃。
@@ -923,6 +920,10 @@ class CloudSnapshotRepository {
       await _resetLocalRecords();
       _throwIfCancelled(isCancelled);
     });
+    // 清空后的本机既不再与云端一致，也不该继续声称"已处理某个云版本"。
+    // 基线必须在事务提交之后才失效：事务内的预检可能中途放弃，先清基线会让
+    // 一次被中止的重置白白洗掉上一条同步基线。
+    await _clearSyncResult();
     database.notifyUpdates({
       for (final table in database.allTables)
         if (_businessTables.contains(table.actualTableName))

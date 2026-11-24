@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/services.dart';
@@ -185,6 +186,55 @@ void main() {
     expect(service.ownerUserId, isNull);
     expect(gateway.requests, isEmpty, reason: '释放路径只停止，不再登记新的计时');
   });
+
+  test('设置还没读回来时被释放的 owner 不能让这份计划重新拉起前台服务', () async {
+    // 计划挂在"读设置"这一步时用户登出：generation 变了，恢复执行必须整段
+    // 放弃，否则会替新会话重新登记一份倒计时，或重排一批 Android 通知。
+    const androidChannel = MethodChannel(
+      'dexterous.com/flutter/local_notifications',
+    );
+    final androidCalls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(androidChannel, (call) async {
+      androidCalls.add(call);
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(androidChannel, null));
+
+    // Windows 宿主上同一份迟到计划会写系统状态栏；这里同样要求一次调用都没有。
+    const statusChannel = MethodChannel('focus_timer_test/stale_plan_status');
+    final statusCalls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(statusChannel, (call) async {
+      statusCalls.add(call);
+      return null;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(statusChannel, null));
+
+    final gateway = _RecordingTimerServiceGateway();
+    final store = _SuspendingPreferencesStore(
+      FocusDevicePreferencesStore(await SharedPreferences.getInstance()),
+    );
+    final service = FocusNotificationService(
+      preferencesStore: store,
+      windowsChannel: statusChannel,
+      timerServiceGateway: gateway,
+    );
+    addTearDown(service.dispose);
+
+    await service.setUserId('user-a');
+    gateway.stopCount = 0;
+
+    final pending = service.sync(taskTitle: '写报告');
+    await store.loadStarted;
+    await service.releaseUser('user-a');
+    store.resumeLoad();
+    await pending;
+
+    expect(service.ownerUserId, isNull);
+    expect(gateway.requests, isEmpty, reason: '迟到的计划不能再登记新的计时');
+    expect(gateway.stopCount, 1, reason: '只有释放路径停过一次服务');
+    expect(androidCalls, isEmpty, reason: '迟到的计划也不能再排程任何 Android 通知');
+    expect(statusCalls, isEmpty, reason: '迟到的计划也不该再写 Windows 状态栏');
+  });
 }
 
 /// 只记录"停了几次"：释放路径的契约是幂等的停止，不是重绘。
@@ -201,4 +251,37 @@ class _RecordingTimerServiceGateway implements FocusTimerServiceGateway {
   Future<void> stop() async {
     stopCount++;
   }
+}
+
+/// 把设置读取挂起在一个 Completer 上：模拟"计划还在读设置时用户已经登出"。
+class _SuspendingPreferencesStore implements FocusDevicePreferencesStore {
+  _SuspendingPreferencesStore(this._inner);
+
+  final FocusDevicePreferencesStore _inner;
+  final Completer<void> _loadStarted = Completer<void>();
+  final Completer<void> _resume = Completer<void>();
+
+  Future<void> get loadStarted => _loadStarted.future;
+
+  void resumeLoad() {
+    if (!_resume.isCompleted) _resume.complete();
+  }
+
+  @override
+  String? get userId => _inner.userId;
+
+  @override
+  Future<FocusDevicePreferences> load() async {
+    if (!_loadStarted.isCompleted) _loadStarted.complete();
+    await _resume.future;
+    return _inner.load();
+  }
+
+  @override
+  Future<void> save(FocusDevicePreferences preferences) =>
+      _inner.save(preferences);
+
+  @override
+  Future<void> markNotificationPermissionRequested() =>
+      _inner.markNotificationPermissionRequested();
 }

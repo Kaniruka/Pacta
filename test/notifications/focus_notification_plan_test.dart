@@ -129,6 +129,52 @@ void main() {
     );
   });
 
+  test('暂停后恢复的会话按剩余反推进度，不会把进度条一次画满', () {
+    // 10:00 开始、10:10 暂停、10:40 恢复：结束时刻整体后移到 11:30。暂停的
+    // 30 分钟只是把终点推后，不能被算成"已经专注过"。
+    final session = FocusSession(
+      id: 'session-3',
+      taskId: 'task-1',
+      mode: FocusChainMode.regular,
+      durationSeconds: 30 * 60,
+      startedAt: startedAt,
+      endsAt: startedAt.add(const Duration(minutes: 90)),
+      status: FocusSessionStatus.active,
+      completedAt: null,
+      effectiveSeconds: 10 * 60,
+      pausedSeconds: 30 * 60,
+    );
+
+    final plan = FocusNotificationPlan.forSession(session, taskTitle: '写报告');
+    final fiveMinutesAfterResume = startedAt.add(const Duration(minutes: 45));
+
+    expect(plan.progressTotalSeconds, 30 * 60);
+    expect(
+      plan.elapsedSecondsAt(fiveMinutesAfterResume),
+      0,
+      reason: '按"分母 - 剩余"反推；旧的按起点相减会把 45 分钟全画进进度条',
+    );
+    expect(plan.remainingSecondsAt(fiveMinutesAfterResume), 45 * 60);
+
+    // 剩余落回分母以内后，进度与剩余必须共享同一个分母，不会各算各的。
+    final lastWindow = session.endsAt.subtract(const Duration(minutes: 20));
+    expect(plan.elapsedSecondsAt(lastWindow), 10 * 60);
+    expect(
+      plan.elapsedSecondsAt(lastWindow) + plan.remainingSecondsAt(lastWindow),
+      plan.progressTotalSeconds,
+    );
+
+    // 全程只增不减，也永远越不过分母。
+    var previous = 0;
+    for (var minutes = 0; minutes <= 120; minutes += 5) {
+      final elapsed = plan.elapsedSecondsAt(
+        startedAt.add(Duration(minutes: minutes)),
+      );
+      expect(elapsed, inInclusiveRange(previous, plan.progressTotalSeconds));
+      previous = elapsed;
+    }
+  });
+
   test('没有起点时进度退化为不确定进度', () {
     final plan = FocusNotificationPlan(
       flowId: 'flow-1',

@@ -46,12 +46,15 @@ class MainActivity : FlutterActivity() {
         private const val MAX_AVATAR_SELECTION_BYTES = 5 * 1024 * 1024 + 1
 
         /// 五个 `*_v2` 渠道：旧版 v1 渠道的重要性创建后不可改，只能删除重建。
+        ///
+        /// 顺序即优先级：`degradedChannels.first` 代表最该修的那一个，所以事件
+        /// 渠道放最前、只读的状态渠道放最后，页面给的入口才和实际严重程度一致。
         private val FOCUS_CHANNEL_IDS = listOf(
-            "pacta_focus_status_v2",
             "pacta_focus_events_v2",
             "pacta_national_focus_reminders_v2",
             "pacta_daily_open_reminders_v2",
             "pacta_schedule_reminders_v2",
+            "pacta_focus_status_v2",
         )
 
         /// 事件渠道：进入专注 / 专注结束必须能弹出并响铃。
@@ -257,19 +260,21 @@ class MainActivity : FlutterActivity() {
     ///
     /// 没有服务在跑时直接返回：停止是空操作，不能为了发 STOP 冷启动前台服务，
     /// 否则每次启动应用都会闪一张"剩余 00:00"的通知。
+    ///
+    /// 有服务在跑时直接 [stopService]：走 startForegroundService(ACTION_STOP)
+    /// 会和 ticker 的收尾赛跑，一边在撤通知一边又画一帧"剩余 00:00"。
+    /// [FocusTimerForegroundService] 里的 ACTION_STOP 仍然保留，供冷启动的
+    /// STOP 安全退出。
     private fun stopFocusTimerService(result: MethodChannel.Result) {
         if (!FocusTimerForegroundService.running) {
             result.success(null)
             return
         }
-        val intent = Intent(this, FocusTimerForegroundService::class.java).apply {
-            action = FocusTimerForegroundService.ACTION_STOP
-        }
         try {
-            ContextCompat.startForegroundService(this, intent)
+            stopService(Intent(this, FocusTimerForegroundService::class.java))
             result.success(null)
         } catch (error: Exception) {
-            stopService(intent)
+            // 服务刚好自己结束时会抛"not running"：停止本身是幂等的。
             result.success(null)
         }
     }

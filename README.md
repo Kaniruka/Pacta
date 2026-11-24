@@ -6,7 +6,7 @@
 
 [![Flutter checks](https://github.com/Kaniruka/Pacta/actions/workflows/flutter-checks.yml/badge.svg?branch=master)](https://github.com/Kaniruka/Pacta/actions/workflows/flutter-checks.yml)
 [![Release](https://github.com/Kaniruka/Pacta/actions/workflows/release.yml/badge.svg)](https://github.com/Kaniruka/Pacta/actions/workflows/release.yml)
-[![version](https://img.shields.io/badge/version-0.3.0%2B3-blue)](pubspec.yaml)
+[![version](https://img.shields.io/badge/version-0.3.1%2B4-blue)](pubspec.yaml)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
 [简体中文](README.md) · [English](README.en.md)

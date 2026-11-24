@@ -78,6 +78,42 @@ void main() {
     expect(fixture.pendingTimers, isEmpty);
   }, skip: !Platform.isWindows);
 
+  test('关闭期间 OS 已送达 2204 时，重新进入应用只推进到下一天', () async {
+    final fixture = await _Fixture.create(
+      now: DateTime.utc(2026, 9, 26, 15),
+      minuteOfDay: 22 * 60,
+      nationalEnabled: true,
+    );
+    addTearDown(fixture.dispose);
+    // 进程关着的时候，系统已在 22:00（北京时区 14:00 UTC）替我们送达；本地只
+    // 留下"已排程"标记，通知中心里已经没有这个 id。
+    await fixture.nationalState.saveScheduled(
+      NationalFocusReminderSchedule(
+        dayKey: '2026-09-26',
+        scheduledAt: DateTime.utc(2026, 9, 26, 14),
+        repeatsDaily: false,
+      ),
+    );
+
+    await fixture.service.syncNationalFocusReminder(
+      hasPendingConfirmations: true,
+    );
+
+    expect(
+      fixture.statusCalls.map((call) => call.method),
+      isNot(contains('showNotification')),
+      reason: 'OS 已经弹过这一次，重进应用不能再补一张即时 toast',
+    );
+    expect(fixture.nationalState.loadLastSentDayKey(), '2026-09-26');
+    final scheduled = fixture.adapter.scheduled
+        .where((entry) => entry.id == 2204)
+        .toList();
+    expect(scheduled, hasLength(1));
+    expect(scheduled.single.at.toUtc(), DateTime.utc(2026, 9, 27, 14));
+    expect(scheduled.single.payload, 'national-focus-reminder:2026-09-27');
+    expect(fixture.pendingTimers, isEmpty);
+  }, skip: !Platform.isWindows);
+
   test('确认完待确认国策会在系统队列里撤掉 2204', () async {
     final fixture = await _Fixture.create(
       now: DateTime.utc(2026, 9, 26, 13, 59),
@@ -141,6 +177,7 @@ class _Fixture {
     required this.nationalState,
     required this.adapter,
     required this.timers,
+    required this.statusCalls,
   });
 
   final FocusNotificationService service;
@@ -149,6 +186,9 @@ class _Fixture {
   final NationalFocusReminderStateStore nationalState;
   final _FakeWindowsAdapter adapter;
   final List<_RecordedTimer> timers;
+
+  /// 状态通道收到的调用：用来证明"没有补一张即时 toast"。
+  final List<MethodCall> statusCalls;
 
   List<_RecordedTimer> get pendingTimers =>
       timers.where((recorded) => recorded.timer.isActive).toList();
@@ -204,8 +244,12 @@ class _Fixture {
         return timer;
       },
     );
+    final statusCalls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async => null);
+        .setMockMethodCallHandler(channel, (call) async {
+          statusCalls.add(call);
+          return null;
+        });
     addTearDown(() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, null);
@@ -217,6 +261,7 @@ class _Fixture {
       nationalState: nationalState,
       adapter: resolvedAdapter,
       timers: timers,
+      statusCalls: statusCalls,
     );
   }
 
