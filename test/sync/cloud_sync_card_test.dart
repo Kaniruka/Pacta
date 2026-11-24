@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
@@ -537,6 +539,91 @@ void main() {
       await database.close();
     });
   }
+
+  // 工单 02：点击「数据同步」不再等云端与本机读取完成才弹面板。
+  testWidgets('点击数据同步首帧即弹出面板，读取完成前只给加载态与本地项', (tester) async {
+    final fixture = await _CloudFixture.create();
+    final coordinator = await _autoUpload(fixture.phoneSync);
+    addTearDown(coordinator.dispose);
+    final gate = Completer<void>();
+    fixture.remote.inspectGate = gate;
+    try {
+      await fixture.pump(tester, autoUpload: coordinator);
+      expect(fixture.remote.inspectCalls, 0, reason: '打开前不读取云端');
+
+      await tester.tap(find.byTooltip('查看云同步'));
+      // 只发一帧：inspectCloud 被门控挂住，弹层必须已经出现。
+      await tester.pump();
+
+      expect(find.text('云端与本机'), findsOneWidget);
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      expect(find.text('正在读取云端与本机状态…'), findsOneWidget);
+      // 本地项立即可用，不必等网络或查库。
+      expect(find.text('今日确认后自动上传'), findsOneWidget);
+      expect(find.text('历史备份'), findsOneWidget);
+      expect(find.text('关闭'), findsOneWidget);
+      // 读取完成前不给方向动作：任何旧结果都不该被当成当前状态。
+      expect(find.text('上传'), findsNothing);
+      expect(find.text('下载'), findsNothing);
+      expect(find.textContaining('云端来源：'), findsNothing);
+      expect(fixture.remote.inspectCalls, 1, reason: '读取发生在弹层内部');
+
+      gate.complete();
+      await tester.pumpAndSettle();
+
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+      expect(find.text('云端来源：家里的电脑'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, '下载'), findsOneWidget);
+      await tester.tap(find.text('上传'));
+      await tester.pumpAndSettle();
+      expect(find.text('上传并覆盖云端？'), findsOneWidget);
+      await tester.tap(find.text('确认上传'));
+      await tester.pumpAndSettle();
+      expect(find.text('上传完成，已覆盖云端数据。'), findsOneWidget);
+      expect(fixture.remote.uploadCalls, 2, reason: '准备条件一次，用户上传一次');
+    } finally {
+      if (!gate.isCompleted) gate.complete();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await fixture.dispose();
+    }
+  });
+
+  testWidgets('读取失败时面板保留并可原地重试', (tester) async {
+    final fixture = await _CloudFixture.create();
+    final coordinator = await _autoUpload(fixture.phoneSync);
+    addTearDown(coordinator.dispose);
+    fixture.remote.failInspect = true;
+    try {
+      await fixture.pump(tester, autoUpload: coordinator);
+      await tester.tap(find.byTooltip('查看云同步'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('同步未完成'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, '重试'), findsOneWidget);
+      // 失败不关面板，也不阻塞本地项。
+      expect(find.text('今日确认后自动上传'), findsOneWidget);
+      expect(find.text('历史备份'), findsOneWidget);
+      expect(find.text('关闭'), findsOneWidget);
+      expect(find.text('下载'), findsNothing);
+      expect(find.text('上传'), findsNothing);
+
+      fixture.remote.failInspect = false;
+      await tester.tap(find.text('重试'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('同步未完成'), findsNothing);
+      expect(find.text('云端来源：家里的电脑'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, '下载'), findsOneWidget);
+      await tester.tap(find.text('关闭'));
+      await tester.pumpAndSettle();
+      expect(find.text('云端与本机'), findsNothing);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await fixture.dispose();
+    }
+  });
 }
 
 /// 与 App 组合一致的自动上传协调器：开关只在配置了云端连接的卡片里出现。
@@ -674,6 +761,19 @@ class _ThrowingResultStore extends CloudSyncResultStore {
 class _CountingRemote extends InMemoryCloudSnapshotRemote {
   int uploadCalls = 0;
   int downloadCalls = 0;
+  int inspectCalls = 0;
+
+  /// 非空时把云端检查挂起：用来断言弹层在读取完成前就已出现。
+  Completer<void>? inspectGate;
+  bool failInspect = false;
+
+  @override
+  Future<CloudSnapshotMetadata?> inspect({required String userId}) async {
+    inspectCalls++;
+    await inspectGate?.future;
+    if (failInspect) throw StateError('测试网络不可用');
+    return super.inspect(userId: userId);
+  }
 
   @override
   Future<CloudSnapshotMetadata> upload({

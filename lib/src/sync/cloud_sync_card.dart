@@ -159,7 +159,12 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
         return;
       }
       _presentedCheck = check.completedChecks;
-      await _inspect(automatic: true);
+      // 已经读到本机与云端状态：弹层首帧就是就绪态，不再重复查库。
+      await _inspect(
+        automatic: true,
+        initialLocal: local,
+        initialCloud: check.metadata,
+      );
     } catch (_) {
       // Discovery must never block ordinary local use.
     } finally {
@@ -289,57 +294,30 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
     }
   }
 
-  Future<bool?> _showModal(AlertDialog dialog) {
+  /// 弹层统一入口：Android 用底部弹层，桌面用对话框。
+  ///
+  /// [builder] 会拿到当前是否使用底部弹层排版；弹层内容可以在自己的 [State]
+  /// 里重建，加载、失败与就绪状态切换不需要外层重新 push 一次路由。
+  Future<T?> _showModal<T>(
+    Widget Function(BuildContext context, bool sheet) builder,
+  ) {
     if (Theme.of(context).platform == TargetPlatform.android) {
-      return showModalBottomSheet<bool>(
+      return showModalBottomSheet<T>(
         context: context,
         isScrollControlled: true,
         useSafeArea: true,
         showDragHandle: true,
         builder: (context) {
           _modalRoute = ModalRoute.of(context);
-          return Padding(
-            padding: EdgeInsets.only(
-              bottom: MediaQuery.viewInsetsOf(context).bottom,
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.sizeOf(context).height * .85,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    DefaultTextStyle(
-                      style: Theme.of(context).textTheme.titleLarge!,
-                      child: dialog.title!,
-                    ),
-                    const SizedBox(height: 16),
-                    Flexible(
-                      child: SingleChildScrollView(child: dialog.content!),
-                    ),
-                    const SizedBox(height: 16),
-                    Wrap(
-                      alignment: WrapAlignment.end,
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: dialog.actions!,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
+          return builder(context, true);
         },
       );
     }
-    return showDialog<bool>(
+    return showDialog<T>(
       context: context,
       builder: (context) {
         _modalRoute = ModalRoute.of(context);
-        return dialog;
+        return builder(context, false);
       },
     );
   }
@@ -363,9 +341,18 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
     await _loadResult();
   }
 
-  Future<void> _inspect({bool automatic = false}) async {
+  /// 弹出同步操作面板。
+  ///
+  /// 手动点击不等待任何网络或数据库查询：弹层第一帧立刻出现，云端与本机状态
+  /// 由 [_CloudSyncOperationsModal] 在内部并行读取。自动提示（[automatic]）
+  /// 沿用调用方已经读到的 [initialLocal] / [initialCloud]，先确认本机没有未
+  /// 结束的专注或预约，再让弹层首帧就是就绪态。
+  Future<void> _inspect({
+    bool automatic = false,
+    CloudSnapshotLocalState? initialLocal,
+    CloudSnapshotMetadata? initialCloud,
+  }) async {
     final repository = widget.repository;
-    final versionCheck = widget.versionCheck;
     if (repository == null || _working) return;
     setState(() {
       _working = true;
@@ -373,34 +360,51 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
     });
     bool? selectedDirection;
     final messenger = ScaffoldMessenger.of(context);
+    // 面板会重新读取两端状态并自带失败提示，旧的同步反馈不叠在面板上。
+    messenger.hideCurrentSnackBar();
     try {
-      final cloud = automatic
-          ? widget.versionCheck?.metadata
-          : await repository.inspectCloud();
-      final local = await repository.captureLocalState();
-      if (!mounted || widget.repository != repository) return;
-      if (automatic &&
-          (local.hasUnfinishedFlow ||
-              widget.versionCheck?.hasPendingVersion != true ||
-              widget.versionCheck?.metadata != cloud)) {
-        _deferred = local.hasUnfinishedFlow;
-        return;
+      var readyLocal = initialLocal;
+      final readyCloud = automatic
+          ? (initialCloud ?? widget.versionCheck?.metadata)
+          : null;
+      if (automatic) {
+        readyLocal ??= await repository.captureLocalState();
+        if (!mounted || widget.repository != repository) return;
+        if (readyLocal.hasUnfinishedFlow ||
+            widget.versionCheck?.hasPendingVersion != true ||
+            widget.versionCheck?.metadata != readyCloud) {
+          _deferred = readyLocal.hasUnfinishedFlow;
+          return;
+        }
       }
-      final direction = await _showModal(
-        _operationsSheet(
-          local: local,
-          cloud: cloud,
+      final selection = await _showModal<_CloudSyncSelection>(
+        (context, sheet) => _CloudSyncOperationsModal(
+          sheet: sheet,
           repository: repository,
-          versionCheck: versionCheck,
+          versionCheck: widget.versionCheck,
+          autoUpload: widget.autoUpload,
+          resultError: _resultError,
+          onOpenHistory: _openHistory,
+          initialLocal: readyLocal,
+          initialCloud: readyCloud,
+          initialReady: automatic,
         ),
       );
-      if (direction == null || !mounted || widget.repository != repository) {
+      if (selection == null || !mounted || widget.repository != repository) {
         return;
       }
+      final direction = selection.upload;
       selectedDirection = direction;
-      final confirmed = await _showModal(
-        _directionConfirm(upload: direction, local: local, cloud: cloud),
-      );
+      final local = selection.local;
+      final cloud = selection.cloud;
+      final confirmed = await _showModal<bool>((context, sheet) {
+        final dialog = _directionConfirm(
+          upload: direction,
+          local: local,
+          cloud: cloud,
+        );
+        return sheet ? _sheetSurface(context, dialog) : dialog;
+      });
       if (confirmed != true || !mounted || widget.repository != repository) {
         return;
       }
@@ -473,115 +477,6 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
         });
       }
     }
-  }
-
-  AlertDialog _operationsSheet({
-    required CloudSnapshotLocalState local,
-    required CloudSnapshotMetadata? cloud,
-    required CloudSnapshotRepository repository,
-    required CloudVersionCheck? versionCheck,
-  }) {
-    return AlertDialog(
-      constraints: const BoxConstraints(maxWidth: 560),
-      title: const Text('云端与本机'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(cloud == null ? '云端暂无数据，可首次上传。' : '云端来源：${cloud.deviceName}'),
-            if (widget.autoUpload?.blockedReason case final reason?) ...[
-              const SizedBox(height: 8),
-              Text(
-                '自动上传已停止：$reason',
-                style: Theme.of(context).textTheme.bodyMedium
-                    ?.copyWith(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-            if (_resultError case final error?) ...[
-              const SizedBox(height: 8),
-              Text(
-                error,
-                style: Theme.of(context).textTheme.bodyMedium
-                    ?.copyWith(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-            if (cloud != null) ...[
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: local.hasUnfinishedFlow
-                      ? null
-                      : () => Navigator.pop(context, false),
-                  icon: const Icon(Icons.cloud_download_outlined),
-                  label: const Text('下载'),
-                ),
-              ),
-              if (local.hasUnfinishedFlow) ...[
-                const SizedBox(height: 8),
-                const Text('本机有未结束的专注或预约，请先处理后再下载。'),
-              ],
-            ],
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () => Navigator.pop(context, true),
-                icon: const Icon(Icons.cloud_upload_outlined),
-                label: const Text('上传'),
-              ),
-            ),
-            if (widget.autoUpload case final coordinator?) ...[
-              const SizedBox(height: 4),
-              _AutoUploadSwitch(coordinator: coordinator),
-            ],
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const Icon(Icons.history),
-              title: const Text('历史备份'),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.pop(context);
-                unawaited(_openHistory());
-              },
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        if (cloud != null && versionCheck != null)
-          TextButton(
-            onPressed: () async {
-              final messenger = ScaffoldMessenger.of(context);
-              try {
-                if (!mounted ||
-                    widget.repository != repository ||
-                    widget.versionCheck != versionCheck) {
-                  return;
-                }
-                await versionCheck.ignore(cloud);
-                if (mounted &&
-                    widget.repository == repository &&
-                    context.mounted) {
-                  Navigator.pop(context);
-                }
-              } catch (_) {
-                if (messenger.mounted) {
-                  messenger.showSnackBar(
-                    const SnackBar(content: Text('忽略未保存，请重试。')),
-                  );
-                }
-              }
-            },
-            child: const Text('忽略'),
-          ),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('关闭'),
-        ),
-      ],
-    );
   }
 
   AlertDialog _directionConfirm({
@@ -773,6 +668,288 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
               );
             },
           ),
+        ),
+      ),
+    ),
+  );
+}
+
+/// 用户在操作面板里选中的方向，以及当时读到的两端状态。
+///
+/// `upload` 为 true 表示上传（用本机覆盖云端）；外层据此沿用原有的覆盖确认、
+/// 防重复与冲突检测流程，反馈与执行语义都不变。
+typedef _CloudSyncSelection = ({
+  bool upload,
+  CloudSnapshotLocalState local,
+  CloudSnapshotMetadata? cloud,
+});
+
+/// 同步操作面板：先弹出、后读取。
+///
+/// 手动点击「数据同步」时弹层首帧就出现；[CloudSnapshotRepository.inspectCloud]
+/// 与 [CloudSnapshotRepository.captureLocalState] 在面板内部并行执行。读取完成
+/// 前只呈现本地即可用的自动上传开关、历史备份与关闭，绝不把上一次读到的结果
+/// 当成当前状态；读取失败时整个面板保留，可原地重试。选定方向时把
+/// (direction, local, cloud) 交回外层继续确认与执行。
+class _CloudSyncOperationsModal extends StatefulWidget {
+  const _CloudSyncOperationsModal({
+    required this.sheet,
+    required this.repository,
+    required this.versionCheck,
+    required this.autoUpload,
+    required this.resultError,
+    required this.onOpenHistory,
+    this.initialLocal,
+    this.initialCloud,
+    this.initialReady = false,
+  });
+
+  /// Android 底部弹层排版；桌面直接用 [AlertDialog]。
+  final bool sheet;
+  final CloudSnapshotRepository repository;
+  final CloudVersionCheck? versionCheck;
+  final CloudAutoUploadCoordinator? autoUpload;
+
+  /// 同步记录读取失败时的提示：属于本地状态，随面板一起展示。
+  final String? resultError;
+  final Future<void> Function() onOpenHistory;
+
+  /// 自动提示路径已经读好的状态：首帧即就绪，不再重复读取。
+  final CloudSnapshotLocalState? initialLocal;
+  final CloudSnapshotMetadata? initialCloud;
+  final bool initialReady;
+
+  @override
+  State<_CloudSyncOperationsModal> createState() =>
+      _CloudSyncOperationsModalState();
+}
+
+class _CloudSyncOperationsModalState extends State<_CloudSyncOperationsModal> {
+  CloudSnapshotLocalState? _local;
+  CloudSnapshotMetadata? _cloud;
+  Object? _failure;
+  bool _loading = false;
+  int _request = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.autoUpload?.addListener(_autoUploadChanged);
+    final readyLocal = widget.initialLocal;
+    if (widget.initialReady && readyLocal != null) {
+      _local = readyLocal;
+      _cloud = widget.initialCloud;
+    } else {
+      _loading = true;
+      unawaited(_load());
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.autoUpload?.removeListener(_autoUploadChanged);
+    super.dispose();
+  }
+
+  void _autoUploadChanged() {
+    if (mounted) setState(() {});
+  }
+
+  bool get _ready => !_loading && _failure == null && _local != null;
+
+  /// 并行读取云端与本机状态；任何一路失败都留在面板内，可原地重试。
+  Future<void> _load() async {
+    final repository = widget.repository;
+    final request = ++_request;
+    try {
+      final states = await Future.wait<Object?>([
+        repository.inspectCloud(),
+        repository.captureLocalState(),
+      ]);
+      if (!mounted || request != _request || widget.repository != repository) {
+        return;
+      }
+      setState(() {
+        _cloud = states[0] as CloudSnapshotMetadata?;
+        _local = states[1] as CloudSnapshotLocalState;
+        _failure = null;
+        _loading = false;
+      });
+    } catch (error) {
+      if (!mounted || request != _request || widget.repository != repository) {
+        return;
+      }
+      setState(() {
+        _failure = error;
+        _loading = false;
+      });
+    }
+  }
+
+  void _retry() {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _failure = null;
+    });
+    unawaited(_load());
+  }
+
+  void _select(bool upload) {
+    final local = _local;
+    if (local == null) return;
+    Navigator.pop<_CloudSyncSelection>(context, (
+      upload: upload,
+      local: local,
+      cloud: _cloud,
+    ));
+  }
+
+  Future<void> _ignore() async {
+    final versionCheck = widget.versionCheck;
+    final cloud = _cloud;
+    if (versionCheck == null || cloud == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await versionCheck.ignore(cloud);
+      if (!mounted || !context.mounted) return;
+      Navigator.pop(context);
+    } catch (_) {
+      if (messenger.mounted) {
+        messenger.showSnackBar(const SnackBar(content: Text('忽略未保存，请重试。')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dialog = AlertDialog(
+      constraints: const BoxConstraints(maxWidth: 560),
+      title: const Text('云端与本机'),
+      content: SingleChildScrollView(child: _content(context)),
+      actions: _actions(context),
+    );
+    return widget.sheet ? _sheetSurface(context, dialog) : dialog;
+  }
+
+  List<Widget> _actions(BuildContext context) => [
+    if (_ready && _cloud != null && widget.versionCheck != null)
+      TextButton(onPressed: _ignore, child: const Text('忽略')),
+    TextButton(
+      onPressed: () => Navigator.pop(context),
+      child: const Text('关闭'),
+    ),
+  ];
+
+  Widget _content(BuildContext context) {
+    final theme = Theme.of(context);
+    final local = _local;
+    final cloud = _cloud;
+    final errorStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.error,
+    );
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_loading) ...[
+          const LinearProgressIndicator(),
+          const SizedBox(height: 12),
+          const Text('正在读取云端与本机状态…'),
+        ],
+        if (_failure case final failure?) ...[
+          Text('同步未完成：${_snapshotFailureText(failure)}', style: errorStyle),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(onPressed: _retry, child: const Text('重试')),
+          ),
+        ],
+        if (_ready && local != null) ...[
+          Text(cloud == null ? '云端暂无数据，可首次上传。' : '云端来源：${cloud.deviceName}'),
+          if (widget.autoUpload?.blockedReason case final reason?) ...[
+            const SizedBox(height: 8),
+            Text('自动上传已停止：$reason', style: errorStyle),
+          ],
+          if (widget.resultError case final error?) ...[
+            const SizedBox(height: 8),
+            Text(error, style: errorStyle),
+          ],
+          if (cloud != null) ...[
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: local.hasUnfinishedFlow
+                    ? null
+                    : () => _select(false),
+                icon: const Icon(Icons.cloud_download_outlined),
+                label: const Text('下载'),
+              ),
+            ),
+            if (local.hasUnfinishedFlow) ...[
+              const SizedBox(height: 8),
+              const Text('本机有未结束的专注或预约，请先处理后再下载。'),
+            ],
+          ],
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _select(true),
+              icon: const Icon(Icons.cloud_upload_outlined),
+              label: const Text('上传'),
+            ),
+          ),
+        ],
+        if (widget.autoUpload case final coordinator?) ...[
+          const SizedBox(height: 4),
+          _AutoUploadSwitch(coordinator: coordinator),
+        ],
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: const Icon(Icons.history),
+          title: const Text('历史备份'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () {
+            Navigator.pop(context);
+            unawaited(widget.onOpenHistory());
+          },
+        ),
+      ],
+    );
+  }
+}
+
+/// 把 [AlertDialog] 的标题、内容与底栏动作排成 Android 底部弹层。
+///
+/// 内容自带滚动容器，这里只负责最大高度、安全间距与动作换行。
+Widget _sheetSurface(BuildContext context, AlertDialog dialog) {
+  return Padding(
+    padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+    child: ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * .85,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            DefaultTextStyle(
+              style: Theme.of(context).textTheme.titleLarge!,
+              child: dialog.title!,
+            ),
+            const SizedBox(height: 16),
+            Flexible(child: dialog.content ?? const SizedBox.shrink()),
+            const SizedBox(height: 16),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
+              children: dialog.actions ?? const <Widget>[],
+            ),
+          ],
         ),
       ),
     ),
