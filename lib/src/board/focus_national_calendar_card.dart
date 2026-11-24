@@ -156,6 +156,11 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
   _TopSlotTab _topSlotTab = _TopSlotTab.status;
   bool _topSlotTabChosen = false;
 
+  /// 顶槽横向滑动累计位移：只有明确横拖超过 [_topSlotSwipeThreshold] 才切页，
+  /// 原地长按与垂直拖拽排序都不会误触。
+  double _topSlotDragDistance = 0;
+  static const _topSlotSwipeThreshold = 24.0;
+
   /// 只读安排：仓储、账号时区或月份一变就整份丢弃并重新订阅；代次保证
   /// 上一账号/上一时区/上一月的迟到事件不会回显到屏上。
   List<Schedule> _schedules = const [];
@@ -597,6 +602,9 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
 
   Widget _buildTopSlot(BuildContext context) {
     final showSwitch = _showTopSlotSwitch;
+    final content = showSwitch && _topSlotTab == _TopSlotTab.pinned
+        ? _buildPinnedSlot(context)
+        : _buildSelectedDayNationalFocus(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -604,12 +612,46 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
           _buildTopSlotSwitch(context),
           const SizedBox(height: 8),
         ],
-        if (showSwitch && _topSlotTab == _TopSlotTab.pinned)
-          _buildPinnedSlot(context)
+        if (showSwitch)
+          // 顶槽左右滑动：国策状态 ⇄ 置顶目标。高度随内容自适应，不用固定
+          // 高度的 PageView 裁切置顶卡；横向识别器只在超过 touch slop 的
+          // 明确横拖时才赢竞技场，长按菜单与垂直拖拽排序保持原样。
+          GestureDetector(
+            key: const ValueKey('board-top-slot-swipe'),
+            behavior: HitTestBehavior.deferToChild,
+            onHorizontalDragStart: (_) => _topSlotDragDistance = 0,
+            onHorizontalDragUpdate: (details) =>
+                _topSlotDragDistance += details.delta.dx,
+            onHorizontalDragCancel: () => _topSlotDragDistance = 0,
+            onHorizontalDragEnd: _endTopSlotSwipe,
+            child: AnimatedSize(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                switchInCurve: Curves.easeOut,
+                switchOutCurve: Curves.easeIn,
+                child: content,
+              ),
+            ),
+          )
         else
-          _buildSelectedDayNationalFocus(context),
+          content,
       ],
     );
+  }
+
+  /// 左滑去置顶目标、右滑回国策状态；与胶囊点击走同一条 [_selectTopSlot]。
+  void _endTopSlotSwipe(DragEndDetails details) {
+    final distance = _topSlotDragDistance;
+    _topSlotDragDistance = 0;
+    if (!_showTopSlotSwitch) return;
+    if (distance <= -_topSlotSwipeThreshold) {
+      _selectTopSlot(_TopSlotTab.pinned);
+    } else if (distance >= _topSlotSwipeThreshold) {
+      _selectTopSlot(_TopSlotTab.status);
+    }
   }
 
   /// 紧凑分段胶囊：两枚标签始终并排，极端字号下由 Wrap 换行而不是溢出。

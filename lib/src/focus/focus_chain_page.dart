@@ -6,10 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../app/app_providers.dart';
 import '../tasks/task_models.dart';
+import '../tasks/task_repository.dart';
 import '../theme/pacta_fonts.dart';
 import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../theme/pacta_surfaces.dart';
+import '../theme/pacta_theme.dart';
 import '../ui/pacta_date_format.dart';
 import '../ui/pacta_error_text.dart';
 import '../ui/pacta_grouped_list.dart';
@@ -747,12 +749,52 @@ class FocusTaskPickerPage extends ConsumerStatefulWidget {
 }
 
 class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
+  /// 三档筛选与 PageView 页序一一对应：全部 / 精锐 / 普通。
+  static const _filters = <TaskClassification?>[
+    null,
+    TaskClassification.elite,
+    TaskClassification.regular,
+  ];
+
+  static const _pageTransition = Duration(milliseconds: 240);
+
   TaskClassification? _filter;
   bool _openingSetup = false;
+  late final PageController _pageController;
+
+  /// 程序化切页的目标与进行标记：跨两页时 `onPageChanged` 会先报中间页，
+  /// 不能让它把胶囊高亮改回中间那一档。
+  TaskClassification? _animatingToFilter;
+  bool _animatingFilter = false;
+
+  /// 同一仓储只订阅一次：翻页触发的 setState 不会重建流。
+  TaskRepository? _goalsRepository;
+  Stream<List<Goal>>? _goalsStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  Stream<List<Goal>> _watchGoals(TaskRepository repository) {
+    if (!identical(_goalsRepository, repository)) {
+      _goalsRepository = repository;
+      _goalsStream = repository.watchGoals();
+    }
+    return _goalsStream!;
+  }
 
   @override
   Widget build(BuildContext context) {
     final gutter = PactaSpacing.gutterFor(MediaQuery.sizeOf(context).width);
+    final goalsStream = _watchGoals(ref.watch(taskRepositoryProvider));
     return Scaffold(
       appBar: AppBar(title: const Text('选择任务')),
       body: Center(
@@ -785,13 +827,14 @@ class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
                     ),
                   ],
                   selected: {_filter},
-                  onSelectionChanged: (values) =>
-                      setState(() => _filter = values.single),
+                  onSelectionChanged: (values) => _selectFilter(values.single),
                 ),
               ),
               Expanded(
                 child: StreamBuilder<List<Goal>>(
-                  stream: ref.watch(taskRepositoryProvider).watchGoals(),
+                  // 流在翻页前后保持同一实例：三页共用一次读取，切页不会
+                  // 先闪一帧空列表再重新加载。
+                  stream: goalsStream,
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
                       return const Center(child: Text('任务读取失败，请返回后重试。'));
@@ -800,58 +843,23 @@ class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
                       return const Center(child: CircularProgressIndicator());
                     }
                     final goals = snapshot.data!;
-                    final entries = [
-                      for (final goal in goals)
-                        if (!goal.isDeleted)
-                          for (final task in goal.tasks)
-                            if (!task.isDeleted &&
-                                !task.isComplete &&
-                                _matchesFilter(task))
-                              (goal: goal, task: task),
-                    ];
-                    if (entries.isEmpty) {
-                      return const Center(child: Text('当前筛选下没有可开始的任务。'));
-                    }
-                    return ListView.separated(
-                      key: const PageStorageKey('focus-task-picker-list'),
-                      padding: EdgeInsets.fromLTRB(
-                        gutter,
-                        0,
-                        gutter,
-                        PactaSpacing.xl,
+                    return ScrollConfiguration(
+                      // 桌面按住鼠标横拖也能翻页；触控板与触控笔同权。
+                      behavior: const PactaScrollBehavior(),
+                      child: PageView(
+                        key: const ValueKey('focus-task-picker-pager'),
+                        controller: _pageController,
+                        onPageChanged: _selectFilterPage,
+                        children: [
+                          for (final (index, filter) in _filters.indexed)
+                            _taskPage(
+                              goals: goals,
+                              filter: filter,
+                              index: index,
+                              gutter: gutter,
+                            ),
+                        ],
                       ),
-                      itemCount: entries.length,
-                      // 主题把 Card 的外边距设为 0，连续卡片会紧贴；
-                      // 任务卡之间补一档 8dp，滚动时仍能区分相邻任务。
-                      separatorBuilder: (context, index) =>
-                          const SizedBox(height: PactaSpacing.sm),
-                      itemBuilder: (context, index) {
-                        final entry = entries[index];
-                        final task = entry.task;
-                        final estimate = task.estimatedMinutes == null
-                            ? '未设置'
-                            : '${task.estimatedMinutes} 分钟';
-                        return Card(
-                          child: ListTile(
-                            leading: _TaskTypeWell(
-                              classification: task.classification,
-                            ),
-                            title: Text(task.title),
-                            subtitle: Text(
-                              '目标：${entry.goal.title} · ${task.classification.label} · '
-                              '预计时长：$estimate · 已专注 ${formatEffectiveDuration(task.focusProgressSeconds)}',
-                            ),
-                            onTap: () => _showSetup(task),
-                            trailing: Tooltip(
-                              message: '开始任务：${task.title}',
-                              child: FilledButton.tonal(
-                                onPressed: () => _showSetup(task),
-                                child: const Text('开始'),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
                     );
                   },
                 ),
@@ -863,8 +871,103 @@ class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
     );
   }
 
-  bool _matchesFilter(Task task) {
-    return switch (_filter) {
+  Widget _taskPage({
+    required List<Goal> goals,
+    required TaskClassification? filter,
+    required int index,
+    required double gutter,
+  }) {
+    final entries = [
+      for (final goal in goals)
+        if (!goal.isDeleted)
+          for (final task in goal.tasks)
+            if (!task.isDeleted &&
+                !task.isComplete &&
+                _matchesFilter(task, filter))
+              (goal: goal, task: task),
+    ];
+    if (entries.isEmpty) {
+      return const Center(child: Text('当前筛选下没有可开始的任务。'));
+    }
+    return ListView.separated(
+      // 每页独立保存滚动位置：从精锐滑回全部不会跳回顶部。
+      key: PageStorageKey<String>('focus-task-picker-list-$index'),
+      padding: EdgeInsets.fromLTRB(gutter, 0, gutter, PactaSpacing.xl),
+      itemCount: entries.length,
+      // 主题把 Card 的外边距设为 0，连续卡片会紧贴；
+      // 任务卡之间补一档 8dp，滚动时仍能区分相邻任务。
+      separatorBuilder: (context, index) =>
+          const SizedBox(height: PactaSpacing.sm),
+      itemBuilder: (context, index) {
+        final entry = entries[index];
+        final task = entry.task;
+        return Card(
+          child: ListTile(
+            leading: _TaskTypeWell(classification: task.classification),
+            title: Text(task.title),
+            subtitle: Text(_taskSubtitle(entry.goal, task)),
+            onTap: () => _showSetup(task),
+            trailing: Tooltip(
+              message: '开始任务：${task.title}',
+              child: FilledButton.tonal(
+                onPressed: () => _showSetup(task),
+                child: const Text('开始'),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 卡片副标题：只留图标没有表达的事实——目标名、预计时长与已专注进度。
+  ///
+  /// 分类由左侧 [_TaskTypeWell] 的图标承担，不再重复写「精锐 / 普通」；
+  /// 没有预计时长时也不写「预计时长：未设置」这种零信息占位。
+  String _taskSubtitle(Goal goal, Task task) {
+    final estimate = task.estimatedMinutes;
+    final progress = formatCompactFocusDuration(task.focusProgressSeconds);
+    if (estimate == null) {
+      return task.focusProgressSeconds > 0
+          ? '${goal.title} · 已专注 $progress'
+          : '${goal.title} · 尚未专注';
+    }
+    return '${goal.title} · 已专注 $progress / '
+        '${formatCompactEstimateMinutes(estimate)}';
+  }
+
+  void _selectFilter(TaskClassification? filter) {
+    final index = _filters.indexOf(filter);
+    if (index < 0) return;
+    if (_filter != filter) setState(() => _filter = filter);
+    if (!_pageController.hasClients) return;
+    _animatingToFilter = filter;
+    _animatingFilter = true;
+    unawaited(
+      _pageController
+          .animateToPage(
+            index,
+            duration: _pageTransition,
+            curve: Curves.easeOutCubic,
+          )
+          .whenComplete(() {
+            if (_animatingToFilter != filter) return;
+            _animatingToFilter = null;
+            _animatingFilter = false;
+          }),
+    );
+  }
+
+  void _selectFilterPage(int index) {
+    // 程序化切页跨两页时会经过中间页；中途页不能覆写用户的胶囊选择。
+    if (_animatingFilter) return;
+    final filter = _filters[index];
+    if (_filter == filter) return;
+    setState(() => _filter = filter);
+  }
+
+  bool _matchesFilter(Task task, TaskClassification? filter) {
+    return switch (filter) {
       null => true,
       TaskClassification.elite =>
         task.classification == TaskClassification.elite ||
@@ -1021,12 +1124,27 @@ class _FocusHistoryData {
 }
 
 class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
+  static const _pageTransition = Duration(milliseconds: 240);
+
   /// 用户显式选中的链；为空时按「第一条有记录的链」做默认选择。
   FocusChainType? _chain;
+
+  /// 首次数据就绪时锁定的落点：之后流刷新不再重新计算默认链，
+  /// 用户主动滑动或点选后由 [_chain] 接管。
+  FocusChainType? _initialChain;
+  PageController? _pageController;
+  FocusChainType? _animatingToChain;
+  bool _animatingChain = false;
   FocusRepository? _dataRepository;
   String? _dataSignature;
   late Future<_FocusHistoryData> _dataFuture;
   String? _displayTimeZoneId;
+
+  @override
+  void dispose() {
+    _pageController?.dispose();
+    super.dispose();
+  }
 
   Future<void> _refreshDisplayTimeZone() async {
     final zoneId = await readAccountDisplayTimeZone(ref);
@@ -1094,6 +1212,47 @@ class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
     return FocusChainType.elite;
   }
 
+  /// 首次拿到完整数据时锁定落点，并让 PageController 以该页为初始页。
+  ///
+  /// 不先渲染精锐链再 `jumpToPage`：默认链在第一次 build 就参与
+  /// `initialPage` 计算，首帧直接落在有记录的那一链上。
+  FocusChainType _resolveChain(FocusChainHistory history) {
+    final chosen = _chain ?? _initialChain;
+    if (chosen != null) return chosen;
+    return _initialChain = _defaultChain(history);
+  }
+
+  void _selectChain(FocusChainType chain) {
+    final index = FocusChainType.values.indexOf(chain);
+    if (index < 0) return;
+    if (_chain != chain) setState(() => _chain = chain);
+    final controller = _pageController;
+    if (controller == null || !controller.hasClients) return;
+    _animatingToChain = chain;
+    _animatingChain = true;
+    unawaited(
+      controller
+          .animateToPage(
+            index,
+            duration: _pageTransition,
+            curve: Curves.easeOutCubic,
+          )
+          .whenComplete(() {
+            if (_animatingToChain != chain) return;
+            _animatingToChain = null;
+            _animatingChain = false;
+          }),
+    );
+  }
+
+  void _onChainPageChanged(int index) {
+    // 程序化切页跨两页时会经过中间链；中途页不能覆写用户的选择。
+    if (_animatingChain) return;
+    final chain = FocusChainType.values[index];
+    if (_chain == chain) return;
+    setState(() => _chain = chain);
+  }
+
   Widget _chainSwitch(BuildContext context, FocusChainType chain) {
     final gutter = PactaSpacing.gutterFor(MediaQuery.sizeOf(context).width);
     return Padding(
@@ -1131,8 +1290,7 @@ class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
                 ),
             ],
             selected: {chain},
-            onSelectionChanged: (selection) =>
-                setState(() => _chain = selection.single),
+            onSelectionChanged: (selection) => _selectChain(selection.single),
           ),
         ),
       ),
@@ -1186,7 +1344,10 @@ class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
                     sessions: sessions,
                     appointments: data.appointments,
                   );
-                  final chain = _chain ?? _defaultChain(history);
+                  final chain = _resolveChain(history);
+                  final pageController = _pageController ??= PageController(
+                    initialPage: FocusChainType.values.indexOf(chain),
+                  );
                   // 三链切换、统计摘要与时间轴同受 800dp 居中约束：桌面宽屏
                   // 不再把时间轴拉成 1248dp 的通栏。
                   return Align(
@@ -1197,16 +1358,35 @@ class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
                         children: [
                           _chainSwitch(context, chain),
                           Expanded(
-                            child: _FocusHistoryTimeline(
-                              repository: repository,
-                              chain: chain,
-                              timeline: history.timelineFor(chain),
-                              nodes: data.nodes,
-                              taskTitles: taskTitles,
-                              displayTimeZoneId: _displayTimeZoneId,
-                              dataNotice: _dataNotice(data),
-                              onNodeNoteUpdated: () => _reload(repository),
-                              onSessionUpdated: () => _reload(repository),
+                            child: ScrollConfiguration(
+                              // 桌面按住鼠标横拖也能换链；触控板与触控笔同权。
+                              behavior: const PactaScrollBehavior(),
+                              child: PageView.builder(
+                                key: const ValueKey('focus-history-pager'),
+                                controller: pageController,
+                                itemCount: FocusChainType.values.length,
+                                onPageChanged: _onChainPageChanged,
+                                itemBuilder: (context, index) {
+                                  final pageChain =
+                                      FocusChainType.values[index];
+                                  return _FocusHistoryTimeline(
+                                    // 每链独立保存滚动位置，来回滑动不串位。
+                                    key: PageStorageKey<String>(
+                                      'focus-history-page-${pageChain.name}',
+                                    ),
+                                    repository: repository,
+                                    chain: pageChain,
+                                    timeline: history.timelineFor(pageChain),
+                                    nodes: data.nodes,
+                                    taskTitles: taskTitles,
+                                    displayTimeZoneId: _displayTimeZoneId,
+                                    dataNotice: _dataNotice(data),
+                                    onNodeNoteUpdated: () =>
+                                        _reload(repository),
+                                    onSessionUpdated: () => _reload(repository),
+                                  );
+                                },
+                              ),
                             ),
                           ),
                         ],
@@ -1232,6 +1412,7 @@ class _FocusHistoryPageState extends ConsumerState<FocusHistoryPage> {
 /// 纵向链式时间轴：段头 + 连接线 + 圆形序号徽章。
 class _FocusHistoryTimeline extends StatelessWidget {
   const _FocusHistoryTimeline({
+    super.key,
     required this.repository,
     required this.chain,
     required this.timeline,
