@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
@@ -31,6 +32,7 @@ class FocusNotificationSettingsPage extends StatefulWidget {
     this.isAndroid,
     this.permissionGateway,
     this.batteryOptimizationGateway,
+    this.channelHealthGateway,
     this.calendarSourcesBuilder,
     this.accountTimeZoneIdLoader,
   });
@@ -47,6 +49,12 @@ class FocusNotificationSettingsPage extends StatefulWidget {
   /// Android 后台运行（忽略电池优化）能力；为空时按平台取默认实现。
   final BatteryOptimizationGateway? batteryOptimizationGateway;
 
+  /// 通知渠道健康度（弹窗与锁屏是否被系统抑制）；为空时按平台取默认实现。
+  ///
+  /// 与 [batteryOptimizationGateway] 分开注入：既有页面测试不必为一个新能力
+  /// 改构造参数。
+  final NotificationChannelHealthGateway? channelHealthGateway;
+
   /// 打开已有《系统日历导入》页的来源勾选与手动导入界面。
   ///
   /// 由《我的》注入，本页因此不依赖日历模块；为空时该行只解释入口尚未接入。
@@ -62,7 +70,8 @@ class FocusNotificationSettingsPage extends StatefulWidget {
 }
 
 class _FocusNotificationSettingsPageState
-    extends State<FocusNotificationSettingsPage> {
+    extends State<FocusNotificationSettingsPage>
+    with WidgetsBindingObserver {
   FocusDevicePreferences? _preferences;
   bool _notificationsAllowed = false;
   bool _exactAlarmsAllowed = false;
@@ -70,6 +79,9 @@ class _FocusNotificationSettingsPageState
   bool _loading = true;
   bool _updating = false;
   String? _message;
+
+  /// 渠道被降级时弹窗与锁屏提醒会被系统静默吞掉；非 Android 恒为健康。
+  NotificationChannelHealth? _channelHealth;
 
   /// 账号时区：提醒时间与结算点说明都按它表达；未设时保留 null，
   /// 让检查点/提醒说明按默认国策时区（Asia/Shanghai）对齐。
@@ -89,16 +101,49 @@ class _FocusNotificationSettingsPageState
   BatteryOptimizationGateway get _battery =>
       widget.batteryOptimizationGateway ?? createBatteryOptimizationGateway();
 
+  NotificationChannelHealthGateway get _channelHealthGateway =>
+      widget.channelHealthGateway ?? createNotificationChannelHealthGateway();
+
+  bool get _showChannelHealthRow =>
+      _isAndroid && _notificationsAllowed && _channelHealth?.healthy == false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// 从系统设置返回时重新探测：用户可能刚把渠道重要性调回"紧急"。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    unawaited(_refreshChannelHealth());
+  }
+
+  Future<void> _refreshChannelHealth() async {
+    final health = await _readChannelHealth();
+    if (!mounted) return;
+    setState(() => _channelHealth = health);
+  }
+
+  /// 只读探测渠道健康度；非 Android 不发起任何平台调用。
+  Future<NotificationChannelHealth> _readChannelHealth() async {
+    if (!_isAndroid) return const NotificationChannelHealth.healthy();
+    return _channelHealthGateway.inspectChannelHealth();
   }
 
   Future<void> _load() async {
     final preferences = await widget.service.getPreferences();
     final accountTimeZoneId = await _readAccountTimeZoneId();
     final permissions = await _readSystemPermissions();
+    final channelHealth = await _readChannelHealth();
     if (!mounted) return;
     setState(() {
       _preferences = preferences;
@@ -106,6 +151,7 @@ class _FocusNotificationSettingsPageState
       _notificationsAllowed = permissions.$1;
       _exactAlarmsAllowed = permissions.$2;
       _ignoringBatteryOptimizations = permissions.$3;
+      _channelHealth = channelHealth;
       _loading = false;
     });
   }
@@ -136,12 +182,14 @@ class _FocusNotificationSettingsPageState
   Future<void> _applyPreferences(FocusDevicePreferences updated) async {
     await widget.service.updatePreferences(updated);
     final permissions = await _readSystemPermissions();
+    final channelHealth = await _readChannelHealth();
     if (!mounted) return;
     setState(() {
       _preferences = updated;
       _notificationsAllowed = permissions.$1;
       _exactAlarmsAllowed = permissions.$2;
       _ignoringBatteryOptimizations = permissions.$3;
+      _channelHealth = channelHealth;
     });
   }
 
@@ -427,6 +475,30 @@ class _FocusNotificationSettingsPageState
     }
   }
 
+  /// 前往第一个被降级的渠道的系统设置页。
+  ///
+  /// 只打开一个渠道：用户在那里还能顺手改下一个，页面不再堆一排跳转按钮。
+  Future<void> _openChannelHealthSettings() async {
+    final degraded = _channelHealth?.degradedChannelIds ?? const <String>[];
+    if (degraded.isEmpty) return;
+    setState(() {
+      _updating = true;
+      _message = null;
+    });
+    try {
+      await _channelHealthGateway.openChannelSettings(degraded.first);
+      if (!mounted) return;
+      final health = await _readChannelHealth();
+      if (!mounted) return;
+      setState(() {
+        _channelHealth = health;
+        _message = health.healthy ? null : '渠道提醒仍被系统限制；弹窗与锁屏通知可能被抑制。';
+      });
+    } finally {
+      if (mounted) setState(() => _updating = false);
+    }
+  }
+
   Future<void> _openCalendarSources() async {
     final builder = widget.calendarSourcesBuilder;
     if (builder == null) return;
@@ -526,6 +598,20 @@ class _FocusNotificationSettingsPageState
         ),
         onTap: _updating ? null : _openSystemNotificationSettings,
       ),
+      // 通知权限开着但渠道被降级：弹窗与锁屏提醒会被系统静默抑制，必须在这里
+      // 给出直达渠道设置的入口，否则用户只会觉得"通知没响"。
+      if (_showChannelHealthRow)
+        PactaSettingsTile(
+          tileKey: const Key('open-notification-channel-health'),
+          leadingIcon: Icons.notifications_paused_outlined,
+          title: '弹出与锁屏提醒',
+          subtitle: '系统可能抑制弹窗或锁屏通知；点按前往渠道设置开启。',
+          statusBadge: const PactaStatusBadge(
+            label: '需开启',
+            tone: PactaStatusBadgeTone.warning,
+          ),
+          onTap: _updating ? null : _openChannelHealthSettings,
+        ),
       if (_isAndroid && !_notificationsAllowed)
         PactaSettingsTile(
           tileKey: const Key('request-notification-permission'),
@@ -640,10 +726,10 @@ class _FocusNotificationSettingsPageState
           PactaSettingsTile(
             tileKey: const Key('daily-open-reminder-time'),
             title: '提醒时间（本机时间）',
-            // 非桌面端的时间值本身就是答案；只有桌面端存在「退出后不送达」
-            // 这条非显而易见的限制需要写清楚。
+            // 非桌面端的时间值本身就是答案；桌面端把提醒交给系统通知中心，
+            // 因此这里要说明它不再依赖进程存活。
             subtitle: _isWindowsDesktop
-                ? '仅在 Pacta 正在运行（含隐藏到托盘）时送达；完全退出后不会提醒。'
+                ? '写入 Windows 系统通知中心；Pacta 完全退出后仍会按时送达。'
                 : null,
             trailing: _timeTrailing(
               preferences.dailyOpenReminderMinutesAfterMidnight,

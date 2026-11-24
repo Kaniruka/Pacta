@@ -63,4 +63,87 @@ void main() {
       20 * 60,
     );
   });
+
+  test('准备窗口同时给出进度分母与已过去的秒数', () {
+    final appointment = AppointmentPreparation(
+      id: 'appointment-2',
+      taskId: 'task-1',
+      mode: FocusChainMode.regular,
+      durationSeconds: 30 * 60,
+      startedAt: startedAt,
+      endsAt: startedAt.add(const Duration(minutes: 15)),
+      status: AppointmentPreparationStatus.active,
+      settledAt: null,
+      updatedAt: startedAt,
+      preparationSeconds: 15 * 60,
+    );
+
+    final plan = FocusNotificationPlan.forAppointment(
+      appointment,
+      taskTitle: 'Write a report',
+    );
+
+    expect(plan.startedAt, startedAt);
+    expect(plan.totalSeconds, 15 * 60);
+    expect(plan.progressTotalSeconds, 15 * 60);
+    expect(
+      plan.elapsedSecondsAt(startedAt.add(const Duration(minutes: 5))),
+      5 * 60,
+    );
+    // 进度条不会超过分母，也不会因为设备时钟回拨变成负数。
+    expect(
+      plan.elapsedSecondsAt(startedAt.add(const Duration(hours: 3))),
+      15 * 60,
+    );
+    expect(
+      plan.elapsedSecondsAt(startedAt.subtract(const Duration(minutes: 5))),
+      0,
+    );
+  });
+
+  test('暂停中的会话把进度冻结在暂停时刻', () {
+    final session = FocusSession(
+      id: 'session-2',
+      taskId: 'task-1',
+      mode: FocusChainMode.regular,
+      durationSeconds: 30 * 60,
+      startedAt: startedAt,
+      endsAt: startedAt.add(const Duration(minutes: 20)),
+      status: FocusSessionStatus.paused,
+      completedAt: null,
+      effectiveSeconds: 10 * 60,
+      pausedAt: startedAt.add(const Duration(minutes: 10)),
+    );
+
+    final plan = FocusNotificationPlan.forSession(
+      session,
+      taskTitle: 'Write a report',
+    );
+
+    expect(plan.totalSeconds, 30 * 60);
+    expect(plan.progressTotalSeconds, 30 * 60);
+    expect(
+      plan.elapsedSecondsAt(session.pausedAt!.add(const Duration(hours: 4))),
+      10 * 60,
+      reason: '暂停之后进度条必须停住，不能继续往后爬',
+    );
+  });
+
+  test('没有起点时进度退化为不确定进度', () {
+    final plan = FocusNotificationPlan(
+      flowId: 'flow-1',
+      taskTitle: 'Write a report',
+      modeLabel: '常规',
+      stage: FocusNotificationStage.active,
+      stageEndsAt: null,
+      focusEndsAt: _focusEnd,
+    );
+
+    expect(plan.startedAt, isNull);
+    expect(plan.totalSeconds, isNull);
+    expect(plan.progressTotalSeconds, 1);
+    expect(plan.elapsedSecondsAt(_focusEnd), 0);
+  });
 }
+
+final DateTime _focusEnd = DateTime.utc(2026, 9, 26, 10, 30);

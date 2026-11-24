@@ -67,7 +67,7 @@ void main() {
 
     await adapter.schedule(
       id: 2203,
-      title: '专注已结束',
+      title: '专注已完成',
       body: '任务：整理发布材料',
       at: DateTime.utc(2026, 11, 16, 2, 13),
       payload: 'session:abc',
@@ -82,7 +82,7 @@ void main() {
       DateTime.utc(2026, 11, 16, 2, 13).millisecondsSinceEpoch,
     );
     expect(arguments['payload'], 'session:abc');
-    expect(arguments['title'], '专注已结束');
+    expect(arguments['title'], '专注已完成');
   });
 
   test('schedule is a no-op when the OS registration was refused', () async {

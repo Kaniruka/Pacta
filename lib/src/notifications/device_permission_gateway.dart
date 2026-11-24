@@ -27,6 +27,35 @@ abstract interface class BatteryOptimizationGateway {
   Future<void> openBatteryOptimizationSettings();
 }
 
+/// 通知渠道健康度：渠道被降级或静音时，弹窗与锁屏提醒会被系统静默抑制。
+///
+/// 与 [DevicePermissionGateway] 分开声明：既有的假实现不必为一个新能力补
+/// 方法，页面按需注入；桌面端恒为"健康"。
+class NotificationChannelHealth {
+  const NotificationChannelHealth({
+    required this.healthy,
+    this.degradedChannelIds = const [],
+  });
+
+  const NotificationChannelHealth.healthy()
+    : this(healthy: true, degradedChannelIds: const []);
+
+  /// 五个 `*_v2` 渠道都没有被降级、阻断或设为隐藏锁屏内容。
+  final bool healthy;
+
+  /// 需要用户去系统设置里修好的渠道 id，顺序稳定（事件渠道在最前）。
+  final List<String> degradedChannelIds;
+}
+
+/// 读取与打开单个通知渠道的系统设置页。
+abstract interface class NotificationChannelHealthGateway {
+  /// 只读探测：不写任何系统设置，未创建的渠道按健康处理。
+  Future<NotificationChannelHealth> inspectChannelHealth();
+
+  /// 直达该渠道的系统设置页；不可用时回退到应用通知设置。
+  Future<void> openChannelSettings(String channelId);
+}
+
 DevicePermissionGateway createDevicePermissionGateway() => Platform.isAndroid
     ? const MethodChannelDevicePermissionGateway()
     : const UnsupportedDevicePermissionGateway();
@@ -37,8 +66,17 @@ BatteryOptimizationGateway createBatteryOptimizationGateway() =>
     ? const MethodChannelDevicePermissionGateway()
     : const UnsupportedDevicePermissionGateway();
 
+/// 通知渠道健康度：Android 走设备权限通道，桌面端没有渠道概念。
+NotificationChannelHealthGateway createNotificationChannelHealthGateway() =>
+    Platform.isAndroid
+    ? const MethodChannelDevicePermissionGateway()
+    : const UnsupportedDevicePermissionGateway();
+
 class MethodChannelDevicePermissionGateway
-    implements DevicePermissionGateway, BatteryOptimizationGateway {
+    implements
+        DevicePermissionGateway,
+        BatteryOptimizationGateway,
+        NotificationChannelHealthGateway {
   const MethodChannelDevicePermissionGateway({
     this.channel = const MethodChannel('com.pacta/device_permissions'),
   });
@@ -73,6 +111,40 @@ class MethodChannelDevicePermissionGateway
     await _invoke('openBatteryOptimizationSettings');
   }
 
+  @override
+  Future<NotificationChannelHealth> inspectChannelHealth() async {
+    try {
+      final reply = await channel.invokeMapMethod<String, Object?>(
+        'getNotificationChannelHealth',
+      );
+      if (reply == null) return const NotificationChannelHealth.healthy();
+      final degraded = reply['degradedChannels'];
+      return NotificationChannelHealth(
+        // 只有原生侧明确说"不健康"才算不健康：读不到就按健康处理，
+        // 避免首次启动或旧宿主把用户引向并不存在的降级问题。
+        healthy: reply['healthy'] != false,
+        degradedChannelIds: [
+          if (degraded is List)
+            for (final id in degraded)
+              if (id is String && id.isNotEmpty) id,
+        ],
+      );
+    } catch (_) {
+      return const NotificationChannelHealth.healthy();
+    }
+  }
+
+  @override
+  Future<void> openChannelSettings(String channelId) async {
+    try {
+      await channel.invokeMethod<void>('openNotificationChannelSettings', {
+        'channelId': channelId,
+      });
+    } catch (_) {
+      // 渠道级设置页不是所有机型都有；调用方保留整页通知设置入口。
+    }
+  }
+
   Future<void> _invoke(String method) async {
     try {
       await channel.invokeMethod<void>(method);
@@ -83,7 +155,10 @@ class MethodChannelDevicePermissionGateway
 }
 
 class UnsupportedDevicePermissionGateway
-    implements DevicePermissionGateway, BatteryOptimizationGateway {
+    implements
+        DevicePermissionGateway,
+        BatteryOptimizationGateway,
+        NotificationChannelHealthGateway {
   const UnsupportedDevicePermissionGateway();
 
   @override
@@ -97,4 +172,11 @@ class UnsupportedDevicePermissionGateway
 
   @override
   Future<void> openBatteryOptimizationSettings() async {}
+
+  @override
+  Future<NotificationChannelHealth> inspectChannelHealth() async =>
+      const NotificationChannelHealth.healthy();
+
+  @override
+  Future<void> openChannelSettings(String channelId) async {}
 }
