@@ -865,6 +865,71 @@ class CloudSnapshotRepository {
     );
   }
 
+  /// 重置本机全部记录，但不销毁卡片，也不改动卡片、规则与任务的结构。
+  ///
+  /// 只清空“记录与进度”：点亮/连击/内化/失败记录、专注与预约记录、任务的
+  /// 完成状态与专注进度、全部日程；国策卡的名称、规则、树布局与强化等级，
+  /// 下必为例与信号，目标（含置顶与排序）与任务本身全部保留。
+  ///
+  /// [expectedFingerprint] 是确认对话框弹出前捕获的本机指纹：确认期间任何
+  /// 变化都让本次重置整体放弃，绝不按旧范围清空。重置前先持久保存本机恢复
+  /// 点并读回校验，因此这次清空可以从「重置记录前备份」完整找回。
+  Future<void> resetAllRecords({
+    required String expectedFingerprint,
+    bool Function()? isCancelled,
+  }) async {
+    final localBefore = await captureLocalState();
+    if (localBefore.hasUnfinishedFlow) {
+      throw StateError('预约或专注尚未结束，暂不能重置数据。');
+    }
+    if (localBefore.fingerprint != expectedFingerprint) {
+      throw StateError('本机数据在确认期间发生变化，请重新检查后再重置。');
+    }
+    final point = CloudRecoveryPoint(
+      id: const Uuid().v4(),
+      userId: userId,
+      createdAt: now().toUtc(),
+      reason: CloudRecoveryReason.beforeRecordReset,
+      dataUpdatedAt: localBefore.dataUpdatedAt,
+      rowCount: localBefore.rowCount,
+      payload: localBefore.payload,
+      sourceDeviceName: deviceName,
+    );
+    await recoveryPointStore.save(point);
+    // 与恢复路径同一条读回校验：落盘内容必须证明就是本次恢复点（同一用户、
+    // 同一标识、与清空前本机状态同一指纹），否则一行都不改。
+    final persisted = await recoveryPointStore.load(userId, point.id);
+    if (persisted == null ||
+        persisted.userId != userId ||
+        persisted.id != point.id ||
+        _fingerprint(persisted.payload) != localBefore.fingerprint) {
+      throw StateError('本机恢复点未正确保存，已取消重置。');
+    }
+    _throwIfCancelled(isCancelled);
+    // 清空后的本机既不再与云端一致，也不该继续声称"已处理某个云版本"；
+    // 清除失败说明存储不可写，此时仍不替换任何业务行。
+    await _clearSyncResult();
+    await database.transaction(() async {
+      // 事务内、删除前再检查一次：预检与删除之间用户可能已经切换账号、
+      // 开始了一次专注，或在别处改了数据。此时必须整体放弃。
+      final localAtCommit = await _captureLocalState();
+      _throwIfCancelled(isCancelled);
+      if (localAtCommit.hasUnfinishedFlow) {
+        throw StateError('预约或专注尚未结束，暂不能重置数据。');
+      }
+      if (localAtCommit.fingerprint != expectedFingerprint) {
+        throw StateError('本机数据在确认期间发生变化，请重新检查后再重置。');
+      }
+      await _resetLocalRecords();
+      _throwIfCancelled(isCancelled);
+    });
+    database.notifyUpdates({
+      for (final table in database.allTables)
+        if (_businessTables.contains(table.actualTableName))
+          drift.TableUpdate.onTable(table),
+    });
+  }
+
   /// 恢复点必须先真正落盘并可读回，才允许替换本机数据。
   Future<void> _replaceWithRecoveryPoint({
     required Map<String, List<Map<String, Object?>>> validatedRows,
@@ -991,6 +1056,173 @@ class CloudSnapshotRepository {
       database.localCalendarSources,
     )..where((row) => row.userId.equals(userId))).get();
     return {for (final row in rows) row.sourceId: row};
+  }
+
+  /// 事务内的业务表重置：只清空记录与进度，保留结构与用户写下的内容。
+  ///
+  /// 引用完整性在最后统一成立：软删除的行先删除，再收拾失去引用的任务、
+  /// 强化等级与父节点，因此重置后导出的快照仍能通过 [_validatePayload]。
+  Future<void> _resetLocalRecords() async {
+    // 直接写 SQLite 的存储表示：时间列是 Unix 秒，布尔列是 0/1。
+    final timestamp = now().toUtc().millisecondsSinceEpoch ~/ 1000;
+
+    // 国策树：失败记录与结算进度本身就是“记录”。软删除的卡片连同它的强化
+    // 等级一起消失；保留卡的结构（名称、规则、作用范围、树位置、强化等级）
+    // 全部留下，只把状态与连续天数归零。
+    await database.customStatement(
+      'DELETE FROM local_national_focus_failures WHERE user_id = ?',
+      [userId],
+    );
+    await database.customStatement(
+      'DELETE FROM local_national_focus_maintenance WHERE user_id = ?',
+      [userId],
+    );
+    await database.customStatement(
+      'DELETE FROM local_national_focus_cards '
+      'WHERE user_id = ? AND deleted_at IS NOT NULL',
+      [userId],
+    );
+    await database.customStatement(
+      'DELETE FROM local_national_focus_strengthening_levels WHERE user_id = ? '
+      'AND card_id NOT IN ('
+      'SELECT id FROM local_national_focus_cards WHERE user_id = ?)',
+      [userId, userId],
+    );
+
+    final retainedRows = await database
+        .customSelect(
+          'SELECT id, trigger_condition, action, scope, exception_notes, '
+          'is_in_tree, parent_id, active_strengthening_level '
+          'FROM local_national_focus_cards WHERE user_id = ?',
+          variables: [drift.Variable<String>(userId)],
+        )
+        .get();
+    final retainedIds = <String>{
+      for (final row in retainedRows) row.read<String>('id'),
+    };
+    final levelRows = await database
+        .customSelect(
+          'SELECT card_id, level_number, trigger_condition_override, '
+          'action_override FROM local_national_focus_strengthening_levels '
+          'WHERE user_id = ?',
+          variables: [drift.Variable<String>(userId)],
+        )
+        .get();
+    final levels = <String, Map<int, ({String? trigger, String? action})>>{};
+    for (final row in levelRows) {
+      final cardId = row.read<String>('card_id');
+      levels.putIfAbsent(cardId, () => {})[row.read<int>('level_number')] = (
+        trigger: row.readNullable<String>('trigger_condition_override'),
+        action: row.readNullable<String>('action_override'),
+      );
+    }
+    // 要求版本描述“这一次点亮按哪条规则判”，历史版本属于记录：全部清空后
+    // 每张保留卡只留一条 version_number = 1 的当前生效版本。
+    await database.customStatement(
+      'DELETE FROM local_national_focus_requirement_versions WHERE user_id = ?',
+      [userId],
+    );
+    for (final row in retainedRows) {
+      final cardId = row.read<String>('id');
+      final parentId = row.readNullable<String>('parent_id');
+      // 父节点已被删除（或本来就不存在）时保留卡必须回到根：留着悬空引用
+      // 会让整份快照校验失败，树也不再可解释。
+      final keepParent = parentId == null || retainedIds.contains(parentId);
+      final selected = row.readNullable<int>('active_strengthening_level');
+      final level = selected == null ? null : levels[cardId]?[selected];
+      final levelNumber = level == null ? null : selected;
+      await database.customStatement(
+        'UPDATE local_national_focus_cards SET parent_id = ?, '
+        'is_in_tree = ?, active_strengthening_level = ?, '
+        "state = 'extinguished', successful_days = 0, "
+        'current_consecutive_days = 0, best_consecutive_days = 0, '
+        'maintenance_cycle_started = 0, failure_reason = NULL, '
+        'cascade_source_card_id = NULL, cascade_prior_state = NULL, '
+        "review_disposition = 'accepted', updated_at = ? "
+        'WHERE user_id = ? AND id = ?',
+        [
+          keepParent ? parentId : null,
+          keepParent ? row.read<int>('is_in_tree') : 0,
+          levelNumber,
+          timestamp,
+          userId,
+          cardId,
+        ],
+      );
+      await database.customStatement(
+        'INSERT INTO local_national_focus_requirement_versions ('
+        'user_id, id, card_id, version_number, strengthening_level_number, '
+        'effective_trigger_condition, effective_action, scope, '
+        'exception_notes, effective_from, effective_until) '
+        'VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, NULL)',
+        [
+          userId,
+          const Uuid().v4(),
+          cardId,
+          levelNumber,
+          level?.trigger ?? row.read<String>('trigger_condition'),
+          level?.action ?? row.read<String>('action'),
+          row.readNullable<String>('scope'),
+          row.readNullable<String>('exception_notes'),
+          timestamp,
+        ],
+      );
+    }
+
+    // 专注链：会话、预约、节点、链记录与同步来源都是“记录”，整体清空；
+    // 下必为例只删已软删除的条目，有效规则与信号（chain_signals）保留。
+    for (final table in const [
+      'focus_sessions',
+      'focus_appointments',
+      'focus_nodes',
+      'focus_chain_records',
+      'appointment_chain_records',
+      'focus_sync_sources',
+    ]) {
+      await database.customStatement(
+        'DELETE FROM "${_quoteIdentifier(table)}" WHERE user_id = ?',
+        [userId],
+      );
+    }
+    await database.customStatement(
+      'DELETE FROM focus_precedent_rules '
+      'WHERE user_id = ? AND deleted_at IS NOT NULL',
+      [userId],
+    );
+
+    // 目标与任务：删除软删除的行，以及归属已删除目标（或目标已不存在）的
+    // 孤儿任务。目标本身连同置顶与排序保留，保留任务只把完成状态与进度归零。
+    await database.customStatement(
+      'DELETE FROM local_tasks WHERE user_id = ? AND deleted_at IS NOT NULL',
+      [userId],
+    );
+    await database.customStatement(
+      'DELETE FROM local_goals WHERE user_id = ? AND deleted_at IS NOT NULL',
+      [userId],
+    );
+    await database.customStatement(
+      'DELETE FROM local_tasks WHERE user_id = ? AND goal_id NOT IN ('
+      'SELECT id FROM local_goals WHERE user_id = ?)',
+      [userId, userId],
+    );
+    await database.customStatement(
+      'UPDATE local_tasks SET is_complete = 0, focus_progress_seconds = 0, '
+      'updated_at = ? WHERE user_id = ?',
+      [timestamp, userId],
+    );
+
+    // 日程：自有日程、重复规则与导入副本全部清空；日历来源（本机日历映射与
+    // 勾选状态）保留，重新导入时不必再走一次授权。
+    for (final table in const [
+      'local_schedules',
+      'local_schedule_recurrences',
+      'local_calendar_blocks',
+    ]) {
+      await database.customStatement(
+        'DELETE FROM "${_quoteIdentifier(table)}" WHERE user_id = ?',
+        [userId],
+      );
+    }
   }
 
   Future<Map<String, dynamic>> _exportPayload() async {

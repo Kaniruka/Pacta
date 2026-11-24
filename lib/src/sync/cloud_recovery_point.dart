@@ -5,7 +5,14 @@ import 'package:drift/drift.dart' as drift;
 import '../tasks/task_database.dart';
 
 /// 保存恢复点的原因，用于在“找回本机数据”入口区分上下文。
-enum CloudRecoveryReason { beforeCloudRestore, beforeRecoveryRestore }
+///
+/// [beforeRecordReset] 由「重置所有记录」写入：重置只清空运行期记录，保留
+/// 卡片、树布局、规则与任务结构，因此这份恢复点就是那次清空唯一的回滚路径。
+enum CloudRecoveryReason {
+  beforeCloudRestore,
+  beforeRecoveryRestore,
+  beforeRecordReset,
+}
 
 /// 恢复前持久保存的本机业务快照。
 ///

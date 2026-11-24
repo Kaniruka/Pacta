@@ -8,6 +8,7 @@ import '../calendar/calendar_page.dart';
 import '../national_focus/national_focus_ai_access.dart';
 import '../national_focus/national_focus_ai_analysis_page.dart';
 import '../notifications/focus_notification_settings_page.dart';
+import '../schedules/schedule_models.dart';
 import '../sync/cloud_sync_card.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_grouped_list.dart';
@@ -43,6 +44,13 @@ class MyPage extends ConsumerWidget {
           // 退出登录已移入《编辑资料》的「账号安全」分组：通知服务随依赖一起
           // 传下去，明确登出时先取消本机的提醒绑定再清登录状态。
           notificationService: ref.watch(focusNotificationServiceProvider),
+          // 「重置所有记录」同样住在《编辑资料》底部：仓储、待传队列的取消
+          // 入口与重置后的失效回调都从这里注入。
+          cloudSnapshotRepository: ref.watch(cloudSnapshotRepositoryProvider),
+          onCancelPendingUpload: ref
+              .watch(cloudAutoUploadCoordinatorProvider)
+              ?.cancelPending,
+          onRecordsReset: () => _afterRecordsReset(ref),
         ),
         const SizedBox(height: PactaSpacing.md),
         CloudSyncCard(
@@ -120,6 +128,33 @@ class MyPage extends ConsumerWidget {
         const SizedBox(height: PactaSpacing.xl),
       ],
     );
+  }
+
+  /// 重置记录之后：让受影响的仓储重新读表，并清掉已经不再成立的待发提醒。
+  ///
+  /// 仓储都是 autoDispose 的读表入口：invalidate 之后列表与统计重新订阅，
+  /// 页面上不会残留刚刚被清空的旧行。提醒必须先取消，否则国策提醒会在没有
+  /// 任何待确认卡片、日程也已经清空的情况下照常弹出。
+  Future<void> _afterRecordsReset(WidgetRef ref) async {
+    ref.invalidate(taskRepositoryProvider);
+    ref.invalidate(focusRepositoryProvider);
+    ref.invalidate(nationalFocusRepositoryProvider);
+    ref.invalidate(calendarRepositoryProvider);
+    ref.invalidate(scheduleRepositoryProvider);
+    final notificationService = ref.read(focusNotificationServiceProvider);
+    try {
+      await notificationService.syncNationalFocusReminder(
+        hasPendingConfirmations: false,
+      );
+      await notificationService.syncScheduleReminders(
+        schedules: const <Schedule>[],
+        timeZoneId: await resolveAccountDisplayTimeZoneId(
+          ref.read(profileRepositoryProvider),
+        ),
+      );
+    } catch (_) {
+      // 取消提醒是尽力而为：记录已经清空，下一次对账会再取消一次。
+    }
   }
 }
 

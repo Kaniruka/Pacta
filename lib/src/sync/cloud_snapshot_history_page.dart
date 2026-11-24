@@ -225,6 +225,7 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
   static String _reason(CloudRecoveryReason reason) => switch (reason) {
     CloudRecoveryReason.beforeCloudRestore => '云端恢复前保存',
     CloudRecoveryReason.beforeRecoveryRestore => '找回恢复点前保存',
+    CloudRecoveryReason.beforeRecordReset => '重置记录前备份',
   };
 
   @override
