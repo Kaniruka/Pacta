@@ -8,6 +8,7 @@ import '../focus/focus_chain_page.dart';
 import '../focus/focus_models.dart';
 import '../national_focus/national_focus_models.dart';
 import '../notifications/focus_notification_service.dart';
+import '../sync/cloud_snapshot_repository.dart';
 import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../ui/pacta_error_text.dart';
@@ -36,6 +37,9 @@ class MyProfileCard extends StatefulWidget {
     this.authRepository,
     this.lifecycleRepository,
     this.notificationService,
+    this.cloudSnapshotRepository,
+    this.onCancelPendingUpload,
+    this.onRecordsReset,
   });
 
   final ProfileRepository repository;
@@ -50,6 +54,12 @@ class MyProfileCard extends StatefulWidget {
 
   /// 明确退出登录时先取消本机的提醒绑定；未注入时只清登录状态。
   final FocusNotificationService? notificationService;
+
+  /// 「重置所有记录」的依赖：只有《我的》会把仓储与宿主回调传下去，
+  /// 隔离组件测试因此仍不渲染危险操作区。
+  final CloudSnapshotRepository? cloudSnapshotRepository;
+  final Future<void> Function()? onCancelPendingUpload;
+  final Future<void> Function()? onRecordsReset;
 
   @override
   State<MyProfileCard> createState() => _MyProfileCardState();
@@ -122,6 +132,9 @@ class _MyProfileCardState extends State<MyProfileCard> {
           authRepository: widget.authRepository,
           lifecycleRepository: widget.lifecycleRepository,
           notificationService: widget.notificationService,
+          cloudSnapshotRepository: widget.cloudSnapshotRepository,
+          onCancelPendingUpload: widget.onCancelPendingUpload,
+          onRecordsReset: widget.onRecordsReset,
         ),
       ),
     );

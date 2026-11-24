@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../auth/auth_repository.dart';
 import '../auth/user_lifecycle.dart';
 import '../notifications/focus_notification_service.dart';
+import '../sync/cloud_snapshot_repository.dart';
 import '../theme/pacta_fonts.dart';
 import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
@@ -33,6 +34,9 @@ class ProfileEditPage extends StatefulWidget {
     this.authRepository,
     this.lifecycleRepository,
     this.notificationService,
+    this.cloudSnapshotRepository,
+    this.onCancelPendingUpload,
+    this.onRecordsReset,
   });
 
   final ProfileRepository repository;
@@ -45,6 +49,16 @@ class ProfileEditPage extends StatefulWidget {
 
   /// 明确退出登录时先取消本机已登记的提醒；未注入时只清登录状态。
   final FocusNotificationService? notificationService;
+
+  /// 「重置所有记录」的依赖。未注入时（隔离组件测试、未登录环境）不渲染
+  /// 危险操作区：重置必须由《我的》提供仓储与既存数据的失效回调。
+  final CloudSnapshotRepository? cloudSnapshotRepository;
+
+  /// 重置前取消待传的自动上传：刚清空的记录不能再被队列送回云端。
+  final Future<void> Function()? onCancelPendingUpload;
+
+  /// 重置成功后由宿主失效受影响的仓储并清掉待发提醒。
+  final Future<void> Function()? onRecordsReset;
 
   @override
   State<ProfileEditPage> createState() => _ProfileEditPageState();
@@ -64,6 +78,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
   String? _loadedTimeZoneId;
   String? _error;
   bool _signingOut = false;
+  bool _resetting = false;
 
   @override
   void initState() {
@@ -321,6 +336,105 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     }
   }
 
+  /// 「重置所有记录」：先按确认前的本机状态预检，再二次强确认，最后才动数据。
+  ///
+  /// 顺序是刻意的：未结束的专注/预约先被拦住（清空会抹掉仍在进行的流程），
+  /// 而确认对话框拿到的指纹就是这次清空的唯一范围，之后任何不一致都由
+  /// 仓储在事务内拒绝，而不是按旧范围继续删。
+  Future<void> _resetAllRecords() async {
+    final repository = widget.cloudSnapshotRepository;
+    if (repository == null || _resetting) return;
+    final messenger = ScaffoldMessenger.of(context);
+    // 不碰 _error：它属于资料保存，失败时会带出「重试同步」；重置自己的失败
+    // 走 SnackBar，两类原因因此不会混在同一条提示里。
+    setState(() => _resetting = true);
+    try {
+      final state = await repository.captureLocalState();
+      if (!mounted) return;
+      if (state.hasUnfinishedFlow) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('预约或专注尚未结束，请先结束当前专注或预约，再重置数据。')),
+        );
+        return;
+      }
+      if (!await _confirmReset()) return;
+      if (!mounted) return;
+      // 先取消待传队列：否则重置后的本机会被队列悄悄传成新的云端版本。
+      await widget.onCancelPendingUpload?.call();
+      await repository.resetAllRecords(expectedFingerprint: state.fingerprint);
+      await widget.onRecordsReset?.call();
+      if (!mounted) return;
+      messenger.showSnackBar(
+        const SnackBar(content: Text('已重置所有记录；卡片、规则与任务已保留。')),
+      );
+    } on Object catch (error) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(formatUserError(error, fallback: '重置未完成，请稍后重试。')),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _resetting = false);
+    }
+  }
+
+  /// 二次强确认：把“保留什么、销毁什么、影响范围”摆在同一屏。
+  ///
+  /// 这是不可撤销动作之前唯一一次确认，因此不能只写“确定要重置吗”：
+  /// 用户必须在点下去之前就看清楚卡片会留下、进度会消失。
+  Future<bool> _confirmReset() async {
+    final theme = Theme.of(context);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('重置所有记录？'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('保留', style: theme.textTheme.titleSmall),
+              const SizedBox(height: PactaSpacing.xxs),
+              const Text(
+                '· 国策卡与国策树布局\n'
+                '· 下必为例与专注信号\n'
+                '· 目标（含置顶与排序）与任务',
+              ),
+              const SizedBox(height: PactaSpacing.md),
+              Text('销毁', style: theme.textTheme.titleSmall),
+              const SizedBox(height: PactaSpacing.xxs),
+              const Text(
+                '· 点亮、连击、内化与失败记录\n'
+                '· 专注与预约记录\n'
+                '· 任务的完成状态与专注进度\n'
+                '· 全部日程、重复规则与导入副本',
+              ),
+              const SizedBox(height: PactaSpacing.md),
+              Text(
+                '仅重置本机，不自动覆盖云端；重置前会自动保存本机恢复点。',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            key: const ValueKey('profile-reset-records-cancel'),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            key: const ValueKey('profile-reset-records-confirm'),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('确认重置'),
+          ),
+        ],
+      ),
+    );
+    return confirmed ?? false;
+  }
+
   Future<void> _retry() async {
     setState(() => _busy = true);
     try {
@@ -438,6 +552,35 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
                           showChevron: false,
                           enabled: !_busy && !_picking && !_signingOut,
                           onTap: _signOut,
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (widget.cloudSnapshotRepository != null) ...[
+                    const SizedBox(height: PactaSpacing.xl),
+                    const PactaSectionHeader(title: '危险操作'),
+                    PactaGroupedList(
+                      children: [
+                        PactaSettingsTile(
+                          tileKey: const ValueKey(
+                            'profile-reset-records-entry',
+                          ),
+                          // 危险动作的图标取错误色：它和「账号安全」分成两段，
+                          // 不靠分隔线区分，只靠这一处颜色与语义。
+                          leading: Icon(
+                            Icons.restart_alt_outlined,
+                            size: PactaIconSizes.md,
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                          title: '重置所有记录',
+                          subtitle: '清空全部记录与进度，保留卡片、规则与任务',
+                          showChevron: false,
+                          enabled:
+                              !_busy &&
+                              !_picking &&
+                              !_signingOut &&
+                              !_resetting,
+                          onTap: _resetAllRecords,
                         ),
                       ],
                     ),
