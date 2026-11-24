@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/src/auth/user_lifecycle.dart';
@@ -124,6 +125,11 @@ void main() {
     expect(find.byKey(_pinnedTab), findsNothing);
     expect(find.text('置顶目标'), findsNothing);
     expect(find.text('还没有置顶目标'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('board-top-slot-swipe')),
+      findsNothing,
+      reason: '没有置顶目标时不显示切换，也不占用高度',
+    );
     expect(find.text('今日国策状态'), findsOneWidget);
     expect(find.text('点亮 1'), findsOneWidget);
     // 顶槽仍在热力月历之上，且没有空占位把月历挤下去。
@@ -688,6 +694,138 @@ void main() {
     await _tapDay(tester, 9);
     expect(find.textContaining('已移除的国策卡'), findsOneWidget);
     expect(find.textContaining('card-uuid-removed'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+
+  testWidgets('窄屏顶槽左滑到置顶目标：长按菜单、垂直拖动与对称内边距全保留', (tester) async {
+    _useTallView(tester);
+    final harness = _Harness(
+      cards: [
+        _card('a', NationalFocusCardState.lit),
+        _card('b', NationalFocusCardState.pendingTodayConfirmation),
+      ],
+      pinned: [_goal('goal-a', '写周报'), _goal('goal-b', '读文档')],
+    );
+    await tester.pumpWidget(harness.build());
+    await tester.pumpAndSettle();
+
+    // 有待确认节点：默认国策状态。滑动区存在，但绝不是一个固定高度 PageView。
+    expect(find.text('今日国策状态'), findsOneWidget);
+    expect(find.text('写周报'), findsNothing);
+    final swipeArea = find.byKey(const ValueKey('board-top-slot-swipe'));
+    expect(swipeArea, findsOneWidget);
+    expect(
+      find.descendant(of: swipeArea, matching: find.byType(PageView)),
+      findsNothing,
+      reason: '顶槽按内容自适应高度，不能用 PageView 裁切置顶卡',
+    );
+
+    // 触控左滑：国策状态 -> 置顶目标。
+    await tester.drag(
+      find.byKey(const ValueKey('board-today-national-focus')),
+      const Offset(-160, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('写周报'), findsOneWidget);
+    expect(find.text('读文档'), findsOneWidget);
+    expect(find.text('今日国策状态'), findsNothing);
+    expect(find.text('点亮 2'), findsNothing);
+
+    // 置顶卡槽的对称内边距（10dp vs 10dp）在滑动切换后仍成立。
+    final surface = tester.getRect(
+      find.byKey(const ValueKey('board-top-slot-pinned-surface')),
+    );
+    final first = tester.getRect(
+      find.byKey(const ValueKey('board-pinned-goal-goal-a')),
+    );
+    final last = tester.getRect(
+      find.byKey(const ValueKey('board-pinned-goal-goal-b')),
+    );
+    expect(first.top - surface.top, moreOrLessEquals(10, epsilon: 0.5));
+    expect(surface.bottom - last.bottom, moreOrLessEquals(10, epsilon: 0.5));
+    expect(
+      (first.top - surface.top) - (surface.bottom - last.bottom),
+      moreOrLessEquals(0, epsilon: 0.5),
+      reason: '滑动切页后上下内边距仍严格对称',
+    );
+
+    // 横向手势不抢长按：菜单仍能打开并执行取消置顶。
+    await tester.longPress(find.text('写周报'));
+    await tester.pumpAndSettle();
+    expect(find.text('在计划中查看'), findsOneWidget);
+    expect(find.text('取消置顶'), findsOneWidget);
+    await tester.tap(find.text('取消置顶'));
+    await tester.pumpAndSettle();
+    expect(harness.tasks.unpinned, ['goal-a']);
+
+    // 垂直拖动也不会被误判成右滑：仍停在置顶目标。
+    await tester.drag(find.text('读文档'), const Offset(0, -120));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('board-top-slot-pinned-surface')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('board-today-national-focus')),
+      findsNothing,
+    );
+
+    // 置顶排序的真实回调仍写回完整 ID。
+    tester
+        .widget<PactaHoldReorderList>(find.byType(PactaHoldReorderList))
+        .onReorder(0, 1);
+    await tester.pumpAndSettle();
+    expect(harness.tasks.reordered.single, ['goal-b', 'goal-a']);
+
+    // 触控右滑：置顶目标 -> 国策状态。
+    await tester.drag(
+      find.byKey(const ValueKey('board-top-slot-pinned-surface')),
+      const Offset(160, 0),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('今日国策状态'), findsOneWidget);
+    expect(find.text('写周报'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await _unmount(tester);
+  });
+
+  testWidgets('鼠标按住横拖同样能在国策状态与置顶目标之间切换', (tester) async {
+    _useTallView(tester);
+    final harness = _Harness(
+      cards: [
+        _card('a', NationalFocusCardState.lit),
+        _card('b', NationalFocusCardState.pendingTodayConfirmation),
+      ],
+      pinned: [_goal('goal-a', '写周报')],
+    );
+    await tester.pumpWidget(harness.build());
+    await tester.pumpAndSettle();
+    expect(find.text('今日国策状态'), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const ValueKey('board-today-national-focus')),
+      const Offset(-160, 0),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('board-top-slot-pinned-surface')),
+      findsOneWidget,
+    );
+    expect(find.text('写周报'), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const ValueKey('board-top-slot-pinned-surface')),
+      const Offset(160, 0),
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey('board-today-national-focus')),
+      findsOneWidget,
+    );
+    expect(find.text('写周报'), findsNothing);
     expect(tester.takeException(), isNull);
     await _unmount(tester);
   });
