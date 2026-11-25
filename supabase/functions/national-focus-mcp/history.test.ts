@@ -4,7 +4,7 @@ import { writeFileSync } from 'node:fs';
 import { createHandler, hash, StoreError, type Store } from './handler.ts';
 
 const issuer = 'https://example.supabase.co/functions/v1/national-focus-mcp';
-const resource = `${issuer}/mcp`;
+const resource = `${issuer}/mcp/readonly`;
 const token = `pacta_mcp_${'a'.repeat(64)}`;
 const metadata = { contract_version: 1, status: 'available', revision: 2,
   source_device: { id: 'phone', name: 'Android' }, uploaded_at: '2026-10-21T01:00:00Z',
@@ -72,8 +72,6 @@ function fixture(ownerToken = token, ownerSnapshot: unknown = rawHistory) {
   let historyCalls = 0;
   let seenHistoryArgs: Record<string, unknown> | undefined;
   const store: Store = {
-    async insert(table, value) { (tables[table] ??= []).push(value); },
-    async one(table, field, value) { return tables[table]?.find((row) => row[field] === value) ?? null; },
     async rpc(name, args) {
       if (name === 'read_national_focus_mcp_metadata') {
         if (denied || args.p_token_hash !== await hash(ownerToken)) throw new StoreError('28000');
@@ -87,6 +85,9 @@ function fixture(ownerToken = token, ownerSnapshot: unknown = rawHistory) {
         if (historyUnavailable) throw new Error('private database payload must not leak');
         if (args.p_expected_revision !== undefined && args.p_expected_revision !== 2) throw new StoreError('PT409');
         return snapshot;
+      }
+      if (name === 'record_national_focus_mcp_audit') {
+        return null;
       }
       throw new Error(`unexpected RPC ${name}`);
     },

@@ -1,475 +1,293 @@
--- Rollback-only authorization, RLS, OAuth, suspension, and metadata checks.
+-- Rollback-only authorization, RLS, scoped token, audit log, suspension,
+-- and constrained write-invariant checks for MCP v2.
 -- Run only in an isolated Supabase project after applying
--- 202610210001_national_focus_mcp.sql. Creates transaction-local test identities;
--- no ordinary user is selected or modified. All fixtures and temporary table
--- grants used to exercise default-deny RLS are rolled back.
+-- 202611250002_national_focus_mcp_v2.sql. Creates transaction-local test
+-- identities; no ordinary user is selected or modified.
 
 begin;
 
 do $setup$
 declare
-  test_user_id uuid;
-  other_user_id uuid;
-  client_id text := 'national-focus-mcp-probe-' || gen_random_uuid()::text;
-  request_code text := 'nf-' || replace(gen_random_uuid()::text, '-', '');
-  suspended_request_code text := 'nf-' || replace(gen_random_uuid()::text, '-', '');
-  request_hash text;
-  suspended_request_hash text;
-  other_token_hash text := md5(gen_random_uuid()::text);
+  test_user_id uuid := gen_random_uuid();
+  other_user_id uuid := gen_random_uuid();
+  other_token text := 'pacta_mcp_' || repeat('b', 64);
+  other_token_hash text;
   other_grant_id uuid;
 begin
-  test_user_id := gen_random_uuid();
-  other_user_id := gen_random_uuid();
   perform set_config('request.jwt.claim.role', 'service_role', true);
   insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,created_at,updated_at)
   values
-    ('00000000-0000-0000-0000-000000000000',test_user_id,'authenticated','authenticated','nf-access-'||test_user_id||'@probe.invalid','',now(),now(),now()),
-    ('00000000-0000-0000-0000-000000000000',other_user_id,'authenticated','authenticated','nf-access-'||other_user_id||'@probe.invalid','',now(),now(),now());
+    ('00000000-0000-0000-0000-000000000000',test_user_id,'authenticated','authenticated','nf-v2-'||test_user_id||'@probe.invalid','',now(),now(),now()),
+    ('00000000-0000-0000-0000-000000000000',other_user_id,'authenticated','authenticated','nf-v2-'||other_user_id||'@probe.invalid','',now(),now(),now());
 
-  request_hash := encode(
-    sha256(convert_to(lower(btrim(request_code)), 'UTF8')), 'hex'
-  );
-  suspended_request_hash := encode(
-    sha256(convert_to(lower(btrim(suspended_request_code)), 'UTF8')), 'hex'
-  );
-
-  perform set_config('nf_mcp_test.user_id', test_user_id::text, true);
-  perform set_config('nf_mcp_test.other_user_id', other_user_id::text, true);
-  perform set_config('nf_mcp_test.client_id', client_id, true);
-  perform set_config('nf_mcp_test.request_code', request_code, true);
-  perform set_config('nf_mcp_test.request_hash', request_hash, true);
-  perform set_config('nf_mcp_test.suspended_request_code', suspended_request_code, true);
-  perform set_config('nf_mcp_test.suspended_request_hash', suspended_request_hash, true);
-  perform set_config('nf_mcp_test.other_token_hash', other_token_hash, true);
-
-  insert into public.national_focus_mcp_clients(
-    id, client_name, redirect_uris
-  ) values (
-    client_id,
-    'National Focus MCP SQL probe',
-    '["https://probe.invalid/callback"]'::jsonb
-  );
-
-  insert into public.national_focus_mcp_requests(
-    request_hash, client_id, redirect_uri, resource, code_challenge, state
-  ) values
-    (
-      request_hash, client_id, 'https://probe.invalid/callback',
-      'https://probe.invalid/mcp', 'probe-challenge', 'probe-state'
-    ),
-    (
-      suspended_request_hash, client_id, 'https://probe.invalid/callback',
-      'https://probe.invalid/mcp', 'suspended-challenge', 'suspended-state'
-    );
+  other_token_hash := encode(sha256(convert_to(other_token, 'UTF8')), 'hex');
 
   insert into public.national_focus_mcp_grants(
-    user_id, client_id, token_hash, expires_at
+    user_id, label, agent_preset, scope, token_hash, token_prefix, expires_at
   ) values (
-    other_user_id, client_id, other_token_hash, now() + interval '1 hour'
+    other_user_id, 'Other user token', 'codex', 'national_focus:read',
+    other_token_hash, 'pacta_mcp_bbbb...', now() + interval '1 hour'
   ) returning id into other_grant_id;
-  perform set_config('nf_mcp_test.other_grant_id', other_grant_id::text, true);
 
   insert into public.cloud_business_snapshots(
-    user_id, revision, payload, device_id, device_name,
-    data_updated_at, row_count
+    user_id, revision, payload, device_id, device_name, data_updated_at, row_count
   ) values (
     test_user_id,
-    7,
+    1,
     jsonb_build_object(
-      'schemaVersion', 1,
+      'schemaVersion', 4,
       'userId', test_user_id::text,
       'tables', jsonb_build_object(
+        'local_goals', '[]'::jsonb,
+        'local_tasks', '[]'::jsonb,
         'local_national_focus_cards', jsonb_build_array(
           jsonb_build_object(
             'user_id', test_user_id::text,
-            'name', 'SECRET-NF-MCP-PROBE private business payload'
+            'id', 'card-1',
+            'name', '早起断屏',
+            'trigger_condition', '',
+            'action', '起床 30 分钟内不用娱乐 App',
+            'scope', null,
+            'exception_notes', null,
+            'is_in_tree', 1,
+            'parent_id', null,
+            'state', 'lit',
+            'successful_days', 5,
+            'current_consecutive_days', 3,
+            'best_consecutive_days', 4,
+            'maintenance_cycle_started', 1,
+            'failure_reason', null,
+            'cascade_source_card_id', null,
+            'cascade_prior_state', null,
+            'review_disposition', 'accepted',
+            'active_strengthening_level', null,
+            'icon_key', 'lucide:sunrise',
+            'created_at', 1700000000,
+            'updated_at', 1700000000,
+            'deleted_at', null
           )
         ),
         'local_national_focus_strengthening_levels', '[]'::jsonb,
         'local_national_focus_maintenance', '[]'::jsonb,
-        'local_national_focus_failures', '[]'::jsonb
+        'local_national_focus_failures', '[]'::jsonb,
+        'focus_precedent_rules', '[]'::jsonb,
+        'focus_appointments', '[]'::jsonb,
+        'focus_sessions', '[]'::jsonb,
+        'focus_nodes', '[]'::jsonb,
+        'focus_chain_records', '[]'::jsonb,
+        'appointment_chain_records', '[]'::jsonb,
+        'chain_signals', '[]'::jsonb,
+        'focus_sync_sources', '[]'::jsonb,
+        'local_calendar_sources', '[]'::jsonb,
+        'local_calendar_blocks', '[]'::jsonb,
+        'local_schedules', '[]'::jsonb,
+        'local_schedule_recurrences', '[]'::jsonb
       )
     ),
     'probe-device-id', 'Probe device', now(), 1
   );
 
-  insert into public.user_suspension_periods(user_id)
-  values (other_user_id);
+  insert into public.user_suspension_periods(user_id) values (other_user_id);
+
+  perform set_config('nf_mcp_test.user_id', test_user_id::text, true);
+  perform set_config('nf_mcp_test.other_user_id', other_user_id::text, true);
+  perform set_config('nf_mcp_test.other_token_hash', other_token_hash, true);
+  perform set_config('nf_mcp_test.other_grant_id', other_grant_id::text, true);
 end
 $setup$;
 
--- This grant is transaction-local in effect because the whole probe rolls back.
--- It allows authenticated queries to reach PostgreSQL RLS, whose default-deny
--- behavior is then exercised against rows that really exist.
+-- Default-deny RLS check for authenticated role.
 grant select, insert, update, delete on
-  public.national_focus_mcp_clients,
   public.national_focus_mcp_grants,
-  public.national_focus_mcp_requests
+  public.national_focus_mcp_audit_logs
 to authenticated;
 
 set local role authenticated;
-select set_config(
-  'request.jwt.claim.sub', current_setting('nf_mcp_test.user_id'), true
-);
+select set_config('request.jwt.claim.sub', current_setting('nf_mcp_test.user_id'), true);
 
-do $authenticated_probe$
+do $rls_and_create_probe$
 declare
   visible_rows integer;
-  changed_rows integer;
-  own_grants integer;
-  request_info jsonb;
-  owner_grant_id uuid;
+  created_ro jsonb;
+  created_rw jsonb;
+  ro_hash text;
+  rw_hash text;
 begin
-  select count(*) into visible_rows from public.national_focus_mcp_clients;
-  if visible_rows <> 0 then
-    raise exception 'authenticated_role_bypassed_client_rls';
-  end if;
-
   select count(*) into visible_rows from public.national_focus_mcp_grants;
   if visible_rows <> 0 then
-    raise exception 'authenticated_role_bypassed_grant_rls';
+    raise exception 'rls_leaked_grants';
   end if;
-
-  select count(*) into visible_rows from public.national_focus_mcp_requests;
+  select count(*) into visible_rows from public.national_focus_mcp_audit_logs;
   if visible_rows <> 0 then
-    raise exception 'authenticated_role_bypassed_request_rls';
+    raise exception 'rls_leaked_audit_logs';
   end if;
 
+  -- Foreign revoke must fail with 42501.
   begin
-    insert into public.national_focus_mcp_clients(id, client_name, redirect_uris)
-    values (
-      'direct-write-' || gen_random_uuid()::text,
-      'must be rejected',
-      '[]'::jsonb
-    );
-    raise exception 'authenticated_direct_insert_bypassed_rls';
-  exception
-    when insufficient_privilege then null;
+    perform public.revoke_national_focus_mcp_grant(current_setting('nf_mcp_test.other_grant_id')::uuid);
+    raise exception 'foreign_grant_revoked';
+  exception when sqlstate '42501' then null;
   end;
 
-  update public.national_focus_mcp_grants
-  set revoked_at = now()
-  where id = current_setting('nf_mcp_test.other_grant_id')::uuid;
-  get diagnostics changed_rows = row_count;
-  if changed_rows <> 0 then
-    raise exception 'authenticated_direct_update_bypassed_rls';
+  created_ro := public.create_national_focus_mcp_grant('Codex Read', 'national_focus:read', 1800, 'codex');
+  created_rw := public.create_national_focus_mcp_grant('Antigravity RW', 'national_focus:readwrite', null, 'antigravity');
+
+  if (created_ro ->> 'token') not like 'pacta_mcp_%'
+    or created_rw ->> 'expires_at' is not null then
+    raise exception 'unexpected_created_grant_shape';
   end if;
 
-  delete from public.national_focus_mcp_grants
-  where id = current_setting('nf_mcp_test.other_grant_id')::uuid;
-  get diagnostics changed_rows = row_count;
-  if changed_rows <> 0 then
-    raise exception 'authenticated_direct_delete_bypassed_rls';
-  end if;
+  ro_hash := encode(sha256(convert_to(created_ro ->> 'token', 'UTF8')), 'hex');
+  rw_hash := encode(sha256(convert_to(created_rw ->> 'token', 'UTF8')), 'hex');
 
-  request_info := public.inspect_national_focus_mcp_request(
-    current_setting('nf_mcp_test.request_code')
-  );
-  if request_info ->> 'client_name' <> 'National Focus MCP SQL probe'
-    or request_info ->> 'redirect_uri' <> 'https://probe.invalid/callback'
-    or request_info ->> 'scope' <> 'national_focus:read'
-    or request_info ->> 'expires_at' is null then
-    raise exception 'app_request_inspection_returned_invalid_details';
-  end if;
-  if request_info ? 'state' or request_info ? 'code' then
-    raise exception 'app_request_inspection_returned_sensitive_fields';
-  end if;
-
-  begin
-    perform public.approve_national_focus_mcp_connection(
-      current_setting('nf_mcp_test.request_code'), false
-    );
-    raise exception 'missing_explicit_consent_was_accepted';
-  exception
-    when insufficient_privilege then null;
-  end;
-
-  -- A declined attempt leaves the request available for a later explicit consent.
-  perform public.inspect_national_focus_mcp_request(
-    current_setting('nf_mcp_test.request_code')
-  );
-  perform public.approve_national_focus_mcp_connection(
-    current_setting('nf_mcp_test.request_code'), true
-  );
-
-  begin
-    perform public.inspect_national_focus_mcp_request(
-      current_setting('nf_mcp_test.request_code')
-    );
-    raise exception 'approved_request_was_inspected_again';
-  exception
-    when sqlstate '22023' then null;
-  end;
-
-  select count(*) into own_grants
-  from public.list_national_focus_mcp_grants();
-  if own_grants <> 1 then
-    raise exception 'user_grant_listing_did_not_scope_to_auth_uid';
-  end if;
-  select id into owner_grant_id
-  from public.list_national_focus_mcp_grants();
-  perform set_config('nf_mcp_test.owner_grant_id', owner_grant_id::text, true);
-
-  begin
-    perform public.exchange_national_focus_mcp_code(
-      'not-authorized', current_setting('nf_mcp_test.client_id'),
-      'https://probe.invalid/callback', 'https://probe.invalid/mcp',
-      'probe-challenge', 'unauthorized-token-hash'
-    );
-    raise exception 'authenticated_role_called_service_only_exchange';
-  exception
-    when insufficient_privilege then null;
-  end;
-
-  begin
-    perform public.read_national_focus_mcp_metadata('not-authorized', null);
-    raise exception 'authenticated_role_called_service_only_metadata_read';
-  exception
-    when insufficient_privilege then null;
-  end;
-
-  begin
-    perform public.revoke_national_focus_mcp_grant(
-      current_setting('nf_mcp_test.other_grant_id')::uuid
-    );
-    raise exception 'user_revoked_another_users_grant';
-  exception
-    when insufficient_privilege then null;
-  end;
+  perform set_config('nf_mcp_test.ro_id', created_ro ->> 'id', true);
+  perform set_config('nf_mcp_test.rw_id', created_rw ->> 'id', true);
+  perform set_config('nf_mcp_test.ro_hash', ro_hash, true);
+  perform set_config('nf_mcp_test.rw_hash', rw_hash, true);
 end
-$authenticated_probe$;
+$rls_and_create_probe$;
 
 reset role;
 set local role service_role;
 
-do $service_role_probe$
+do $service_scope_and_write_probe$
 declare
-  request_row public.national_focus_mcp_requests;
-  exchange_result jsonb;
-  metadata_result jsonb;
-  owner_user_id uuid := current_setting('nf_mcp_test.user_id')::uuid;
-  expected_keys text[] := array[
-    'contract_version', 'data_updated_at', 'freshness', 'revision',
-    'source_device', 'status', 'uploaded_at'
-  ];
-  actual_keys text[];
-  token_hash text := md5(gen_random_uuid()::text);
+  meta jsonb;
+  updated_cards jsonb;
+  bad_cards jsonb;
 begin
-  select * into request_row
-  from public.national_focus_mcp_requests
-  where request_hash = current_setting('nf_mcp_test.request_hash');
-
-  if request_row.code_value is null or request_row.code_hash is null
-    or request_row.code_value = current_setting('nf_mcp_test.request_code')
-    or request_row.code_hash <> encode(
-      sha256(convert_to(request_row.code_value, 'UTF8')), 'hex'
-    ) then
-    raise exception 'approved_request_did_not_store_a_separate_hashed_code';
-  end if;
-  perform set_config('nf_mcp_test.token_hash', token_hash, true);
-
+  -- Suspended user token fails.
   begin
-    perform public.exchange_national_focus_mcp_code(
-      request_row.code_hash,
-      current_setting('nf_mcp_test.client_id'),
-      request_row.redirect_uri,
-      'https://wrong.invalid/mcp',
-      request_row.code_challenge,
-      token_hash
-    );
-    raise exception 'wrong_resource_was_accepted';
-  exception
-    when sqlstate '22023' then null;
+    perform public.read_national_focus_mcp_metadata(current_setting('nf_mcp_test.other_token_hash'), null, 'national_focus:read');
+    raise exception 'suspended_token_accepted';
+  exception when sqlstate '28000' then null;
   end;
 
-  exchange_result := public.exchange_national_focus_mcp_code(
-    request_row.code_hash,
-    current_setting('nf_mcp_test.client_id'),
-    request_row.redirect_uri,
-    request_row.resource,
-    request_row.code_challenge,
-    token_hash
+  -- Readonly token fails when readwrite scope is required.
+  begin
+    perform public.verify_national_focus_mcp_grant(current_setting('nf_mcp_test.ro_hash'), 'national_focus:readwrite');
+    raise exception 'readonly_token_escalated';
+  exception when sqlstate '42501' then null;
+  end;
+
+  meta := public.read_national_focus_mcp_metadata(current_setting('nf_mcp_test.rw_hash'), 1, 'national_focus:readwrite');
+  if meta ->> 'status' <> 'available' or (meta ->> 'revision')::integer <> 1 then
+    raise exception 'unexpected_metadata_before_write';
+  end if;
+
+  -- Forbidden runtime mutation (altering successful_days) must fail.
+  bad_cards := jsonb_build_array(
+    jsonb_build_object(
+      'user_id', current_setting('nf_mcp_test.user_id'),
+      'id', 'card-1',
+      'name', '早起断屏',
+      'trigger_condition', '',
+      'action', '起床 30 分钟内不用娱乐 App',
+      'scope', null,
+      'exception_notes', null,
+      'is_in_tree', 1,
+      'parent_id', null,
+      'state', 'lit',
+      'successful_days', 999,
+      'current_consecutive_days', 3,
+      'best_consecutive_days', 4,
+      'maintenance_cycle_started', 1,
+      'failure_reason', null,
+      'cascade_source_card_id', null,
+      'cascade_prior_state', null,
+      'review_disposition', 'accepted',
+      'active_strengthening_level', null,
+      'icon_key', 'lucide:sunrise',
+      'created_at', 1700000000,
+      'updated_at', 1700000001,
+      'deleted_at', null
+    )
   );
-  if exchange_result ->> 'scope' <> 'national_focus:read'
-    or (exchange_result ->> 'expires_in')::integer <= 0 then
-    raise exception 'authorization_code_exchange_returned_invalid_scope_or_expiry';
-  end if;
-
-  select * into request_row
-  from public.national_focus_mcp_requests
-  where request_hash = current_setting('nf_mcp_test.request_hash');
-  if request_row.code_value is not null or request_row.consumed_at is null then
-    raise exception 'authorization_code_was_not_cleared_after_exchange';
-  end if;
-
-  metadata_result := public.read_national_focus_mcp_metadata(token_hash, 7);
-  if metadata_result ->> 'status' <> 'available'
-    or (metadata_result ->> 'revision')::bigint <> 7 then
-    raise exception 'delegated_metadata_status_or_revision_missing';
-  end if;
-  select array_agg(key order by key) into actual_keys
-  from jsonb_object_keys(metadata_result) as keys(key);
-  if actual_keys is distinct from expected_keys then
-    raise exception 'delegated_metadata_returned_unexpected_keys: %', actual_keys;
-  end if;
-  if metadata_result::text like '%SECRET-NF-MCP-PROBE%'
-    or metadata_result::text like '%private business payload%'
-    or metadata_result::text like '%' || owner_user_id::text || '%' then
-    raise exception 'delegated_metadata_leaked_user_or_business_payload';
-  end if;
-
   begin
-    perform public.read_national_focus_mcp_metadata(token_hash, 6);
-    raise exception 'stale_snapshot_revision_was_accepted';
-  exception
-    when sqlstate 'PT409' then null;
-  end;
-
-  begin
-    perform public.read_national_focus_mcp_metadata(
-      current_setting('nf_mcp_test.other_token_hash'), null
+    perform public.write_national_focus_mcp_snapshot(
+      current_setting('nf_mcp_test.rw_hash'), 1, bad_cards, '[]'::jsonb,
+      'update_national_focus_card', 'illegal progress edit'
     );
-    raise exception 'suspended_user_delegate_was_accepted';
-  exception
-    when sqlstate '28000' then null;
+    raise exception 'illegal_progress_mutation_succeeded';
+  exception when sqlstate '42501' then null;
   end;
 
-  begin
-    perform public.exchange_national_focus_mcp_code(
-      request_row.code_hash,
-      current_setting('nf_mcp_test.client_id'),
-      request_row.redirect_uri,
-      request_row.resource,
-      request_row.code_challenge,
-      md5(gen_random_uuid()::text)
-    );
-    raise exception 'authorization_code_replay_was_accepted';
-  exception
-    when sqlstate '22023' then null;
-  end;
-end
-$service_role_probe$;
-
-reset role;
-set local role authenticated;
-select set_config(
-  'request.jwt.claim.sub', current_setting('nf_mcp_test.other_user_id'), true
-);
-
-do $suspended_user_probe$
-begin
-  begin
-    perform public.inspect_national_focus_mcp_request(
-      current_setting('nf_mcp_test.suspended_request_code')
-    );
-    raise exception 'suspended_user_inspected_new_request';
-  exception
-    when insufficient_privilege then null;
-  end;
-
-  begin
-    perform public.approve_national_focus_mcp_connection(
-      current_setting('nf_mcp_test.suspended_request_code'), true
-    );
-    raise exception 'suspended_user_approved_new_connection';
-  exception
-    when insufficient_privilege then null;
-  end;
-end
-$suspended_user_probe$;
-
-select set_config(
-  'request.jwt.claim.sub', current_setting('nf_mcp_test.user_id'), true
-);
-
-do $revoke_probe$
-begin
-  begin
-    perform public.revoke_national_focus_mcp_grant(
-      current_setting('nf_mcp_test.other_grant_id')::uuid
-    );
-    raise exception 'user_revoked_another_users_grant';
-  exception
-    when insufficient_privilege then null;
-  end;
-
-  perform public.revoke_national_focus_mcp_grant(
-    current_setting('nf_mcp_test.owner_grant_id')::uuid
+  -- Valid constrained write advances revision and archives history.
+  updated_cards := jsonb_build_array(
+    jsonb_build_object(
+      'user_id', current_setting('nf_mcp_test.user_id'),
+      'id', 'card-1',
+      'name', '先发制人',
+      'trigger_condition', '',
+      'action', '起床 30 分钟内不用娱乐 App',
+      'scope', null,
+      'exception_notes', null,
+      'is_in_tree', 1,
+      'parent_id', null,
+      'state', 'lit',
+      'successful_days', 5,
+      'current_consecutive_days', 3,
+      'best_consecutive_days', 4,
+      'maintenance_cycle_started', 1,
+      'failure_reason', null,
+      'cascade_source_card_id', null,
+      'cascade_prior_state', null,
+      'review_disposition', 'accepted',
+      'active_strengthening_level', null,
+      'icon_key', 'lucide:sunrise',
+      'created_at', 1700000000,
+      'updated_at', 1700000010,
+      'deleted_at', null
+    )
   );
-  perform public.revoke_national_focus_mcp_grant(
-    current_setting('nf_mcp_test.owner_grant_id')::uuid
+  meta := public.write_national_focus_mcp_snapshot(
+    current_setting('nf_mcp_test.rw_hash'), 1, updated_cards, '[]'::jsonb,
+    'update_national_focus_card', '更新国策卡「先发制人」'
   );
-
+  if (meta ->> 'revision')::integer <> 2 then
+    raise exception 'write_did_not_advance_revision';
+  end if;
   if not exists (
-    select 1 from public.list_national_focus_mcp_grants()
-    where id = current_setting('nf_mcp_test.owner_grant_id')::uuid
-      and revoked_at is not null
+    select 1 from public.cloud_business_snapshot_history
+    where user_id = current_setting('nf_mcp_test.user_id')::uuid and revision = 2
   ) then
-    raise exception 'owner_revocation_was_not_idempotently_recorded';
+    raise exception 'write_did_not_archive_history';
   end if;
 end
-$revoke_probe$;
+$service_scope_and_write_probe$;
 
 reset role;
-set local role service_role;
-
-do $revoked_token_probe$
-begin
-  begin
-    perform public.read_national_focus_mcp_metadata(
-      current_setting('nf_mcp_test.token_hash'), null
-    );
-    raise exception 'revoked_delegate_was_accepted';
-  exception
-    when sqlstate '28000' then null;
-  end;
-end
-$revoked_token_probe$;
-
--- Renewal is a fresh explicit approval, never a refresh of the old credential.
-reset role;
-do $renewal_setup$
-begin
-  insert into public.national_focus_mcp_requests(
-    request_hash, client_id, redirect_uri, resource, code_challenge, state
-  ) values (
-    encode(sha256(convert_to('renewal-' || current_setting('nf_mcp_test.request_code'), 'UTF8')), 'hex'),
-    current_setting('nf_mcp_test.client_id'), 'https://probe.invalid/callback',
-    'https://probe.invalid/mcp', 'renewal-challenge', 'renewal-state'
-  );
-end
-$renewal_setup$;
 set local role authenticated;
 select set_config('request.jwt.claim.sub', current_setting('nf_mcp_test.user_id'), true);
-select public.approve_national_focus_mcp_connection(
-  'renewal-' || current_setting('nf_mcp_test.request_code'), true
-);
+
+do $audit_and_revoke_probe$
+declare
+  log_count integer;
+  revoked integer;
+begin
+  select count(*) into log_count from public.list_national_focus_mcp_audit_logs(20);
+  if log_count <> 1 then
+    raise exception 'expected_one_audit_log_got_%', log_count;
+  end if;
+
+  revoked := public.revoke_all_national_focus_mcp_grants();
+  if revoked <> 2 then
+    raise exception 'expected_two_revoked_grants_got_%', revoked;
+  end if;
+end
+$audit_and_revoke_probe$;
+
 reset role;
 set local role service_role;
-do $renewal_probe$
-declare
-  renewed_request public.national_focus_mcp_requests;
-  fresh_token text := md5(gen_random_uuid()::text);
-  exchange_result jsonb;
+
+do $revoked_rejected$
 begin
-  select * into renewed_request from public.national_focus_mcp_requests
-  where request_hash = encode(sha256(convert_to(
-    'renewal-' || current_setting('nf_mcp_test.request_code'), 'UTF8')), 'hex');
-  exchange_result := public.exchange_national_focus_mcp_code(
-    renewed_request.code_hash, renewed_request.client_id, renewed_request.redirect_uri,
-    renewed_request.resource, renewed_request.code_challenge, fresh_token
-  );
-  if (exchange_result ->> 'expires_in')::integer not between 1790 and 1800
-    or exchange_result ? 'refresh_token' then
-    raise exception 'renewed_grant_has_wrong_lifetime_or_refresh_token';
-  end if;
-  perform public.read_national_focus_mcp_metadata(fresh_token, 7);
   begin
-    perform public.read_national_focus_mcp_metadata(current_setting('nf_mcp_test.token_hash'), 7);
-    raise exception 'renewal_revived_revoked_token';
+    perform public.read_national_focus_mcp_metadata(current_setting('nf_mcp_test.rw_hash'), null, 'national_focus:read');
+    raise exception 'revoked_token_accepted';
   exception when sqlstate '28000' then null;
   end;
 end
-$renewal_probe$;
+$revoked_rejected$;
 
 rollback;

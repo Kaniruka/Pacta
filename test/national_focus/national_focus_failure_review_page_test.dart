@@ -142,6 +142,25 @@ void main() {
     expect(find.textContaining('未回顾 1 / 共 1 批'), findsOneWidget);
     expect(find.textContaining('2 个节点'), findsOneWidget);
     expect(find.byType(NationalFocusCardIconWell), findsNWidgets(2));
+    // 「未回顾 / 已回顾」胶囊紧跟在原因胶囊同排 Wrap 内，且位于批次标题下方。
+    final titleRect = tester.getRect(find.textContaining('2 个节点'));
+    final causeBadge = find.descendant(
+      of: find.byType(Wrap).first,
+      matching: find.text('未完成今日确认'),
+    );
+    final reviewBadge = find.descendant(
+      of: find.byType(Wrap).first,
+      matching: find.text('未回顾'),
+    );
+    expect(causeBadge, findsOneWidget);
+    expect(reviewBadge, findsOneWidget);
+    final causeRect = tester.getRect(causeBadge);
+    final reviewRect = tester.getRect(reviewBadge);
+    expect(
+      (causeRect.center.dy - reviewRect.center.dy).abs(),
+      lessThanOrEqualTo(4.0),
+    );
+    expect(reviewRect.top, greaterThanOrEqualTo(titleRect.bottom));
     // 没有共同说明时不出现提示槽。
     expect(find.byType(NationalFocusInfoCallout), findsNothing);
 

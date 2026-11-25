@@ -317,19 +317,26 @@ class _FailureBatchCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            Text(
+              '$checkpointLabel · ${failures.length} 个节点',
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontWeight: PactaFonts.semibold,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+            const SizedBox(height: PactaSpacing.sm),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                Expanded(
-                  child: Text(
-                    '$checkpointLabel · ${failures.length} 个节点',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: PactaFonts.semibold,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
+                for (final reason in reasons)
+                  PactaStatusBadge(
+                    label: reason,
+                    tone: reason == representative.cause.label
+                        ? PactaStatusBadgeTone.error
+                        : PactaStatusBadgeTone.neutral,
                   ),
-                ),
-                const SizedBox(width: PactaSpacing.sm),
                 PactaStatusBadge(
                   label: isReviewed ? '已回顾' : '未回顾',
                   icon: isReviewed
@@ -339,20 +346,6 @@ class _FailureBatchCard extends StatelessWidget {
                       ? PactaStatusBadgeTone.neutral
                       : PactaStatusBadgeTone.warning,
                 ),
-              ],
-            ),
-            const SizedBox(height: PactaSpacing.sm),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                for (final reason in reasons)
-                  PactaStatusBadge(
-                    label: reason,
-                    tone: reason == representative.cause.label
-                        ? PactaStatusBadgeTone.error
-                        : PactaStatusBadgeTone.neutral,
-                  ),
               ],
             ),
             const SizedBox(height: PactaSpacing.xs),

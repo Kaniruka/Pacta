@@ -114,8 +114,8 @@ class Codex:
         pending_output.unlink(missing_ok=True)
         runtime = os.environ.copy()
         runtime['PACTA_DEMO_DELEGATE'] = self.token
-        skill = (ROOT / 'skills/pacta-national-focus-analysis/SKILL.md').read_text()
-        contract = (ROOT / 'skills/pacta-national-focus-analysis/references/contract.md').read_text()
+        skill = (ROOT / 'skills/better-national-focus/SKILL.md').read_text()
+        contract = (ROOT / 'skills/better-national-focus/references/tree-and-recovery.md').read_text()
         prompt = (skill + '\n' + contract + '\nApply the skill above. '
                   'Use only pacta_demo MCP for data; never run shell commands or read environment/config files. '
                   'Read current metadata, tree, library, every failure page and frozen detail for the latest '

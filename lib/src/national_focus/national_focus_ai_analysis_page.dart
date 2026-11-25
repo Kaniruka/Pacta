@@ -3,9 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../theme/pacta_fonts.dart';
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
+import '../theme/pacta_surfaces.dart';
 import '../ui/pacta_date_format.dart';
+import '../ui/pacta_error_text.dart';
+import '../ui/pacta_grouped_list.dart';
 import 'national_focus_ai_access.dart';
+import 'national_focus_shared_widgets.dart';
 
 class NationalFocusAiAnalysisEntry extends StatelessWidget {
   const NationalFocusAiAnalysisEntry({
@@ -22,24 +28,25 @@ class NationalFocusAiAnalysisEntry extends StatelessWidget {
   final Future<String?> Function()? accountTimeZoneIdLoader;
 
   @override
-  Widget build(BuildContext context) => Card(
-    child: ListTile(
-      key: const ValueKey('national-focus-ai-entry'),
-      leading: const Icon(Icons.auto_awesome_outlined),
-      title: const Text('国策 AI 分析'),
-      subtitle: const Text('了解只读范围、配置 Codex，并管理授权'),
-      trailing: const Icon(Icons.chevron_right),
-      onTap: () => Navigator.of(context).push<void>(
-        MaterialPageRoute<void>(
-          builder: (_) => NationalFocusAiAnalysisPage(
-            mcpUrl: mcpUrl,
-            repository: repository,
-            onOpenSync: onOpenSync,
-            accountTimeZoneIdLoader: accountTimeZoneIdLoader,
+  Widget build(BuildContext context) => PactaGroupedList(
+    children: [
+      PactaSettingsTile(
+        tileKey: const ValueKey('national-focus-ai-entry'),
+        leadingIcon: Icons.auto_awesome_outlined,
+        title: '国策 AI 分析',
+        subtitle: '多端 Agent 接入、只读/读写授权与调用记录',
+        onTap: () => Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => NationalFocusAiAnalysisPage(
+              mcpUrl: mcpUrl,
+              repository: repository,
+              onOpenSync: onOpenSync,
+              accountTimeZoneIdLoader: accountTimeZoneIdLoader,
+            ),
           ),
         ),
       ),
-    ),
+    ],
   );
 }
 
@@ -64,27 +71,20 @@ class NationalFocusAiAnalysisPage extends StatefulWidget {
 
 class _NationalFocusAiAnalysisPageState
     extends State<NationalFocusAiAnalysisPage> {
-  static const _serverName = 'pacta-national-focus';
-  static const _firstQuestion =
-      '请使用 \$pacta-national-focus-analysis 分析我的国策：先读取快照版本、来源设备和上传时间，再审视当前树与卡片库的规则具体性、父子依赖与执行负担。请分开事实、可能解释和建议，引用稳定卡片 ID 和要求版本 ID，说明缺失数据；不要替我判断现实履行或修改数据。';
-  static const _failureReviewQuestion =
-      '请使用 \$pacta-national-focus-analysis 复盘我的国策反复失败：先核对云快照 revision、来源设备和上传时间，读取当前完整树与规则，再默认查询近 30 个国策日的失败历史，按工具游标读完分页；当前树和规则不受历史窗口过滤。结合失败事件、失败时冻结的树快照和当时规则，与当前规则比较，引用稳定卡片 ID、失败事件 ID 和历史要求版本 ID，避免混淆同名卡，并保留已软删除卡片的历史证据。区分主动失败、漏确认和连带影响，以及原始失败原因和后续共享反思说明；分开事实、假设和建议，给出下一步可在 App 自行尝试的调整。若 revision 变化，重取一致数据并重新分析。明确无历史、证据不足、更早数据未查询或查询截断；需要时按我的要求扩展更早范围。不要用累计成功量生成成功日历，不宣称完整编辑史、证明因果或测量真实习惯形成，不修改或暗示写回数据。';
-  final _requestCodeController = TextEditingController();
+  final GlobalKey<TooltipState> _infoTooltipKey = GlobalKey<TooltipState>();
   List<NationalFocusAiGrant> _grants = const [];
-  NationalFocusAiAuthorizationRequest? _request;
-  String? _inspectedRequestCode;
+  List<NationalFocusAiAuditLog> _auditLogs = const [];
   String? _loadError;
   String? _actionMessage;
   bool _loading = true;
   bool _working = false;
-  String? _workingGrantId;
   String? _displayTimeZoneId;
 
   @override
   void initState() {
     super.initState();
     unawaited(_loadTimeZone());
-    unawaited(_loadGrants());
+    unawaited(_loadData());
   }
 
   Future<void> _loadTimeZone() async {
@@ -99,19 +99,14 @@ class _NationalFocusAiAnalysisPageState
     }
   }
 
-  @override
-  void dispose() {
-    _requestCodeController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadGrants() async {
+  Future<void> _loadData() async {
     final repository = widget.repository;
     if (repository == null) {
       setState(() {
         _loading = false;
         _loadError = null;
         _grants = const [];
+        _auditLogs = const [];
       });
       return;
     }
@@ -120,10 +115,14 @@ class _NationalFocusAiAnalysisPageState
       _loadError = null;
     });
     try {
-      final grants = await repository.listMyGrants();
+      final results = await Future.wait<Object>([
+        repository.listMyGrants(),
+        repository.listRecentAuditLogs(limit: 20),
+      ]);
       if (!mounted) return;
       setState(() {
-        _grants = grants;
+        _grants = results[0] as List<NationalFocusAiGrant>;
+        _auditLogs = results[1] as List<NationalFocusAiAuditLog>;
         _loading = false;
       });
     } catch (error) {
@@ -135,74 +134,33 @@ class _NationalFocusAiAnalysisPageState
     }
   }
 
-  Future<void> _inspectRequest() async {
+  Future<void> _openCreateSheet() async {
     final repository = widget.repository;
-    if (repository == null || _working) return;
-    final requestCode = _requestCodeController.text.trim();
-    if (!_isRequestCode(requestCode)) {
-      setState(() => _actionMessage = '请输入浏览器显示的 64 位十六进制授权请求码。');
-      return;
-    }
-    setState(() {
-      _working = true;
-      _actionMessage = null;
-      _request = null;
-      _inspectedRequestCode = null;
-    });
-    try {
-      final request = await repository.inspectRequest(requestCode);
-      if (!mounted) return;
-      setState(() {
-        _request = request;
-        _inspectedRequestCode = requestCode;
-      });
-    } catch (error) {
-      if (mounted) setState(() => _actionMessage = _friendlyError(error));
-    } finally {
-      if (mounted) setState(() => _working = false);
-    }
-  }
-
-  Future<void> _approveRequest() async {
-    final repository = widget.repository;
-    final requestCode = _inspectedRequestCode;
-    if (repository == null || requestCode == null || _working) return;
-    setState(() {
-      _working = true;
-      _actionMessage = null;
-    });
-    try {
-      await repository.approveRequest(requestCode);
-      if (!mounted) return;
-      _requestCodeController.clear();
-      setState(() {
-        _request = null;
-        _inspectedRequestCode = null;
-        _actionMessage = '授权已完成。返回 Codex 浏览器继续连接；如果仍在等待，请刷新页面。';
-      });
-      await _loadGrants();
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _actionMessage = _friendlyError(error);
-          if (error is NationalFocusAiAccessError && error.code == '22023') {
-            _request = null;
-            _inspectedRequestCode = null;
-          }
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _working = false);
-    }
-  }
-
-  void _cancelRequest() {
-    setState(() {
-      _request = null;
-      _inspectedRequestCode = null;
-      _requestCodeController.clear();
-      _actionMessage = '已取消；没有授予授权。';
-    });
+    final mcpUrl = widget.mcpUrl;
+    if (repository == null || mcpUrl == null || _working) return;
+    final created = await showModalBottomSheet<CreatedNationalFocusAiGrant>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (_) => _CreateConnectionSheet(
+        mcpUrl: mcpUrl,
+        onCreate:
+            ({
+              required String label,
+              required NationalFocusAiScope scope,
+              Duration? ttl,
+              String? agentPreset,
+            }) => repository.createGrant(
+              label: label,
+              scope: scope,
+              ttl: ttl,
+              agentPreset: agentPreset,
+            ),
+      ),
+    );
+    if (!mounted || created == null) return;
+    setState(() => _actionMessage = '已创建连接「${created.grant.label}」。');
+    await _loadData();
   }
 
   Future<void> _revokeGrant(NationalFocusAiGrant grant) async {
@@ -210,16 +168,16 @@ class _NationalFocusAiAnalysisPageState
     if (repository == null || _working) return;
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('撤销 Codex 连接？'),
-        content: const Text('撤销后，Codex 的后续读取会被阻止。已经进入 Codex 对话的信息无法收回。'),
+      builder: (dialogContext) => AlertDialog(
+        title: Text('撤销「${grant.label}」？'),
+        content: const Text('撤销后，该连接令牌会立即失效，无法再读取或修改你的国策云端快照。'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
+            onPressed: () => Navigator.of(dialogContext).pop(false),
             child: const Text('保留连接'),
           ),
           FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
             child: const Text('确认撤销'),
           ),
         ],
@@ -228,287 +186,123 @@ class _NationalFocusAiAnalysisPageState
     if (confirmed != true || !mounted) return;
     setState(() {
       _working = true;
-      _workingGrantId = grant.id;
       _actionMessage = null;
     });
     try {
       await repository.revokeGrant(grant.id);
       if (!mounted) return;
-      setState(() => _actionMessage = '连接已撤销。');
-      await _loadGrants();
+      setState(() => _actionMessage = '已撤销连接「${grant.label}」。');
+      await _loadData();
     } catch (error) {
       if (mounted) setState(() => _actionMessage = _friendlyError(error));
     } finally {
-      if (mounted) {
-        setState(() {
-          _working = false;
-          _workingGrantId = null;
-        });
-      }
+      if (mounted) setState(() => _working = false);
     }
   }
 
-  Future<void> _copyCodexConfiguration() async {
-    final mcpUrl = widget.mcpUrl;
-    if (mcpUrl == null || mcpUrl.isEmpty) return;
-    final config = _codexConfiguration(mcpUrl);
-    await Clipboard.setData(ClipboardData(text: config));
-    if (mounted) {
-      setState(
-        () => _actionMessage = '已复制 Codex 配置。配置只含服务地址，不含密钥或 Pacta 登录会话。',
-      );
+  Future<void> _revokeAllGrants() async {
+    final repository = widget.repository;
+    if (repository == null || _working) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('撤销全部连接？'),
+        content: const Text('当前所有有效 MCP 连接令牌都会立即失效，需要重新创建后才能继续使用。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('全部撤销'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _working = true;
+      _actionMessage = null;
+    });
+    try {
+      final count = await repository.revokeAllGrants();
+      if (!mounted) return;
+      setState(() => _actionMessage = '已撤销 $count 个有效连接。');
+      await _loadData();
+    } catch (error) {
+      if (mounted) setState(() => _actionMessage = _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _working = false);
     }
-  }
-
-  String _friendlyError(Object error) {
-    if (error is NationalFocusAiAccessError) {
-      return switch (error.code) {
-        '22023' => '授权请求码无效、已过期或已处理。请回到 Codex 浏览器刷新，再输入新的请求码。',
-        '42501' => '当前登录状态无法管理授权。请重新登录，或确认账号未停用。',
-        _ => '暂时无法连接授权服务。请检查网络与登录状态后重试。',
-      };
-    }
-    return '暂时无法连接授权服务。请检查网络与登录状态后重试。';
   }
 
   @override
   Widget build(BuildContext context) {
-    final mcpUrl = widget.mcpUrl;
-    return Scaffold(
-      key: const ValueKey('national-focus-ai-analysis-page'),
-      appBar: AppBar(title: const Text('国策 AI 分析')),
-      body: SafeArea(
-        top: false,
-        child: Center(
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final now = DateTime.now().toUtc();
+    final activeGrants = _grants.where((g) => g.isActiveAt(now)).toList();
+    final canManage = widget.mcpUrl != null && widget.repository != null;
+
+    return PactaSurfaces.wrapIfMissing(
+      context,
+      Scaffold(
+        appBar: AppBar(
+          title: const Text('国策 AI 分析'),
+          actions: [
+            IconButton(
+              onPressed: (_loading || _working || widget.repository == null)
+                  ? null
+                  : _loadData,
+              tooltip: '刷新状态',
+              icon: const Icon(Icons.refresh, size: PactaIconSizes.md),
+            ),
+            Tooltip(
+              key: _infoTooltipKey,
+              message:
+                  'AI 读取最近一次上传的云端快照，已内置 better-national-focus 技能。'
+                  '读写连接可新建或编辑卡片、管理强化与树挂载，每次写入自动保留历史备份，'
+                  '绝不修改点亮状态、连胜与失败记录。',
+              child: IconButton(
+                onPressed: () =>
+                    _infoTooltipKey.currentState?.ensureTooltipVisible(),
+                tooltip: '连接说明',
+                icon: const Icon(Icons.info_outline, size: PactaIconSizes.md),
+              ),
+            ),
+          ],
+        ),
+        body: Align(
+          alignment: Alignment.topCenter,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 800),
             child: ListView(
-              padding: PactaSpacing.pageInsets(context, top: PactaSpacing.md),
+              key: const ValueKey('national-focus-ai-analysis-page'),
+              padding: PactaSpacing.pageInsets(context),
               children: [
-                Card(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '只读连接',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          '可读取最近一次手动上传的国策树、卡片库、规则与进度，也可查询失败事件、失败时冻结的完整树快照、原始失败原因和后续共享反思说明。快照保留当时的名称、结构和规则；原始原因与事后说明分开。',
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          '当前树还提供强化等级、要求版本、连续记录和内化进度；每次读取都附快照版本、来源设备和上传时间。',
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          '历史记录不是完整的逐日审计日志；累计成功日数不会展开成每日成功记录。Codex 只能读取，不能新增、修改或删除失败记录与说明。',
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          '你在 App 维护数据并手动上传后，Codex 才能读取新版本；打开此页或授权不会触发业务同步。手机尚未上传的修改不会进入分析；国策状态以上传时为准。',
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          '授权独立于 Pacta 登录会话。Codex 不会收到你的 Pacta 密码或普通应用会话；你可以随时撤销。撤销不能收回已进入对话的信息。',
-                        ),
-                      ],
-                    ),
-                  ),
+                _buildHeroCard(
+                  context,
+                  activeCount: activeGrants.length,
+                  canManage: canManage,
                 ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(child: _sectionTitle(context, '授权状态')),
-                    IconButton(
-                      tooltip: '刷新授权状态',
-                      onPressed:
-                          _loading || _working || widget.repository == null
-                          ? null
-                          : _loadGrants,
-                      icon: const Icon(Icons.refresh),
-                    ),
-                  ],
+                if (_actionMessage != null) ...[
+                  const SizedBox(height: PactaSpacing.md),
+                  NationalFocusInfoCallout(message: _actionMessage!),
+                ],
+                PactaSectionHeader(
+                  title: '已授权连接',
+                  trailing: activeGrants.length > 1
+                      ? TextButton(
+                          key: const ValueKey('national-focus-ai-revoke-all'),
+                          onPressed: _working ? null : _revokeAllGrants,
+                          child: const Text('全部撤销'),
+                        )
+                      : null,
                 ),
-                _buildGrantStatus(context),
-                const SizedBox(height: 12),
-                _sectionTitle(context, '1. 维护后手动上传'),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Text(
-                          '先在 App 维护国策，再进入云端同步，选择上传本机并核对整份覆盖确认。上传会替换云端整份业务快照，包含其他业务模块；MCP 仅向 Codex 提供国策白名单数据。',
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          '上传完成后手机无须常驻，关闭 App 仍可分析。每次分析先核对来源设备、真实上传时间和版本；它们表示最近上传，不代表最后编辑时间。',
-                        ),
-                        const SizedBox(height: 12),
-                        OutlinedButton.icon(
-                          key: const ValueKey('national-focus-ai-open-sync'),
-                          onPressed: widget.onOpenSync,
-                          icon: const Icon(Icons.cloud_upload_outlined),
-                          label: const Text('前往手动同步'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _sectionTitle(context, '2. 连接 Codex'),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Text('在已安装 Codex CLI 的设备上复制并运行以下配置：'),
-                        const SizedBox(height: 8),
-                        if (mcpUrl == null || mcpUrl.isEmpty)
-                          const Text('服务地址尚未配置，请联系应用维护者。')
-                        else ...[
-                          Text(
-                            'MCP 服务地址',
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                          const SizedBox(height: 4),
-                          SelectableText(mcpUrl),
-                          const SizedBox(height: 12),
-                          SelectableText(_codexConfiguration(mcpUrl)),
-                          const SizedBox(height: 8),
-                          FilledButton.icon(
-                            onPressed: _working
-                                ? null
-                                : _copyCodexConfiguration,
-                            icon: const Icon(Icons.copy_outlined),
-                            label: const Text('复制 Codex 配置'),
-                          ),
-                        ],
-                        const SizedBox(height: 8),
-                        const Text(
-                          '首次登录会在浏览器打开 Pacta 授权。将浏览器显示的一次性请求码粘贴到下方，在 App 核对客户端后明确授权。请求码 5 分钟有效且只能使用一次。',
-                        ),
-                        const SizedBox(height: 8),
-                        const Text('授权有效 30 分钟且不自动续期；到期后在 Codex 重新运行登录命令。'),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _sectionTitle(context, '3. 确认授权请求'),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Text('只输入 Codex 浏览器显示的一次性请求码。此码不会保存在 App 中。'),
-                        const SizedBox(height: 12),
-                        TextField(
-                          key: const ValueKey('national-focus-ai-request-code'),
-                          controller: _requestCodeController,
-                          enabled: !_working && widget.repository != null,
-                          maxLength: 64,
-                          autocorrect: false,
-                          enableSuggestions: false,
-                          keyboardType: TextInputType.visiblePassword,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.allow(
-                              RegExp('[0-9a-fA-F]'),
-                            ),
-                          ],
-                          decoration: const InputDecoration(
-                            labelText: '授权请求码',
-                            helperText: '64 位十六进制字符',
-                          ),
-                          onChanged: (_) => setState(() {
-                            _request = null;
-                            _inspectedRequestCode = null;
-                            _actionMessage = null;
-                          }),
-                        ),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: OutlinedButton.icon(
-                            onPressed:
-                                _working ||
-                                    widget.repository == null ||
-                                    !_isRequestCode(
-                                      _requestCodeController.text.trim(),
-                                    )
-                                ? null
-                                : _inspectRequest,
-                            icon: const Icon(Icons.verified_user_outlined),
-                            label: Text(_working ? '正在核对…' : '核对授权码'),
-                          ),
-                        ),
-                        if (_request case final request?) ...[
-                          const Divider(height: 28),
-                          Text(
-                            '请求客户端',
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                          const SizedBox(height: 4),
-                          SelectableText(request.clientName),
-                          const SizedBox(height: 12),
-                          Text(
-                            '授权范围',
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            '国策 AI 只读：云快照信息、国策树、卡片库、规则、进度与失败历史（含冻结快照、原始原因和后续共享反思说明）。不包含目标、任务、专注、日历或管理数据；Codex 不能修改失败记录。',
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            '授权后返回地址',
-                            style: Theme.of(context).textTheme.labelLarge,
-                          ),
-                          const SizedBox(height: 4),
-                          SelectableText(request.redirectUri),
-                          const SizedBox(height: 16),
-                          const Text('授权后 Codex 可在 30 分钟内读取上述范围，你可随时在此页撤销。'),
-                          const SizedBox(height: 12),
-                          FilledButton(
-                            onPressed: _working ? null : _approveRequest,
-                            child: Text(_working ? '正在授权…' : '授予 30 分钟只读授权'),
-                          ),
-                          TextButton(
-                            onPressed: _working ? null : _cancelRequest,
-                            child: const Text('取消，不授权'),
-                          ),
-                        ],
-                        if (_actionMessage != null) ...[
-                          const SizedBox(height: 8),
-                          Semantics(
-                            liveRegion: true,
-                            child: Text(_actionMessage!),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                _sectionTitle(context, '4. 安装 skill 并开始提问'),
-                _buildSkillGuide(context),
-                const SizedBox(height: 12),
-                _sectionTitle(context, '遇到问题'),
-                const Card(
-                  child: Padding(
-                    padding: EdgeInsets.all(16),
-                    child: Text(
-                      '无快照或旧版快照：回到手动同步，使用当前 App 上传整份数据。\n\n数据过旧：在来源设备维护后重新上传；让 Codex 重新读取快照信息，不沿用上一版本。分析中版本变化时重新取数，避免混用。\n\n授权失效或已撤销：在 Codex 重新运行登录命令，再在此页核对并授权。账号停用时请联系管理员。\n\n离线或服务错误：检查网络与登录状态，重试授权状态或 Codex 读取；读取失败不表示国策为空。离线仍可维护本机国策，联网后由你手动上传。\n\n未配置服务：请联系应用维护者配置云服务；不需要把密码、会话或管理员密钥贴给 Codex。',
-                    ),
-                  ),
-                ),
+                _buildGrantsSection(context, now, colors),
+                const PactaSectionHeader(title: '最近调用与写入记录'),
+                _buildAuditSection(context, colors),
               ],
             ),
           ),
@@ -517,179 +311,673 @@ class _NationalFocusAiAnalysisPageState
     );
   }
 
-  Widget _buildSkillGuide(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            '在 Codex 中粘贴安装说明，按客户端提示完成安装。安装后重启 Codex 并新开对话，使用 \$pacta-national-focus-analysis 启用；skill 负责分析方法，MCP 授权仍须单独完成。',
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: () => _copyText(_skillInstallation, '已复制 skill 安装说明'),
-            icon: const Icon(Icons.copy_outlined),
-            label: const Text('复制 skill 安装说明'),
-          ),
-          const SizedBox(height: 12),
-          Text('结构分析', style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 8),
-          const SelectableText(_firstQuestion),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: () => _copyText(_firstQuestion, '已复制首次问题'),
-            icon: const Icon(Icons.chat_bubble_outline),
-            label: const Text('复制首次问题'),
-          ),
-          const SizedBox(height: 8),
-          const Divider(height: 28),
-          Text('失败复盘', style: Theme.of(context).textTheme.titleSmall),
-          const SizedBox(height: 8),
-          const Text(
-            '完成上方上传、连接和授权后，复制此示例到 Codex。默认复盘近 30 个国策日的失败历史，当前树和规则仍完整读取；你可以要求扩展更早范围。分页查询不等于完整编辑史，缺失或截断的历史需要在分析中说明。',
-          ),
-          const SizedBox(height: 12),
-          const SelectableText(_failureReviewQuestion),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: () => _copyText(_failureReviewQuestion, '已复制失败复盘示例'),
-            icon: const Icon(Icons.copy_outlined),
-            label: const Text('复制失败复盘示例'),
-          ),
-          const SizedBox(height: 8),
-          const Text('分析建议由你决定是否在 App 采纳。Codex 不能修改国策、替你点亮或确认，也不能认定真实习惯已经形成。'),
-        ],
-      ),
-    ),
-  );
+  Widget _buildHeroCard(
+    BuildContext context, {
+    required int activeCount,
+    required bool canManage,
+  }) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final statusText = widget.mcpUrl == null || widget.repository == null
+        ? '连接服务未配置'
+        : activeCount == 0
+        ? '当前无有效连接 · 支持反重力 / Claude / Codex / DSH / Cursor'
+        : '生效中 $activeCount 个连接 · 支持只读与受限读写';
 
-  static const _skillInstallation =
-      '请使用 \$skill-installer 从 https://github.com/Kaniruka/Pacta/tree/master/skills/pacta-national-focus-analysis 安装此 skill。安装后提示我重启 Codex 并新开对话并使用 \$pacta-national-focus-analysis。';
-
-  Future<void> _copyText(String text, String message) async {
-    await Clipboard.setData(ClipboardData(text: text));
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Widget _buildGrantStatus(BuildContext context) {
-    final repository = widget.repository;
-    if (repository == null) {
-      return const Card(
-        child: ListTile(
-          leading: Icon(Icons.cloud_off_outlined),
-          title: Text('连接状态不可用'),
-          subtitle: Text('当前未配置服务或登录会话，请联系应用维护者。'),
-        ),
-      );
-    }
-    if (_loading) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(20),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      );
-    }
-    if (_loadError != null) {
-      return Card(
-        child: ListTile(
-          leading: const Icon(Icons.error_outline),
-          title: const Text('无法读取授权状态'),
-          subtitle: Text(_loadError!),
-          trailing: TextButton.icon(
-            onPressed: _working ? null : _loadGrants,
-            icon: const Icon(Icons.refresh),
-            label: const Text('重试'),
-          ),
-        ),
-      );
-    }
-    if (_grants.isEmpty) {
-      return const Card(
-        child: ListTile(
-          leading: Icon(Icons.no_accounts_outlined),
-          title: Text('尚未授权'),
-          subtitle: Text('完成下方授权后，连接会显示在这里。'),
-        ),
-      );
-    }
-    return Column(
-      children: [
-        // 卡片外边距为零：多张授权卡之间补一档 8dp，避免上下贴成一整块。
-        for (final (index, grant) in _grants.indexed) ...[
-          if (index > 0) const SizedBox(height: PactaSpacing.sm),
-          _grantCard(context, grant),
-        ],
-      ],
-    );
-  }
-
-  Widget _grantCard(BuildContext context, NationalFocusAiGrant grant) {
-    final active = grant.isActiveAt(DateTime.now().toUtc());
-    final status = active
-        ? '已授权'
-        : grant.revokedAt != null
-        ? '已撤销'
-        : '已过期';
     return Card(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: PactaSpacing.cardInsets,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Icon(
-                  active ? Icons.verified_user_outlined : Icons.history,
-                  semanticLabel: status,
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: colors.primaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(PactaSpacing.sm),
+                    child: Icon(
+                      Icons.hub_outlined,
+                      size: PactaIconSizes.md,
+                      color: colors.onPrimaryContainer,
+                    ),
+                  ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: PactaSpacing.md),
                 Expanded(
                   child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [Text(grant.clientName), Text(status)],
+                    children: [
+                      Text(
+                        '多端 Agent 接入',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: PactaFonts.semibold,
+                        ),
+                      ),
+                      const SizedBox(height: PactaSpacing.xxs),
+                      Text(
+                        statusText,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
+                ),
+                const SizedBox(width: PactaSpacing.sm),
+                const PactaStatusBadge(
+                  label: '内置技能',
+                  icon: Icons.auto_awesome_outlined,
+                  tone: PactaStatusBadgeTone.primary,
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Text('范围：${_scopeLabel(grant.scope)}'),
-            Text(
-              '授权时间：${formatPactaDateTimeInZone(grant.createdAt, timeZoneId: _displayTimeZoneId)}',
-            ),
-            Text(
-              '到期时间：${formatPactaDateTimeInZone(grant.expiresAt, timeZoneId: _displayTimeZoneId)}',
-            ),
-            if (active) ...[
-              const SizedBox(height: 12),
-              OutlinedButton(
-                onPressed: _working ? null : () => _revokeGrant(grant),
-                child: Text(_workingGrantId == grant.id ? '正在撤销…' : '撤销此连接'),
+            if (!canManage) ...[
+              const SizedBox(height: PactaSpacing.md),
+              const NationalFocusInfoCallout(
+                message: '服务地址或登录会话尚未配置，请联系应用维护者。',
               ),
             ],
+            const SizedBox(height: PactaSpacing.lg),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final createButton = FilledButton.icon(
+                  key: const ValueKey('national-focus-ai-create'),
+                  onPressed: canManage && !_working ? _openCreateSheet : null,
+                  icon: const Icon(Icons.add_link, size: PactaIconSizes.sm),
+                  label: const Text('创建连接'),
+                );
+                final syncButton = widget.onOpenSync == null
+                    ? null
+                    : OutlinedButton.icon(
+                        key: const ValueKey('national-focus-ai-open-sync'),
+                        onPressed: widget.onOpenSync,
+                        icon: const Icon(
+                          Icons.sync_outlined,
+                          size: PactaIconSizes.sm,
+                        ),
+                        label: const Text('前往数据同步'),
+                      );
+                if (syncButton == null) return createButton;
+                if (constraints.maxWidth >= 420) {
+                  return Row(
+                    children: [
+                      Expanded(child: createButton),
+                      const SizedBox(width: PactaSpacing.sm),
+                      Expanded(child: syncButton),
+                    ],
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    createButton,
+                    const SizedBox(height: PactaSpacing.sm),
+                    syncButton,
+                  ],
+                );
+              },
+            ),
           ],
         ),
       ),
     );
   }
 
-  String _codexConfiguration(String mcpUrl) =>
-      'codex mcp add $_serverName --url $mcpUrl\n'
-      'codex mcp login $_serverName --oauth-client-registration dcr';
+  Widget _buildGrantsSection(
+    BuildContext context,
+    DateTime now,
+    ColorScheme colors,
+  ) {
+    final theme = Theme.of(context);
+    if (_loading) {
+      return PactaGroupedList(
+        children: [
+          Padding(
+            padding: PactaSpacing.cardInsets,
+            child: Row(
+              children: [
+                const SizedBox(
+                  width: PactaIconSizes.compact,
+                  height: PactaIconSizes.compact,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: PactaSpacing.md),
+                Text('正在读取连接状态…', style: theme.textTheme.bodyMedium),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+    if (_loadError != null) {
+      return Card(
+        child: Padding(
+          padding: PactaSpacing.cardInsets,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              NationalFocusInlineError(_loadError!),
+              const SizedBox(height: PactaSpacing.md),
+              OutlinedButton.icon(
+                onPressed: _loadData,
+                icon: const Icon(Icons.refresh, size: PactaIconSizes.sm),
+                label: const Text('重试'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_grants.isEmpty) {
+      return PactaGroupedList(
+        children: [
+          Padding(
+            padding: PactaSpacing.cardInsets,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('尚未创建连接', style: theme.textTheme.titleSmall),
+                const SizedBox(height: PactaSpacing.xs),
+                Text(
+                  '点击上方「创建连接」，选择只读或读写权限并生成一次性配置。',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+    return PactaGroupedList(
+      children: [
+        for (final grant in _grants) _buildGrantRow(context, grant, now),
+      ],
+    );
+  }
 
-  static bool _isRequestCode(String value) =>
-      RegExp(r'^[0-9a-fA-F]{64}$').hasMatch(value);
+  Widget _buildGrantRow(
+    BuildContext context,
+    NationalFocusAiGrant grant,
+    DateTime now,
+  ) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final active = grant.isActiveAt(now);
+    final expired = grant.revokedAt == null && grant.isExpiredAt(now);
+    final statusLabel = active
+        ? '生效中'
+        : expired
+        ? '已过期'
+        : '已撤销';
+    final statusTone = active
+        ? PactaStatusBadgeTone.success
+        : PactaStatusBadgeTone.neutral;
+    final preset = NationalFocusAgentPreset.fromStorage(grant.agentPreset);
+    final expiryText = grant.expiresAt == null
+        ? '永不过期'
+        : '到期 ${formatPactaDateTimeInZone(grant.expiresAt!, timeZoneId: _displayTimeZoneId)}';
+    final lastUsedText = grant.lastUsedAt == null
+        ? '尚未使用'
+        : '最近调用 ${formatPactaDateTimeInZone(grant.lastUsedAt!, timeZoneId: _displayTimeZoneId)}';
 
-  static Widget _sectionTitle(BuildContext context, String title) => Padding(
-    padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
-    child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+    return Padding(
+      padding: EdgeInsets.fromLTRB(16, 12, active ? 8 : 16, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  grant.label,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: PactaFonts.semibold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    PactaStatusBadge(
+                      label: grant.scope.label,
+                      tone: grant.scope == NationalFocusAiScope.readWrite
+                          ? PactaStatusBadgeTone.primary
+                          : PactaStatusBadgeTone.neutral,
+                    ),
+                    PactaStatusBadge(label: statusLabel, tone: statusTone),
+                    if (preset != null)
+                      PactaStatusBadge(
+                        label: preset.label,
+                        tone: PactaStatusBadgeTone.neutral,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${grant.tokenPrefix} · $expiryText · $lastUsedText',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (active)
+            IconButton(
+              key: ValueKey('national-focus-ai-revoke-${grant.id}'),
+              onPressed: _working ? null : () => _revokeGrant(grant),
+              tooltip: '撤销此连接',
+              icon: Icon(
+                Icons.link_off_outlined,
+                size: PactaIconSizes.md,
+                color: colors.error,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAuditSection(BuildContext context, ColorScheme colors) {
+    final theme = Theme.of(context);
+    if (_loading) {
+      return PactaGroupedList(
+        children: [
+          Padding(
+            padding: PactaSpacing.cardInsets,
+            child: Text(
+              '正在读取最近调用记录…',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    if (_auditLogs.isEmpty) {
+      return PactaGroupedList(
+        children: [
+          Padding(
+            padding: PactaSpacing.cardInsets,
+            child: Text(
+              '尚无调用记录',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return PactaGroupedList(
+      children: [for (final log in _auditLogs) _buildAuditRow(context, log)],
+    );
+  }
+
+  Widget _buildAuditRow(BuildContext context, NationalFocusAiAuditLog log) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final timeLabel = formatPactaDateTimeInZone(
+      log.createdAt,
+      timeZoneId: _displayTimeZoneId,
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            log.summary,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontWeight: PactaFonts.medium,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              PactaStatusBadge(
+                label: log.isWrite ? '写入' : '读取',
+                tone: log.isWrite
+                    ? PactaStatusBadgeTone.primary
+                    : PactaStatusBadgeTone.neutral,
+              ),
+              if (log.snapshotRevision != null)
+                PactaStatusBadge(
+                  label: 'r${log.snapshotRevision}',
+                  tone: PactaStatusBadgeTone.neutral,
+                ),
+              Text(
+                '${log.grantLabel} · $timeLabel',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _friendlyError(Object error) {
+    if (error is NationalFocusAiAccessError) {
+      switch (error.code) {
+        case '42501':
+          return '当前账号状态不允许执行此操作，请重新登录后重试。';
+        case 'PT429':
+          return '有效连接数量已达上限，请先撤销不再使用的连接。';
+        case '22023':
+          return '连接参数无效，请检查名称与有效期后重试。';
+      }
+    }
+    return formatUserError(error, fallback: '无法完成 AI 连接操作，请检查网络后重试。');
+  }
+}
+
+class _CreateConnectionSheet extends StatefulWidget {
+  const _CreateConnectionSheet({required this.mcpUrl, required this.onCreate});
+
+  final String mcpUrl;
+  final Future<CreatedNationalFocusAiGrant> Function({
+    required String label,
+    required NationalFocusAiScope scope,
+    Duration? ttl,
+    String? agentPreset,
+  })
+  onCreate;
+
+  @override
+  State<_CreateConnectionSheet> createState() => _CreateConnectionSheetState();
+}
+
+class _CreateConnectionSheetState extends State<_CreateConnectionSheet> {
+  final _labelController = TextEditingController(
+    text: NationalFocusAgentPreset.antigravity.defaultConnectionName,
   );
+  NationalFocusAgentPreset _preset = NationalFocusAgentPreset.antigravity;
+  NationalFocusAiScope _scope = NationalFocusAiScope.read;
+  NationalFocusAiTtlPreset _ttlPreset = NationalFocusAiTtlPreset.sevenDays;
+  bool _labelEditedManually = false;
+  bool _submitting = false;
+  String? _error;
+  CreatedNationalFocusAiGrant? _created;
 
-  static String _scopeLabel(String scope) => switch (scope) {
-    'national_focus:read' => '国策 AI 只读（云快照中的树、卡片、规则、进度与失败历史）',
-    _ => scope,
-  };
+  @override
+  void dispose() {
+    _labelController.dispose();
+    super.dispose();
+  }
+
+  void _selectPreset(NationalFocusAgentPreset preset) {
+    setState(() {
+      _preset = preset;
+      if (!_labelEditedManually && _created == null) {
+        _labelController.text = preset.defaultConnectionName;
+      }
+    });
+  }
+
+  Future<void> _submit() async {
+    final label = _labelController.text.trim();
+    if (label.isEmpty) {
+      setState(() => _error = '请输入连接名称。');
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    try {
+      final created = await widget.onCreate(
+        label: label,
+        scope: _scope,
+        ttl: _ttlPreset.duration,
+        agentPreset: _preset.storageValue,
+      );
+      if (!mounted) return;
+      setState(() {
+        _created = created;
+        _submitting = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _submitting = false;
+        _error = error is NationalFocusAiAccessError && error.code == 'PT429'
+            ? '有效连接数量已达上限，请先撤销不再使用的连接。'
+            : formatUserError(error, fallback: '创建连接失败，请稍后重试。');
+      });
+    }
+  }
+
+  Future<void> _copy(String text, String message) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final created = _created;
+    final viewInsets = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(20, 20, 20, 20 + viewInsets),
+      child: SingleChildScrollView(
+        child: created == null
+            ? _buildCreateForm(context)
+            : _buildCredentialResult(context, created),
+      ),
+    );
+  }
+
+  Widget _buildCreateForm(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '创建 MCP 连接',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: PactaFonts.semibold,
+          ),
+        ),
+        const SizedBox(height: PactaSpacing.md),
+        Text('客户端预设', style: theme.textTheme.labelLarge),
+        const SizedBox(height: PactaSpacing.xs),
+        Wrap(
+          spacing: PactaSpacing.sm,
+          runSpacing: PactaSpacing.xs,
+          children: [
+            for (final preset in NationalFocusAgentPreset.values)
+              ChoiceChip(
+                label: Text(preset.label),
+                selected: _preset == preset,
+                onSelected: _submitting ? null : (_) => _selectPreset(preset),
+              ),
+          ],
+        ),
+        const SizedBox(height: PactaSpacing.md),
+        TextField(
+          key: const ValueKey('national-focus-ai-grant-label'),
+          controller: _labelController,
+          enabled: !_submitting,
+          maxLength: 80,
+          onChanged: (_) => _labelEditedManually = true,
+          decoration: pactaCardInputDecoration(
+            context,
+            labelText: '连接名称',
+            hintText: '例如：MacBook Codex、家里 Antigravity',
+          ),
+        ),
+        const SizedBox(height: PactaSpacing.md),
+        Text('授权范围', style: theme.textTheme.labelLarge),
+        const SizedBox(height: PactaSpacing.xs),
+        SegmentedButton<NationalFocusAiScope>(
+          segments: [
+            for (final scope in NationalFocusAiScope.values)
+              ButtonSegment<NationalFocusAiScope>(
+                value: scope,
+                label: Text(scope.label),
+              ),
+          ],
+          selected: {_scope},
+          onSelectionChanged: _submitting
+              ? null
+              : (selection) => setState(() => _scope = selection.first),
+        ),
+        const SizedBox(height: PactaSpacing.xs),
+        Text(
+          _scope == NationalFocusAiScope.readWrite
+              ? '允许 AI 创建/修改卡片、调整强化与树结构并自动备份云端快照；禁止修改点亮状态、连胜与失败记录。'
+              : '仅允许读取最近一次上传的云端快照与失败历史，不提供写入工具。',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: PactaSpacing.md),
+        Text('有效期', style: theme.textTheme.labelLarge),
+        const SizedBox(height: PactaSpacing.xs),
+        Wrap(
+          spacing: PactaSpacing.sm,
+          runSpacing: PactaSpacing.xs,
+          children: [
+            for (final ttl in NationalFocusAiTtlPreset.values)
+              ChoiceChip(
+                label: Text(ttl.label),
+                selected: _ttlPreset == ttl,
+                onSelected: _submitting
+                    ? null
+                    : (_) => setState(() => _ttlPreset = ttl),
+              ),
+          ],
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: PactaSpacing.md),
+          NationalFocusInlineError(_error!),
+        ],
+        const SizedBox(height: PactaSpacing.lg),
+        FilledButton.icon(
+          key: const ValueKey('national-focus-ai-submit-create'),
+          onPressed: _submitting ? null : _submit,
+          icon: const Icon(Icons.vpn_key_outlined, size: PactaIconSizes.sm),
+          label: Text(_submitting ? '生成中…' : '生成连接令牌'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCredentialResult(
+    BuildContext context,
+    CreatedNationalFocusAiGrant created,
+  ) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final endpoint = nationalFocusMcpEndpointUrl(
+      widget.mcpUrl,
+      created.grant.scope,
+    );
+    final config = buildNationalFocusAgentConfig(
+      preset: _preset,
+      endpointUrl: endpoint,
+      token: created.token,
+    );
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '连接已创建',
+          style: theme.textTheme.titleLarge?.copyWith(
+            fontWeight: PactaFonts.semibold,
+          ),
+        ),
+        const SizedBox(height: PactaSpacing.md),
+        const NationalFocusInfoCallout(
+          message: '令牌仅展示这一次，关闭后无法再次查看；如遗失请撤销后重新创建。',
+        ),
+        const SizedBox(height: PactaSpacing.md),
+        Text('切换客户端配置格式', style: theme.textTheme.labelLarge),
+        const SizedBox(height: PactaSpacing.xs),
+        Wrap(
+          spacing: PactaSpacing.sm,
+          runSpacing: PactaSpacing.xs,
+          children: [
+            for (final preset in NationalFocusAgentPreset.values)
+              ChoiceChip(
+                label: Text(preset.label),
+                selected: _preset == preset,
+                onSelected: (_) => setState(() => _preset = preset),
+              ),
+          ],
+        ),
+        const SizedBox(height: PactaSpacing.md),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: colors.outlineVariant),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(PactaSpacing.md),
+            child: SelectableText(
+              config,
+              key: const ValueKey('national-focus-ai-config-preview'),
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        ),
+        const SizedBox(height: PactaSpacing.md),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                key: const ValueKey('national-focus-ai-copy-token'),
+                onPressed: () => _copy(created.token, '已复制连接令牌'),
+                icon: const Icon(Icons.key_outlined, size: PactaIconSizes.sm),
+                label: const Text('复制令牌'),
+              ),
+            ),
+            const SizedBox(width: PactaSpacing.sm),
+            Expanded(
+              child: FilledButton.icon(
+                key: const ValueKey('national-focus-ai-copy-config'),
+                onPressed: () => _copy(config, '已复制 ${_preset.label} 配置'),
+                icon: const Icon(Icons.copy_outlined, size: PactaIconSizes.sm),
+                label: const Text('复制配置'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: PactaSpacing.sm),
+        TextButton(
+          key: const ValueKey('national-focus-ai-sheet-done'),
+          onPressed: () => Navigator.of(context).pop(created),
+          child: const Text('完成'),
+        ),
+      ],
+    );
+  }
 }

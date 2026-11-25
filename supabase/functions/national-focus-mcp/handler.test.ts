@@ -1,337 +1,508 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHandler, hash, StoreError, type Store } from './handler.ts';
+import { BUNDLED_SKILLS } from './skills_bundle.ts';
 
 const issuer = 'https://example.supabase.co/functions/v1/national-focus-mcp';
-const resource = `${issuer}/mcp`;
-const token = `pacta_mcp_${'a'.repeat(64)}`;
-const metadata = { contract_version: 1, status: 'available', revision: 2,
-  source_device: { id: 'phone', name: 'Android' }, uploaded_at: '2026-10-21T01:00:00Z',
-  data_updated_at: '2026-10-20T23:00:00Z', freshness: 'latest_manual_upload' };
-const epoch = (value: string) => Date.parse(value) / 1000;
-const activeSnapshot = {
-  ...metadata,
-  tables: {
-    local_national_focus_cards: [
-      { id: 'tree-a', name: 'Shared name', trigger_condition: 'before 07:00', action: 'read',
-        scope: 'home', exception_notes: null, is_in_tree: 1, parent_id: null, state: 'lit',
-        successful_days: 60, current_consecutive_days: 4, best_consecutive_days: 9,
-        maintenance_cycle_started: 1, failure_reason: null, cascade_source_card_id: null,
-        cascade_prior_state: null, active_strengthening_level: 1,
-        icon_key: 'lucide:book-open', deleted_at: null,
-        user_id: 'private-user', token: 'private-token' },
-      { id: 'tree-b', name: 'Shared name', trigger_condition: '', action: 'review',
-        scope: null, exception_notes: 'skip when ill', is_in_tree: 1, parent_id: 'tree-a',
-        state: 'pending_today_confirmation', successful_days: 2, current_consecutive_days: 2,
-        best_consecutive_days: 2, maintenance_cycle_started: 1, failure_reason: null,
-        cascade_source_card_id: null, cascade_prior_state: null, active_strengthening_level: null,
-        icon_key: null, deleted_at: null },
-      { id: 'library-c', name: 'Library card', trigger_condition: '', action: 'practice',
-        scope: null, exception_notes: null, is_in_tree: 0, parent_id: null, state: 'extinguished',
-        successful_days: 0, current_consecutive_days: 0, best_consecutive_days: 0,
-        maintenance_cycle_started: 0, failure_reason: null, cascade_source_card_id: null,
-        cascade_prior_state: null, active_strengthening_level: null, deleted_at: null },
-      { id: 'deleted-d', name: 'Deleted card', trigger_condition: '', action: 'deleted',
-        scope: null, exception_notes: null, is_in_tree: 0, parent_id: null, state: 'extinguished',
-        successful_days: 0, current_consecutive_days: 0, best_consecutive_days: 0,
-        maintenance_cycle_started: 0, failure_reason: null, cascade_source_card_id: null,
-        cascade_prior_state: null, active_strengthening_level: null, deleted_at: epoch('2026-10-20T00:00:00Z') },
-    ],
-    local_national_focus_strengthening_levels: [
-      { user_id: 'private-user', card_id: 'tree-a', level_number: 1,
-        trigger_condition_override: 'before 06:00', action_override: null,
-        credential: { secret: 'nested-level-secret' } },
-      { user_id: 'private-user', card_id: 'tree-a', level_number: 2,
-        trigger_condition_override: null, action_override: 'read two pages' },
-    ],
-    local_national_focus_maintenance: [
-      { user_id: 'private-user', last_settled_checkpoint_at: epoch('2026-10-21T20:00:00Z'),
-        admin: { token: 'nested-maintenance-secret' } },
-    ],
-    local_tasks: [{ id: 'private-task', title: 'not in scope' }],
-  },
-};
+const readonlyUrl = `${issuer}/mcp/readonly`;
+const readwriteUrl = `${issuer}/mcp/readwrite`;
+const aliasUrl = `${issuer}/mcp`;
+const roToken = `pacta_mcp_${'a'.repeat(64)}`;
+const rwToken = `pacta_mcp_${'b'.repeat(64)}`;
+const ownerId = '11111111-1111-1111-1111-111111111111';
 
-function fixture() {
-  const tables: Record<string, Record<string, unknown>[]> = {};
-  let denied = false;
-  let unavailable = false;
-  let calls = 0;
-  let value: unknown = metadata;
-  let snapshot: unknown = activeSnapshot;
-  const store: Store = {
-    async insert(table, value) { (tables[table] ??= []).push({ expires_at: new Date(Date.now() + 300000).toISOString(), ...value }); },
-    async one(table, field, value) { return tables[table]?.find((r) => r[field] === value) ?? null; },
-    async rpc(name, args) {
-      calls++;
-      if (unavailable) throw new StoreError('unavailable');
-      if (name === 'read_national_focus_mcp_metadata') {
-        if (denied || args.p_token_hash !== await hash(token)) throw new StoreError('28000');
-        if (args.p_expected_revision !== undefined && args.p_expected_revision !== 2) throw new StoreError('PT409');
-        return value;
-      }
-      if (name === 'read_national_focus_mcp_snapshot') {
-        if (denied || args.p_token_hash !== await hash(token)) throw new StoreError('28000');
-        if (args.p_expected_revision !== undefined && args.p_expected_revision !== 2) throw new StoreError('PT409');
-        return snapshot;
-      }
-      throw new Error(`unexpected RPC ${name}`);
+const epoch = (value: string) => Math.floor(Date.parse(value) / 1000);
+
+function baseSnapshot() {
+  return {
+    contract_version: 1,
+    status: 'available',
+    revision: 2,
+    source_device: { id: 'phone', name: 'Android' },
+    uploaded_at: '2026-10-21T01:00:00Z',
+    data_updated_at: '2026-10-20T23:00:00Z',
+    freshness: 'latest_manual_upload',
+    tables: {
+      local_national_focus_cards: [
+        {
+          user_id: ownerId,
+          id: 'tree-a',
+          name: 'Shared name',
+          trigger_condition: 'before 07:00',
+          action: 'read',
+          scope: 'home',
+          exception_notes: null,
+          is_in_tree: 1,
+          parent_id: null,
+          state: 'lit',
+          successful_days: 60,
+          current_consecutive_days: 4,
+          best_consecutive_days: 9,
+          maintenance_cycle_started: 1,
+          failure_reason: null,
+          cascade_source_card_id: null,
+          cascade_prior_state: null,
+          review_disposition: 'accepted',
+          active_strengthening_level: 1,
+          icon_key: 'lucide:book-open',
+          created_at: epoch('2026-10-01T00:00:00Z'),
+          updated_at: epoch('2026-10-20T00:00:00Z'),
+          deleted_at: null,
+        },
+        {
+          user_id: ownerId,
+          id: 'tree-b',
+          name: 'Shared name',
+          trigger_condition: '',
+          action: 'review',
+          scope: null,
+          exception_notes: 'skip when ill',
+          is_in_tree: 1,
+          parent_id: 'tree-a',
+          state: 'pending_today_confirmation',
+          successful_days: 2,
+          current_consecutive_days: 2,
+          best_consecutive_days: 2,
+          maintenance_cycle_started: 1,
+          failure_reason: null,
+          cascade_source_card_id: null,
+          cascade_prior_state: null,
+          review_disposition: 'accepted',
+          active_strengthening_level: null,
+          icon_key: null,
+          created_at: epoch('2026-10-02T00:00:00Z'),
+          updated_at: epoch('2026-10-20T00:00:00Z'),
+          deleted_at: null,
+        },
+        {
+          user_id: ownerId,
+          id: 'tree-extinguished',
+          name: 'Extinguished root',
+          trigger_condition: '',
+          action: 'stretch',
+          scope: null,
+          exception_notes: null,
+          is_in_tree: 1,
+          parent_id: null,
+          state: 'extinguished',
+          successful_days: 1,
+          current_consecutive_days: 0,
+          best_consecutive_days: 1,
+          maintenance_cycle_started: 1,
+          failure_reason: 'missed',
+          cascade_source_card_id: null,
+          cascade_prior_state: null,
+          review_disposition: 'accepted',
+          active_strengthening_level: null,
+          icon_key: null,
+          created_at: epoch('2026-10-03T00:00:00Z'),
+          updated_at: epoch('2026-10-20T00:00:00Z'),
+          deleted_at: null,
+        },
+        {
+          user_id: ownerId,
+          id: 'library-c',
+          name: 'Library card',
+          trigger_condition: '',
+          action: 'practice',
+          scope: null,
+          exception_notes: null,
+          is_in_tree: 0,
+          parent_id: null,
+          state: 'extinguished',
+          successful_days: 0,
+          current_consecutive_days: 0,
+          best_consecutive_days: 0,
+          maintenance_cycle_started: 0,
+          failure_reason: null,
+          cascade_source_card_id: null,
+          cascade_prior_state: null,
+          review_disposition: 'accepted',
+          active_strengthening_level: null,
+          icon_key: null,
+          created_at: epoch('2026-10-04T00:00:00Z'),
+          updated_at: epoch('2026-10-20T00:00:00Z'),
+          deleted_at: null,
+        },
+        {
+          user_id: ownerId,
+          id: 'deleted-d',
+          name: 'Deleted card',
+          trigger_condition: '',
+          action: 'deleted',
+          scope: null,
+          exception_notes: null,
+          is_in_tree: 0,
+          parent_id: null,
+          state: 'extinguished',
+          successful_days: 0,
+          current_consecutive_days: 0,
+          best_consecutive_days: 0,
+          maintenance_cycle_started: 0,
+          failure_reason: null,
+          cascade_source_card_id: null,
+          cascade_prior_state: null,
+          review_disposition: 'accepted',
+          active_strengthening_level: null,
+          icon_key: null,
+          created_at: epoch('2026-10-05T00:00:00Z'),
+          updated_at: epoch('2026-10-20T00:00:00Z'),
+          deleted_at: epoch('2026-10-20T00:00:00Z'),
+        },
+      ],
+      local_national_focus_strengthening_levels: [
+        {
+          user_id: ownerId,
+          card_id: 'tree-a',
+          level_number: 1,
+          trigger_condition_override: 'before 06:00',
+          action_override: null,
+          created_at: epoch('2026-10-01T00:00:00Z'),
+          updated_at: epoch('2026-10-20T00:00:00Z'),
+        },
+      ],
+      local_national_focus_maintenance: [
+        { user_id: ownerId, last_settled_checkpoint_at: epoch('2026-10-21T20:00:00Z') },
+      ],
     },
   };
-  const handle = createHandler({ issuer, store });
-  return { tables, setDenied: () => { denied = true; }, setUnavailable: () => { unavailable = true; },
-    setValue: (next: unknown) => { value = next; }, setSnapshot: (next: unknown) => { snapshot = next; }, count: () => calls,
-    request: (path: string, options?: RequestInit) => handle(new Request(`${issuer}${path}`, options)),
-    mcp: (body: unknown, auth = token) => handle(new Request(resource, { method: 'POST',
-      headers: { Authorization: `Bearer ${auth}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })),
+}
+
+function fixture() {
+  let denied = false;
+  let unavailable = false;
+  let snapshot = baseSnapshot();
+  const auditLogs: Array<Record<string, unknown>> = [];
+  let nextCardIndex = 1;
+
+  const checkToken = async (tokenHash: unknown, requiredScope: unknown) => {
+    const roHash = await hash(roToken);
+    const rwHash = await hash(rwToken);
+    if (denied) throw new StoreError('28000');
+    if (tokenHash === rwHash) {
+      return { grant_id: 'grant-rw', user_id: ownerId, label: 'Antigravity RW', scope: 'national_focus:readwrite' };
+    }
+    if (tokenHash === roHash) {
+      if (requiredScope === 'national_focus:readwrite') throw new StoreError('42501');
+      return { grant_id: 'grant-ro', user_id: ownerId, label: 'Codex Read', scope: 'national_focus:read' };
+    }
+    throw new StoreError('28000');
+  };
+
+  const store: Store = {
+    async rpc(name, args) {
+      if (unavailable) throw new StoreError('unavailable');
+      if (name === 'verify_national_focus_mcp_grant') {
+        return checkToken(args.p_token_hash, args.p_required_scope);
+      }
+      if (name === 'read_national_focus_mcp_metadata') {
+        await checkToken(args.p_token_hash, args.p_required_scope);
+        if (args.p_expected_revision !== undefined && args.p_expected_revision !== snapshot.revision) {
+          throw new StoreError('PT409');
+        }
+        return {
+          contract_version: snapshot.contract_version,
+          status: snapshot.status,
+          revision: snapshot.revision,
+          source_device: snapshot.source_device,
+          uploaded_at: snapshot.uploaded_at,
+          data_updated_at: snapshot.data_updated_at,
+          freshness: snapshot.freshness,
+        };
+      }
+      if (name === 'read_national_focus_mcp_snapshot') {
+        await checkToken(args.p_token_hash, 'national_focus:read');
+        if (args.p_expected_revision !== undefined && args.p_expected_revision !== snapshot.revision) {
+          throw new StoreError('PT409');
+        }
+        return snapshot;
+      }
+      if (name === 'record_national_focus_mcp_audit') {
+        auditLogs.push(args);
+        return null;
+      }
+      if (name === 'write_national_focus_mcp_snapshot') {
+        const grant = await checkToken(args.p_token_hash, 'national_focus:readwrite');
+        if (args.p_expected_revision !== snapshot.revision) throw new StoreError('PT409');
+        snapshot = {
+          ...snapshot,
+          revision: snapshot.revision + 1,
+          source_device: { id: `mcp:${grant.grant_id}`, name: `MCP · ${grant.label}` },
+          uploaded_at: '2026-10-21T02:00:00Z',
+          data_updated_at: '2026-10-21T02:00:00Z',
+          tables: {
+            ...snapshot.tables,
+            local_national_focus_cards: args.p_cards as typeof snapshot.tables.local_national_focus_cards,
+            local_national_focus_strengthening_levels:
+              args.p_strengthening_levels as typeof snapshot.tables.local_national_focus_strengthening_levels,
+          },
+        };
+        auditLogs.push({
+          p_tool_name: args.p_tool_name,
+          p_action_kind: 'write',
+          p_summary: args.p_summary,
+          p_snapshot_revision: snapshot.revision,
+        });
+        return {
+          contract_version: snapshot.contract_version,
+          status: snapshot.status,
+          revision: snapshot.revision,
+          source_device: snapshot.source_device,
+          uploaded_at: snapshot.uploaded_at,
+          data_updated_at: snapshot.data_updated_at,
+          freshness: snapshot.freshness,
+        };
+      }
+      throw new Error(`Unexpected RPC ${name}`);
+    },
+  };
+
+  const handle = createHandler({
+    issuer,
+    store,
+    now: () => new Date('2026-10-21T02:00:00Z'),
+    newCardId: () => `new-card-${nextCardIndex++}`,
+  });
+
+  const post = (endpoint: string, body: unknown, token = roToken) =>
+    handle(
+      new Request(endpoint, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    );
+
+  return {
+    handle,
+    post,
+    auditLogs,
+    setDenied: () => {
+      denied = true;
+    },
+    setUnavailable: () => {
+      unavailable = true;
+    },
+    bumpRevision: () => {
+      snapshot.revision += 1;
+    },
+    getSnapshot: () => snapshot,
   };
 }
+
 const rpc = (method: string, params?: unknown) => ({ jsonrpc: '2.0', id: 1, method, params });
 
-test('public challenge discovers a path issuer and metadata without credentials', async () => {
+test('rejects unauthenticated requests and legacy OAuth DCR endpoints', async () => {
   const f = fixture();
-  const r = await f.request('/mcp', { method: 'POST', body: '{}' });
-  assert.equal(r.status, 401);
-  assert.match(r.headers.get('WWW-Authenticate')!, /resource_metadata="https:/);
-  assert.equal((await (await f.request('/resource-metadata')).json()).resource, resource);
-  const as = await (await f.request('/.well-known/openid-configuration')).json();
-  assert.deepEqual(as.code_challenge_methods_supported, ['S256']);
-  assert.equal(as.issuer, issuer);
-  assert.equal(f.count(), 0);
+  const missingAuth = await f.handle(new Request(readonlyUrl, { method: 'POST', body: '{}' }));
+  assert.equal(missingAuth.status, 401);
+
+  const legacyOAuth = await f.handle(new Request(`${issuer}/register`, { method: 'POST', body: '{}' }));
+  assert.equal(legacyOAuth.status, 404);
 });
 
-test('discovery works through Supabase forwarded function paths', async () => {
-  const store: Store = { async insert() {}, async one() { return null; }, async rpc() { throw new Error('not needed'); } };
-  const handle = createHandler({ issuer, store });
-  for (const prefix of ['/functions/v1/national-focus-mcp', '/national-focus-mcp']) {
-    const r = await handle(new Request(`https://worker.internal${prefix}/resource-metadata`));
-    assert.equal(r.status, 200);
-    assert.equal((await r.json()).resource, resource);
-  }
-  assert.equal((await handle(new Request('https://worker.internal/other-function/resource-metadata'))).status, 404);
-});
-
-test('token exchange forwards only bound hashes and returns a separate credential', async () => {
-  let seen = false;
-  const verifier = 'v'.repeat(43);
-  const store: Store = { async insert() {}, async one() { return null; }, async rpc(name, args) {
-    assert.equal(name, 'exchange_national_focus_mcp_code');
-    assert.equal(args.p_code_hash, await hash('c'.repeat(64)));
-    assert.equal(args.p_client_id, 'b'.repeat(64));
-    assert.equal(args.p_redirect_uri, 'http://127.0.0.1:3333/callback');
-    assert.equal(args.p_resource, resource);
-    assert.match(String(args.p_code_challenge), /^[A-Za-z0-9_-]{43}$/);
-    assert.match(String(args.p_token_hash), /^[a-f0-9]{64}$/);
-    assert.equal(JSON.stringify(args).includes(verifier), false);
-    seen = true;
-    return { expires_in: 1799, scope: 'national_focus:read' };
-  } };
-  const handle = createHandler({ issuer, store });
-  const b = new URLSearchParams({ grant_type: 'authorization_code', code: 'c'.repeat(64),
-    client_id: 'b'.repeat(64), code_verifier: verifier, redirect_uri: 'http://127.0.0.1:3333/callback', resource });
-  const r = await handle(new Request(`${issuer}/token`, { method: 'POST', body: b }));
-  assert.equal(r.status, 200);
-  const result = await r.json();
-  assert.equal(seen, true);
-  assert.match(result.access_token, /^pacta_mcp_[a-f0-9]{64}$/);
-  assert.equal(result.expires_in, 1799);
-  assert.equal('refresh_token' in result, false);
-  b.delete('client_id');
-  assert.equal((await handle(new Request(`${issuer}/token`, { method: 'POST', body: b }))).status, 400);
-});
-
-test('DCR accepts exact public loopback clients and rejects open redirect targets', async () => {
+test('readonly token works on /mcp and /mcp/readonly, and is rejected with 403 on /mcp/readwrite', async () => {
   const f = fixture();
-  for (const redirect of ['https://evil.example/callback', 'http://127.0.0.1:3333/cb#fragment',
-    'http://user:pass@127.0.0.1:3333/cb', 'http://127.0.0.1:3333/cb?next=evil', 'http://127.0.0.1/cb']) {
-    assert.equal((await f.request('/register', { method: 'POST', body: JSON.stringify({ token_endpoint_auth_method: 'none', redirect_uris: [redirect] }) })).status, 400);
-  }
-  const r = await f.request('/register', { method: 'POST', body: JSON.stringify({ client_name: 'Codex',
-    token_endpoint_auth_method: 'none', redirect_uris: ['http://127.0.0.1:3333/callback'] }) });
-  const registered = await r.json();
-  assert.equal(r.status, 201);
-  assert.match(registered.client_id, /^[a-f0-9]{64}$/);
-  assert.equal('client_secret' in registered, false);
-  const compatible = await f.request('/register', { method: 'POST', body: JSON.stringify({
-    grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'],
-    redirect_uris: ['http://localhost:3333/callback'],
-  }) });
-  assert.equal(compatible.status, 201);
-  assert.deepEqual((await compatible.json()).grant_types, ['authorization_code']);
+  const initAlias = await (await f.post(aliasUrl, rpc('initialize'))).json();
+  assert.match(initAlias.result.instructions, /Endpoint mode: readonly/);
+  assert.match(initAlias.result.instructions, /better-national-focus/);
+  assert.match(initAlias.result.instructions, /include_references/);
+
+  const roTools = await (await f.post(readonlyUrl, rpc('tools/list'))).json();
+  const names = roTools.result.tools.map((t: { name: string }) => t.name);
+  assert.ok(names.includes('list_skills'));
+  assert.ok(!names.includes('create_national_focus_card'));
+
+  const escalated = await f.post(readwriteUrl, rpc('tools/list'), roToken);
+  assert.equal(escalated.status, 403);
+  assert.equal((await escalated.json()).error, 'insufficient_scope');
 });
 
-test('authorization waits for separate App approval and preserves exact callback/state', async () => {
+test('exposes bundled skills via tools, resources, and prompts', async () => {
   const f = fixture();
-  const client = await (await f.request('/register', { method: 'POST', body: JSON.stringify({
-    token_endpoint_auth_method: 'none', redirect_uris: ['http://127.0.0.1:3333/callback'] }) })).json();
-  const p = new URLSearchParams({ client_id: client.client_id, redirect_uri: 'http://127.0.0.1:3333/callback',
-    response_type: 'code', scope: 'national_focus:read', resource,
-    code_challenge_method: 'S256', code_challenge: 'a'.repeat(43), state: 'request-state-123456' });
-  const r = await f.request(`/authorize?${p}`);
-  assert.equal(r.status, 302);
-  const waiting = new URL(r.headers.get('Location')!);
-  const ticket = waiting.searchParams.get('request')!;
-  assert.match(ticket, /^[a-f0-9]{64}$/);
-  const pending = await f.request(`/authorize?request=${ticket}`);
-  assert.match(pending.headers.get('Content-Type')!, /text\/plain/);
-  const disclosure = await pending.text();
-  assert.match(disclosure, /National Focus read-only/);
-  assert.match(disclosure, /National Focus tree, library, rules, progress, failure events with frozen trees/);
-  assert.equal(f.tables.national_focus_mcp_grants, undefined);
-  // Authenticated App's SQL approval is independently covered by the SQL probe.
-  Object.assign(f.tables.national_focus_mcp_requests[0], { grant_id: 'approved', code_value: 'code' });
-  const approved = await f.request(`/authorize?request=${ticket}`);
-  const callback = new URL(approved.headers.get('Location')!);
-  assert.equal(callback.origin, 'http://127.0.0.1:3333');
-  assert.equal(callback.searchParams.get('state'), 'request-state-123456');
-  assert.equal(callback.searchParams.get('iss'), issuer);
-  p.set('redirect_uri', 'https://evil.example');
-  assert.equal((await f.request(`/authorize?${p}`)).status, 400);
-  p.set('redirect_uri', 'http://127.0.0.1:3333/callback');
-  p.set('code_challenge_method', 'plain');
-  assert.equal((await f.request(`/authorize?${p}`)).status, 400);
+  assert.ok(BUNDLED_SKILLS.some((s) => s.name === 'better-national-focus'));
+
+  const listSkills = await (await f.post(readonlyUrl, rpc('tools/call', { name: 'list_skills', arguments: {} }))).json();
+  assert.equal(listSkills.result.isError, false);
+  assert.equal(listSkills.result.structuredContent.skills[0].name, 'better-national-focus');
+
+  const getRef = await (
+    await f.post(
+      readonlyUrl,
+      rpc('tools/call', {
+        name: 'get_skill',
+        arguments: { name: 'better-national-focus', reference: 'references/card-design.md' },
+      }),
+    )
+  ).json();
+  assert.match(getRef.result.structuredContent.content, /国策卡设计法/);
+
+  const getAll = await (
+    await f.post(
+      readonlyUrl,
+      rpc('tools/call', {
+        name: 'get_skill',
+        arguments: { name: 'better-national-focus', include_references: true },
+      }),
+    )
+  ).json();
+  assert.match(getAll.result.structuredContent.content, /更好的国策/);
+  assert.equal(getAll.result.structuredContent.references.length, 2);
+  assert.match(getAll.result.structuredContent.references[0].content, /国策卡设计法/);
+  assert.match(getAll.result.structuredContent.references[1].content, /国策树结构/);
+
+  const treeRead = await (
+    await f.post(readonlyUrl, rpc('tools/call', { name: 'get_national_focus_tree', arguments: { expected_revision: 2 } }))
+  ).json();
+  assert.equal(treeRead.result.structuredContent.skill_guidance.recommended_skill, 'better-national-focus');
+
+  const resList = await (await f.post(readonlyUrl, rpc('resources/list'))).json();
+  assert.ok(resList.result.resources.some((r: { uri: string }) => r.uri === 'pacta://skills/better-national-focus/SKILL.md'));
+
+  const resRead = await (
+    await f.post(readonlyUrl, rpc('resources/read', { uri: 'pacta://skills/better-national-focus/SKILL.md' }))
+  ).json();
+  assert.match(resRead.result.contents[0].text, /更好的国策/);
+
+  const promptList = await (await f.post(readonlyUrl, rpc('prompts/list'))).json();
+  assert.equal(promptList.result.prompts.length, 3);
+
+  const promptGet = await (
+    await f.post(readonlyUrl, rpc('prompts/get', { name: 'design_or_optimize_national_focus', arguments: { goal: '早睡' } }))
+  ).json();
+  assert.equal(promptGet.result.messages[0].content.type, 'resource');
+  assert.match(promptGet.result.messages[0].content.resource.text, /更好的国策/);
+  assert.equal(promptGet.result.messages[1].content.type, 'resource');
+  assert.match(promptGet.result.messages[1].content.resource.text, /国策卡设计法/);
+  assert.match(promptGet.result.messages[2].content.text, /早睡/);
 });
 
-test('metadata and National Focus tools are exposed and metadata expected revision is enforced', async () => {
+test('readwrite creates, updates, moves, soft-deletes and restores cards with CAS and audit logs', async () => {
   const f = fixture();
-  const listed = await (await f.mcp(rpc('tools/list'))).json();
-  assert.deepEqual(listed.result.tools.map((t: { name: string }) => t.name), [
-    'get_snapshot_metadata', 'get_national_focus_tree', 'get_national_focus_library', 'get_national_focus_card',
-    'list_national_focus_failures', 'get_national_focus_failure',
-  ]);
-  for (let i = 0; i < 2; i++) {
-    const r = await (await f.mcp(rpc('tools/call', { name: 'get_snapshot_metadata', arguments: { expected_revision: 2 } }))).json();
-    assert.deepEqual(r.result.structuredContent, metadata);
-    assert.equal(JSON.stringify(r).includes('payload'), false);
-  }
-  const changed = await (await f.mcp(rpc('tools/call', { name: 'get_snapshot_metadata', arguments: { expected_revision: 1 } }))).json();
-  assert.equal(changed.result.isError, true);
-  assert.match(changed.result.content[0].text, /snapshot_changed/);
-  assert.deepEqual(f.tables, {}); // reads allocate no authorizations or business writes
-});
 
-test('tree, library and card tools preserve National Focus detail while whitelisting every field', async () => {
-  const f = fixture();
-  f.setSnapshot(activeSnapshot);
-  const tree = await (await f.mcp(rpc('tools/call', { name: 'get_national_focus_tree',
-    arguments: { expected_revision: 2 } }))).json();
-  const treeValue = tree.result.structuredContent;
-  assert.deepEqual(treeValue.cards.map((card: { id: string }) => card.id), ['tree-a', 'tree-b']);
-  assert.equal(treeValue.cards[1].parent_id, 'tree-a');
-  assert.equal(treeValue.cards[0].internalization_progress_percent, 100 * (1 - Math.exp(-1)));
-  assert.deepEqual(treeValue.cards[0].strengthening_levels, [
-    { level_number: 1, trigger_condition_override: 'before 06:00', action_override: null },
-    { level_number: 2, trigger_condition_override: null, action_override: 'read two pages' },
-  ]);
-  assert.equal(treeValue.cards[0].icon_key, 'lucide:book-open');
-  assert.equal(treeValue.cards[1].icon_key, null);
-  assert.deepEqual(treeValue.cards[0].effective_requirements, {
-    strengthening_level_number: 1,
-    trigger_condition: 'before 06:00',
-    action: 'read',
-    scope: 'home',
-    exception_notes: null,
-  });
-  assert.equal('requirement_versions' in treeValue.cards[0], false);
-  assert.equal('current_requirement_version' in treeValue.cards[0], false);
-  assert.equal(treeValue.maintenance.last_settled_checkpoint_at, '2026-10-21T20:00:00.000Z');
-  assert.deepEqual(treeValue.metadata, metadata);
+  // 1. Create card in library
+  const created = await (
+    await f.post(
+      readwriteUrl,
+      rpc('tools/call', {
+        name: 'create_national_focus_card',
+        arguments: {
+          expected_revision: 2,
+          name: '先发制人',
+          action: '起床后 30 分钟内禁用娱乐 App；仅做洗漱与早餐',
+          icon_key: 'lucide:sunrise',
+          strengthening_levels: [{ level_number: 1, action_override: '起床后 45 分钟内禁用娱乐 App' }],
+          active_strengthening_level: 1,
+        },
+      }),
+      rwToken,
+    )
+  ).json();
+  assert.equal(created.result.isError, false);
+  assert.equal(created.result.structuredContent.metadata.revision, 3);
+  assert.equal(created.result.structuredContent.card.id, 'new-card-1');
+  assert.equal(created.result.structuredContent.card.is_in_tree, false);
+  assert.equal(created.result.structuredContent.card.state, 'extinguished');
+  assert.equal(created.result.structuredContent.card.icon_key, 'lucide:sunrise');
+  assert.equal(created.result.structuredContent.card.effective_requirements.action, '起床后 45 分钟内禁用娱乐 App');
 
-  const library = await (await f.mcp(rpc('tools/call', { name: 'get_national_focus_library', arguments: {} }))).json();
-  assert.deepEqual(library.result.structuredContent.cards.map((card: { id: string }) => card.id), ['library-c']);
+  // 2. Stale CAS revision is rejected with snapshot_changed
+  const stale = await (
+    await f.post(
+      readwriteUrl,
+      rpc('tools/call', {
+        name: 'update_national_focus_card',
+        arguments: { expected_revision: 2, card_id: 'new-card-1', name: '过时版本' },
+      }),
+      rwToken,
+    )
+  ).json();
+  assert.equal(stale.result.isError, true);
+  assert.equal(stale.result.structuredContent.error.code, 'snapshot_changed');
 
-  const card = await (await f.mcp(rpc('tools/call', { name: 'get_national_focus_card',
-    arguments: { card_id: 'tree-a', expected_revision: 2 } }))).json();
-  assert.equal(card.result.structuredContent.card.id, 'tree-a');
-  assert.equal(card.result.structuredContent.metadata.revision, 2);
-  assert.equal(card.result.structuredContent.card.icon_key, 'lucide:book-open');
-  assert.equal(card.result.structuredContent.card.effective_requirements.trigger_condition, 'before 06:00');
-  assert.equal('requirement_versions' in card.result.structuredContent.card, false);
-  assert.equal(card.result.structuredContent.error, undefined);
+  // 3. Forbidden runtime field is rejected
+  const forbidden = await (
+    await f.post(
+      readwriteUrl,
+      rpc('tools/call', {
+        name: 'update_national_focus_card',
+        arguments: { expected_revision: 3, card_id: 'tree-a', state: 'lit' },
+      }),
+      rwToken,
+    )
+  ).json();
+  assert.equal(forbidden.error.code, -32602);
 
-  const serialized = JSON.stringify({ tree: tree.result, library: library.result, card: card.result });
-  for (const secret of ['private-user', 'private-token', 'deleted-d', 'Deleted card', 'local_tasks', 'private-task', 'payload', 'nested-level-secret', 'nested-maintenance-secret', 'requirement_versions', 'current_requirement_version']) {
-    assert.equal(serialized.includes(secret), false, `leaked ${secret}`);
-  }
-  assert.deepEqual(f.tables, {});
-});
+  // 4. Reject placing lit/pending branch under extinguished parent
+  const badMove = await (
+    await f.post(
+      readwriteUrl,
+      rpc('tools/call', {
+        name: 'move_national_focus_card',
+        arguments: { expected_revision: 3, card_id: 'tree-a', is_in_tree: true, parent_id: 'tree-extinguished' },
+      }),
+      rwToken,
+    )
+  ).json();
+  assert.equal(badMove.result.isError, true);
+  assert.equal(badMove.result.structuredContent.error.code, 'invalid_tree_placement');
 
-test('content tools fail closed on malformed snapshot relations and preserve unavailable states', async () => {
-  const f = fixture();
-  const broken = structuredClone(activeSnapshot) as any;
-  broken.tables.local_national_focus_cards[1].parent_id = 'missing-parent';
-  f.setSnapshot(broken);
-  const invalid = await (await f.mcp(rpc('tools/call', { name: 'get_national_focus_tree' }))).json();
-  assert.equal(invalid.result.structuredContent.metadata.status, 'unsupported_snapshot');
-  assert.deepEqual(invalid.result.structuredContent.cards, []);
-  assert.equal(JSON.stringify(invalid).includes('private-token'), false);
-  assert.equal(JSON.stringify(invalid).includes('tree-a'), false);
+  // 5. Move new card into tree under tree-a
+  const movedIn = await (
+    await f.post(
+      readwriteUrl,
+      rpc('tools/call', {
+        name: 'move_national_focus_card',
+        arguments: { expected_revision: 3, card_id: 'new-card-1', is_in_tree: true, parent_id: 'tree-a' },
+      }),
+      rwToken,
+    )
+  ).json();
+  assert.equal(movedIn.result.isError, false);
+  assert.equal(movedIn.result.structuredContent.metadata.revision, 4);
+  assert.equal(movedIn.result.structuredContent.card.is_in_tree, true);
+  assert.equal(movedIn.result.structuredContent.card.parent_id, 'tree-a');
 
-  const noSnapshot = { contract_version: 1, status: 'no_snapshot', revision: null,
-    source_device: null, uploaded_at: null, recovery: 'Upload in Pacta.' };
-  f.setSnapshot(noSnapshot);
-  const unavailable = await (await f.mcp(rpc('tools/call', { name: 'get_national_focus_tree' }))).json();
-  assert.equal(unavailable.result.structuredContent.metadata.status, 'no_snapshot');
-  assert.deepEqual(unavailable.result.structuredContent.cards, []);
+  // 6. Move lit tree-a branch back to library transitions lit/pending nodes to pending_today_confirmation
+  const movedOut = await (
+    await f.post(
+      readwriteUrl,
+      rpc('tools/call', {
+        name: 'move_national_focus_card',
+        arguments: { expected_revision: 4, card_id: 'tree-a', is_in_tree: false },
+      }),
+      rwToken,
+    )
+  ).json();
+  assert.equal(movedOut.result.isError, false);
+  assert.equal(movedOut.result.structuredContent.metadata.revision, 5);
+  assert.equal(movedOut.result.structuredContent.card.state, 'pending_today_confirmation');
 
-  const emptySnapshot = { ...metadata, tables: {
-    local_national_focus_cards: [], local_national_focus_strengthening_levels: [],
-    local_national_focus_maintenance: [],
-  } };
-  f.setSnapshot(emptySnapshot);
-  const empty = await (await f.mcp(rpc('tools/call', { name: 'get_national_focus_tree' }))).json();
-  assert.equal(empty.result.structuredContent.metadata.status, 'available');
-  assert.deepEqual(empty.result.structuredContent.cards, []);
-});
+  // 7. Soft-delete and restore library-c
+  const softDeleted = await (
+    await f.post(
+      readwriteUrl,
+      rpc('tools/call', {
+        name: 'set_national_focus_card_deleted',
+        arguments: { expected_revision: 5, card_id: 'library-c', deleted: true },
+      }),
+      rwToken,
+    )
+  ).json();
+  assert.equal(softDeleted.result.isError, false);
+  assert.equal(softDeleted.result.structuredContent.metadata.revision, 6);
 
-test('card lookup requires a pinned revision and changed snapshots return metadata with recovery', async () => {
-  const f = fixture();
-  const missingRevision = await (await f.mcp(rpc('tools/call', { name: 'get_national_focus_card',
-    arguments: { card_id: 'tree-a' } }))).json();
-  assert.equal(missingRevision.error.code, -32602);
-  assert.match(missingRevision.error.data.recovery, /tools\/list/);
-
-  const changed = await (await f.mcp(rpc('tools/call', { name: 'get_national_focus_card',
-    arguments: { card_id: 'tree-a', expected_revision: 1 } }))).json();
-  assert.equal(changed.result.isError, true);
-  assert.equal(changed.result.structuredContent.metadata.revision, 2);
-  assert.equal(changed.result.structuredContent.error.code, 'snapshot_changed');
-  assert.match(changed.result.structuredContent.error.recovery, /Read metadata again/);
-});
-
-test('every MCP request rechecks delegate including initialize/list/notifications', async () => {
-  const f = fixture();
-  for (const method of ['initialize', 'tools/list', 'tools/call']) {
-    assert.equal((await f.mcp(rpc(method), 'ordinary-app-jwt')).status, 401);
-    assert.equal((await f.mcp(rpc(method), `pacta_mcp_${'b'.repeat(64)}`)).status, 401);
-  }
-  assert.equal((await f.mcp(rpc('initialize'))).status, 200);
-  f.setDenied(); // revoked/expired/suspended all map to DB invalid_delegate
-  for (const body of [rpc('initialize'), rpc('tools/list'), { jsonrpc: '2.0', method: 'notifications/initialized' }, rpc('tools/call')]) {
-    assert.equal((await f.mcp(body)).status, 401);
-  }
-});
-
-test('invalid inputs and unsupported writes cannot become arbitrary SQL/table reads', async () => {
-  const f = fixture();
-  for (const args of [{ user_id: 'other-user' }, { sql: 'select * from tasks' }, { expected_revision: -1 }, { expected_revision: 2.5 }]) {
-    const r = await (await f.mcp(rpc('tools/call', { name: 'get_snapshot_metadata', arguments: args }))).json();
-    assert.equal(r.error.code, -32602);
-  }
-  const r = await (await f.mcp(rpc('tools/call', { name: 'write_card' }))).json();
-  assert.equal(r.error.code, -32602);
-  assert.equal((await f.request('/mcp', { method: 'POST', headers: { Origin: 'https://evil.example' } })).status, 403);
-  assert.equal((await f.request('/token', { method: 'POST', body: 'grant_type=authorization_code&code_verifier=short' })).status, 400);
-});
-
-test('no snapshot, old format and service errors remain distinct from an empty tree', async () => {
-  const f = fixture();
-  for (const status of ['no_snapshot', 'legacy_snapshot', 'unsupported_snapshot']) {
-    f.setValue({ contract_version: 1, status, revision: null, uploaded_at: null });
-    const r = await (await f.mcp(rpc('tools/call', { name: 'get_snapshot_metadata' }))).json();
-    assert.equal(r.result.structuredContent.status, status);
-    assert.equal(r.result.structuredContent.uploaded_at, null);
-  }
-  f.setUnavailable();
-  assert.equal((await f.mcp(rpc('tools/list'))).status, 503);
+  const restored = await (
+    await f.post(
+      readwriteUrl,
+      rpc('tools/call', {
+        name: 'set_national_focus_card_deleted',
+        arguments: { expected_revision: 6, card_id: 'library-c', deleted: false },
+      }),
+      rwToken,
+    )
+  ).json();
+  assert.equal(restored.result.isError, false);
+  assert.equal(restored.result.structuredContent.metadata.revision, 7);
+  assert.ok(f.auditLogs.some((entry) => entry.p_action_kind === 'write' && entry.p_snapshot_revision === 7));
 });

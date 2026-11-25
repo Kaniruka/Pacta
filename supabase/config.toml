@@ -1,4 +1,4 @@
-# This endpoint accepts only independent opaque OAuth delegates, not Auth JWTs.
-# Discovery/DCR must be public; handler + database authorize every MCP request.
+# This endpoint accepts independent opaque Scoped Bearer Tokens (`pacta_mcp_...`),
+# not Supabase Auth JWTs. Handler + PostgreSQL authorize every MCP request.
 [functions.national-focus-mcp]
 verify_jwt = false

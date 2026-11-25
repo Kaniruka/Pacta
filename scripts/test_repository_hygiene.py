@@ -84,8 +84,8 @@ class RepositoryHygieneTest(unittest.TestCase):
         self.write('lib/src/main.dart')
         self.write('test/widget_test.dart')
         self.write('supabase/migrations/20261114000000_init.sql')
-        self.write('skills/pacta-national-focus-analysis/SKILL.md')
-        self.write('skills/pacta-national-focus-analysis/references/contract.md')
+        self.write('skills/better-national-focus/SKILL.md')
+        self.write('skills/better-national-focus/references/card-design.md')
         self.write('packages/panel/docs/readme.md')
         self.stage(
             'README.md',

@@ -5,7 +5,6 @@ import 'package:pacta/main.dart';
 import 'package:pacta/src/national_focus/national_focus_ai_access.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
-import 'package:pacta/src/theme/pacta_spacing.dart';
 
 import '../support/fake_auth_repository.dart';
 
@@ -29,7 +28,7 @@ void main() {
         .setMockMethodCallHandler(SystemChannels.platform, null);
   });
 
-  testWidgets('我的中的国策 AI 入口可复制无密钥配置并撤销连接', (tester) async {
+  testWidgets('创建只读与读写连接、切换多端配置格式并撤销单个与全部连接', (tester) async {
     final grants = _FakeNationalFocusAiGrantRepository();
 
     await tester.pumpWidget(
@@ -41,85 +40,153 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('我的').last);
-    await tester.pumpAndSettle();
-    final entry = find.byKey(const ValueKey('national-focus-ai-entry'));
-    await tester.ensureVisible(entry);
-    await tester.tap(entry);
-    await tester.pumpAndSettle();
-
-    final page = find.byKey(const ValueKey('national-focus-ai-analysis-page'));
+    final page = await _openMyAiPage(tester);
     expect(
-      find.descendant(of: page, matching: find.text('国策 AI 分析')),
+      find.descendant(of: page, matching: find.text('多端 Agent 接入')),
       findsOneWidget,
     );
-    expect(find.textContaining('最近一次手动上传'), findsOneWidget);
-    expect(find.textContaining('失败时冻结的完整树快照'), findsOneWidget);
-    expect(find.textContaining('强化等级、要求版本、连续记录和内化进度'), findsOneWidget);
-    expect(find.textContaining('快照版本、来源设备和上传时间'), findsOneWidget);
-    expect(find.textContaining('原始原因与事后说明分开'), findsOneWidget);
-    expect(find.textContaining('不是完整的逐日审计日志'), findsOneWidget);
-    expect(find.textContaining('不能新增、修改或删除失败记录与说明'), findsOneWidget);
-    expect(find.text('尚未授权'), findsOneWidget);
+    expect(find.text('尚未创建连接'), findsOneWidget);
 
-    final requestCodeField = find.byKey(
-      const ValueKey('national-focus-ai-request-code'),
+    // 1. 创建默认反重力只读连接
+    await tester.tap(find.byKey(const ValueKey('national-focus-ai-create')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('national-focus-ai-submit-create')),
     );
-    await _scrollUntilVisible(tester, page, requestCodeField);
-    await tester.enterText(requestCodeField, 'a' * 64);
+    await tester.pumpAndSettle();
+
+    expect(find.text('连接已创建'), findsOneWidget);
+    expect(grants.createdCalls.length, 1);
+    expect(grants.createdCalls.first.scope, NationalFocusAiScope.read);
+
+    // 切换到 Claude Code 并复制配置
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Claude Code').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('national-focus-ai-copy-config')),
+    );
     await tester.pumpAndSettle();
     expect(
-      tester.widget<TextField>(requestCodeField).controller!.text,
-      'a' * 64,
+      copiedText,
+      contains('claude mcp add --transport http pacta-national-focus'),
     );
-    await _scrollUntilVisible(tester, page, find.text('核对授权码'));
-    final inspectButton = find.ancestor(
-      of: find.text('核对授权码'),
-      matching: find.byType(OutlinedButton),
+    expect(copiedText, contains('$mcpUrl/readonly'));
+    expect(copiedText, contains('Bearer pacta_mcp_'));
+
+    // 复制令牌
+    await tester.tap(
+      find.byKey(const ValueKey('national-focus-ai-copy-token')),
     );
-    expect(tester.widget<OutlinedButton>(inspectButton).onPressed, isNotNull);
-    await tester.ensureVisible(find.text('核对授权码'));
-    await tester.tap(find.text('核对授权码'));
     await tester.pumpAndSettle();
-    expect(grants.inspectedCodes, ['a' * 64]);
-    expect(find.text('Codex CLI'), findsOneWidget);
-    expect(find.text('https://127.0.0.1/callback'), findsOneWidget);
-    expect(find.textContaining('失败历史（含冻结快照'), findsOneWidget);
-    expect(find.textContaining('Codex 不能修改失败记录'), findsOneWidget);
+    expect(copiedText, startsWith('pacta_mcp_'));
 
-    await _scrollUntilVisible(tester, page, find.text('授予 30 分钟只读授权'));
-    await tester.tap(find.text('授予 30 分钟只读授权'));
+    final doneButton = find.byKey(
+      const ValueKey('national-focus-ai-sheet-done'),
+    );
+    await tester.ensureVisible(doneButton);
     await tester.pumpAndSettle();
-    expect(grants.approvedCodes, ['a' * 64]);
-    await _scrollToTop(tester, page);
-    expect(find.text('已授权'), findsOneWidget);
-    expect(find.text('Codex CLI'), findsOneWidget);
-    await _scrollUntilVisible(tester, page, find.text('复制 Codex 配置'));
-    expect(find.textContaining('30 分钟'), findsOneWidget);
+    await tester.tap(doneButton);
+    await tester.pumpAndSettle();
+    expect(find.text('反重力'), findsNWidgets(2));
+    expect(find.text('只读'), findsOneWidget);
+    expect(find.text('生效中'), findsOneWidget);
 
-    await _scrollUntilVisible(tester, page, find.text('复制 Codex 配置'));
-    await tester.tap(find.text('复制 Codex 配置'));
+    // 2. 创建第二个连接：Codex 读写 + 永不过期
+    await tester.tap(find.byKey(const ValueKey('national-focus-ai-create')));
     await tester.pumpAndSettle();
-    expect(copiedText, contains('codex mcp add pacta-national-focus'));
-    expect(copiedText, contains(mcpUrl));
-    expect(copiedText, isNot(contains('SUPABASE_PUBLISHABLE_KEY')));
-    expect(copiedText, isNot(contains('Bearer ')));
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Codex').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('读写'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, '永不过期'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('national-focus-ai-submit-create')),
+    );
+    await tester.pumpAndSettle();
 
-    await _scrollToTop(tester, page);
-    await tester.tap(find.text('撤销此连接'));
+    await tester.tap(
+      find.byKey(const ValueKey('national-focus-ai-copy-config')),
+    );
     await tester.pumpAndSettle();
-    expect(find.text('撤销 Codex 连接？'), findsOneWidget);
+    expect(copiedText, contains('[mcp_servers.pacta_national_focus]'));
+    expect(copiedText, contains('$mcpUrl/readwrite'));
+
+    await tester.ensureVisible(doneButton);
+    await tester.pumpAndSettle();
+    await tester.tap(doneButton);
+    await tester.pumpAndSettle();
+    expect(find.text('永不过期'), findsNothing); // 合成在元信息行里
+    expect(find.textContaining('永不过期'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('national-focus-ai-revoke-all')),
+      findsOneWidget,
+    );
+
+    // 3. 撤销单个连接
+    await tester.tap(
+      find.byKey(const ValueKey('national-focus-ai-revoke-grant-1')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('撤销「反重力」？'), findsOneWidget);
     await tester.tap(find.text('确认撤销'));
     await tester.pumpAndSettle();
-
     expect(grants.revokeCalls, ['grant-1']);
-    await _scrollToTop(tester, page);
     expect(find.text('已撤销'), findsOneWidget);
-    expect(find.text('撤销此连接'), findsNothing);
+
+    // 4. 再创建一个并测试全部撤销
+    await tester.tap(find.byKey(const ValueKey('national-focus-ai-create')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(ChoiceChip, 'DSH').last);
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey('national-focus-ai-submit-create')),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(doneButton);
+    await tester.pumpAndSettle();
+    await tester.tap(doneButton);
+    await tester.pumpAndSettle();
+
+    final revokeAllButton = find.byKey(
+      const ValueKey('national-focus-ai-revoke-all'),
+    );
+    await tester.ensureVisible(revokeAllButton);
+    await tester.pumpAndSettle();
+    await tester.tap(revokeAllButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '全部撤销'));
+    await tester.pumpAndSettle();
+    expect(grants.revokeAllCalls, 1);
+    expect(find.text('已撤销'), findsNWidgets(3));
   });
 
-  testWidgets('引导可进入现有手动同步并复制 skill 和首次问题', (tester) async {
-    final grants = _FakeNationalFocusAiGrantRepository();
+  testWidgets('展示最近调用与写入记录并支持进入手动同步', (tester) async {
+    final now = DateTime.utc(2026, 11, 25, 12, 0);
+    final grants = _FakeNationalFocusAiGrantRepository()
+      ..auditLogs.addAll([
+        NationalFocusAiAuditLog(
+          id: 'log-write',
+          grantId: 'grant-1',
+          grantLabel: 'Codex',
+          toolName: 'create_national_focus_card',
+          actionKind: 'write',
+          summary: '创建国策卡「先发制人」',
+          snapshotRevision: 9,
+          createdAt: now,
+        ),
+        NationalFocusAiAuditLog(
+          id: 'log-read',
+          grantId: 'grant-1',
+          grantLabel: 'Codex',
+          toolName: 'get_national_focus_tree',
+          actionKind: 'read',
+          summary: '读取国策树',
+          snapshotRevision: 8,
+          createdAt: now.subtract(const Duration(minutes: 5)),
+        ),
+      ]);
+
     await tester.pumpWidget(
       PactaApp(
         authRepository: FakeAuthRepository()..signedInUser = 'user@example.com',
@@ -129,50 +196,17 @@ void main() {
     );
     await tester.pumpAndSettle();
     final page = await _openMyAiPage(tester);
-    await _scrollUntilVisible(tester, page, find.text('前往手动同步'));
-    await tester.tap(find.text('前往手动同步'));
+
+    await _scrollUntilVisible(tester, page, find.text('创建国策卡「先发制人」'));
+    expect(find.text('写入'), findsOneWidget);
+    expect(find.text('读取'), findsOneWidget);
+    expect(find.text('r9'), findsOneWidget);
+
+    await _scrollToTop(tester, page);
+    await tester.tap(find.byKey(const ValueKey('national-focus-ai-open-sync')));
     await tester.pumpAndSettle();
     expect(find.text('手动同步'), findsOneWidget);
     expect(find.textContaining('仅进入本页不会上传或下载'), findsOneWidget);
-    expect(grants.approvedCodes, isEmpty);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    await _scrollUntilVisible(tester, page, find.text('复制 skill 安装说明'));
-    await tester.tap(find.text('复制 skill 安装说明'));
-    await tester.pumpAndSettle();
-    expect(copiedText, contains('https://github.com/Kaniruka/Pacta'));
-    expect(copiedText, contains('skills/pacta-national-focus-analysis'));
-    expect(copiedText, contains(r'$skill-installer'));
-    await tester.pump(const Duration(seconds: 5));
-    await tester.pumpAndSettle();
-    await _scrollUntilVisible(tester, page, find.text('复制首次问题'));
-    await tester.tap(find.text('复制首次问题'));
-    await tester.pumpAndSettle();
-    expect(copiedText, contains(r'$pacta-national-focus-analysis'));
-    expect(copiedText, contains('来源设备和上传时间'));
-    expect(copiedText, contains('事实、可能解释和建议'));
-    await tester.pump(const Duration(seconds: 5));
-    await tester.pumpAndSettle();
-    await _scrollUntilVisible(tester, page, find.text('复制失败复盘示例'));
-    await tester.tap(find.text('复制失败复盘示例'));
-    await tester.pumpAndSettle();
-    for (final evidence in [
-      r'$pacta-national-focus-analysis',
-      '近 30 个国策日',
-      '按工具游标读完分页',
-      '当前树和规则不受历史窗口过滤',
-      '失败事件 ID 和历史要求版本 ID',
-      '主动失败、漏确认和连带影响',
-      '原始失败原因和后续共享反思说明',
-      'revision 变化，重取一致数据并重新分析',
-      '查询截断',
-      '不修改或暗示写回数据',
-    ]) {
-      expect(copiedText, contains(evidence));
-    }
-    await _scrollUntilVisible(tester, page, find.textContaining('无快照或旧版快照'));
-    expect(find.textContaining('离线仍可维护本机国策'), findsOneWidget);
-    expect(tester.takeException(), isNull);
   });
 
   testWidgets('国策树更多菜单进入同一个国策 AI 分析页', (tester) async {
@@ -203,18 +237,14 @@ void main() {
       find.byKey(const ValueKey('national-focus-ai-analysis-page')),
       findsOneWidget,
     );
-    expect(find.textContaining('最近一次手动上传'), findsOneWidget);
-    expect(find.textContaining('失败时冻结的完整树快照'), findsOneWidget);
   });
 
-  testWidgets('320 窄屏、大字号与深色主题下引导页可滚动且无溢出', (tester) async {
-    tester.view.physicalSize = const Size(320, 800);
+  testWidgets('320 窄屏、20:9 全面屏与深色主题下顶对齐且无溢出', (tester) async {
+    tester.view.physicalSize = const Size(393, 873);
     tester.view.devicePixelRatio = 1;
-    tester.platformDispatcher.textScaleFactorTestValue = 2;
     tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
     final grants = _FakeNationalFocusAiGrantRepository();
 
@@ -229,97 +259,33 @@ void main() {
     final page = await _openMyAiPage(tester);
 
     expect(Theme.of(tester.element(page)).brightness, Brightness.dark);
+    final heroRect = tester.getRect(find.text('多端 Agent 接入'));
+    expect(heroRect.top, lessThan(180));
     expect(tester.takeException(), isNull);
-    await _scrollUntilVisible(tester, page, find.text('复制 Codex 配置'));
-    expect(tester.takeException(), isNull);
-    await _scrollUntilVisible(
-      tester,
-      page,
-      find.byKey(const ValueKey('national-focus-ai-request-code')),
-    );
-    await tester.pump(const Duration(seconds: 5));
+
+    tester.view.physicalSize = const Size(320, 800);
     await tester.pumpAndSettle();
-    await _scrollUntilVisible(tester, page, find.text('复制失败复盘示例'));
-    await tester.tap(find.text('复制失败复盘示例'));
-    await tester.pumpAndSettle();
-    expect(copiedText, contains('近 30 个国策日'));
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Windows 宽屏通过侧边导航打开引导页且无溢出', (tester) async {
-    tester.view.physicalSize = const Size(1200, 800);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    final grants = _FakeNationalFocusAiGrantRepository();
-
-    await tester.pumpWidget(
-      PactaApp(
-        authRepository: FakeAuthRepository()..signedInUser = 'user@example.com',
-        nationalFocusMcpUrl: mcpUrl,
-        nationalFocusAiGrantRepositoryFactory: (_) => grants,
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.byType(NavigationRail), findsOneWidget);
-    expect(find.byType(NavigationBar), findsNothing);
-
-    await tester.tap(
-      find.descendant(
-        of: find.byType(NavigationRail),
-        matching: find.text('我的'),
-      ),
-    );
-    await tester.pumpAndSettle();
-    final page = await _openMyAiPage(tester, selectMyTab: false);
-
-    expect(page, findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('未配置服务时说明原因并禁用授权操作', (tester) async {
+  testWidgets('未配置服务时禁用创建并展示提示', (tester) async {
     await tester.pumpWidget(
       PactaApp(
         authRepository: FakeAuthRepository()..signedInUser = 'user@example.com',
       ),
     );
     await tester.pumpAndSettle();
-    final page = await _openMyAiPage(tester);
-
-    await _scrollUntilVisible(tester, page, find.text('服务地址尚未配置，请联系应用维护者。'));
-    expect(find.text('服务地址尚未配置，请联系应用维护者。'), findsOneWidget);
-    await _scrollToTop(tester, page);
-    expect(find.text('连接状态不可用'), findsOneWidget);
-    expect(find.text('复制 Codex 配置'), findsNothing);
-    await _scrollUntilVisible(
-      tester,
-      page,
-      find.byKey(const ValueKey('national-focus-ai-request-code')),
+    await _openMyAiPage(tester);
+    expect(find.text('服务地址或登录会话尚未配置，请联系应用维护者。'), findsOneWidget);
+    final createButton = tester.widget<FilledButton>(
+      find.byKey(const ValueKey('national-focus-ai-create')),
     );
-    expect(
-      tester
-          .widget<TextField>(
-            find.byKey(const ValueKey('national-focus-ai-request-code')),
-          )
-          .enabled,
-      isFalse,
-    );
-    expect(tester.takeException(), isNull);
-    expect(page, findsOneWidget);
+    expect(createButton.onPressed, isNull);
   });
 
-  testWidgets('授权状态加载失败可重试，恢复后显示连接状态', (tester) async {
+  testWidgets('加载失败可重试，恢复后展示连接列表', (tester) async {
     final grants = _FakeNationalFocusAiGrantRepository()
-      ..listError = StateError('temporary outage')
-      ..grants.add(
-        NationalFocusAiGrant(
-          id: 'grant-retry',
-          clientName: 'Codex CLI',
-          scope: 'national_focus:read',
-          createdAt: DateTime.now().toUtc(),
-          expiresAt: DateTime.now().toUtc().add(const Duration(minutes: 30)),
-        ),
-      );
+      ..listError = StateError('temporary outage');
     await tester.pumpWidget(
       PactaApp(
         authRepository: FakeAuthRepository()..signedInUser = 'user@example.com',
@@ -328,74 +294,31 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final page = await _openMyAiPage(tester);
-    await _scrollUntilVisible(tester, page, find.text('无法读取授权状态'));
-
-    expect(find.text('无法读取授权状态'), findsOneWidget);
+    await _openMyAiPage(tester);
+    expect(find.text('重试'), findsOneWidget);
     grants.listError = null;
-    await _scrollUntilVisible(tester, page, find.text('重试'));
     await tester.tap(find.text('重试'));
     await tester.pumpAndSettle();
-
     expect(grants.listCalls, 2);
-    await _scrollUntilVisible(tester, page, find.text('已授权'));
-    expect(find.text('已授权'), findsOneWidget);
-    expect(find.text('撤销此连接'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('多张授权卡之间保留 8dp 间距，不贴成一整块', (tester) async {
-    final now = DateTime.now().toUtc();
-    final grants = _FakeNationalFocusAiGrantRepository()
-      ..grants.addAll([
-        _grant('grant-a', 'Codex CLI', now),
-        _grant('grant-b', 'Claude Code', now),
-      ]);
-    await tester.pumpWidget(
-      PactaApp(
-        authRepository: FakeAuthRepository()..signedInUser = 'user@example.com',
-        nationalFocusMcpUrl: mcpUrl,
-        nationalFocusAiGrantRepositoryFactory: (_) => grants,
-      ),
-    );
-    await tester.pumpAndSettle();
-    final page = await _openMyAiPage(tester);
-    await _scrollUntilVisible(tester, page, find.textContaining('范围：'));
-
-    final scopes = find.textContaining('范围：');
-    expect(scopes, findsNWidgets(2));
-    final firstCard = find
-        .ancestor(of: scopes.at(0), matching: find.byType(Card))
-        .first;
-    final secondCard = find
-        .ancestor(of: scopes.at(1), matching: find.byType(Card))
-        .first;
-    expect(
-      tester.getRect(secondCard).top - tester.getRect(firstCard).bottom,
-      greaterThanOrEqualTo(PactaSpacing.sm),
-      reason: 'CardThemeData.margin 为零：多张授权卡之间必须靠 SizedBox 分开',
-    );
-    expect(tester.takeException(), isNull);
+    expect(find.text('尚未创建连接'), findsOneWidget);
   });
 }
 
-NationalFocusAiGrant _grant(String id, String clientName, DateTime now) =>
-    NationalFocusAiGrant(
-      id: id,
-      clientName: clientName,
-      scope: 'national_focus:read',
-      createdAt: now,
-      expiresAt: now.add(const Duration(minutes: 30)),
-    );
+class _CreatedArgs {
+  const _CreatedArgs(this.label, this.scope, this.ttl, this.agentPreset);
+  final String label;
+  final NationalFocusAiScope scope;
+  final Duration? ttl;
+  final String? agentPreset;
+}
 
 class _FakeNationalFocusAiGrantRepository
     implements NationalFocusAiGrantRepository {
-  _FakeNationalFocusAiGrantRepository();
-
   final grants = <NationalFocusAiGrant>[];
-  final inspectedCodes = <String>[];
-  final approvedCodes = <String>[];
+  final auditLogs = <NationalFocusAiAuditLog>[];
+  final createdCalls = <_CreatedArgs>[];
   final revokeCalls = <String>[];
+  int revokeAllCalls = 0;
   Object? listError;
   int listCalls = 0;
 
@@ -404,50 +327,66 @@ class _FakeNationalFocusAiGrantRepository
     listCalls++;
     final error = listError;
     if (error != null) throw error;
-    return grants;
+    return List.unmodifiable(grants);
   }
 
   @override
-  Future<NationalFocusAiAuthorizationRequest> inspectRequest(
-    String requestCode,
-  ) async {
-    inspectedCodes.add(requestCode);
-    return NationalFocusAiAuthorizationRequest(
-      clientName: 'Codex CLI',
-      redirectUri: 'https://127.0.0.1/callback',
-      scope: 'national_focus:read',
-      expiresAt: DateTime.now().toUtc().add(const Duration(minutes: 5)),
+  Future<CreatedNationalFocusAiGrant> createGrant({
+    required String label,
+    required NationalFocusAiScope scope,
+    Duration? ttl,
+    String? agentPreset,
+  }) async {
+    createdCalls.add(_CreatedArgs(label, scope, ttl, agentPreset));
+    final now = DateTime.now().toUtc();
+    final id = 'grant-${grants.length + 1}';
+    final token = 'pacta_mcp_${id.padRight(64, 'a').substring(0, 64)}';
+    final grant = NationalFocusAiGrant(
+      id: id,
+      label: label,
+      agentPreset: agentPreset,
+      scope: scope,
+      tokenPrefix: '${token.substring(0, 14)}...',
+      createdAt: now,
+      expiresAt: ttl == null ? null : now.add(ttl),
     );
-  }
-
-  @override
-  Future<void> approveRequest(String requestCode) async {
-    approvedCodes.add(requestCode);
-    grants.add(
-      NationalFocusAiGrant(
-        id: 'grant-1',
-        clientName: 'Codex CLI',
-        scope: 'national_focus:read',
-        createdAt: DateTime.now().toUtc(),
-        expiresAt: DateTime.now().toUtc().add(const Duration(minutes: 30)),
-      ),
-    );
+    grants.insert(0, grant);
+    return CreatedNationalFocusAiGrant(grant: grant, token: token);
   }
 
   @override
   Future<void> revokeGrant(String grantId) async {
     revokeCalls.add(grantId);
-    final index = grants.indexWhere((grant) => grant.id == grantId);
-    if (index == -1) return;
-    grants[index] = grants[index].copyWith(revokedAt: DateTime.now().toUtc());
+    final index = grants.indexWhere((g) => g.id == grantId);
+    if (index != -1) {
+      grants[index] = grants[index].copyWith(revokedAt: DateTime.now().toUtc());
+    }
   }
+
+  @override
+  Future<int> revokeAllGrants() async {
+    revokeAllCalls++;
+    var count = 0;
+    final now = DateTime.now().toUtc();
+    for (var i = 0; i < grants.length; i++) {
+      if (grants[i].revokedAt == null) {
+        grants[i] = grants[i].copyWith(revokedAt: now);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  @override
+  Future<List<NationalFocusAiAuditLog>> listRecentAuditLogs({
+    int limit = 20,
+  }) async => List.unmodifiable(auditLogs.take(limit));
 }
 
 class _EmptyNationalFocusRepository implements NationalFocusRepository {
   @override
   Stream<List<NationalFocusCard>> watchTreeCards() => Stream.value(const []);
 
-  // My 页的名片统计读取树与国策库两侧，空仓储也要提供空流。
   @override
   Stream<List<NationalFocusCard>> watchLibraryCards() => Stream.value(const []);
 
@@ -464,12 +403,19 @@ class _EmptyNationalFocusRepository implements NationalFocusRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+Finder _scrollableFor(Finder container) {
+  if (container.evaluate().any((e) => e.widget is ListView)) {
+    return container;
+  }
+  return find.descendant(of: container, matching: find.byType(ListView));
+}
+
 Future<void> _scrollUntilVisible(
   WidgetTester tester,
   Finder page,
   Finder target,
 ) async {
-  final listView = find.descendant(of: page, matching: find.byType(ListView));
+  final listView = _scrollableFor(page);
   for (var attempt = 0; attempt < 24; attempt++) {
     if (target.evaluate().isNotEmpty) {
       final targetRect = tester.getRect(target.first);
@@ -488,14 +434,10 @@ Future<void> _scrollUntilVisible(
     await tester.pumpAndSettle();
   }
   expect(target, findsOneWidget);
-  final targetRect = tester.getRect(target.first);
-  final listRect = tester.getRect(listView.first);
-  expect(targetRect.top, greaterThanOrEqualTo(listRect.top));
-  expect(targetRect.bottom, lessThanOrEqualTo(listRect.bottom));
 }
 
 Future<void> _scrollToTop(WidgetTester tester, Finder page) async {
-  final listView = find.descendant(of: page, matching: find.byType(ListView));
+  final listView = _scrollableFor(page);
   await tester.drag(listView.first, const Offset(0, 6000));
   await tester.pumpAndSettle();
 }

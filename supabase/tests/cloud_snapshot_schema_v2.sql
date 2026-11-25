@@ -411,12 +411,12 @@ declare
   owner_id uuid := current_setting('schema_v2_test.owner_id')::uuid;
   metadata jsonb;
 begin
-  insert into public.national_focus_mcp_clients (id, client_name, redirect_uris)
-  values ('schema-v2-probe', 'Schema v2 probe', '[]'::jsonb)
-  on conflict (id) do nothing;
-  insert into public.national_focus_mcp_grants (user_id, client_id, token_hash, expires_at)
-  values (owner_id, 'schema-v2-probe', 'schema-v2-probe-token',
-    now() + interval '10 minutes');
+  insert into public.national_focus_mcp_grants (
+    user_id, label, scope, token_hash, token_prefix, expires_at
+  ) values (
+    owner_id, 'Schema v2 probe', 'national_focus:read',
+    'schema-v2-probe-token', 'pacta_mcp_probe...', now() + interval '10 minutes'
+  );
   metadata := public.read_national_focus_mcp_metadata('schema-v2-probe-token');
   if metadata ->> 'status' <> 'available' then
     raise exception 'complete version 2 snapshot reported as % instead of available',

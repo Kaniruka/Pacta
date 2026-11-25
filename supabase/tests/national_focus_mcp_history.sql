@@ -18,14 +18,12 @@ begin
     ('00000000-0000-0000-0000-000000000000',owner_id,'authenticated','authenticated','nf-owner-'||owner_id||'@probe.invalid','',now(),now(),now()),
     ('00000000-0000-0000-0000-000000000000',other_id,'authenticated','authenticated','nf-other-'||other_id||'@probe.invalid','',now(),now(),now()),
     ('00000000-0000-0000-0000-000000000000',empty_id,'authenticated','authenticated','nf-empty-'||empty_id||'@probe.invalid','',now(),now(),now());
-  insert into public.national_focus_mcp_clients(id,client_name,redirect_uris)
-  values(client_id,'Rollback history acceptance probe','["https://probe.invalid/callback"]'::jsonb);
-  insert into public.national_focus_mcp_grants(user_id,client_id,token_hash,expires_at,revoked_at)
-  values(owner_id,client_id,owner_token,now()+interval '1 hour',null),
-    (other_id,client_id,other_token,now()+interval '1 hour',null),
-    (empty_id,client_id,empty_token,now()+interval '1 hour',null),
-    (owner_id,client_id,expired_token,now()-interval '1 minute',null),
-    (owner_id,client_id,revoked_token,now()+interval '1 hour',now());
+  insert into public.national_focus_mcp_grants(user_id,label,scope,token_hash,token_prefix,expires_at,revoked_at)
+  values(owner_id,'Rollback history acceptance probe','national_focus:read',owner_token,'pacta_mcp_owner...',now()+interval '1 hour',null),
+    (other_id,'Rollback history acceptance probe','national_focus:read',other_token,'pacta_mcp_other...',now()+interval '1 hour',null),
+    (empty_id,'Rollback history acceptance probe','national_focus:read',empty_token,'pacta_mcp_empty...',now()+interval '1 hour',null),
+    (owner_id,'Rollback history acceptance probe','national_focus:read',expired_token,'pacta_mcp_exp...',now()-interval '1 minute',null),
+    (owner_id,'Rollback history acceptance probe','national_focus:read',revoked_token,'pacta_mcp_rev...',now()+interval '1 hour',now());
   insert into public.cloud_business_snapshots(user_id,revision,payload,device_id,device_name,data_updated_at,row_count)
   values
     (owner_id,1,jsonb_build_object('schemaVersion',1,'userId',owner_id::text,'tables',jsonb_build_object(

@@ -5,8 +5,8 @@ import hashlib
 from pathlib import Path
 from zipfile import ZIP_STORED, ZipFile, ZipInfo
 
-NAME = 'pacta-national-focus-analysis'
-FILES = ('SKILL.md', 'references/contract.md', 'evals/README.md', 'evals/cases.json')
+NAME = 'better-national-focus'
+FILES = ('SKILL.md', 'references/card-design.md', 'references/tree-and-recovery.md')
 
 
 def main():
