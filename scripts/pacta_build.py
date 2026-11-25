@@ -20,6 +20,7 @@ Usage (repository root):
     python scripts/pacta_build.py build --target all --release --require-release-signing
     python scripts/pacta_build.py build --target windows --release --dry-run
     python scripts/pacta_build.py init-keystore
+    python scripts/pacta_build.py supabase-usage --view users
 
 Value resolution order for the two client keys:
 command line option > process environment > the `--env-file` file.
@@ -36,6 +37,7 @@ import argparse
 import base64
 import contextlib
 import dataclasses
+import datetime
 import json
 import os
 from pathlib import Path
@@ -46,7 +48,11 @@ import string
 import subprocess
 import sys
 import tempfile
-from typing import Iterable, Iterator, Mapping, Optional, Sequence, TextIO
+from typing import Any, Iterable, Iterator, Mapping, Optional, Sequence, TextIO
+import unicodedata
+import urllib.error
+import urllib.parse
+import urllib.request
 import zipfile
 
 REPO = Path(__file__).resolve().parents[1]
@@ -174,6 +180,8 @@ class Context:
     out: TextIO
     err: TextIO
     input_fn: object = input
+    # Offline injection point for supabase-usage (tests pass a fake opener).
+    urlopen_fn: Optional[Any] = None
 
 
 # ---------------------------------------------------------------------------
@@ -1272,6 +1280,1111 @@ def _report_ignore_status(context: Context, paths: Sequence[Path]) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Supabase Free Plan quota & per-user storage usage (supabase-usage)
+# ---------------------------------------------------------------------------
+
+SUPABASE_USAGE_VIEWS = ('summary', 'users')
+SUPABASE_USAGE_SOURCES = ('auto', 'management', 'service')
+SUPABASE_MANAGEMENT_BASE = 'https://api.supabase.com/v1'
+SUPABASE_USAGE_USER_AGENT = 'pacta-build'
+SUPABASE_BYTES_PER_MB = 1024 * 1024
+SUPABASE_USAGE_TIMEOUT = 30.0
+SUPABASE_USAGE_ROW_PAGE_SIZE = 1000
+SUPABASE_USAGE_USER_PAGE_SIZE = 200
+SUPABASE_USAGE_SUMMARY_USERS = 10
+SUPABASE_USAGE_TABLE_BUCKETS = {
+    'cloud_business_snapshots': 'snapshot',
+    'cloud_business_snapshot_history': 'history',
+    'profile_accounts': 'profile',
+}
+SUPABASE_USAGE_TABLE_NAME = re.compile(r'[a-z_][a-z0-9_]*')
+
+SUPABASE_USAGE_OVERVIEW_SQL = """\
+SELECT
+  pg_database_size(current_database())::bigint AS db_bytes,
+  (SELECT coalesce(sum(pg_total_relation_size(c.oid)), 0)::bigint
+   FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'public' AND c.relkind = 'r') AS public_bytes,
+  (SELECT count(*)::bigint FROM auth.users) AS total_users,
+  (SELECT count(*)::bigint FROM auth.users
+   WHERE last_sign_in_at >= now() - interval '30 days') AS mau_30d,
+  (SELECT coalesce(sum(coalesce((metadata->>'size')::bigint, 0)), 0)::bigint
+   FROM storage.objects) AS storage_bytes,
+  (SELECT count(*)::bigint FROM storage.objects) AS storage_objects
+"""
+
+SUPABASE_USAGE_TABLES_SQL = """\
+SELECT
+  c.relname AS table_name,
+  pg_total_relation_size(c.oid)::bigint AS total_bytes,
+  pg_relation_size(c.oid)::bigint AS table_bytes,
+  pg_indexes_size(c.oid)::bigint AS index_bytes,
+  coalesce(pg_total_relation_size(c.reltoastrelid), 0)::bigint AS toast_bytes,
+  coalesce(s.n_live_tup, 0)::bigint AS live_rows,
+  EXISTS (
+    SELECT 1 FROM information_schema.columns col
+    WHERE col.table_schema = 'public'
+      AND col.table_name = c.relname
+      AND col.column_name = 'user_id'
+  ) AS has_user_id
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+LEFT JOIN pg_stat_user_tables s ON s.relid = c.oid
+WHERE n.nspname = 'public' AND c.relkind = 'r'
+ORDER BY total_bytes DESC, table_name ASC
+"""
+
+
+class _SupabaseHTTPError(BuildError):
+    """Internal HTTP failure: carries a status/code, never the request headers."""
+
+    def __init__(self, message: str, *, status: Optional[int] = None, code: str = '') -> None:
+        super().__init__(message, EXIT_FAILED)
+        self.status = status
+        self.code = code
+
+
+# supabase-usage is the only command allowed to read privileged credentials.
+# They never reach a defines file, a Flutter argument, stdout, stderr or JSON.
+def _read_supabase_privileged_credentials(
+    context: Context, file_values: Mapping[str, str]
+) -> dict:
+    """Host-only reader for SUPABASE_ACCESS_TOKEN and SUPABASE_SECRET_KEY."""
+
+    def pick(key: str) -> str:
+        for candidate in (context.environ.get(key), file_values.get(key)):
+            value = (candidate or '').strip()
+            if value:
+                return value
+        return ''
+
+    return {
+        'access_token': pick('SUPABASE_ACCESS_TOKEN'),
+        'secret_key': pick('SUPABASE_SECRET_KEY') or pick('SUPABASE_SERVICE_ROLE_KEY'),
+    }
+
+
+def supabase_usage_status(context: Context, file_values: Mapping[str, str]) -> str:
+    """Menu header label: which quota query mode is available (presence only)."""
+    credentials = _read_supabase_privileged_credentials(context, file_values)
+    if credentials['access_token']:
+        return 'Management API 精确模式'
+    if credentials['secret_key']:
+        return 'Service API 估算模式'
+    return '未配置'
+
+
+def project_ref_from_url(url: str) -> str:
+    """https://<ref>.supabase.co -> <ref>; validates scheme and hostname."""
+    text = (url or '').strip()
+    parsed = urllib.parse.urlsplit(text)
+    if parsed.scheme != 'https' or not parsed.hostname:
+        raise BuildError(
+            'SUPABASE_URL 无效：需要 https://<project-ref>.supabase.co，当前为 {}。'.format(
+                text or '<空>'
+            ),
+            EXIT_MISSING_CONFIG,
+        )
+    project_ref = parsed.hostname.split('.')[0].strip()
+    if not project_ref:
+        raise BuildError(
+            'SUPABASE_URL 无效：无法从 {} 解析项目 ref。'.format(text), EXIT_MISSING_CONFIG
+        )
+    return project_ref
+
+
+def _select_supabase_usage_source(requested: str, credentials: Mapping[str, str]) -> str:
+    """Pick management / service, or fail with a named-credential error."""
+    access_token = credentials.get('access_token') or ''
+    secret_key = credentials.get('secret_key') or ''
+    if requested == 'management':
+        if not access_token:
+            raise BuildError(
+                'Management API 精确模式需要 SUPABASE_ACCESS_TOKEN（.env 或进程环境变量）。',
+                EXIT_MISSING_CONFIG,
+            )
+        return 'management'
+    if requested == 'service':
+        if not secret_key:
+            raise BuildError(
+                'Service API 估算模式需要 SUPABASE_SECRET_KEY（或 SUPABASE_SERVICE_ROLE_KEY）。',
+                EXIT_MISSING_CONFIG,
+            )
+        return 'service'
+    if access_token:
+        return 'management'
+    if secret_key:
+        return 'service'
+    raise BuildError(
+        '缺少 Supabase 配额查询凭据：配置 SUPABASE_ACCESS_TOKEN（Management API 精确模式）'
+        ' 或 SUPABASE_SECRET_KEY / SUPABASE_SERVICE_ROLE_KEY（Service API 估算模式）。',
+        EXIT_MISSING_CONFIG,
+    )
+
+
+def _resolve_supabase_usage_target(arguments, context: Context) -> dict:
+    """Resolve URL, project ref and (host-only) credentials for the report."""
+    env_file = Path(getattr(arguments, 'env_file', DEFAULT_ENV_FILE) or DEFAULT_ENV_FILE)
+    if not env_file.is_absolute():
+        env_file = context.repo / env_file
+    file_values = read_env_file(env_file)
+
+    url = ''
+    for candidate in (
+        getattr(arguments, 'supabase_url', None),
+        context.environ.get('SUPABASE_URL'),
+        file_values.get('SUPABASE_URL'),
+    ):
+        value = (candidate or '').strip()
+        if value:
+            url = value
+            break
+
+    credentials = _read_supabase_privileged_credentials(context, file_values)
+    requested = str(getattr(arguments, 'source', 'auto') or 'auto').strip().lower()
+    if requested not in SUPABASE_USAGE_SOURCES:
+        requested = 'auto'
+    return {
+        'env_file': env_file,
+        'url': url.rstrip('/'),
+        'project_ref': project_ref_from_url(url),
+        'access_token': credentials['access_token'],
+        'secret_key': credentials['secret_key'],
+        'source': _select_supabase_usage_source(requested, credentials),
+    }
+
+
+def _source_label(source: str) -> str:
+    return 'Management API 精确模式' if source == 'management' else 'Service API 估算模式'
+
+
+def _safe_reason(reason) -> str:
+    """First line of an HTTP/transport reason, bounded and header-free."""
+    text = str(reason or '').strip()
+    if not text:
+        return '未知错误'
+    return text.splitlines()[0][:200]
+
+
+def _open_url(opener, request):
+    try:
+        return opener(request, timeout=SUPABASE_USAGE_TIMEOUT)
+    except TypeError:
+        return opener(request)
+
+
+def _http_error_code(error) -> str:
+    reader = getattr(error, 'read', None)
+    if not callable(reader):
+        return ''
+    try:
+        body = reader()
+    except (OSError, ValueError, AttributeError):
+        return ''
+    try:
+        payload = json.loads(body.decode('utf-8', 'replace'))
+    except (AttributeError, ValueError):
+        return ''
+    if isinstance(payload, Mapping):
+        return str(payload.get('code') or '')
+    return ''
+
+
+def _supabase_http_json(
+    context: Context,
+    *,
+    url: str,
+    headers: Mapping[str, str],
+    payload: Optional[object] = None,
+):
+    """Call one Supabase endpoint; returns (status, decoded_json).
+
+    Every failure becomes a sanitized BuildError: HTTP status plus a bounded
+    reason line. Authorization headers and tokens never enter the message.
+    """
+    data = None if payload is None else json.dumps(payload).encode('utf-8')
+    request = urllib.request.Request(
+        url,
+        data=data,
+        headers={key: str(value) for key, value in headers.items()},
+        method='POST' if data is not None else 'GET',
+    )
+    opener = context.urlopen_fn if context.urlopen_fn is not None else urllib.request.urlopen
+    try:
+        response = _open_url(opener, request)
+        try:
+            body = response.read()
+            status = int(getattr(response, 'status', 200) or 200)
+        finally:
+            closer = getattr(response, 'close', None)
+            if callable(closer):
+                closer()
+    except urllib.error.HTTPError as error:
+        raise _SupabaseHTTPError(
+            'Supabase 请求失败（HTTP {}）：{}'.format(error.code, _safe_reason(error.reason)),
+            status=error.code,
+            code=_http_error_code(error),
+        ) from None
+    except urllib.error.URLError as error:
+        raise _SupabaseHTTPError(
+            '无法连接 Supabase：{}'.format(_safe_reason(error.reason))
+        ) from None
+    except OSError as error:
+        raise _SupabaseHTTPError('Supabase 请求失败：{}'.format(_safe_reason(error))) from None
+
+    text = body.decode('utf-8', 'replace').strip() if isinstance(body, (bytes, bytearray)) else ''
+    if not text:
+        return status, None
+    try:
+        return status, json.loads(text)
+    except ValueError:
+        raise _SupabaseHTTPError('Supabase 返回了无法解析的 JSON 响应。') from None
+
+
+def _management_headers(access_token: str) -> dict:
+    return {
+        'Authorization': 'Bearer ' + access_token,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'User-Agent': SUPABASE_USAGE_USER_AGENT,
+    }
+
+
+def _management_project_metadata(
+    context: Context, *, project_ref: str, access_token: str
+) -> dict:
+    """Best-effort project metadata; 401/403 is a real auth failure."""
+    url = '{}/projects/{}'.format(SUPABASE_MANAGEMENT_BASE, project_ref)
+    try:
+        _, payload = _supabase_http_json(
+            context, url=url, headers=_management_headers(access_token)
+        )
+    except _SupabaseHTTPError as error:
+        if error.status in (401, 403):
+            raise BuildError(
+                'Supabase Management API 鉴权失败（HTTP {}）：请检查 SUPABASE_ACCESS_TOKEN。'.format(
+                    error.status
+                ),
+                EXIT_MISSING_CONFIG,
+            ) from None
+        return {}
+    if not isinstance(payload, Mapping):
+        return {}
+    return {
+        'name': str(payload.get('name') or ''),
+        'region': str(payload.get('region') or ''),
+        'status': str(payload.get('status') or ''),
+    }
+
+
+def _management_query(
+    context: Context, *, project_ref: str, access_token: str, query: str
+) -> list:
+    url = '{}/projects/{}/database/query'.format(SUPABASE_MANAGEMENT_BASE, project_ref)
+    _, payload = _supabase_http_json(
+        context,
+        url=url,
+        headers=_management_headers(access_token),
+        payload={'query': query},
+    )
+    if isinstance(payload, Mapping):
+        payload = payload.get('result')
+    return payload if isinstance(payload, list) else []
+
+
+def _validated_usage_table_names(rows: Sequence[object]) -> list:
+    """Public tables exposing user_id, with every name validated before SQL."""
+    names: list = []
+    for row in rows:
+        if not isinstance(row, Mapping) or not _truthy(row.get('has_user_id')):
+            continue
+        name = str(row.get('table_name') or '').strip()
+        if not SUPABASE_USAGE_TABLE_NAME.fullmatch(name):
+            raise BuildError('Supabase 返回了非法表名，已拒绝拼接 SQL：{!r}'.format(name))
+        if name not in names:
+            names.append(name)
+    return names
+
+
+def build_user_breakdown_sql(table_names: Sequence[str]) -> str:
+    """Per-user breakdown query; table names are whitelisted by regex first."""
+    selects: list = []
+    for name in table_names:
+        if not SUPABASE_USAGE_TABLE_NAME.fullmatch(name):
+            raise BuildError('Supabase 返回了非法表名，已拒绝拼接 SQL：{!r}'.format(name))
+        bucket = SUPABASE_USAGE_TABLE_BUCKETS.get(name, 'other')
+        selects.append(
+            "SELECT user_id, '{bucket}' AS bucket, count(*)::bigint AS rows, "
+            'coalesce(sum(pg_column_size(t.*)), 0)::bigint AS bytes '
+            'FROM public."{table}" t GROUP BY user_id'.format(bucket=bucket, table=name)
+        )
+    selects.append(
+        "SELECT owner AS user_id, 'storage' AS bucket, count(*)::bigint AS rows, "
+        "coalesce(sum(coalesce((metadata->>'size')::bigint, 0)), 0)::bigint AS bytes "
+        'FROM storage.objects WHERE owner IS NOT NULL GROUP BY owner'
+    )
+    has_profiles = 'profile_accounts' in table_names
+    display = "coalesce(p.display_name, '')" if has_profiles else "''"
+    profile_join = (
+        '\nLEFT JOIN public.profile_accounts p ON p.user_id = u.id' if has_profiles else ''
+    )
+    return (
+        'WITH user_rows AS (\n  '
+        + '\n  UNION ALL\n  '.join(selects)
+        + '\n),\naggregated AS (\n'
+        '  SELECT user_id,\n'
+        "    sum(CASE WHEN bucket = 'snapshot' THEN bytes ELSE 0 END)::bigint AS snapshot_bytes,\n"
+        "    sum(CASE WHEN bucket = 'history' THEN bytes ELSE 0 END)::bigint AS history_bytes,\n"
+        "    sum(CASE WHEN bucket = 'history' THEN rows ELSE 0 END)::bigint AS history_count,\n"
+        "    sum(CASE WHEN bucket = 'profile' THEN bytes ELSE 0 END)::bigint AS profile_bytes,\n"
+        "    sum(CASE WHEN bucket = 'other' THEN bytes ELSE 0 END)::bigint AS other_bytes,\n"
+        "    sum(CASE WHEN bucket = 'storage' THEN bytes ELSE 0 END)::bigint AS storage_bytes,\n"
+        "    sum(CASE WHEN bucket = 'storage' THEN rows ELSE 0 END)::bigint AS storage_objects,\n"
+        '    sum(bytes)::bigint AS db_bytes\n'
+        '  FROM user_rows GROUP BY user_id\n'
+        ')\n'
+        'SELECT u.id AS user_id, u.email, ' + display + ' AS display_name, u.last_sign_in_at,\n'
+        '  coalesce(a.snapshot_bytes, 0)::bigint AS snapshot_bytes,\n'
+        '  coalesce(a.history_bytes, 0)::bigint AS history_bytes,\n'
+        '  coalesce(a.history_count, 0)::bigint AS history_count,\n'
+        '  coalesce(a.profile_bytes, 0)::bigint AS profile_bytes,\n'
+        '  coalesce(a.other_bytes, 0)::bigint AS other_bytes,\n'
+        '  coalesce(a.storage_bytes, 0)::bigint AS storage_bytes,\n'
+        '  coalesce(a.storage_objects, 0)::bigint AS storage_objects,\n'
+        '  coalesce(a.db_bytes, 0)::bigint AS db_bytes,\n'
+        '  (coalesce(a.db_bytes, 0) + coalesce(a.storage_bytes, 0))::bigint AS total_bytes\n'
+        'FROM auth.users u' + profile_join + '\n'
+        'LEFT JOIN aggregated a ON a.user_id = u.id\n'
+        'ORDER BY total_bytes DESC, u.email ASC'
+    )
+
+
+def _service_headers(secret_key: str) -> dict:
+    """Opaque sb_secret_... keys go in apikey only; JWT keys also get a Bearer."""
+    headers = {
+        'apikey': secret_key,
+        'Accept': 'application/json',
+        'User-Agent': SUPABASE_USAGE_USER_AGENT,
+    }
+    if secret_key.count('.') == 2:
+        headers['Authorization'] = 'Bearer ' + secret_key
+    return headers
+
+
+def _is_missing_table(error: _SupabaseHTTPError) -> bool:
+    return error.status == 404 or error.code in ('PGRST205', '42P01')
+
+
+def _service_fetch_users(context: Context, *, base_url: str, secret_key: str) -> list:
+    headers = _service_headers(secret_key)
+    users: list = []
+    page = 1
+    while page <= 100:
+        url = '{}/auth/v1/admin/users?page={}&per_page={}'.format(
+            base_url, page, SUPABASE_USAGE_USER_PAGE_SIZE
+        )
+        _, payload = _supabase_http_json(context, url=url, headers=headers)
+        batch = payload.get('users') if isinstance(payload, Mapping) else payload
+        if not isinstance(batch, list) or not batch:
+            break
+        users.extend(item for item in batch if isinstance(item, Mapping))
+        if len(batch) < SUPABASE_USAGE_USER_PAGE_SIZE:
+            break
+        page += 1
+    return users
+
+
+def _service_fetch_rows(
+    context: Context, *, base_url: str, secret_key: str, table: str, select: str
+) -> list:
+    """Paginated PostgREST read; a missing table is treated as empty."""
+    if not SUPABASE_USAGE_TABLE_NAME.fullmatch(table):
+        raise BuildError('内部错误：非法数据表名 {!r}。'.format(table))
+    headers = _service_headers(secret_key)
+    rows: list = []
+    offset = 0
+    while offset <= 1000000:
+        url = '{}/rest/v1/{}?select={}&limit={}&offset={}'.format(
+            base_url, table, select, SUPABASE_USAGE_ROW_PAGE_SIZE, offset
+        )
+        try:
+            _, payload = _supabase_http_json(context, url=url, headers=headers)
+        except _SupabaseHTTPError as error:
+            if _is_missing_table(error):
+                return []
+            raise BuildError(str(error), error.exit_code) from None
+        batch = payload if isinstance(payload, list) else []
+        rows.extend(item for item in batch if isinstance(item, Mapping))
+        if len(batch) < SUPABASE_USAGE_ROW_PAGE_SIZE:
+            break
+        offset += SUPABASE_USAGE_ROW_PAGE_SIZE
+    return rows
+
+
+def _json_payload_bytes(value) -> int:
+    """UTF-8 length of the compact JSON encoding of a jsonb payload."""
+    if value is None:
+        return 0
+    try:
+        text = json.dumps(value, ensure_ascii=False, separators=(',', ':'))
+    except (TypeError, ValueError):
+        return 0
+    return len(text.encode('utf-8'))
+
+
+def _bytea_length(value) -> int:
+    """Decoded byte length of a PostgREST bytea literal (\\x... hex form)."""
+    if isinstance(value, (bytes, bytearray)):
+        return len(value)
+    if isinstance(value, str) and value.startswith('\\x'):
+        return max(0, (len(value) - 2) // 2)
+    return 0
+
+
+def _logical_row_count(row: Mapping) -> int:
+    try:
+        return max(1, int(row.get('row_count') or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _coerce_int(value) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _truthy(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in ('t', 'true', '1', 'yes')
+    return bool(value)
+
+
+def _percent(used, limit) -> float:
+    try:
+        used_value = float(used or 0)
+        limit_value = float(limit or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if limit_value <= 0:
+        return 0.0
+    return round(used_value / limit_value * 100.0, 2)
+
+
+def _parse_timestamp(value):
+    text = str(value or '').strip()
+    if not text:
+        return None
+    if text.endswith('Z'):
+        text = text[:-1] + '+00:00'
+    try:
+        parsed = datetime.datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+    return parsed
+
+
+def _within_days(value, *, days: int, now=None) -> bool:
+    parsed = _parse_timestamp(value)
+    if parsed is None:
+        return False
+    reference = now or datetime.datetime.now(datetime.timezone.utc)
+    return (reference - parsed) <= datetime.timedelta(days=days)
+
+
+def format_bytes(value) -> str:
+    try:
+        number = float(value or 0)
+    except (TypeError, ValueError):
+        number = 0.0
+    negative = number < 0
+    number = abs(number)
+    for index, unit in enumerate(('B', 'KB', 'MB', 'GB', 'TB')):
+        if number < 1024 or unit == 'TB':
+            text = '{:.0f} B'.format(number) if unit == 'B' else '{:.2f} {}'.format(number, unit)
+            return ('-' if negative else '') + text
+        number /= 1024
+    return '{:.2f} B'.format(number)
+
+
+def progress_bar(percent, *, width: int = 20) -> str:
+    try:
+        value = float(percent or 0)
+    except (TypeError, ValueError):
+        value = 0.0
+    value = min(100.0, max(0.0, value))
+    filled = int(round(value / 100.0 * width))
+    return '[' + '#' * filled + '-' * (width - filled) + ']'
+
+
+def display_width(text: str) -> int:
+    """Terminal cell width: East Asian wide glyphs count as two columns."""
+    return sum(
+        2 if unicodedata.east_asian_width(character) in ('W', 'F') else 1
+        for character in str(text)
+    )
+
+
+def pad_display(text, width: int) -> str:
+    text = str(text)
+    return text + ' ' * max(0, width - display_width(text))
+
+
+def mask_email(value: str) -> str:
+    """user@domain -> us***@domain; short local parts collapse to u***."""
+    text = (value or '').strip()
+    if '@' not in text:
+        return text or '-'
+    local, _, domain = text.partition('@')
+    prefix = local[:2] if len(local) > 2 else local[:1]
+    return '{}***@{}'.format(prefix or 'u', domain)
+
+
+def _usage_limits(arguments) -> dict:
+    def megabytes(value, fallback: float) -> float:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return fallback
+        return number if number > 0 else fallback
+
+    return {
+        'database_bytes': int(
+            megabytes(getattr(arguments, 'db_limit_mb', 500.0), 500.0) * SUPABASE_BYTES_PER_MB
+        ),
+        'storage_bytes': int(
+            megabytes(getattr(arguments, 'storage_limit_mb', 1024.0), 1024.0)
+            * SUPABASE_BYTES_PER_MB
+        ),
+        'mau': int(megabytes(getattr(arguments, 'mau_limit', 50000), 50000.0)),
+    }
+
+
+def _format_mb(value) -> str:
+    try:
+        return '{:g} MB'.format(float(value))
+    except (TypeError, ValueError):
+        return '0 MB'
+
+
+def _normalize_table_row(row: Mapping) -> dict:
+    return {
+        'table_name': str(row.get('table_name') or ''),
+        'total_bytes': _coerce_int(row.get('total_bytes')),
+        'table_bytes': _coerce_int(row.get('table_bytes')),
+        'index_bytes': _coerce_int(row.get('index_bytes')),
+        'toast_bytes': _coerce_int(row.get('toast_bytes')),
+        'live_rows': _coerce_int(row.get('live_rows')),
+        'has_user_id': _truthy(row.get('has_user_id')),
+    }
+
+
+def _normalize_management_user(row: Mapping) -> dict:
+    db_bytes = _coerce_int(row.get('db_bytes'))
+    storage_bytes = _coerce_int(row.get('storage_bytes'))
+    return {
+        'user_id': str(row.get('user_id') or ''),
+        'email': str(row.get('email') or ''),
+        'display_name': str(row.get('display_name') or ''),
+        'last_sign_in_at': str(row.get('last_sign_in_at') or ''),
+        'snapshot_bytes': _coerce_int(row.get('snapshot_bytes')),
+        'history_bytes': _coerce_int(row.get('history_bytes')),
+        'history_count': _coerce_int(row.get('history_count')),
+        'profile_bytes': _coerce_int(row.get('profile_bytes')),
+        'other_bytes': _coerce_int(row.get('other_bytes')),
+        'storage_bytes': storage_bytes,
+        'storage_objects': _coerce_int(row.get('storage_objects')),
+        'db_bytes': db_bytes,
+        'total_bytes': db_bytes + storage_bytes,
+    }
+
+
+def _estimate_service_users(
+    raw_users: Sequence[Mapping],
+    *,
+    snapshot_rows: Sequence[Mapping],
+    history_rows: Sequence[Mapping],
+    profile_rows: Sequence[Mapping],
+) -> list:
+    """Estimate per-user payload bytes from PostgREST rows (exact=False)."""
+    entries: dict = {}
+
+    def entry_for(key) -> dict:
+        identifier = str(key or '')
+        if identifier not in entries:
+            entries[identifier] = {
+                'user_id': identifier,
+                'email': '',
+                'display_name': '',
+                'last_sign_in_at': '',
+                'snapshot_bytes': 0,
+                'history_bytes': 0,
+                'history_count': 0,
+                'profile_bytes': 0,
+                'other_bytes': 0,
+                'storage_bytes': 0,
+                'storage_objects': 0,
+                'db_bytes': 0,
+            }
+        return entries[identifier]
+
+    for user in raw_users:
+        entry = entry_for(user.get('id'))
+        entry['email'] = str(user.get('email') or '')
+        metadata = user.get('user_metadata')
+        if isinstance(metadata, Mapping):
+            entry['display_name'] = str(metadata.get('display_name') or metadata.get('name') or '')
+        entry['last_sign_in_at'] = str(user.get('last_sign_in_at') or '')
+
+    for row in snapshot_rows:
+        size = _json_payload_bytes(row.get('payload'))
+        entry = entry_for(row.get('user_id'))
+        entry['snapshot_bytes'] += size
+        entry['db_bytes'] += size
+
+    for row in history_rows:
+        size = _json_payload_bytes(row.get('payload'))
+        entry = entry_for(row.get('user_id'))
+        entry['history_bytes'] += size
+        entry['history_count'] += _logical_row_count(row)
+        entry['db_bytes'] += size
+
+    for row in profile_rows:
+        size = _bytea_length(row.get('avatar_bytes'))
+        entry = entry_for(row.get('user_id'))
+        entry['profile_bytes'] += size
+        entry['db_bytes'] += size
+        if not entry['display_name']:
+            entry['display_name'] = str(row.get('display_name') or '')
+
+    users: list = []
+    for entry in entries.values():
+        entry['total_bytes'] = entry['db_bytes'] + entry['storage_bytes']
+        users.append(entry)
+    return users
+
+
+def _finalize_users(users: Sequence[Mapping], *, db_used: int, free_db_bytes: int) -> list:
+    """Add the three per-user ratio fields used by both views and JSON."""
+    total_bytes = sum(_coerce_int(user.get('total_bytes')) for user in users)
+    finalized: list = []
+    for user in users:
+        entry = dict(user)
+        total = _coerce_int(user.get('total_bytes'))
+        entry['share_of_users_pct'] = (
+            round(total / total_bytes * 100.0, 4) if total_bytes else 0.0
+        )
+        entry['share_of_db_used_pct'] = _percent(total, db_used)
+        entry['share_of_free_db_pct'] = _percent(total, free_db_bytes)
+        finalized.append(entry)
+    return finalized
+
+
+def _summarize_users(users: Sequence[Mapping]) -> Optional[dict]:
+    """Aggregate the users hidden by --top N into one summary row."""
+    if not users:
+        return None
+    summary = {
+        'user_id': '',
+        'email': '其余 {} 位用户'.format(len(users)),
+        'display_name': '',
+        'last_sign_in_at': '',
+        'is_summary': True,
+        'users': len(users),
+    }
+    for key in (
+        'snapshot_bytes',
+        'history_bytes',
+        'history_count',
+        'profile_bytes',
+        'other_bytes',
+        'storage_bytes',
+        'storage_objects',
+        'db_bytes',
+        'total_bytes',
+    ):
+        summary[key] = sum(_coerce_int(user.get(key)) for user in users)
+    for key in ('share_of_users_pct', 'share_of_db_used_pct', 'share_of_free_db_pct'):
+        summary[key] = round(sum(float(user.get(key) or 0.0) for user in users), 4)
+    return summary
+
+
+def apply_user_limit(report: dict, top: int) -> dict:
+    """Keep the first top users and fold the rest into users.remaining."""
+    limit = max(0, _coerce_int(top))
+    users = report.get('users') or {}
+    breakdown = list(users.get('breakdown') or [])
+    if limit <= 0 or limit >= len(breakdown):
+        users['remaining'] = None
+        users['breakdown'] = breakdown
+        return report
+    users['breakdown'] = breakdown[:limit]
+    users['remaining'] = _summarize_users(breakdown[limit:])
+    return report
+
+
+def _mask_report_emails(report: dict) -> dict:
+    for user in (report.get('users') or {}).get('breakdown') or []:
+        if user.get('email') and not user.get('is_summary'):
+            user['email'] = mask_email(str(user['email']))
+    return report
+
+
+def _assemble_report(
+    *,
+    project: Mapping,
+    source: str,
+    exact: bool,
+    limits: Mapping,
+    db_bytes,
+    total_users,
+    mau_used,
+    storage_bytes,
+    storage_objects,
+    users: Sequence[Mapping],
+    tables: Sequence[Mapping],
+    notes: Sequence[str],
+) -> dict:
+    used = max(0, _coerce_int(db_bytes))
+    user_data = sum(_coerce_int(user.get('db_bytes')) for user in users)
+    storage_used = max(0, _coerce_int(storage_bytes))
+    mau_value = max(0, _coerce_int(mau_used))
+    return {
+        'project': dict(project),
+        'source': source,
+        'exact_database_size': bool(exact),
+        'limits': dict(limits),
+        'database': {
+            'used_bytes': used,
+            'remaining_bytes': max(0, _coerce_int(limits.get('database_bytes')) - used),
+            'used_pct': _percent(used, limits.get('database_bytes')),
+            'user_data_bytes': user_data,
+            'system_bytes': max(0, used - user_data) if exact else None,
+            'total_users': max(0, _coerce_int(total_users)),
+        },
+        'storage': {
+            'used_bytes': storage_used,
+            'remaining_bytes': max(0, _coerce_int(limits.get('storage_bytes')) - storage_used),
+            'used_pct': _percent(storage_used, limits.get('storage_bytes')),
+            'objects': max(0, _coerce_int(storage_objects)),
+        },
+        'mau': {
+            'used': mau_value,
+            'remaining': max(0, _coerce_int(limits.get('mau')) - mau_value),
+            'used_pct': _percent(mau_value, limits.get('mau')),
+        },
+        'users': {
+            'total': len(users),
+            'breakdown': list(users),
+            'remaining': None,
+        },
+        'tables': list(tables),
+        'notes': list(notes),
+    }
+
+
+def collect_supabase_usage_report(
+    target: Mapping, context: Context, *, limits: Mapping
+) -> dict:
+    """Run the Management (exact) or Service (estimated) quota collection."""
+    base_url = str(target['url'])
+    project_ref = str(target['project_ref'])
+    source = str(target['source'])
+    project = {'ref': project_ref, 'name': '', 'region': '', 'status': ''}
+    notes: list = []
+
+    if source == 'management':
+        access_token = str(target['access_token'])
+        project.update(
+            _management_project_metadata(
+                context, project_ref=project_ref, access_token=access_token
+            )
+        )
+        overview_rows = _management_query(
+            context,
+            project_ref=project_ref,
+            access_token=access_token,
+            query=SUPABASE_USAGE_OVERVIEW_SQL,
+        )
+        overview = (
+            overview_rows[0]
+            if overview_rows and isinstance(overview_rows[0], Mapping)
+            else {}
+        )
+        table_rows = _management_query(
+            context,
+            project_ref=project_ref,
+            access_token=access_token,
+            query=SUPABASE_USAGE_TABLES_SQL,
+        )
+        tables = [
+            _normalize_table_row(row) for row in table_rows if isinstance(row, Mapping)
+        ]
+        table_names = _validated_usage_table_names(table_rows)
+        user_rows = _management_query(
+            context,
+            project_ref=project_ref,
+            access_token=access_token,
+            query=build_user_breakdown_sql(table_names),
+        )
+        users = [
+            _normalize_management_user(row) for row in user_rows if isinstance(row, Mapping)
+        ]
+        db_bytes = _coerce_int(overview.get('db_bytes'))
+        users = _finalize_users(
+            users, db_used=db_bytes, free_db_bytes=_coerce_int(limits.get('database_bytes'))
+        )
+        return _assemble_report(
+            project=project,
+            source='management',
+            exact=True,
+            limits=limits,
+            db_bytes=db_bytes,
+            total_users=_coerce_int(overview.get('total_users')) or len(users),
+            mau_used=_coerce_int(overview.get('mau_30d')),
+            storage_bytes=_coerce_int(overview.get('storage_bytes')),
+            storage_objects=_coerce_int(overview.get('storage_objects')),
+            users=users,
+            tables=tables,
+            notes=notes,
+        )
+
+    secret_key = str(target['secret_key'])
+    raw_users = _service_fetch_users(context, base_url=base_url, secret_key=secret_key)
+    snapshot_rows = _service_fetch_rows(
+        context,
+        base_url=base_url,
+        secret_key=secret_key,
+        table='cloud_business_snapshots',
+        select='user_id,payload,row_count',
+    )
+    history_rows = _service_fetch_rows(
+        context,
+        base_url=base_url,
+        secret_key=secret_key,
+        table='cloud_business_snapshot_history',
+        select='user_id,payload,row_count',
+    )
+    profile_rows = _service_fetch_rows(
+        context,
+        base_url=base_url,
+        secret_key=secret_key,
+        table='profile_accounts',
+        select='user_id,display_name,avatar_bytes,avatar_mime_type',
+    )
+    users = _estimate_service_users(
+        raw_users,
+        snapshot_rows=snapshot_rows,
+        history_rows=history_rows,
+        profile_rows=profile_rows,
+    )
+    users.sort(
+        key=lambda entry: (
+            -_coerce_int(entry.get('total_bytes')),
+            str(entry.get('email') or ''),
+        )
+    )
+    estimated_db = sum(_coerce_int(entry.get('db_bytes')) for entry in users)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    mau_used = sum(
+        1 for item in raw_users if _within_days(item.get('last_sign_in_at'), days=30, now=now)
+    )
+    users = _finalize_users(
+        users, db_used=estimated_db, free_db_bytes=_coerce_int(limits.get('database_bytes'))
+    )
+    notes.append(
+        'Service API 只统计客户端数据行；Postgres 系统表、索引与 TOAST 体积需配置 '
+        'SUPABASE_ACCESS_TOKEN 走 Management API 精确模式。'
+    )
+    notes.append('Storage 实际占用未统计：Storage 对象需要 SUPABASE_ACCESS_TOKEN 才能读取。')
+    return _assemble_report(
+        project=project,
+        source='service',
+        exact=False,
+        limits=limits,
+        db_bytes=estimated_db,
+        total_users=len(raw_users) or len(users),
+        mau_used=mau_used,
+        storage_bytes=0,
+        storage_objects=0,
+        users=users,
+        tables=[],
+        notes=notes,
+    )
+
+
+def render_usage_report(report: Mapping, *, view: str = 'summary') -> list:
+    """Render the quota report as plain text lines (never any secret)."""
+    project = report.get('project') or {}
+    limits = report.get('limits') or {}
+    database = report.get('database') or {}
+    storage = report.get('storage') or {}
+    mau = report.get('mau') or {}
+    users = report.get('users') or {}
+
+    lines = [
+        '=== Supabase 免费额度与用量（{}） ==='.format(
+            _source_label(str(report.get('source') or ''))
+        )
+    ]
+    project_line = '  项目：{}'.format(project.get('ref') or '-')
+    extras = [
+        str(value)
+        for value in (project.get('name'), project.get('region'), project.get('status'))
+        if value
+    ]
+    if extras:
+        project_line += '（{}）'.format(' / '.join(extras))
+    lines.append(project_line)
+
+    lines.append(
+        '  数据库：{} / {}  {} {:6.2f}%  剩余 {}'.format(
+            format_bytes(database.get('used_bytes')),
+            format_bytes(limits.get('database_bytes')),
+            progress_bar(database.get('used_pct')),
+            float(database.get('used_pct') or 0.0),
+            format_bytes(database.get('remaining_bytes')),
+        )
+    )
+    lines.append('    用户数据：{}'.format(format_bytes(database.get('user_data_bytes'))))
+    if database.get('system_bytes') is None:
+        lines.append('    系统与开销：需要 SUPABASE_ACCESS_TOKEN 才能精确统计')
+    lines.append(
+        '  存储：{} / {}  {} {:6.2f}%  剩余 {}  对象数 {}'.format(
+            format_bytes(storage.get('used_bytes')),
+            format_bytes(limits.get('storage_bytes')),
+            progress_bar(storage.get('used_pct')),
+            float(storage.get('used_pct') or 0.0),
+            format_bytes(storage.get('remaining_bytes')),
+            _coerce_int(storage.get('objects')),
+        )
+    )
+    lines.append(
+        '  MAU（近 30 天）：{} / {}  {} {:6.2f}%  剩余 {}'.format(
+            _coerce_int(mau.get('used')),
+            _coerce_int(limits.get('mau')),
+            progress_bar(mau.get('used_pct')),
+            float(mau.get('used_pct') or 0.0),
+            _coerce_int(mau.get('remaining')),
+        )
+    )
+    lines.append('  用户总数：{}'.format(_coerce_int(database.get('total_users'))))
+
+    tables = [
+        table for table in report.get('tables') or [] if _coerce_int(table.get('total_bytes'))
+    ]
+    if view == 'summary' and tables:
+        lines.append('  数据表占用（Top {}）：'.format(min(len(tables), 6)))
+        for table in tables[:6]:
+            lines.append(
+                '    {} {}  rows={}  user_id={}'.format(
+                    pad_display(str(table.get('table_name') or '-'), 34),
+                    pad_display(format_bytes(table.get('total_bytes')), 12),
+                    _coerce_int(table.get('live_rows')),
+                    'yes' if _truthy(table.get('has_user_id')) else 'no',
+                )
+            )
+
+    breakdown = list(users.get('breakdown') or [])
+    lines.append(
+        '  用户用量{}：'.format(
+            '明细' if view == 'users' else '（Top {}）'.format(len(breakdown))
+        )
+    )
+    if not breakdown:
+        lines.append('    未发现用户数据。')
+    else:
+        lines.append(
+            '    {} {} {} {} {}'.format(
+                pad_display('邮箱', 30),
+                pad_display('数据库', 11),
+                pad_display('存储', 11),
+                pad_display('合计', 11),
+                '占免费库容',
+            )
+        )
+        for user in breakdown:
+            label = str(user.get('email') or user.get('user_id') or '<未知用户>')
+            if user.get('display_name'):
+                label = '{} ({})'.format(label, user['display_name'])
+            lines.append(
+                '    {} {} {} {} {:6.2f}%'.format(
+                    pad_display(label, 30),
+                    pad_display(format_bytes(user.get('db_bytes')), 11),
+                    pad_display(format_bytes(user.get('storage_bytes')), 11),
+                    pad_display(format_bytes(user.get('total_bytes')), 11),
+                    float(user.get('share_of_free_db_pct') or 0.0),
+                )
+            )
+    remaining = users.get('remaining')
+    if isinstance(remaining, Mapping) and remaining.get('users'):
+        lines.append(
+            '    其余 {} 位用户合计：{}'.format(
+                _coerce_int(remaining.get('users')),
+                format_bytes(remaining.get('total_bytes')),
+            )
+        )
+
+    for note in report.get('notes') or []:
+        lines.append('  注意：{}'.format(note))
+    return lines
+
+
+def handle_supabase_usage(arguments, context: Context) -> int:
+    """Report Supabase Free Plan quotas and per-user storage/database usage."""
+    target = _resolve_supabase_usage_target(arguments, context)
+    limits = _usage_limits(arguments)
+    view = str(getattr(arguments, 'view', 'summary') or 'summary').strip().lower()
+    if view not in SUPABASE_USAGE_VIEWS:
+        view = 'summary'
+    top = max(0, _coerce_int(getattr(arguments, 'top', 0)))
+    mask_emails = bool(getattr(arguments, 'mask_email', False))
+    json_output = bool(getattr(arguments, 'json', False))
+
+    if getattr(arguments, 'dry_run', False):
+        print('[dry-run] Supabase 配额查询计划：', file=context.out)
+        print('  项目 ref ：{}'.format(target['project_ref']), file=context.out)
+        print('  查询模式 ：{}'.format(_source_label(str(target['source']))), file=context.out)
+        print('  视图     ：{}'.format(view), file=context.out)
+        print(
+            '  用户数量 ：{}'.format(
+                '全部用户' if top <= 0 else 'Top {}（其余汇总）'.format(top)
+            ),
+            file=context.out,
+        )
+        print('  邮箱脱敏 ：{}'.format('是' if mask_emails else '否'), file=context.out)
+        print(
+            '  免费额度 ：数据库 {} / 存储 {} / MAU {}'.format(
+                _format_mb(getattr(arguments, 'db_limit_mb', 500.0)),
+                _format_mb(getattr(arguments, 'storage_limit_mb', 1024.0)),
+                _coerce_int(getattr(arguments, 'mau_limit', 50000)),
+            ),
+            file=context.out,
+        )
+        print('  凭据     ：只在本进程内使用，不写入 defines、不打入 Flutter。', file=context.out)
+        print('[dry-run] 未发起任何 HTTP 请求。', file=context.out)
+        return EXIT_OK
+
+    report = collect_supabase_usage_report(target, context, limits=limits)
+    if mask_emails:
+        _mask_report_emails(report)
+    if json_output:
+        report = apply_user_limit(report, top)
+        print(json.dumps(report, ensure_ascii=False, indent=2), file=context.out)
+        return EXIT_OK
+    effective_top = top or (SUPABASE_USAGE_SUMMARY_USERS if view == 'summary' else 0)
+    report = apply_user_limit(report, effective_top)
+    for line in render_usage_report(report, view=view):
+        print(line, file=context.out)
+    return EXIT_OK
+
+
+# ---------------------------------------------------------------------------
 # Command line
 # ---------------------------------------------------------------------------
 
@@ -1310,108 +2423,204 @@ def _shared_namespace(arguments, **extra) -> argparse.Namespace:
     return argparse.Namespace(**values)
 
 
-def handle_interactive(arguments, context: Context) -> int:
-    defines, file_values, env_file = _resolve_defines(arguments, context)
-    keystore = _resolve_repo_path(context.repo, DEFAULT_KEYSTORE)
-    properties = _resolve_repo_path(context.repo, DEFAULT_PROPERTIES)
-    signing_ready = keystore.is_file() and properties.is_file()
+_SUBMENU_BACK = ('0', 'b', 'back')
+_SUBMENU_QUIT = ('q', 'quit', 'exit')
+_MAIN_MENU_QUIT = ('0', 'q', 'quit', 'exit')
 
-    print('=== Pacta 交互式构建与运行 ===', file=context.out)
-    _report_ignored(context, file_values)
-    _print_header(context, defines, env_file)
+
+def _interactive_exit(context: Context) -> int:
+    print('[pacta] 已退出。', file=context.out)
+    return EXIT_OK
+
+
+def _interactive_prompt(context: Context, read_input, prompt: str) -> Optional[str]:
+    """Read one trimmed, lower-cased answer; None means EOF."""
+    try:
+        return str(read_input(prompt)).strip().lower()
+    except EOFError:
+        return None
+
+
+def _print_main_menu(context: Context) -> None:
     print(
-        '[pacta] Android Release 签名：{}'.format(
-            '已就绪（{}）'.format(properties)
-            if signing_ready
-            else '未生成（可选择 7 一键生成）'
-        ),
-        file=context.out,
-    )
-    print(
-        '\n请选择操作：\n'
-        '  1) 运行 Windows 桌面版 (Debug)\n'
-        '  2) 运行 Android 设备/模拟器 (Debug)\n'
-        '  3) 构建 Windows Release（自动打包 .zip 便携包与 setup.exe 安装程序）\n'
-        '  4) 构建 Android Release APK\n'
-        '  5) 构建 Android Release AAB (Google Play)\n'
-        '  6) 构建全平台 Release (Windows + APK + AAB，强制正式签名)\n'
-        '  7) 生成本机 Android Release 签名 (init-keystore)\n'
-        '  8) 一键导出 GitHub Actions Release Secrets 填写清单 (build/github-actions-secrets.txt)\n'
-        '  9) 一键将 6 个 Release Secrets 推送到当前 GitHub 仓库 (gh secret set)\n'
-        '  0) 退出',
+        '\n请选择类别：\n'
+        '  1) 运行调试 (Run)\n'
+        '  2) 构建与打包 (Build)\n'
+        '  3) 签名与发布凭据 (Signing & GitHub Secrets)\n'
+        '  4) Supabase 云端配额与用量 (Supabase Usage)\n'
+        '  0) 退出 (q/quit/exit)',
         file=context.out,
     )
 
-    read_input = context.input_fn if callable(context.input_fn) else input
+
+def _interactive_run_menu(arguments, context: Context, read_input) -> Optional[int]:
+    """Category 1: choose a target, then a build mode, then flutter run."""
     while True:
-        try:
-            choice = str(read_input('请输入编号 [1-9, 0/q 退出]: ')).strip().lower()
-        except EOFError:
-            print('[pacta] 已退出。', file=context.out)
-            return EXIT_OK
+        print(
+            '\n--- 运行调试 ---\n'
+            '  1) Windows 桌面版\n'
+            '  2) Android 设备/模拟器（自动取第一台）\n'
+            '  3) 手动输入设备 ID\n'
+            '  0) 返回主菜单（b）',
+            file=context.out,
+        )
+        target_choice = _interactive_prompt(
+            context, read_input, '[pacta] 请选择运行目标 [1-3, 0/b 返回, q 退出]: '
+        )
+        if target_choice is None or target_choice in _SUBMENU_QUIT:
+            return _interactive_exit(context)
+        if target_choice in _SUBMENU_BACK:
+            return None
+        target = None
+        if target_choice == '1':
+            target = 'windows'
+        elif target_choice == '2':
+            target = 'android'
+        elif target_choice == '3':
+            while True:
+                device = _interactive_prompt(
+                    context, read_input, '[pacta] 请输入设备 ID（如 emulator-5554）: '
+                )
+                if device is None or device in _SUBMENU_QUIT:
+                    return _interactive_exit(context)
+                if device in _SUBMENU_BACK:
+                    break
+                if not device:
+                    print('[pacta] 设备 ID 不能为空。', file=context.err)
+                    continue
+                target = device
+                break
+        else:
+            print(
+                '[pacta] 无效编号 "{}"，请输入 1-3 或 0/b/q。'.format(target_choice),
+                file=context.err,
+            )
+            continue
+        if target is None:
+            continue
 
-        if choice in ('0', 'q', 'quit', 'exit'):
-            print('[pacta] 已退出。', file=context.out)
-            return EXIT_OK
-        if choice == '1':
+        while True:
+            print(
+                '\n--- 构建模式 ---\n'
+                '  1) Debug（默认，直接回车）\n'
+                '  2) Profile\n'
+                '  3) Release\n'
+                '  0) 返回上一步（b）',
+                file=context.out,
+            )
+            mode_choice = _interactive_prompt(
+                context, read_input, '[pacta] 请选择构建模式 [1-3, 回车=Debug, 0/b 返回]: '
+            )
+            if mode_choice is None or mode_choice in _SUBMENU_QUIT:
+                return _interactive_exit(context)
+            if mode_choice in _SUBMENU_BACK:
+                break
+            mode = {'': 'debug', '1': 'debug', '2': 'profile', '3': 'release'}.get(mode_choice)
+            if mode is None:
+                print(
+                    '[pacta] 无效编号 "{}"，请输入 1-3 或 0/b/q。'.format(mode_choice),
+                    file=context.err,
+                )
+                continue
             return handle_run(
-                _shared_namespace(arguments, command='run', target='windows', mode='debug'),
+                _shared_namespace(arguments, command='run', target=target, mode=mode),
                 context,
             )
+
+
+def _interactive_build_menu(arguments, context: Context, read_input) -> Optional[int]:
+    """Category 2: pre-canned release builds."""
+    options = {
+        '1': ('windows', False, False),
+        '2': ('apk', False, False),
+        '3': ('apk', True, False),
+        '4': ('appbundle', False, False),
+        '5': ('all', False, True),
+    }
+    while True:
+        print(
+            '\n--- 构建与打包 ---\n'
+            '  1) Windows Release（自动打包便携 zip 与 setup.exe）\n'
+            '  2) Android Release APK\n'
+            '  3) Android Release APK（--split-per-abi）\n'
+            '  4) Android Release AAB (Google Play)\n'
+            '  5) 全平台 Release（Windows + APK + AAB，强制正式签名）\n'
+            '  0) 返回主菜单（b）',
+            file=context.out,
+        )
+        choice = _interactive_prompt(
+            context, read_input, '[pacta] 请选择构建项 [1-5, 0/b 返回, q 退出]: '
+        )
+        if choice is None or choice in _SUBMENU_QUIT:
+            return _interactive_exit(context)
+        if choice in _SUBMENU_BACK:
+            return None
+        option = options.get(choice)
+        if option is None:
+            print(
+                '[pacta] 无效编号 "{}"，请输入 1-5 或 0/b/q。'.format(choice),
+                file=context.err,
+            )
+            continue
+        target, split_per_abi, require_signing = option
+        return handle_build(
+            _shared_namespace(
+                arguments,
+                command='build',
+                target=target,
+                mode='release',
+                split_per_abi=split_per_abi,
+                require_release_signing=require_signing,
+            ),
+            context,
+        )
+
+
+def _interactive_signing_menu(arguments, context: Context, read_input) -> Optional[int]:
+    """Category 3: keystore generation and GitHub secret export/push."""
+    while True:
+        print(
+            '\n--- 签名与发布凭据 ---\n'
+            '  1) 生成本机 Android Release 签名 (init-keystore)\n'
+            '  2) 重新生成并覆盖现有签名 (init-keystore --force)\n'
+            '  3) 导出 GitHub Actions Release Secrets 清单\n'
+            '  4) 推送 6 个 Release Secrets 到当前 GitHub 仓库 (gh secret set)\n'
+            '  0) 返回主菜单（b）',
+            file=context.out,
+        )
+        choice = _interactive_prompt(
+            context, read_input, '[pacta] 请选择签名项 [1-4, 0/b 返回, q 退出]: '
+        )
+        if choice is None or choice in _SUBMENU_QUIT:
+            return _interactive_exit(context)
+        if choice in _SUBMENU_BACK:
+            return None
+
         if choice == '2':
-            return handle_run(
-                _shared_namespace(arguments, command='run', target='android', mode='debug'),
-                context,
+            confirm = _interactive_prompt(
+                context, read_input, '[pacta] 确认覆盖现有签名文件？[y/N]: '
             )
-        if choice == '3':
-            return handle_build(
+            if confirm is None:
+                return _interactive_exit(context)
+            if confirm not in ('y', 'yes'):
+                print('[pacta] 已取消，未覆盖任何签名文件。', file=context.out)
+                continue
+            return handle_init_keystore(
                 _shared_namespace(
                     arguments,
-                    command='build',
-                    target='windows',
-                    mode='release',
-                    split_per_abi=False,
-                    require_release_signing=False,
+                    command='init-keystore',
+                    keystore=DEFAULT_KEYSTORE,
+                    properties=DEFAULT_PROPERTIES,
+                    alias=DEFAULT_ALIAS,
+                    dname=DEFAULT_DNAME,
+                    store_password=None,
+                    key_password=None,
+                    force=True,
                 ),
                 context,
             )
-        if choice == '4':
-            return handle_build(
-                _shared_namespace(
-                    arguments,
-                    command='build',
-                    target='apk',
-                    mode='release',
-                    split_per_abi=False,
-                    require_release_signing=False,
-                ),
-                context,
-            )
-        if choice == '5':
-            return handle_build(
-                _shared_namespace(
-                    arguments,
-                    command='build',
-                    target='appbundle',
-                    mode='release',
-                    split_per_abi=False,
-                    require_release_signing=False,
-                ),
-                context,
-            )
-        if choice == '6':
-            return handle_build(
-                _shared_namespace(
-                    arguments,
-                    command='build',
-                    target='all',
-                    mode='release',
-                    split_per_abi=False,
-                    require_release_signing=True,
-                ),
-                context,
-            )
-        if choice == '7':
+
+        if choice == '1':
             return handle_init_keystore(
                 _shared_namespace(
                     arguments,
@@ -1426,7 +2635,8 @@ def handle_interactive(arguments, context: Context) -> int:
                 ),
                 context,
             )
-        if choice == '8':
+
+        if choice in ('3', '4'):
             return handle_github_secrets(
                 _shared_namespace(
                     arguments,
@@ -1434,23 +2644,107 @@ def handle_interactive(arguments, context: Context) -> int:
                     keystore=DEFAULT_KEYSTORE,
                     properties=DEFAULT_PROPERTIES,
                     output=DEFAULT_GITHUB_SECRETS_FILE,
-                    apply=False,
+                    apply=choice == '4',
                 ),
                 context,
             )
-        if choice == '9':
-            return handle_github_secrets(
-                _shared_namespace(
-                    arguments,
-                    command='github-secrets',
-                    keystore=DEFAULT_KEYSTORE,
-                    properties=DEFAULT_PROPERTIES,
-                    output=DEFAULT_GITHUB_SECRETS_FILE,
-                    apply=True,
-                ),
-                context,
+
+        print(
+            '[pacta] 无效编号 "{}"，请输入 1-4 或 0/b/q。'.format(choice),
+            file=context.err,
+        )
+
+
+def _interactive_supabase_menu(arguments, context: Context, read_input) -> Optional[int]:
+    """Category 4: quota views; a failed query pauses instead of exiting."""
+    options = {
+        '1': {'view': 'summary', 'mask_email': False, 'json': False},
+        '2': {'view': 'users', 'mask_email': False, 'json': False},
+        '3': {'view': 'summary', 'mask_email': True, 'json': False},
+        '4': {'view': 'summary', 'mask_email': False, 'json': True},
+    }
+    while True:
+        print(
+            '\n--- Supabase 云端配额与用量 ---\n'
+            '  1) 概览（summary）\n'
+            '  2) 逐用户用量（--view users）\n'
+            '  3) 概览（邮箱脱敏 --mask-email）\n'
+            '  4) JSON 输出（--json）\n'
+            '  0) 返回主菜单（b）',
+            file=context.out,
+        )
+        choice = _interactive_prompt(
+            context, read_input, '[pacta] 请选择查看方式 [1-4, 0/b 返回, q 退出]: '
+        )
+        if choice is None or choice in _SUBMENU_QUIT:
+            return _interactive_exit(context)
+        if choice in _SUBMENU_BACK:
+            return None
+        option = options.get(choice)
+        if option is None:
+            print(
+                '[pacta] 无效编号 "{}"，请输入 1-4 或 0/b/q。'.format(choice),
+                file=context.err,
             )
-        print('[pacta] 无效编号 "{}"，请输入 1-9 或 0/q。'.format(choice), file=context.err)
+            continue
+        try:
+            return handle_supabase_usage(
+                _shared_namespace(arguments, command='supabase-usage', **option), context
+            )
+        except BuildError as error:
+            print('[pacta] ' + str(error), file=context.err)
+            pause = _interactive_prompt(context, read_input, '按回车返回主菜单，输入 q 退出: ')
+            if pause is None or pause in _SUBMENU_QUIT:
+                return _interactive_exit(context)
+            return None
+
+
+def handle_interactive(arguments, context: Context) -> int:
+    defines, file_values, env_file = _resolve_defines(arguments, context)
+    keystore = _resolve_repo_path(context.repo, DEFAULT_KEYSTORE)
+    properties = _resolve_repo_path(context.repo, DEFAULT_PROPERTIES)
+    signing_ready = keystore.is_file() and properties.is_file()
+
+    print('=== Pacta 交互式构建与运行 ===', file=context.out)
+    _report_ignored(context, file_values)
+    _print_header(context, defines, env_file)
+    print(
+        '[pacta] Supabase 配额查询：{}'.format(supabase_usage_status(context, file_values)),
+        file=context.out,
+    )
+    print(
+        '[pacta] Android Release 签名：{}'.format(
+            '已就绪（{}）'.format(properties)
+            if signing_ready
+            else '未生成（主菜单 3 -> 1 一键生成）'
+        ),
+        file=context.out,
+    )
+
+    read_input = context.input_fn if callable(context.input_fn) else input
+    handlers = {
+        '1': _interactive_run_menu,
+        '2': _interactive_build_menu,
+        '3': _interactive_signing_menu,
+        '4': _interactive_supabase_menu,
+    }
+    while True:
+        _print_main_menu(context)
+        choice = _interactive_prompt(
+            context, read_input, '[pacta] 请输入类别编号 [1-4, 0/q 退出]: '
+        )
+        if choice is None or choice in _MAIN_MENU_QUIT:
+            return _interactive_exit(context)
+        handler = handlers.get(choice)
+        if handler is None:
+            print(
+                '[pacta] 无效编号 "{}"，请输入 1-4 或 0/q。'.format(choice),
+                file=context.err,
+            )
+            continue
+        result = handler(arguments, context, read_input)
+        if result is not None:
+            return result
 
 
 def _add_mode_arguments(parser, *, default_mode: str) -> None:
@@ -1574,6 +2868,44 @@ def build_parser() -> argparse.ArgumentParser:
         help='push all 6 secrets directly to GitHub via `gh secret set`',
     )
 
+    usage_parser = subparsers.add_parser(
+        'supabase-usage',
+        aliases=['usage', 'quota'],
+        help='report Supabase Free Plan quota and per-user storage usage',
+    )
+    _add_shared_arguments(usage_parser, defaults=False)
+    usage_parser.add_argument(
+        '--json', action='store_true', default=False, help='emit a UTF-8 JSON report (no secrets)'
+    )
+    usage_parser.add_argument(
+        '--view', choices=SUPABASE_USAGE_VIEWS, default='summary', help='summary / users'
+    )
+    usage_parser.add_argument(
+        '--top', type=int, default=0, metavar='N', help='show Top N users, 0 = all'
+    )
+    usage_parser.add_argument(
+        '--mask-email', action='store_true', default=False, help='mask user e-mail local parts'
+    )
+    usage_parser.add_argument(
+        '--source',
+        choices=SUPABASE_USAGE_SOURCES,
+        default='auto',
+        help='auto / management / service',
+    )
+    usage_parser.add_argument(
+        '--db-limit-mb', type=float, default=500.0, metavar='MB', help='free plan database quota'
+    )
+    usage_parser.add_argument(
+        '--storage-limit-mb',
+        type=float,
+        default=1024.0,
+        metavar='MB',
+        help='free plan storage quota',
+    )
+    usage_parser.add_argument(
+        '--mau-limit', type=int, default=50000, metavar='N', help='free plan monthly active users'
+    )
+
     return parser
 
 
@@ -1583,6 +2915,10 @@ HANDLERS = {
     'init-keystore': handle_init_keystore,
     'github-secrets': handle_github_secrets,
     'interactive': handle_interactive,
+    'supabase-usage': handle_supabase_usage,
+    # argparse keeps the typed alias as the command; map all three to one handler.
+    'usage': handle_supabase_usage,
+    'quota': handle_supabase_usage,
 }
 
 
@@ -1596,6 +2932,7 @@ def main(
     repo: Optional[Path] = None,
     input_fn=None,
     is_tty: Optional[bool] = None,
+    urlopen_fn=None,
 ) -> int:
     out = sys.stdout if out is None else out
     err = sys.stderr if err is None else err
@@ -1609,6 +2946,7 @@ def main(
         out=out,
         err=err,
         input_fn=input if input_fn is None else input_fn,
+        urlopen_fn=urlopen_fn,
     )
     command = arguments.command
     if command is None:

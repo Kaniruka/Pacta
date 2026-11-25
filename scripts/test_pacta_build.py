@@ -5,6 +5,7 @@ command assembly and the keystore flow are all exercised through an injected
 fake runner, mirroring scripts/test_run_ui_baseline.py.
 """
 
+import datetime
 import io
 import json
 import os
@@ -12,6 +13,7 @@ from pathlib import Path
 import tempfile
 import unittest
 import unittest.mock
+import urllib.error
 
 import pacta_build as subject
 
@@ -760,6 +762,59 @@ class InitKeystoreTests(unittest.TestCase):
         self.assertIn('keystore', err)
 
 
+class FakeHTTPResponse:
+    """Minimal urllib response: a JSON body plus a close hook."""
+
+    def __init__(self, payload, status=200):
+        self._body = json.dumps(payload).encode('utf-8')
+        self.status = status
+
+    def read(self):
+        return self._body
+
+    def close(self):
+        pass
+
+
+class FakeSupabaseAPI:
+    """Offline urllib opener: routes by URL and by the POSTed SQL text."""
+
+    def __init__(self, *, overview=None, tables=(), users=(), project=None, service=None):
+        self.requests = []
+        self.overview = overview if overview is not None else {}
+        self.tables = list(tables)
+        self.users = list(users)
+        self.project = project if project is not None else {
+            'name': 'pacta',
+            'region': 'ap-southeast-1',
+            'status': 'ACTIVE_HEALTHY',
+        }
+        self.service = dict(service or {})
+
+    def __call__(self, request, timeout=None):
+        self.requests.append(request)
+        url = request.full_url
+        if url.endswith('/database/query'):
+            query = json.loads(request.data.decode('utf-8'))['query']
+            if 'pg_database_size' in query:
+                return FakeHTTPResponse([self.overview])
+            if 'has_user_id' in query:
+                return FakeHTTPResponse(self.tables)
+            return FakeHTTPResponse(self.users)
+        if '/projects/' in url:
+            return FakeHTTPResponse(self.project)
+        if '/auth/v1/admin/users' in url:
+            return FakeHTTPResponse({'users': self.service.get('users', [])})
+        for table in (
+            'cloud_business_snapshots',
+            'cloud_business_snapshot_history',
+            'profile_accounts',
+        ):
+            if '/rest/v1/' + table in url:
+                return FakeHTTPResponse(self.service.get(table, []))
+        raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)
+
+
 class InteractiveAndReleaseWorkflowTests(unittest.TestCase):
     def setUp(self):
         self._directory = tempfile.TemporaryDirectory()
@@ -779,7 +834,7 @@ class InteractiveAndReleaseWorkflowTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def _run_interactive(self, argv, choices, *, runner=None, is_tty=None):
+    def _run_interactive(self, argv, choices, *, runner=None, is_tty=None, urlopen_fn=None):
         iterator = iter(choices or ())
         prompts = []
 
@@ -801,6 +856,7 @@ class InteractiveAndReleaseWorkflowTests(unittest.TestCase):
             repo=self.repo,
             input_fn=fake_input if choices is not None else None,
             is_tty=is_tty,
+            urlopen_fn=urlopen_fn,
         )
         return code, out.getvalue(), err.getvalue(), runner, prompts
 
@@ -810,36 +866,137 @@ class InteractiveAndReleaseWorkflowTests(unittest.TestCase):
         self.assertEqual([], runner.commands)
         self.assertIn('usage:', err)
 
-    def test_interactive_quit_choices_exit_cleanly(self):
-        for quit_choice in ('0', 'q'):
+    def test_main_menu_lists_two_level_categories_and_quit_exits_cleanly(self):
+        for quit_choice in ('0', 'q', 'quit', 'exit'):
             code, out, err, runner, _ = self._run_interactive([], [quit_choice])
             self.assertEqual(subject.EXIT_OK, code, err)
             self.assertEqual([], runner.commands)
             self.assertIn('交互式构建与运行', out)
+            self.assertIn('1) 运行调试 (Run)', out)
+            self.assertIn('2) 构建与打包 (Build)', out)
+            self.assertIn('3) 签名与发布凭据 (Signing & GitHub Secrets)', out)
+            self.assertIn('4) Supabase 云端配额与用量 (Supabase Usage)', out)
             self.assertNotIn('sb_secret_never_inject', out + err)
 
-    def test_interactive_reprompts_after_invalid_choice_and_runs_menu_options(self):
+    def test_menu_header_reports_quota_mode_and_signing_status(self):
+        code, out, err, _, _ = self._run_interactive([], ['0'])
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('Supabase 配额查询：Service API 估算模式', out)
+        self.assertIn('Android Release 签名：未生成', out)
+
+    def test_invalid_main_menu_choice_reprompts(self):
+        code, out, err, _, _ = self._run_interactive([], ['bad-option', '0'])
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('无效编号', err)
+        self.assertIn('交互式构建与运行', out)
+
+    def test_run_category_runs_windows_and_android_with_a_mode(self):
         device_json = json.dumps(
             [{'id': 'emulator-5554', 'targetPlatform': 'android-arm64', 'isSupported': True}]
         )
         scenarios = (
-            ('1', ['--dry-run'], 'run -d windows --debug'),
-            ('2', ['--dry-run'], 'run -d emulator-5554 --debug'),
-            ('3', ['--dry-run'], 'build --target windows --release'),
-            ('4', ['--dry-run'], 'build --target apk --release'),
-            ('5', ['--dry-run'], 'build --target appbundle --release'),
-            ('6', ['--dry-run'], 'build --target all --release'),
-            ('7', ['--dry-run'], 'keytool'),
+            (['1', '1', '1'], [], 'run -d windows --debug'),
+            (['1', '1', ''], [], 'run -d windows --debug'),
+            (
+                ['1', '2', '2'],
+                [subject.CommandResult(0, device_json, '')],
+                'run -d emulator-5554 --profile',
+            ),
+            (
+                ['1', '2', '3'],
+                [subject.CommandResult(0, device_json, '')],
+                'run -d emulator-5554 --release',
+            ),
         )
-        for choice, extra_argv, expected_marker in scenarios:
-            runner = FakeRunner(responses=[subject.CommandResult(0, device_json, '')])
+        for choices, responses, expected in scenarios:
+            runner = FakeRunner(responses=responses)
             code, out, err, _, _ = self._run_interactive(
-                extra_argv + ['interactive'], ['bad-option', choice], runner=runner
+                ['--dry-run', 'interactive'], choices, runner=runner
             )
             self.assertEqual(subject.EXIT_OK, code, err)
-            self.assertIn('无效编号', err)
-            self.assertIn(expected_marker, out)
+            self.assertIn(expected, out)
             self.assertNotIn('sb_secret_never_inject', out + err)
+
+    def test_run_category_rejects_blank_device_and_back_returns_to_main_menu(self):
+        code, out, err, _, _ = self._run_interactive(['--dry-run', 'interactive'], ['1', '3', '   ', '0', '0'])
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('设备 ID 不能为空', err)
+        self.assertNotIn('flutter run', out)
+
+    def test_run_category_accepts_a_manual_device_id(self):
+        code, out, err, _, _ = self._run_interactive(
+            ['--dry-run', 'interactive'], ['1', '3', 'emulator-9999', '1']
+        )
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('run -d emulator-9999 --debug', out)
+
+    def test_build_category_maps_every_option(self):
+        scenarios = (
+            ('1', 'build --target windows --release'),
+            ('2', 'build --target apk --release'),
+            ('4', 'build --target appbundle --release'),
+            ('5', 'build --target all --release'),
+        )
+        for choice, expected in scenarios:
+            code, out, err, runner, _ = self._run_interactive(['--dry-run', 'interactive'], ['2', choice])
+            self.assertEqual(subject.EXIT_OK, code, err)
+            self.assertIn(expected, out)
+            self.assertEqual([], runner.commands)
+        code, out, err, _, _ = self._run_interactive(['--dry-run', 'interactive'], ['2', '3'])
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('build --target apk --release', out)
+        self.assertIn('--split-per-abi', out)
+        code, out, err, _, _ = self._run_interactive(['--dry-run', 'interactive'], ['2', '5'])
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('requireReleaseSigning=true', out)
+
+    def test_signing_category_generates_keystore_and_guards_force_overwrite(self):
+        code, out, err, _, _ = self._run_interactive(['--dry-run', 'interactive'], ['3', '1'])
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('keytool', out)
+
+        code, out, err, _, _ = self._run_interactive(['--dry-run', 'interactive'], ['3', '2', 'n', '0', '0'])
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('已取消，未覆盖任何签名文件', out)
+        self.assertNotIn('keytool', out)
+
+        code, out, err, _, _ = self._run_interactive(['--dry-run', 'interactive'], ['3', '2', 'y'])
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('keytool', out)
+
+    def test_signing_category_exports_github_secrets_manifest(self):
+        code, out, err, _, _ = self._run_interactive(['--dry-run', 'interactive'], ['3', '3'])
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('GitHub Secrets', out)
+
+        code, out, err, _, _ = self._run_interactive(['--dry-run', 'interactive'], ['3', '4'])
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('gh secret set', out)
+
+    def test_supabase_category_prints_report_and_pauses_after_an_error(self):
+        api = FakeSupabaseAPI(
+            overview={'db_bytes': 1024, 'total_users': 0, 'mau_30d': 0, 'storage_bytes': 0}
+        )
+        (self.repo / '.env').write_text(
+            'SUPABASE_URL=https://example.supabase.co\n'
+            'SUPABASE_PUBLISHABLE_KEY=sb_publishable_demo\n'
+            'SUPABASE_ACCESS_TOKEN=menu-token\n',
+            encoding='utf-8',
+        )
+        code, out, err, _, _ = self._run_interactive(['interactive'], ['4', '1'], urlopen_fn=api)
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('Management API 精确模式', out)
+        self.assertNotIn('menu-token', out + err)
+
+        (self.repo / '.env').write_text(
+            'SUPABASE_URL=https://example.supabase.co\n'
+            'SUPABASE_PUBLISHABLE_KEY=sb_publishable_demo\n',
+            encoding='utf-8',
+        )
+        code, out, err, _, prompts = self._run_interactive(['interactive'], ['4', '1', '', '0'])
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('SUPABASE_ACCESS_TOKEN', err)
+        self.assertIn('按回车返回主菜单', prompts[-2])
 
     def test_release_workflow_declares_android_signing_secrets_and_strict_flag(self):
         workflow_path = Path(subject.__file__).resolve().parent.parent / '.github' / 'workflows' / 'release.yml'
@@ -970,6 +1127,358 @@ class InteractiveAndReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn('sb_secret_never_inject', manifest)
         self.assertNotIn('StorePass123456', out.getvalue())
         self.assertEqual(6, len(runner.commands))
+
+
+USAGE_MGMT_TOKEN = 'management-token-must-never-leak'
+USAGE_OPAQUE_KEY = 'sb_secret_opaque_value'
+USAGE_JWT_KEY = 'header.payload.signature'
+
+
+class SupabaseUsageTests(unittest.TestCase):
+    def setUp(self):
+        self._directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self._directory.cleanup)
+        self.repo = Path(self._directory.name)
+
+    def _write_env(self, body):
+        (self.repo / '.env').write_text(body, encoding='utf-8')
+
+    def _management_env(self):
+        self._write_env(
+            'SUPABASE_URL=https://project-ref.supabase.co\n'
+            'SUPABASE_ACCESS_TOKEN=' + USAGE_MGMT_TOKEN + '\n'
+            'SUPABASE_SECRET_KEY=' + USAGE_OPAQUE_KEY + '\n'
+        )
+
+    def _default_api(self, **overrides):
+        api = FakeSupabaseAPI(
+            overview={
+                'db_bytes': 10 * 1024 * 1024,
+                'public_bytes': 8 * 1024 * 1024,
+                'total_users': 2,
+                'mau_30d': 1,
+                'storage_bytes': 4 * 1024 * 1024,
+                'storage_objects': 7,
+            },
+            tables=[
+                {
+                    'table_name': 'cloud_business_snapshots',
+                    'total_bytes': 6 * 1024 * 1024,
+                    'table_bytes': 5 * 1024 * 1024,
+                    'index_bytes': 1024 * 1024,
+                    'toast_bytes': 0,
+                    'live_rows': 40,
+                    'has_user_id': True,
+                },
+                {
+                    'table_name': 'profile_accounts',
+                    'total_bytes': 2 * 1024 * 1024,
+                    'table_bytes': 1024 * 1024,
+                    'index_bytes': 1024 * 1024,
+                    'toast_bytes': 0,
+                    'live_rows': 3,
+                    'has_user_id': True,
+                },
+                {
+                    'table_name': 'national_focus_cards',
+                    'total_bytes': 1024,
+                    'table_bytes': 1024,
+                    'index_bytes': 0,
+                    'toast_bytes': 0,
+                    'live_rows': 1,
+                    'has_user_id': False,
+                },
+            ],
+            users=[
+                {
+                    'user_id': 'u1',
+                    'email': 'alpha@example.com',
+                    'display_name': 'Alpha',
+                    'last_sign_in_at': '2026-11-01T00:00:00Z',
+                    'snapshot_bytes': 4 * 1024 * 1024,
+                    'history_bytes': 0,
+                    'history_count': 0,
+                    'profile_bytes': 1024 * 1024,
+                    'other_bytes': 0,
+                    'storage_bytes': 3 * 1024 * 1024,
+                    'storage_objects': 7,
+                    'db_bytes': 5 * 1024 * 1024,
+                    'total_bytes': 8 * 1024 * 1024,
+                },
+                {
+                    'user_id': 'u2',
+                    'email': 'beta@example.com',
+                    'display_name': '',
+                    'last_sign_in_at': '',
+                    'snapshot_bytes': 1024 * 1024,
+                    'history_bytes': 0,
+                    'history_count': 0,
+                    'profile_bytes': 0,
+                    'other_bytes': 0,
+                    'storage_bytes': 0,
+                    'storage_objects': 0,
+                    'db_bytes': 1024 * 1024,
+                    'total_bytes': 1024 * 1024,
+                },
+            ],
+        )
+        for key, value in overrides.items():
+            setattr(api, key, value)
+        return api
+
+    def _run(self, argv, *, api=None, environ=None):
+        out, err = io.StringIO(), io.StringIO()
+        code = subject.main(
+            argv,
+            runner=FakeRunner(),
+            environ={} if environ is None else environ,
+            out=out,
+            err=err,
+            repo=self.repo,
+            urlopen_fn=api,
+        )
+        return code, out.getvalue(), err.getvalue()
+
+    def test_management_mode_reports_exact_quota_and_per_user_usage(self):
+        self._management_env()
+        api = self._default_api()
+        code, out, err = self._run(['supabase-usage'], api=api)
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('Management API 精确模式', out)
+        self.assertIn('project-ref', out)
+        self.assertIn('alpha@example.com', out)
+        self.assertIn('cloud_business_snapshots', out)
+        self.assertNotIn(USAGE_MGMT_TOKEN, out + err)
+
+        query_requests = [r for r in api.requests if r.full_url.endswith('/database/query')]
+        self.assertEqual(3, len(query_requests))
+        self.assertEqual(
+            'Bearer ' + USAGE_MGMT_TOKEN, query_requests[0].get_header('Authorization')
+        )
+        breakdown_sql = json.loads(query_requests[2].data.decode('utf-8'))['query']
+        self.assertIn('cloud_business_snapshots', breakdown_sql)
+        self.assertIn('profile_accounts', breakdown_sql)
+        self.assertNotIn('national_focus_cards', breakdown_sql)
+        self.assertIn('storage.objects', breakdown_sql)
+        self.assertNotIn(USAGE_MGMT_TOKEN, breakdown_sql)
+
+    def test_json_report_is_valid_json_without_credentials(self):
+        self._management_env()
+        api = self._default_api()
+        code, out, err = self._run(['usage', '--json'], api=api)
+        self.assertEqual(subject.EXIT_OK, code, err)
+        report = json.loads(out)
+        self.assertEqual('management', report['source'])
+        self.assertTrue(report['exact_database_size'])
+        self.assertEqual(500 * 1024 * 1024, report['limits']['database_bytes'])
+        self.assertEqual(2.0, report['database']['used_pct'])
+        self.assertEqual(6 * 1024 * 1024, report['database']['user_data_bytes'])
+        self.assertEqual(4 * 1024 * 1024, report['database']['system_bytes'])
+        self.assertEqual(4 * 1024 * 1024, report['storage']['used_bytes'])
+        self.assertEqual(7, report['storage']['objects'])
+        self.assertEqual(1, report['mau']['used'])
+        first = report['users']['breakdown'][0]
+        self.assertEqual(1.6, first['share_of_free_db_pct'])
+        self.assertEqual('Alpha', first['display_name'])
+        for credential in (USAGE_MGMT_TOKEN, USAGE_OPAQUE_KEY):
+            self.assertNotIn(credential, out + err)
+        self.assertEqual([], report['notes'])
+
+    def test_view_and_top_and_mask_email_shape_the_output(self):
+        self._management_env()
+        code, out, err = self._run(['quota', '--view', 'users', '--top', '1'], api=self._default_api())
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('alpha@example.com', out)
+        self.assertNotIn('beta@example.com', out)
+        self.assertIn('其余 1 位用户合计', out)
+
+        code, out, err = self._run(
+            ['usage', '--view', 'users', '--mask-email'], api=self._default_api()
+        )
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertIn('al***@example.com', out)
+        self.assertNotIn('alpha@example.com', out)
+
+        code, out, err = self._run(['usage', '--json', '--top', '1'], api=self._default_api())
+        report = json.loads(out)
+        self.assertEqual(1, len(report['users']['breakdown']))
+        self.assertEqual(1, report['users']['remaining']['users'])
+        self.assertEqual(1024 * 1024, report['users']['remaining']['total_bytes'])
+
+    def test_dry_run_makes_no_http_calls(self):
+        self._management_env()
+        api = self._default_api()
+        code, out, err = self._run(
+            [
+                'supabase-usage',
+                '--dry-run',
+                '--source',
+                'service',
+                '--db-limit-mb',
+                '500',
+                '--storage-limit-mb',
+                '1024',
+                '--mau-limit',
+                '50000',
+            ],
+            api=api,
+        )
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertEqual([], api.requests)
+        self.assertIn('project-ref', out)
+        self.assertIn('Service API 估算模式', out)
+        self.assertIn('500 MB', out)
+        self.assertNotIn(USAGE_MGMT_TOKEN, out + err)
+
+    def test_service_mode_uses_apikey_only_for_opaque_secret(self):
+        now = datetime.datetime.now(datetime.timezone.utc)
+        self._write_env(
+            'SUPABASE_URL=https://project-ref.supabase.co\n'
+            'SUPABASE_SECRET_KEY=' + USAGE_OPAQUE_KEY + '\n'
+        )
+        api = FakeSupabaseAPI(
+            service={
+                'users': [
+                    {
+                        'id': 'u1',
+                        'email': 'alpha@example.com',
+                        'last_sign_in_at': (now - datetime.timedelta(days=2)).isoformat(),
+                        'user_metadata': {'display_name': 'Alpha'},
+                    }
+                ],
+                'cloud_business_snapshots': [
+                    {'user_id': 'u1', 'payload': {'a': 'x' * 10}, 'row_count': 3}
+                ],
+                'cloud_business_snapshot_history': [
+                    {'user_id': 'u1', 'payload': {'b': 'y' * 5}, 'row_count': 2}
+                ],
+                'profile_accounts': [
+                    {
+                        'user_id': 'u1',
+                        'display_name': 'Alpha',
+                        'avatar_bytes': '\\x' + 'ab' * 4,
+                        'avatar_mime_type': 'image/png',
+                    }
+                ],
+            }
+        )
+        code, out, err = self._run(['usage', '--json', '--source', 'service'], api=api)
+        self.assertEqual(subject.EXIT_OK, code, err)
+        self.assertTrue(api.requests)
+        headers = {key.lower(): value for key, value in api.requests[0].headers.items()}
+        self.assertEqual(USAGE_OPAQUE_KEY, headers['apikey'])
+        self.assertNotIn('authorization', headers)
+
+        report = json.loads(out)
+        self.assertEqual('service', report['source'])
+        self.assertFalse(report['exact_database_size'])
+        self.assertIsNone(report['database']['system_bytes'])
+        self.assertEqual(0, report['storage']['used_bytes'])
+        self.assertEqual(1, report['mau']['used'])
+        profile = report['users']['breakdown'][0]
+        self.assertEqual(4, profile['profile_bytes'])
+        self.assertEqual(2, profile['history_count'])
+        self.assertGreater(profile['snapshot_bytes'], 0)
+        self.assertTrue(any('SUPABASE_ACCESS_TOKEN' in note for note in report['notes']))
+        self.assertNotIn(USAGE_OPAQUE_KEY, out + err)
+
+    def test_service_mode_sends_bearer_for_legacy_jwt_secret(self):
+        self._write_env(
+            'SUPABASE_URL=https://project-ref.supabase.co\n'
+            'SUPABASE_SERVICE_ROLE_KEY=' + USAGE_JWT_KEY + '\n'
+        )
+        api = FakeSupabaseAPI(service={'users': []})
+        code, out, err = self._run(['usage', '--json', '--source', 'service'], api=api)
+        self.assertEqual(subject.EXIT_OK, code, err)
+        headers = {key.lower(): value for key, value in api.requests[0].headers.items()}
+        self.assertEqual(USAGE_JWT_KEY, headers['apikey'])
+        self.assertEqual('Bearer ' + USAGE_JWT_KEY, headers['authorization'])
+        self.assertNotIn(USAGE_JWT_KEY, out + err)
+
+    def test_missing_credentials_name_both_sources(self):
+        self._write_env(
+            'SUPABASE_URL=https://project-ref.supabase.co\n'
+            'SUPABASE_PUBLISHABLE_KEY=sb_publishable_demo\n'
+        )
+        code, out, err = self._run(['supabase-usage'], api=FakeSupabaseAPI())
+        self.assertEqual(subject.EXIT_MISSING_CONFIG, code)
+        self.assertIn('SUPABASE_ACCESS_TOKEN', err)
+        self.assertIn('SUPABASE_SECRET_KEY', err)
+
+    def test_invalid_url_returns_missing_config(self):
+        self._write_env(
+            'SUPABASE_URL=http://insecure.example.com\n'
+            'SUPABASE_ACCESS_TOKEN=' + USAGE_MGMT_TOKEN + '\n'
+        )
+        code, out, err = self._run(['supabase-usage'], api=FakeSupabaseAPI())
+        self.assertEqual(subject.EXIT_MISSING_CONFIG, code)
+        self.assertIn('SUPABASE_URL', err)
+        self.assertNotIn(USAGE_MGMT_TOKEN, err)
+
+    def test_http_error_message_is_sanitized(self):
+        self._management_env()
+
+        def failing(request, timeout=None):
+            headers = {'Authorization': 'Bearer ' + USAGE_MGMT_TOKEN}
+            raise urllib.error.HTTPError(request.full_url, 401, 'Unauthorized', headers, None)
+
+        code, out, err = self._run(['supabase-usage', '--source', 'management'], api=failing)
+        self.assertEqual(subject.EXIT_MISSING_CONFIG, code)
+        self.assertIn('401', err)
+        self.assertNotIn(USAGE_MGMT_TOKEN, out + err)
+        self.assertNotIn('Bearer', out + err)
+
+    def test_unsafe_table_name_is_rejected_before_sql_concatenation(self):
+        self._management_env()
+        api = self._default_api(
+            tables=[
+                {
+                    'table_name': 'users; DROP TABLE auth.users',
+                    'has_user_id': True,
+                    'total_bytes': 1024,
+                }
+            ]
+        )
+        code, out, err = self._run(['supabase-usage'], api=api)
+        self.assertEqual(subject.EXIT_FAILED, code)
+        self.assertIn('非法表名', err)
+        queries = [
+            json.loads(request.data.decode('utf-8'))['query']
+            for request in api.requests
+            if request.data
+        ]
+        self.assertFalse(any('DROP TABLE' in query for query in queries))
+        self.assertNotIn(USAGE_MGMT_TOKEN, out + err)
+
+    def test_client_define_whitelist_is_unchanged(self):
+        self.assertEqual(
+            ('SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEY'), subject.CLIENT_DEFINE_KEYS
+        )
+        self.assertIs(subject.handle_supabase_usage, subject.HANDLERS['supabase-usage'])
+        self.assertIs(subject.handle_supabase_usage, subject.HANDLERS['usage'])
+        self.assertIs(subject.handle_supabase_usage, subject.HANDLERS['quota'])
+
+    def test_usage_credentials_never_reach_the_defines_file(self):
+        self._write_env(
+            'SUPABASE_URL=https://project-ref.supabase.co\n'
+            'SUPABASE_PUBLISHABLE_KEY=sb_publishable_demo\n'
+            'SUPABASE_ACCESS_TOKEN=' + USAGE_MGMT_TOKEN + '\n'
+            'SUPABASE_SECRET_KEY=' + USAGE_OPAQUE_KEY + '\n'
+        )
+        runner = FakeRunner()
+        out, err = io.StringIO(), io.StringIO()
+        code = subject.main(
+            ['build', '--target', 'apk', '--release', '--dry-run'],
+            runner=runner,
+            environ={},
+            out=out,
+            err=err,
+            repo=self.repo,
+        )
+        self.assertEqual(subject.EXIT_OK, code, err.getvalue())
+        self.assertNotIn(USAGE_MGMT_TOKEN, out.getvalue() + err.getvalue())
+        self.assertNotIn(USAGE_OPAQUE_KEY, out.getvalue() + err.getvalue())
+        self.assertIn('SUPABASE_ACCESS_TOKEN', out.getvalue())
 
 
 if __name__ == '__main__':
