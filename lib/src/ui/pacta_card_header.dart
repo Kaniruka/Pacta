@@ -15,12 +15,16 @@ class PactaCardHeader extends StatelessWidget {
   const PactaCardHeader({
     super.key,
     required this.title,
+    this.leading,
     this.trailing,
     this.titleStyle,
     this.padding,
   });
 
   final String title;
+
+  /// 标题左侧的紧凑视觉锚点（例如卡片自定义图标井）。
+  final Widget? leading;
   final Widget? trailing;
   final TextStyle? titleStyle;
   final EdgeInsetsGeometry? padding;
@@ -35,6 +39,10 @@ class PactaCardHeader extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (leading != null) ...[
+              leading!,
+              const SizedBox(width: PactaSpacing.sm),
+            ],
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.only(top: PactaSpacing.sm),

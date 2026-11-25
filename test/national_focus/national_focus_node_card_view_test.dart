@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_shared_widgets.dart';
@@ -19,6 +20,7 @@ NationalFocusCard _card(
   int bestConsecutiveDays = 0,
   int successfulDays = 0,
   String? parentId,
+  int? activeStrengtheningLevel,
 }) => NationalFocusCard(
   id: id,
   name: name,
@@ -32,6 +34,7 @@ NationalFocusCard _card(
   bestConsecutiveDays: bestConsecutiveDays,
   successfulDays: successfulDays,
   parentId: parentId,
+  activeStrengtheningLevel: activeStrengtheningLevel,
 );
 
 class _FixtureRepository extends UnavailableNationalFocusRepository {
@@ -138,11 +141,19 @@ void main() {
       reason: '简洁视图不展示国策规则',
     );
     expect(
-      find.descendant(of: node, matching: find.byIcon(Icons.lightbulb)),
+      find.descendant(of: node, matching: find.byIcon(LucideIcons.lightbulb)),
       findsOneWidget,
     );
-    // 简洁视图同样不展示状态微标、根节点微标与已内化徽记。
-    for (final label in ['点亮', '根', '已内化', '连续 5 天']) {
+    // 简洁视图同样不展示状态微标、根节点微标、已内化与档位徽记。
+    expect(
+      find.descendant(
+        of: node,
+        matching: find.byKey(const ValueKey('national-focus-node-level-badge')),
+      ),
+      findsNothing,
+      reason: '简洁视图只有圆形状态图标与名称，不显示 LV0 档位胶囊',
+    );
+    for (final label in ['点亮', '根', '已内化', '连续 5 天', 'LV0']) {
       expect(
         find.descendant(of: node, matching: find.text(label)),
         findsNothing,
@@ -281,23 +292,36 @@ void main() {
       final statusIcon = find.descendant(
         of: finder,
         matching: find.byIcon(switch (card.state) {
-          NationalFocusCardState.lit => Icons.lightbulb,
           NationalFocusCardState.pendingTodayConfirmation =>
             Icons.hourglass_top,
-          NationalFocusCardState.extinguished => Icons.lightbulb_outline,
+          _ => LucideIcons.lightbulb,
         }),
       );
-      // 抬头行垂直居中：短名称不再把图标井顶到卡片上缘，标题中线与图标井
-      // 中线严格重合，上下重心一致。
+      // 抬头行垂直居中：图标井对齐的是「标题 + 档位胶囊」整列的中心，
+      // 因此标题中线略高于图标井中线，整列重心仍与图标井一致。
+      final iconCenter = tester.getRect(statusIcon).center.dy;
+      final levelBadgeRect = tester.getRect(
+        find.descendant(
+          of: finder,
+          matching: find.byKey(
+            const ValueKey('national-focus-node-level-badge'),
+          ),
+        ),
+      );
+      expect(
+        (nameRect.top + levelBadgeRect.bottom) / 2,
+        closeTo(iconCenter, 0.51),
+        reason: '${card.name} 的标题与胶囊整列与图标井垂直居中对齐',
+      );
       expect(
         nameRect.center.dy,
-        closeTo(tester.getRect(statusIcon).center.dy, 0.51),
-        reason: '${card.name} 的标题与图标井垂直居中对齐，抬头不再顶对齐',
+        lessThan(iconCenter),
+        reason: '${card.name} 的胶囊行常显，标题自然落在图标井中线之上',
       );
       expect(
         nameRect.top,
-        greaterThanOrEqualTo(cardRect.top + 9.99),
-        reason: '${card.name} 的标题行从 9dp 上内边距开始，顶部没有额外占位',
+        greaterThanOrEqualTo(cardRect.top + 8.99),
+        reason: '${card.name} 的标题行紧贴 9dp 上内边距，顶部没有额外占位',
       );
       // 四边等宽：RoundedRectangleBorder 只有一条 BorderSide，四条边同宽。
       final shape =
@@ -515,7 +539,7 @@ void main() {
     final doneIconRect = tester.getRect(
       find.descendant(
         of: cardKey(done.id),
-        matching: find.byIcon(Icons.lightbulb),
+        matching: find.byIcon(LucideIcons.lightbulb),
       ),
     );
     expect(
@@ -690,6 +714,83 @@ void main() {
     await tearDownTree(tester);
   });
 
+  testWidgets('详细卡片常显 LV0–LV5 档位胶囊：基础中性、强化主色', (tester) async {
+    final base = _card('base', '基础卡', state: NationalFocusCardState.lit);
+    final strengthened = [
+      for (var level = 1; level <= 5; level++)
+        _card(
+          'lv$level',
+          '强化卡 $level',
+          state: NationalFocusCardState.lit,
+          activeStrengtheningLevel: level,
+        ),
+    ];
+    final repository = _FixtureRepository([base, ...strengthened]);
+    addTearDown(repository.dispose);
+    await pumpTree(tester, repository, size: const Size(1280, 1600));
+    await switchToDetailed(tester);
+
+    final colors = Theme.of(tester.element(cardKey(base.id))).colorScheme;
+    Finder badgeOf(NationalFocusCard card) => find.descendant(
+      of: cardKey(card.id),
+      matching: find.byKey(const ValueKey('national-focus-node-level-badge')),
+    );
+    // 未强化：中性底 LV0，语义说明「基础要求」。
+    expect(badgeOf(base), findsOneWidget);
+    expect(
+      find.descendant(of: cardKey(base.id), matching: find.text('LV0')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: cardKey(base.id), matching: find.byTooltip('基础要求')),
+      findsOneWidget,
+    );
+    expect(
+      (tester.widget<DecoratedBox>(badgeOf(base)).decoration as BoxDecoration)
+          .color,
+      colors.surfaceContainerHighest,
+    );
+    // 强化 1–5 级：主色底 LV1–LV5。
+    for (final card in strengthened) {
+      final level = card.activeStrengtheningLevel;
+      expect(badgeOf(card), findsOneWidget, reason: '每张详细卡都常显档位胶囊');
+      expect(
+        find.descendant(of: cardKey(card.id), matching: find.text('LV$level')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: cardKey(card.id),
+          matching: find.byTooltip('强化等级 $level'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        (tester.widget<DecoratedBox>(badgeOf(card)).decoration as BoxDecoration)
+            .color,
+        colors.primaryContainer,
+      );
+    }
+    // 语义标签同步播报档位。
+    final semantics = tester.widget<Semantics>(
+      find
+          .descendant(
+            of: nodeKey(strengthened.last.id),
+            matching: find.byType(Semantics),
+          )
+          .first,
+    );
+    expect(semantics.properties.label, contains('强化等级 5'));
+    final baseSemantics = tester.widget<Semantics>(
+      find
+          .descendant(of: nodeKey(base.id), matching: find.byType(Semantics))
+          .first,
+    );
+    expect(baseSemantics.properties.label, contains('基础要求'));
+    expect(tester.takeException(), isNull);
+    await tearDownTree(tester);
+  });
+
   // 最坏节点：2 行长标题 + 180d/180d + 根 + 已内化 + 3 行长规则，320×800 窄屏。
   for (final brightness in Brightness.values) {
     for (final scale in [1.0, 2.0]) {
@@ -706,6 +807,7 @@ void main() {
           currentConsecutiveDays: 180,
           bestConsecutiveDays: 180,
           successfulDays: 180,
+          activeStrengtheningLevel: 5,
         );
         expect(card.isTopLevel, isTrue);
         expect(card.isInternalized, isTrue);
@@ -724,8 +826,8 @@ void main() {
         expect(cardFinder, findsOneWidget);
         expect(
           tester.getSize(cardFinder).height,
-          closeTo(160 * scale, 0.01),
-          reason: '详细视图节点高度 160dp 随 textScaler 线性缩放',
+          closeTo(176 * scale, 0.01),
+          reason: '详细视图节点高度 176dp 随 textScaler 线性缩放',
         );
         expect(
           find.descendant(of: cardFinder, matching: find.byType(ColoredBox)),
@@ -767,6 +869,21 @@ void main() {
           find.descendant(of: cardFinder, matching: find.text('已内化')),
           findsOneWidget,
         );
+        // 最坏组合同时带上常显的 LV5 档位胶囊，仍零溢出。
+        expect(
+          find.descendant(
+            of: cardFinder,
+            matching: find.byKey(
+              const ValueKey('national-focus-node-level-badge'),
+            ),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(of: cardFinder, matching: find.text('LV5')),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
 
         // 名称仍最多两行；规则升到最多三行并左对齐。
         final nameFinder = find.descendant(
@@ -848,7 +965,7 @@ void main() {
         final iconRect = tester.getRect(
           find.descendant(
             of: cardFinder,
-            matching: find.byIcon(Icons.lightbulb),
+            matching: find.byIcon(LucideIcons.lightbulb),
           ),
         );
         expect(

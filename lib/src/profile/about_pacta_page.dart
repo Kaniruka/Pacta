@@ -10,7 +10,7 @@ import '../ui/pacta_grouped_list.dart';
 ///
 /// 仓库没有引入 `package_info_plus`，客户端也不从平台通道读取版本；这里只有
 /// 一个常量，改版本时与 `pubspec.yaml` 一起改，界面不再各写一套。
-const String pactaAppVersion = '0.3.1+4';
+const String pactaAppVersion = '0.4.0+5';
 
 /// 方法论出处：用户提供的知乎原回答。
 const String pactaTheorySourceUrl =
@@ -188,7 +188,7 @@ class AboutPactaPage extends StatelessWidget {
     );
   }
 
-  /// 版本胶囊：一眼可读的 `v0.3.1+4`，与开源许可页显示的版本同一个常量。
+  /// 版本胶囊：一眼可读的 `v0.4.0+5`，与开源许可页显示的版本同一个常量。
   Widget _versionPill(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;

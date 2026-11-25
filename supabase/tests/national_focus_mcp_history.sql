@@ -31,7 +31,6 @@ begin
     (owner_id,1,jsonb_build_object('schemaVersion',1,'userId',owner_id::text,'tables',jsonb_build_object(
       'local_national_focus_cards',jsonb_build_array(jsonb_build_object('user_id',owner_id::text,'id','owner-card','name','Owner card','action','Owner action')),
       'local_national_focus_strengthening_levels',jsonb_build_array(jsonb_build_object('user_id',owner_id::text,'card_id','owner-card','level_number',1,'action_override','Strengthened action')),
-      'local_national_focus_requirement_versions',jsonb_build_array(jsonb_build_object('user_id',owner_id::text,'id','owner-version','card_id','owner-card','version_number',1,'effective_action','Owner action')),
       'local_national_focus_maintenance',jsonb_build_array(jsonb_build_object('user_id',owner_id::text,'last_settled_checkpoint_at',now())),
       'local_national_focus_failures',jsonb_build_array(jsonb_build_object('user_id',owner_id::text,'id','owner-event')),
       'focus_sync_sources',jsonb_build_array(jsonb_build_object('payload','MIXED_SOURCE_LOG_OUT_OF_SCOPE')),
@@ -39,7 +38,7 @@ begin
     )),'owner-device','Owner fixture device',now(),8),
     (other_id,1,jsonb_build_object('schemaVersion',1,'userId',other_id::text,'tables',jsonb_build_object(
       'local_national_focus_cards',jsonb_build_array(jsonb_build_object('user_id',other_id::text,'id','other-card','name','OTHER_USER_SECRET')),
-      'local_national_focus_strengthening_levels','[]'::jsonb,'local_national_focus_requirement_versions','[]'::jsonb,
+      'local_national_focus_strengthening_levels','[]'::jsonb,
       'local_national_focus_maintenance','[]'::jsonb,'local_national_focus_failures','[]'::jsonb
     )),'other-device','Other fixture device',now(),1);
   insert into public.user_suspension_periods(user_id) values(other_id);
@@ -149,7 +148,7 @@ begin
   values(current_setting('nf_content.empty_id')::uuid,1,
     jsonb_build_object('schemaVersion',1,'userId',current_setting('nf_content.empty_id'),'tables',jsonb_build_object(
       'local_national_focus_cards','[]'::jsonb,'local_national_focus_strengthening_levels','[]'::jsonb,
-      'local_national_focus_requirement_versions','[]'::jsonb,'local_national_focus_maintenance','[]'::jsonb,
+      'local_national_focus_maintenance','[]'::jsonb,
       'local_national_focus_failures','[]'::jsonb)), 'empty-device','Empty fixture device',now(),0);
   delete from public.cloud_business_snapshots where user_id=current_setting('nf_content.empty_id')::uuid;
   begin
@@ -169,10 +168,21 @@ reset role;
 set local role authenticated;
 select set_config('request.jwt.claim.sub',current_setting('nf_content.owner_id'),true);
 select public.save_cloud_business_snapshot(1,
-  jsonb_build_object('schemaVersion',2,'userId',current_setting('nf_content.owner_id'),'tables',jsonb_build_object(
-    'local_national_focus_cards',jsonb_build_array(jsonb_build_object('user_id',current_setting('nf_content.owner_id'),'id','replacement-card','name','Replacement card')),
-    'local_national_focus_strengthening_levels','[]'::jsonb,'local_national_focus_requirement_versions','[]'::jsonb,
-    'local_national_focus_maintenance','[]'::jsonb,'local_national_focus_failures','[]'::jsonb,'focus_sync_sources','[]'::jsonb
+  jsonb_build_object('schemaVersion',4,'userId',current_setting('nf_content.owner_id'),'tables',jsonb_build_object(
+    'local_goals','[]'::jsonb,
+    'local_schedules','[]'::jsonb,
+    'local_schedule_recurrences','[]'::jsonb,
+    'focus_appointments','[]'::jsonb,
+    'local_national_focus_cards',jsonb_build_array(jsonb_build_object(
+      'user_id',current_setting('nf_content.owner_id'),
+      'id','replacement-card',
+      'name','Replacement card',
+      'icon_key','lucide:book-open'
+    )),
+    'local_national_focus_strengthening_levels','[]'::jsonb,
+    'local_national_focus_maintenance','[]'::jsonb,
+    'local_national_focus_failures','[]'::jsonb,
+    'focus_sync_sources','[]'::jsonb
   )),'replacement-device','Replacement fixture device',now(),1);
 reset role;
 set local role service_role;

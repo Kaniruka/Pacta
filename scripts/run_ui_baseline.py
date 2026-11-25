@@ -56,6 +56,7 @@ SOURCE_FILES = (
     'lib/src/focus/focus_statistics.dart',
     'lib/src/national_focus/national_focus_ai_analysis_page.dart',
     'lib/src/national_focus/national_focus_failure_pages.dart',
+    'lib/src/national_focus/national_focus_icons.dart',
     'lib/src/national_focus/national_focus_library_page.dart',
     'lib/src/national_focus/national_focus_shared_widgets.dart',
     'lib/src/national_focus/national_focus_strengthening_page.dart',

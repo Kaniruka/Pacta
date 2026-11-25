@@ -86,7 +86,6 @@ begin
           )
         ),
         'local_national_focus_strengthening_levels', '[]'::jsonb,
-        'local_national_focus_requirement_versions', '[]'::jsonb,
         'local_national_focus_maintenance', '[]'::jsonb,
         'local_national_focus_failures', '[]'::jsonb
       )

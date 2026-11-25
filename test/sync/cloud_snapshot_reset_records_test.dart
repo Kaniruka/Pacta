@@ -50,7 +50,7 @@ void main() {
       'is_in_tree, parent_id, state, successful_days, current_consecutive_days, '
       'best_consecutive_days, maintenance_cycle_started, failure_reason, '
       'cascade_source_card_id, cascade_prior_state, review_disposition, '
-      'active_strengthening_level FROM local_national_focus_cards '
+      'active_strengthening_level, icon_key FROM local_national_focus_cards '
       "WHERE user_id = 'user-a' ORDER BY id",
     );
     expect(cards.map((row) => row['id']), [
@@ -86,30 +86,15 @@ void main() {
       reason: '指向不存在的强化等级时该字段收敛为空',
     );
 
-    // 要求版本：每张保留卡一条 version_number = 1、未结束的当前生效版本。
-    final versions = await _rows(
+    // 生效版本记录整表已下线：重置后既不会重建，也不能残留。
+    final versionTable = await _rows(
       database,
-      'SELECT card_id, version_number, strengthening_level_number, '
-      'effective_trigger_condition, effective_action, scope, exception_notes, '
-      'effective_until FROM local_national_focus_requirement_versions '
-      "WHERE user_id = 'user-a' ORDER BY card_id",
+      "SELECT name FROM sqlite_master WHERE type = 'table' "
+      "AND name = 'local_national_focus_requirement_versions'",
     );
-    expect(versions.map((row) => row['card_id']), [
-      'card-child',
-      'card-lib',
-      'card-root',
-    ]);
-    for (final version in versions) {
-      expect(version['version_number'], 1);
-      expect(version['effective_until'], isNull);
-    }
-    final rootVersion = versions.firstWhere(
-      (row) => row['card_id'] == 'card-root',
-    );
-    expect(rootVersion['strengthening_level_number'], 2);
-    expect(rootVersion['effective_trigger_condition'], '强化条件');
-    expect(rootVersion['effective_action'], '先写第一步');
-    expect(rootVersion['scope'], '工作');
+    expect(versionTable, isEmpty);
+    // 卡片自定义图标属于用户写下的内容，重置记录时原样保留。
+    expect(root['icon_key'], 'lucide:book-open');
 
     // 专注链：记录全部清空，有效规则与信号保留。
     for (final table in const [
@@ -527,6 +512,7 @@ Future<void> _seed(PactaDatabase database) async {
     'cascade_prior_state': 'lit',
     'review_disposition': 'accepted',
     'active_strengthening_level': activeLevel == 0 ? null : activeLevel,
+    'icon_key': null,
     'created_at': created,
     'updated_at': updated,
     'deleted_at': deletedAt,
@@ -543,7 +529,8 @@ Future<void> _seed(PactaDatabase database) async {
       )
       ..['trigger_condition'] = '打开待办清单'
       ..['action'] = '先写第一步'
-      ..['scope'] = '工作',
+      ..['scope'] = '工作'
+      ..['icon_key'] = 'lucide:book-open',
   );
   await _insert(
     database,
@@ -623,42 +610,6 @@ Future<void> _seed(PactaDatabase database) async {
     'local_national_focus_strengthening_levels',
     level('card-deleted', 1, '已删强化'),
   );
-
-  Map<String, Object?> version(String id, String cardId, int number) => {
-    'user_id': 'user-a',
-    'id': id,
-    'card_id': cardId,
-    'version_number': number,
-    'strengthening_level_number': null,
-    'effective_trigger_condition': '旧条件',
-    'effective_action': '旧动作',
-    'scope': null,
-    'exception_notes': null,
-    'effective_from': created,
-    'effective_until': updated,
-  };
-  await _insert(
-    database,
-    'local_national_focus_requirement_versions',
-    version('ver-root-1', 'card-root', 1),
-  );
-  await _insert(database, 'local_national_focus_requirement_versions', {
-    ...version('ver-root-2', 'card-root', 2),
-    'strengthening_level_number': 2,
-    'effective_trigger_condition': '强化条件',
-    'effective_action': '先写第一步',
-    'scope': '工作',
-    'effective_until': null,
-  });
-  await _insert(database, 'local_national_focus_requirement_versions', {
-    ...version('ver-lib-1', 'card-lib', 1),
-    'strengthening_level_number': 1,
-    'effective_until': null,
-  });
-  await _insert(database, 'local_national_focus_requirement_versions', {
-    ...version('ver-deleted-1', 'card-deleted', 1),
-    'effective_until': null,
-  });
 
   await _insert(database, 'local_national_focus_maintenance', {
     'user_id': 'user-a',

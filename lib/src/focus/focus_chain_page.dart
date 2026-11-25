@@ -625,30 +625,87 @@ class _FocusRecoveryStrip extends StatelessWidget {
 }
 
 /// Full 下必为例 manager, opened from the Focus Chain first screen.
-class PrecedentRulesPage extends StatelessWidget {
+///
+/// M3 Expressive 二级页：标题只在 AppBar 出现一次，规则说明收进右上角
+/// 单层 `Tooltip` 的 ⓘ；正文只有 `PactaSectionHeader` + `PactaGroupedList`
+/// 的分段白卡，新建动作独立成右下角扩展 FAB，不再和列表挤在同一张卡片里。
+class PrecedentRulesPage extends StatefulWidget {
   const PrecedentRulesPage({super.key});
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('下必为例')),
-    // 推入式二级页统一居中并限制正文宽度：桌面宽屏下与页面级卡片同一
-    // 阅读节奏，不再横向撑满整块画布。
-    body: Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 800),
-        child: ListView(
-          padding: PactaSpacing.pageInsets(
-            context,
-            top: PactaSpacing.sm,
-            bottom: PactaSpacing.xl,
+  State<PrecedentRulesPage> createState() => _PrecedentRulesPageState();
+}
+
+class _PrecedentRulesPageState extends State<PrecedentRulesPage> {
+  final _cardKey = GlobalKey<PrecedentRulesCardState>();
+  final _infoTooltipKey = GlobalKey<TooltipState>();
+
+  @override
+  Widget build(BuildContext context) {
+    return PactaSurfaces.wrapIfMissing(
+      context,
+      Scaffold(
+        appBar: AppBar(
+          title: const Text('下必为例'),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: PactaSpacing.sm),
+              // 只有一层 Tooltip：IconButton 不再自带第二个命名气泡；
+              // Semantics 保留可读名称，读屏仍知道这是说明按钮。
+              child: Semantics(
+                label: '下必为例说明',
+                button: true,
+                child: Tooltip(
+                  key: _infoTooltipKey,
+                  triggerMode: TooltipTriggerMode.tap,
+                  message: '专注中断时可直接选择或新建；规则含义由你自己判断。',
+                  child: IconButton(
+                    key: const ValueKey('precedent-rules-info'),
+                    onPressed: () =>
+                        _infoTooltipKey.currentState?.ensureTooltipVisible(),
+                    icon: const Icon(
+                      Icons.info_outline,
+                      size: PactaIconSizes.md,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        // 推入式二级页统一顶对齐并限制正文宽度：桌面宽屏下与页面级卡片
+        // 同一阅读节奏，不再横向撑满整块画布；20:9 长屏也不会被垂直居中
+        // 压到页面中部。
+        body: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 800),
+            child: ListView(
+              padding: PactaSpacing.pageInsets(
+                context,
+                top: PactaSpacing.sm,
+                bottom: 100,
+              ),
+              // 页面本身已有 AppBar 标题「下必为例」，卡片改称「共享规则」。
+              children: [
+                PrecedentRulesCard(
+                  key: _cardKey,
+                  showTitle: false,
+                  showCreateButton: false,
+                ),
+              ],
+            ),
           ),
-          // 页面本身已有 AppBar 标题「下必为例」，卡片不再重复一次。
-          children: const [PrecedentRulesCard(showTitle: false)],
+        ),
+        floatingActionButton: FloatingActionButton.extended(
+          key: const ValueKey('precedent-rules-create'),
+          onPressed: () => _cardKey.currentState?.createRule(),
+          icon: const Icon(Icons.add, size: PactaIconSizes.sm),
+          label: const Text('新建规则'),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// The pinned start action: choosing a task never requires scrolling away.
@@ -1898,8 +1955,11 @@ class _FocusHistoryTimeline extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
+            // 主轴收紧到内容高度：Row 的 center 才能把这段文字块真正垂直
+            // 居中，单行卡片与两行卡片的上下留白才会严格对称。
             child: Column(
               key: textColumnKey,
+              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: content,
             ),
@@ -2007,11 +2067,9 @@ class _FocusHistoryTimeline extends StatelessWidget {
           const PopupMenuItem<String>(value: 'note', child: Text('编辑节点备注')),
         PopupMenuItem<String>(
           value: 'fail',
-          child: Text(
-            '判定为失败',
-            style: Theme.of(context).textTheme.bodyLarge
-                ?.copyWith(color: colors.error),
-          ),
+          // 只取错误色，不改字阶：与「编辑节点备注」共用父级 labelLarge，
+          // 同组菜单不会出现一大一小的字号。
+          child: Text('判定为失败', style: TextStyle(color: colors.error)),
         ),
       ],
     );
@@ -2194,16 +2252,25 @@ class _FocusHistoryTimeline extends StatelessWidget {
 }
 
 class PrecedentRulesCard extends ConsumerStatefulWidget {
-  const PrecedentRulesCard({super.key, this.showTitle = true});
+  const PrecedentRulesCard({
+    super.key,
+    this.showTitle = true,
+    this.showCreateButton = true,
+  });
 
   /// 独立页已有 AppBar 标题时关掉卡片标题，避免同屏重复两次「下必为例」。
   final bool showTitle;
 
+  /// 独立嵌入（没有页面级 FAB）时在分组末段提供一条设置式新建入口。
+  final bool showCreateButton;
+
   @override
-  ConsumerState<PrecedentRulesCard> createState() => _PrecedentRulesCardState();
+  ConsumerState<PrecedentRulesCard> createState() => PrecedentRulesCardState();
 }
 
-class _PrecedentRulesCardState extends ConsumerState<PrecedentRulesCard> {
+/// 规则卡状态：页面把「新建规则」FAB 的动作委托给这张卡，避免两处各写一遍
+/// 编辑器调用与刷新逻辑。
+class PrecedentRulesCardState extends ConsumerState<PrecedentRulesCard> {
   List<PrecedentRule> _rules = const [];
   bool _loading = true;
   bool _busy = false;
@@ -2232,6 +2299,9 @@ class _PrecedentRulesCardState extends ConsumerState<PrecedentRulesCard> {
       });
     }
   }
+
+  /// 供页面级 FAB 调用：与卡片内嵌的「新建规则」入口走同一条路径。
+  Future<void> createRule() => _create();
 
   Future<void> _create() async {
     final text = await showTextEditor(
@@ -2303,102 +2373,135 @@ class _PrecedentRulesCardState extends ConsumerState<PrecedentRulesCard> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      // 卡片可能被独立嵌进裸 MaterialApp 宿主（测试或预览）：补一层表面
+      // 令牌，分段列表的卡片底色始终有定义。
+      PactaSurfaces.wrapIfMissing(context, Builder(builder: _buildCard));
+
+  Widget _buildCard(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(PactaSpacing.lg),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (widget.showTitle) ...[
-              Text('下必为例', style: theme.textTheme.titleMedium),
-              const SizedBox(height: PactaSpacing.sm),
-            ],
-            Text(
-              '专注中断时可直接选择或新建；规则含义由你自己判断。',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: colors.onSurfaceVariant,
-              ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PactaSectionHeader(
+          title: widget.showTitle ? '下必为例' : '共享规则',
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+          trailing: Text(
+            '${_rules.length} 条',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+              fontFeatures: const [ui.FontFeature.tabularFigures()],
             ),
-            const SizedBox(height: PactaSpacing.md),
-            if (_loading)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: PactaSpacing.lg),
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_rules.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: PactaSpacing.md),
-                child: Text('还没有共享规则。'),
-              )
-            else
-              // 规则是一组同质条目：行间只放 1dp hairline，不散落成独立卡片。
-              Column(
-                children: [
-                  for (final (index, rule) in _rules.indexed) ...[
-                    if (index > 0)
-                      Divider(
-                        height: 1,
-                        thickness: 1,
-                        color: colors.outlineVariant,
-                      ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(rule.text),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            tooltip: '编辑下必为例',
-                            constraints: const BoxConstraints(
-                              minWidth: 48,
-                              minHeight: 48,
-                            ),
-                            onPressed: _busy ? null : () => _edit(rule),
-                            icon: const Icon(
-                              Icons.edit_outlined,
-                              size: PactaIconSizes.compact,
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: '删除下必为例',
-                            constraints: const BoxConstraints(
-                              minWidth: 48,
-                              minHeight: 48,
-                            ),
-                            onPressed: _busy ? null : () => _delete(rule),
-                            icon: const Icon(
-                              Icons.delete_outline,
-                              size: PactaIconSizes.compact,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            if (_error != null)
-              Padding(
-                padding: const EdgeInsets.only(top: PactaSpacing.sm),
-                child: Text(
-                  _error!,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: colors.error,
-                  ),
-                ),
-              ),
-            const SizedBox(height: PactaSpacing.md),
-            FilledButton.icon(
-              onPressed: _busy ? null : _create,
-              icon: const Icon(Icons.add, size: PactaIconSizes.sm),
-              label: const Text('新建规则'),
-            ),
-          ],
+          ),
         ),
-      ),
+        ..._body(context, theme, colors),
+      ],
     );
   }
+
+  List<Widget> _body(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme colors,
+  ) {
+    if (_loading) {
+      return [
+        _plainCard(
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: PactaSpacing.lg),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ),
+      ];
+    }
+    if (_rules.isEmpty) {
+      // 空态与错误都收进纯白 20dp 卡片：页面底部不再裸铺一段文字。
+      return [
+        _plainCard(
+          Text(
+            _error ?? '还没有共享规则。',
+            style: _error == null
+                ? theme.textTheme.bodyMedium
+                : theme.textTheme.bodyMedium?.copyWith(color: colors.error),
+          ),
+        ),
+        if (widget.showCreateButton) ...[
+          const SizedBox(height: PactaSpacing.sm),
+          PactaGroupedList(children: [_createTile(colors)]),
+        ],
+      ];
+    }
+    return [
+      PactaGroupedList(
+        key: const ValueKey('precedent-rules-list'),
+        children: [
+          for (final rule in _rules) _ruleRow(context, theme, colors, rule),
+          if (widget.showCreateButton) _createTile(colors),
+        ],
+      ),
+      if (_error != null) ...[
+        const SizedBox(height: PactaSpacing.sm),
+        Text(
+          _error!,
+          style: theme.textTheme.bodyMedium?.copyWith(color: colors.error),
+        ),
+      ],
+    ];
+  }
+
+  /// 一条规则：整行点击编辑，右侧只留一颗溢出菜单。
+  Widget _ruleRow(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme colors,
+    PrecedentRule rule,
+  ) => InkWell(
+    onTap: _busy ? null : () => _edit(rule),
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+      child: Row(
+        children: [
+          Expanded(child: Text(rule.text, style: theme.textTheme.bodyLarge)),
+          PopupMenuButton<String>(
+            tooltip: '规则操作',
+            icon: const Icon(Icons.more_vert, size: PactaIconSizes.compact),
+            onSelected: (value) {
+              switch (value) {
+                case 'edit':
+                  unawaited(_edit(rule));
+                case 'delete':
+                  unawaited(_delete(rule));
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem<String>(value: 'edit', child: Text('编辑')),
+              PopupMenuItem<String>(
+                value: 'delete',
+                // 只取错误色，不改字阶：同组菜单字号一致。
+                child: Text('删除', style: TextStyle(color: colors.error)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+
+  /// 独立嵌入时的设置式新建入口：与规则条目同属一个分段组，不是裸大按钮。
+  Widget _createTile(ColorScheme colors) => PactaSettingsTile(
+    leading: Icon(
+      Icons.add_circle_outline,
+      size: PactaIconSizes.md,
+      color: colors.primary,
+    ),
+    title: '新建规则',
+    showChevron: false,
+    onTap: _busy ? null : _create,
+  );
+
+  Widget _plainCard(Widget child) => Card(
+    child: Padding(padding: PactaSpacing.cardInsets, child: child),
+  );
 }

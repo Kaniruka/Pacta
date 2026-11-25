@@ -251,14 +251,11 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     final action = _requiredText(draft.action, '国策规则');
     final scope = _optionalText(draft.scope);
     final exceptionNotes = _optionalText(draft.exceptionNotes);
-    final initialVersion = NationalFocusRequirementVersion(
-      versionNumber: 1,
-      strengtheningLevelNumber: null,
-      effectiveTriggerCondition: triggerCondition,
-      effectiveAction: action,
-      scope: scope,
-      exceptionNotes: exceptionNotes,
-      effectiveFrom: timestamp,
+    final iconKey = _optionalText(draft.iconKey);
+    final levels = _normalizeStrengtheningLevels(draft.strengtheningLevels);
+    final activeLevel = _validateActiveStrengtheningLevel(
+      draft.activeStrengtheningLevel,
+      levels,
     );
     final card = NationalFocusCard(
       id: id,
@@ -267,11 +264,13 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       action: action,
       scope: scope,
       exceptionNotes: exceptionNotes,
+      iconKey: iconKey,
       isInTree: false,
       state: NationalFocusCardState.extinguished,
       createdAt: timestamp,
       updatedAt: timestamp,
-      requirementVersions: [initialVersion],
+      strengtheningLevels: levels,
+      activeStrengtheningLevel: activeLevel,
     );
     await database.transaction(() async {
       await database
@@ -285,29 +284,22 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
               action: card.action,
               scope: Value(card.scope),
               exceptionNotes: Value(card.exceptionNotes),
+              iconKey: Value(card.iconKey),
               isInTree: const Value(false),
               parentId: const Value(null),
               state: Value(card.state.storageValue),
+              activeStrengtheningLevel: Value(card.activeStrengtheningLevel),
               createdAt: timestamp,
               updatedAt: timestamp,
             ),
           );
-      await database
-          .into(database.localNationalFocusRequirementVersions)
-          .insert(
-            LocalNationalFocusRequirementVersionsCompanion.insert(
-              userId: userId,
-              id: _uuid.v4(),
-              cardId: card.id,
-              versionNumber: 1,
-              strengtheningLevelNumber: const Value(null),
-              effectiveTriggerCondition: triggerCondition,
-              effectiveAction: action,
-              scope: Value(scope),
-              exceptionNotes: Value(exceptionNotes),
-              effectiveFrom: timestamp,
-            ),
-          );
+      if (levels.isNotEmpty) {
+        await _writeStrengtheningLevels(
+          cardId: card.id,
+          levels: levels,
+          timestamp: timestamp,
+        );
+      }
       await _recordSyncSnapshot(operation: 'create_card');
     });
     return card;
@@ -326,47 +318,66 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       action: _requiredText(draft.action, '国策规则'),
       scope: _optionalText(draft.scope),
       exceptionNotes: _optionalText(draft.exceptionNotes),
+      iconKey: _optionalText(draft.iconKey),
+      strengtheningLevels: draft.strengtheningLevels,
+      activeStrengtheningLevel: draft.activeStrengtheningLevel,
+      updateStrengthening: draft.updateStrengthening,
     );
     await database.transaction(() async {
       final card = await _findCardRow(cardId);
       if (card.deletedAt != null) {
         throw StateError('已删除的国策卡需要先恢复到卡片库。');
       }
-      if (card.name == normalized.name &&
-          card.triggerCondition == normalized.triggerCondition &&
-          card.action == normalized.action &&
-          card.scope == normalized.scope &&
-          card.exceptionNotes == normalized.exceptionNotes) {
-        return;
-      }
-
-      final selected = card.activeStrengtheningLevel;
-      final level = selected == null
-          ? null
-          : await (database.select(
-                  database.localNationalFocusStrengtheningLevels,
-                )..where(
-                  (level) =>
-                      level.userId.equals(userId) &
-                      level.cardId.equals(cardId) &
-                      level.levelNumber.equals(selected),
-                ))
-                .getSingleOrNull();
-      final timestamp = _nextTimestamp(card.updatedAt);
-      if ((level?.triggerConditionOverride ?? card.triggerCondition) !=
-              (level?.triggerConditionOverride ??
-                  normalized.triggerCondition) ||
-          (level?.actionOverride ?? card.action) !=
-              (level?.actionOverride ?? normalized.action) ||
+      // 编辑页把名称、图标、规则、例外与强化档位一起提交：这里先校验整份
+      // 草稿，再在同一次事务里落盘，任何一项非法都不会留下半张卡。
+      final updatesStrengthening =
+          normalized.updateStrengthening ||
+          normalized.strengtheningLevels != null;
+      final levels = updatesStrengthening
+          ? _normalizeStrengtheningLevels(normalized.strengtheningLevels)
+          : const <NationalFocusStrengtheningLevel>[];
+      final activeLevel = updatesStrengthening
+          ? _validateActiveStrengtheningLevel(
+              normalized.activeStrengtheningLevel,
+              levels,
+            )
+          : card.activeStrengtheningLevel;
+      final storedLevels = updatesStrengthening
+          ? await (database.select(
+                    database.localNationalFocusStrengtheningLevels,
+                  )
+                  ..where(
+                    (level) =>
+                        level.userId.equals(userId) &
+                        level.cardId.equals(cardId),
+                  )
+                  ..orderBy([(level) => OrderingTerm.asc(level.levelNumber)]))
+                .get()
+          : const <LocalNationalFocusStrengtheningLevel>[];
+      final levelsChanged =
+          updatesStrengthening &&
+          !_sameStrengtheningLevels(storedLevels, levels);
+      final activeChanged =
+          updatesStrengthening && card.activeStrengtheningLevel != activeLevel;
+      final fieldsChanged =
+          card.name != normalized.name ||
+          card.triggerCondition != normalized.triggerCondition ||
+          card.action != normalized.action ||
           card.scope != normalized.scope ||
-          card.exceptionNotes != normalized.exceptionNotes) {
-        await _appendRequirementVersion(
-          card: card,
-          levelNumber: selected,
-          triggerOverride: level?.triggerConditionOverride,
-          actionOverride: level?.actionOverride,
-          effectiveFrom: timestamp,
-          updatedDraft: normalized,
+          card.exceptionNotes != normalized.exceptionNotes ||
+          card.iconKey != normalized.iconKey;
+      if (!fieldsChanged && !levelsChanged && !activeChanged) return;
+
+      final timestamp = _nextTimestamp(card.updatedAt);
+      if (levelsChanged) {
+        await _writeStrengtheningLevels(
+          cardId: cardId,
+          levels: levels,
+          timestamp: timestamp,
+          retainedCreatedAt: {
+            for (final level in storedLevels)
+              level.levelNumber: level.createdAt,
+          },
         );
       }
       await _updateCard(
@@ -377,6 +388,10 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
           action: Value(normalized.action),
           scope: Value(normalized.scope),
           exceptionNotes: Value(normalized.exceptionNotes),
+          iconKey: Value(normalized.iconKey),
+          activeStrengtheningLevel: updatesStrengthening
+              ? Value(activeLevel)
+              : const Value.absent(),
           updatedAt: Value(timestamp),
         ),
       );
@@ -509,15 +524,6 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
             );
       }
 
-      if (card.activeStrengtheningLevel == targetLevelNumber) {
-        await _appendRequirementVersion(
-          card: card,
-          levelNumber: targetLevelNumber,
-          triggerOverride: triggerOverride,
-          actionOverride: actionOverride,
-          effectiveFrom: timestamp,
-        );
-      }
       await _updateCard(
         card,
         LocalNationalFocusCardsCompanion(updatedAt: Value(timestamp)),
@@ -569,13 +575,6 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
       }
 
       final timestamp = _nextTimestamp(card.updatedAt);
-      await _appendRequirementVersion(
-        card: card,
-        levelNumber: levelNumber,
-        triggerOverride: level?.triggerConditionOverride,
-        actionOverride: level?.actionOverride,
-        effectiveFrom: timestamp,
-      );
       await _updateCard(
         card,
         LocalNationalFocusCardsCompanion(
@@ -587,121 +586,103 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
     });
   }
 
-  Future<void> _appendRequirementVersion({
-    required LocalNationalFocusCard card,
-    required int? levelNumber,
-    required String? triggerOverride,
-    required String? actionOverride,
-    required DateTime effectiveFrom,
-    NationalFocusCardDraft? updatedDraft,
+  /// 用草稿整体替换一张卡的强化档位。
+  ///
+  /// 只保留同编号档位的创建时间，规则与更新时间取本次保存的时间：编辑器
+  /// 底部唯一「保存」按钮执行的就是这一次全量替换。
+  Future<void> _writeStrengtheningLevels({
+    required String cardId,
+    required List<NationalFocusStrengtheningLevel> levels,
+    required DateTime timestamp,
+    Map<int, DateTime> retainedCreatedAt = const {},
   }) async {
-    var versions =
-        await (database.select(database.localNationalFocusRequirementVersions)
-              ..where(
-                (version) =>
-                    version.userId.equals(userId) &
-                    version.cardId.equals(card.id),
-              )
-              ..orderBy([(version) => OrderingTerm.asc(version.versionNumber)]))
-            .get();
-
-    if (versions.isEmpty) {
-      String? previousTriggerOverride;
-      String? previousActionOverride;
-      final selected = card.activeStrengtheningLevel;
-      if (selected != null) {
-        final previousLevel =
-            await (database.select(
-                  database.localNationalFocusStrengtheningLevels,
-                )..where(
-                  (level) =>
-                      level.userId.equals(userId) &
-                      level.cardId.equals(card.id) &
-                      level.levelNumber.equals(selected),
-                ))
-                .getSingleOrNull();
-        previousTriggerOverride = previousLevel?.triggerConditionOverride;
-        previousActionOverride = previousLevel?.actionOverride;
-      }
+    await (database.delete(database.localNationalFocusStrengtheningLevels)
+          ..where(
+            (level) =>
+                level.userId.equals(userId) & level.cardId.equals(cardId),
+          ))
+        .go();
+    for (final level in levels) {
       await database
-          .into(database.localNationalFocusRequirementVersions)
+          .into(database.localNationalFocusStrengtheningLevels)
           .insert(
-            LocalNationalFocusRequirementVersionsCompanion.insert(
+            LocalNationalFocusStrengtheningLevelsCompanion.insert(
               userId: userId,
-              id: _uuid.v4(),
-              cardId: card.id,
-              versionNumber: 1,
-              strengtheningLevelNumber: Value(selected),
-              effectiveTriggerCondition:
-                  previousTriggerOverride ?? card.triggerCondition,
-              effectiveAction: previousActionOverride ?? card.action,
-              scope: Value(card.scope),
-              exceptionNotes: Value(card.exceptionNotes),
-              effectiveFrom: card.createdAt,
-            ),
-          );
-      versions =
-          await (database.select(database.localNationalFocusRequirementVersions)
-                ..where(
-                  (version) =>
-                      version.userId.equals(userId) &
-                      version.cardId.equals(card.id),
-                )
-                ..orderBy([
-                  (version) => OrderingTerm.asc(version.versionNumber),
-                ]))
-              .get();
-    }
-
-    final openVersion =
-        await (database.select(database.localNationalFocusRequirementVersions)
-              ..where(
-                (version) =>
-                    version.userId.equals(userId) &
-                    version.cardId.equals(card.id) &
-                    version.effectiveUntil.isNull(),
-              ))
-            .getSingleOrNull();
-    if (openVersion != null) {
-      await (database.update(database.localNationalFocusRequirementVersions)
-            ..where(
-              (version) =>
-                  version.userId.equals(userId) &
-                  version.id.equals(openVersion.id),
-            ))
-          .write(
-            LocalNationalFocusRequirementVersionsCompanion(
-              effectiveUntil: Value(effectiveFrom),
+              cardId: cardId,
+              levelNumber: level.levelNumber,
+              triggerConditionOverride: Value(level.triggerCondition),
+              actionOverride: Value(level.action),
+              createdAt: retainedCreatedAt[level.levelNumber] ?? timestamp,
+              updatedAt: timestamp,
             ),
           );
     }
+  }
 
-    await database
-        .into(database.localNationalFocusRequirementVersions)
-        .insert(
-          LocalNationalFocusRequirementVersionsCompanion.insert(
-            userId: userId,
-            id: _uuid.v4(),
-            cardId: card.id,
-            versionNumber: versions.last.versionNumber + 1,
-            strengtheningLevelNumber: Value(levelNumber),
-            effectiveTriggerCondition:
-                triggerOverride ??
-                updatedDraft?.triggerCondition ??
-                card.triggerCondition,
-            effectiveAction:
-                actionOverride ?? updatedDraft?.action ?? card.action,
-            scope: Value(
-              updatedDraft == null ? card.scope : updatedDraft.scope,
-            ),
-            exceptionNotes: Value(
-              updatedDraft == null
-                  ? card.exceptionNotes
-                  : updatedDraft.exceptionNotes,
-            ),
-            effectiveFrom: effectiveFrom,
-          ),
+  /// 校验并归一化强化档位草稿：最多 5 级、编号从 1 连续递增、每级至少
+  /// 一条非空规则。任何一项不满足都整体拒绝，不写半份草稿。
+  List<NationalFocusStrengtheningLevel> _normalizeStrengtheningLevels(
+    List<NationalFocusStrengtheningLevel>? levels,
+  ) {
+    if (levels == null || levels.isEmpty) return const [];
+    if (levels.length > maxNationalFocusStrengtheningLevels) {
+      throw ArgumentError(
+        '一张国策卡最多建立 $maxNationalFocusStrengtheningLevels 个强化等级。',
+      );
+    }
+    final sorted = [...levels]
+      ..sort((left, right) => left.levelNumber.compareTo(right.levelNumber));
+    final normalized = <NationalFocusStrengtheningLevel>[];
+    for (var index = 0; index < sorted.length; index++) {
+      final level = sorted[index];
+      if (level.levelNumber != index + 1) {
+        throw ArgumentError('强化等级必须从 1 开始连续编号。');
+      }
+      final trigger = _optionalText(level.triggerCondition);
+      final action = _optionalText(level.action);
+      if (trigger == null && action == null) {
+        throw ArgumentError(
+          '强化等级 ${level.levelNumber} 至少填写一项强化要求；留空字段会沿用基础要求。',
         );
+      }
+      normalized.add(
+        NationalFocusStrengtheningLevel(
+          levelNumber: level.levelNumber,
+          triggerCondition: trigger,
+          action: action,
+        ),
+      );
+    }
+    return normalized;
+  }
+
+  int? _validateActiveStrengtheningLevel(
+    int? activeLevel,
+    List<NationalFocusStrengtheningLevel> levels,
+  ) {
+    if (activeLevel == null) return null;
+    if (!levels.any((level) => level.levelNumber == activeLevel)) {
+      throw ArgumentError('当前选中的强化等级不存在。');
+    }
+    return activeLevel;
+  }
+
+  bool _sameStrengtheningLevels(
+    List<LocalNationalFocusStrengtheningLevel> stored,
+    List<NationalFocusStrengtheningLevel> draft,
+  ) {
+    if (stored.length != draft.length) return false;
+    for (var index = 0; index < draft.length; index++) {
+      final left = stored[index];
+      final right = draft[index];
+      if (left.levelNumber != right.levelNumber ||
+          _optionalText(left.triggerConditionOverride) !=
+              _optionalText(right.triggerCondition) ||
+          _optionalText(left.actionOverride) != _optionalText(right.action)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   @override
@@ -888,13 +869,6 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
                 (level) =>
                     level.userId.equals(userId) & level.cardId.equals(cardId),
               ))
-            .go();
-        await (database.delete(
-              database.localNationalFocusRequirementVersions,
-            )..where(
-              (version) =>
-                  version.userId.equals(userId) & version.cardId.equals(cardId),
-            ))
             .go();
         await (database.delete(database.localNationalFocusCards)
               ..where((candidate) => candidate.userId.equals(userId))
@@ -1582,17 +1556,10 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
                     level.userId.equals(userId) & level.cardId.equals(card.id),
               ))
               .get();
-      final versions =
-          await (database.select(database.localNationalFocusRequirementVersions)
-                ..where(
-                  (version) =>
-                      version.userId.equals(userId) &
-                      version.cardId.equals(card.id),
-                ))
-              .get();
       cards.add({
         'id': card.id,
         'name': card.name,
+        'iconKey': card.iconKey,
         'triggerCondition': card.triggerCondition,
         'action': card.action,
         'scope': card.scope,
@@ -1620,22 +1587,6 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
               'actionOverride': level.actionOverride,
               'createdAt': level.createdAt.toUtc().toIso8601String(),
               'updatedAt': level.updatedAt.toUtc().toIso8601String(),
-            },
-        ],
-        'requirementVersions': [
-          for (final version in versions)
-            {
-              'id': version.id,
-              'versionNumber': version.versionNumber,
-              'strengtheningLevelNumber': version.strengtheningLevelNumber,
-              'effectiveTriggerCondition': version.effectiveTriggerCondition,
-              'effectiveAction': version.effectiveAction,
-              'scope': version.scope,
-              'exceptionNotes': version.exceptionNotes,
-              'effectiveFrom': version.effectiveFrom.toUtc().toIso8601String(),
-              'effectiveUntil': version.effectiveUntil
-                  ?.toUtc()
-                  .toIso8601String(),
             },
         ],
       });
@@ -1889,28 +1840,6 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
               )
               ..orderBy([(level) => OrderingTerm.asc(level.levelNumber)]))
             .get();
-    final versionRows =
-        await (database.select(database.localNationalFocusRequirementVersions)
-              ..where(
-                (version) =>
-                    version.userId.equals(userId) &
-                    version.cardId.equals(row.id),
-              )
-              ..orderBy([(version) => OrderingTerm.asc(version.versionNumber)]))
-            .get();
-    final versions = versionRows.isEmpty
-        ? [
-            NationalFocusRequirementVersion(
-              versionNumber: 1,
-              strengtheningLevelNumber: row.activeStrengtheningLevel,
-              effectiveTriggerCondition: row.triggerCondition,
-              effectiveAction: row.action,
-              scope: row.scope,
-              exceptionNotes: row.exceptionNotes,
-              effectiveFrom: row.createdAt,
-            ),
-          ]
-        : versionRows.map(_requirementVersionFromRow).toList(growable: false);
     return NationalFocusCard(
       id: row.id,
       name: row.name,
@@ -1943,46 +1872,39 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
           )
           .toList(growable: false),
       activeStrengtheningLevel: row.activeStrengtheningLevel,
-      requirementVersions: versions,
+      iconKey: row.iconKey,
     );
   }
-
-  NationalFocusRequirementVersion _requirementVersionFromRow(
-    LocalNationalFocusRequirementVersion row,
-  ) => NationalFocusRequirementVersion(
-    versionNumber: row.versionNumber,
-    strengtheningLevelNumber: row.strengtheningLevelNumber,
-    effectiveTriggerCondition: row.effectiveTriggerCondition,
-    effectiveAction: row.effectiveAction,
-    scope: row.scope,
-    exceptionNotes: row.exceptionNotes,
-    effectiveFrom: row.effectiveFrom,
-    effectiveUntil: row.effectiveUntil,
-  );
 
   Future<Map<String, Object?>> _snapshotJson(
     LocalNationalFocusCard row, {
     String? failureSourceCardId,
   }) async {
-    final version =
-        await (database.select(database.localNationalFocusRequirementVersions)
-              ..where(
-                (candidate) =>
-                    candidate.userId.equals(userId) &
-                    candidate.cardId.equals(row.id) &
-                    candidate.effectiveUntil.isNull(),
-              ))
-            .getSingleOrNull();
+    // 快照只冻结卡片当时的结构与规则：强化档位的当时值直接取卡上的
+    // active_strengthening_level，不再依赖已删除的版本记录表。
+    final activeLevel = row.activeStrengtheningLevel;
+    LocalNationalFocusStrengtheningLevel? strengths;
+    if (activeLevel != null) {
+      strengths =
+          await (database.select(database.localNationalFocusStrengtheningLevels)
+                ..where(
+                  (level) =>
+                      level.userId.equals(userId) &
+                      level.cardId.equals(row.id) &
+                      level.levelNumber.equals(activeLevel),
+                ))
+              .getSingleOrNull();
+    }
     return {
       'id': row.id,
       'name': row.name,
+      'iconKey': row.iconKey,
       'triggerCondition': row.triggerCondition,
       'action': row.action,
       'effectiveTriggerCondition':
-          version?.effectiveTriggerCondition ?? row.triggerCondition,
-      'effectiveAction': version?.effectiveAction ?? row.action,
-      'activeStrengtheningLevel': row.activeStrengtheningLevel,
-      'requirementVersionNumber': version?.versionNumber,
+          strengths?.triggerConditionOverride ?? row.triggerCondition,
+      'effectiveAction': strengths?.actionOverride ?? row.action,
+      'activeStrengtheningLevel': activeLevel,
       'scope': row.scope,
       'exceptionNotes': row.exceptionNotes,
       'isInTree': row.isInTree,
@@ -2029,7 +1951,7 @@ class LocalNationalFocusRepository implements NationalFocusRepository {
                   ),
             failureSourceCardId: item['failureSourceCardId'] as String?,
             activeStrengtheningLevel: item['activeStrengtheningLevel'] as int?,
-            requirementVersionNumber: item['requirementVersionNumber'] as int?,
+            iconKey: item['iconKey'] as String?,
             effectiveTriggerCondition:
                 item['effectiveTriggerCondition'] as String?,
             effectiveAction: item['effectiveAction'] as String?,

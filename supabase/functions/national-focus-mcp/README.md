@@ -219,14 +219,14 @@ to every subsequent tool call. After a new manual upload, restart analysis if
 Each card contains `id`, `name`, `is_in_tree`, `parent_id`, the exact uploaded
 `state` (`lit`, `pending_today_confirmation`, `extinguished`), base
 `trigger_condition`, `action`, `scope`, `exception_notes`,
-`active_strengthening_level`, `effective_requirements`,
-`current_requirement_version`, all `strengthening_levels` and
-`requirement_versions`, current/best consecutive days, `successful_days` and
-`internalization_progress_percent`. Version entries carry stable IDs, version
-numbers, effective rule text, strengthening level and validity bounds;
-`effective_until: null` identifies the active requirement version. Selecting a
-level never rewrites the base rule or historical versions. Soft-deleted cards
-are excluded from both current collections and details.
+`active_strengthening_level`, `icon_key`, `effective_requirements`, all
+`strengthening_levels`, current/best consecutive days, `successful_days` and
+`internalization_progress_percent`. `icon_key` is the uploaded custom icon key
+(a stable short string such as `lucide:book-open`, or `null` when the card uses
+the default icon). `effective_requirements` is derived directly from the active
+strengthening level over the base rule; the retired requirement-version table is
+no longer part of the snapshot or the projection. Soft-deleted cards are
+excluded from both current collections and details.
 
 Internalization is the display proxy `100 * (1 - exp(-successful_days / 60))`,
 not measured habit formation or a daily success calendar. `maintenance` records
@@ -234,7 +234,7 @@ only the uploaded settlement checkpoint; it never runs settlement. Past upload
 states remain exactly as uploaded even when the server date has advanced.
 
 The HTTP boundary reconstructs every object from a typed field whitelist,
-including nested levels, versions and source-device metadata. Unknown fields,
+including nested levels, card icon keys and source-device metadata. Unknown fields,
 other business tables, owner identifiers and mixed-module source logs are never
 forwarded. Invalid fields or broken references yield `unsupported_snapshot`
 with an update/manual-upload recovery instruction. Free text in allowed rule

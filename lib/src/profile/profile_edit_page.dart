@@ -476,7 +476,9 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
       context,
       Scaffold(
         appBar: AppBar(title: const Text('编辑资料')),
-        body: Center(
+        // 顶对齐：长屏下 `Center` 会把头像与首个输入框压到页面中部。
+        body: Align(
+          alignment: Alignment.topCenter,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 640),
             child: SingleChildScrollView(

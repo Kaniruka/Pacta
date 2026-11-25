@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
+import '../theme/pacta_surfaces.dart';
 import '../ui/pacta_date_format.dart';
 import '../ui/pacta_error_text.dart';
+import '../ui/pacta_grouped_list.dart';
 import 'cloud_recovery_point.dart';
 import 'cloud_snapshot_history.dart';
 import 'cloud_snapshot_repository.dart';
@@ -46,6 +49,7 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
   List<CloudSnapshotHistoryEntry> _cloud = const [];
   List<CloudRecoveryPointSummary> _points = const [];
   String? _displayTimeZoneId;
+  final _infoTooltipKey = GlobalKey<TooltipState>();
 
   @override
   void initState() {
@@ -230,130 +234,177 @@ class _CloudSnapshotHistoryPageState extends State<CloudSnapshotHistoryPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('历史备份')),
-      body: SafeArea(child: _body(context)),
-    );
-  }
-
-  Widget _body(BuildContext context) {
-    final theme = Theme.of(context);
-    // 与其余二级页同一版心：宽屏居中收到 800dp，窄屏用统一页边距。
-    return Align(
-      alignment: Alignment.topCenter,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 800),
-        child: ListView(
-          padding: PactaSpacing.pageInsets(context),
-          children: [
-            Text('云端备份', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 4),
-            Text(
-              '最近 $cloudSnapshotHistoryLimit 份成功上传，含最新一份。'
-              '恢复到旧版本不会上传或覆盖云端。',
-              style: theme.textTheme.bodySmall,
+    return PactaSurfaces.wrapIfMissing(
+      context,
+      Scaffold(
+        appBar: AppBar(
+          title: const Text('历史备份'),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: PactaSpacing.sm),
+              // 说明只有一层 Tooltip：IconButton 不再挂第二个命名气泡，
+              // 读屏仍通过 Semantics 得到「历史备份说明」。
+              child: Semantics(
+                label: '历史备份说明',
+                button: true,
+                child: Tooltip(
+                  key: _infoTooltipKey,
+                  triggerMode: TooltipTriggerMode.tap,
+                  message:
+                      '云端保留最近 $cloudSnapshotHistoryLimit 份成功上传，'
+                      '恢复不会上传或覆盖云端；每次恢复前自动保存可离线找回的本机恢复点。',
+                  child: IconButton(
+                    key: const ValueKey('cloud-history-info'),
+                    onPressed: () =>
+                        _infoTooltipKey.currentState?.ensureTooltipVisible(),
+                    icon: const Icon(
+                      Icons.info_outline,
+                      size: PactaIconSizes.md,
+                    ),
+                  ),
+                ),
+              ),
             ),
-            const SizedBox(height: 8),
-            ..._cloudSection(context),
-            const SizedBox(height: 24),
-            Text('本机恢复点', style: theme.textTheme.titleMedium),
-            const SizedBox(height: 4),
-            Text(
-              '每次恢复前自动保存在本机，与云端备份分开，可随时找回；离线也能找回。',
-              style: theme.textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-            ..._pointsSection(context),
           ],
+        ),
+        body: SafeArea(
+          // 与其余二级页同一版心：宽屏居中收到 800dp，长屏顶部对齐。
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 800),
+              child: ListView(
+                padding: PactaSpacing.pageInsets(context),
+                children: [
+                  _section(
+                    context,
+                    title: '云端备份',
+                    trailing: '${_cloud.length} / $cloudSnapshotHistoryLimit',
+                    children: _cloudSection(context),
+                  ),
+                  const SizedBox(height: PactaSpacing.lg),
+                  _section(
+                    context,
+                    title: '本机恢复点',
+                    trailing: '${_points.length} 份',
+                    children: _pointsSection(context),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
 
-  /// 全局 `CardThemeData.margin` 为零：相邻历史记录之间显式留 8dp。
-  List<Widget> _spacedRows(List<Widget> rows) => [
-    for (var index = 0; index < rows.length; index++) ...[
-      if (index > 0) const SizedBox(height: PactaSpacing.sm),
-      rows[index],
-    ],
-  ];
+  Widget _section(
+    BuildContext context, {
+    required String title,
+    required String trailing,
+    required List<Widget> children,
+  }) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PactaSectionHeader(
+          title: title,
+          trailing: Text(
+            trailing,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colors.onSurfaceVariant,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+        ...children,
+      ],
+    );
+  }
+
+  /// 加载／错误／空态都是一张 20dp 纯白卡片：页面底部不再裸铺文字或进度条。
+  Widget _stateCard(Widget child) => Card(
+    child: Padding(padding: PactaSpacing.cardInsets, child: child),
+  );
 
   List<Widget> _cloudSection(BuildContext context) {
     final error = _cloudError;
     if (_loadingCloud) {
-      return const [
-        Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: LinearProgressIndicator(),
-        ),
-      ];
+      return [_stateCard(const LinearProgressIndicator(minHeight: 4))];
     }
     if (error != null) {
       return [
-        _SectionError(
-          message: error,
-          retryKey: const ValueKey('retry-cloud-history'),
-          onRetry: _working ? null : _retryCloud,
+        _stateCard(
+          _SectionError(
+            message: error,
+            retryKey: const ValueKey('retry-cloud-history'),
+            onRetry: _working ? null : _retryCloud,
+          ),
         ),
       ];
     }
     if (_cloud.isEmpty) {
-      return const [
-        Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: Text('还没有可恢复的云端备份。'),
-        ),
-      ];
+      return [_stateCard(const Text('还没有可恢复的云端备份。'))];
     }
-    return _spacedRows([
-      for (final entry in _cloud)
-        _HistoryTile(
-          title: _formatDateTime(entry.uploadedAt),
-          subtitle: '${entry.deviceName} · ${entry.rowCount} 条记录',
-          action: '恢复',
-          onPressed: _working ? null : () => _restoreCloud(entry),
-          icon: Icons.cloud_outlined,
-        ),
-    ]);
+    final primary = Theme.of(context).colorScheme.primary;
+    return [
+      PactaGroupedList(
+        key: const ValueKey('cloud-history-list'),
+        children: [
+          for (final entry in _cloud)
+            _HistoryTile(
+              title: _formatDateTime(entry.uploadedAt),
+              sourceLabel: entry.deviceName,
+              rowCount: entry.rowCount,
+              action: '恢复',
+              onPressed: _working ? null : () => _restoreCloud(entry),
+              icon: Icons.cloud_outlined,
+              iconColor: primary,
+            ),
+        ],
+      ),
+    ];
   }
 
   List<Widget> _pointsSection(BuildContext context) {
     final error = _pointsError;
     if (_loadingPoints) {
-      return const [
-        Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: LinearProgressIndicator(),
-        ),
-      ];
+      return [_stateCard(const LinearProgressIndicator(minHeight: 4))];
     }
     if (error != null) {
       return [
-        _SectionError(
-          message: error,
-          retryKey: const ValueKey('retry-local-points'),
-          onRetry: _working ? null : _retryPoints,
+        _stateCard(
+          _SectionError(
+            message: error,
+            retryKey: const ValueKey('retry-local-points'),
+            onRetry: _working ? null : _retryPoints,
+          ),
         ),
       ];
     }
     if (_points.isEmpty) {
-      return const [
-        Padding(
-          padding: EdgeInsets.symmetric(vertical: 12),
-          child: Text('还没有本机恢复点；第一次恢复时会自动创建。'),
-        ),
-      ];
+      return [_stateCard(const Text('还没有本机恢复点；第一次恢复时会自动创建。'))];
     }
-    return _spacedRows([
-      for (final point in _points)
-        _HistoryTile(
-          title: _formatDateTime(point.createdAt),
-          subtitle: '${_reason(point.reason)} · ${point.rowCount} 条记录',
-          action: '找回',
-          onPressed: _working ? null : () => _restorePoint(point),
-          icon: Icons.restore_outlined,
-        ),
-    ]);
+    final tertiary = Theme.of(context).colorScheme.tertiary;
+    return [
+      PactaGroupedList(
+        key: const ValueKey('local-recovery-points-list'),
+        children: [
+          for (final point in _points)
+            _HistoryTile(
+              title: _formatDateTime(point.createdAt),
+              sourceLabel: _reason(point.reason),
+              rowCount: point.rowCount,
+              action: '找回',
+              onPressed: _working ? null : () => _restorePoint(point),
+              icon: Icons.restore_outlined,
+              iconColor: tertiary,
+            ),
+        ],
+      ),
+    ];
   }
 }
 
@@ -370,47 +421,95 @@ class _SectionError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(child: Text(message)),
-          const SizedBox(width: 12),
-          TextButton(
-            key: retryKey,
-            onPressed: onRetry,
-            child: const Text('重试'),
-          ),
-        ],
-      ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(child: Text(message)),
+        const SizedBox(width: PactaSpacing.md),
+        TextButton(
+          key: retryKey,
+          style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+          onPressed: onRetry,
+          child: const Text('重试'),
+        ),
+      ],
     );
   }
 }
 
+/// 一行历史记录：图标 + 时间与来源/记录数 + 单一文字按钮。
+///
+/// 来源与「N 条记录」放在同一行 `Wrap`：记录数是一枚不可拆分的
+/// [PactaStatusBadge]，360dp 窄屏宁可整枚换行，也不会把「201 条记录」
+/// 折成单字孤行。
 class _HistoryTile extends StatelessWidget {
   const _HistoryTile({
     required this.title,
-    required this.subtitle,
+    required this.sourceLabel,
+    required this.rowCount,
     required this.action,
     required this.onPressed,
     required this.icon,
+    required this.iconColor,
   });
 
   final String title;
-  final String subtitle;
+  final String sourceLabel;
+  final int rowCount;
   final String action;
   final VoidCallback? onPressed;
   final IconData icon;
+  final Color iconColor;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon),
-      title: Text(title),
-      subtitle: Text(subtitle),
-      trailing: TextButton(onPressed: onPressed, child: Text(action)),
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(icon, size: PactaIconSizes.md, color: iconColor),
+          const SizedBox(width: PactaSpacing.md),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      sourceLabel,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                    PactaStatusBadge(label: '$rowCount 条记录'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+            onPressed: onPressed,
+            child: Text(action),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -6,7 +6,7 @@
 
 [![Flutter checks](https://github.com/Kaniruka/Pacta/actions/workflows/flutter-checks.yml/badge.svg?branch=master)](https://github.com/Kaniruka/Pacta/actions/workflows/flutter-checks.yml)
 [![Release](https://github.com/Kaniruka/Pacta/actions/workflows/release.yml/badge.svg)](https://github.com/Kaniruka/Pacta/actions/workflows/release.yml)
-[![version](https://img.shields.io/badge/version-0.3.1%2B4-blue)](pubspec.yaml)
+[![version](https://img.shields.io/badge/version-0.4.0%2B5-blue)](pubspec.yaml)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
 [简体中文](README.md) · [English](README.en.md)
@@ -41,7 +41,7 @@ python scripts/pacta_build.py run -d windows
 
 | 命令 | 作用 |
 | --- | --- |
-| `python scripts/pacta_build.py` | 交互式菜单（也可显式传 `interactive` 或 `-i`），按提示选择运行、打包或生成签名 |
+| `python scripts/pacta_build.py` | 交互式两级菜单（也可显式传 `interactive` 或 `-i`）：运行调试 / 构建与打包 / 签名与发布凭据 / Supabase 云端配额与用量 |
 | `python scripts/pacta_build.py run -d windows` | 桌面调试；`-d android` 自动取第一台 Android 设备，或 `-d <device-id>` |
 | `python scripts/pacta_build.py run -d emulator-5554 --profile` | 指定设备与构建模式（`--debug`/`--profile`/`--release`） |
 | `python scripts/pacta_build.py build --target apk --release --split-per-abi` | 分 ABI 的 APK |
@@ -51,8 +51,11 @@ python scripts/pacta_build.py run -d windows
 | `python scripts/pacta_build.py build --target apk --dry-run` | 只打印脱敏执行计划，不执行任何命令 |
 | `python scripts/pacta_build.py init-keystore` | 生成本机 Android Release 签名，并同步导出 GitHub Secrets 清单 |
 | `python scripts/pacta_build.py github-secrets` | 一键汇总 `.env` 与签名文件，输出 `build/github-actions-secrets.txt`（缺签名会自动生成；追加 `--apply` 可经 `gh secret set` 一键写入 GitHub 仓库） |
+| `python scripts/pacta_build.py supabase-usage` | 汇总 Supabase 免费额度、数据库与逐用户存储占用（`--view users` 明细、`--top N` 只看前 N 位、`--mask-email` 脱敏、`--json` 机器可读、`--dry-run` 只打印计划） |
 
 白名单之外的键（`SUPABASE_SECRET_KEY`、`SUPABASE_SERVICE_ROLE_KEY`、`SUPABASE_ACCESS_TOKEN`、`TEST_*`、`ANDROID_KEYSTORE_*`）一律不注入、不写入临时文件、不出现在日志里；构建缺少两个客户端键时给出中文报错并以退出码 `2` 结束。
+
+`supabase-usage`（别名 `usage` / `quota`）是唯一读取 `SUPABASE_ACCESS_TOKEN` 与 `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY` 的命令：有 access token 时走 Management API 精确模式（数据库总量、索引 / TOAST / 系统开销、Storage、30 天 MAU 与逐用户明细），只有 secret key 时走 Service API 估算模式（仅客户端数据行，Storage 与系统开销需 access token）。这些凭据只在本机进程内使用，不写入临时 defines、不传给 Flutter、不出现在 stdout / `--json` / 报错里。
 
 ## Android Release 签名
 

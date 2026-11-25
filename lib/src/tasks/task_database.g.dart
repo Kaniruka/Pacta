@@ -1608,6 +1608,17 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
         type: DriftSqlType.int,
         requiredDuringInsert: false,
       );
+  static const VerificationMeta _iconKeyMeta = const VerificationMeta(
+    'iconKey',
+  );
+  @override
+  late final GeneratedColumn<String> iconKey = GeneratedColumn<String>(
+    'icon_key',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -1662,6 +1673,7 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
     cascadePriorState,
     reviewDisposition,
     activeStrengtheningLevel,
+    iconKey,
     createdAt,
     updatedAt,
     deletedAt,
@@ -1832,6 +1844,12 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
         ),
       );
     }
+    if (data.containsKey('icon_key')) {
+      context.handle(
+        _iconKeyMeta,
+        iconKey.isAcceptableOrUnknown(data['icon_key']!, _iconKeyMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -1939,6 +1957,10 @@ class $LocalNationalFocusCardsTable extends LocalNationalFocusCards
         DriftSqlType.int,
         data['${effectivePrefix}active_strengthening_level'],
       ),
+      iconKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}icon_key'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -1981,6 +2003,10 @@ class LocalNationalFocusCard extends DataClass
   final String? cascadePriorState;
   final String reviewDisposition;
   final int? activeStrengtheningLevel;
+
+  /// 卡片自定义图标键（`lucide:book` 等四套前缀键）；空值按默认灯泡呈现。
+  /// 40 起随 Cloud Snapshot v4 的 `icon_key` 跨端同步。
+  final String? iconKey;
   final DateTime createdAt;
   final DateTime updatedAt;
   final DateTime? deletedAt;
@@ -2004,6 +2030,7 @@ class LocalNationalFocusCard extends DataClass
     this.cascadePriorState,
     required this.reviewDisposition,
     this.activeStrengtheningLevel,
+    this.iconKey,
     required this.createdAt,
     required this.updatedAt,
     this.deletedAt,
@@ -2045,6 +2072,9 @@ class LocalNationalFocusCard extends DataClass
       map['active_strengthening_level'] = Variable<int>(
         activeStrengtheningLevel,
       );
+    }
+    if (!nullToAbsent || iconKey != null) {
+      map['icon_key'] = Variable<String>(iconKey);
     }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
@@ -2089,6 +2119,9 @@ class LocalNationalFocusCard extends DataClass
       activeStrengtheningLevel: activeStrengtheningLevel == null && nullToAbsent
           ? const Value.absent()
           : Value(activeStrengtheningLevel),
+      iconKey: iconKey == null && nullToAbsent
+          ? const Value.absent()
+          : Value(iconKey),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
       deletedAt: deletedAt == null && nullToAbsent
@@ -2134,6 +2167,7 @@ class LocalNationalFocusCard extends DataClass
       activeStrengtheningLevel: serializer.fromJson<int?>(
         json['activeStrengtheningLevel'],
       ),
+      iconKey: serializer.fromJson<String?>(json['iconKey']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
       deletedAt: serializer.fromJson<DateTime?>(json['deletedAt']),
@@ -2166,6 +2200,7 @@ class LocalNationalFocusCard extends DataClass
       'activeStrengtheningLevel': serializer.toJson<int?>(
         activeStrengtheningLevel,
       ),
+      'iconKey': serializer.toJson<String?>(iconKey),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
@@ -2192,6 +2227,7 @@ class LocalNationalFocusCard extends DataClass
     Value<String?> cascadePriorState = const Value.absent(),
     String? reviewDisposition,
     Value<int?> activeStrengtheningLevel = const Value.absent(),
+    Value<String?> iconKey = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
     Value<DateTime?> deletedAt = const Value.absent(),
@@ -2227,6 +2263,7 @@ class LocalNationalFocusCard extends DataClass
     activeStrengtheningLevel: activeStrengtheningLevel.present
         ? activeStrengtheningLevel.value
         : this.activeStrengtheningLevel,
+    iconKey: iconKey.present ? iconKey.value : this.iconKey,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -2276,6 +2313,7 @@ class LocalNationalFocusCard extends DataClass
       activeStrengtheningLevel: data.activeStrengtheningLevel.present
           ? data.activeStrengtheningLevel.value
           : this.activeStrengtheningLevel,
+      iconKey: data.iconKey.present ? data.iconKey.value : this.iconKey,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
       deletedAt: data.deletedAt.present ? data.deletedAt.value : this.deletedAt,
@@ -2304,6 +2342,7 @@ class LocalNationalFocusCard extends DataClass
           ..write('cascadePriorState: $cascadePriorState, ')
           ..write('reviewDisposition: $reviewDisposition, ')
           ..write('activeStrengtheningLevel: $activeStrengtheningLevel, ')
+          ..write('iconKey: $iconKey, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt')
@@ -2332,6 +2371,7 @@ class LocalNationalFocusCard extends DataClass
     cascadePriorState,
     reviewDisposition,
     activeStrengtheningLevel,
+    iconKey,
     createdAt,
     updatedAt,
     deletedAt,
@@ -2359,6 +2399,7 @@ class LocalNationalFocusCard extends DataClass
           other.cascadePriorState == this.cascadePriorState &&
           other.reviewDisposition == this.reviewDisposition &&
           other.activeStrengtheningLevel == this.activeStrengtheningLevel &&
+          other.iconKey == this.iconKey &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt &&
           other.deletedAt == this.deletedAt);
@@ -2385,6 +2426,7 @@ class LocalNationalFocusCardsCompanion
   final Value<String?> cascadePriorState;
   final Value<String> reviewDisposition;
   final Value<int?> activeStrengtheningLevel;
+  final Value<String?> iconKey;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<DateTime?> deletedAt;
@@ -2409,6 +2451,7 @@ class LocalNationalFocusCardsCompanion
     this.cascadePriorState = const Value.absent(),
     this.reviewDisposition = const Value.absent(),
     this.activeStrengtheningLevel = const Value.absent(),
+    this.iconKey = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -2434,6 +2477,7 @@ class LocalNationalFocusCardsCompanion
     this.cascadePriorState = const Value.absent(),
     this.reviewDisposition = const Value.absent(),
     this.activeStrengtheningLevel = const Value.absent(),
+    this.iconKey = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.deletedAt = const Value.absent(),
@@ -2465,6 +2509,7 @@ class LocalNationalFocusCardsCompanion
     Expression<String>? cascadePriorState,
     Expression<String>? reviewDisposition,
     Expression<int>? activeStrengtheningLevel,
+    Expression<String>? iconKey,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<DateTime>? deletedAt,
@@ -2495,6 +2540,7 @@ class LocalNationalFocusCardsCompanion
       if (reviewDisposition != null) 'review_disposition': reviewDisposition,
       if (activeStrengtheningLevel != null)
         'active_strengthening_level': activeStrengtheningLevel,
+      if (iconKey != null) 'icon_key': iconKey,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (deletedAt != null) 'deleted_at': deletedAt,
@@ -2522,6 +2568,7 @@ class LocalNationalFocusCardsCompanion
     Value<String?>? cascadePriorState,
     Value<String>? reviewDisposition,
     Value<int?>? activeStrengtheningLevel,
+    Value<String?>? iconKey,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<DateTime?>? deletedAt,
@@ -2550,6 +2597,7 @@ class LocalNationalFocusCardsCompanion
       reviewDisposition: reviewDisposition ?? this.reviewDisposition,
       activeStrengtheningLevel:
           activeStrengtheningLevel ?? this.activeStrengtheningLevel,
+      iconKey: iconKey ?? this.iconKey,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -2625,6 +2673,9 @@ class LocalNationalFocusCardsCompanion
         activeStrengtheningLevel.value,
       );
     }
+    if (iconKey.present) {
+      map['icon_key'] = Variable<String>(iconKey.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -2662,6 +2713,7 @@ class LocalNationalFocusCardsCompanion
           ..write('cascadePriorState: $cascadePriorState, ')
           ..write('reviewDisposition: $reviewDisposition, ')
           ..write('activeStrengtheningLevel: $activeStrengtheningLevel, ')
+          ..write('iconKey: $iconKey, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -3178,741 +3230,6 @@ class LocalNationalFocusStrengtheningLevelsCompanion
           ..write('actionOverride: $actionOverride, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
-          ..write('rowid: $rowid')
-          ..write(')'))
-        .toString();
-  }
-}
-
-class $LocalNationalFocusRequirementVersionsTable
-    extends LocalNationalFocusRequirementVersions
-    with
-        TableInfo<
-          $LocalNationalFocusRequirementVersionsTable,
-          LocalNationalFocusRequirementVersion
-        > {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $LocalNationalFocusRequirementVersionsTable(
-    this.attachedDatabase, [
-    this._alias,
-  ]);
-  static const VerificationMeta _userIdMeta = const VerificationMeta('userId');
-  @override
-  late final GeneratedColumn<String> userId = GeneratedColumn<String>(
-    'user_id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<String> id = GeneratedColumn<String>(
-    'id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _cardIdMeta = const VerificationMeta('cardId');
-  @override
-  late final GeneratedColumn<String> cardId = GeneratedColumn<String>(
-    'card_id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _versionNumberMeta = const VerificationMeta(
-    'versionNumber',
-  );
-  @override
-  late final GeneratedColumn<int> versionNumber = GeneratedColumn<int>(
-    'version_number',
-    aliasedName,
-    false,
-    type: DriftSqlType.int,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _strengtheningLevelNumberMeta =
-      const VerificationMeta('strengtheningLevelNumber');
-  @override
-  late final GeneratedColumn<int> strengtheningLevelNumber =
-      GeneratedColumn<int>(
-        'strengthening_level_number',
-        aliasedName,
-        true,
-        type: DriftSqlType.int,
-        requiredDuringInsert: false,
-      );
-  static const VerificationMeta _effectiveTriggerConditionMeta =
-      const VerificationMeta('effectiveTriggerCondition');
-  @override
-  late final GeneratedColumn<String> effectiveTriggerCondition =
-      GeneratedColumn<String>(
-        'effective_trigger_condition',
-        aliasedName,
-        false,
-        type: DriftSqlType.string,
-        requiredDuringInsert: true,
-      );
-  static const VerificationMeta _effectiveActionMeta = const VerificationMeta(
-    'effectiveAction',
-  );
-  @override
-  late final GeneratedColumn<String> effectiveAction = GeneratedColumn<String>(
-    'effective_action',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _scopeMeta = const VerificationMeta('scope');
-  @override
-  late final GeneratedColumn<String> scope = GeneratedColumn<String>(
-    'scope',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _exceptionNotesMeta = const VerificationMeta(
-    'exceptionNotes',
-  );
-  @override
-  late final GeneratedColumn<String> exceptionNotes = GeneratedColumn<String>(
-    'exception_notes',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _effectiveFromMeta = const VerificationMeta(
-    'effectiveFrom',
-  );
-  @override
-  late final GeneratedColumn<DateTime> effectiveFrom =
-      GeneratedColumn<DateTime>(
-        'effective_from',
-        aliasedName,
-        false,
-        type: DriftSqlType.dateTime,
-        requiredDuringInsert: true,
-      );
-  static const VerificationMeta _effectiveUntilMeta = const VerificationMeta(
-    'effectiveUntil',
-  );
-  @override
-  late final GeneratedColumn<DateTime> effectiveUntil =
-      GeneratedColumn<DateTime>(
-        'effective_until',
-        aliasedName,
-        true,
-        type: DriftSqlType.dateTime,
-        requiredDuringInsert: false,
-      );
-  @override
-  List<GeneratedColumn> get $columns => [
-    userId,
-    id,
-    cardId,
-    versionNumber,
-    strengtheningLevelNumber,
-    effectiveTriggerCondition,
-    effectiveAction,
-    scope,
-    exceptionNotes,
-    effectiveFrom,
-    effectiveUntil,
-  ];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'local_national_focus_requirement_versions';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<LocalNationalFocusRequirementVersion> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('user_id')) {
-      context.handle(
-        _userIdMeta,
-        userId.isAcceptableOrUnknown(data['user_id']!, _userIdMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_userIdMeta);
-    }
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    } else if (isInserting) {
-      context.missing(_idMeta);
-    }
-    if (data.containsKey('card_id')) {
-      context.handle(
-        _cardIdMeta,
-        cardId.isAcceptableOrUnknown(data['card_id']!, _cardIdMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_cardIdMeta);
-    }
-    if (data.containsKey('version_number')) {
-      context.handle(
-        _versionNumberMeta,
-        versionNumber.isAcceptableOrUnknown(
-          data['version_number']!,
-          _versionNumberMeta,
-        ),
-      );
-    } else if (isInserting) {
-      context.missing(_versionNumberMeta);
-    }
-    if (data.containsKey('strengthening_level_number')) {
-      context.handle(
-        _strengtheningLevelNumberMeta,
-        strengtheningLevelNumber.isAcceptableOrUnknown(
-          data['strengthening_level_number']!,
-          _strengtheningLevelNumberMeta,
-        ),
-      );
-    }
-    if (data.containsKey('effective_trigger_condition')) {
-      context.handle(
-        _effectiveTriggerConditionMeta,
-        effectiveTriggerCondition.isAcceptableOrUnknown(
-          data['effective_trigger_condition']!,
-          _effectiveTriggerConditionMeta,
-        ),
-      );
-    } else if (isInserting) {
-      context.missing(_effectiveTriggerConditionMeta);
-    }
-    if (data.containsKey('effective_action')) {
-      context.handle(
-        _effectiveActionMeta,
-        effectiveAction.isAcceptableOrUnknown(
-          data['effective_action']!,
-          _effectiveActionMeta,
-        ),
-      );
-    } else if (isInserting) {
-      context.missing(_effectiveActionMeta);
-    }
-    if (data.containsKey('scope')) {
-      context.handle(
-        _scopeMeta,
-        scope.isAcceptableOrUnknown(data['scope']!, _scopeMeta),
-      );
-    }
-    if (data.containsKey('exception_notes')) {
-      context.handle(
-        _exceptionNotesMeta,
-        exceptionNotes.isAcceptableOrUnknown(
-          data['exception_notes']!,
-          _exceptionNotesMeta,
-        ),
-      );
-    }
-    if (data.containsKey('effective_from')) {
-      context.handle(
-        _effectiveFromMeta,
-        effectiveFrom.isAcceptableOrUnknown(
-          data['effective_from']!,
-          _effectiveFromMeta,
-        ),
-      );
-    } else if (isInserting) {
-      context.missing(_effectiveFromMeta);
-    }
-    if (data.containsKey('effective_until')) {
-      context.handle(
-        _effectiveUntilMeta,
-        effectiveUntil.isAcceptableOrUnknown(
-          data['effective_until']!,
-          _effectiveUntilMeta,
-        ),
-      );
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {userId, id};
-  @override
-  LocalNationalFocusRequirementVersion map(
-    Map<String, dynamic> data, {
-    String? tablePrefix,
-  }) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return LocalNationalFocusRequirementVersion(
-      userId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}user_id'],
-      )!,
-      id: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}id'],
-      )!,
-      cardId: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}card_id'],
-      )!,
-      versionNumber: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}version_number'],
-      )!,
-      strengtheningLevelNumber: attachedDatabase.typeMapping.read(
-        DriftSqlType.int,
-        data['${effectivePrefix}strengthening_level_number'],
-      ),
-      effectiveTriggerCondition: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}effective_trigger_condition'],
-      )!,
-      effectiveAction: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}effective_action'],
-      )!,
-      scope: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}scope'],
-      ),
-      exceptionNotes: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}exception_notes'],
-      ),
-      effectiveFrom: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
-        data['${effectivePrefix}effective_from'],
-      )!,
-      effectiveUntil: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
-        data['${effectivePrefix}effective_until'],
-      ),
-    );
-  }
-
-  @override
-  $LocalNationalFocusRequirementVersionsTable createAlias(String alias) {
-    return $LocalNationalFocusRequirementVersionsTable(attachedDatabase, alias);
-  }
-}
-
-class LocalNationalFocusRequirementVersion extends DataClass
-    implements Insertable<LocalNationalFocusRequirementVersion> {
-  final String userId;
-  final String id;
-  final String cardId;
-  final int versionNumber;
-  final int? strengtheningLevelNumber;
-  final String effectiveTriggerCondition;
-  final String effectiveAction;
-  final String? scope;
-  final String? exceptionNotes;
-  final DateTime effectiveFrom;
-  final DateTime? effectiveUntil;
-  const LocalNationalFocusRequirementVersion({
-    required this.userId,
-    required this.id,
-    required this.cardId,
-    required this.versionNumber,
-    this.strengtheningLevelNumber,
-    required this.effectiveTriggerCondition,
-    required this.effectiveAction,
-    this.scope,
-    this.exceptionNotes,
-    required this.effectiveFrom,
-    this.effectiveUntil,
-  });
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['user_id'] = Variable<String>(userId);
-    map['id'] = Variable<String>(id);
-    map['card_id'] = Variable<String>(cardId);
-    map['version_number'] = Variable<int>(versionNumber);
-    if (!nullToAbsent || strengtheningLevelNumber != null) {
-      map['strengthening_level_number'] = Variable<int>(
-        strengtheningLevelNumber,
-      );
-    }
-    map['effective_trigger_condition'] = Variable<String>(
-      effectiveTriggerCondition,
-    );
-    map['effective_action'] = Variable<String>(effectiveAction);
-    if (!nullToAbsent || scope != null) {
-      map['scope'] = Variable<String>(scope);
-    }
-    if (!nullToAbsent || exceptionNotes != null) {
-      map['exception_notes'] = Variable<String>(exceptionNotes);
-    }
-    map['effective_from'] = Variable<DateTime>(effectiveFrom);
-    if (!nullToAbsent || effectiveUntil != null) {
-      map['effective_until'] = Variable<DateTime>(effectiveUntil);
-    }
-    return map;
-  }
-
-  LocalNationalFocusRequirementVersionsCompanion toCompanion(
-    bool nullToAbsent,
-  ) {
-    return LocalNationalFocusRequirementVersionsCompanion(
-      userId: Value(userId),
-      id: Value(id),
-      cardId: Value(cardId),
-      versionNumber: Value(versionNumber),
-      strengtheningLevelNumber: strengtheningLevelNumber == null && nullToAbsent
-          ? const Value.absent()
-          : Value(strengtheningLevelNumber),
-      effectiveTriggerCondition: Value(effectiveTriggerCondition),
-      effectiveAction: Value(effectiveAction),
-      scope: scope == null && nullToAbsent
-          ? const Value.absent()
-          : Value(scope),
-      exceptionNotes: exceptionNotes == null && nullToAbsent
-          ? const Value.absent()
-          : Value(exceptionNotes),
-      effectiveFrom: Value(effectiveFrom),
-      effectiveUntil: effectiveUntil == null && nullToAbsent
-          ? const Value.absent()
-          : Value(effectiveUntil),
-    );
-  }
-
-  factory LocalNationalFocusRequirementVersion.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return LocalNationalFocusRequirementVersion(
-      userId: serializer.fromJson<String>(json['userId']),
-      id: serializer.fromJson<String>(json['id']),
-      cardId: serializer.fromJson<String>(json['cardId']),
-      versionNumber: serializer.fromJson<int>(json['versionNumber']),
-      strengtheningLevelNumber: serializer.fromJson<int?>(
-        json['strengtheningLevelNumber'],
-      ),
-      effectiveTriggerCondition: serializer.fromJson<String>(
-        json['effectiveTriggerCondition'],
-      ),
-      effectiveAction: serializer.fromJson<String>(json['effectiveAction']),
-      scope: serializer.fromJson<String?>(json['scope']),
-      exceptionNotes: serializer.fromJson<String?>(json['exceptionNotes']),
-      effectiveFrom: serializer.fromJson<DateTime>(json['effectiveFrom']),
-      effectiveUntil: serializer.fromJson<DateTime?>(json['effectiveUntil']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'userId': serializer.toJson<String>(userId),
-      'id': serializer.toJson<String>(id),
-      'cardId': serializer.toJson<String>(cardId),
-      'versionNumber': serializer.toJson<int>(versionNumber),
-      'strengtheningLevelNumber': serializer.toJson<int?>(
-        strengtheningLevelNumber,
-      ),
-      'effectiveTriggerCondition': serializer.toJson<String>(
-        effectiveTriggerCondition,
-      ),
-      'effectiveAction': serializer.toJson<String>(effectiveAction),
-      'scope': serializer.toJson<String?>(scope),
-      'exceptionNotes': serializer.toJson<String?>(exceptionNotes),
-      'effectiveFrom': serializer.toJson<DateTime>(effectiveFrom),
-      'effectiveUntil': serializer.toJson<DateTime?>(effectiveUntil),
-    };
-  }
-
-  LocalNationalFocusRequirementVersion copyWith({
-    String? userId,
-    String? id,
-    String? cardId,
-    int? versionNumber,
-    Value<int?> strengtheningLevelNumber = const Value.absent(),
-    String? effectiveTriggerCondition,
-    String? effectiveAction,
-    Value<String?> scope = const Value.absent(),
-    Value<String?> exceptionNotes = const Value.absent(),
-    DateTime? effectiveFrom,
-    Value<DateTime?> effectiveUntil = const Value.absent(),
-  }) => LocalNationalFocusRequirementVersion(
-    userId: userId ?? this.userId,
-    id: id ?? this.id,
-    cardId: cardId ?? this.cardId,
-    versionNumber: versionNumber ?? this.versionNumber,
-    strengtheningLevelNumber: strengtheningLevelNumber.present
-        ? strengtheningLevelNumber.value
-        : this.strengtheningLevelNumber,
-    effectiveTriggerCondition:
-        effectiveTriggerCondition ?? this.effectiveTriggerCondition,
-    effectiveAction: effectiveAction ?? this.effectiveAction,
-    scope: scope.present ? scope.value : this.scope,
-    exceptionNotes: exceptionNotes.present
-        ? exceptionNotes.value
-        : this.exceptionNotes,
-    effectiveFrom: effectiveFrom ?? this.effectiveFrom,
-    effectiveUntil: effectiveUntil.present
-        ? effectiveUntil.value
-        : this.effectiveUntil,
-  );
-  LocalNationalFocusRequirementVersion copyWithCompanion(
-    LocalNationalFocusRequirementVersionsCompanion data,
-  ) {
-    return LocalNationalFocusRequirementVersion(
-      userId: data.userId.present ? data.userId.value : this.userId,
-      id: data.id.present ? data.id.value : this.id,
-      cardId: data.cardId.present ? data.cardId.value : this.cardId,
-      versionNumber: data.versionNumber.present
-          ? data.versionNumber.value
-          : this.versionNumber,
-      strengtheningLevelNumber: data.strengtheningLevelNumber.present
-          ? data.strengtheningLevelNumber.value
-          : this.strengtheningLevelNumber,
-      effectiveTriggerCondition: data.effectiveTriggerCondition.present
-          ? data.effectiveTriggerCondition.value
-          : this.effectiveTriggerCondition,
-      effectiveAction: data.effectiveAction.present
-          ? data.effectiveAction.value
-          : this.effectiveAction,
-      scope: data.scope.present ? data.scope.value : this.scope,
-      exceptionNotes: data.exceptionNotes.present
-          ? data.exceptionNotes.value
-          : this.exceptionNotes,
-      effectiveFrom: data.effectiveFrom.present
-          ? data.effectiveFrom.value
-          : this.effectiveFrom,
-      effectiveUntil: data.effectiveUntil.present
-          ? data.effectiveUntil.value
-          : this.effectiveUntil,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('LocalNationalFocusRequirementVersion(')
-          ..write('userId: $userId, ')
-          ..write('id: $id, ')
-          ..write('cardId: $cardId, ')
-          ..write('versionNumber: $versionNumber, ')
-          ..write('strengtheningLevelNumber: $strengtheningLevelNumber, ')
-          ..write('effectiveTriggerCondition: $effectiveTriggerCondition, ')
-          ..write('effectiveAction: $effectiveAction, ')
-          ..write('scope: $scope, ')
-          ..write('exceptionNotes: $exceptionNotes, ')
-          ..write('effectiveFrom: $effectiveFrom, ')
-          ..write('effectiveUntil: $effectiveUntil')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode => Object.hash(
-    userId,
-    id,
-    cardId,
-    versionNumber,
-    strengtheningLevelNumber,
-    effectiveTriggerCondition,
-    effectiveAction,
-    scope,
-    exceptionNotes,
-    effectiveFrom,
-    effectiveUntil,
-  );
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is LocalNationalFocusRequirementVersion &&
-          other.userId == this.userId &&
-          other.id == this.id &&
-          other.cardId == this.cardId &&
-          other.versionNumber == this.versionNumber &&
-          other.strengtheningLevelNumber == this.strengtheningLevelNumber &&
-          other.effectiveTriggerCondition == this.effectiveTriggerCondition &&
-          other.effectiveAction == this.effectiveAction &&
-          other.scope == this.scope &&
-          other.exceptionNotes == this.exceptionNotes &&
-          other.effectiveFrom == this.effectiveFrom &&
-          other.effectiveUntil == this.effectiveUntil);
-}
-
-class LocalNationalFocusRequirementVersionsCompanion
-    extends UpdateCompanion<LocalNationalFocusRequirementVersion> {
-  final Value<String> userId;
-  final Value<String> id;
-  final Value<String> cardId;
-  final Value<int> versionNumber;
-  final Value<int?> strengtheningLevelNumber;
-  final Value<String> effectiveTriggerCondition;
-  final Value<String> effectiveAction;
-  final Value<String?> scope;
-  final Value<String?> exceptionNotes;
-  final Value<DateTime> effectiveFrom;
-  final Value<DateTime?> effectiveUntil;
-  final Value<int> rowid;
-  const LocalNationalFocusRequirementVersionsCompanion({
-    this.userId = const Value.absent(),
-    this.id = const Value.absent(),
-    this.cardId = const Value.absent(),
-    this.versionNumber = const Value.absent(),
-    this.strengtheningLevelNumber = const Value.absent(),
-    this.effectiveTriggerCondition = const Value.absent(),
-    this.effectiveAction = const Value.absent(),
-    this.scope = const Value.absent(),
-    this.exceptionNotes = const Value.absent(),
-    this.effectiveFrom = const Value.absent(),
-    this.effectiveUntil = const Value.absent(),
-    this.rowid = const Value.absent(),
-  });
-  LocalNationalFocusRequirementVersionsCompanion.insert({
-    required String userId,
-    required String id,
-    required String cardId,
-    required int versionNumber,
-    this.strengtheningLevelNumber = const Value.absent(),
-    required String effectiveTriggerCondition,
-    required String effectiveAction,
-    this.scope = const Value.absent(),
-    this.exceptionNotes = const Value.absent(),
-    required DateTime effectiveFrom,
-    this.effectiveUntil = const Value.absent(),
-    this.rowid = const Value.absent(),
-  }) : userId = Value(userId),
-       id = Value(id),
-       cardId = Value(cardId),
-       versionNumber = Value(versionNumber),
-       effectiveTriggerCondition = Value(effectiveTriggerCondition),
-       effectiveAction = Value(effectiveAction),
-       effectiveFrom = Value(effectiveFrom);
-  static Insertable<LocalNationalFocusRequirementVersion> custom({
-    Expression<String>? userId,
-    Expression<String>? id,
-    Expression<String>? cardId,
-    Expression<int>? versionNumber,
-    Expression<int>? strengtheningLevelNumber,
-    Expression<String>? effectiveTriggerCondition,
-    Expression<String>? effectiveAction,
-    Expression<String>? scope,
-    Expression<String>? exceptionNotes,
-    Expression<DateTime>? effectiveFrom,
-    Expression<DateTime>? effectiveUntil,
-    Expression<int>? rowid,
-  }) {
-    return RawValuesInsertable({
-      if (userId != null) 'user_id': userId,
-      if (id != null) 'id': id,
-      if (cardId != null) 'card_id': cardId,
-      if (versionNumber != null) 'version_number': versionNumber,
-      if (strengtheningLevelNumber != null)
-        'strengthening_level_number': strengtheningLevelNumber,
-      if (effectiveTriggerCondition != null)
-        'effective_trigger_condition': effectiveTriggerCondition,
-      if (effectiveAction != null) 'effective_action': effectiveAction,
-      if (scope != null) 'scope': scope,
-      if (exceptionNotes != null) 'exception_notes': exceptionNotes,
-      if (effectiveFrom != null) 'effective_from': effectiveFrom,
-      if (effectiveUntil != null) 'effective_until': effectiveUntil,
-      if (rowid != null) 'rowid': rowid,
-    });
-  }
-
-  LocalNationalFocusRequirementVersionsCompanion copyWith({
-    Value<String>? userId,
-    Value<String>? id,
-    Value<String>? cardId,
-    Value<int>? versionNumber,
-    Value<int?>? strengtheningLevelNumber,
-    Value<String>? effectiveTriggerCondition,
-    Value<String>? effectiveAction,
-    Value<String?>? scope,
-    Value<String?>? exceptionNotes,
-    Value<DateTime>? effectiveFrom,
-    Value<DateTime?>? effectiveUntil,
-    Value<int>? rowid,
-  }) {
-    return LocalNationalFocusRequirementVersionsCompanion(
-      userId: userId ?? this.userId,
-      id: id ?? this.id,
-      cardId: cardId ?? this.cardId,
-      versionNumber: versionNumber ?? this.versionNumber,
-      strengtheningLevelNumber:
-          strengtheningLevelNumber ?? this.strengtheningLevelNumber,
-      effectiveTriggerCondition:
-          effectiveTriggerCondition ?? this.effectiveTriggerCondition,
-      effectiveAction: effectiveAction ?? this.effectiveAction,
-      scope: scope ?? this.scope,
-      exceptionNotes: exceptionNotes ?? this.exceptionNotes,
-      effectiveFrom: effectiveFrom ?? this.effectiveFrom,
-      effectiveUntil: effectiveUntil ?? this.effectiveUntil,
-      rowid: rowid ?? this.rowid,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (userId.present) {
-      map['user_id'] = Variable<String>(userId.value);
-    }
-    if (id.present) {
-      map['id'] = Variable<String>(id.value);
-    }
-    if (cardId.present) {
-      map['card_id'] = Variable<String>(cardId.value);
-    }
-    if (versionNumber.present) {
-      map['version_number'] = Variable<int>(versionNumber.value);
-    }
-    if (strengtheningLevelNumber.present) {
-      map['strengthening_level_number'] = Variable<int>(
-        strengtheningLevelNumber.value,
-      );
-    }
-    if (effectiveTriggerCondition.present) {
-      map['effective_trigger_condition'] = Variable<String>(
-        effectiveTriggerCondition.value,
-      );
-    }
-    if (effectiveAction.present) {
-      map['effective_action'] = Variable<String>(effectiveAction.value);
-    }
-    if (scope.present) {
-      map['scope'] = Variable<String>(scope.value);
-    }
-    if (exceptionNotes.present) {
-      map['exception_notes'] = Variable<String>(exceptionNotes.value);
-    }
-    if (effectiveFrom.present) {
-      map['effective_from'] = Variable<DateTime>(effectiveFrom.value);
-    }
-    if (effectiveUntil.present) {
-      map['effective_until'] = Variable<DateTime>(effectiveUntil.value);
-    }
-    if (rowid.present) {
-      map['rowid'] = Variable<int>(rowid.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('LocalNationalFocusRequirementVersionsCompanion(')
-          ..write('userId: $userId, ')
-          ..write('id: $id, ')
-          ..write('cardId: $cardId, ')
-          ..write('versionNumber: $versionNumber, ')
-          ..write('strengtheningLevelNumber: $strengtheningLevelNumber, ')
-          ..write('effectiveTriggerCondition: $effectiveTriggerCondition, ')
-          ..write('effectiveAction: $effectiveAction, ')
-          ..write('scope: $scope, ')
-          ..write('exceptionNotes: $exceptionNotes, ')
-          ..write('effectiveFrom: $effectiveFrom, ')
-          ..write('effectiveUntil: $effectiveUntil, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -17235,9 +16552,6 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
   late final $LocalNationalFocusStrengtheningLevelsTable
   localNationalFocusStrengtheningLevels =
       $LocalNationalFocusStrengtheningLevelsTable(this);
-  late final $LocalNationalFocusRequirementVersionsTable
-  localNationalFocusRequirementVersions =
-      $LocalNationalFocusRequirementVersionsTable(this);
   late final $LocalNationalFocusMaintenanceTable localNationalFocusMaintenance =
       $LocalNationalFocusMaintenanceTable(this);
   late final $LocalNationalFocusFailuresTable localNationalFocusFailures =
@@ -17290,7 +16604,6 @@ abstract class _$PactaDatabase extends GeneratedDatabase {
     localTasks,
     localNationalFocusCards,
     localNationalFocusStrengtheningLevels,
-    localNationalFocusRequirementVersions,
     localNationalFocusMaintenance,
     localNationalFocusFailures,
     taskSyncEntries,
@@ -17988,6 +17301,7 @@ typedef $$LocalNationalFocusCardsTableCreateCompanionBuilder =
       Value<String?> cascadePriorState,
       Value<String> reviewDisposition,
       Value<int?> activeStrengtheningLevel,
+      Value<String?> iconKey,
       required DateTime createdAt,
       required DateTime updatedAt,
       Value<DateTime?> deletedAt,
@@ -18014,6 +17328,7 @@ typedef $$LocalNationalFocusCardsTableUpdateCompanionBuilder =
       Value<String?> cascadePriorState,
       Value<String> reviewDisposition,
       Value<int?> activeStrengtheningLevel,
+      Value<String?> iconKey,
       Value<DateTime> createdAt,
       Value<DateTime> updatedAt,
       Value<DateTime?> deletedAt,
@@ -18121,6 +17436,11 @@ class $$LocalNationalFocusCardsTableFilterComposer
 
   ColumnFilters<int> get activeStrengtheningLevel => $composableBuilder(
     column: $table.activeStrengtheningLevel,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get iconKey => $composableBuilder(
+    column: $table.iconKey,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -18244,6 +17564,11 @@ class $$LocalNationalFocusCardsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get iconKey => $composableBuilder(
+    column: $table.iconKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -18348,6 +17673,9 @@ class $$LocalNationalFocusCardsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get iconKey =>
+      $composableBuilder(column: $table.iconKey, builder: (column) => column);
+
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
 
@@ -18423,6 +17751,7 @@ class $$LocalNationalFocusCardsTableTableManager
                 Value<String?> cascadePriorState = const Value.absent(),
                 Value<String> reviewDisposition = const Value.absent(),
                 Value<int?> activeStrengtheningLevel = const Value.absent(),
+                Value<String?> iconKey = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -18447,6 +17776,7 @@ class $$LocalNationalFocusCardsTableTableManager
                 cascadePriorState: cascadePriorState,
                 reviewDisposition: reviewDisposition,
                 activeStrengtheningLevel: activeStrengtheningLevel,
+                iconKey: iconKey,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -18473,6 +17803,7 @@ class $$LocalNationalFocusCardsTableTableManager
                 Value<String?> cascadePriorState = const Value.absent(),
                 Value<String> reviewDisposition = const Value.absent(),
                 Value<int?> activeStrengtheningLevel = const Value.absent(),
+                Value<String?> iconKey = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -18497,6 +17828,7 @@ class $$LocalNationalFocusCardsTableTableManager
                 cascadePriorState: cascadePriorState,
                 reviewDisposition: reviewDisposition,
                 activeStrengtheningLevel: activeStrengtheningLevel,
+                iconKey: iconKey,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 deletedAt: deletedAt,
@@ -18795,356 +18127,6 @@ typedef $$LocalNationalFocusStrengtheningLevelsTableProcessedTableManager =
         >,
       ),
       LocalNationalFocusStrengtheningLevel,
-      PrefetchHooks Function()
-    >;
-typedef $$LocalNationalFocusRequirementVersionsTableCreateCompanionBuilder =
-    LocalNationalFocusRequirementVersionsCompanion Function({
-      required String userId,
-      required String id,
-      required String cardId,
-      required int versionNumber,
-      Value<int?> strengtheningLevelNumber,
-      required String effectiveTriggerCondition,
-      required String effectiveAction,
-      Value<String?> scope,
-      Value<String?> exceptionNotes,
-      required DateTime effectiveFrom,
-      Value<DateTime?> effectiveUntil,
-      Value<int> rowid,
-    });
-typedef $$LocalNationalFocusRequirementVersionsTableUpdateCompanionBuilder =
-    LocalNationalFocusRequirementVersionsCompanion Function({
-      Value<String> userId,
-      Value<String> id,
-      Value<String> cardId,
-      Value<int> versionNumber,
-      Value<int?> strengtheningLevelNumber,
-      Value<String> effectiveTriggerCondition,
-      Value<String> effectiveAction,
-      Value<String?> scope,
-      Value<String?> exceptionNotes,
-      Value<DateTime> effectiveFrom,
-      Value<DateTime?> effectiveUntil,
-      Value<int> rowid,
-    });
-
-class $$LocalNationalFocusRequirementVersionsTableFilterComposer
-    extends
-        Composer<_$PactaDatabase, $LocalNationalFocusRequirementVersionsTable> {
-  $$LocalNationalFocusRequirementVersionsTableFilterComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnFilters<String> get userId => $composableBuilder(
-    column: $table.userId,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get cardId => $composableBuilder(
-    column: $table.cardId,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get versionNumber => $composableBuilder(
-    column: $table.versionNumber,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<int> get strengtheningLevelNumber => $composableBuilder(
-    column: $table.strengtheningLevelNumber,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get effectiveTriggerCondition => $composableBuilder(
-    column: $table.effectiveTriggerCondition,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get effectiveAction => $composableBuilder(
-    column: $table.effectiveAction,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get scope => $composableBuilder(
-    column: $table.scope,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get exceptionNotes => $composableBuilder(
-    column: $table.exceptionNotes,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<DateTime> get effectiveFrom => $composableBuilder(
-    column: $table.effectiveFrom,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<DateTime> get effectiveUntil => $composableBuilder(
-    column: $table.effectiveUntil,
-    builder: (column) => ColumnFilters(column),
-  );
-}
-
-class $$LocalNationalFocusRequirementVersionsTableOrderingComposer
-    extends
-        Composer<_$PactaDatabase, $LocalNationalFocusRequirementVersionsTable> {
-  $$LocalNationalFocusRequirementVersionsTableOrderingComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  ColumnOrderings<String> get userId => $composableBuilder(
-    column: $table.userId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get id => $composableBuilder(
-    column: $table.id,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get cardId => $composableBuilder(
-    column: $table.cardId,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get versionNumber => $composableBuilder(
-    column: $table.versionNumber,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<int> get strengtheningLevelNumber => $composableBuilder(
-    column: $table.strengtheningLevelNumber,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get effectiveTriggerCondition => $composableBuilder(
-    column: $table.effectiveTriggerCondition,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get effectiveAction => $composableBuilder(
-    column: $table.effectiveAction,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get scope => $composableBuilder(
-    column: $table.scope,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get exceptionNotes => $composableBuilder(
-    column: $table.exceptionNotes,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<DateTime> get effectiveFrom => $composableBuilder(
-    column: $table.effectiveFrom,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<DateTime> get effectiveUntil => $composableBuilder(
-    column: $table.effectiveUntil,
-    builder: (column) => ColumnOrderings(column),
-  );
-}
-
-class $$LocalNationalFocusRequirementVersionsTableAnnotationComposer
-    extends
-        Composer<_$PactaDatabase, $LocalNationalFocusRequirementVersionsTable> {
-  $$LocalNationalFocusRequirementVersionsTableAnnotationComposer({
-    required super.$db,
-    required super.$table,
-    super.joinBuilder,
-    super.$addJoinBuilderToRootComposer,
-    super.$removeJoinBuilderFromRootComposer,
-  });
-  GeneratedColumn<String> get userId =>
-      $composableBuilder(column: $table.userId, builder: (column) => column);
-
-  GeneratedColumn<String> get id =>
-      $composableBuilder(column: $table.id, builder: (column) => column);
-
-  GeneratedColumn<String> get cardId =>
-      $composableBuilder(column: $table.cardId, builder: (column) => column);
-
-  GeneratedColumn<int> get versionNumber => $composableBuilder(
-    column: $table.versionNumber,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<int> get strengtheningLevelNumber => $composableBuilder(
-    column: $table.strengtheningLevelNumber,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get effectiveTriggerCondition => $composableBuilder(
-    column: $table.effectiveTriggerCondition,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get effectiveAction => $composableBuilder(
-    column: $table.effectiveAction,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get scope =>
-      $composableBuilder(column: $table.scope, builder: (column) => column);
-
-  GeneratedColumn<String> get exceptionNotes => $composableBuilder(
-    column: $table.exceptionNotes,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<DateTime> get effectiveFrom => $composableBuilder(
-    column: $table.effectiveFrom,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<DateTime> get effectiveUntil => $composableBuilder(
-    column: $table.effectiveUntil,
-    builder: (column) => column,
-  );
-}
-
-class $$LocalNationalFocusRequirementVersionsTableTableManager
-    extends
-        RootTableManager<
-          _$PactaDatabase,
-          $LocalNationalFocusRequirementVersionsTable,
-          LocalNationalFocusRequirementVersion,
-          $$LocalNationalFocusRequirementVersionsTableFilterComposer,
-          $$LocalNationalFocusRequirementVersionsTableOrderingComposer,
-          $$LocalNationalFocusRequirementVersionsTableAnnotationComposer,
-          $$LocalNationalFocusRequirementVersionsTableCreateCompanionBuilder,
-          $$LocalNationalFocusRequirementVersionsTableUpdateCompanionBuilder,
-          (
-            LocalNationalFocusRequirementVersion,
-            BaseReferences<
-              _$PactaDatabase,
-              $LocalNationalFocusRequirementVersionsTable,
-              LocalNationalFocusRequirementVersion
-            >,
-          ),
-          LocalNationalFocusRequirementVersion,
-          PrefetchHooks Function()
-        > {
-  $$LocalNationalFocusRequirementVersionsTableTableManager(
-    _$PactaDatabase db,
-    $LocalNationalFocusRequirementVersionsTable table,
-  ) : super(
-        TableManagerState(
-          db: db,
-          table: table,
-          createFilteringComposer: () =>
-              $$LocalNationalFocusRequirementVersionsTableFilterComposer(
-                $db: db,
-                $table: table,
-              ),
-          createOrderingComposer: () =>
-              $$LocalNationalFocusRequirementVersionsTableOrderingComposer(
-                $db: db,
-                $table: table,
-              ),
-          createComputedFieldComposer: () =>
-              $$LocalNationalFocusRequirementVersionsTableAnnotationComposer(
-                $db: db,
-                $table: table,
-              ),
-          updateCompanionCallback:
-              ({
-                Value<String> userId = const Value.absent(),
-                Value<String> id = const Value.absent(),
-                Value<String> cardId = const Value.absent(),
-                Value<int> versionNumber = const Value.absent(),
-                Value<int?> strengtheningLevelNumber = const Value.absent(),
-                Value<String> effectiveTriggerCondition = const Value.absent(),
-                Value<String> effectiveAction = const Value.absent(),
-                Value<String?> scope = const Value.absent(),
-                Value<String?> exceptionNotes = const Value.absent(),
-                Value<DateTime> effectiveFrom = const Value.absent(),
-                Value<DateTime?> effectiveUntil = const Value.absent(),
-                Value<int> rowid = const Value.absent(),
-              }) => LocalNationalFocusRequirementVersionsCompanion(
-                userId: userId,
-                id: id,
-                cardId: cardId,
-                versionNumber: versionNumber,
-                strengtheningLevelNumber: strengtheningLevelNumber,
-                effectiveTriggerCondition: effectiveTriggerCondition,
-                effectiveAction: effectiveAction,
-                scope: scope,
-                exceptionNotes: exceptionNotes,
-                effectiveFrom: effectiveFrom,
-                effectiveUntil: effectiveUntil,
-                rowid: rowid,
-              ),
-          createCompanionCallback:
-              ({
-                required String userId,
-                required String id,
-                required String cardId,
-                required int versionNumber,
-                Value<int?> strengtheningLevelNumber = const Value.absent(),
-                required String effectiveTriggerCondition,
-                required String effectiveAction,
-                Value<String?> scope = const Value.absent(),
-                Value<String?> exceptionNotes = const Value.absent(),
-                required DateTime effectiveFrom,
-                Value<DateTime?> effectiveUntil = const Value.absent(),
-                Value<int> rowid = const Value.absent(),
-              }) => LocalNationalFocusRequirementVersionsCompanion.insert(
-                userId: userId,
-                id: id,
-                cardId: cardId,
-                versionNumber: versionNumber,
-                strengtheningLevelNumber: strengtheningLevelNumber,
-                effectiveTriggerCondition: effectiveTriggerCondition,
-                effectiveAction: effectiveAction,
-                scope: scope,
-                exceptionNotes: exceptionNotes,
-                effectiveFrom: effectiveFrom,
-                effectiveUntil: effectiveUntil,
-                rowid: rowid,
-              ),
-          withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
-              .toList(),
-          prefetchHooksCallback: null,
-        ),
-      );
-}
-
-typedef $$LocalNationalFocusRequirementVersionsTableProcessedTableManager =
-    ProcessedTableManager<
-      _$PactaDatabase,
-      $LocalNationalFocusRequirementVersionsTable,
-      LocalNationalFocusRequirementVersion,
-      $$LocalNationalFocusRequirementVersionsTableFilterComposer,
-      $$LocalNationalFocusRequirementVersionsTableOrderingComposer,
-      $$LocalNationalFocusRequirementVersionsTableAnnotationComposer,
-      $$LocalNationalFocusRequirementVersionsTableCreateCompanionBuilder,
-      $$LocalNationalFocusRequirementVersionsTableUpdateCompanionBuilder,
-      (
-        LocalNationalFocusRequirementVersion,
-        BaseReferences<
-          _$PactaDatabase,
-          $LocalNationalFocusRequirementVersionsTable,
-          LocalNationalFocusRequirementVersion
-        >,
-      ),
-      LocalNationalFocusRequirementVersion,
       PrefetchHooks Function()
     >;
 typedef $$LocalNationalFocusMaintenanceTableCreateCompanionBuilder =
@@ -25835,12 +24817,6 @@ class $PactaDatabaseManager {
       $$LocalNationalFocusStrengtheningLevelsTableTableManager(
         _db,
         _db.localNationalFocusStrengtheningLevels,
-      );
-  $$LocalNationalFocusRequirementVersionsTableTableManager
-  get localNationalFocusRequirementVersions =>
-      $$LocalNationalFocusRequirementVersionsTableTableManager(
-        _db,
-        _db.localNationalFocusRequirementVersions,
       );
   $$LocalNationalFocusMaintenanceTableTableManager
   get localNationalFocusMaintenance =>

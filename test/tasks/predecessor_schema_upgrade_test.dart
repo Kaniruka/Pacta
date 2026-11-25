@@ -132,7 +132,7 @@ void main() {
         final version = await database
             .customSelect('PRAGMA user_version')
             .get();
-        expect(version.single.read<int>('user_version'), 39);
+        expect(version.single.read<int>('user_version'), 40);
         upgradedStructure = await _structure(database);
         firstFingerprint = (await _capture(database, 'user-a')).fingerprint;
       } finally {
@@ -312,7 +312,7 @@ void main() {
         final version = await database
             .customSelect('PRAGMA user_version')
             .get();
-        expect(version.single.read<int>('user_version'), 39);
+        expect(version.single.read<int>('user_version'), 40);
       } finally {
         await database.close();
         await fixture.dispose();

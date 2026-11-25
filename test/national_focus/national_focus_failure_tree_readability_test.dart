@@ -277,7 +277,12 @@ void main() {
     await tester.tap(farNode);
     await tester.pumpAndSettle();
     expect(find.text('冻结要求'), findsOneWidget);
-    expect(find.text('此页只读：不能恢复、改写或用当前规则重算当时状态。'), findsOneWidget);
+    // 只读页的静态说明只在顶栏 ⓘ 里，冻结详情表本身不再复述免责声明。
+    expect(find.text('此页只读：不能恢复、改写或用当前规则重算当时状态。'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('national-focus-failure-tree-info')),
+      findsOneWidget,
+    );
     expect(find.text('落到具体时间与地点'), findsWidgets);
     expect(find.text('待今日确认'), findsWidgets);
     expect(find.text('确认'), findsNothing, reason: '历史详情不得使用实时动作标签');

@@ -395,7 +395,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('需要喝水时允许离开'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('编辑下必为例').first);
+    // 行右侧只留一颗溢出菜单：先点「规则操作」，再选「编辑」。
+    await tester.tap(find.byTooltip('规则操作').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('编辑'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).last, '需要喝水时允许短暂离开');
     await tester.tap(find.text('保存'));
@@ -403,7 +406,9 @@ void main() {
     expect(find.text('需要喝水时允许短暂离开'), findsOneWidget);
     expect(find.text('需要喝水时允许离开'), findsNothing);
 
-    await tester.tap(find.byTooltip('删除下必为例').first);
+    await tester.tap(find.byTooltip('规则操作').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除'));
     await tester.pumpAndSettle();
     expect(find.text('确认删除下必为例？'), findsOneWidget);
     await tester.tap(find.text('删除'));

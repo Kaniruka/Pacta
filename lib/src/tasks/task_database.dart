@@ -68,6 +68,10 @@ class LocalNationalFocusCards extends Table {
   TextColumn get reviewDisposition =>
       text().withDefault(const Constant('accepted'))();
   IntColumn get activeStrengtheningLevel => integer().nullable()();
+
+  /// 卡片自定义图标键（`lucide:book` 等四套前缀键）；空值按默认灯泡呈现。
+  /// 40 起随 Cloud Snapshot v4 的 `icon_key` 跨端同步。
+  TextColumn get iconKey => text().nullable()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
   DateTimeColumn get deletedAt => dateTime().nullable()();
@@ -87,23 +91,6 @@ class LocalNationalFocusStrengtheningLevels extends Table {
 
   @override
   Set<Column<Object>> get primaryKey => {userId, cardId, levelNumber};
-}
-
-class LocalNationalFocusRequirementVersions extends Table {
-  TextColumn get userId => text()();
-  TextColumn get id => text()();
-  TextColumn get cardId => text()();
-  IntColumn get versionNumber => integer()();
-  IntColumn get strengtheningLevelNumber => integer().nullable()();
-  TextColumn get effectiveTriggerCondition => text()();
-  TextColumn get effectiveAction => text()();
-  TextColumn get scope => text().nullable()();
-  TextColumn get exceptionNotes => text().nullable()();
-  DateTimeColumn get effectiveFrom => dateTime()();
-  DateTimeColumn get effectiveUntil => dateTime().nullable()();
-
-  @override
-  Set<Column<Object>> get primaryKey => {userId, id};
 }
 
 class LocalNationalFocusMaintenance extends Table {
@@ -540,7 +527,6 @@ class LocalCloudRecoveryPoints extends Table {
     LocalTasks,
     LocalNationalFocusCards,
     LocalNationalFocusStrengtheningLevels,
-    LocalNationalFocusRequirementVersions,
     LocalNationalFocusMaintenance,
     LocalNationalFocusFailures,
     TaskSyncEntries,
@@ -588,7 +574,6 @@ class PactaDatabase extends _$PactaDatabase {
       UNION SELECT user_id FROM focus_preferences
       UNION SELECT user_id FROM focus_precedent_rules
       UNION SELECT user_id FROM local_national_focus_failures
-      UNION SELECT user_id FROM local_national_focus_requirement_versions
       UNION SELECT user_id FROM local_national_focus_strengthening_levels
       UNION SELECT user_id FROM local_national_focus_maintenance
       UNION SELECT user_id FROM local_national_focus_cards
@@ -658,9 +643,6 @@ class PactaDatabase extends _$PactaDatabase {
         localNationalFocusFailures,
       )..where((row) => row.userId.equals(userId))).go();
       await (delete(
-        localNationalFocusRequirementVersions,
-      )..where((row) => row.userId.equals(userId))).go();
-      await (delete(
         localNationalFocusStrengtheningLevels,
       )..where((row) => row.userId.equals(userId))).go();
       await (delete(
@@ -718,7 +700,7 @@ class PactaDatabase extends _$PactaDatabase {
   /// ticket, so the final integrating schema has to reconcile both bodies above
   /// 36; this step stays structurally guarded instead of encoding a number.
   @override
-  int get schemaVersion => 39;
+  int get schemaVersion => 40;
 
   /// 仍然携带 `review_disposition` 的本地表。旧多端核对流程已废除，
   /// 这些列只保留给历史数据库的结构兼容，业务上一律按 `accepted` 读取。
@@ -849,7 +831,6 @@ class PactaDatabase extends _$PactaDatabase {
           localNationalFocusCards.activeStrengtheningLevel,
         );
         await m.createTable(localNationalFocusStrengtheningLevels);
-        await m.createTable(localNationalFocusRequirementVersions);
       }
       if (from >= 13 && from < 18) {
         await m.addColumn(
@@ -1020,6 +1001,29 @@ class PactaDatabase extends _$PactaDatabase {
         await ensureGoalPinSchema(this, m);
         await ensureFailureReviewSchema(this, m);
         await ensureProfileZoneSchema(this, m);
+      }
+      // 40：国策卡新增跨端自定义图标键，同时彻底删除「生效版本记录」表。
+      //
+      // 测试期没有真实用户数据，旧表是脏数据而不是待支持的输入：这里直接
+      // 丢弃整表，不做数据搬家，也不留兼容读取。列与表都用结构探针守卫，
+      // 重复升级、回拨 user_version、或由 40 之后的库重跑都安全。
+      if (from < 40) {
+        await customStatement(
+          'DROP TABLE IF EXISTS local_national_focus_requirement_versions',
+        );
+        final cardColumns = await customSelect(
+          'PRAGMA table_info(local_national_focus_cards)',
+        ).get();
+        final cardColumnNames = cardColumns
+            .map((row) => row.read<String>('name'))
+            .toSet();
+        if (cardColumnNames.isNotEmpty &&
+            !cardColumnNames.contains('icon_key')) {
+          await m.addColumn(
+            localNationalFocusCards,
+            localNationalFocusCards.iconKey,
+          );
+        }
       }
       if (from < 15) {
         await _cascadeLegacyActiveDescendants(this);

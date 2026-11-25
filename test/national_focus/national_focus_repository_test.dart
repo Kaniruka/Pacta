@@ -69,7 +69,7 @@ void main() {
     expect(restored.state, NationalFocusCardState.extinguished);
   });
 
-  test('名称独立于要求，可重名且改名不建立要求版本', () async {
+  test('名称独立于要求，可重名且改名不改写规则与图标', () async {
     final first = await repository.createCard(
       const NationalFocusCardDraft(
         name: '  阅读  ',
@@ -96,8 +96,8 @@ void main() {
     expect(renamed.state, before.state);
     expect(renamed.successfulDays, before.successfulDays);
     expect(renamed.currentConsecutiveDays, before.currentConsecutiveDays);
-    expect(renamed.requirementVersions, hasLength(1));
-    expect(renamed.requirementVersions.single.versionNumber, 1);
+    expect(renamed.strengtheningLevels, isEmpty);
+    expect(renamed.iconKey, isNull);
     expect(renamed.effectiveAction, '阅读 5 页');
     await expectLater(
       repository.renameCard(cardId: first.id, name: '   '),
@@ -133,7 +133,7 @@ void main() {
     expect((await repository.getCard(card.id)).name, card.name);
   });
 
-  test('可省略触发条件，完整编辑保留状态与要求生效历史', () async {
+  test('可省略触发条件，完整编辑保留状态与基础规则', () async {
     final actionOnly = await repository.createCard(
       const NationalFocusCardDraft(name: '仅行动', action: '阅读'),
     );
@@ -168,14 +168,8 @@ void main() {
     expect(after.state, before.state);
     expect(after.successfulDays, before.successfulDays);
     expect(after.currentConsecutiveDays, before.currentConsecutiveDays);
-    expect(after.requirementVersions, hasLength(2));
-    expect(after.requirementVersions.first.effectiveTriggerCondition, '');
-    expect(after.requirementVersions.first.effectiveAction, '阅读 5 页');
-    expect(
-      after.requirementVersions.first.effectiveUntil,
-      after.requirementVersions.last.effectiveFrom,
-    );
-    expect(after.requirementVersions.last.scope, '每天');
+    expect(after.strengtheningLevels, isEmpty);
+    expect(after.effectiveAction, '阅读 10 页');
     await repository.updateCard(cardId: card.id, draft: edited);
     expect((await repository.getCard(card.id)).updatedAt, after.updatedAt);
     await expectLater(
@@ -192,7 +186,7 @@ void main() {
     expect((await repository.getCard(card.id)).name, '精读');
   });
 
-  test('强化覆盖下编辑基础内容不改有效版本，范围和例外修改建立版本', () async {
+  test('强化覆盖下编辑基础内容不改强化规则，清空范围只改基础字段', () async {
     final card = await repository.createCard(draft('旧触发', '旧行动'));
     await repository.saveStrengtheningLevel(
       cardId: card.id,
@@ -213,7 +207,8 @@ void main() {
       ),
     );
     final covered = await repository.getCard(card.id);
-    expect(covered.requirementVersions, hasLength(2));
+    expect(covered.strengtheningLevels, hasLength(1));
+    expect(covered.activeStrengtheningLevel, 1);
     expect(covered.action, '新基础行动');
     expect(covered.effectiveAction, '强化行动');
     await repository.updateCard(
@@ -225,9 +220,9 @@ void main() {
       ),
     );
     final cleared = await repository.getCard(card.id);
-    expect(cleared.requirementVersions, hasLength(3));
-    expect(cleared.requirementVersions.last.scope, isNull);
-    expect(cleared.requirementVersions.last.exceptionNotes, isNull);
+    expect(cleared.scope, isNull);
+    expect(cleared.exceptionNotes, isNull);
+    expect(cleared.strengtheningLevels, hasLength(1));
     await repository.selectStrengtheningLevel(
       cardId: card.id,
       levelNumber: null,
@@ -237,24 +232,85 @@ void main() {
     expect(base.effectiveAction, '新基础行动');
   });
 
-  test('旧快照缺要求版本时编辑保留旧基础要求', () async {
-    final card = await repository.createCard(draft('旧触发', '旧行动'));
-    await database.delete(database.localNationalFocusRequirementVersions).go();
-    now = now.add(const Duration(minutes: 1));
+  test('卡片草稿与强化档位、图标在同一事务里原子落盘', () async {
+    final card = await repository.createCard(
+      const NationalFocusCardDraft(
+        name: '阅读',
+        action: '阅读 5 页',
+        iconKey: 'lucide:book-open',
+        strengtheningLevels: [
+          NationalFocusStrengtheningLevel(levelNumber: 1, action: '阅读 10 页'),
+          NationalFocusStrengtheningLevel(levelNumber: 2, action: '阅读 20 页'),
+        ],
+        activeStrengtheningLevel: 2,
+        updateStrengthening: true,
+      ),
+    );
+    expect(card.iconKey, 'lucide:book-open');
+    expect(card.strengtheningLevels, hasLength(2));
+    expect(card.activeStrengtheningLevel, 2);
+    expect(card.effectiveAction, '阅读 20 页');
+
     await repository.updateCard(
       cardId: card.id,
       draft: const NationalFocusCardDraft(
-        name: '新名称',
-        triggerCondition: '',
-        action: '新行动',
+        name: '精读',
+        action: '阅读 6 页',
+        iconKey: null,
+        strengtheningLevels: [
+          NationalFocusStrengtheningLevel(levelNumber: 1, action: '阅读 12 页'),
+        ],
+        activeStrengtheningLevel: 1,
+        updateStrengthening: true,
       ),
     );
     final updated = await repository.getCard(card.id);
-    expect(updated.requirementVersions, hasLength(2));
-    expect(updated.requirementVersions.first.effectiveTriggerCondition, '旧触发');
-    expect(updated.requirementVersions.first.scope, '仅工作日');
-    expect(updated.requirementVersions.last.effectiveTriggerCondition, '');
-    expect(updated.requirementVersions.last.scope, isNull);
+    expect(updated.name, '精读');
+    expect(updated.iconKey, isNull);
+    expect(updated.strengtheningLevels, hasLength(1));
+    expect(updated.effectiveAction, '阅读 12 页');
+
+    // 非连续编号整体拒绝：卡名、图标与档位都保持上一次保存的形状。
+    await expectLater(
+      repository.updateCard(
+        cardId: card.id,
+        draft: const NationalFocusCardDraft(
+          name: '坏草稿',
+          action: '坏行动',
+          iconKey: 'material:book',
+          strengtheningLevels: [
+            NationalFocusStrengtheningLevel(levelNumber: 1, action: '第一级'),
+            NationalFocusStrengtheningLevel(levelNumber: 3, action: '第三级'),
+          ],
+          activeStrengtheningLevel: 3,
+          updateStrengthening: true,
+        ),
+      ),
+      throwsArgumentError,
+    );
+    final unchanged = await repository.getCard(card.id);
+    expect(unchanged.name, '精读');
+    expect(unchanged.iconKey, isNull);
+    expect(unchanged.strengtheningLevels.single.action, '阅读 12 页');
+    expect(unchanged.activeStrengtheningLevel, 1);
+
+    // 当前选中的档位必须在草稿里真实存在。
+    await expectLater(
+      repository.updateCard(
+        cardId: card.id,
+        draft: const NationalFocusCardDraft(
+          name: '精读',
+          action: '阅读 6 页',
+          strengtheningLevels: [
+            NationalFocusStrengtheningLevel(levelNumber: 1, action: '阅读 12 页'),
+          ],
+          activeStrengtheningLevel: 2,
+          updateStrengthening: true,
+        ),
+      ),
+      throwsArgumentError,
+    );
+    expect((await repository.getCard(card.id)).activeStrengtheningLevel, 1);
   });
 
   test('完整编辑拒绝其他用户和已删除卡片', () async {
@@ -328,23 +384,7 @@ void main() {
     expect(strengthened.successfulDays, 1);
     expect(strengthened.currentConsecutiveDays, 1);
     expect(strengthened.state, NationalFocusCardState.pendingTodayConfirmation);
-    expect(strengthened.requirementVersions, hasLength(3));
-    expect(strengthened.requirementVersions[0].effectiveAction, '阅读 5 页');
-    expect(
-      strengthened.requirementVersions[0].effectiveUntil!.isAtSameMomentAs(
-        DateTime.utc(2026, 9, 25, 4),
-      ),
-      isTrue,
-    );
-    expect(strengthened.requirementVersions[1].effectiveAction, '阅读 10 页');
-    expect(
-      strengthened.requirementVersions[1].effectiveUntil!.isAtSameMomentAs(
-        DateTime.utc(2026, 9, 26, 4),
-      ),
-      isTrue,
-    );
-    expect(strengthened.requirementVersions[2].effectiveAction, '阅读 12 页');
-    expect(strengthened.requirementVersions[2].effectiveUntil, isNull);
+    expect(strengthened.strengtheningLevels.single.action, '阅读 12 页');
 
     await repository.dispose();
     repository = LocalNationalFocusRepository(
@@ -355,8 +395,7 @@ void main() {
     final restored = await repository.getCard(card.id);
     expect(restored.activeStrengtheningLevel, 1);
     expect(restored.effectiveAction, '阅读 12 页');
-    expect(restored.requirementVersions, hasLength(3));
-    expect(restored.requirementVersions[1].effectiveAction, '阅读 10 页');
+    expect(restored.strengtheningLevels.single.action, '阅读 12 页');
   });
 
   test('强化等级最多五个且未强化字段沿用基础要求', () async {
@@ -392,9 +431,16 @@ void main() {
     expect(updated.strengtheningLevels, hasLength(5));
   });
 
-  test('失败快照保留检查点时的强化要求版本', () async {
+  test('失败快照冻结检查点时的强化要求与图标', () async {
     now = DateTime.utc(2026, 9, 25, 3, 59);
-    final card = await repository.createCard(draft('开始工作后', '阅读 5 页'));
+    final card = await repository.createCard(
+      const NationalFocusCardDraft(
+        name: '阅读',
+        triggerCondition: '开始工作后',
+        action: '阅读 5 页',
+        iconKey: 'lucide:book-open',
+      ),
+    );
     await repository.placeCard(cardId: card.id, parentId: null);
     await repository.lightCard(card.id);
     final level = await repository.saveStrengtheningLevel(
@@ -417,7 +463,7 @@ void main() {
       (item) => item.id == card.id,
     );
     expect(snapshot.activeStrengtheningLevel, 1);
-    expect(snapshot.requirementVersionNumber, 2);
+    expect(snapshot.iconKey, 'lucide:book-open');
     expect(snapshot.effectiveAction, '阅读 10 页');
     expect(snapshot.name, card.name);
 
@@ -429,10 +475,18 @@ void main() {
       levelNumber: 1,
       draft: const NationalFocusStrengtheningLevelDraft(action: '阅读 12 页'),
     );
+    await repository.updateCard(
+      cardId: card.id,
+      draft: const NationalFocusCardDraft(
+        name: '新名称',
+        action: '阅读 5 页',
+        iconKey: 'tabler:book',
+      ),
+    );
     failure = (await repository.getFailures()).single;
     snapshot = failure.treeSnapshot.singleWhere((item) => item.id == card.id);
     expect(snapshot.effectiveAction, '阅读 10 页');
-    expect(snapshot.requirementVersionNumber, 2);
+    expect(snapshot.iconKey, 'lucide:book-open');
     expect(snapshot.name, card.name);
   });
 

@@ -7,15 +7,15 @@ import 'package:pacta/src/sync/cloud_snapshot_repository.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 探针 SQL 里嵌着的 v3 载荷必须就是客户端真实导出的形状。
+/// 探针 SQL 里嵌着的 v4 载荷必须就是客户端真实导出的形状。
 ///
 /// 这里不再逐字比对 SQL 源码，也不镜像 PRAGMA 列名，而是走公共契约：
 /// 把 fixture 通过 `InMemoryCloudSnapshotRemote` 上传，再用
 /// `CloudSnapshotRepository.downloadCloud` 恢复，最后用公开的
 /// `captureLocalState()` 再导出一次，往返结果必须与 fixture 完全一致。
 /// 客户端恢复路径本身就是最严格的形状检查——fixture 不真实就会在此失败。
-const _fixtureTag = r'$snapshot_v3_fixture$';
-const _fixturePath = 'supabase/tests/cloud_snapshot_schema_v3.sql';
+const _fixtureTag = r'$snapshot_v4_fixture$';
+const _fixturePath = 'supabase/tests/cloud_snapshot_schema_v4.sql';
 const _ownerPlaceholder = '__OWNER_ID__';
 const _fixtureOwner = '11111111-2222-3333-4444-555555555555';
 
@@ -25,7 +25,6 @@ const _businessTables = <String>{
   'local_tasks',
   'local_national_focus_cards',
   'local_national_focus_strengthening_levels',
-  'local_national_focus_requirement_versions',
   'local_national_focus_maintenance',
   'local_national_focus_failures',
   'focus_precedent_rules',
@@ -98,6 +97,14 @@ void main() {
     final after = await repository.captureLocalState();
 
     expect(after.payload['tables'], equals(fixture['tables']));
+    final cards =
+        (after.payload['tables'] as Map)['local_national_focus_cards']
+            as List<dynamic>;
+    expect(
+      (cards.single as Map)['icon_key'],
+      'lucide:book-open',
+      reason: 'v4 快照必须把卡片自定义图标键原样往返',
+    );
   });
 
   test('快照替换前拒绝公历之外的 0000 年日期', () async {
@@ -155,7 +162,7 @@ Map<String, dynamic> _fixture() {
   final start = sql.indexOf(_fixtureTag);
   final end = sql.indexOf(_fixtureTag, start + _fixtureTag.length);
   if (start < 0 || end < 0) {
-    throw StateError('SQL v3 probe is missing its json fixture block.');
+    throw StateError('SQL v4 probe is missing its json fixture block.');
   }
   final raw = sql
       .substring(start + _fixtureTag.length, end)

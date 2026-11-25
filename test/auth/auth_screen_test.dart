@@ -16,6 +16,10 @@ class _ScriptedAuthRepository implements AuthRepository {
   String? userId;
   Object? signInFailure;
   Object? signUpFailure;
+
+  /// 请求挂起闸门：非空时 signIn/signUp 停在 await 上，用来观察转圈与禁用态。
+  Completer<void>? signInGate;
+  Completer<void>? signUpGate;
   int signInCalls = 0;
   int signUpCalls = 0;
   final _changes = StreamController<String?>.broadcast();
@@ -35,6 +39,8 @@ class _ScriptedAuthRepository implements AuthRepository {
   @override
   Future<void> signIn({required String email, required String password}) async {
     signInCalls++;
+    final gate = signInGate;
+    if (gate != null) await gate.future;
     final failure = signInFailure;
     if (failure != null) throw failure;
     identifier = email;
@@ -45,6 +51,8 @@ class _ScriptedAuthRepository implements AuthRepository {
   @override
   Future<void> signUp({required String email, required String password}) async {
     signUpCalls++;
+    final gate = signUpGate;
+    if (gate != null) await gate.future;
     final failure = signUpFailure;
     if (failure != null) throw failure;
     identifier = email;
@@ -182,34 +190,58 @@ Future<void> _setSize(
 }
 
 void main() {
-  testWidgets('登录卡片用分段入口突显注册，去掉空洞口号与晦涩底部切换', (tester) async {
+  testWidgets('登录卡片并排等宽双按钮，移除顶部重复分段入口', (tester) async {
     final repository = _ScriptedAuthRepository();
     addTearDown(repository.dispose);
     await tester.pumpWidget(PactaApp(authRepository: repository));
     await tester.pumpAndSettle();
 
-    expect(find.byType(SegmentedButton<bool>), findsOneWidget);
-    expect(find.widgetWithText(SegmentedButton<bool>, '登录'), findsOneWidget);
-    expect(find.text('受邀注册'), findsOneWidget);
+    // 邮箱与密码只有一份，顶部再放「登录 / 受邀注册」分段只是重复标题。
+    expect(find.byType(SegmentedButton<bool>), findsNothing);
     expect(find.text('进入 Pacta'), findsOneWidget);
     expect(find.text('把注意力带回眼前的一步。'), findsNothing);
     expect(find.text('没有注册资格？联系管理员。'), findsNothing);
-    expect(find.widgetWithText(FilledButton, '登录'), findsOneWidget);
+
+    final register = tester.getRect(
+      find.widgetWithText(OutlinedButton, '受邀注册'),
+    );
+    final login = tester.getRect(find.widgetWithText(FilledButton, '登录'));
+
+    // 同排：中心线相差 <= 1dp，且左右顺序固定为「受邀注册 | 登录」。
+    expect((register.center.dy - login.center.dy).abs(), lessThanOrEqualTo(1));
+    expect(register.right, lessThan(login.left));
+    expect(register.width, closeTo(login.width, 2));
+    // 触屏命中区：两颗都不低于 48dp。
+    expect(register.height, greaterThanOrEqualTo(48));
+    expect(login.height, greaterThanOrEqualTo(48));
+
+    // 资格说明只存在于受邀注册入口的 Tooltip 上，不再占正文一行。
+    final tooltips = tester.widgetList<Tooltip>(
+      find.ancestor(
+        of: find.byKey(const ValueKey('auth-register-button')),
+        matching: find.byType(Tooltip),
+      ),
+    );
+    expect(
+      tooltips.map((tooltip) => tooltip.message),
+      contains('使用已开通注册资格的邮箱与密码（至少 8 位）激活账号'),
+    );
+    expect(find.text('使用已开通注册资格的邮箱与密码（至少 8 位）激活账号'), findsNothing);
   });
 
-  testWidgets('切到受邀注册显示引导文案与注册主操作', (tester) async {
+  testWidgets('受邀注册按钮直接提交注册，不经过任何模式切换', (tester) async {
     final repository = _ScriptedAuthRepository();
     addTearDown(repository.dispose);
     await tester.pumpWidget(PactaApp(authRepository: repository));
     await tester.pumpAndSettle();
 
-    expect(find.text('使用已开通注册资格的邮箱与密码（至少 8 位）激活账号'), findsNothing);
-
-    await tester.tap(find.text('受邀注册'));
+    await tester.enterText(find.byType(TextField).at(0), 'user@example.com');
+    await tester.enterText(find.byType(TextField).at(1), 'correct-password');
+    await tester.tap(find.widgetWithText(OutlinedButton, '受邀注册'));
     await tester.pumpAndSettle();
 
-    expect(find.text('使用已开通注册资格的邮箱与密码（至少 8 位）激活账号'), findsOneWidget);
-    expect(find.widgetWithText(FilledButton, '注册'), findsOneWidget);
+    expect(repository.signUpCalls, 1);
+    expect(repository.signInCalls, 0);
   });
 
   testWidgets('密码框可切换明文，图标与状态同步', (tester) async {
@@ -229,6 +261,74 @@ void main() {
 
     expect(obscured(), isFalse);
     expect(find.byIcon(Icons.visibility_off_outlined), findsOneWidget);
+  });
+
+  testWidgets('有效凭据在密码框回车触发登录而不是注册', (tester) async {
+    final repository = _ScriptedAuthRepository();
+    addTearDown(repository.dispose);
+    await tester.pumpWidget(PactaApp(authRepository: repository));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).at(0), 'user@example.com');
+    await tester.enterText(find.byType(TextField).at(1), 'correct-password');
+    await tester.pump();
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(repository.signInCalls, 1, reason: '回车默认走登录');
+    expect(repository.signUpCalls, 0, reason: '回车不得触发受邀注册');
+  });
+
+  testWidgets('登录请求挂起时只有登录按钮转圈，受邀注册保持文字并禁用', (tester) async {
+    final repository = _ScriptedAuthRepository();
+    addTearDown(repository.dispose);
+    final gate = Completer<void>();
+    repository.signInGate = gate;
+    await tester.pumpWidget(PactaApp(authRepository: repository));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField).at(0), 'user@example.com');
+    await tester.enterText(find.byType(TextField).at(1), 'correct-password');
+    await tester.tap(find.byKey(const ValueKey('auth-login-button')));
+    await tester.pump();
+
+    final loginButton = find.byKey(const ValueKey('auth-login-button'));
+    final registerButton = find.byKey(const ValueKey('auth-register-button'));
+    // 只有被点的那颗展示转圈指示器。
+    expect(
+      find.descendant(
+        of: loginButton,
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: registerButton,
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsNothing,
+    );
+    // 另一颗保持一致的文字与 48dp 命中区，但同步禁用。
+    expect(
+      find.descendant(of: registerButton, matching: find.text('受邀注册')),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<OutlinedButton>(registerButton).onPressed,
+      isNull,
+      reason: '请求期间另一颗同步禁用，避免同一份凭据再发一次',
+    );
+    expect(
+      tester.widget<FilledButton>(loginButton).onPressed,
+      isNull,
+      reason: '请求期间登录按钮自身也不可重复点按',
+    );
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(repository.signInCalls, 1);
+    expect(repository.signUpCalls, 0);
   });
 
   testWidgets('密码框回车直接提交', (tester) async {
@@ -260,15 +360,12 @@ void main() {
       await tester.pumpWidget(PactaApp(authRepository: repository));
       await tester.pumpAndSettle();
 
-      if (testCase.registering) {
-        await tester.tap(find.text('受邀注册'));
-        await tester.pumpAndSettle();
-      }
-
       await tester.enterText(find.byType(TextField).at(0), 'user@example.com');
       await tester.enterText(find.byType(TextField).at(1), 'correct-password');
       await tester.tap(
-        find.widgetWithText(FilledButton, testCase.registering ? '注册' : '登录'),
+        testCase.registering
+            ? find.widgetWithText(OutlinedButton, '受邀注册')
+            : find.widgetWithText(FilledButton, '登录'),
       );
       await tester.pumpAndSettle();
 
@@ -312,10 +409,18 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
 
-        await tester.tap(find.text('受邀注册'));
-        await tester.pumpAndSettle();
-        expect(tester.takeException(), isNull);
-        expect(find.text('使用已开通注册资格的邮箱与密码（至少 8 位）激活账号'), findsOneWidget);
+        // 并排双按钮在 320dp 下也必须同排不溢出，资格说明不占正文。
+        final register = tester.getRect(
+          find.widgetWithText(OutlinedButton, '受邀注册'),
+        );
+        final login = tester.getRect(find.widgetWithText(FilledButton, '登录'));
+        expect(register.right, lessThan(login.left));
+        expect(
+          (register.center.dy - login.center.dy).abs(),
+          lessThanOrEqualTo(1),
+        );
+        expect(login.right, lessThanOrEqualTo(logicalSize.width));
+        expect(find.text('使用已开通注册资格的邮箱与密码（至少 8 位）激活账号'), findsNothing);
       });
     }
   }

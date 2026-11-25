@@ -29,7 +29,7 @@ void main() {
 
     expect(cleaned, isTrue);
     await _expectUserRows(database, 'old-user-id', 0);
-    await _expectUserRows(database, 'new-user-id', 20);
+    await _expectUserRows(database, 'new-user-id', 19);
   });
 }
 
@@ -82,19 +82,6 @@ Future<void> _seedUser(PactaDatabase db, String userId) async {
           levelNumber: 1,
           createdAt: now,
           updatedAt: now,
-        ),
-      );
-  await db
-      .into(db.localNationalFocusRequirementVersions)
-      .insert(
-        LocalNationalFocusRequirementVersionsCompanion.insert(
-          userId: userId,
-          id: 'version-$userId',
-          cardId: 'card-$userId',
-          versionNumber: 1,
-          effectiveTriggerCondition: 'start work',
-          effectiveAction: 'write first step',
-          effectiveFrom: now,
         ),
       );
   await db
@@ -269,9 +256,6 @@ Future<void> _expectUserRows(PactaDatabase db, String userId, int count) async {
     )..where((row) => row.userId.equals(userId))).get(),
     await (db.select(
       db.localNationalFocusStrengtheningLevels,
-    )..where((row) => row.userId.equals(userId))).get(),
-    await (db.select(
-      db.localNationalFocusRequirementVersions,
     )..where((row) => row.userId.equals(userId))).get(),
     await (db.select(
       db.localNationalFocusMaintenance,

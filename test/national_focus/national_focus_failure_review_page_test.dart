@@ -4,8 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/focus/focus_repository.dart';
+import 'package:pacta/src/national_focus/national_focus_failure_pages.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
+import 'package:pacta/src/national_focus/national_focus_shared_widgets.dart';
 import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
@@ -117,6 +119,41 @@ void main() {
     await tester.tap(find.text('查看当时树'));
     await tester.pumpAndSettle();
     expect(find.text('当时树（只读）'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('失败记录页无检查点说明，批次卡用图标井与高对比结构', (tester) async {
+    final batchId = await createFailedBatch(repository);
+    Widget page() => MaterialApp(
+      home: NationalFocusFailureHistoryPage(
+        key: UniqueKey(),
+        repository: repository,
+        displayTimeZoneId: 'UTC',
+      ),
+    );
+    await tester.pumpWidget(page());
+    await pumpPage(tester);
+
+    // 检查点说明折叠卡整块下线，页内只剩分组标题与批次卡。
+    expect(find.text('检查点说明'), findsNothing);
+    expect(find.textContaining('下次检查点'), findsNothing);
+    expect(find.text('失败记录'), findsOneWidget);
+    expect(find.textContaining('未回顾 1 / 共 1 批'), findsOneWidget);
+    expect(find.textContaining('2 个节点'), findsOneWidget);
+    expect(find.byType(NationalFocusCardIconWell), findsNWidgets(2));
+    // 没有共同说明时不出现提示槽。
+    expect(find.byType(NationalFocusInfoCallout), findsNothing);
+
+    await repository.updateFailureExplanation(
+      batchId: batchId,
+      explanation: '共同说明：当天加班',
+    );
+    await tester.pumpWidget(page());
+    await pumpPage(tester);
+    expect(find.byType(NationalFocusInfoCallout), findsOneWidget);
+    expect(find.text('共同说明：当天加班'), findsOneWidget);
+    expect(find.text('检查点说明'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });

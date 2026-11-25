@@ -60,7 +60,9 @@ void main() {
       expect(find.text('行动'), findsNothing);
       expect(find.text('国策规则'), findsOneWidget);
       expect(find.text('读十页'), findsOneWidget);
-      await tester.tap(find.text('编辑卡片'));
+      await tester.tap(
+        find.byKey(const ValueKey('national-focus-detail-edit')),
+      );
       await tester.pumpAndSettle();
       final fields = find.byType(TextFormField);
       expect(fields, findsNWidgets(2));
@@ -86,10 +88,10 @@ void main() {
             ? NationalFocusCardState.lit
             : NationalFocusCardState.extinguished,
       );
-      expect(updated.requirementVersions.first.effectiveAction, '读十页');
-      expect(updated.requirementVersions.last.effectiveAction, '读二十页');
-      expect(updated.requirementVersions.last.scope, isNull);
-      expect(updated.requirementVersions.last.exceptionNotes, '出差除外');
+      expect(updated.strengtheningLevels, isEmpty);
+      expect(updated.effectiveAction, '读二十页');
+      expect(updated.iconKey, isNull);
+      expect(updated.exceptionNotes, '出差除外');
       expect(find.text('每日阅读'), findsOneWidget);
       expect(find.text('例外与判例'), findsOneWidget);
       await tester.tap(find.text('例外与判例'));

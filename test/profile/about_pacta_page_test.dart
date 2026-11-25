@@ -23,7 +23,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // 版本胶囊与 pubspec 同源：单一常量同时喂给版本胶囊与许可页。
-    expect(find.text('v0.3.1+4'), findsOneWidget);
+    expect(find.text('v0.4.0+5'), findsOneWidget);
     expect(find.byKey(const ValueKey('about-version-pill')), findsOneWidget);
     expect(find.text('Pacta'), findsOneWidget);
     expect(find.text('理论出处'), findsOneWidget);
@@ -94,7 +94,7 @@ void main() {
     expect(find.byType(LicensePage), findsOneWidget);
     final page = tester.widget<LicensePage>(find.byType(LicensePage));
     expect(page.applicationName, 'Pacta');
-    expect(page.applicationVersion, '0.3.1+4');
+    expect(page.applicationVersion, '0.4.0+5');
     expect(tester.takeException(), isNull);
   });
 
@@ -137,7 +137,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(AboutPactaPage), findsOneWidget);
-    expect(find.text('v0.3.1+4'), findsOneWidget);
+    expect(find.text('v0.4.0+5'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
   });

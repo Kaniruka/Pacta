@@ -130,8 +130,10 @@ void main() {
       await tester.tap(find.text('失败记录'));
       await tester.pumpAndSettle();
       expect(find.text('国策失败记录'), findsOneWidget);
-      expect(find.textContaining('· 1 个节点'), findsOneWidget);
-      await tester.tap(find.textContaining('· 1 个节点'));
+      expect(find.text('检查点说明'), findsNothing);
+      expect(find.text('失败记录'), findsOneWidget);
+      expect(find.textContaining('1 个节点'), findsOneWidget);
+      await tester.tap(find.textContaining('1 个节点'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('查看当时树'));
       await tester.pumpAndSettle();

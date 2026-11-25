@@ -7,24 +7,12 @@ import 'package:flutter/services.dart';
 
 import '../theme/pacta_fonts.dart';
 import '../theme/pacta_icon_sizes.dart';
+import '../theme/pacta_spacing.dart';
 import '../theme/pacta_status_colors.dart';
-import 'national_focus_repository.dart';
-import 'national_focus_strengthening_page.dart';
-
-Future<void> pushStrengtheningManager({
-  required BuildContext context,
-  required NationalFocusRepository repository,
-  required String cardId,
-  String? displayTimeZoneId,
-}) => Navigator.of(context).push<void>(
-  MaterialPageRoute<void>(
-    builder: (_) => NationalFocusStrengtheningPage(
-      repository: repository,
-      cardId: cardId,
-      displayTimeZoneId: displayTimeZoneId,
-    ),
-  ),
-);
+import '../theme/pacta_surfaces.dart';
+import '../ui/pacta_grouped_list.dart';
+import 'national_focus_icons.dart';
+import 'national_focus_models.dart';
 
 class NationalFocusTreeCanvasScale extends InheritedWidget {
   const NationalFocusTreeCanvasScale({
@@ -362,6 +350,453 @@ class NationalFocusFieldText extends StatelessWidget {
         style: Theme.of(context).textTheme.bodyLarge,
       ),
     ],
+  );
+}
+
+/// 国策卡状态图标井：40dp 圆形底 + 语义前景色。
+///
+/// 三态与国策树简洁节点（[NationalFocusCardState] 的亮 / 待确认 / 熄灭）完全
+/// 同源：点亮取成功容器色，待确认取三级提醒容器色，熄灭取中性容器色；描边
+/// 固定用 [ColorScheme.outlineVariant]，让同一状态在树与详情页读成同一个点。
+///
+/// 图标固定在 [PactaIconSizes.md]、井固定在 [PactaIconSizes.hero]：三态在
+/// 任何页面都是同一枚 40dp 圆点，调用方不再各自覆写像素。
+class NationalFocusStatusWell extends StatelessWidget {
+  const NationalFocusStatusWell({super.key, required this.state, this.iconKey});
+
+  final NationalFocusCardState state;
+
+  /// 卡片自定义图标键；点亮与熄灭态直接渲染它，空值/未知键回落默认灯泡，
+  /// 待今日确认态保留沙漏语义图标。
+  final String? iconKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final status = PactaStatusColors.of(context);
+    final customIcon = nationalFocusIconData(iconKey);
+    final (Color background, Color foreground, IconData icon) = switch (state) {
+      NationalFocusCardState.lit => (
+        status.successContainer,
+        status.onSuccessContainer,
+        customIcon,
+      ),
+      NationalFocusCardState.pendingTodayConfirmation => (
+        colors.tertiaryContainer,
+        colors.onTertiaryContainer,
+        Icons.hourglass_top,
+      ),
+      NationalFocusCardState.extinguished => (
+        colors.surfaceContainerHighest,
+        colors.onSurfaceVariant,
+        customIcon,
+      ),
+    };
+    return Container(
+      width: PactaIconSizes.hero,
+      height: PactaIconSizes.hero,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: background,
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Icon(icon, size: PactaIconSizes.md, color: foreground),
+    );
+  }
+}
+
+/// 卡片自定义图标的圆形图标井：列表头与失败记录节点行共用。
+///
+/// 井径默认 40dp（详情/身份卡尺度），列表可传 [PactaIconSizes.lg] 收紧；
+/// 井内图标固定 [PactaIconSizes.sm]，几何只由井径决定。空值/未知键回落
+/// 默认灯泡，颜色取中性前景，不与三态语义色抢注意力。
+class NationalFocusCardIconWell extends StatelessWidget {
+  const NationalFocusCardIconWell({
+    super.key,
+    required this.iconKey,
+    this.diameter = PactaIconSizes.hero,
+    this.foreground,
+    this.background,
+  });
+
+  final String? iconKey;
+  final double diameter;
+  final Color? foreground;
+  final Color? background;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      width: diameter,
+      height: diameter,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: background ?? colors.surfaceContainerHighest,
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Icon(
+        nationalFocusIconData(iconKey),
+        size: PactaIconSizes.sm,
+        color: foreground ?? colors.onSurfaceVariant,
+      ),
+    );
+  }
+}
+
+/// 卡内柔化提示槽：`surfaceContainerLow` 底、12dp 圆角、行内 ⓘ。
+///
+/// 身份卡的连带说明与编辑页的强化档位提示共用这一块，避免两处各写一遍
+/// 底色、圆角、图标尺度与正文样式。
+class NationalFocusInfoCallout extends StatelessWidget {
+  const NationalFocusInfoCallout({super.key, required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.info_outline,
+              size: PactaIconSizes.sm,
+              color: colors.onSurfaceVariant,
+            ),
+            const SizedBox(width: PactaSpacing.sm),
+            Expanded(
+              child: Text(
+                message,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 卡片状态胶囊：把三态映射到 [PactaStatusBadge] 的语义语气。
+///
+/// 点亮用成功、待确认用提醒、熄灭用中性；文字始终保留，不靠颜色单独表达状态。
+class NationalFocusStateBadge extends StatelessWidget {
+  const NationalFocusStateBadge({super.key, required this.state});
+
+  final NationalFocusCardState state;
+
+  @override
+  Widget build(BuildContext context) => PactaStatusBadge(
+    label: state.label,
+    tone: switch (state) {
+      NationalFocusCardState.lit => PactaStatusBadgeTone.success,
+      NationalFocusCardState.pendingTodayConfirmation =>
+        PactaStatusBadgeTone.warning,
+      NationalFocusCardState.extinguished => PactaStatusBadgeTone.neutral,
+    },
+  );
+}
+
+/// 内化进度轨：圆端、4dp（详情页 6dp），已内化时取成功前景色封顶。
+///
+/// 语义标签只报一次百分比，读屏不会把进度条读成一段没有数值的图形。
+class NationalFocusInternalizationBar extends StatelessWidget {
+  const NationalFocusInternalizationBar({
+    super.key,
+    required this.card,
+    this.height = 4,
+  });
+
+  final NationalFocusCard card;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final status = PactaStatusColors.of(context);
+    final progress = card.internalizationProgress.clamp(0.0, 100.0);
+    return Semantics(
+      label: '内化进度 ${progress.toStringAsFixed(1)}%',
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(999),
+        child: LinearProgressIndicator(
+          value: progress / 100,
+          minHeight: height,
+          backgroundColor: colors.surfaceContainerHigh,
+          valueColor: AlwaysStoppedAnimation<Color>(
+            card.isInternalized ? status.onSuccessContainer : colors.primary,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 国策卡身份总览卡：状态井 + 名称与连击胶囊 + 状态徽标 + 可选的连带说明。
+///
+/// 详情页与只读镜像共用同一张卡，避免两处各写一套头部。名称与
+/// [NationalFocusStreakTags] 必须同处一个 [Wrap]：短名称时胶囊紧跟名称右侧，
+/// 长名称自动换行，而不是被挤到下一行的最左缘。
+class NationalFocusCardIdentityCard extends StatelessWidget {
+  const NationalFocusCardIdentityCard({
+    super.key,
+    required this.card,
+    this.cascadeNote,
+  });
+
+  final NationalFocusCard card;
+
+  /// 连带熄灭 / 恢复说明；为空时整块提示槽不占位。
+  final String? cascadeNote;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final note = cascadeNote;
+    return Card(
+      child: Padding(
+        padding: PactaSpacing.cardInsets,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                NationalFocusStatusWell(
+                  state: card.state,
+                  iconKey: card.iconKey,
+                ),
+                const SizedBox(width: PactaSpacing.md),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        spacing: PactaSpacing.sm,
+                        runSpacing: 6,
+                        children: [
+                          Text(
+                            card.name,
+                            style: theme.textTheme.titleLarge?.copyWith(
+                              fontWeight: PactaFonts.semibold,
+                            ),
+                          ),
+                          NationalFocusStreakTags(
+                            currentConsecutiveDays: card.currentConsecutiveDays,
+                            bestConsecutiveDays: card.bestConsecutiveDays,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          NationalFocusStateBadge(state: card.state),
+                          if (card.isInternalized)
+                            const PactaStatusBadge(
+                              label: '已内化',
+                              icon: Icons.verified_outlined,
+                              tone: PactaStatusBadgeTone.success,
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (note != null) ...[
+              const SizedBox(height: PactaSpacing.md),
+              NationalFocusInfoCallout(message: note),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 详情页规则卡：主蓝「国策规则」标题 + 可选强化档位胶囊 + 可复制正文。
+///
+/// 可编辑详情与只读镜像共用这一张卡：[footer] 承载页面各自的判例呈现
+/// （可编辑页用折叠层，只读页用静态段落），卡身结构零分叉。
+class NationalFocusDetailRulesCard extends StatelessWidget {
+  const NationalFocusDetailRulesCard({
+    super.key,
+    required this.card,
+    this.footer,
+  });
+
+  final NationalFocusCard card;
+
+  /// 规则下方的附加阅读层；为空时连 1dp 发丝线与留白一起省略。
+  final Widget? footer;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final surfaces = PactaSurfaces.of(context);
+    final footerWidget = footer;
+    return Card(
+      child: Padding(
+        padding: PactaSpacing.cardInsets,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Text(
+                    '国策规则',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: colors.primary,
+                      fontWeight: PactaFonts.medium,
+                    ),
+                  ),
+                ),
+                if (card.activeStrengtheningLevel != null)
+                  PactaStatusBadge(
+                    label: '强化等级 ${card.activeStrengtheningLevel}',
+                    icon: Icons.trending_up,
+                    tone: PactaStatusBadgeTone.primary,
+                  ),
+              ],
+            ),
+            const SizedBox(height: PactaSpacing.sm),
+            SelectableText(
+              card.effectiveAction.isEmpty ? '未设置' : card.effectiveAction,
+              style: theme.textTheme.bodyLarge,
+            ),
+            if (footerWidget != null) ...[
+              const SizedBox(height: PactaSpacing.md),
+              Container(height: 1, color: surfaces.hairline),
+              const SizedBox(height: PactaSpacing.xs),
+              footerWidget,
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 详情页记录卡：主蓝「记录」标题 + 右上等宽百分比 + 6dp 进度轨。
+///
+/// 底部只解释「怎么算」：百分比已经在右上角出现一次，这里不再抄第二遍，
+/// 但仍保留「成功日」「内化进度」两个词，读屏与检索都能对上语义。
+class NationalFocusDetailRecordsCard extends StatelessWidget {
+  const NationalFocusDetailRecordsCard({super.key, required this.card});
+
+  final NationalFocusCard card;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final progress = card.internalizationProgress.clamp(0.0, 100.0);
+    return Card(
+      child: Padding(
+        padding: PactaSpacing.cardInsets,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '记录',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: colors.primary,
+                      fontWeight: PactaFonts.medium,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${progress.toStringAsFixed(1)}%',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: PactaFonts.semibold,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: PactaSpacing.md),
+            NationalFocusInternalizationBar(card: card, height: 6),
+            const SizedBox(height: PactaSpacing.sm),
+            Wrap(
+              spacing: PactaSpacing.md,
+              runSpacing: PactaSpacing.xs,
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                Text(
+                  '累计成功日 ${card.successfulDays} 天',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+                Text(
+                  '内化进度 · 按成功日累计计算',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 嵌在纯白卡片里的表单输入框：柔化填充 + 12dp 描边 + 主色聚焦。
+///
+/// 页面底色是浅蓝灰，输入框再直接用页面底会读成"卡片上开了个洞"；这里统一
+/// 取 [ColorScheme.surfaceContainerLow] 作为凹陷底，边框只在未聚焦时用
+/// [ColorScheme.outlineVariant] 轻轻收口。
+InputDecoration pactaCardInputDecoration(
+  BuildContext context, {
+  String? labelText,
+  String? hintText,
+  String? helperText,
+  bool alignLabelWithHint = false,
+}) {
+  final colors = Theme.of(context).colorScheme;
+  final border = OutlineInputBorder(
+    borderRadius: BorderRadius.circular(12),
+    borderSide: BorderSide(color: colors.outlineVariant),
+  );
+  return InputDecoration(
+    labelText: labelText,
+    hintText: hintText,
+    helperText: helperText,
+    alignLabelWithHint: alignLabelWithHint,
+    filled: true,
+    fillColor: colors.surfaceContainerLow,
+    border: border,
+    enabledBorder: border,
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide(color: colors.primary, width: 1.5),
+    ),
   );
 }
 

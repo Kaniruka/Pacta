@@ -5,13 +5,15 @@ import 'package:timezone/timezone.dart' as timezone;
 
 import '../focus/focus_time_zones.dart';
 import '../profile/account_time_zone.dart';
+import '../theme/pacta_fonts.dart';
 import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../theme/pacta_status_colors.dart';
 import '../theme/pacta_surfaces.dart';
 import '../ui/pacta_disclosure_section.dart';
 import '../ui/pacta_error_text.dart';
-import 'national_focus_checkpoints.dart';
+import '../ui/pacta_grouped_list.dart';
+import 'national_focus_icons.dart';
 import 'national_focus_models.dart';
 import 'national_focus_repository.dart';
 import 'national_focus_shared_widgets.dart';
@@ -77,8 +79,8 @@ class NationalFocusFailureHistoryPage extends StatefulWidget {
   /// 结算用的账号时区；为空时按 [displayTimeZoneId] 推出（再回落到北京时间）。
   final String? accountCheckpointTimeZoneId;
 
-  /// The checkpoint that closes the current National Focus Day. Callers pass
-  /// the instant they already display so this page never drifts from the tree.
+  /// 本批之后的检查点。页面不再复述检查点规则，这个值仍由调用方传入，
+  /// 供看板与树页复用同一个瞬时点。
   final DateTime? nextCheckpointAt;
 
   @override
@@ -158,132 +160,108 @@ class _NationalFocusFailureHistoryPageState
     final local = FocusTimeZones.contains(zoneId)
         ? timezone.TZDateTime.from(checkpoint, FocusTimeZones.location(zoneId))
         : checkpoint.toLocal();
-    return '${local.year}-${local.month.toString().padLeft(2, '0')}-'
-        '${local.day.toString().padLeft(2, '0')} '
-        '${local.hour.toString().padLeft(2, '0')}:'
-        '${local.minute.toString().padLeft(2, '0')}';
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
   }
 
-  String get _checkpointZoneId =>
-      widget.accountCheckpointTimeZoneId ??
-      (widget.displayTimeZoneId == AccountTimeZones.fallbackId
-          ? AccountTimeZones.defaultNationalFocusTimeZoneId
-          : AccountTimeZones.checkpointTimeZoneId(widget.displayTimeZoneId));
-
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('国策失败记录')),
-    body: SafeArea(
-      child: Align(
-        alignment: Alignment.topCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 800),
-          child: Padding(
-            padding: PactaSpacing.pageInsets(
-              context,
-              top: PactaSpacing.xs,
-              bottom: PactaSpacing.lg,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _CheckpointExplanation(
-                  nextCheckpointLabel:
-                      '下次检查点：'
-                      '${_formatCheckpoint(widget.nextCheckpointAt ?? nextNationalFocusCheckpoint(DateTime.now().toUtc(), timeZoneId: _checkpointZoneId))}'
-                      ' · $_effectiveDisplayZoneId',
-                  checkpointZoneId: _effectiveDisplayZoneId,
-                  checkpointComparison:
-                      AccountTimeZones.formatCheckpointComparison(
-                        accountTimeZoneId: _checkpointZoneId,
-                        referenceUtc:
-                            widget.nextCheckpointAt ?? DateTime.now().toUtc(),
-                      ),
-                ),
-                const SizedBox(height: PactaSpacing.sm),
-                Expanded(
-                  child: FutureBuilder<List<NationalFocusFailure>>(
-                    future: _failures,
-                    builder: (context, snapshot) {
-                      if (snapshot.hasError) {
-                        return Center(
-                          child: Text(formatUserError(snapshot.error!)),
-                        );
-                      }
-                      if (!snapshot.hasData) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      final grouped = <String, List<NationalFocusFailure>>{};
-                      for (final failure in snapshot.data!) {
-                        grouped
-                            .putIfAbsent(failure.batchId, () => [])
-                            .add(failure);
-                      }
-                      if (grouped.isEmpty) {
-                        return const Center(child: Text('还没有国策失败记录。'));
-                      }
-                      final batches = grouped.values.toList(growable: false);
-                      return ListView.separated(
-                        itemCount: batches.length,
-                        separatorBuilder: (_, _) =>
-                            const SizedBox(height: PactaSpacing.sm),
-                        itemBuilder: (context, index) => _FailureBatchCard(
-                          failures: batches[index],
-                          checkpointLabel: _formatCheckpoint(
-                            batches[index].first.checkpointAt,
-                          ),
-                          onOpenTree: () =>
-                              _openFailureTree(batches[index].first),
-                          onEditExplanation: () =>
-                              _editExplanation(batches[index].first),
-                          onMarkReviewed: () =>
-                              _markReviewed(batches[index].first),
-                        ),
-                      );
-                    },
+  Widget build(BuildContext context) =>
+      PactaSurfaces.wrapIfMissing(context, Builder(builder: _buildPage));
+
+  Widget _buildPage(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('国策失败记录')),
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 800),
+            child: FutureBuilder<List<NationalFocusFailure>>(
+              future: _failures,
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(child: Text(formatUserError(snapshot.error!)));
+                }
+                if (!snapshot.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final grouped = <String, List<NationalFocusFailure>>{};
+                for (final failure in snapshot.data!) {
+                  grouped.putIfAbsent(failure.batchId, () => []).add(failure);
+                }
+                final batches = grouped.values.toList(growable: false);
+                final unreviewed = batches
+                    .where((batch) => batch.any((item) => !item.isReviewed))
+                    .length;
+                final header = PactaSectionHeader(
+                  title: '失败记录',
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                  trailing: Text(
+                    batches.isEmpty
+                        ? '还没有记录'
+                        : '未回顾 $unreviewed / 共 ${batches.length} 批',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
                   ),
-                ),
-              ],
+                );
+                if (batches.isEmpty) {
+                  return ListView(
+                    padding: PactaSpacing.pageInsets(
+                      context,
+                      top: PactaSpacing.xs,
+                      bottom: PactaSpacing.lg,
+                    ),
+                    children: [
+                      header,
+                      const SizedBox(height: PactaSpacing.xl),
+                      const NationalFocusTreeMessage(
+                        icon: Icons.event_available,
+                        title: '还没有国策失败记录',
+                        message: '检查点结算后仍待确认的节点会在这里成批出现。',
+                      ),
+                    ],
+                  );
+                }
+                return ListView.separated(
+                  padding: PactaSpacing.pageInsets(
+                    context,
+                    top: PactaSpacing.xs,
+                    bottom: PactaSpacing.lg,
+                  ),
+                  itemCount: batches.length + 1,
+                  separatorBuilder: (_, index) =>
+                      SizedBox(height: index == 0 ? 0 : PactaSpacing.md),
+                  itemBuilder: (context, index) {
+                    if (index == 0) return header;
+                    final batch = batches[index - 1];
+                    return _FailureBatchCard(
+                      failures: batch,
+                      checkpointLabel: _formatCheckpoint(
+                        batch.first.checkpointAt,
+                      ),
+                      onOpenTree: () => _openFailureTree(batch.first),
+                      onEditExplanation: () => _editExplanation(batch.first),
+                      onMarkReviewed: () => _markReviewed(batch.first),
+                    );
+                  },
+                );
+              },
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
-class _CheckpointExplanation extends StatelessWidget {
-  const _CheckpointExplanation({
-    required this.nextCheckpointLabel,
-    required this.checkpointZoneId,
-    required this.checkpointComparison,
-  });
-
-  final String nextCheckpointLabel;
-  final String checkpointZoneId;
-
-  /// 账号时区的 04:00；设备时区不同时并列本机对应时间。
-  final String checkpointComparison;
-
-  @override
-  Widget build(BuildContext context) => Card(
-    child: PactaDisclosureSection(
-      tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-      title: const Text('检查点说明'),
-      subtitle: Text(nextCheckpointLabel),
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Text(
-            '$checkpointComparison；结算边界跟随账号时区（$checkpointZoneId），'
-            '不跟随本机时区。',
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
+/// 高对比失败批次卡：时间戳标题 + 回顾徽标 + 原因标签 + 细线分割的节点行。
+///
+/// 节点行不用裸 ListTile：左侧是当时的卡片图标井，右侧两行分别是节点名与
+/// 失败原因，行间只留一条柔化发丝线。共同说明仅在确实填写过时出现；底部
+/// 动作条在宽窗左右平衡、窄窗自动堆叠。
 class _FailureBatchCard extends StatelessWidget {
   const _FailureBatchCard({
     required this.failures,
@@ -301,54 +279,183 @@ class _FailureBatchCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final representative = failures.first;
     final isReviewed = failures.every((failure) => failure.isReviewed);
-    return Card(
-      child: PactaDisclosureSection(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-        title: Text(
-          '$checkpointLabel · ${failures.length} 个节点'
-          '${isReviewed ? ' · 已回顾' : ' · 未回顾'}',
+    final reasons = <String>{representative.cause.label};
+    for (final failure in failures) {
+      final reason = failure.failureReason?.trim();
+      if (reason != null && reason.isNotEmpty) reasons.add(reason);
+    }
+    final explanation = representative.sharedExplanation?.trim();
+    final actions = <Widget>[
+      TextButton.icon(
+        onPressed: onOpenTree,
+        icon: const Icon(Icons.account_tree_outlined, size: PactaIconSizes.sm),
+        label: const Text('查看当时树'),
+      ),
+      TextButton.icon(
+        onPressed: onEditExplanation,
+        icon: const Icon(Icons.edit_note, size: PactaIconSizes.sm),
+        label: Text(
+          explanation == null || explanation.isEmpty ? '补充说明' : '编辑共同说明',
         ),
-        subtitle: Text(representative.cause.label),
-        children: [
-          for (final failure in failures)
-            ListTile(
-              leading: const Icon(Icons.account_tree_outlined),
-              title: Text(_snapshotName(failure)),
-              subtitle: Text(
-                '${failure.cause.label}'
-                '${failure.failureReason == failure.cause.label ? '' : ' · ${failure.failureReason ?? '原因未填写'}'}',
-              ),
-            ),
-          const Divider(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-            child: Wrap(
-              alignment: WrapAlignment.end,
-              spacing: 8,
+      ),
+      if (!isReviewed)
+        TextButton.icon(
+          key: const ValueKey('national-focus-mark-reviewed'),
+          onPressed: onMarkReviewed,
+          icon: const Icon(Icons.check_circle_outline, size: PactaIconSizes.sm),
+          label: const Text('标记已回顾'),
+        ),
+    ];
+    return Card(
+      key: ValueKey('national-focus-failure-batch-${representative.batchId}'),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                TextButton.icon(
-                  onPressed: onOpenTree,
-                  icon: const Icon(Icons.account_tree_outlined),
-                  label: const Text('查看当时树'),
-                ),
-                TextButton.icon(
-                  onPressed: onEditExplanation,
-                  icon: const Icon(Icons.edit_note),
-                  label: Text(
-                    representative.sharedExplanation == null
-                        ? '补充说明'
-                        : '编辑共同说明',
+                Expanded(
+                  child: Text(
+                    '$checkpointLabel · ${failures.length} 个节点',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: PactaFonts.semibold,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
                   ),
                 ),
-                if (!isReviewed)
-                  TextButton.icon(
-                    key: const ValueKey('national-focus-mark-reviewed'),
-                    onPressed: onMarkReviewed,
-                    icon: const Icon(Icons.check_circle_outline),
-                    label: const Text('标记已回顾'),
+                const SizedBox(width: PactaSpacing.sm),
+                PactaStatusBadge(
+                  label: isReviewed ? '已回顾' : '未回顾',
+                  icon: isReviewed
+                      ? Icons.check_circle_outline
+                      : Icons.schedule,
+                  tone: isReviewed
+                      ? PactaStatusBadgeTone.neutral
+                      : PactaStatusBadgeTone.warning,
+                ),
+              ],
+            ),
+            const SizedBox(height: PactaSpacing.sm),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final reason in reasons)
+                  PactaStatusBadge(
+                    label: reason,
+                    tone: reason == representative.cause.label
+                        ? PactaStatusBadgeTone.error
+                        : PactaStatusBadgeTone.neutral,
                   ),
+              ],
+            ),
+            const SizedBox(height: PactaSpacing.xs),
+            for (var index = 0; index < failures.length; index++) ...[
+              if (index > 0) _FailureHairline(color: colors.outlineVariant),
+              _FailureNodeRow(failure: failures[index]),
+            ],
+            if (explanation != null && explanation.isNotEmpty) ...[
+              const SizedBox(height: PactaSpacing.sm),
+              NationalFocusInfoCallout(message: explanation),
+            ],
+            const SizedBox(height: PactaSpacing.sm),
+            _FailureHairline(color: colors.outlineVariant),
+            const SizedBox(height: PactaSpacing.xs),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth >= 420) {
+                  return Row(
+                    children: [
+                      actions.first,
+                      const Spacer(),
+                      for (var index = 1; index < actions.length; index++)
+                        actions[index],
+                    ],
+                  );
+                }
+                return Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: PactaSpacing.xs,
+                  runSpacing: PactaSpacing.xxs,
+                  children: actions,
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 批次卡内的柔化发丝线：只分层，不与状态色抢注意力。
+class _FailureHairline extends StatelessWidget {
+  const _FailureHairline({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: PactaSpacing.xs),
+    child: DecoratedBox(
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.35)),
+      child: const SizedBox(height: 1, width: double.infinity),
+    ),
+  );
+}
+
+/// 单个失败节点：当时图标井 + 节点名 + 原因，两行紧凑排布。
+class _FailureNodeRow extends StatelessWidget {
+  const _FailureNodeRow({required this.failure});
+
+  final NationalFocusFailure failure;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final snapshot = failure.treeSnapshot
+        .where((card) => card.id == failure.cardId)
+        .firstOrNull;
+    final reason =
+        failure.cause.label +
+        (failure.failureReason == failure.cause.label
+            ? ''
+            : ' · ${failure.failureReason ?? '原因未填写'}');
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: PactaSpacing.xs),
+      child: Row(
+        children: [
+          NationalFocusCardIconWell(
+            iconKey: snapshot?.iconKey,
+            diameter: PactaIconSizes.lg,
+          ),
+          const SizedBox(width: PactaSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  snapshot?.name ?? '已移除的国策卡',
+                  style: theme.textTheme.bodyLarge,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: PactaSpacing.xxs),
+                Text(
+                  reason,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ],
             ),
           ),
@@ -356,13 +463,6 @@ class _FailureBatchCard extends StatelessWidget {
       ),
     );
   }
-
-  String _snapshotName(NationalFocusFailure failure) =>
-      failure.treeSnapshot
-          .where((card) => card.id == failure.cardId)
-          .map((card) => card.name)
-          .firstOrNull ??
-      '已移除的国策卡';
 }
 
 /// Read-only browser for the tree snapshot frozen when a failure batch closed.
@@ -380,11 +480,19 @@ class NationalFocusFailureTreePage extends StatelessWidget {
   final String checkpointLabel;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      PactaSurfaces.wrapIfMissing(context, Builder(builder: _buildPage));
+
+  Widget _buildPage(BuildContext context) {
     final index = _HistoryTreeIndex(failure.treeSnapshot);
     final nodeHeight = _historyNodeHeight(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('当时树（只读）')),
+      appBar: AppBar(
+        title: const Text('当时树（只读）'),
+        // 只读页的全部静态说明收进顶栏这一枚 ⓘ：正文只留这份快照的数据，
+        // 不再用一段免责文字占住首屏。
+        actions: const [_FailureTreeInfoButton()],
+      ),
       body: SafeArea(
         child: Align(
           alignment: Alignment.topCenter,
@@ -401,12 +509,6 @@ class NationalFocusFailureTreePage extends StatelessWidget {
                 Text(
                   '$checkpointLabel · ${failure.cause.label}',
                   style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '点按节点查看当时状态与冻结要求；快照固定在检查点，此页只读，'
-                  '不能恢复、改写或用当前规则重算当时节点。',
-                  style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),
                 if (index.roots.isEmpty)
@@ -542,11 +644,6 @@ class NationalFocusFailureTreePage extends StatelessWidget {
                 card.name,
                 style: Theme.of(sheetContext).textTheme.headlineSmall,
               ),
-              const SizedBox(height: 4),
-              Text(
-                '检查点时的只读快照，不随当前树变化。',
-                style: Theme.of(sheetContext).textTheme.bodySmall,
-              ),
               const SizedBox(height: 16),
               NationalFocusFieldText(
                 label: '当时状态',
@@ -581,11 +678,7 @@ class NationalFocusFailureTreePage extends StatelessWidget {
                 const SizedBox(height: 12),
                 NationalFocusFieldText(
                   label: '强化等级',
-                  value: [
-                    '等级 ${card.activeStrengtheningLevel}',
-                    if (card.requirementVersionNumber != null)
-                      '要求版本 ${card.requirementVersionNumber}',
-                  ].join(' · '),
+                  value: '等级 ${card.activeStrengtheningLevel}',
                 ),
               ],
               const SizedBox(height: 12),
@@ -604,11 +697,6 @@ class NationalFocusFailureTreePage extends StatelessWidget {
                     style: Theme.of(sheetContext).textTheme.bodyMedium,
                   ),
                 ),
-              const SizedBox(height: 16),
-              Text(
-                '此页只读：不能恢复、改写或用当前规则重算当时状态。',
-                style: Theme.of(sheetContext).textTheme.bodySmall,
-              ),
             ],
           ),
         ),
@@ -639,6 +727,39 @@ class NationalFocusFailureTreePage extends StatelessWidget {
     }
     return notes;
   }
+}
+
+/// 只读历史树的唯一说明入口：顶栏 ⓘ，点按与悬停都弹同一条说明。
+class _FailureTreeInfoButton extends StatefulWidget {
+  const _FailureTreeInfoButton();
+
+  @override
+  State<_FailureTreeInfoButton> createState() => _FailureTreeInfoButtonState();
+}
+
+class _FailureTreeInfoButtonState extends State<_FailureTreeInfoButton> {
+  final _tooltipKey = GlobalKey<TooltipState>();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(right: PactaSpacing.sm),
+    child: Semantics(
+      label: '当时树说明',
+      button: true,
+      child: Tooltip(
+        key: _tooltipKey,
+        triggerMode: TooltipTriggerMode.tap,
+        message:
+            '点按节点查看当时状态与冻结要求；快照固定在检查点，此页只读，'
+            '不能恢复、改写或用当前规则重算当时节点。',
+        child: IconButton(
+          key: const ValueKey('national-focus-failure-tree-info'),
+          onPressed: () => _tooltipKey.currentState?.ensureTooltipVisible(),
+          icon: const Icon(Icons.info_outline, size: PactaIconSizes.md),
+        ),
+      ),
+    ),
+  );
 }
 
 const _historyNodeWidth = 210.0;
@@ -789,10 +910,10 @@ class _HistoricalFocusNode extends StatelessWidget {
     // 画布本身是 surfaceContainerLow：历史节点必须换成卡片底色再加一圈
     // 细边框，否则整张卡融进画布，节点边界和可点区域都读不出来。
     final cardSurface = PactaSurfaces.cardFor(Theme.of(context).brightness);
+    // 冻结快照里的 iconKey 决定节点图标；待今日确认仍用沙漏表达未确认。
     final statusIcon = switch (card.state) {
-      NationalFocusCardState.lit => Icons.lightbulb,
       NationalFocusCardState.pendingTodayConfirmation => Icons.hourglass_top,
-      NationalFocusCardState.extinguished => Icons.lightbulb_outline,
+      _ => nationalFocusIconData(card.iconKey),
     };
     final iconBackground = switch (card.state) {
       NationalFocusCardState.lit => PactaStatusColors.of(
@@ -892,7 +1013,10 @@ class _HistoricalLibrarySection extends StatelessWidget {
       children: [
         for (final card in cards)
           ListTile(
-            leading: const Icon(Icons.inventory_2_outlined),
+            leading: NationalFocusCardIconWell(
+              iconKey: card.iconKey,
+              diameter: PactaIconSizes.lg,
+            ),
             title: Text('卡片库内 · ${card.name}'),
             subtitle: Text('${card.state.label} · ${card.effectiveAction}'),
             onTap: () => onOpen(card),

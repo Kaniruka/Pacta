@@ -14,6 +14,7 @@ import '../ui/pacta_error_text.dart';
 import '../ui/pacta_page_header.dart';
 import 'national_focus_checkpoints.dart';
 import 'national_focus_failure_pages.dart';
+import 'national_focus_icons.dart';
 import 'national_focus_library_page.dart';
 import 'national_focus_models.dart';
 import 'national_focus_repository.dart';
@@ -459,7 +460,6 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
           child: _NodeActionsSheet(
             card: card,
             lightBlocked: lightBlocked,
-            cascadeSourceLabel: cascadeSourceLabel,
             onAction: (action) async {
               Navigator.of(sheetContext).pop();
               if (!mounted) return;
@@ -672,6 +672,10 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
               cardsById,
             );
 
+        // 页头、工具栏、提示横幅、空态与画布共用同一条纵轴：横向边距只能
+        // 来自这一个 gutter 真源，页面里不再散落硬编码的 20dp。
+        final gutter = PactaSpacing.gutterFor(MediaQuery.sizeOf(context).width);
+
         return Column(
           children: [
             Expanded(
@@ -707,43 +711,20 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                                   _placementCard == null && !_viewBusy
                                   ? _saveView
                                   : null,
+                              // 每日结算摘要并进工具栏同一行：不再在页头与
+                              // 画布之间孤悬一段 20dp 左边距的独立文本。
+                              checkpointSummary: _checkpointSummary,
                             ),
                           ),
                         ),
                         if (_viewBusy)
-                          const Padding(
-                            padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
-                            child: Text('正在更新视图…'),
+                          Padding(
+                            padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 8),
+                            child: const Text('正在更新视图…'),
                           ),
-                        Align(
-                          alignment: Alignment.topCenter,
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(
-                              maxWidth: PactaSpacing.maxContentWidth,
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  _checkpointSummary,
-                                  key: const ValueKey(
-                                    'national-focus-checkpoint-summary',
-                                  ),
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurfaceVariant,
-                                      ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
                         if (_viewReadFailed || _viewSaveFailed)
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                            padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 8),
                             child: Row(
                               children: [
                                 Expanded(
@@ -768,7 +749,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                           ),
                         if (_placementCard case final card?)
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                            padding: EdgeInsets.fromLTRB(gutter, 4, gutter, 8),
                             child: _PlacementBanner(
                               card: card,
                               onCancel: _cancelPlacement,
@@ -776,7 +757,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                           ),
                         if (_error != null)
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                            padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 8),
                             child: NationalFocusInlineError(_error!),
                           ),
                       ],
@@ -784,7 +765,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                   ),
                   if (_placementCard != null)
                     SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+                      padding: EdgeInsets.fromLTRB(gutter, 4, gutter, 8),
                       sliver: SliverToBoxAdapter(
                         child: _TopLevelPosition(
                           isSelecting: _placementCard != null,
@@ -796,7 +777,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                     ),
                   if (roots.isEmpty && _placementCard == null)
                     SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                      padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 20),
                       sliver: SliverToBoxAdapter(
                         child: NationalFocusTreeMessage(
                           icon: Icons.account_tree_outlined,
@@ -815,7 +796,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                     )
                   else if (roots.isNotEmpty)
                     SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                      padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 24),
                       sliver: SliverToBoxAdapter(
                         child: NationalFocusTreeCanvas(
                           treeWidth: roots.fold<double>(
@@ -853,7 +834,7 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
                     )
                   else
                     SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+                      padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 20),
                       sliver: SliverToBoxAdapter(
                         child: NationalFocusTreeMessage(
                           icon: Icons.touch_app_outlined,
@@ -964,10 +945,10 @@ class _NationalFocusTreePageState extends State<NationalFocusTreePage> {
     return _detailed ? _detailedNodeWidth : 148;
   }
 
-  /// 节点高度：详细视图要放下两行名称、详情页同款胶囊行与三行国策规则。
+  /// 节点高度：详细视图要放下两行名称、常显档位胶囊行与三行国策规则。
   ///
-  /// 1x 时最坏内容约 116dp，[_detailedNodeHeight] 的 160dp 留出呼吸位；2x 时
-  /// 最坏内容约 274dp，仍在 320dp 之内，不会出现 RenderFlex overflow。
+  /// 1x 时最坏内容约 157dp，[_detailedNodeHeight] 的 176dp 留出呼吸位；2x 时
+  /// 最坏内容约 339dp，仍在 352dp 之内，不会出现 RenderFlex overflow。
   double get _nodeHeight =>
       (_detailed ? _detailedNodeHeight : 100.0) *
       MediaQuery.textScalerOf(context).scale(1);
@@ -1009,6 +990,7 @@ class _TreePageHeader extends StatelessWidget {
     required this.onLibrary,
     required this.onOpenFailureRecords,
     required this.onOpenAiAnalysis,
+    required this.checkpointSummary,
   });
   final bool detailed;
   final ValueChanged<bool>? onViewSelected;
@@ -1019,9 +1001,14 @@ class _TreePageHeader extends StatelessWidget {
   final VoidCallback onOpenFailureRecords;
   final VoidCallback? onOpenAiAnalysis;
 
+  /// 每日结算摘要：与工具栏同排，超长时整段折到工具栏下方并齐左。
+  final String checkpointSummary;
+
   @override
   Widget build(BuildContext context) {
     final gutter = PactaSpacing.gutterFor(MediaQuery.sizeOf(context).width);
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         gutter,
@@ -1040,63 +1027,89 @@ class _TreePageHeader extends StatelessWidget {
               label: Text('全部确认 ($pendingCount)'),
             ),
           ),
+          // 工具栏与「每日结算」同排：宽屏时摘要贴右，窄屏放不下就整段
+          // 折到工具栏下方并保持齐左，而不是另起一个 20dp 左边距的孤行。
           Wrap(
+            alignment: WrapAlignment.spaceBetween,
             crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
+            spacing: PactaSpacing.sm,
+            runSpacing: PactaSpacing.xs,
             children: [
-              PopupMenuButton<bool>(
-                enabled: onViewSelected != null,
-                onSelected: onViewSelected,
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: false, child: Text('简洁视图')),
-                  PopupMenuItem(value: true, child: Text('详细视图')),
-                ],
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    minWidth: 48,
-                    minHeight: 48,
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(detailed ? '详细视图' : '简洁视图'),
-                        const Icon(
-                          Icons.arrow_drop_down,
-                          size: PactaIconSizes.md,
+              // 三个工具栏控件自身仍可折行：320dp + 2.0x 字号下
+              // 「简洁视图 + 卡片库 + 更多」会超过一行宽度，Row 会横向溢出。
+              Wrap(
+                spacing: PactaSpacing.xs,
+                runSpacing: PactaSpacing.xs,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  PopupMenuButton<bool>(
+                    enabled: onViewSelected != null,
+                    onSelected: onViewSelected,
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: false, child: Text('简洁视图')),
+                      PopupMenuItem(value: true, child: Text('详细视图')),
+                    ],
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        minWidth: 48,
+                        minHeight: 48,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(detailed ? '详细视图' : '简洁视图'),
+                            const Icon(
+                              Icons.arrow_drop_down,
+                              size: PactaIconSizes.md,
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
-                ),
-              ),
-              Tooltip(
-                message: '卡片库',
-                child: TextButton.icon(
-                  onPressed: onLibrary,
-                  icon: const Icon(
-                    Icons.library_books_outlined,
-                    size: PactaIconSizes.sm,
+                  Tooltip(
+                    message: '卡片库',
+                    child: TextButton.icon(
+                      onPressed: onLibrary,
+                      icon: const Icon(
+                        Icons.library_books_outlined,
+                        size: PactaIconSizes.sm,
+                      ),
+                      label: const Text('卡片库'),
+                    ),
                   ),
-                  label: const Text('卡片库'),
-                ),
-              ),
-              PopupMenuButton<String>(
-                tooltip: '更多',
-                icon: const Icon(Icons.more_vert, size: PactaIconSizes.md),
-                onSelected: (value) {
-                  if (value == 'ai') {
-                    onOpenAiAnalysis?.call();
-                  } else if (value == 'records') {
-                    onOpenFailureRecords();
-                  }
-                },
-                itemBuilder: (_) => [
-                  const PopupMenuItem(value: 'records', child: Text('失败记录')),
-                  if (onOpenAiAnalysis != null)
-                    const PopupMenuItem(value: 'ai', child: Text('国策 AI 分析')),
+                  PopupMenuButton<String>(
+                    tooltip: '更多',
+                    icon: const Icon(Icons.more_vert, size: PactaIconSizes.md),
+                    onSelected: (value) {
+                      if (value == 'ai') {
+                        onOpenAiAnalysis?.call();
+                      } else if (value == 'records') {
+                        onOpenFailureRecords();
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                        value: 'records',
+                        child: Text('失败记录'),
+                      ),
+                      if (onOpenAiAnalysis != null)
+                        const PopupMenuItem(
+                          value: 'ai',
+                          child: Text('国策 AI 分析'),
+                        ),
+                    ],
+                  ),
                 ],
+              ),
+              Text(
+                checkpointSummary,
+                key: const ValueKey('national-focus-checkpoint-summary'),
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -1110,23 +1123,17 @@ class _NodeActionsSheet extends StatelessWidget {
   const _NodeActionsSheet({
     required this.card,
     required this.lightBlocked,
-    required this.cascadeSourceLabel,
     required this.onAction,
   });
   final NationalFocusCard card;
   final bool lightBlocked;
-  final String? cascadeSourceLabel;
   final ValueChanged<_NodeAction> onAction;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final String? blockedReason =
-        lightBlocked && card.state != NationalFocusCardState.lit
-        ? (cascadeSourceLabel == null
-              ? '请先点亮父节点。'
-              : '因「$cascadeSourceLabel」连带熄灭；父节点恢复后仍需单独点亮。')
-        : null;
+    final bool isLightBlocked =
+        lightBlocked && card.state != NationalFocusCardState.lit;
     Widget action(
       _NodeAction kind,
       IconData icon,
@@ -1167,9 +1174,7 @@ class _NodeActionsSheet extends StatelessWidget {
                 child: FilledButton.icon(
                   key: const ValueKey('national-focus-primary-state-action'),
                   style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
-                  onPressed:
-                      (card.state == NationalFocusCardState.lit ||
-                          !lightBlocked)
+                  onPressed: !isLightBlocked
                       ? () => onAction(
                           card.state == NationalFocusCardState.lit
                               ? _NodeAction.extinguish
@@ -1182,11 +1187,16 @@ class _NodeActionsSheet extends StatelessWidget {
                         : Icons.lightbulb,
                     size: PactaIconSizes.sm,
                   ),
-                  label: Text(switch (card.state) {
-                    NationalFocusCardState.lit => '熄灭',
-                    NationalFocusCardState.pendingTodayConfirmation => '确认',
-                    NationalFocusCardState.extinguished => '点亮',
-                  }),
+                  label: Text(
+                    isLightBlocked
+                        ? '请先点亮父节点'
+                        : switch (card.state) {
+                            NationalFocusCardState.lit => '熄灭',
+                            NationalFocusCardState.pendingTodayConfirmation =>
+                              '确认',
+                            NationalFocusCardState.extinguished => '点亮',
+                          },
+                  ),
                 ),
               ),
               if (card.state ==
@@ -1211,11 +1221,7 @@ class _NodeActionsSheet extends StatelessWidget {
               ],
             ],
           ),
-          if (blockedReason != null) ...[
-            const SizedBox(height: 8),
-            Text(blockedReason, style: theme.textTheme.bodyMedium),
-          ],
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
           action(_NodeAction.details, Icons.article_outlined, '查看详情'),
           action(
             _NodeAction.addChild,
@@ -1269,6 +1275,7 @@ class _NationalFocusTreeNode extends StatelessWidget {
       label:
           '节点 $path，${card.name}，$status'
           '${card.isTopLevel ? '，根节点' : ''}'
+          '${card.activeStrengtheningLevel == null ? '，基础要求' : '，强化等级 ${card.activeStrengtheningLevel}'}'
           '${card.isInternalized ? '，已内化' : ''}'
           '${selecting
               ? blocked
@@ -1329,12 +1336,12 @@ class _NationalFocusSimpleNode extends StatelessWidget {
                 border: Border.all(color: colors.outlineVariant),
               ),
               child: Icon(
+                // 用户选的自定义图标直接进圆形节点；待今日确认仍用沙漏
+                // 表达"等确认"，空值与未知键回落默认灯泡。
                 switch (card.state) {
-                  NationalFocusCardState.lit => Icons.lightbulb,
                   NationalFocusCardState.pendingTodayConfirmation =>
                     Icons.hourglass_top,
-                  NationalFocusCardState.extinguished =>
-                    Icons.lightbulb_outline,
+                  _ => nationalFocusIconData(card.iconKey),
                 },
                 size: PactaIconSizes.md,
                 color: switch (card.state) {
@@ -1375,24 +1382,28 @@ const double _nodeCardRadius = 16;
 const double _detailedNodeWidth = 228;
 
 /// 详细视图卡片的基准高度：1x 最坏内容约 157dp（两行名称 + 折成两行的胶囊
-/// + 11dp 分隔带 + 三行规则，外加 9dp 上下内边距），160dp 只留约 3dp 呼吸位；
-/// 2x 时卡片高度随 `textScaler` 线性放大到 320dp，最坏组合约 306dp。任何
-/// 一项再长一点都会先撞上这个高度，改结构前请重算：
+/// + 11dp 分隔带 + 三行规则，外加 9dp 上下内边距），176dp 留出约 19dp 呼吸位；
+/// 2x 时卡片高度随 `textScaler` 线性放大到 352dp，最坏组合约 339dp。
 ///
-/// 18（上下内边距）+ 80（两行标题 40 + 4 + 两行 16dp 胶囊 + 4，2x 时胶囊
-/// 折成三行约 181）+ 11（5 + 1 + 5 分隔带）+ 48（三行规则，2x 约 96）
-/// ≤ 160 / 320。
-const double _detailedNodeHeight = 160;
+/// 强化档位胶囊是常显项，2x 时 `180d + 180d + LV5 + 已内化` 会各占一行
+/// （右列只有 164dp 宽），因此基准高度在加入档位胶囊后从 160dp 上移到
+/// 176dp。任何一项再长一点都会先撞上这个高度，改结构前请重算：
+///
+/// 18（上下内边距）+ 84（两行标题 40 + 4 + 两行 16dp 胶囊 + 4，2x 时胶囊
+/// 折成四行约 130）+ 11（5 + 1 + 5 分隔带）+ 48（三行规则，2x 约 96）
+/// ≤ 176 / 352。
+const double _detailedNodeHeight = 176;
 
 /// 详细视图状态图标井的直径（井内图标取 [PactaIconSizes.sm]）。
 const double _statusWellSize = PactaIconSizes.lg;
 
 /// 详细视图的节点卡片：左对齐的 M3 状态卡。
 ///
-/// 结构固定为「图标井 + 右列（两行名称 → 紧凑连续天数/已内化胶囊，无可展示
-/// 胶囊时整行不渲染）→ 1dp 柔化分隔线 → 最多三行国策规则」。抬头行按垂直
-/// 居中排版：短名称不会再把图标井顶到卡片上缘，上下重心自然平衡。顶层节点
-/// 不再有「根」胶囊，根只用更粗的外框区分。没有顶部状态条，也没有右上角
+/// 结构固定为「图标井 + 右列（两行名称 → 紧凑胶囊行：按需连击胶囊（0/0 时
+/// 不渲染）+ 常显 `LV0`–`LV5` 强化档位胶囊 + 按需「已内化」→ 1dp 柔化分隔
+/// 线 → 最多三行国策规则」。抬头行按垂直居中排版：图标井对齐整列重心，短
+/// 名称不会把卡片上缘顶出额外留白。顶层节点不再有「根」胶囊，根只用更粗
+/// 的外框区分。没有顶部状态条，也没有右上角
 /// 状态文字胶囊：状态只由左侧图标井、卡片填色与四周边框颜色区分。底色以
 /// [PactaSurfaces.card] 为基底混入状态色，亮暗两种主题下都比画布
 /// surfaceContainerLow 更亮，再配合等宽的 1.2–2dp 四边描边，每张卡都明显浮在
@@ -1420,12 +1431,12 @@ class _NationalFocusNodeCard extends StatelessWidget {
       selecting: selecting,
       blocked: blocked,
     );
-    // 胶囊行只在真有内容时出现：0 天且未内化时整行不渲染，绝不留下
-    // 「连续 0 天」噪声或一截空行。顶层节点不再渲染「根」胶囊：根的层次
-    // 只由更粗的外圈（2dp vs 1.2dp）与外层 Semantics 语义标签承担。
+    // 胶囊行常显：强化档位（LV0–LV5）是每张详细卡都有的信息，连击胶囊
+    // 仍只在真有记录时出现（0/0 不渲染「连续 0 天」噪声）。顶层节点不再
+    // 渲染「根」胶囊：根的层次只由更粗的外圈（2dp vs 1.2dp）与外层
+    // Semantics 语义标签承担。
     final showStreakTags =
         card.currentConsecutiveDays > 0 || card.bestConsecutiveDays > 0;
-    final showTagRow = showStreakTags || card.isInternalized;
     return Card(
       key: ValueKey('national-focus-card-${card.id}'),
       // 画布内卡片用零外边距：节点盒子的高度是布局契约，不能被 Card 的
@@ -1469,33 +1480,33 @@ class _NationalFocusNodeCard extends StatelessWidget {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          if (showTagRow) ...[
-                            const SizedBox(height: PactaSpacing.xs),
-                            // 胶囊宽度受右列约束：连续天数 + 已内化放不下时
-                            // 由 Wrap 换行，绝不横向顶出卡片。
-                            Wrap(
-                              spacing: PactaSpacing.xs,
-                              runSpacing: PactaSpacing.xs,
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                if (showStreakTags)
-                                  NationalFocusStreakTags(
-                                    currentConsecutiveDays:
-                                        card.currentConsecutiveDays,
-                                    bestConsecutiveDays:
-                                        card.bestConsecutiveDays,
-                                    compact: true,
-                                  ),
-                                if (card.isInternalized)
-                                  _NationalFocusNodeBadge(
-                                    icon: Icons.verified_outlined,
-                                    label: '已内化',
-                                    background: colors.secondaryContainer,
-                                    foreground: colors.onSecondaryContainer,
-                                  ),
-                              ],
-                            ),
-                          ],
+                          const SizedBox(height: PactaSpacing.xs),
+                          // 胶囊宽度受右列约束：连续天数 + 档位 + 已内化放不
+                          // 下时由 Wrap 换行，绝不横向顶出卡片。
+                          Wrap(
+                            spacing: PactaSpacing.xs,
+                            runSpacing: PactaSpacing.xs,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              if (showStreakTags)
+                                NationalFocusStreakTags(
+                                  currentConsecutiveDays:
+                                      card.currentConsecutiveDays,
+                                  bestConsecutiveDays: card.bestConsecutiveDays,
+                                  compact: true,
+                                ),
+                              _NationalFocusLevelBadge(
+                                level: card.activeStrengtheningLevel,
+                              ),
+                              if (card.isInternalized)
+                                _NationalFocusNodeBadge(
+                                  icon: Icons.verified_outlined,
+                                  label: '已内化',
+                                  background: colors.secondaryContainer,
+                                  foreground: colors.onSecondaryContainer,
+                                ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -1559,6 +1570,56 @@ class _NationalFocusNodeIconWell extends StatelessWidget {
       color: palette.iconForeground,
     ),
   );
+}
+
+/// 详细视图的强化档位胶囊：每张详细卡常显的 `LV0`–`LV5` 紧凑文字微标。
+///
+/// 只放纯文字，不塞图标：右列只有约 164dp，`180d + 180d + 已内化` 同时
+/// 在场时再多一枚图标就会把三枚胶囊挤成四行。未强化显示 `LV0`（中性底），
+/// 强化 1–5 级显示 `LV1`–`LV5`（主色底），与连击胶囊同一套内边距、行高和
+/// 字重，并排时高度与字重天然对齐。
+class _NationalFocusLevelBadge extends StatelessWidget {
+  const _NationalFocusLevelBadge({required this.level});
+
+  /// 当前生效的强化等级；`null` 表示只用基础要求。
+  final int? level;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final strengthened = level != null;
+    final foreground = strengthened
+        ? colors.onPrimaryContainer
+        : colors.onSurfaceVariant;
+    return Tooltip(
+      message: strengthened ? '强化等级 $level' : '基础要求',
+      child: DecoratedBox(
+        key: const ValueKey('national-focus-node-level-badge'),
+        decoration: BoxDecoration(
+          color: strengthened
+              ? colors.primaryContainer
+              : colors.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Padding(
+          // 与连击胶囊、已内化胶囊同一套内边距与行高。
+          padding: const EdgeInsets.fromLTRB(5, 1, 6, 1),
+          child: Text(
+            strengthened ? 'LV$level' : 'LV0',
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.fade,
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: foreground,
+              fontWeight: PactaFonts.semibold,
+              height: 1.25,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// 详细视图的紧凑微标：节点名称正下方的「已内化」胶囊。
@@ -1675,9 +1736,8 @@ class _NationalFocusNodePalette {
       iconBackground: well,
       iconForeground: wellForeground,
       statusIcon: switch (card.state) {
-        NationalFocusCardState.lit => Icons.lightbulb,
         NationalFocusCardState.pendingTodayConfirmation => Icons.hourglass_top,
-        NationalFocusCardState.extinguished => Icons.lightbulb_outline,
+        _ => nationalFocusIconData(card.iconKey),
       },
       shadowAlpha: dark ? 0.34 : 0.18,
     );

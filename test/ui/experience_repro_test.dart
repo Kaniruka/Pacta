@@ -428,12 +428,17 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('国策卡详情'), findsOneWidget);
 
-      // The detail offers a single visible edit entry and no separate rename.
-      expect(find.text('编辑卡片'), findsOneWidget);
+      // 编辑入口只剩顶栏一颗：页内不再有底部孤立按钮。
+      final editEntry = find.byKey(
+        const ValueKey('national-focus-detail-edit'),
+      );
+      expect(editEntry, findsOneWidget);
+      expect(find.text('编辑'), findsOneWidget);
+      expect(find.text('编辑卡片'), findsNothing);
       expect(find.byTooltip('卡片操作'), findsNothing);
       expect(find.text('修改名称'), findsNothing);
 
-      await tester.tap(find.text('编辑卡片'));
+      await tester.tap(editEntry);
       await tester.pumpAndSettle();
       final nameField = find.ancestor(
         of: find.text('卡片名称'),
@@ -482,19 +487,31 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('查看详情'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('当前规则 · 强化等级 1'), findsOneWidget);
+      // 规则卡用语义胶囊标注当前使用档位，不再把档位拼进标题句子里。
+      expect(find.text('强化等级 1'), findsOneWidget);
       // Strengthening management is entered from the card editor only.
-      expect(find.text('管理强化要求'), findsNothing);
-      await tester.tap(find.text('编辑卡片'));
+      expect(find.text('强化要求'), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey('national-focus-detail-edit')),
+      );
       await tester.pumpAndSettle();
-      final entry = find.text('管理强化要求');
+      final entry = find.text('强化要求');
       expect(entry, findsOneWidget);
       await tester.ensureVisible(entry);
       await tester.tap(entry);
       await tester.pumpAndSettle();
       expect(find.text('国策强化要求'), findsOneWidget);
-      expect(find.text('当前使用 · 强化等级 1'), findsOneWidget);
-      expect(find.textContaining('生效版本记录'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('national-focus-strengthening-level-1'),
+          ),
+          matching: find.text('正在使用'),
+        ),
+        findsOneWidget,
+      );
+      // 生效版本记录已从页面与数据层彻底移除。
+      expect(find.text('生效版本记录'), findsNothing);
 
       final reset = find.descendant(
         of: find.byKey(
@@ -505,15 +522,26 @@ void main() {
       await tester.ensureVisible(reset);
       await tester.tap(reset);
       await tester.pumpAndSettle();
-      expect(find.text('当前使用 · 基础要求'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('national-focus-strengthening-level-base'),
+          ),
+          matching: find.text('正在使用'),
+        ),
+        findsOneWidget,
+      );
 
       await tester.pageBack();
       await tester.pumpAndSettle();
       expect(find.text('编辑国策卡'), findsOneWidget);
-      await tester.pageBack();
+      // 强化档位是编辑页草稿：底部唯一「保存」随卡片一次事务提交。
+      await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
       expect(find.text('国策卡详情'), findsOneWidget);
       expect(find.text('国策规则'), findsOneWidget);
+      // 返回详情后档位回落到基础要求：强化胶囊随之消失。
+      expect(find.text('强化等级 1'), findsNothing);
       expect(tester.takeException(), isNull);
     } finally {
       await _unmountAndSettle(tester);

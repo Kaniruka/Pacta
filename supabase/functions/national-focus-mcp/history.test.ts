@@ -17,7 +17,7 @@ function frozenTree(suffix: string) {
       scope: 'home', exceptionNotes: 'old exception', isInTree: true, parentId: null, state: 'extinguished',
       successfulDays: 12, currentConsecutiveDays: 0, bestConsecutiveDays: 12, maintenanceCycleStarted: true,
       failureReason: 'frozen card reason', cascadeSourceCardId: null, cascadePriorState: null,
-      activeStrengtheningLevel: 2, requirementVersionNumber: 3, effectiveTriggerCondition: 'before 06:00',
+      activeStrengtheningLevel: 2, iconKey: 'tabler:book', effectiveTriggerCondition: 'before 06:00',
       effectiveAction: 'read two pages', createdAt: epoch('2026-01-01T00:00:00Z'), updatedAt: epoch('2026-10-01T00:00:00Z'),
       privateUserId: 'must-not-leak-user', hiddenPayload: 'must-not-leak-frozen-payload' },
     { id: `cascade-${suffix}`, name: 'Historical cascade child', triggerCondition: '', action: 'review',
@@ -159,11 +159,11 @@ test('failure detail returns frozen fields, separate reflection, and excludes ca
   assert.equal(event.review_disposition, 'pending_review');
   assert.equal(event.tree_snapshot[0].effective_trigger_condition, 'before 06:00');
   assert.equal(event.tree_snapshot[0].effective_action, 'read two pages');
-  assert.equal(event.tree_snapshot[0].requirement_version_number, 3);
+  assert.equal(event.tree_snapshot[0].icon_key, 'tabler:book');
   assert.equal(event.tree_snapshot[1].cascade_source_card_id, 'root-b');
   assert.equal(event.tree_snapshot[1].effective_trigger_condition, null);
   assert.equal(event.tree_snapshot[1].effective_action, null);
-  assert.equal(event.tree_snapshot[1].requirement_version_number, null);
+  assert.equal(event.tree_snapshot[1].icon_key, null);
   assert.equal('privateUserId' in event.tree_snapshot[0], false);
   assert.equal(event.tree_snapshot.length, 2);
 
@@ -418,7 +418,7 @@ test('Issue61 synthetic replay: independent parent/child, cascade, deleted histo
   assert.equal(parent.tree_snapshot[0].name, parent.tree_snapshot[1].name);
   assert.notEqual(parent.tree_snapshot[0].id, parent.tree_snapshot[1].id);
   assert.equal(parent.tree_snapshot[0].active_strengthening_level, 2);
-  assert.equal(parent.tree_snapshot[0].requirement_version_number, 3);
+  assert.equal(parent.tree_snapshot[0].icon_key, 'tabler:book');
   assert.equal(parent.tree_snapshot[0].effective_action, 'read two pages');
   assert.equal(parent.failure_reason, 'original parent reason');
   assert.equal(parent.shared_explanation, 'edited later, not original cause');

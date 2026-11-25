@@ -212,13 +212,35 @@ void main() {
     // 对称页边距：正文块 800dp 居中（左右各 240dp），内容再让出一档
     // gutter，不再用旧的左 20 / 右 20 字面量。
     final bodyLeft = (_viewport.width - _maxBodyWidth) / 2;
-    final name = tester.getRect(find.text('开始前先写一步'));
-    expect(
-      name.left,
-      moreOrLessEquals(bodyLeft + PactaSpacing.wideGutter),
-      reason: '正文左缘 = 居中块左缘 + 宽屏 gutter',
+    final headerCard = find.byKey(
+      const ValueKey('national-focus-detail-header-card'),
     );
-    expect(name.left, greaterThanOrEqualTo(bodyLeft), reason: '正文不得贴住桌面左缘');
+    final rulesCard = find.byKey(
+      const ValueKey('national-focus-detail-rules-card'),
+    );
+    final recordsCard = find.byKey(
+      const ValueKey('national-focus-detail-records-card'),
+    );
+    expect(headerCard, findsOneWidget);
+    expect(rulesCard, findsOneWidget);
+    expect(recordsCard, findsOneWidget);
+    // 三卡同一条阅读线：左缘 = 居中块左缘 + 宽屏 gutter。
+    for (final card in [headerCard, rulesCard, recordsCard]) {
+      expect(
+        tester.getRect(card).left,
+        moreOrLessEquals(bodyLeft + PactaSpacing.wideGutter),
+        reason: '卡片左缘 = 居中块左缘 + 宽屏 gutter',
+      );
+      expect(
+        tester.getRect(card).right,
+        moreOrLessEquals(bodyLeft + _maxBodyWidth - PactaSpacing.wideGutter),
+      );
+    }
+    expect(
+      tester.getRect(headerCard).left,
+      greaterThanOrEqualTo(bodyLeft),
+      reason: '正文不得贴住桌面左缘',
+    );
     expect(tester.takeException(), isNull);
     await unmount(tester);
   });

@@ -1,25 +1,65 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
-import '../ui/pacta_date_format.dart';
+import '../theme/pacta_surfaces.dart';
 import '../ui/pacta_disclosure_section.dart';
 import '../ui/pacta_error_text.dart';
+import '../ui/pacta_grouped_list.dart';
 import 'national_focus_models.dart';
 import 'national_focus_repository.dart';
+import 'national_focus_shared_widgets.dart';
 
+/// 强化要求草稿变更回调：档位列表与当前选中档位一起交回调用方。
+typedef NationalFocusStrengtheningDraftChanged = void Function(
+  List<NationalFocusStrengtheningLevel> levels,
+  int? activeLevel,
+);
+
+/// 国策强化要求：查看全部档位、新建或编辑档位、切换当前使用项。
+///
+/// 两种构造：
+/// - 默认构造直接读仓储并即时落盘（既有路由与单测使用）；
+/// - [NationalFocusStrengtheningPage.draft] 只维护内存草稿，每次增改与切换
+///   经 [onDraftChanged] 交回卡片编辑页，由编辑页底部唯一「保存」按钮随
+///   卡片其余字段一次事务提交。
+///
+/// 页面不再维护「生效版本记录」：档位本身就是唯一的规则来源，选中行保持
+/// 与列表一致的实底 card 色，只靠左侧主色强调条、选中图标与状态徽标表达
+/// 「正在使用」，避免半透明混色造成的透明缺块感。
 class NationalFocusStrengtheningPage extends StatefulWidget {
   const NationalFocusStrengtheningPage({
     super.key,
-    required this.repository,
+    required NationalFocusRepository this.repository,
     required this.cardId,
     this.displayTimeZoneId,
-  });
+  }) : draftCard = null,
+       initialLevels = null,
+       initialActiveLevel = null,
+       onDraftChanged = null;
 
-  final NationalFocusRepository repository;
-  final String cardId;
+  /// 草稿模式：不读也不写数据库。
+  const NationalFocusStrengtheningPage.draft({
+    super.key,
+    required NationalFocusCard card,
+    required List<NationalFocusStrengtheningLevel> levels,
+    this.initialActiveLevel,
+    this.onDraftChanged,
+    this.displayTimeZoneId,
+  }) : draftCard = card,
+       repository = null,
+       cardId = null,
+       initialLevels = levels;
+
+  final NationalFocusRepository? repository;
+  final String? cardId;
   final String? displayTimeZoneId;
+  final NationalFocusCard? draftCard;
+  final List<NationalFocusStrengtheningLevel>? initialLevels;
+  final int? initialActiveLevel;
+  final NationalFocusStrengtheningDraftChanged? onDraftChanged;
+
+  bool get isDraft => draftCard != null;
 
   @override
   State<NationalFocusStrengtheningPage> createState() =>
@@ -28,7 +68,12 @@ class NationalFocusStrengtheningPage extends StatefulWidget {
 
 class _NationalFocusStrengtheningPageState
     extends State<NationalFocusStrengtheningPage> {
+  /// 顶栏说明的锚点：点按 IconButton 时由它把 Tooltip 主动显形。
+  final GlobalKey<TooltipState> _infoTooltipKey = GlobalKey<TooltipState>();
+
   NationalFocusCard? _card;
+  List<NationalFocusStrengtheningLevel> _levels = const [];
+  int? _activeLevel;
   bool _loading = true;
   bool _busy = false;
   String? _error;
@@ -36,15 +81,26 @@ class _NationalFocusStrengtheningPageState
   @override
   void initState() {
     super.initState();
+    final draft = widget.draftCard;
+    if (draft != null) {
+      _card = draft;
+      _levels = [...?widget.initialLevels]
+        ..sort((left, right) => left.levelNumber.compareTo(right.levelNumber));
+      _activeLevel = widget.initialActiveLevel;
+      _loading = false;
+      return;
+    }
     _reload();
   }
 
   Future<void> _reload() async {
     try {
-      final card = await widget.repository.getCard(widget.cardId);
+      final card = await widget.repository!.getCard(widget.cardId!);
       if (!mounted) return;
       setState(() {
         _card = card;
+        _levels = card.strengtheningLevels;
+        _activeLevel = card.activeStrengtheningLevel;
         _loading = false;
         _error = null;
       });
@@ -57,31 +113,74 @@ class _NationalFocusStrengtheningPageState
     }
   }
 
+  void _notifyDraft() {
+    widget.onDraftChanged?.call(List.unmodifiable(_levels), _activeLevel);
+  }
+
   Future<void> _editLevel(
     NationalFocusCard card, [
     NationalFocusStrengtheningLevel? level,
   ]) async {
+    final levelNumber = level?.levelNumber ?? _levels.length + 1;
     final draft = await Navigator.of(context)
         .push<NationalFocusStrengtheningLevelDraft>(
           MaterialPageRoute<NationalFocusStrengtheningLevelDraft>(
-            builder: (_) =>
-                _StrengtheningLevelEditorPage(card: card, level: level),
+            builder: (_) => _StrengtheningLevelEditorPage(
+              baseAction: card.action,
+              levelNumber: levelNumber,
+              initialAction: level?.action,
+              initialTriggerCondition: level?.triggerCondition,
+            ),
           ),
         );
     if (draft == null || !mounted) return;
-    await _run(() async {
-      await widget.repository.saveStrengtheningLevel(
+    if (widget.isDraft) {
+      final updated = NationalFocusStrengtheningLevel(
+        levelNumber: levelNumber,
+        triggerCondition: draft.triggerCondition,
+        action: draft.action,
+      );
+      setState(() {
+        final next = [..._levels];
+        final index = next.indexWhere(
+          (item) => item.levelNumber == levelNumber,
+        );
+        if (index >= 0) {
+          next[index] = updated;
+        } else {
+          next.add(updated);
+        }
+        next.sort(
+          (left, right) => left.levelNumber.compareTo(right.levelNumber),
+        );
+        _levels = next;
+        _error = null;
+      });
+      _notifyDraft();
+      return;
+    }
+    await _run(
+      () => widget.repository!.saveStrengtheningLevel(
         cardId: card.id,
         levelNumber: level?.levelNumber,
         draft: draft,
-      );
-    });
+      ),
+    );
   }
 
   Future<void> _selectLevel(int? levelNumber) async {
+    if (widget.isDraft) {
+      if (_activeLevel == levelNumber) return;
+      setState(() {
+        _activeLevel = levelNumber;
+        _error = null;
+      });
+      _notifyDraft();
+      return;
+    }
     await _run(
-      () => widget.repository.selectStrengtheningLevel(
-        cardId: widget.cardId,
+      () => widget.repository!.selectStrengtheningLevel(
+        cardId: widget.cardId!,
         levelNumber: levelNumber,
       ),
     );
@@ -104,7 +203,10 @@ class _NationalFocusStrengtheningPageState
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      PactaSurfaces.wrapIfMissing(context, Builder(builder: _buildPage));
+
+  Widget _buildPage(BuildContext context) {
     final card = _card;
     if (_loading) {
       // 读取期间也要保留返回路径：缺 AppBar 时用户只能等读取结束才能退出。
@@ -120,120 +222,129 @@ class _NationalFocusStrengtheningPageState
       );
     }
 
-    final activeLevel = card.activeStrengtheningLevel;
-    final versionCount = card.requirementVersions.length;
-    final levelCount = card.strengtheningLevels.length;
-    final atCapacity = levelCount >= maxNationalFocusStrengtheningLevels;
     final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final activeLevel = _activeLevel;
+    final levelCount = _levels.length;
+    final atCapacity = levelCount >= maxNationalFocusStrengtheningLevels;
+    final infoMessage = widget.isDraft
+        ? '增改与切换都是草稿；点卡片编辑页底部「保存」后随卡片一并生效。'
+        : '切换即时生效，已有记录保持不变。是否符合由你判断。';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('国策强化要求')),
-      body: Center(
+      appBar: AppBar(
+        title: const Text('国策强化要求'),
+        actions: [
+          // 规则说明收进顶栏 48×48dp 的问号：页面正文不再用一段免责文字
+          // 抢占首屏，也不再和选中行重复抄写同一条要求。
+          Padding(
+            padding: const EdgeInsets.only(right: PactaSpacing.sm),
+            // 只有一个 Tooltip：触屏点按（triggerMode.tap）与桌面悬停都只弹
+            // 那句规则说明；IconButton 不再自带上具名的第二层 tooltip，
+            // 避免点按后冒出「强化要求说明」的冲突气泡。Semantics 保留可读
+            // 名称，读屏仍能识别这是说明按钮。
+            child: Semantics(
+              label: '强化要求说明',
+              button: true,
+              child: Tooltip(
+                key: _infoTooltipKey,
+                triggerMode: TooltipTriggerMode.tap,
+                message: infoMessage,
+                child: IconButton(
+                  key: const ValueKey('national-focus-strengthening-info'),
+                  onPressed: () =>
+                      _infoTooltipKey.currentState?.ensureTooltipVisible(),
+                  icon: const Icon(Icons.info_outline, size: PactaIconSizes.md),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      // 顶对齐：20:9 全面屏（393×873dp）下 Center 会把整段正文压到页
+      // 垂直中线，顶部掉出一大截空白；长屏只能从顶部开始读。
+      body: Align(
+        alignment: Alignment.topCenter,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 800),
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-            children: [
-              _CurrentRequirementPanel(
-                label: activeLevel == null
-                    ? '当前使用 · 基础要求'
-                    : '当前使用 · 强化等级 $activeLevel',
-                rule: card.effectiveAction,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '切换即时生效，已有记录保持不变。是否符合由你判断。',
-                style: theme.textTheme.bodySmall,
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                _InlineError(message: _error!),
-              ],
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text('可用要求', style: theme.textTheme.titleMedium),
-                  ),
-                  Text(
+          // 整页只有两小段（可用要求 / 新建），一次布局比懒加载更稳：窄屏
+          // 两倍字号下滚动到新建行时，上方的分组标题仍留在树里，标题与
+          // 动作的相对位置不会因复用而消失。
+          child: SingleChildScrollView(
+            padding: PactaSpacing.pageInsets(context),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_error != null) ...[
+                  NationalFocusInlineError(_error!),
+                  const SizedBox(height: PactaSpacing.md),
+                ],
+                PactaSectionHeader(
+                  title: '可用要求',
+                  padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+                  trailing: Text(
                     '$levelCount / $maxNationalFocusStrengtheningLevels 级',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ],
-              ),
-              if (atCapacity)
-                Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Text(
-                    '已达 $maxNationalFocusStrengtheningLevels 级上限',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ),
-              const SizedBox(height: 4),
-              _AvailableRequirementRow(
-                key: const ValueKey('national-focus-strengthening-level-base'),
-                numberLabel: '基础',
-                rule: card.action.trim().isEmpty ? '未设置' : card.action,
-                active: activeLevel == null,
-                busy: _busy,
-                onSelect: () => _selectLevel(null),
-              ),
-              for (final level in card.strengtheningLevels)
-                _AvailableRequirementRow(
-                  key: ValueKey(
-                    'national-focus-strengthening-level-${level.levelNumber}',
-                  ),
-                  numberLabel: '${level.levelNumber} 级',
-                  rule: level.action == null
-                      ? '沿用基础要求：${card.action}'
-                      : level.action!,
-                  active: activeLevel == level.levelNumber,
-                  busy: _busy,
-                  onSelect: () => _selectLevel(level.levelNumber),
-                  onEdit: () => _editLevel(card, level),
-                  editTooltip: '编辑强化等级 ${level.levelNumber}',
-                ),
-              if (card.strengtheningLevels.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Text(
-                    '暂无强化等级。可为这张卡设置更严格的国策规则。',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ),
-              const SizedBox(height: 12),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: FilledButton.tonalIcon(
-                  onPressed: _busy || atCapacity
-                      ? null
-                      : () => _editLevel(card),
-                  icon: const Icon(Icons.add),
-                  label: const Text('新建强化要求'),
-                ),
-              ),
-              // Version history is low-frequency reference material: it stays
-              // collapsed below the list and the new-level action so the
-              // current requirement keeps the space above the fold.
-              const SizedBox(height: 8),
-              PactaDisclosureSection(
-                tilePadding: EdgeInsets.zero,
-                title: Text('生效版本记录 · $versionCount'),
-                subtitle: Text(
-                  _currentIntervalLabel(
-                    card.requirementVersions,
-                    displayTimeZoneId: widget.displayTimeZoneId,
-                  ),
-                ),
-                children: [
-                  for (final version in card.requirementVersions.reversed)
-                    _RequirementVersionTile(
-                      version: version,
-                      displayTimeZoneId: widget.displayTimeZoneId,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colors.onSurfaceVariant,
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
-                ],
-              ),
-            ],
+                  ),
+                ),
+                PactaGroupedList(
+                  key: const ValueKey('national-focus-strengthening-tiers'),
+                  children: [
+                    _AvailableRequirementRow(
+                      key: const ValueKey(
+                        'national-focus-strengthening-level-base',
+                      ),
+                      numberLabel: '基础要求',
+                      rule: card.action.trim().isEmpty ? '未设置' : card.action,
+                      active: activeLevel == null,
+                      busy: _busy,
+                      onSelect: () => _selectLevel(null),
+                    ),
+                    for (final level in _levels)
+                      _AvailableRequirementRow(
+                        key: ValueKey(
+                          'national-focus-strengthening-level-${level.levelNumber}',
+                        ),
+                        numberLabel: '强化 ${level.levelNumber} 级',
+                        rule: level.action == null
+                            ? '沿用基础要求：${card.action}'
+                            : level.action!,
+                        active: activeLevel == level.levelNumber,
+                        busy: _busy,
+                        onSelect: () => _selectLevel(level.levelNumber),
+                        onEdit: () => _editLevel(card, level),
+                        editTooltip: '编辑强化等级 ${level.levelNumber}',
+                      ),
+                    // 新建与各等级同处一个分组：它也是"可用要求"的一行，
+                    // 但用设置行的视觉语言和上面的可选择段区分开。
+                    PactaSettingsTile(
+                      tileKey: const ValueKey(
+                        'national-focus-strengthening-create',
+                      ),
+                      leading: Icon(
+                        Icons.add_circle_outline,
+                        size: PactaIconSizes.md,
+                        color: atCapacity || _busy
+                            ? colors.onSurfaceVariant
+                            : colors.primary,
+                      ),
+                      title: '新建强化要求',
+                      subtitle: atCapacity
+                          ? '已达 $maxNationalFocusStrengtheningLevels 级上限'
+                          : _levels.isEmpty
+                          ? '为这张卡设置更严格的国策规则（最多 $maxNationalFocusStrengtheningLevels 级）'
+                          : '添加强化等级 ${levelCount + 1}',
+                      enabled: !_busy && !atCapacity,
+                      showChevron: !atCapacity,
+                      onTap: atCapacity ? null : () => _editLevel(card),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -241,54 +352,12 @@ class _NationalFocusStrengtheningPageState
   }
 }
 
-/// The requirement in force, set apart from the list of the other levels.
-class _CurrentRequirementPanel extends StatelessWidget {
-  const _CurrentRequirementPanel({required this.label, required this.rule});
-
-  final String label;
-  final String rule;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: colors.secondaryContainer,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              label,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: colors.onSecondaryContainer,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              rule,
-              style: theme.textTheme.titleMedium?.copyWith(
-                color: colors.onSecondaryContainer,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// One row in the available requirements list. The active row is the only one
-/// carrying the in-use marker; every level keeps its own edit affordance.
+/// One row in the available requirements list.
 ///
-/// On narrow widths the level, its state and the edit affordance share the
-/// first line while the rule takes the full width underneath, so a long
-/// requirement is never squeezed into a narrow column beside the controls.
-/// Wider widths keep the compact single line.
+/// 选中段与未选中段共用同一段水平内边距（左 16 / 右 12），所以左侧的选中
+/// 图标在两种状态下落在同一条像素线上；选中只加左侧强调条与状态徽标，不挪
+/// 动任何几何、也不把行底换成半透明混色——两种状态都是与列表一致的实底
+/// [PactaSurfaces.card]，列表分段之间不会出现透明缺块。
 class _AvailableRequirementRow extends StatelessWidget {
   const _AvailableRequirementRow({
     super.key,
@@ -314,72 +383,27 @@ class _AvailableRequirementRow extends StatelessWidget {
   /// to the level label and the two controls.
   static const double _stackedBreakpoint = 440;
 
-  static const double _labelWidth = 52;
-
   /// Minimum touch target for Android (48 logical pixels).
   static const double _hitTarget = 48;
+
+  /// 当前选中项的左侧强调竖条宽度。
+  static const double _accentWidth = 3.5;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final foreground = active ? colors.onSecondaryContainer : colors.onSurface;
+    final surfaces = PactaSurfaces.of(context);
     final label = Text(
       numberLabel,
       style: theme.textTheme.labelLarge?.copyWith(
-        color: active ? foreground : colors.primary,
+        color: active ? colors.onSurface : colors.primary,
       ),
     );
     final ruleText = Text(
       rule,
-      style: theme.textTheme.bodyMedium?.copyWith(color: foreground),
+      style: theme.textTheme.bodyMedium?.copyWith(color: colors.onSurface),
     );
-    // 全局 CardThemeData.margin 为零：等级行之间显式留 8dp，禁止贴边。
-    return Container(
-      margin: const EdgeInsets.only(bottom: PactaSpacing.sm),
-      decoration: active
-          ? BoxDecoration(
-              color: colors.secondaryContainer,
-              borderRadius: BorderRadius.circular(14),
-            )
-          : null,
-      padding: EdgeInsets.symmetric(horizontal: active ? 12 : 0, vertical: 8),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final controls = _controls(context);
-          if (constraints.maxWidth < _stackedBreakpoint) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    Expanded(child: label),
-                    ...controls,
-                  ],
-                ),
-                const SizedBox(height: 2),
-                ruleText,
-              ],
-            );
-          }
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              SizedBox(width: _labelWidth, child: label),
-              Expanded(child: ruleText),
-              ...controls,
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  /// State and selection stay separate from editing: an inactive level can be
-  /// edited without changing which requirement is currently in force.
-  List<Widget> _controls(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
     final edit = onEdit == null
         ? null
         : IconButton(
@@ -390,34 +414,109 @@ class _AvailableRequirementRow extends StatelessWidget {
               width: _hitTarget,
               height: _hitTarget,
             ),
-            icon: const Icon(Icons.edit_outlined),
+            icon: const Icon(Icons.edit_outlined, size: PactaIconSizes.compact),
           );
-    if (active) {
-      return [
-        const SizedBox(width: 8),
-        Text(
-          '正在使用',
-          style: theme.textTheme.labelMedium?.copyWith(color: colors.primary),
+    return Material(
+      // 实底：与未选中段、与整个分组完全同色。透明底一旦叠上半透明混色，
+      // 在分段卡片里就会读成缺一块的透明洞。
+      color: surfaces.card,
+      child: InkWell(
+        onTap: busy || active ? null : onSelect,
+        child: Stack(
+          children: [
+            if (active)
+              Positioned(
+                left: 0,
+                top: PactaSpacing.sm,
+                bottom: PactaSpacing.sm,
+                width: _accentWidth,
+                child: DecoratedBox(
+                  key: const ValueKey(
+                    'national-focus-strengthening-active-bar',
+                  ),
+                  decoration: BoxDecoration(
+                    color: colors.primary,
+                    borderRadius: BorderRadius.circular(_accentWidth),
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 12, 12),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final selection = _selection(context);
+                  if (constraints.maxWidth < _stackedBreakpoint) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            _stateIcon(colors),
+                            const SizedBox(width: PactaSpacing.sm),
+                            Expanded(child: label),
+                            selection,
+                            ?edit,
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        ruleText,
+                      ],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      _stateIcon(colors),
+                      const SizedBox(width: PactaSpacing.sm),
+                      label,
+                      const SizedBox(width: PactaSpacing.md),
+                      Expanded(child: ruleText),
+                      const SizedBox(width: PactaSpacing.sm),
+                      selection,
+                      ?edit,
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
         ),
-        ?edit,
-      ];
-    }
-    return [
-      TextButton(
-        style: TextButton.styleFrom(minimumSize: const Size(64, _hitTarget)),
-        onPressed: busy ? null : onSelect,
-        child: const Text('选择'),
       ),
-      ?edit,
-    ];
+    );
   }
+
+  Widget _stateIcon(ColorScheme colors) => Icon(
+    active ? Icons.check_circle : Icons.radio_button_unchecked,
+    size: PactaIconSizes.compact,
+    color: active ? colors.primary : colors.onSurfaceVariant,
+  );
+
+  /// State and selection stay separate from editing: an inactive level can be
+  /// edited without changing which requirement is currently in force.
+  Widget _selection(BuildContext context) => active
+      ? const PactaStatusBadge(
+          label: '正在使用',
+          tone: PactaStatusBadgeTone.primary,
+        )
+      : TextButton(
+          style: TextButton.styleFrom(minimumSize: const Size(64, _hitTarget)),
+          onPressed: busy ? null : onSelect,
+          child: const Text('选择'),
+        );
 }
 
 class _StrengtheningLevelEditorPage extends StatefulWidget {
-  const _StrengtheningLevelEditorPage({required this.card, this.level});
+  const _StrengtheningLevelEditorPage({
+    required this.baseAction,
+    required this.levelNumber,
+    this.initialAction,
+    this.initialTriggerCondition,
+  });
 
-  final NationalFocusCard card;
-  final NationalFocusStrengtheningLevel? level;
+  final String baseAction;
+  final int levelNumber;
+  final String? initialAction;
+  final String? initialTriggerCondition;
 
   @override
   State<_StrengtheningLevelEditorPage> createState() =>
@@ -429,18 +528,27 @@ class _StrengtheningLevelEditorPageState
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _action;
   late final String? _legacyTriggerCondition;
-
-  bool get _isEditingExistingLevel => widget.level != null;
+  late final String _initialAction;
+  bool _dirty = false;
 
   @override
   void initState() {
     super.initState();
-    _legacyTriggerCondition = widget.level?.triggerCondition;
-    _action = TextEditingController(text: widget.level?.action ?? '');
+    _legacyTriggerCondition = widget.initialTriggerCondition;
+    _initialAction = widget.initialAction ?? '';
+    _action = TextEditingController(text: _initialAction);
+    _action.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    final dirty = _action.text != _initialAction;
+    if (dirty == _dirty) return;
+    setState(() => _dirty = dirty);
   }
 
   @override
   void dispose() {
+    _action.removeListener(_onTextChanged);
     _action.dispose();
     super.dispose();
   }
@@ -458,19 +566,56 @@ class _StrengtheningLevelEditorPageState
     );
   }
 
+  /// 有未保存输入时系统返回 / 顶栏返回都先确认：强化规则是用户手写的
+  /// 判据，不能像普通弹层一样一按就吞掉。
+  Future<void> _confirmDiscard() async {
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('放弃未保存的修改？'),
+        content: Text('强化等级 ${widget.levelNumber} 的修改还没有保存。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('继续编辑'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('放弃'),
+          ),
+        ],
+      ),
+    );
+    if (discard == true && mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
-    final levelNumber =
-        widget.level?.levelNumber ?? widget.card.strengtheningLevels.length + 1;
-    final title = widget.level == null
-        ? '新建强化等级 $levelNumber'
-        : '编辑强化等级 $levelNumber';
+  Widget build(BuildContext context) => PactaSurfaces.wrapIfMissing(
+    context,
+    PopScope<NationalFocusStrengtheningLevelDraft>(
+      canPop: !_dirty,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _confirmDiscard();
+      },
+      child: Builder(builder: _buildPage),
+    ),
+  );
+
+  Widget _buildPage(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isEditing = widget.initialAction != null;
+    final title =
+        (isEditing ? '编辑强化等级 ' : '新建强化等级 ') + widget.levelNumber.toString();
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 12),
+            padding: const EdgeInsets.only(right: PactaSpacing.md),
             child: FilledButton.tonal(
               onPressed: _save,
               child: const Text('保存'),
@@ -480,66 +625,97 @@ class _StrengtheningLevelEditorPageState
       ),
       body: Form(
         key: _formKey,
-        child: Center(
+        child: Align(
+          alignment: Alignment.topCenter,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 800),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+              padding: PactaSpacing.pageInsets(context),
               children: [
-                Text(
-                  _isEditingExistingLevel
-                      ? '可展开基础规则对照。留空会沿用基础要求。'
-                      : '填写强化后的国策规则，需要时展开基础规则对照。',
-                  style: Theme.of(context).textTheme.bodyLarge,
+                const PactaSectionHeader(
+                  title: '强化规则',
+                  padding: EdgeInsets.fromLTRB(4, 0, 4, 8),
                 ),
-                const SizedBox(height: 20),
-                TextFormField(
-                  key: const ValueKey('strengthened-rule'),
-                  controller: _action,
-                  minLines: 3,
-                  maxLines: 6,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: const InputDecoration(
-                    labelText: '强化后的国策规则',
-                    helperText: '留空则沿用基础要求',
-                    border: OutlineInputBorder(),
-                    alignLabelWithHint: true,
+                Card(
+                  child: Padding(
+                    padding: PactaSpacing.cardInsets,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        TextFormField(
+                          key: const ValueKey('strengthened-rule'),
+                          controller: _action,
+                          minLines: 3,
+                          maxLines: 6,
+                          textCapitalization: TextCapitalization.sentences,
+                          decoration: pactaCardInputDecoration(
+                            context,
+                            labelText: '强化后的国策规则',
+                            helperText: '留空则沿用基础要求',
+                            alignLabelWithHint: true,
+                          ),
+                        ),
+                        FormField<bool>(
+                          validator: (_) =>
+                              _action.text.trim().isEmpty &&
+                                  (_legacyTriggerCondition ?? '').trim().isEmpty
+                              ? '填写强化后的国策规则。'
+                              : null,
+                          builder: (state) => state.hasError
+                              ? Padding(
+                                  padding: const EdgeInsets.only(
+                                    top: PactaSpacing.md,
+                                  ),
+                                  child: Text(
+                                    state.errorText!,
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: colors.error,
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                const SizedBox(height: 8),
-                PactaDisclosureSection(
-                  tilePadding: EdgeInsets.zero,
-                  childrenPadding: const EdgeInsets.only(bottom: 12),
-                  title: const Text('对照基础规则'),
-                  children: [
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        widget.card.action.trim().isEmpty
-                            ? '未设置'
-                            : widget.card.action,
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: PactaSpacing.lg),
+                // 对照参考是只读材料：默认折叠，需要核对时展开同一张白卡。
+                const PactaSectionHeader(
+                  title: '参考对照',
+                  padding: EdgeInsets.fromLTRB(4, 0, 4, 8),
                 ),
-                FormField<bool>(
-                  validator: (_) =>
-                      _action.text.trim().isEmpty &&
-                          (_legacyTriggerCondition ?? '').trim().isEmpty
-                      ? '填写强化后的国策规则。'
-                      : null,
-                  builder: (state) => state.hasError
-                      ? Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: Text(
-                            state.errorText!,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                          ),
-                        )
-                      : const SizedBox.shrink(),
+                Card(
+                  clipBehavior: Clip.antiAlias,
+                  child: PactaDisclosureSection(
+                    leading: Icon(
+                      Icons.article_outlined,
+                      size: PactaIconSizes.md,
+                      color: colors.onSurfaceVariant,
+                    ),
+                    tilePadding: const EdgeInsets.symmetric(
+                      horizontal: PactaSpacing.lg,
+                      vertical: PactaSpacing.xs,
+                    ),
+                    childrenPadding: const EdgeInsets.fromLTRB(
+                      PactaSpacing.lg,
+                      0,
+                      PactaSpacing.lg,
+                      PactaSpacing.lg,
+                    ),
+                    title: const Text('对照基础规则'),
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          widget.baseAction.trim().isEmpty
+                              ? '未设置'
+                              : widget.baseAction,
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -548,75 +724,4 @@ class _StrengtheningLevelEditorPageState
       ),
     );
   }
-}
-
-class _RequirementVersionTile extends StatelessWidget {
-  const _RequirementVersionTile({
-    required this.version,
-    this.displayTimeZoneId,
-  });
-
-  final NationalFocusRequirementVersion version;
-  final String? displayTimeZoneId;
-
-  @override
-  Widget build(BuildContext context) {
-    final levelNumber = version.strengtheningLevelNumber;
-    final label = levelNumber == null ? '基础要求' : '强化等级 $levelNumber';
-    final endText = version.effectiveUntil == null
-        ? '当前仍生效'
-        : formatPactaDateTimeInZone(
-            version.effectiveUntil!,
-            timeZoneId: displayTimeZoneId,
-          );
-    final end = version.effectiveUntil == null ? endText : '至 $endText';
-    final legacyTrigger = version.effectiveTriggerCondition.trim();
-    final exceptionNotes = version.exceptionNotes?.trim();
-    final start = formatPactaDateTimeInZone(
-      version.effectiveFrom,
-      timeZoneId: displayTimeZoneId,
-    );
-    final versionNumber = version.versionNumber;
-    final rule = version.effectiveAction;
-    final details = [
-      '国策规则：$rule',
-      if (exceptionNotes != null && exceptionNotes.isNotEmpty)
-        '例外与判例：$exceptionNotes',
-      if (legacyTrigger.isNotEmpty) '旧触发条件：$legacyTrigger',
-      '$start — $end',
-    ].join('\n');
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text('版本 $versionNumber · $label'),
-      subtitle: Text(details),
-      isThreeLine: true,
-    );
-  }
-}
-
-class _InlineError extends StatelessWidget {
-  const _InlineError({required this.message});
-
-  final String message;
-
-  @override
-  Widget build(BuildContext context) => Text(
-    message,
-    style: Theme.of(context).textTheme.bodyMedium
-        ?.copyWith(color: Theme.of(context).colorScheme.error),
-  );
-}
-
-String _currentIntervalLabel(
-  List<NationalFocusRequirementVersion> versions, {
-  String? displayTimeZoneId,
-}) {
-  if (versions.isEmpty) return '尚无生效版本记录';
-  final current = versions.last;
-  final versionNumber = current.versionNumber;
-  final effectiveFrom = formatPactaDateTimeInZone(
-    current.effectiveFrom,
-    timeZoneId: displayTimeZoneId,
-  );
-  return '当前版本 $versionNumber · 自 $effectiveFrom 生效';
 }

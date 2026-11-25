@@ -17,14 +17,15 @@ const activeSnapshot = {
         scope: 'home', exception_notes: null, is_in_tree: 1, parent_id: null, state: 'lit',
         successful_days: 60, current_consecutive_days: 4, best_consecutive_days: 9,
         maintenance_cycle_started: 1, failure_reason: null, cascade_source_card_id: null,
-        cascade_prior_state: null, active_strengthening_level: 1, deleted_at: null,
+        cascade_prior_state: null, active_strengthening_level: 1,
+        icon_key: 'lucide:book-open', deleted_at: null,
         user_id: 'private-user', token: 'private-token' },
       { id: 'tree-b', name: 'Shared name', trigger_condition: '', action: 'review',
         scope: null, exception_notes: 'skip when ill', is_in_tree: 1, parent_id: 'tree-a',
         state: 'pending_today_confirmation', successful_days: 2, current_consecutive_days: 2,
         best_consecutive_days: 2, maintenance_cycle_started: 1, failure_reason: null,
         cascade_source_card_id: null, cascade_prior_state: null, active_strengthening_level: null,
-        deleted_at: null },
+        icon_key: null, deleted_at: null },
       { id: 'library-c', name: 'Library card', trigger_condition: '', action: 'practice',
         scope: null, exception_notes: null, is_in_tree: 0, parent_id: null, state: 'extinguished',
         successful_days: 0, current_consecutive_days: 0, best_consecutive_days: 0,
@@ -42,23 +43,6 @@ const activeSnapshot = {
         credential: { secret: 'nested-level-secret' } },
       { user_id: 'private-user', card_id: 'tree-a', level_number: 2,
         trigger_condition_override: null, action_override: 'read two pages' },
-    ],
-    local_national_focus_requirement_versions: [
-      { user_id: 'private-user', id: 'version-a1', card_id: 'tree-a', version_number: 1,
-        strengthening_level_number: null, effective_trigger_condition: 'before 07:00',
-        effective_action: 'read', scope: 'home', exception_notes: null,
-        effective_from: epoch('2026-01-01T00:00:00Z'), effective_until: epoch('2026-02-01T00:00:00Z') },
-      { user_id: 'private-user', id: 'version-a2', card_id: 'tree-a', version_number: 2,
-        strengthening_level_number: 1, effective_trigger_condition: 'before 06:00',
-        effective_action: 'read', scope: 'home', exception_notes: null,
-        effective_from: epoch('2026-02-01T00:00:00Z'), effective_until: null,
-        tasks: [{ title: 'nested-version-task' }] },
-      { user_id: 'private-user', id: 'version-b1', card_id: 'tree-b', version_number: 1,
-        strengthening_level_number: null, effective_trigger_condition: '', effective_action: 'review',
-        scope: null, exception_notes: 'skip when ill', effective_from: epoch('2026-03-01T00:00:00Z'), effective_until: null },
-      { user_id: 'private-user', id: 'version-c1', card_id: 'library-c', version_number: 1,
-        strengthening_level_number: null, effective_trigger_condition: '', effective_action: 'practice',
-        scope: null, exception_notes: null, effective_from: epoch('2026-04-01T00:00:00Z'), effective_until: null },
     ],
     local_national_focus_maintenance: [
       { user_id: 'private-user', last_settled_checkpoint_at: epoch('2026-10-21T20:00:00Z'),
@@ -239,8 +223,17 @@ test('tree, library and card tools preserve National Focus detail while whitelis
     { level_number: 1, trigger_condition_override: 'before 06:00', action_override: null },
     { level_number: 2, trigger_condition_override: null, action_override: 'read two pages' },
   ]);
-  assert.deepEqual(treeValue.cards[0].requirement_versions.map((version: { id: string }) => version.id),
-    ['version-a1', 'version-a2']);
+  assert.equal(treeValue.cards[0].icon_key, 'lucide:book-open');
+  assert.equal(treeValue.cards[1].icon_key, null);
+  assert.deepEqual(treeValue.cards[0].effective_requirements, {
+    strengthening_level_number: 1,
+    trigger_condition: 'before 06:00',
+    action: 'read',
+    scope: 'home',
+    exception_notes: null,
+  });
+  assert.equal('requirement_versions' in treeValue.cards[0], false);
+  assert.equal('current_requirement_version' in treeValue.cards[0], false);
   assert.equal(treeValue.maintenance.last_settled_checkpoint_at, '2026-10-21T20:00:00.000Z');
   assert.deepEqual(treeValue.metadata, metadata);
 
@@ -251,13 +244,13 @@ test('tree, library and card tools preserve National Focus detail while whitelis
     arguments: { card_id: 'tree-a', expected_revision: 2 } }))).json();
   assert.equal(card.result.structuredContent.card.id, 'tree-a');
   assert.equal(card.result.structuredContent.metadata.revision, 2);
-  assert.equal(card.result.structuredContent.card.requirement_versions[1].effective_until, null);
-  assert.equal(card.result.structuredContent.card.current_requirement_version.id, 'version-a2');
+  assert.equal(card.result.structuredContent.card.icon_key, 'lucide:book-open');
   assert.equal(card.result.structuredContent.card.effective_requirements.trigger_condition, 'before 06:00');
+  assert.equal('requirement_versions' in card.result.structuredContent.card, false);
   assert.equal(card.result.structuredContent.error, undefined);
 
   const serialized = JSON.stringify({ tree: tree.result, library: library.result, card: card.result });
-  for (const secret of ['private-user', 'private-token', 'deleted-d', 'Deleted card', 'local_tasks', 'private-task', 'payload', 'nested-level-secret', 'nested-version-task', 'nested-maintenance-secret']) {
+  for (const secret of ['private-user', 'private-token', 'deleted-d', 'Deleted card', 'local_tasks', 'private-task', 'payload', 'nested-level-secret', 'nested-maintenance-secret', 'requirement_versions', 'current_requirement_version']) {
     assert.equal(serialized.includes(secret), false, `leaked ${secret}`);
   }
   assert.deepEqual(f.tables, {});
@@ -283,7 +276,7 @@ test('content tools fail closed on malformed snapshot relations and preserve una
 
   const emptySnapshot = { ...metadata, tables: {
     local_national_focus_cards: [], local_national_focus_strengthening_levels: [],
-    local_national_focus_requirement_versions: [], local_national_focus_maintenance: [],
+    local_national_focus_maintenance: [],
   } };
   f.setSnapshot(emptySnapshot);
   const empty = await (await f.mcp(rpc('tools/call', { name: 'get_national_focus_tree' }))).json();

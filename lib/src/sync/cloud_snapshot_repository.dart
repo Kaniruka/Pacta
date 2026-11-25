@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart' as drift;
@@ -16,13 +17,13 @@ import 'cloud_sync_result.dart';
 
 /// 业务整份快照的载荷版本。
 ///
-/// 版本 3 在完整 core 2（自有日程表 + 每场预约显式准备时长）之上加入重复日程：
-/// `local_schedule_recurrences` 规则表，以及每条实例的规则归属、稳定系列身份、
-/// 原始本地日期、规则时区与开始分钟、例外与墓碑标记。
+/// 版本 4 在 v3（完整 core 2 + 重复日程规则表）之上移除了
+/// `local_national_focus_requirement_versions`（生效版本记录整表下线），
+/// 并让 `local_national_focus_cards.icon_key` 随快照跨端同步。
 ///
-/// 客户端与读取侧都只走这一版：v3 是严格当前形状，缺表缺列整体拒绝；旧版
-/// v1/v2 载荷不再被接受，客户端也不写出任何旧版形状。
-const int cloudSnapshotSchemaVersion = 3;
+/// 客户端与读取侧都只走这一版：v4 是严格当前形状，缺表缺列整体拒绝；旧版
+/// v1/v2/v3 载荷不再被接受，客户端也不写出任何旧版形状。
+const int cloudSnapshotSchemaVersion = 4;
 
 /// 同一上传请求被用于不同内容（服务端 PT422）。自动上传必须停止并检查，
 /// 不能把它改写成新请求。
@@ -627,6 +628,15 @@ class CloudSnapshotRepository {
 
   final DateTime Function() now;
 
+  /// 同一 repository 实例的表元数据缓存。
+  ///
+  /// 同步弹层每次打开都会导出/校验同一批业务表；PRAGMA 结果在连接生命周期
+  /// 内不会变化，缓存后一次点开同步只付一次读取成本，而不是 38 次。
+  final Map<String, List<String>> _tableColumnsCache = {};
+  final Map<String, Map<String, Map<String, Object?>>> _tableColumnInfoCache =
+      {};
+  final Map<String, String> _primaryKeyCache = {};
+
   Future<CloudSyncResult?> loadSyncResult() => syncResultStore.load(userId);
 
   /// 基线写入串行化：恢复、手动同步与自动上传的应答彼此有序；取消后的
@@ -685,7 +695,6 @@ class CloudSnapshotRepository {
     'local_tasks',
     'local_national_focus_cards',
     'local_national_focus_strengthening_levels',
-    'local_national_focus_requirement_versions',
     'local_national_focus_maintenance',
     'local_national_focus_failures',
     'focus_precedent_rules',
@@ -715,8 +724,16 @@ class CloudSnapshotRepository {
         .cast<List<dynamic>>()
         .fold<int>(0, (total, rows) => total + rows.length);
     final hasUnfinished = await _hasUnfinishedFlow();
+    // 归一化留在主 isolate（只读业务数据）。大库才把 jsonEncode + UTF-8 +
+    // FNV-1a 丢进后台 isolate：几万行时这段序列化足以拖慢弹层首帧；小库
+    // 直接同步计算，避免为几毫秒的数据付一次 isolate 起停，也让 testWidgets
+    // 的 FakeAsync 永远不必等待真实 OS isolate 的消息。
+    final normalized = _normalizeFingerprintPayload(payload);
+    final fingerprint = rowCount >= _isolateFingerprintRowThreshold
+        ? await Isolate.run(() => _fingerprintDigest(normalized))
+        : _fingerprintDigest(normalized);
     return CloudSnapshotLocalState(
-      fingerprint: _fingerprint(payload),
+      fingerprint: fingerprint,
       payload: payload,
       rowCount: rowCount,
       dataUpdatedAt: _latestDataTimestamp(payload) ?? DateTime.now().toUtc(),
@@ -1092,8 +1109,7 @@ class CloudSnapshotRepository {
 
     final retainedRows = await database
         .customSelect(
-          'SELECT id, trigger_condition, action, scope, exception_notes, '
-          'is_in_tree, parent_id, active_strengthening_level '
+          'SELECT id, is_in_tree, parent_id, active_strengthening_level '
           'FROM local_national_focus_cards WHERE user_id = ?',
           variables: [drift.Variable<String>(userId)],
         )
@@ -1117,12 +1133,6 @@ class CloudSnapshotRepository {
         action: row.readNullable<String>('action_override'),
       );
     }
-    // 要求版本描述“这一次点亮按哪条规则判”，历史版本属于记录：全部清空后
-    // 每张保留卡只留一条 version_number = 1 的当前生效版本。
-    await database.customStatement(
-      'DELETE FROM local_national_focus_requirement_versions WHERE user_id = ?',
-      [userId],
-    );
     for (final row in retainedRows) {
       final cardId = row.read<String>('id');
       final parentId = row.readNullable<String>('parent_id');
@@ -1148,24 +1158,6 @@ class CloudSnapshotRepository {
           timestamp,
           userId,
           cardId,
-        ],
-      );
-      await database.customStatement(
-        'INSERT INTO local_national_focus_requirement_versions ('
-        'user_id, id, card_id, version_number, strengthening_level_number, '
-        'effective_trigger_condition, effective_action, scope, '
-        'exception_notes, effective_from, effective_until) '
-        'VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, NULL)',
-        [
-          userId,
-          const Uuid().v4(),
-          cardId,
-          levelNumber,
-          level?.trigger ?? row.read<String>('trigger_condition'),
-          level?.action ?? row.read<String>('action'),
-          row.readNullable<String>('scope'),
-          row.readNullable<String>('exception_notes'),
-          timestamp,
         ],
       );
     }
@@ -1366,10 +1358,12 @@ class CloudSnapshotRepository {
   Future<Map<String, Map<String, Object?>>> _tableColumnInfo(
     String table,
   ) async {
+    final cached = _tableColumnInfoCache[table];
+    if (cached != null) return cached;
     final rows = await database
         .customSelect('PRAGMA table_info("${_quoteIdentifier(table)}")')
         .get();
-    return {
+    final info = {
       for (final row in rows)
         row.read<String>('name'): {
           'type': row.read<String>('type').toUpperCase(),
@@ -1377,6 +1371,8 @@ class CloudSnapshotRepository {
           'pk': row.read<int>('pk') > 0,
         },
     };
+    _tableColumnInfoCache[table] = info;
+    return info;
   }
 
   bool _isValidSqliteValue(Object? value, Map<String, Object?> column) {
@@ -1420,7 +1416,6 @@ class CloudSnapshotRepository {
     }
     for (final table in const [
       'local_national_focus_strengthening_levels',
-      'local_national_focus_requirement_versions',
       'local_national_focus_failures',
     ]) {
       for (final row in tables[table]!) {
@@ -1435,6 +1430,16 @@ class CloudSnapshotRepository {
       requireReference(
         name is String && name.trim().isNotEmpty,
         'National Focus card name',
+      );
+      // 自定义图标键可为 null；有值时必须是已去首尾空白的非空字符串，
+      // 否则跨端会同步出一个渲染端无法解析、又永远清不掉的脏键。
+      final iconKey = row['icon_key'];
+      requireReference(
+        iconKey == null ||
+            (iconKey is String &&
+                iconKey.isNotEmpty &&
+                iconKey == iconKey.trim()),
+        'National Focus card icon key',
       );
       final parentId = row['parent_id'];
       if (parentId != null) {
@@ -1707,6 +1712,8 @@ class CloudSnapshotRepository {
   }
 
   Future<List<String>> _tableColumns(String table) async {
+    final cached = _tableColumnsCache[table];
+    if (cached != null) return cached;
     final result = await database
         .customSelect('PRAGMA table_info("${_quoteIdentifier(table)}")')
         .get();
@@ -1714,10 +1721,13 @@ class CloudSnapshotRepository {
     if (!columns.contains('user_id')) {
       throw StateError('Snapshot table has no user ownership column: $table');
     }
+    _tableColumnsCache[table] = columns;
     return columns;
   }
 
   Future<String> _primaryKey(String table, List<String> columns) async {
+    final cached = _primaryKeyCache[table];
+    if (cached != null) return cached;
     final info = await database
         .customSelect('PRAGMA table_info("${_quoteIdentifier(table)}")')
         .get();
@@ -1730,9 +1740,11 @@ class CloudSnapshotRepository {
         primaryKeyColumns.any((entry) => !columns.contains(entry.name))) {
       throw StateError('Snapshot table has no supported primary key: $table');
     }
-    return primaryKeyColumns
+    final key = primaryKeyColumns
         .map((entry) => '"${_quoteIdentifier(entry.name)}"')
         .join(',');
+    _primaryKeyCache[table] = key;
+    return key;
   }
 
   Future<bool> _hasUnfinishedFlow() async {
@@ -1830,44 +1842,86 @@ class CloudSnapshotRepository {
 
   Object? _sqliteValue(Object? value) => value;
 
-  String _fingerprint(Map<String, dynamic> payload) {
-    // Recovery checkpoints advance during an active focus flow without changing
-    // the user's business choices. Keep them in the uploaded payload, but exclude
-    // the same two device checkpoint fields as focus cloud serialization from
-    // the preview change detector. Pauses, interval bounds and outcomes remain.
-    final normalized = jsonDecode(jsonEncode(payload)) as Map<String, dynamic>;
+  String _fingerprint(Map<String, dynamic> payload) =>
+      _fingerprintDigest(_normalizeFingerprintPayload(payload));
+
+  /// 指纹归一化只做必要的浅拷贝。
+  ///
+  /// 以前整包 jsonDecode(jsonEncode(payload)) 深拷贝一次、归一化后再整包
+  /// 编码一次：对几万行快照就是两次全量序列化。业务数据在指纹计算里只读，
+  /// 因此只重建 tables 映射和真正需要改写的 focus_sessions 行，其余表与行
+  /// 直接复用原对象；输出字节与旧实现逐字一致（v2:<16-hex> 不变）。
+  Map<String, dynamic> _normalizeFingerprintPayload(
+    Map<String, dynamic> payload,
+  ) {
     // 指纹也用于校验恢复点读回内容，因此对畸形载荷必须保持全函数：缺表或缺
     // 字段时只跳过归一化，不抛类型错误。
-    final tables = normalized['tables'];
-    final sessions = tables is Map<String, dynamic>
-        ? tables['focus_sessions']
-        : null;
-    if (sessions is List) {
-      for (final row in sessions) {
-        if (row is! Map<String, dynamic>) continue;
-        final encoded = row['effective_intervals'];
-        if (encoded is! String) continue;
-        final decoded = jsonDecode(encoded);
-        if (decoded is! List) continue;
-        for (final interval in decoded) {
-          if (interval is! Map<String, dynamic>) continue;
-          interval
-            ..remove('monotonic_checkpoint_microseconds')
-            ..remove('last_observed_wall_time');
-        }
-        row['effective_intervals'] = jsonEncode(decoded);
+    final tables = payload['tables'];
+    if (tables is! Map) return payload;
+    final normalizedTables = <String, dynamic>{};
+    for (final entry in tables.entries) {
+      final key = entry.key;
+      final value = entry.value;
+      // 畸形 Map 可能带非字符串键；jsonEncode 本来也不接受这样的键。这里
+      // 跳过而不是强转，保证恢复点校验对坏载荷始终是全函数。
+      if (key is! String) continue;
+      if (key != 'focus_sessions' || value is! List) {
+        normalizedTables[key] = value;
+        continue;
       }
+      normalizedTables[key] = [
+        for (final row in value) _normalizeFingerprintSessionRow(row),
+      ];
     }
-    final value = jsonEncode(normalized);
-    // FNV-1a is only a local change detector, never an integrity boundary.
-    var hash = 0xcbf29ce484222325;
-    for (final byte in utf8.encode(value)) {
-      hash ^= byte;
-      hash = (hash * 0x100000001b3) & 0xffffffffffffffff;
+    return {...payload, 'tables': normalizedTables};
+  }
+
+  Object? _normalizeFingerprintSessionRow(Object? row) {
+    if (row is! Map<String, dynamic>) return row;
+    final encoded = row['effective_intervals'];
+    if (encoded is! String) return row;
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(encoded);
+    } on FormatException {
+      // 畸形的恢复点区间文本原样保留，不因指纹计算而拒绝整份载荷。
+      return row;
     }
-    return 'v2:${hash.toRadixString(16).padLeft(16, '0')}';
+    if (decoded is! List) return row;
+    for (final interval in decoded) {
+      if (interval is! Map<String, dynamic>) continue;
+      interval
+        ..remove('monotonic_checkpoint_microseconds')
+        ..remove('last_observed_wall_time');
+    }
+    // 与旧实现一致：能解码的 effective_intervals 一律重新编码（即使没有
+    // 需要剔除的键），保证指纹字节与历史基线完全相同。
+    return {...row, 'effective_intervals': jsonEncode(decoded)};
   }
 
   String _quoteIdentifier(String identifier) =>
       identifier.replaceAll('"', '""');
+}
+
+/// 超过这个行数才把指纹序列化移到后台 isolate。
+///
+/// 小快照（绝大多数用户，含 201 行的历史页夹具）在单帧内同步算完；只有真正
+/// 的大库才需要把 jsonEncode + UTF-8 + FNV-1a 挪出主线程。阈值取 2000 是
+/// 为了不让 testWidgets 的 FakeAsync 等待真实 OS isolate（200 行阈值会让
+/// 201 行夹具在 pumpAndSettle 里永久挂起），同时保留对长年积累大库的优化。
+/// 两条路径共用同一个 [_fingerprintDigest]，摘要字节完全一致。
+const int _isolateFingerprintRowThreshold = 2000;
+
+/// FNV-1a 变更指纹；只在本地做变更检测，从不当完整性边界。
+///
+/// 顶层函数而不是实例方法：它要作为 [Isolate.run] 的任务体在后台 isolate
+/// 里执行，闭包只捕获可发送的归一化载荷。
+String _fingerprintDigest(Map<String, dynamic> normalized) {
+  final value = jsonEncode(normalized);
+  var hash = 0xcbf29ce484222325;
+  for (final byte in utf8.encode(value)) {
+    hash ^= byte;
+    hash = (hash * 0x100000001b3) & 0xffffffffffffffff;
+  }
+  return 'v2:${hash.toRadixString(16).padLeft(16, '0')}';
 }

@@ -292,13 +292,18 @@ void main() {
       await _tapNode(tester, directException);
       await _tapAndSettle(tester, _nodeSheetText('查看详情'), '打开例外节点详情');
       expect(find.text('国策卡详情'), findsOneWidget);
-      await _tapAndSettle(tester, find.text('编辑卡片'), '打开三字段编辑页');
+      await _tapAndSettle(
+        tester,
+        find.byKey(const ValueKey('national-focus-detail-edit')),
+        '打开三字段编辑页',
+      );
       expect(find.text('卡片名称'), findsOneWidget);
       expect(find.text('国策规则'), findsOneWidget);
       // The exception notes are a collapsed section of the editor.
       expect(find.byType(TextFormField), findsNWidgets(2));
       await _tapAndSettle(tester, find.text('例外与判例'), '展开例外与判例字段');
-      expect(find.text('例外与判例（可选）'), findsOneWidget);
+      // 已填写的判例在折叠标题上直接标明状态，不再另起一行说明。
+      expect(find.text('已填写 · 按需展开'), findsOneWidget);
       expect(find.byType(TextFormField), findsNWidgets(3));
       await shot('three-field-card-editor');
       await tester.pageBack();

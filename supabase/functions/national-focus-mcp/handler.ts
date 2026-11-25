@@ -45,19 +45,19 @@ const metadataTool = {
 };
 const treeTool = {
   name: 'get_national_focus_tree',
-  description: 'Read every current National Focus Tree card with stable ids, parent relations, rules, strengthening levels, requirement versions, state, streaks and internalization progress from your latest manual upload. Does not recompute the current time or read failure history.',
+  description: 'Read every current National Focus Tree card with stable ids, parent relations, rules, strengthening levels, custom icon keys (icon_key), state, streaks and internalization progress from your latest manual upload. Does not recompute the current time or read failure history.',
   inputSchema: { type: 'object', properties: { expected_revision: { type: 'integer', minimum: 1 } }, additionalProperties: false },
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
 };
 const libraryTool = {
   name: 'get_national_focus_library',
-  description: 'Read every current independent National Focus Library card with stable ids, rules, strengthening levels, requirement versions, state, streaks and internalization progress from your latest manual upload. Does not recompute the current time or read failure history.',
+  description: 'Read every current independent National Focus Library card with stable ids, rules, strengthening levels, custom icon keys (icon_key), state, streaks and internalization progress from your latest manual upload. Does not recompute the current time or read failure history.',
   inputSchema: { type: 'object', properties: { expected_revision: { type: 'integer', minimum: 1 } }, additionalProperties: false },
   annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
 };
 const cardTool = {
   name: 'get_national_focus_card',
-  description: 'Read one current National Focus card by stable card_id. expected_revision is required so the result stays on the snapshot version you are analyzing. Includes rules, strengthening levels, requirement versions, state, streaks and internalization progress; does not read failure history.',
+  description: 'Read one current National Focus card by stable card_id. expected_revision is required so the result stays on the snapshot version you are analyzing. Includes rules, strengthening levels, custom icon key (icon_key), state, streaks and internalization progress; does not read failure history.',
   inputSchema: { type: 'object', properties: {
     card_id: { type: 'string', minLength: 1, maxLength: 200 },
     expected_revision: { type: 'integer', minimum: 1 },

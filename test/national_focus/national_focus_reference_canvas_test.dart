@@ -141,7 +141,9 @@ void main() {
     await tester.tap(find.text('失败记录'));
     await tester.pumpAndSettle();
     expect(find.text('国策失败记录'), findsOneWidget);
-    expect(find.text('检查点说明'), findsOneWidget);
+    // 检查点说明折叠卡已移除，改为分组标题 + 批次卡。
+    expect(find.text('检查点说明'), findsNothing);
+    expect(find.text('失败记录'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));

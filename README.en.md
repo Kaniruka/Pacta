@@ -6,7 +6,7 @@
 
 [![Flutter checks](https://github.com/Kaniruka/Pacta/actions/workflows/flutter-checks.yml/badge.svg?branch=master)](https://github.com/Kaniruka/Pacta/actions/workflows/flutter-checks.yml)
 [![Release](https://github.com/Kaniruka/Pacta/actions/workflows/release.yml/badge.svg)](https://github.com/Kaniruka/Pacta/actions/workflows/release.yml)
-[![version](https://img.shields.io/badge/version-0.3.1%2B4-blue)](pubspec.yaml)
+[![version](https://img.shields.io/badge/version-0.4.0%2B5-blue)](pubspec.yaml)
 [![license](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
 [简体中文](README.md) · [English](README.en.md)
@@ -41,7 +41,7 @@ python scripts/pacta_build.py run -d windows
 
 | Command | Purpose |
 | --- | --- |
-| `python scripts/pacta_build.py` | Interactive menu (or pass `interactive` / `-i`) to run, build or initialize signing |
+| `python scripts/pacta_build.py` | Interactive two-level menu (or pass `interactive` / `-i`): Run / Build / Signing & GitHub Secrets / Supabase Usage |
 | `python scripts/pacta_build.py run -d windows` | Desktop debugging; `-d android` picks the first Android device, or pass `-d <device-id>` |
 | `python scripts/pacta_build.py run -d emulator-5554 --profile` | Explicit device and build mode (`--debug`/`--profile`/`--release`) |
 | `python scripts/pacta_build.py build --target apk --release --split-per-abi` | Per-ABI APKs |
@@ -51,8 +51,11 @@ python scripts/pacta_build.py run -d windows
 | `python scripts/pacta_build.py build --target apk --dry-run` | Print the redacted plan only, run nothing |
 | `python scripts/pacta_build.py init-keystore` | Generate the local Android release signature and export the GitHub Secrets manifest |
 | `python scripts/pacta_build.py github-secrets` | Export all 6 GitHub Actions Release secrets to `build/github-actions-secrets.txt` (auto-creating the keystore if missing; add `--apply` to push via `gh secret set`) |
+| `python scripts/pacta_build.py supabase-usage` | Report Supabase Free Plan quotas and per-user storage usage (`--view users`, `--top N`, `--mask-email`, `--json`, `--dry-run`) |
 
 Keys outside the whitelist (`SUPABASE_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ACCESS_TOKEN`, `TEST_*`, `ANDROID_KEYSTORE_*`) are never injected, never written to the temporary file and never logged. A build with either client key missing stops with a clear message and exit code `2`.
+
+`supabase-usage` (aliases `usage` / `quota`) is the only command that reads `SUPABASE_ACCESS_TOKEN` or `SUPABASE_SECRET_KEY` / `SUPABASE_SERVICE_ROLE_KEY`: when an access token is set it uses Management API exact mode (total Postgres DB size, index/TOAST/system overhead, Storage, 30-day MAU, and per-user breakdown); with only a secret key it uses Service API estimated mode (client rows only). These credentials stay strictly inside the local host process and never enter temporary defines, Flutter args, stdout/`--json`, or error output.
 
 ## Android release signing
 

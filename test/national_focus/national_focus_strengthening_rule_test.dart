@@ -97,7 +97,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('仅旧触发覆盖的等级允许留空国策规则并保持版本历史', (tester) async {
+  testWidgets('仅旧触发覆盖的等级允许留空国策规则', (tester) async {
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));
@@ -117,7 +117,6 @@ void main() {
     );
     final before = await repository.getCard(card.id);
     expect(before.strengtheningLevels.single.action, isNull);
-    expect(before.requirementVersions, hasLength(1));
     await pumpPage(tester, card);
 
     // An inactive level is editable without being put in force.
@@ -135,7 +134,6 @@ void main() {
     final after = await repository.getCard(card.id);
     expect(after.strengtheningLevels.single.action, isNull);
     expect(after.strengtheningLevels.single.triggerCondition, '仅旧触发');
-    expect(after.requirementVersions, hasLength(1));
     expect(after.activeStrengtheningLevel, isNull);
     expect(after.effectiveAction, '阅读 5 页');
     await tester.pumpWidget(const SizedBox.shrink());

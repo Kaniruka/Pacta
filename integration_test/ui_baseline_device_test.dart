@@ -259,8 +259,8 @@ void main() {
       parentId: rootNationalFocus.id,
     );
     // Phase 5：树上的第三张卡承载「已内化」——成功天数跨过 180 天门槛后，详细
-    // 视图卡片底部出现「已内化」微标；同一画布里根节点保留「根」徽标、3dp
-    // 状态色条与恒两行国策规则，熄灭子节点保留灰态。它保持点亮，所以看板
+    // 视图胶囊行出现「已内化」微标；同一画布里根节点靠更粗的等宽外框区分，
+    // 卡片无顶部状态条、规则最多三行，熄灭子节点保留灰态。它保持点亮，所以看板
     // 顶部计数是「点亮 2 / 待确认 0 / 熄灭 1」：待确认仍为 0，顶槽默认页签
     // 不会被这张卡改写，单栏胶囊的两种页签都能各截一张。
     final internalizedNationalFocus = await tree.createCard(
@@ -303,7 +303,7 @@ void main() {
         'effectiveTriggerCondition': '每次开始专注之前',
         'effectiveAction': '先写下一句话的目标，再决定这件事是否值得 25 分钟。',
         'activeStrengtheningLevel': 0,
-        'requirementVersionNumber': null,
+        'iconKey': null,
         'scope': null,
         'exceptionNotes': null,
         'isInTree': true,

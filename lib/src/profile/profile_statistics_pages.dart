@@ -2,10 +2,12 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import '../national_focus/national_focus_icons.dart';
 import '../national_focus/national_focus_models.dart';
 import '../national_focus/national_focus_shared_widgets.dart';
 import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
+import '../theme/pacta_surfaces.dart';
 import '../ui/pacta_grouped_list.dart';
 import 'profile_overview.dart';
 
@@ -300,7 +302,11 @@ class _CardTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(PactaSpacing.md),
         ),
         child: Icon(
-          internalized ? Icons.verified_outlined : Icons.lightbulb_outline,
+          // 与只读详情页同一套图标：未内化时直接呈现卡片自定义图标，
+          // 空值/未知键回落默认灯泡。
+          internalized
+              ? Icons.verified_outlined
+              : nationalFocusIconData(card.iconKey),
           size: PactaIconSizes.sm,
           color: internalized
               ? colors.onSecondaryContainer
@@ -318,10 +324,7 @@ class _CardTile extends StatelessWidget {
       ),
       onTap: () => Navigator.of(context).push<void>(
         MaterialPageRoute<void>(
-          builder: (_) => _NationalFocusCardReadOnlyPage(
-            card: card,
-            internalized: internalized,
-          ),
+          builder: (_) => _NationalFocusCardReadOnlyPage(card: card),
         ),
       ),
     );
@@ -329,142 +332,62 @@ class _CardTile extends StatelessWidget {
 }
 
 /// 统计页点开的只读详情：只解释这张卡已经存在的记录，不提供任何写操作。
+///
+/// 三卡结构与可编辑详情页一一对应（身份总览 / 规则 / 记录），只是没有顶栏
+/// 编辑入口、也没有可展开的编辑控件：读者在这里看到的就是卡片当前的样子。
 class _NationalFocusCardReadOnlyPage extends StatelessWidget {
-  const _NationalFocusCardReadOnlyPage({
-    required this.card,
-    required this.internalized,
-  });
+  const _NationalFocusCardReadOnlyPage({required this.card});
 
   final NationalFocusCard card;
-  final bool internalized;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      PactaSurfaces.wrapIfMissing(context, Builder(builder: _buildPage));
+
+  Widget _buildPage(BuildContext context) {
     final theme = Theme.of(context);
+    final exceptionNotes = card.exceptionNotes?.trim() ?? '';
     return Scaffold(
       appBar: AppBar(title: const Text('国策卡详情')),
       body: Align(
         alignment: Alignment.topCenter,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 720),
+          // 与可编辑详情页同一条 800dp 阅读线、同一组卡间距与卡内边距。
+          constraints: const BoxConstraints(maxWidth: 800),
           child: ListView(
             padding: PactaSpacing.pageInsets(context),
             children: [
-              Text(card.state.label, style: theme.textTheme.labelMedium),
-              const SizedBox(height: 6),
-              Wrap(
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: PactaSpacing.sm,
-                runSpacing: 6,
-                children: [
-                  Text(card.name, style: theme.textTheme.headlineSmall),
-                  NationalFocusStreakTags(
-                    currentConsecutiveDays: card.currentConsecutiveDays,
-                    bestConsecutiveDays: card.bestConsecutiveDays,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 22),
-              // 与可编辑详情页完全对齐的两段卡片：规则区在上、记录区在下，
-              // 同一档内边距与同一档卡片间隙，只读页也不会读成一段长文本。
-              Card(
-                key: const ValueKey('national-focus-readonly-rules-card'),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: PactaSpacing.lg,
-                    vertical: PactaSpacing.md,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      NationalFocusFieldText(
-                        label: '国策规则',
-                        value: card.effectiveAction,
-                      ),
-                      if ((card.exceptionNotes ?? '').trim().isNotEmpty) ...[
-                        const SizedBox(height: PactaSpacing.lg),
-                        NationalFocusFieldText(
-                          label: '例外与判例',
-                          value: card.exceptionNotes!.trim(),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
+              NationalFocusCardIdentityCard(
+                key: const ValueKey('national-focus-readonly-header-card'),
+                card: card,
               ),
               const SizedBox(height: PactaSpacing.lg),
-              Card(
+              NationalFocusDetailRulesCard(
+                key: const ValueKey('national-focus-readonly-rules-card'),
+                card: card,
+                // 只读页不折叠：判例直接摊开，没有可展开/收起的编辑暗示。
+                footer: exceptionNotes.isEmpty
+                    ? null
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('例外与判例', style: theme.textTheme.titleSmall),
+                          const SizedBox(height: PactaSpacing.xxs),
+                          Text(
+                            exceptionNotes,
+                            style: theme.textTheme.bodyLarge,
+                          ),
+                        ],
+                      ),
+              ),
+              const SizedBox(height: PactaSpacing.lg),
+              NationalFocusDetailRecordsCard(
                 key: const ValueKey('national-focus-readonly-records-card'),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: PactaSpacing.lg,
-                    vertical: PactaSpacing.md,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('记录', style: theme.textTheme.titleSmall),
-                      const SizedBox(height: PactaSpacing.sm),
-                      _RecordRow(
-                        label: '累计成功',
-                        value: '${card.successfulDays} 天',
-                      ),
-                      _RecordRow(
-                        label: '当前连续',
-                        value: '${card.currentConsecutiveDays} 天',
-                      ),
-                      _RecordRow(
-                        label: '历史最高',
-                        value: '${card.bestConsecutiveDays} 天',
-                      ),
-                      if (internalized)
-                        const _RecordRow(label: '内化进度', value: '已封顶')
-                      else
-                        _RecordRow(
-                          label: '内化进度',
-                          value:
-                              '${card.internalizationProgress.toStringAsFixed(0)}%',
-                        ),
-                    ],
-                  ),
-                ),
+                card: card,
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _RecordRow extends StatelessWidget {
-  const _RecordRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: PactaSpacing.xxs),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          Text(
-            value,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontFeatures: const [ui.FontFeature.tabularFigures()],
-            ),
-          ),
-        ],
       ),
     );
   }

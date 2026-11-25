@@ -3,6 +3,7 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -16,6 +17,7 @@ import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
 import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/tasks/task_repository.dart';
+import 'package:pacta/src/theme/pacta_surfaces.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../test/support/fake_auth_repository.dart';
@@ -232,9 +234,38 @@ void main() {
     }
 
     Future<void> back() async {
-      await tester.pageBack();
+      // 中文系统里 BackButton 的 tooltip 是「返回」，pageBack() 找不到英文
+      // 'Back'；直接命中栈顶页面的 BackButton，找不到时才退回 pageBack。
+      final button = find.byType(BackButton);
+      if (button.evaluate().isNotEmpty) {
+        await tester.ensureVisible(button.last);
+        await tester.pumpAndSettle();
+        await tester.tap(
+          button.last,
+          kind: _mouseReview
+              ? ui.PointerDeviceKind.mouse
+              : ui.PointerDeviceKind.touch,
+        );
+      } else {
+        await tester.pageBack();
+      }
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: '返回上一页不应抛异常');
+    }
+
+    /// 顶栏动作没有文字标签时按 Key 命中，保持 48dp 命中区不变。
+    Future<void> tapKey(String value) async {
+      final target = find.byKey(ValueKey(value));
+      await tester.ensureVisible(target);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        target,
+        kind: _mouseReview
+            ? ui.PointerDeviceKind.mouse
+            : ui.PointerDeviceKind.touch,
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: '操作「$value」不应抛异常');
     }
 
     try {
@@ -281,6 +312,70 @@ void main() {
         levels: const ['一级复盘', '二级复盘', '三级复盘', '四级复盘', '五级复盘'],
       );
 
+      // 卡片库页签的截图样本：都不放入国策树，树视图、检查点结算与失败
+      // 列表用例完全不受影响。
+      final richLibraryCard = await tree.createCard(
+        const NationalFocusCardDraft(
+          name: '掩耳入夜',
+          action: '每晚完成洗漱上铺准备入睡时（有课/工作日前夜 00:05 前，休息日前夜 01:55 前）。上铺躺平 5 分钟内即戴耳塞或开定时伴睡音，手机不再亮屏。',
+          exceptionNotes: '发烧或等紧急电话时可记不适用。',
+        ),
+      );
+      now = now.add(const Duration(seconds: 1));
+      await tree.saveStrengtheningLevel(
+        cardId: richLibraryCard.id,
+        draft: const NationalFocusStrengtheningLevelDraft(
+          action: '上铺躺平 3 分钟内即戴耳塞或开定时伴睡音，手机提前放至床尾。',
+        ),
+      );
+      await tree.selectStrengtheningLevel(
+        cardId: richLibraryCard.id,
+        levelNumber: 1,
+      );
+      // 2 天成功日直接落库：卡片库外壳要展示进度摘要与内化轨，而不是空条。
+      await (database.update(database.localNationalFocusCards)
+            ..where((row) => row.userId.equals(_user))
+            ..where((row) => row.id.equals(richLibraryCard.id)))
+          .write(
+            const LocalNationalFocusCardsCompanion(successfulDays: Value(2)),
+          );
+      now = now.add(const Duration(seconds: 1));
+
+      final plainLibraryCard = await tree.createCard(
+        const NationalFocusCardDraft(
+          name: '手机先下班',
+          action: '每晚准备上床入睡前，确认次日闹钟已开、插上充电线，将手机屏幕朝下放进床头挂袋，上床后不再拿回手中。',
+        ),
+      );
+      now = now.add(const Duration(seconds: 1));
+
+      final deletedLibraryCard = await tree.createCard(
+        const NationalFocusCardDraft(name: '旧睡前整理', action: '睡前花五分钟把书桌收干净再关灯。'),
+      );
+      now = now.add(const Duration(seconds: 1));
+      // 软删除样本：只改数据行，不经过删除流程，确保「已删除」页签有卡可截。
+      await (database.update(database.localNationalFocusCards)
+            ..where((row) => row.userId.equals(_user))
+            ..where((row) => row.id.equals(deletedLibraryCard.id)))
+          .write(
+            LocalNationalFocusCardsCompanion(
+              deletedAt: Value(now),
+              successfulDays: const Value(12),
+            ),
+          );
+
+      for (final libraryCard in [
+        richLibraryCard,
+        plainLibraryCard,
+        deletedLibraryCard,
+      ]) {
+        expect(
+          libraryCard.isInTree,
+          isFalse,
+          reason: '库样本「${libraryCard.name}」不能进入国策树',
+        );
+      }
+
       final app = PactaApp(
         authRepository: FakeAuthRepository()..signedInUser = _user,
         focusNotificationService: DisabledFocusNotificationService(),
@@ -304,6 +399,13 @@ void main() {
       );
       await pumpUi();
       await shot('01-tree');
+
+      // 卡片库两个页签：外侧卡片（强化/内化/判例/进度/放入）与已删除恢复卡。
+      await tapText('卡片库');
+      await shot('01b-library-active');
+      await tapText('已删除');
+      await shot('01c-library-deleted');
+      await back();
 
       await openNode(morning);
       await shot('02-node-sheet');
@@ -351,7 +453,7 @@ void main() {
       await shot('03-detail-collapsed');
       await tapText('例外与判例');
       await shot('04-detail-exceptions');
-      await tapText('编辑卡片');
+      await tapKey('national-focus-detail-edit');
       await shot('05-card-editor');
       await tapText('例外与判例');
       final notesField = find.byKey(
@@ -416,23 +518,38 @@ void main() {
       await openNode(strengthened);
       await tapText('查看详情');
       await shot('06-detail-strengthened');
-      await tapText('编辑卡片');
-      await tapText('管理强化要求');
+      await tapKey('national-focus-detail-edit');
+      await tapText('强化要求');
       await shot('07-strengthening-manager');
-      await tester.scrollUntilVisible(
-        find.textContaining('生效版本记录 ·'),
-        150,
-        scrollable: find.byType(Scrollable).last,
+      // 生效版本记录整块下线：没有历史白卡，也没有版本条目。
+      expect(find.text('生效版本记录'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('national-focus-version-history-card')),
+        findsNothing,
       );
-      await tester.tap(find.textContaining('生效版本记录 ·'));
-      await tester.pumpAndSettle();
-      await shot('07b-strengthening-history-expanded');
-      final versionTitle = find.textContaining(RegExp(r'^版本 \d+ ·')).first;
-      await tester.ensureVisible(
-        find.ancestor(of: versionTitle, matching: find.byType(ListTile)).first,
+      // 当前选中行保持实底 card，并带左侧 3.5dp 主色强调条。
+      final activeRow = find.byKey(
+        const ValueKey('national-focus-strengthening-level-1'),
       );
-      await tester.pumpAndSettle();
-      await shot('07c-strengthening-history-content');
+      final activeBar = find.descendant(
+        of: activeRow,
+        matching: find.byKey(
+          const ValueKey('national-focus-strengthening-active-bar'),
+        ),
+      );
+      expect(activeBar, findsOneWidget);
+      expect(
+        tester.getSize(activeBar).width,
+        moreOrLessEquals(3.5, epsilon: 0.01),
+      );
+      final activeMaterial = tester.widget<Material>(
+        find.descendant(of: activeRow, matching: find.byType(Material)).first,
+      );
+      expect(
+        activeMaterial.color,
+        PactaSurfaces.of(tester.element(activeRow)).card,
+      );
+      await shot('07b-strengthening-solid-selected');
       final secondLevel = find.byKey(
         const ValueKey('national-focus-strengthening-level-2'),
       );
@@ -451,13 +568,14 @@ void main() {
       await tester.pumpAndSettle();
       await shot('08-strengthening-level-editor');
       await back();
-      await tester.scrollUntilVisible(
-        find.text('当前使用 · 强化等级 1'),
-        -200,
-        scrollable: find.byType(Scrollable).last,
+      // 当前档位只由选中段表达：回到管理页后「正在使用」仍在 1 级。
+      final activeLevelBadge = find.descendant(
+        of: find.byKey(const ValueKey('national-focus-strengthening-level-1')),
+        matching: find.text('正在使用'),
       );
+      await tester.ensureVisible(activeLevelBadge);
       await tester.pumpAndSettle();
-      expect(find.text('当前使用 · 强化等级 1'), findsOneWidget);
+      expect(activeLevelBadge, findsOneWidget);
       await back();
       expect(find.text('编辑国策卡'), findsOneWidget);
       await back();
@@ -471,8 +589,8 @@ void main() {
 
       await openNode(atCap);
       await tapText('查看详情');
-      await tapText('编辑卡片');
-      await tapText('管理强化要求');
+      await tapKey('national-focus-detail-edit');
+      await tapText('强化要求');
       await shot('09-strengthening-cap');
       expect(find.text('已达 5 级上限'), findsOneWidget);
       await back();

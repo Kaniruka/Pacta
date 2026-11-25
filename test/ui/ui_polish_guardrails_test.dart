@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:analyzer/dart/analysis/utilities.dart';
 import 'package:analyzer/dart/ast/ast.dart';
@@ -8,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:pacta/main.dart';
 import 'package:pacta/src/board/focus_national_calendar_card.dart';
 import 'package:pacta/src/focus/focus_models.dart';
@@ -15,10 +17,13 @@ import 'package:pacta/src/focus/focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_repository.dart';
 import 'package:pacta/src/national_focus/national_focus_shared_widgets.dart';
+import 'package:pacta/src/national_focus/national_focus_strengthening_page.dart';
 import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
 import 'package:pacta/src/notifications/focus_notification_service.dart';
 import 'package:pacta/src/notifications/focus_notification_settings_page.dart';
 import 'package:pacta/src/plan/plan_calendar_view.dart';
+import 'package:pacta/src/profile/avatar_picker.dart';
+import 'package:pacta/src/profile/profile_edit_page.dart';
 import 'package:pacta/src/profile/profile_models.dart';
 import 'package:pacta/src/profile/profile_repository.dart';
 import 'package:pacta/src/schedules/schedule_models.dart';
@@ -840,7 +845,7 @@ void main() {
         final iconRect = tester.getRect(
           find.descendant(
             of: cardFinder,
-            matching: find.byIcon(Icons.lightbulb),
+            matching: find.byIcon(LucideIcons.lightbulb),
           ),
         );
         expect(
@@ -2202,8 +2207,43 @@ void main() {
           find.descendant(of: find.byType(AppBar), matching: find.text('下必为例')),
           findsOneWidget,
         );
+        // 页内不再有说明正文，规则含义收进 AppBar 右上角单层 Tooltip。
+        expect(find.text('专注中断时可直接选择或新建；规则含义由你自己判断。'), findsNothing);
+        final infoTooltip = tester.widget<Tooltip>(
+          find.ancestor(
+            of: find.byKey(const ValueKey('precedent-rules-info')),
+            matching: find.byType(Tooltip),
+          ),
+        );
+        expect(infoTooltip.message, '专注中断时可直接选择或新建；规则含义由你自己判断。');
+
+        // 规则以分段卡片呈现，新建入口是独立扩展 FAB。
+        expect(
+          find.byKey(const ValueKey('precedent-rules-list')),
+          findsOneWidget,
+        );
+        expect(find.byType(PactaSectionHeader), findsOneWidget);
+        expect(find.text('共享规则'), findsOneWidget);
+        expect(
+          find.widgetWithText(FloatingActionButton, '新建规则'),
+          findsOneWidget,
+        );
+        expect(
+          find.byKey(const ValueKey('precedent-rules-create')),
+          findsOneWidget,
+        );
         expect(find.text('允许短暂起身接水'), findsOneWidget);
-        expect(find.text('新建规则'), findsOneWidget);
+
+        // 溢出菜单承载「编辑」与错误色「删除」。
+        await tester.tap(find.byTooltip('规则操作'));
+        await tester.pumpAndSettle();
+        expect(find.text('编辑'), findsOneWidget);
+        final deleteText = tester.widget<Text>(find.text('删除'));
+        expect(
+          deleteText.style?.color,
+          Theme.of(tester.element(find.text('删除'))).colorScheme.error,
+        );
+        expect(deleteText.style?.fontSize, isNull, reason: '危险项不改字阶');
         expect(tester.takeException(), isNull);
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());
@@ -2978,6 +3018,202 @@ void main() {
       );
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Phase 7：隐秘 UI 缺陷的三条永久机械守卫
+  // ---------------------------------------------------------------------------
+  group('Phase 7 机械守卫', () {
+    test('Scaffold.body 里用 Center 包滚动正文的写法被全面拦截', () {
+      final offenders = <String, List<int>>{};
+      for (final file in _libSources()) {
+        final lines = _centeredScrollViewLines(file.readAsStringSync());
+        if (lines.isEmpty) continue;
+        offenders[_relativePath(file)] = lines;
+      }
+      // 白名单只有一个：登录卡片是明确垂直居中的单屏卡片，不是滚动正文页。
+      expect(
+        offenders.keys,
+        ['lib/src/auth/auth_screen.dart'],
+        reason:
+            '20:9 全面屏下 Center 会把滚动正文压到页面中部，顶部掉出一大截'
+            '空白；白名单之外任何一处都是回流。违规：$offenders',
+      );
+
+      // 正反例自证：违规构造必须被拦下，合规顶对齐放行。
+      const violatingSource = '''
+class Demo extends StatelessWidget {
+  const Demo({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('演示')),
+    body: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 800),
+        child: SingleChildScrollView(child: Text('正文')),
+      ),
+    ),
+  );
+}
+''';
+      const compliantSource = '''
+class Demo extends StatelessWidget {
+  const Demo({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('演示')),
+    body: Align(
+      alignment: Alignment.topCenter,
+      child: SingleChildScrollView(child: Text('正文')),
+    ),
+  );
+}
+''';
+      // 包一层 SafeArea 不能绕过：外壳剥掉之后仍是 Center 包滚动正文。
+      const safeAreaWrappedSource = '''
+class Demo extends StatelessWidget {
+  const Demo({super.key});
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('演示')),
+    body: SafeArea(
+      child: Center(
+        child: SingleChildScrollView(child: Text('正文')),
+      ),
+    ),
+  );
+}
+''';
+      expect(_centeredScrollViewLines(violatingSource), hasLength(1));
+      expect(_centeredScrollViewLines(safeAreaWrappedSource), hasLength(1));
+      expect(_centeredScrollViewLines(compliantSource), isEmpty);
+      // Login card（Center 包卡片）不在本守卫的判定范围：它没有滚动正文页。
+      const centeredCardSource = '''
+class Demo extends StatelessWidget {
+  const Demo({super.key});
+
+  @override
+  Widget build(BuildContext context) =>
+      Scaffold(body: Center(child: Card(child: Text('登录卡片'))));
+}
+''';
+      expect(_centeredScrollViewLines(centeredCardSource), isEmpty);
+    });
+
+    test('PopupMenuItem 子树内不覆写 textTheme 字阶', () {
+      final offenders = <String>[];
+      for (final file in _libSources()) {
+        for (final line in _popupMenuTextThemeLines(file.readAsStringSync())) {
+          offenders.add('${_relativePath(file)}:$line');
+        }
+      }
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            '同组溢出菜单必须维持统一字阶，危险项只允许传 TextStyle(color: '
+            'colors.error)：违规：$offenders',
+      );
+
+      const violatingSource = '''
+Widget demo(BuildContext context) => PopupMenuItem<String>(
+  value: 'fail',
+  child: Text(
+    '判定为失败',
+    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+      color: Theme.of(context).colorScheme.error,
+    ),
+  ),
+);
+''';
+      const compliantSource = '''
+Widget demo(BuildContext context) => PopupMenuItem<String>(
+  value: 'fail',
+  child: Text(
+    '判定为失败',
+    style: TextStyle(color: Theme.of(context).colorScheme.error),
+  ),
+);
+''';
+      expect(_popupMenuTextThemeLines(violatingSource), hasLength(1));
+      expect(_popupMenuTextThemeLines(compliantSource), isEmpty);
+    });
+
+    testWidgets('20:9 长屏（393×873dp）正文顶部紧贴 AppBar', (tester) async {
+      _useView(tester, const Size(393, 873));
+      final database = PactaDatabase(NativeDatabase.memory());
+      final repository = LocalNationalFocusRepository(
+        database: database,
+        userId: 'guard-long-screen',
+        cloudSyncEnabled: false,
+        now: () => DateTime.utc(2026, 11, 25, 9),
+      );
+      try {
+        final card = await repository.createCard(
+          const NationalFocusCardDraft(name: '晨光校准', action: '闹钟第一次响起时打开床边灯。'),
+        );
+        await repository.placeCard(cardId: card.id, parentId: null);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: pactaTheme(Brightness.light),
+            home: NationalFocusStrengtheningPage(
+              repository: repository,
+              cardId: card.id,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final appBar = tester.getRect(find.byType(AppBar));
+        final section = tester.getRect(
+          find.widgetWithText(PactaSectionHeader, '可用要求'),
+        );
+        expect(
+          section.top - appBar.bottom,
+          lessThanOrEqualTo(40),
+          reason: '国策强化要求正文必须从 AppBar 下方起排，不能被垂直居中压到中部',
+        );
+        expect(section.height, greaterThan(0));
+
+        // 编辑资料：头像同样紧贴 AppBar，而不是掉到页面中部。
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: pactaTheme(Brightness.light),
+            home: const ProfileEditPage(
+              repository: UnavailableProfileRepository(),
+              avatarPicker: _NullAvatarPicker(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final editAppBar = tester.getRect(find.byType(AppBar));
+        final avatar = tester.getRect(find.byKey(const Key('profile-avatar')));
+        expect(
+          avatar.top - editAppBar.bottom,
+          lessThanOrEqualTo(40),
+          reason: '编辑资料的头像必须紧贴 AppBar 底缘，长屏不留下大块空顶',
+        );
+        expect(find.text('编辑资料'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 1));
+        await repository.dispose();
+        await database.close();
+      }
+    });
+  });
+}
+
+/// 只为「编辑资料」守卫提供一次取消的头像选择器：本守卫不触发选图。
+class _NullAvatarPicker implements AvatarPicker {
+  const _NullAvatarPicker();
+
+  @override
+  Future<Uint8List?> pickSingleImage() async => null;
 }
 
 // -----------------------------------------------------------------------------
@@ -3145,6 +3381,163 @@ class _StringLiteralVisitor extends RecursiveAstVisitor<void> {
   void visitSimpleStringLiteral(SimpleStringLiteral node) {
     values.add(node.value);
     super.visitSimpleStringLiteral(node);
+  }
+}
+
+/// 源码里所有「Scaffold.body 是 Center，且其子树里有 SingleChildScrollView」
+/// 的行号。
+///
+/// 20:9 全面屏下这种写法会把整段滚动正文压到页面垂直中线，顶部掉出一大截
+/// 空白；16:9 模拟器几乎看不出来，所以必须机械锁定。
+List<int> _centeredScrollViewLines(String source) {
+  final visitor = _CenteredScrollViewVisitor();
+  parseString(content: source, throwIfDiagnostics: false).unit.accept(visitor);
+  return [for (final offset in visitor.offsets) _lineOf(source, offset)];
+}
+
+/// 源码里所有「PopupMenuItem 构造函数参数子树内读取 textTheme」的行号。
+///
+/// 同组溢出菜单必须统一字阶：危险项只能覆写颜色（TextStyle(color: ...)），
+/// 一旦读 textTheme 就会把字号/字重改成与普通项不一致。
+List<int> _popupMenuTextThemeLines(String source) {
+  final visitor = _PopupMenuTextStyleVisitor();
+  parseString(content: source, throwIfDiagnostics: false).unit.accept(visitor);
+  return [for (final offset in visitor.offsets) _lineOf(source, offset)];
+}
+
+class _CenteredScrollViewVisitor extends RecursiveAstVisitor<void> {
+  final offsets = <int>[];
+
+  @override
+  void visitInstanceCreationExpression(InstanceCreationExpression node) {
+    if (node.constructorName.type.name.lexeme == 'Scaffold') {
+      _collect(node.argumentList);
+    }
+    super.visitInstanceCreationExpression(node);
+  }
+
+  @override
+  void visitMethodInvocation(MethodInvocation node) {
+    if (node.methodName.name == 'Scaffold') _collect(node.argumentList);
+    super.visitMethodInvocation(node);
+  }
+
+  void _collect(ArgumentList arguments) {
+    for (final argument in arguments.arguments) {
+      if (argument is! NamedExpression || argument.name.label.name != 'body') {
+        continue;
+      }
+      // 先剥掉 SafeArea 外壳：body 写成 SafeArea(child: Center(...)) 与直接
+      // 写 Center 是同一种「正文垂直居中」缺陷，不能靠包一层 SafeArea 绕过。
+      final body = _unwrapSafeArea(argument.expression);
+      if (!_isCenterConstruction(body)) continue;
+      final probe = _SingleChildScrollViewProbe();
+      body.accept(probe);
+      if (probe.found) offsets.add(argument.offset);
+    }
+  }
+
+  /// 循环展开 SafeArea(child: ...)：登录卡片常见 SafeArea 包卡片，而 20:9
+  /// 长屏的滚动正文页不允许任何一层 Center 残留。
+  Expression _unwrapSafeArea(Expression expression) {
+    var current = expression;
+    // 上限只防手写死循环，正常页面嵌套不会超过两层。
+    for (var depth = 0; depth < 8; depth++) {
+      if (!_isSafeAreaConstruction(current)) return current;
+      final arguments = _argumentsOf(current);
+      if (arguments == null) return current;
+      final child = _namedChild(arguments);
+      if (child == null) return current;
+      current = child;
+    }
+    return current;
+  }
+
+  ArgumentList? _argumentsOf(Expression expression) => switch (expression) {
+    InstanceCreationExpression(:final argumentList) => argumentList,
+    MethodInvocation(:final argumentList) => argumentList,
+    _ => null,
+  };
+
+  Expression? _namedChild(ArgumentList arguments) {
+    for (final argument in arguments.arguments) {
+      if (argument is NamedExpression && argument.name.label.name == 'child') {
+        return argument.expression;
+      }
+    }
+    return null;
+  }
+
+  bool _isSafeAreaConstruction(Expression expression) =>
+      _constructionName(expression) == 'SafeArea';
+
+  bool _isCenterConstruction(Expression expression) =>
+      _constructionName(expression) == 'Center';
+
+  String? _constructionName(Expression expression) => switch (expression) {
+    InstanceCreationExpression(:final constructorName) =>
+      constructorName.type.name.lexeme,
+    MethodInvocation(:final methodName) => methodName.name,
+    _ => null,
+  };
+}
+
+/// 子探测：Center 子树里是否出现滚动正文。
+class _SingleChildScrollViewProbe extends RecursiveAstVisitor<void> {
+  bool found = false;
+
+  @override
+  void visitInstanceCreationExpression(InstanceCreationExpression node) {
+    if (node.constructorName.type.name.lexeme == 'SingleChildScrollView') {
+      found = true;
+      return;
+    }
+    super.visitInstanceCreationExpression(node);
+  }
+
+  @override
+  void visitMethodInvocation(MethodInvocation node) {
+    if (node.methodName.name == 'SingleChildScrollView') {
+      found = true;
+      return;
+    }
+    super.visitMethodInvocation(node);
+  }
+}
+
+class _PopupMenuTextStyleVisitor extends RecursiveAstVisitor<void> {
+  final offsets = <int>[];
+
+  @override
+  void visitInstanceCreationExpression(InstanceCreationExpression node) {
+    if (node.constructorName.type.name.lexeme == 'PopupMenuItem') {
+      _collect(node.argumentList);
+    }
+    super.visitInstanceCreationExpression(node);
+  }
+
+  @override
+  void visitMethodInvocation(MethodInvocation node) {
+    // 只做语法解析时，未解析的 `PopupMenuItem(...)` 会落在方法调用节点上。
+    if (node.methodName.name == 'PopupMenuItem') _collect(node.argumentList);
+    super.visitMethodInvocation(node);
+  }
+
+  void _collect(ArgumentList arguments) {
+    final probe = _TextThemeProbe();
+    arguments.accept(probe);
+    offsets.addAll(probe.offsets);
+  }
+}
+
+/// 子探测：一个子树里所有 `textTheme` 标识符位置。
+class _TextThemeProbe extends RecursiveAstVisitor<void> {
+  final offsets = <int>[];
+
+  @override
+  void visitSimpleIdentifier(SimpleIdentifier node) {
+    if (node.name == 'textTheme') offsets.add(node.offset);
+    super.visitSimpleIdentifier(node);
   }
 }
 

@@ -82,8 +82,8 @@ void main() {
       'appointment': 'accepted',
       'card': 'accepted',
     });
-    // 掰正动作不改 schema：版本号仍是冻结的 39。
-    expect(reopened.schemaVersion, 39);
+    // 掰正动作不改 schema：版本号仍是冻结的 40。
+    expect(reopened.schemaVersion, 40);
   });
 
   test('新建库不触发旧数据掰正，且 schema 版本保持冻结', () async {
@@ -96,7 +96,7 @@ void main() {
       rows.map((row) => row.read<String>('name')),
       containsAll(<String>['focus_sessions', 'local_national_focus_cards']),
     );
-    expect(database.schemaVersion, 39);
+    expect(database.schemaVersion, 40);
   });
 
   test('单设备时钟跳变核对模型仍完整可用', () {

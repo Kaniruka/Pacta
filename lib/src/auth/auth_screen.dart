@@ -109,9 +109,14 @@ class AuthScreen extends ConsumerStatefulWidget {
 class _AuthScreenState extends ConsumerState<AuthScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
-  bool _isRegistering = false;
   bool _obscurePassword = true;
   bool _busy = false;
+
+  /// 正在提交的那颗按钮：true = 受邀注册，false = 登录，null = 空闲。
+  ///
+  /// 两颗按钮共用同一份请求状态，但只有被点的那颗展示转圈指示器；另一颗
+  /// 同步禁用，避免同一份邮箱/密码在请求未结束时再发一次。
+  bool? _submittingRegister;
   String? _error;
 
   @override
@@ -121,7 +126,8 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     super.dispose();
   }
 
-  Future<void> _submit() async {
+  Future<void> _submit({required bool registering}) async {
+    if (_busy) return;
     FocusManager.instance.primaryFocus?.unfocus();
     final email = _email.text.trim();
     final password = _password.text;
@@ -131,11 +137,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     }
     setState(() {
       _busy = true;
+      _submittingRegister = registering;
       _error = null;
     });
     try {
       final repository = ref.read(authRepositoryProvider);
-      if (_isRegistering) {
+      if (registering) {
         await repository.signUp(email: email, password: password);
       } else {
         await repository.signIn(email: email, password: password);
@@ -144,7 +151,12 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       if (!mounted) return;
       setState(() => _error = _friendlyError(error));
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _submittingRegister = null;
+        });
+      }
     }
   }
 
@@ -160,14 +172,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     }
     return describeKnownFailure(error) ??
         formatUserError(error, fallback: '登录未完成，请稍后重试。');
-  }
-
-  void _selectMode({required bool registering}) {
-    if (_busy || _isRegistering == registering) return;
-    setState(() {
-      _isRegistering = registering;
-      _error = null;
-    });
   }
 
   @override
@@ -212,29 +216,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       style: theme.textTheme.headlineSmall,
                     ),
                     const SizedBox(height: PactaSpacing.xl),
-                    SegmentedButton<bool>(
-                      showSelectedIcon: false,
-                      expandedInsets: EdgeInsets.zero,
-                      segments: const [
-                        ButtonSegment(value: false, label: Text('登录')),
-                        ButtonSegment(value: true, label: Text('受邀注册')),
-                      ],
-                      selected: {_isRegistering},
-                      onSelectionChanged: _busy
-                          ? null
-                          : (selection) =>
-                                _selectMode(registering: selection.first),
-                    ),
-                    if (_isRegistering) ...[
-                      const SizedBox(height: PactaSpacing.md),
-                      Text(
-                        '使用已开通注册资格的邮箱与密码（至少 8 位）激活账号',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: PactaSpacing.lg),
                     TextField(
                       controller: _email,
                       keyboardType: TextInputType.emailAddress,
@@ -252,7 +233,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       autocorrect: false,
                       enableSuggestions: false,
                       textInputAction: TextInputAction.done,
-                      onSubmitted: (_) => unawaited(_submit()),
+                      // 回车提交默认走登录：注册是低频的显式动作。
+                      onSubmitted: (_) =>
+                          unawaited(_submit(registering: false)),
                       decoration: InputDecoration(
                         labelText: '密码',
                         prefixIcon: const Icon(Icons.lock_outline_rounded),
@@ -279,17 +262,59 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       ),
                     ],
                     const SizedBox(height: PactaSpacing.xl),
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size(0, 48),
-                      ),
-                      onPressed: _busy ? null : _submit,
-                      child: _busy
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(_isRegistering ? '注册' : '登录'),
+                    // 邮箱与密码已经填在上面，底部不再用分段控件重复一遍
+                    // 「登录 / 受邀注册」：两颗并排等宽按钮直接承载动作。
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Tooltip(
+                            message: '使用已开通注册资格的邮箱与密码（至少 8 位）激活账号',
+                            child: OutlinedButton(
+                              key: const ValueKey('auth-register-button'),
+                              style: OutlinedButton.styleFrom(
+                                minimumSize: const Size(0, 48),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                              ),
+                              onPressed: _busy
+                                  ? null
+                                  : () => _submit(registering: true),
+                              child: _busy && _submittingRegister == true
+                                  ? const SizedBox.square(
+                                      dimension: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Text('受邀注册'),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: PactaSpacing.md),
+                        Expanded(
+                          child: FilledButton(
+                            key: const ValueKey('auth-login-button'),
+                            style: FilledButton.styleFrom(
+                              minimumSize: const Size(0, 48),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
+                            ),
+                            onPressed: _busy
+                                ? null
+                                : () => _submit(registering: false),
+                            child: _busy && _submittingRegister == false
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('登录'),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

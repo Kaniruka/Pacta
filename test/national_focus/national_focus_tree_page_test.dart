@@ -12,7 +12,9 @@ import 'package:pacta/src/national_focus/national_focus_shared_widgets.dart';
 import 'package:pacta/src/national_focus/national_focus_tree_page.dart';
 import 'package:pacta/src/tasks/task_database.dart';
 import 'package:pacta/src/theme/pacta_icon_sizes.dart';
+import 'package:pacta/src/theme/pacta_spacing.dart';
 import 'package:pacta/src/theme/pacta_theme.dart';
+import 'package:pacta/src/ui/pacta_page_header.dart';
 
 void main() {
   late PactaDatabase database;
@@ -113,15 +115,30 @@ void main() {
           ),
         );
         await pumpNationalFocusUi(tester);
-        final nameField = find.widgetWithText(TextFormField, '卡片名称');
+        // 底部保存按钮与「基础内容」白卡共用同一条页边距：左右缘像素对齐。
+        final baseCard = find.byKey(
+          const ValueKey('national-focus-editor-base-card'),
+        );
         final saveButton = find.widgetWithText(FilledButton, '保存');
+        expect(baseCard, findsOneWidget);
         expect(
           tester.getRect(saveButton).left,
-          closeTo(tester.getRect(nameField).left, 1),
+          closeTo(tester.getRect(baseCard).left, 1),
         );
         expect(
           tester.getRect(saveButton).right,
-          closeTo(tester.getRect(nameField).right, 1),
+          closeTo(tester.getRect(baseCard).right, 1),
+        );
+        // 表单字段比卡片再让出一档内缘，输入框不会压到白卡边线。
+        final nameField = find.widgetWithText(TextFormField, '卡片名称');
+        final fieldRect = tester.getRect(nameField);
+        final cardRect = tester.getRect(baseCard);
+        expect(fieldRect.left, greaterThan(cardRect.left));
+        expect(fieldRect.right, lessThan(cardRect.right));
+        expect(
+          fieldRect.left - cardRect.left,
+          greaterThanOrEqualTo(PactaSpacing.lg - 0.5),
+          reason: '输入框左内缘至少让出一档 16dp',
         );
         final heading = find.text('例外与判例');
         await tester.ensureVisible(heading);
@@ -312,8 +329,12 @@ void main() {
     expect(find.textContaining('历史最高'), findsNothing);
     expect(find.textContaining('成功日'), findsNWidgets(2));
     expect(find.textContaining('内化进度'), findsOneWidget);
-    expect(find.text('管理强化要求'), findsNothing);
-    expect(find.text('编辑卡片'), findsOneWidget);
+    expect(find.text('强化要求'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('national-focus-detail-edit')),
+      findsOneWidget,
+    );
+    expect(find.text('编辑卡片'), findsNothing);
     await tester.pageBack();
     await tester.pumpAndSettle();
     expect(
@@ -626,7 +647,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('外部入口直达失败记录并在页内说明检查点', (tester) async {
+  testWidgets('外部入口直达失败记录，检查点说明已下线', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -646,13 +667,11 @@ void main() {
 
     expect(find.text('国策失败记录'), findsOneWidget);
     expect(find.text('查看失败记录'), findsNothing);
-    expect(find.text('下次检查点：2026-09-26 05:00 · Asia/Tokyo'), findsOneWidget);
-    expect(find.text('检查点说明'), findsOneWidget);
-    expect(find.textContaining('北京时间 04:00'), findsNothing);
-    await tester.tap(find.text('检查点说明'));
-    await pumpNationalFocusUi(tester);
-    expect(find.textContaining('每日结算：'), findsOneWidget);
-    expect(find.textContaining('结算边界跟随账号时区（Asia/Tokyo）'), findsOneWidget);
+    // 折叠式检查点说明整块移除：页内只剩分组标题与批次卡片。
+    expect(find.text('检查点说明'), findsNothing);
+    expect(find.textContaining('下次检查点'), findsNothing);
+    expect(find.text('失败记录'), findsOneWidget);
+    expect(find.text('还没有记录'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(seconds: 1));
@@ -701,7 +720,14 @@ void main() {
 
     expect(find.text('当时树（只读）'), findsOneWidget);
     expect(find.text('检查点时的完整树快照'), findsOneWidget);
+    // 只读说明收进顶栏唯一 ⓘ：点按后才出现，正文不再常驻一段免责文字。
+    expect(find.textContaining('不能恢复、改写或用当前规则重算'), findsNothing);
+    final info = find.byKey(const ValueKey('national-focus-failure-tree-info'));
+    expect(info, findsOneWidget);
+    await tester.tap(info);
+    await tester.pump();
     expect(find.textContaining('不能恢复、改写或用当前规则重算'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
     final frozenParent = find.byKey(
       ValueKey('national-focus-history-node-${parent.id}'),
     );
@@ -739,7 +765,7 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
-  testWidgets('从只读历史树返回失败记录保留批次展开与检查点说明', (tester) async {
+  testWidgets('从只读历史树返回失败记录保留分组与批次动作', (tester) async {
     final card = await createPlacedCard();
     await repository.lightCard(card.id);
     now = DateTime.utc(2026, 9, 25, 20);
@@ -760,9 +786,9 @@ void main() {
     );
     await pumpNationalFocusUi(tester);
     await openRecords(tester);
-    await tester.tap(find.text('检查点说明'));
-    await pumpNationalFocusUi(tester);
-    expect(find.textContaining('每日结算：'), findsOneWidget);
+    expect(find.text('失败记录'), findsOneWidget);
+    expect(find.textContaining('未回顾'), findsWidgets);
+    expect(find.text('检查点说明'), findsNothing);
     await tester.tap(find.textContaining('1 个节点'));
     await pumpNationalFocusUi(tester);
     expect(find.text('查看当时树'), findsOneWidget);
@@ -773,9 +799,10 @@ void main() {
     await tester.pageBack();
     await pumpNationalFocusUi(tester);
     expect(find.text('国策失败记录'), findsOneWidget);
-    expect(find.textContaining('每日结算：'), findsOneWidget);
+    expect(find.text('失败记录'), findsOneWidget);
     expect(find.text('查看当时树'), findsOneWidget);
     expect(find.text('补充说明'), findsOneWidget);
+    expect(find.text('检查点说明'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(seconds: 1));
@@ -953,7 +980,9 @@ void main() {
     await pumpNationalFocusUi(tester);
     expect(find.text('全部确认 (0)'), findsOneWidget);
     await openRecords(tester);
-    expect(find.text('下次检查点：2026-09-26 05:00 · Asia/Tokyo'), findsOneWidget);
+    expect(find.text('国策失败记录'), findsOneWidget);
+    expect(find.text('下次检查点：2026-09-26 05:00 · Asia/Tokyo'), findsNothing);
+    expect(find.text('检查点说明'), findsNothing);
     await tester.pageBack();
     await tester.pumpAndSettle();
     await openNode(tester, card);
@@ -1090,10 +1119,16 @@ void main() {
       NationalFocusCardState.extinguished,
     );
     await openNode(tester, child);
-    final light = tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, '点亮'),
+    final primaryAction = find.byKey(
+      const ValueKey('national-focus-primary-state-action'),
     );
+    final light = tester.widget<FilledButton>(primaryAction);
     expect(light.onPressed, isNull);
+    expect(
+      find.descendant(of: primaryAction, matching: find.text('请先点亮父节点')),
+      findsOneWidget,
+    );
+    expect(find.text('请先点亮父节点。'), findsNothing);
     await tester.tap(find.text('查看详情'));
     await tester.pumpAndSettle();
     expect(find.textContaining('因「${parent.name}」连带熄灭'), findsOneWidget);
@@ -1128,7 +1163,7 @@ void main() {
     await tapAction(tester, '查看详情');
     await tester.pumpAndSettle();
     expect(find.text('修改名称'), findsNothing);
-    await tester.tap(find.text('编辑卡片'));
+    await tester.tap(find.byKey(const ValueKey('national-focus-detail-edit')));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).first, '新的父名称');
     await tester.tap(find.text('保存'));
@@ -1319,13 +1354,14 @@ void main() {
     );
     await pumpNationalFocusUi(tester);
     await openNode(tester, card);
-    expect(find.text('管理强化要求'), findsNothing);
+    expect(find.text('强化要求'), findsNothing);
     await tapAction(tester, '查看详情');
-    await tapAction(tester, '编辑卡片');
-    await tapAction(tester, '管理强化要求');
+    await tester.tap(find.byKey(const ValueKey('national-focus-detail-edit')));
+    await tester.pumpAndSettle();
+    await tapAction(tester, '强化要求');
     await pumpNationalFocusUi(tester);
     expect(find.text('国策强化要求'), findsOneWidget);
-    expect(find.text('基础'), findsOneWidget);
+    expect(find.text('基础要求'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
@@ -1678,5 +1714,70 @@ void main() {
         await tester.pump(const Duration(seconds: 1));
       },
     );
+  }
+
+  // 纵轴对齐契约：页头、工具栏、每日结算与画布必须共用同一个 gutter 真源。
+  for (final size in const [Size(393, 873), Size(1280, 800)]) {
+    testWidgets('页头／工具栏／每日结算／画布共享同一 gutter 左缘 ${size.width}', (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await createPlacedCard();
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: pactaTheme(Brightness.light),
+          home: Scaffold(body: NationalFocusTreePage(repository: repository)),
+        ),
+      );
+      await pumpNationalFocusUi(tester);
+
+      final gutter = PactaSpacing.gutterFor(size.width);
+      final header = tester.getRect(find.byType(PactaPageHeader));
+      final headerTitle = tester.getRect(
+        find.descendant(
+          of: find.byType(PactaPageHeader),
+          matching: find.text('国策树'),
+        ),
+      );
+      expect(headerTitle.left, closeTo(header.left, 0.01));
+
+      // 工具栏与页头同一内容列：视图下拉与页头左缘像素对齐。
+      final viewMenu = tester.getRect(find.byType(PopupMenuButton<bool>));
+      expect(viewMenu.left, closeTo(header.left, 0.01));
+
+      final summary = find.byKey(
+        const ValueKey('national-focus-checkpoint-summary'),
+      );
+      expect(summary, findsOneWidget, reason: '每日结算不再另起一行悬置');
+      final summaryRect = tester.getRect(summary);
+      final canvas = find.byType(NationalFocusTreeCanvas);
+      expect(canvas, findsOneWidget);
+
+      if (size.width <= PactaSpacing.maxContentWidth) {
+        // 窄屏三段共用同一条纵轴：页头、结算摘要与画布左缘完全重合。
+        expect(header.left, closeTo(gutter, 0.01));
+        expect(summaryRect.left, closeTo(gutter, 0.01), reason: '摘要折行后仍齐左');
+        expect(tester.getRect(canvas).left, closeTo(gutter, 0.01));
+      } else {
+        // 宽屏：正文收进 960 内容列，摘要与工具栏同排并贴右缘。
+        expect(
+          summaryRect.bottom,
+          lessThanOrEqualTo(viewMenu.bottom + 0.01),
+          reason: '摘要与工具栏同排',
+        );
+        expect(summaryRect.right, closeTo(header.right, 0.01));
+      }
+      expect(
+        tester.getRect(canvas).left,
+        closeTo(gutter, 0.01),
+        reason: '画布横向边距同样来自 gutterFor',
+      );
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+    });
   }
 }

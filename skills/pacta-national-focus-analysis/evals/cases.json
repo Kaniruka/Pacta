@@ -14,7 +14,7 @@
   },
   "cases": [
     {
-      "id": "same-name-and-version",
+      "id": "same-name-and-icon",
       "tree": [
         {
           "id": "card-a",
@@ -29,11 +29,7 @@
             "scope": null,
             "exception_notes": null
           },
-          "current_requirement_version": {
-            "id": "version-a2",
-            "effective_until": null,
-            "version_number": 2
-          },
+          "icon_key": "lucide:book-open",
           "active_strengthening_level": 1,
           "successful_days": 12,
           "internalization_progress_percent": 18.1
@@ -51,11 +47,7 @@
             "scope": null,
             "exception_notes": null
           },
-          "current_requirement_version": {
-            "id": "version-b1",
-            "effective_until": null,
-            "version_number": 1
-          },
+          "icon_key": null,
           "active_strengthening_level": null,
           "successful_days": 0,
           "internalization_progress_percent": 0
@@ -74,7 +66,7 @@
                 "trigger_condition": "起床后",
                 "action": "喝水"
               },
-              "requirement_version_id": "version-a1"
+              "icon_key": "lucide:book-open"
             }
           ]
         }
@@ -97,7 +89,7 @@
             "trigger_condition": "累了",
             "action": "休息一下"
           },
-          "current_requirement_version": null
+          "icon_key": null
         }
       ],
       "library": []

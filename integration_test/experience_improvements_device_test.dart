@@ -232,6 +232,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       _expectNoException(tester, '打开 Pacta');
+      // 目标/任务编辑入口在计划页；看板只常驻置顶目标与今日融合卡。
+      await _openTab(tester, '计划');
 
       final goalCard = find.ancestor(
         of: find.text(goal.title),
@@ -337,17 +339,30 @@ void main() {
       await _tapAndSettle(tester, find.byTooltip('卡片操作'), '打开卡片操作菜单');
       await _tapAndSettle(tester, find.text('查看详情'), '打开国策卡详情');
       expect(find.text('国策卡详情'), findsOneWidget);
-      expect(find.textContaining('当前规则 · 强化等级 1'), findsOneWidget);
+      // 规则卡用语义胶囊标注档位，不再把档位拼进标题句子。
+      expect(find.text('强化等级 1'), findsOneWidget);
       // Strengthening management is only reachable from the card editor.
-      expect(find.text('管理强化要求'), findsNothing);
-      await _tapAndSettle(tester, find.text('编辑卡片'), '打开国策卡编辑');
+      expect(find.text('强化要求'), findsNothing);
+      await _tapAndSettle(
+        tester,
+        find.byKey(const ValueKey('national-focus-detail-edit')),
+        '打开国策卡编辑',
+      );
       expect(find.text('卡片名称'), findsOneWidget);
 
-      final manageStrengthening = find.text('管理强化要求');
+      final manageStrengthening = find.text('强化要求');
       await _ensureVisible(tester, manageStrengthening, '显示强化管理入口');
       await _tapAndSettle(tester, manageStrengthening, '打开强化要求管理');
       expect(find.text('国策强化要求'), findsOneWidget);
-      expect(find.text('当前使用 · 强化等级 1'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('national-focus-strengthening-level-1'),
+          ),
+          matching: find.text('正在使用'),
+        ),
+        findsOneWidget,
+      );
       final resetRequirement = find.descendant(
         of: find.byKey(
           const ValueKey('national-focus-strengthening-level-base'),
@@ -356,19 +371,31 @@ void main() {
       );
       await _ensureVisible(tester, resetRequirement, '显示基础要求切换操作');
       await _tapAndSettle(tester, resetRequirement, '切换到基础要求');
-      expect(find.text('当前使用 · 基础要求'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('national-focus-strengthening-level-base'),
+          ),
+          matching: find.text('正在使用'),
+        ),
+        findsOneWidget,
+      );
       await shot(tester, 'national-strengthening-basic-selected');
 
-      await tester.pageBack();
+      // 强化页顶栏是自定义图标按钮，没有 Material/Cupertino BackButton；
+      // 用系统返回走同一条 Navigator.pop 语义。
+      await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       _expectNoException(tester, '返回国策卡编辑');
       expect(find.text('编辑国策卡'), findsOneWidget);
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-      _expectNoException(tester, '返回国策卡详情');
+      // 强化档位是编辑器草稿：底部唯一「保存」一次提交后再回到详情。
+      final saveDraft = find.widgetWithText(FilledButton, '保存');
+      await _ensureVisible(tester, saveDraft, '显示编辑页保存按钮');
+      await _tapAndSettle(tester, saveDraft, '保存强化草稿并返回详情');
       expect(find.text('国策卡详情'), findsOneWidget);
       expect(find.text('国策规则'), findsOneWidget);
-      expect(find.textContaining('当前规则 · 强化等级 1'), findsNothing);
+      // 保存后档位回落到基础要求：强化胶囊随之消失。
+      expect(find.text('强化等级 1'), findsNothing);
       await shot(tester, 'national-card-detail-refreshed');
     } finally {
       tester.platformDispatcher.clearPlatformBrightnessTestValue();

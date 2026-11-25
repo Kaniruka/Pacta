@@ -731,6 +731,9 @@ class _CloudSyncOperationsModalState extends State<_CloudSyncOperationsModal> {
   bool _loading = false;
   int _request = 0;
 
+  /// 弹层卸载信号：任何入场等待都与它竞速，避免挂起。
+  final Completer<void> _disposed = Completer<void>();
+
   @override
   void initState() {
     super.initState();
@@ -748,6 +751,7 @@ class _CloudSyncOperationsModalState extends State<_CloudSyncOperationsModal> {
   @override
   void dispose() {
     widget.autoUpload?.removeListener(_autoUploadChanged);
+    if (!_disposed.isCompleted) _disposed.complete();
     super.dispose();
   }
 
@@ -758,20 +762,43 @@ class _CloudSyncOperationsModalState extends State<_CloudSyncOperationsModal> {
   bool get _ready => !_loading && _failure == null && _local != null;
 
   /// 并行读取云端与本机状态；任何一路失败都留在面板内，可原地重试。
+  /// 先云端、后本机：弹层首帧立即探测云端，本机全表快照等入场动画结束。
+  ///
+  /// 手动点「数据同步」时弹层在 0ms 就出现；若同一帧再跑一次整库扫描与
+  /// 指纹计算，转场动画会被主线程上的 SQLite 读取拖住，看起来像"点一下
+  /// 卡住"。云端探测是网络调用，不占主线程，可以马上发；本机扫描留到
+  /// 路由动画完成后。任何一路失败都留在面板内，可原地重试。
   Future<void> _load() async {
     final repository = widget.repository;
     final request = ++_request;
+    // 云端探测在首帧立即发出；它的失败也要在这个 async 调用里被吞掉，
+    // 否则会变成未捕获异常，并在入场等待期间挂起整个弹层。
+    CloudSnapshotMetadata? cloud;
+    Object? cloudFailure;
     try {
-      final states = await Future.wait<Object?>([
-        repository.inspectCloud(),
-        repository.captureLocalState(),
-      ]);
+      cloud = await repository.inspectCloud();
+    } catch (error) {
+      cloudFailure = error;
+    }
+    await _waitForEntrance();
+    if (!mounted || request != _request || widget.repository != repository) {
+      return;
+    }
+    if (cloudFailure != null) {
+      setState(() {
+        _failure = cloudFailure;
+        _loading = false;
+      });
+      return;
+    }
+    try {
+      final local = await repository.captureLocalState();
       if (!mounted || request != _request || widget.repository != repository) {
         return;
       }
       setState(() {
-        _cloud = states[0] as CloudSnapshotMetadata?;
-        _local = states[1] as CloudSnapshotLocalState;
+        _cloud = cloud;
+        _local = local;
         _failure = null;
         _loading = false;
       });
@@ -784,6 +811,40 @@ class _CloudSyncOperationsModalState extends State<_CloudSyncOperationsModal> {
         _loading = false;
       });
     }
+  }
+
+  /// 等这一帧画完，再按路由动画状态决定何时读本机库。
+  ///
+  /// 无动画路由（测试里的 home、已完成的弹层）在首帧后立刻开始；有入场
+  /// 动画的路由等 animation 完成后才开始，转场期间不再插入整库读取。
+  /// 所有等待都与 [_disposed] 竞速：弹层被提前关掉时立即醒来，不会留下
+  /// 一个永远不完成的 Completer。
+  Future<void> _waitForEntrance() async {
+    final firstFrame = Completer<void>();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!firstFrame.isCompleted) firstFrame.complete();
+    });
+    await Future.any<void>([firstFrame.future, _disposed.future]);
+    if (!mounted) return;
+    final animation = ModalRoute.of(context)?.animation;
+    if (animation == null || animation.status == AnimationStatus.completed) {
+      return;
+    }
+    final settled = Completer<void>();
+    void listener(AnimationStatus status) {
+      if (status != AnimationStatus.completed &&
+          status != AnimationStatus.dismissed) {
+        return;
+      }
+      animation.removeStatusListener(listener);
+      if (!settled.isCompleted) settled.complete();
+    }
+
+    animation.addStatusListener(listener);
+    // 动画可能在注册监听之前就已经完成。
+    listener(animation.status);
+    await Future.any<void>([settled.future, _disposed.future]);
+    animation.removeStatusListener(listener);
   }
 
   void _retry() {

@@ -75,7 +75,7 @@ class NationalFocusCard {
     this.parentId,
     this.strengtheningLevels = const [],
     this.activeStrengtheningLevel,
-    this.requirementVersions = const [],
+    this.iconKey,
   });
 
   final String id;
@@ -99,7 +99,10 @@ class NationalFocusCard {
   final NationalFocusCardState? cascadePriorState;
   final List<NationalFocusStrengtheningLevel> strengtheningLevels;
   final int? activeStrengtheningLevel;
-  final List<NationalFocusRequirementVersion> requirementVersions;
+
+  /// 卡片自定义图标键（如 `lucide:book`）；空值按默认灯泡图标呈现，
+  /// 经 Cloud Snapshot 的 `icon_key` 跨端同步。
+  final String? iconKey;
 
   bool get isInLibrary => !isInTree;
   bool get isDeleted => deletedAt != null;
@@ -162,28 +165,6 @@ class NationalFocusStrengtheningLevelDraft {
   final String? action;
 }
 
-class NationalFocusRequirementVersion {
-  const NationalFocusRequirementVersion({
-    required this.versionNumber,
-    required this.strengtheningLevelNumber,
-    required this.effectiveTriggerCondition,
-    required this.effectiveAction,
-    required this.effectiveFrom,
-    this.scope,
-    this.exceptionNotes,
-    this.effectiveUntil,
-  });
-
-  final int versionNumber;
-  final int? strengtheningLevelNumber;
-  final String effectiveTriggerCondition;
-  final String effectiveAction;
-  final String? scope;
-  final String? exceptionNotes;
-  final DateTime effectiveFrom;
-  final DateTime? effectiveUntil;
-}
-
 class NationalFocusCardSnapshot {
   const NationalFocusCardSnapshot({
     required this.id,
@@ -206,7 +187,7 @@ class NationalFocusCardSnapshot {
     this.cascadePriorState,
     this.failureSourceCardId,
     this.activeStrengtheningLevel,
-    this.requirementVersionNumber,
+    this.iconKey,
     String? effectiveTriggerCondition,
     String? effectiveAction,
   }) : effectiveTriggerCondition =
@@ -231,7 +212,9 @@ class NationalFocusCardSnapshot {
   final NationalFocusCardState? cascadePriorState;
   final String? failureSourceCardId;
   final int? activeStrengtheningLevel;
-  final int? requirementVersionNumber;
+
+  /// 失败当时卡片的自定义图标键；旧快照缺这一项时回落 `null`。
+  final String? iconKey;
   final String effectiveTriggerCondition;
   final String effectiveAction;
   final DateTime createdAt;
@@ -277,6 +260,10 @@ class NationalFocusCardDraft {
     required this.action,
     this.scope,
     this.exceptionNotes,
+    this.iconKey,
+    this.strengtheningLevels,
+    this.activeStrengtheningLevel,
+    this.updateStrengthening = false,
   });
 
   final String name;
@@ -284,4 +271,18 @@ class NationalFocusCardDraft {
   final String action;
   final String? scope;
   final String? exceptionNotes;
+
+  /// 卡片自定义图标键；`null` 表示回落默认图标。
+  final String? iconKey;
+
+  /// 强化档位草稿。非 `null` 时随卡片在同一次事务里整体替换；
+  /// 传 `null` 表示这次编辑不触碰已存的强化档位。
+  final List<NationalFocusStrengtheningLevel>? strengtheningLevels;
+
+  /// 草稿当前选中的强化档位；必须存在于 [strengtheningLevels] 中。
+  final int? activeStrengtheningLevel;
+
+  /// `true` 时即使 [strengtheningLevels] 与现库一致也重写档位行；
+  /// 编辑器用它表达"这次保存包含强化草稿"。
+  final bool updateStrengthening;
 }

@@ -7,12 +7,17 @@ class PactaDisclosureSection extends StatefulWidget {
     required this.title,
     required this.children,
     this.subtitle,
+    this.leading,
     this.tilePadding = EdgeInsets.zero,
     this.childrenPadding = const EdgeInsets.only(bottom: 8),
   });
 
   final Widget title;
   final Widget? subtitle;
+
+  /// Optional leading glyph, matching [ListTile]'s 24dp icon slot.
+  final Widget? leading;
+
   final List<Widget> children;
   final EdgeInsetsGeometry tilePadding;
   final EdgeInsetsGeometry childrenPadding;
@@ -33,6 +38,7 @@ class _PactaDisclosureSectionState extends State<PactaDisclosureSection> {
   @override
   Widget build(BuildContext context) => ExpansionTile(
     tilePadding: widget.tilePadding,
+    leading: widget.leading,
     shape: const Border(),
     collapsedShape: const Border(),
     maintainState: true,

@@ -14,7 +14,7 @@ import '../test/support/fake_auth_repository.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('T17 编辑强化要求、保留生效版本并跨重启显示', (tester) async {
+  testWidgets('T17 编辑强化要求、随卡片保存并跨重启显示', (tester) async {
     const userId = 'ticket-17-user';
     final temporaryDirectory = await Directory.systemTemp.createTemp(
       'pacta-ticket-17-',
@@ -65,12 +65,6 @@ void main() {
       await _reveal(tester, selectFirstLevel);
       await tester.tap(selectFirstLevel);
       await tester.pumpAndSettle();
-      var savedCard = await repository.getCard(card.id);
-      expect(savedCard.activeStrengtheningLevel, 1);
-      expect(savedCard.effectiveTriggerCondition, '完成当天阅读');
-      expect(savedCard.effectiveAction, '每天阅读 10 页');
-      expect(savedCard.state, NationalFocusCardState.extinguished);
-      expect(savedCard.successfulDays, 0);
 
       await _reveal(tester, find.byTooltip('编辑强化等级 1'));
       await tester.tap(find.byTooltip('编辑强化等级 1'));
@@ -82,14 +76,18 @@ void main() {
       await tester.tap(find.text('保存'));
       await tester.pumpAndSettle();
 
-      savedCard = await repository.getCard(card.id);
+      // 档位增改与选中都还是草稿：返回编辑页点唯一「保存」才落盘。
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+
+      final savedCard = await repository.getCard(card.id);
       expect(savedCard.activeStrengtheningLevel, 1);
+      expect(savedCard.effectiveTriggerCondition, '完成当天阅读');
       expect(savedCard.effectiveAction, '每天阅读 12 页');
-      expect(savedCard.requirementVersions, hasLength(3));
-      expect(savedCard.requirementVersions[1].effectiveAction, '每天阅读 10 页');
-      expect(savedCard.requirementVersions[1].effectiveUntil, isNotNull);
-      expect(savedCard.requirementVersions[2].effectiveAction, '每天阅读 12 页');
-      expect(savedCard.requirementVersions[2].effectiveUntil, isNull);
+      expect(savedCard.strengtheningLevels, hasLength(1));
+      expect(savedCard.strengtheningLevels.single.action, '每天阅读 12 页');
       expect(savedCard.state, NationalFocusCardState.extinguished);
       expect(savedCard.successfulDays, 0);
 
@@ -106,15 +104,22 @@ void main() {
       expect(restartedCard.activeStrengtheningLevel, 1);
       expect(restartedCard.effectiveTriggerCondition, '完成当天阅读');
       expect(restartedCard.effectiveAction, '每天阅读 12 页');
-      expect(restartedCard.requirementVersions, hasLength(3));
-      expect(restartedCard.requirementVersions[1].effectiveAction, '每天阅读 10 页');
-      expect(restartedCard.requirementVersions[1].effectiveUntil, isNotNull);
-      expect(restartedCard.requirementVersions[2].effectiveUntil, isNull);
+      expect(restartedCard.strengtheningLevels, hasLength(1));
+      expect(restartedCard.strengtheningLevels.single.action, '每天阅读 12 页');
 
       await _openApp(tester, auth, createRepository);
       await _openStrengtheningManager(tester);
-      expect(find.text('每天阅读 12 页'), findsNWidgets(2));
-      expect(find.text('当前使用 · 强化等级 1'), findsOneWidget);
+      // 顶部不再复述当前要求：同一条规则只由选中段保留一次。
+      expect(find.text('每天阅读 12 页'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byKey(
+            const ValueKey('national-focus-strengthening-level-1'),
+          ),
+          matching: find.text('正在使用'),
+        ),
+        findsOneWidget,
+      );
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
       for (final openRepository in repositories) {
@@ -149,12 +154,12 @@ Future<void> _openApp(
 }
 
 Future<void> _openStrengtheningManager(WidgetTester tester) async {
-  // Strengthening management lives behind the card editor.
-  final editButton = find.text('编辑卡片');
+  // Strengthening management lives behind the card editor's top-bar action.
+  final editButton = find.byKey(const ValueKey('national-focus-detail-edit'));
   await _reveal(tester, editButton);
   await tester.tap(editButton);
   await tester.pumpAndSettle();
-  final manageButton = find.text('管理强化要求');
+  final manageButton = find.text('强化要求');
   await _reveal(tester, manageButton);
   await tester.tap(manageButton);
   await tester.pumpAndSettle();

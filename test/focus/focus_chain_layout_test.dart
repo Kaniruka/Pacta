@@ -234,6 +234,21 @@ void main() {
       matching: find.byType(Card),
     );
     expect(cards, findsNWidgets(2));
+
+    // 文字列显式收紧主轴，Row 的 center 才是真正的内容居中。
+    final textColumns = find.descendant(
+      of: find.byType(FocusHistoryPage),
+      matching: find.byKey(const ValueKey('focus-history-card-text')),
+    );
+    expect(textColumns, findsNWidgets(2));
+    for (var index = 0; index < 2; index++) {
+      expect(
+        tester.widget<Column>(textColumns.at(index)).mainAxisSize,
+        MainAxisSize.min,
+        reason: '第 ${index + 1} 行文字列必须 mainAxisSize.min',
+      );
+    }
+
     for (var index = 0; index < 2; index++) {
       final cardFinder = cards.at(index);
       final cardRect = tester.getRect(cardFinder);
@@ -260,6 +275,67 @@ void main() {
         reason: '文字块不贴边：上下至少留一档 12dp',
       );
     }
+
+    // 带 48dp 溢出菜单的完成卡片：直接量首个 Text 顶缘与末个 Text 底缘。
+    final completedCard = find.ancestor(
+      of: find.byType(PopupMenuButton<String>),
+      matching: find.byType(Card),
+    );
+    expect(completedCard, findsOneWidget);
+    final completedRect = tester.getRect(completedCard);
+    final texts = find.descendant(
+      of: completedCard,
+      matching: find.byType(Text),
+    );
+    final topGap = tester.getRect(texts.first).top - completedRect.top;
+    final bottomGap = completedRect.bottom - tester.getRect(texts.last).bottom;
+    expect(
+      (topGap - bottomGap).abs(),
+      lessThanOrEqualTo(1.5),
+      reason: '完成卡片首行顶距 $topGap / 末行底距 $bottomGap 必须对称',
+    );
+
+    expect(tester.takeException(), isNull);
+    await _disposeWidget(tester);
+  });
+
+  testWidgets('历史卡片溢出菜单的危险项与普通项同为 labelLarge 字阶', (tester) async {
+    final fixture = await _Fixture.create();
+    addTearDown(fixture.dispose);
+    await fixture.focus.startSession(
+      taskId: fixture.taskIds.first,
+      mode: FocusChainMode.regular,
+      duration: const Duration(minutes: 25),
+    );
+    fixture.now = fixture.now.add(const Duration(minutes: 25));
+    await fixture.focus.settleDueSessions();
+
+    await _mount(tester, fixture);
+    await _openDestination(tester, '专注链');
+    await tester.tap(find.byKey(_historyEntry));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('普通链'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+
+    final failText = tester.widget<Text>(find.text('判定为失败'));
+    final noteText = tester.widget<Text>(find.text('编辑节点备注'));
+    // 只传颜色、不碰 textTheme：字号继承自菜单主题的 labelLarge。
+    expect(failText.style?.fontSize, isNull);
+    expect(noteText.style?.fontSize, isNull);
+    final errorColor = Theme.of(tester.element(find.text('判定为失败')))
+        .colorScheme
+        .error;
+    expect(failText.style?.color, errorColor);
+    expect(noteText.style?.color, isNull, reason: '普通项不覆写颜色');
+    // 渲染尺寸一致性：同组菜单不允许出现两种字号。
+    expect(
+      tester.getSize(find.text('判定为失败')).height,
+      closeTo(tester.getSize(find.text('编辑节点备注')).height, 0.5),
+    );
+
     expect(tester.takeException(), isNull);
     await _disposeWidget(tester);
   });

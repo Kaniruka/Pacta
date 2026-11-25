@@ -34,11 +34,10 @@ export interface ProjectedNationalFocusCard extends JsonObject {
   cascade_source_card_id: string | null;
   cascade_prior_state: string | null;
   active_strengthening_level: number | null;
+  icon_key: string | null;
   internalization_progress_percent: number;
   effective_requirements: JsonObject;
-  current_requirement_version: JsonObject;
   strengthening_levels: JsonObject[];
-  requirement_versions: JsonObject[];
 }
 
 export interface NationalFocusProjection {
@@ -65,6 +64,7 @@ interface CardRecord {
   cascade_source_card_id: string | null;
   cascade_prior_state: string | null;
   active_strengthening_level: number | null;
+  icon_key: string | null;
   deleted_at: string | null;
 }
 
@@ -73,19 +73,6 @@ interface StrengtheningLevel {
   level_number: number;
   trigger_condition_override: string | null;
   action_override: string | null;
-}
-
-interface RequirementVersion {
-  id: string;
-  card_id: string;
-  version_number: number;
-  strengthening_level_number: number | null;
-  effective_trigger_condition: string;
-  effective_action: string;
-  scope: string | null;
-  exception_notes: string | null;
-  effective_from: string;
-  effective_until: string | null;
 }
 
 function fail(): never {
@@ -106,6 +93,13 @@ function nullableString(row: JsonObject, key: string): string | null {
   const value = row[key];
   if (value === null) return null;
   if (typeof value !== 'string') return fail();
+  return value;
+}
+
+function nullableTrimmedString(row: JsonObject, key: string): string | null {
+  const value = row[key];
+  if (value === null) return null;
+  if (typeof value !== 'string' || value.trim().length === 0 || value !== value.trim()) return fail();
   return value;
 }
 
@@ -238,6 +232,8 @@ function projectCard(value: JsonObject): CardRecord {
     cascade_source_card_id: nullableString(value, 'cascade_source_card_id'),
     cascade_prior_state: cascadePriorState,
     active_strengthening_level: nullableInteger(value, 'active_strengthening_level', 1, 5),
+    // v4 快照带自定义图标键；v1–v3 快照没有这一列，投影回落 null。
+    icon_key: 'icon_key' in value ? nullableTrimmedString(value, 'icon_key') : null,
     deleted_at: timestampField(value, 'deleted_at', true),
   };
   if (card.current_consecutive_days > card.best_consecutive_days) return fail();
@@ -253,38 +249,6 @@ function projectStrengtheningLevel(value: JsonObject): StrengtheningLevel {
   };
   if (level.trigger_condition_override === null && level.action_override === null) return fail();
   return level;
-}
-
-function projectRequirementVersion(value: JsonObject): RequirementVersion {
-  const version = {
-    id: requiredString(value, 'id'),
-    card_id: requiredString(value, 'card_id'),
-    version_number: integer(value, 'version_number', 1),
-    strengthening_level_number: nullableInteger(value, 'strengthening_level_number', 1, 5),
-    effective_trigger_condition: requiredString(value, 'effective_trigger_condition', true),
-    effective_action: requiredString(value, 'effective_action'),
-    scope: nullableString(value, 'scope'),
-    exception_notes: nullableString(value, 'exception_notes'),
-    effective_from: timestampField(value, 'effective_from')!,
-    effective_until: timestampField(value, 'effective_until', true),
-  };
-  if (version.effective_until !== null
-    && Date.parse(version.effective_until) < Date.parse(version.effective_from)) return fail();
-  return version;
-}
-
-function publicRequirementVersion(version: RequirementVersion): JsonObject {
-  return {
-    id: version.id,
-    version_number: version.version_number,
-    strengthening_level_number: version.strengthening_level_number,
-    effective_trigger_condition: version.effective_trigger_condition,
-    effective_action: version.effective_action,
-    scope: version.scope,
-    exception_notes: version.exception_notes,
-    effective_from: version.effective_from,
-    effective_until: version.effective_until,
-  };
 }
 
 function ensureTreeRelations(cards: Map<string, CardRecord>): void {
@@ -339,39 +303,6 @@ function projectAvailableSnapshot(raw: JsonObject, metadata: NationalFocusMetada
     levels.sort((a, b) => a.level_number - b.level_number);
   }
 
-  const versionsByCard = new Map<string, RequirementVersion[]>();
-  const seenVersionIds = new Set<string>();
-  const seenVersions = new Set<string>();
-  for (const rawVersion of recordArray(tables, 'local_national_focus_requirement_versions')) {
-    const version = projectRequirementVersion(rawVersion);
-    if (!allCards.has(version.card_id) || seenVersionIds.has(version.id)) return fail();
-    const key = `${version.card_id}\u0000${version.version_number}`;
-    if (seenVersions.has(key)) return fail();
-    seenVersionIds.add(version.id);
-    seenVersions.add(key);
-    const versions = versionsByCard.get(version.card_id) ?? [];
-    versions.push(version);
-    versionsByCard.set(version.card_id, versions);
-  }
-  for (const versions of versionsByCard.values()) versions.sort((a, b) => a.version_number - b.version_number);
-
-  const currentVersionByCard = new Map<string, RequirementVersion>();
-  for (const card of allCards.values()) {
-    if (card.deleted_at !== null) continue;
-    const current = (versionsByCard.get(card.id) ?? []).filter((version) => version.effective_until === null);
-    if (current.length !== 1) return fail();
-    const version = current[0];
-    const activeLevel = card.active_strengthening_level === null ? null
-      : (levelsByCard.get(card.id) ?? []).find((level) => level.level_number === card.active_strengthening_level);
-    const expectedTrigger = activeLevel?.trigger_condition_override ?? card.trigger_condition;
-    const expectedAction = activeLevel?.action_override ?? card.action;
-    if (version.strengthening_level_number !== card.active_strengthening_level
-      || version.effective_trigger_condition !== expectedTrigger
-      || version.effective_action !== expectedAction
-      || version.scope !== card.scope || version.exception_notes !== card.exception_notes) return fail();
-    currentVersionByCard.set(card.id, version);
-  }
-
   const rawMaintenance = recordArray(tables, 'local_national_focus_maintenance');
   if (rawMaintenance.length > 1) return fail();
   const maintenance = rawMaintenance.length === 0 ? null : {
@@ -381,7 +312,12 @@ function projectAvailableSnapshot(raw: JsonObject, metadata: NationalFocusMetada
   const cards = [...allCards.values()]
     .filter((card) => card.deleted_at === null)
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map((card): ProjectedNationalFocusCard => ({
+    .map((card): ProjectedNationalFocusCard => {
+      const activeLevel = card.active_strengthening_level === null ? null
+        : (levelsByCard.get(card.id) ?? []).find(
+          (level) => level.level_number === card.active_strengthening_level,
+        );
+      return {
       id: card.id,
       name: card.name,
       trigger_condition: card.trigger_condition,
@@ -399,22 +335,23 @@ function projectAvailableSnapshot(raw: JsonObject, metadata: NationalFocusMetada
       cascade_source_card_id: card.cascade_source_card_id,
       cascade_prior_state: card.cascade_prior_state,
       active_strengthening_level: card.active_strengthening_level,
+      icon_key: card.icon_key,
       internalization_progress_percent: 100 * (1 - Math.exp(-card.successful_days / 60)),
+      // 有效要求直接由当前档位覆盖基础字段，不再追溯版本记录。
       effective_requirements: {
-        strengthening_level_number: currentVersionByCard.get(card.id)!.strengthening_level_number,
-        trigger_condition: currentVersionByCard.get(card.id)!.effective_trigger_condition,
-        action: currentVersionByCard.get(card.id)!.effective_action,
-        scope: currentVersionByCard.get(card.id)!.scope,
-        exception_notes: currentVersionByCard.get(card.id)!.exception_notes,
+        strengthening_level_number: card.active_strengthening_level,
+        trigger_condition: activeLevel?.trigger_condition_override ?? card.trigger_condition,
+        action: activeLevel?.action_override ?? card.action,
+        scope: card.scope,
+        exception_notes: card.exception_notes,
       },
-      current_requirement_version: publicRequirementVersion(currentVersionByCard.get(card.id)!),
       strengthening_levels: (levelsByCard.get(card.id) ?? []).map((level) => ({
         level_number: level.level_number,
         trigger_condition_override: level.trigger_condition_override,
         action_override: level.action_override,
       })),
-      requirement_versions: (versionsByCard.get(card.id) ?? []).map(publicRequirementVersion),
-    }));
+    };
+    });
   return { metadata, cards, maintenance };
 }
 
@@ -531,8 +468,8 @@ function frozenCard(value: JsonObject): JsonObject {
   })) result[target] = integer(value, source);
   result.active_strengthening_level = 'activeStrengtheningLevel' in value
     ? nullableInteger(value, 'activeStrengtheningLevel', 1, 5) : null;
-  result.requirement_version_number = 'requirementVersionNumber' in value
-    ? nullableInteger(value, 'requirementVersionNumber', 1, Number.MAX_SAFE_INTEGER) : null;
+  // v4 冻结快照带卡片图标键；更早的快照没有这一项，回落 null。
+  result.icon_key = 'iconKey' in value ? nullableTrimmedString(value, 'iconKey') : null;
   result.created_at = timestampField(value, 'createdAt');
   result.updated_at = timestampField(value, 'updatedAt');
   return result;

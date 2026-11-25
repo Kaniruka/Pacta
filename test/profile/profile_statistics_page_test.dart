@@ -4,6 +4,7 @@ import 'package:pacta/src/focus/focus_models.dart';
 import 'package:pacta/src/national_focus/national_focus_models.dart';
 import 'package:pacta/src/profile/profile_overview.dart';
 import 'package:pacta/src/profile/profile_statistics_pages.dart';
+import 'package:pacta/src/theme/pacta_spacing.dart';
 import 'package:pacta/src/theme/pacta_theme.dart';
 import 'package:pacta/src/ui/pacta_grouped_list.dart';
 
@@ -123,6 +124,20 @@ void main() {
     expect(find.text('编辑卡片'), findsNothing);
     expect(find.byType(FilledButton), findsNothing);
     expect(find.text('点亮'), findsOneWidget, reason: '只展示当前状态标签');
+    // 只读镜像也有身份总览卡：状态井、名称与状态胶囊都在卡内。
+    final header = find.byKey(
+      const ValueKey('national-focus-readonly-header-card'),
+    );
+    expect(header, findsOneWidget);
+    expect(
+      find.descendant(of: header, matching: find.text('晨光')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('national-focus-detail-edit')),
+      findsNothing,
+    );
+    expect(find.byIcon(Icons.edit_outlined), findsNothing);
     // 规则区与记录区各自成一张 Card，和可编辑详情页的两段边界完全对齐。
     final rules = find.byKey(
       const ValueKey('national-focus-readonly-rules-card'),
@@ -141,6 +156,21 @@ void main() {
       findsOneWidget,
     );
     expect(find.descendant(of: rules, matching: find.text('记录')), findsNothing);
+    expect(
+      tester.getRect(rules).top - tester.getRect(header).bottom,
+      moreOrLessEquals(PactaSpacing.lg, epsilon: 0.01),
+      reason: '身份卡与规则卡之间恒定 16dp',
+    );
+    expect(
+      tester.getRect(records).top - tester.getRect(rules).bottom,
+      moreOrLessEquals(PactaSpacing.lg, epsilon: 0.01),
+      reason: '规则卡与记录卡之间恒定 16dp',
+    );
+    expect(
+      tester.getRect(rules).left,
+      moreOrLessEquals(tester.getRect(header).left, epsilon: 0.5),
+      reason: '三张卡共用同一条阅读线',
+    );
     expect(tester.takeException(), isNull);
   });
 

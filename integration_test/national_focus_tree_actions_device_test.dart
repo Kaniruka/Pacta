@@ -70,8 +70,9 @@ void main() {
       await tester.tap(find.text('失败记录'));
       await tester.pumpAndSettle();
       expect(find.text('国策失败记录'), findsOneWidget);
-      expect(find.textContaining('下次检查点'), findsOneWidget);
-      expect(find.text('检查点说明'), findsOneWidget);
+      expect(find.textContaining('下次检查点'), findsNothing);
+      expect(find.text('检查点说明'), findsNothing);
+      expect(find.text('失败记录'), findsOneWidget);
     },
   );
 }

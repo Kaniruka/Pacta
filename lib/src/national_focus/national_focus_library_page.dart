@@ -2,16 +2,21 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../theme/pacta_fonts.dart';
+import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
+import '../theme/pacta_surfaces.dart';
 import '../theme/pacta_theme.dart';
 import '../ui/pacta_card_header.dart';
 import '../ui/pacta_disclosure_section.dart';
 import '../ui/pacta_error_text.dart';
 import '../ui/pacta_grouped_list.dart';
 import '../ui/pacta_horizontal_pager.dart';
+import 'national_focus_icons.dart';
 import 'national_focus_models.dart';
 import 'national_focus_repository.dart';
 import 'national_focus_shared_widgets.dart';
+import 'national_focus_strengthening_page.dart';
 
 class NationalFocusCardLibraryPage extends StatefulWidget {
   const NationalFocusCardLibraryPage({
@@ -182,7 +187,10 @@ class _NationalFocusCardLibraryPageState
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) =>
+      PactaSurfaces.wrapIfMissing(context, Builder(builder: _buildPage));
+
+  Widget _buildPage(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: const Text('国策卡片库'),
       bottom: TabBar(
@@ -386,7 +394,16 @@ class _NationalFocusCardEditorPageState
   final _name = TextEditingController();
   final _action = TextEditingController();
   final _exceptionNotes = TextEditingController();
-  late NationalFocusCard? _card = widget.card;
+  String? _iconKey;
+  List<NationalFocusStrengtheningLevel> _strengtheningLevels = const [];
+  int? _activeStrengtheningLevel;
+  late final String _initialName;
+  late final String _initialAction;
+  late final String _initialExceptionNotes;
+  late final String? _initialIconKey;
+  late final List<NationalFocusStrengtheningLevel> _initialStrengtheningLevels;
+  late final int? _initialActiveStrengtheningLevel;
+  bool _dirty = false;
   bool _busy = false;
   String? _error;
 
@@ -394,39 +411,120 @@ class _NationalFocusCardEditorPageState
   void initState() {
     super.initState();
     final card = widget.card;
-    if (card == null) return;
-    _name.text = card.name;
-    _action.text = card.action;
-    _exceptionNotes.text = card.exceptionNotes ?? '';
-  }
-
-  /// The strengthening manager is a pushed route: this editor stays mounted, so
-  /// unsaved text in the controllers survives the round trip. Only the
-  /// strengthening summary needs a refresh.
-  Future<void> _openStrengtheningManager() async {
-    final card = _card;
-    if (card == null) return;
-    await pushStrengtheningManager(
-      context: context,
-      repository: widget.repository,
-      cardId: card.id,
-      displayTimeZoneId: widget.displayTimeZoneId,
+    _initialName = card?.name ?? '';
+    _initialAction = card?.action ?? '';
+    _initialExceptionNotes = card?.exceptionNotes ?? '';
+    _initialIconKey = card?.iconKey;
+    _initialStrengtheningLevels = List.unmodifiable(
+      card?.strengtheningLevels ?? const <NationalFocusStrengtheningLevel>[],
     );
-    if (!mounted) return;
-    try {
-      final refreshed = await widget.repository.getCard(card.id);
-      if (mounted) setState(() => _card = refreshed);
-    } catch (_) {
-      // The summary keeps the previous values; saving still reports its own error.
-    }
+    _initialActiveStrengtheningLevel = card?.activeStrengtheningLevel;
+    _name.text = _initialName;
+    _action.text = _initialAction;
+    _exceptionNotes.text = _initialExceptionNotes;
+    _iconKey = _initialIconKey;
+    _strengtheningLevels = [..._initialStrengtheningLevels];
+    _activeStrengtheningLevel = _initialActiveStrengtheningLevel;
+    _name.addListener(_onFieldChanged);
+    _action.addListener(_onFieldChanged);
+    _exceptionNotes.addListener(_onFieldChanged);
   }
 
   @override
   void dispose() {
+    _name.removeListener(_onFieldChanged);
+    _action.removeListener(_onFieldChanged);
+    _exceptionNotes.removeListener(_onFieldChanged);
     _name.dispose();
     _action.dispose();
     _exceptionNotes.dispose();
     super.dispose();
+  }
+
+  void _onFieldChanged() {
+    final dirty = _hasUnsavedChanges();
+    if (dirty == _dirty) return;
+    setState(() => _dirty = dirty);
+  }
+
+  /// 逐项对照进入页面时的快照：名称、规则、例外、图标、强化档位与当前选中
+  /// 档位任一项变化都算未保存。强化草稿按编号与规则逐条比较，增删改都算。
+  bool _hasUnsavedChanges() {
+    if (_name.text != _initialName ||
+        _action.text != _initialAction ||
+        _exceptionNotes.text != _initialExceptionNotes ||
+        _iconKey != _initialIconKey ||
+        _activeStrengtheningLevel != _initialActiveStrengtheningLevel ||
+        _strengtheningLevels.length != _initialStrengtheningLevels.length) {
+      return true;
+    }
+    for (var index = 0; index < _strengtheningLevels.length; index++) {
+      final current = _strengtheningLevels[index];
+      final initial = _initialStrengtheningLevels[index];
+      if (current.levelNumber != initial.levelNumber ||
+          current.triggerCondition != initial.triggerCondition ||
+          current.action != initial.action) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 强化草稿页只读这份临时卡片：名称与基础规则取当前输入，不写库。
+  NationalFocusCard _strengtheningDraftCard() {
+    final card = widget.card;
+    final timestamp = DateTime.now().toUtc();
+    return NationalFocusCard(
+      id: card?.id ?? 'draft',
+      name: _name.text.trim().isEmpty ? '未命名国策卡' : _name.text.trim(),
+      triggerCondition: '',
+      action: _action.text.trim(),
+      isInTree: card?.isInTree ?? false,
+      state: card?.state ?? NationalFocusCardState.extinguished,
+      createdAt: card?.createdAt ?? timestamp,
+      updatedAt: card?.updatedAt ?? timestamp,
+      strengtheningLevels: _strengtheningLevels,
+      activeStrengtheningLevel: _activeStrengtheningLevel,
+      iconKey: _iconKey,
+    );
+  }
+
+  /// 强化等级是卡片草稿的一部分：进入子页调整，改动经回调写回本页状态，
+  /// 直到点底部唯一「保存」才随卡片一次事务落盘。
+  Future<void> _openStrengtheningDraft() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => NationalFocusStrengtheningPage.draft(
+          card: _strengtheningDraftCard(),
+          levels: _strengtheningLevels,
+          initialActiveLevel: _activeStrengtheningLevel,
+          displayTimeZoneId: widget.displayTimeZoneId,
+          onDraftChanged: (levels, activeLevel) {
+            if (!mounted) return;
+            setState(() {
+              _strengtheningLevels = List.unmodifiable(levels);
+              _activeStrengtheningLevel = activeLevel;
+              _dirty = _hasUnsavedChanges();
+            });
+          },
+        ),
+      ),
+    );
+    if (mounted) setState(() => _dirty = _hasUnsavedChanges());
+  }
+
+  Future<void> _pickIcon() async {
+    final selection = await showNationalFocusIconPicker(
+      context,
+      selectedKey: _iconKey,
+    );
+    if (selection == null || !mounted) return;
+    setState(() {
+      _iconKey = selection == nationalFocusIconResetSelection
+          ? null
+          : selection;
+      _dirty = _hasUnsavedChanges();
+    });
   }
 
   Future<void> _save() async {
@@ -443,6 +541,10 @@ class _NationalFocusCardEditorPageState
         action: _action.text,
         scope: null,
         exceptionNotes: _exceptionNotes.text,
+        iconKey: _iconKey,
+        strengtheningLevels: _strengtheningLevels,
+        activeStrengtheningLevel: _activeStrengtheningLevel,
+        updateStrengthening: true,
       );
       final existing = widget.card;
       final NationalFocusCard card;
@@ -460,171 +562,305 @@ class _NationalFocusCardEditorPageState
     }
   }
 
+  Future<void> _requestExit() async {
+    final choice = await showDialog<_UnsavedChangesChoice>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('尚未保存更改'),
+        content: const Text('名称、图标、国策规则、例外或强化草稿还有未保存的修改。'),
+        actions: [
+          TextButton(
+            key: const ValueKey('national-focus-editor-discard'),
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(_UnsavedChangesChoice.discard),
+            child: const Text('放弃'),
+          ),
+          TextButton(
+            key: const ValueKey('national-focus-editor-keep-editing'),
+            onPressed: () =>
+                Navigator.of(dialogContext)
+                    .pop(_UnsavedChangesChoice.keepEditing),
+            child: const Text('继续编辑'),
+          ),
+          FilledButton(
+            key: const ValueKey('national-focus-editor-save'),
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(_UnsavedChangesChoice.save),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (choice == _UnsavedChangesChoice.discard) {
+      Navigator.of(context).pop();
+    } else if (choice == _UnsavedChangesChoice.save) {
+      await _save();
+    }
+  }
+
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(widget.card == null ? '新建国策卡' : '编辑国策卡')),
-    body: Form(
-      key: _formKey,
-      autovalidateMode: AutovalidateMode.onUserInteraction,
-      child: LayoutBuilder(
-        builder: (context, constraints) => Center(
+  Widget build(BuildContext context) => PactaSurfaces.wrapIfMissing(
+    context,
+    PopScope<NationalFocusCard>(
+      canPop: !_dirty,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        _requestExit();
+      },
+      child: Builder(builder: _buildForm),
+    ),
+  );
+
+  Widget _buildForm(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final surfaces = PactaSurfaces.of(context);
+    final activeStrengtheningLevel = _activeStrengtheningLevel;
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.card == null ? '新建国策卡' : '编辑国策卡')),
+      body: Form(
+        key: _formKey,
+        autovalidateMode: AutovalidateMode.onUserInteraction,
+        child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 760),
             child: ListView(
-              padding: PactaSpacing.pageInsets(context, top: PactaSpacing.xl),
+              padding: PactaSpacing.pageInsets(context),
               children: [
-                Text(
-                  widget.card?.activeStrengtheningLevel != null
-                      ? '编辑基础要求；已强化的字段仍使用强化要求。'
-                      : '写下规则，由你判断是否有效。',
-                  style: Theme.of(context).textTheme.bodyLarge,
+                const PactaSectionHeader(
+                  title: '基础内容',
+                  padding: EdgeInsets.fromLTRB(4, 0, 4, 8),
                 ),
-                const SizedBox(height: 20),
-                TextFormField(
-                  controller: _name,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(labelText: '卡片名称'),
-                  validator: (value) => _requiredFieldError(value, '卡片名称'),
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _action,
-                  minLines: 3,
-                  maxLines: 6,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(
-                    labelText: '国策规则',
-                    hintText: '写清在什么情况下做什么，例如：坐到书桌前后，先完成计划中的第一项',
-                    alignLabelWithHint: true,
+                Card(
+                  key: const ValueKey('national-focus-editor-base-card'),
+                  child: Padding(
+                    padding: PactaSpacing.cardInsets,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            NationalFocusCardIconWell(iconKey: _iconKey),
+                            const SizedBox(width: PactaSpacing.md),
+                            Expanded(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '卡片图标',
+                                    style: theme.textTheme.titleSmall,
+                                  ),
+                                  const SizedBox(height: PactaSpacing.xxs),
+                                  Text(
+                                    _iconKey == null
+                                        ? '未设置 · 默认灯泡'
+                                        : nationalFocusIconLabel(_iconKey),
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: colors.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton.icon(
+                              key: const ValueKey('national-focus-editor-icon'),
+                              onPressed: _busy ? null : _pickIcon,
+                              icon: const Icon(
+                                Icons.palette_outlined,
+                                size: PactaIconSizes.sm,
+                              ),
+                              label: const Text('更换图标'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: PactaSpacing.lg),
+                        if (activeStrengtheningLevel != null) ...[
+                          NationalFocusInfoCallout(
+                            message:
+                                '当前正使用强化等级 $activeStrengtheningLevel，此处修改的是基础要求。',
+                          ),
+                          const SizedBox(height: PactaSpacing.lg),
+                        ],
+                        TextFormField(
+                          controller: _name,
+                          textInputAction: TextInputAction.next,
+                          decoration: pactaCardInputDecoration(
+                            context,
+                            labelText: '卡片名称',
+                          ),
+                          validator: (value) =>
+                              _requiredFieldError(value, '卡片名称'),
+                        ),
+                        const SizedBox(height: PactaSpacing.lg),
+                        TextFormField(
+                          controller: _action,
+                          minLines: 3,
+                          maxLines: 6,
+                          textInputAction: TextInputAction.next,
+                          decoration: pactaCardInputDecoration(
+                            context,
+                            labelText: '国策规则',
+                            hintText: '写清在什么情况下做什么，例如：坐到书桌前后，先完成计划中的第一项',
+                            alignLabelWithHint: true,
+                          ),
+                          validator: (value) =>
+                              _requiredFieldError(value, '国策规则'),
+                        ),
+                      ],
+                    ),
                   ),
-                  validator: (value) => _requiredFieldError(value, '国策规则'),
                 ),
-                const SizedBox(height: 16),
-                PactaDisclosureSection(
-                  tilePadding: EdgeInsets.zero,
-                  childrenPadding: const EdgeInsets.only(bottom: 12),
-                  title: const Text('例外与判例'),
-                  subtitle: const Text('可选，按需展开'),
+                const PactaSectionHeader(title: '进阶设置'),
+                PactaGroupedList(
                   children: [
-                    TextFormField(
-                      key: const ValueKey('national-focus-exception-notes'),
-                      controller: _exceptionNotes,
-                      minLines: 2,
-                      maxLines: 4,
-                      textInputAction: TextInputAction.done,
-                      decoration: const InputDecoration(
-                        hintText: '例如：出差时顺延；当天取消安排记“不适用”',
-                        alignLabelWithHint: true,
+                    PactaDisclosureSection(
+                      leading: Icon(
+                        Icons.menu_book_outlined,
+                        size: PactaIconSizes.md,
+                        color: colors.onSurfaceVariant,
                       ),
+                      tilePadding: const EdgeInsets.symmetric(
+                        horizontal: PactaSpacing.lg,
+                        vertical: PactaSpacing.xs,
+                      ),
+                      childrenPadding: const EdgeInsets.fromLTRB(
+                        PactaSpacing.lg,
+                        0,
+                        PactaSpacing.lg,
+                        PactaSpacing.lg,
+                      ),
+                      title: const Text('例外与判例'),
+                      // 只订阅输入框的值刷新副标题：展开状态与焦点都不受影响。
+                      subtitle: ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: _exceptionNotes,
+                        builder: (context, value, _) => Text(
+                          value.text.trim().isNotEmpty
+                              ? '已填写 · 按需展开'
+                              : '可选 · 按需展开',
+                        ),
+                      ),
+                      children: [
+                        TextFormField(
+                          key: const ValueKey('national-focus-exception-notes'),
+                          controller: _exceptionNotes,
+                          minLines: 2,
+                          maxLines: 4,
+                          textInputAction: TextInputAction.done,
+                          decoration: pactaCardInputDecoration(
+                            context,
+                            hintText: '例如：出差时顺延；当天取消安排记“不适用”',
+                            alignLabelWithHint: true,
+                          ),
+                        ),
+                      ],
+                    ),
+                    _StrengtheningEntry(
+                      activeLevel: _activeStrengtheningLevel,
+                      levelCount: _strengtheningLevels.length,
+                      enabled: !_busy,
+                      onManage: _openStrengtheningDraft,
                     ),
                   ],
                 ),
                 if (_error != null) ...[
-                  const SizedBox(height: 16),
+                  const SizedBox(height: PactaSpacing.lg),
                   NationalFocusInlineError(_error!),
-                ],
-                if (_card != null) ...[
-                  const SizedBox(height: 8),
-                  _StrengtheningEntry(
-                    card: _card!,
-                    enabled: !_busy,
-                    onManage: _openStrengtheningManager,
-                  ),
                 ],
               ],
             ),
           ),
         ),
       ),
-    ),
-    bottomNavigationBar: SafeArea(
-      child: Center(
-        heightFactor: 1,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 760),
-          child: Padding(
-            // 底部固定操作区与表单用同一条页边距：保存按钮的左右缘必须
-            // 与输入框严格对齐。
-            padding: PactaSpacing.pageInsets(
-              context,
-              top: PactaSpacing.sm,
-              bottom: PactaSpacing.md,
-            ),
-            child: SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _busy ? null : _save,
-                icon: _busy
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save_outlined),
-                label: Text(
-                  _busy
-                      ? '保存中'
-                      : widget.card == null
-                      ? '保存到卡片库'
-                      : '保存',
+      // 底部固定操作区：白底 + 1dp 发丝线，与表单共用同一条页边距，保存按钮
+      // 与「基础内容」白卡左右缘严格对齐。
+      bottomNavigationBar: DecoratedBox(
+        decoration: BoxDecoration(
+          color: surfaces.actionBar,
+          border: Border(top: BorderSide(color: surfaces.hairline)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Center(
+            heightFactor: 1,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 760),
+              child: Padding(
+                padding: PactaSpacing.pageInsets(
+                  context,
+                  top: PactaSpacing.md,
+                  bottom: PactaSpacing.md,
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: FilledButton.icon(
+                    onPressed: _busy ? null : _save,
+                    icon: _busy
+                        ? const SizedBox.square(
+                            dimension: PactaIconSizes.sm,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(
+                            Icons.save_outlined,
+                            size: PactaIconSizes.sm,
+                          ),
+                    label: Text(
+                      _busy
+                          ? '保存中'
+                          : widget.card == null
+                          ? '保存到卡片库'
+                          : '保存',
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
+/// 编辑页返回时的三选一：放弃修改、留下继续编辑、校验后保存。
+enum _UnsavedChangesChoice { discard, keepEditing, save }
+
 /// The only entrance to strengthening management: the card editor.
+///
+/// 这里不再包一层 surfaceContainerLow 阴影框：页面底色本身就是浅蓝灰，
+/// 再叠一层同族色只会读成"发灰的第二个卡片"。整行改用标准设置行，
+/// 强化档位与已设数量各占一个语义位。
 class _StrengtheningEntry extends StatelessWidget {
   const _StrengtheningEntry({
-    required this.card,
+    required this.activeLevel,
+    required this.levelCount,
     required this.enabled,
     required this.onManage,
   });
 
-  final NationalFocusCard card;
+  final int? activeLevel;
+  final int levelCount;
   final bool enabled;
   final VoidCallback onManage;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final activeLevel = card.activeStrengtheningLevel;
     final current = activeLevel == null ? '基础要求' : '强化等级 $activeLevel';
-    final configured = card.strengtheningLevels.length;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
+    return PactaSettingsTile(
+      tileKey: const ValueKey('national-focus-editor-strengthening-entry'),
+      leadingIcon: Icons.trending_up,
+      title: '强化要求',
+      subtitle: '当前使用$current · 进入调整草稿，随卡片一起保存',
+      statusBadge: PactaStatusBadge(
+        label: '$levelCount / $maxNationalFocusStrengtheningLevels 级',
+        tone: activeLevel == null
+            ? PactaStatusBadgeTone.neutral
+            : PactaStatusBadgeTone.primary,
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('强化要求', style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 2),
-                  Text(
-                    '当前使用$current · 已设 $configured / '
-                    '$maxNationalFocusStrengtheningLevels 级',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ],
-              ),
-            ),
-            TextButton(
-              onPressed: enabled ? onManage : null,
-              child: const Text('管理强化要求'),
-            ),
-          ],
-        ),
-      ),
+      enabled: enabled,
+      onTap: onManage,
     );
   }
 }
@@ -645,100 +881,209 @@ class _LibraryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final strengtheningLevel = card.activeStrengtheningLevel;
-    final hasExceptionNotes = (card.exceptionNotes ?? '').trim().isNotEmpty;
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        // 整卡是详情入口：读者点标题、规则或留白都进同一个阅读页。
-        onTap: onDetails,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (strengtheningLevel != null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: Text(
-                  '当前要求 · 强化等级 $strengtheningLevel',
-                  style: theme.textTheme.labelLarge,
+    return _LibraryCardShell(
+      card: card,
+      // 整卡是详情入口：读者点标题、规则或留白都进同一个阅读页。
+      onTap: onDetails,
+      trailing: PopupMenuButton<String>(
+        tooltip: '卡片操作',
+        onSelected: (value) {
+          if (value == 'details') {
+            onDetails();
+          } else if (value == 'delete') {
+            onDelete?.call();
+          }
+        },
+        itemBuilder: (_) => [
+          const PopupMenuItem(value: 'details', child: Text('查看详情')),
+          PopupMenuItem(
+            value: 'delete',
+            enabled: onDelete != null,
+            child: Text('删除', style: TextStyle(color: theme.colorScheme.error)),
+          ),
+        ],
+      ),
+      action: FilledButton.tonalIcon(
+        onPressed: onPlace,
+        icon: const Icon(Icons.account_tree_outlined, size: PactaIconSizes.sm),
+        label: const Text('放入国策树'),
+      ),
+    );
+  }
+}
+
+/// 卡片库外壳：卡片库与已删除列表共用同一套三段式布局。
+///
+/// [onTap] 为空时（已删除卡片）不包 InkWell；[trailing] 为空时头部右侧改留
+/// 16dp 内缘，标题不会因为少一颗按钮而贴边。[middle] 是规则与底栏之间的
+/// 提示位（已删除卡片的恢复说明）；卡片内容宽度不足 300dp 时底栏自动上下
+/// 堆叠，按钮右对齐，进度摘要不被挤成一条。
+class _LibraryCardShell extends StatelessWidget {
+  const _LibraryCardShell({
+    required this.card,
+    required this.action,
+    this.onTap,
+    this.trailing,
+    this.middle,
+  });
+
+  final NationalFocusCard card;
+
+  /// 底栏右侧的主操作（放入国策树 / 恢复到卡片库）。
+  final Widget action;
+
+  final VoidCallback? onTap;
+  final Widget? trailing;
+  final Widget? middle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final middleWidget = middle;
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        PactaCardHeader(
+          title: card.name,
+          // 卡片自定义图标：标题旁的紧凑圆形图标井，空值回落默认灯泡。
+          leading: NationalFocusCardIconWell(
+            iconKey: card.iconKey,
+            diameter: PactaIconSizes.lg,
+          ),
+          titleStyle: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: PactaFonts.semibold,
+          ),
+          padding: EdgeInsets.fromLTRB(16, 8, trailing == null ? 16 : 8, 4),
+          trailing: trailing,
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _LibraryCardMeta(card: card),
+              // 列表只负责识别这张卡：规则最多三行，全文留给详情页，
+              // 滚动时不再被长文本撑成一屏一张卡。
+              Text(
+                card.effectiveAction.isEmpty ? '未设置' : card.effectiveAction,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  height: 1.45,
                 ),
               ),
-            // 48dp 的弹出菜单按钮会把单行标题垂直居中，标题距卡片顶部被撑到
-            // 约 29dp；统一头部把标题视觉顶距固定为 16dp，并保留 48×48dp
-            // 命中区。有强化等级说明时由头部内部 8dp 补偿衔接，不叠加。
-            PactaCardHeader(
-              title: card.name,
-              padding: EdgeInsets.fromLTRB(
-                16,
-                strengtheningLevel == null ? 8 : 0,
-                8,
-                16,
-              ),
-              trailing: PopupMenuButton<String>(
-                tooltip: '卡片操作',
-                onSelected: (value) {
-                  if (value == 'details') {
-                    onDetails();
-                  } else if (value == 'delete') {
-                    onDelete?.call();
+              if (middleWidget != null) ...[
+                const SizedBox(height: PactaSpacing.sm),
+                middleWidget,
+              ],
+              const SizedBox(height: PactaSpacing.md),
+              // 左右平衡底栏：左侧进度摘要吃满余宽，右侧只留一颗主操作。
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final compactProgress = _LibraryCardProgress(card: card);
+                  if (constraints.maxWidth >= 300) {
+                    return Row(
+                      children: [
+                        Expanded(child: compactProgress),
+                        const SizedBox(width: PactaSpacing.md),
+                        action,
+                      ],
+                    );
                   }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      compactProgress,
+                      const SizedBox(height: PactaSpacing.md),
+                      Align(alignment: Alignment.centerRight, child: action),
+                    ],
+                  );
                 },
-                itemBuilder: (_) => [
-                  const PopupMenuItem(value: 'details', child: Text('查看详情')),
-                  PopupMenuItem(
-                    value: 'delete',
-                    enabled: onDelete != null,
-                    child: Text(
-                      '删除',
-                      style: TextStyle(color: theme.colorScheme.error),
-                    ),
-                  ),
-                ],
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // 列表只负责识别这张卡：规则最多三行，判例收成徽标，全文
-                  // 留给详情页，滚动时不再被长文本撑成一屏一张卡。
-                  Text('国策规则', style: theme.textTheme.titleSmall),
-                  const SizedBox(height: PactaSpacing.xs),
-                  Text(
-                    card.effectiveAction.isEmpty ? '未设置' : card.effectiveAction,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyLarge,
-                  ),
-                  if (hasExceptionNotes) ...[
-                    const SizedBox(height: PactaSpacing.sm),
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: PactaStatusBadge(
-                        label: '含判例',
-                        icon: Icons.menu_book_outlined,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: PactaSpacing.md),
-                  _NationalFocusRecordSummary(card: card, compact: true),
-                  const SizedBox(height: PactaSpacing.md),
-                  // 删除只留在溢出菜单：底栏不再并排一颗重复的危险按钮。
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: FilledButton.tonalIcon(
-                      onPressed: onPlace,
-                      icon: const Icon(Icons.account_tree_outlined),
-                      label: const Text('放入国策树'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
+      ],
+    );
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: onTap == null ? content : InkWell(onTap: onTap, child: content),
+    );
+  }
+}
+
+/// 卡片库外壳的元数据胶囊行：强化档位 / 已内化 / 判例。
+///
+/// 三项都不成立时整行不占位，短卡片不会因为「胶囊槽」被撑出一条空带。
+class _LibraryCardMeta extends StatelessWidget {
+  const _LibraryCardMeta({required this.card});
+
+  final NationalFocusCard card;
+
+  @override
+  Widget build(BuildContext context) {
+    final strengtheningLevel = card.activeStrengtheningLevel;
+    final hasExceptionNotes = (card.exceptionNotes ?? '').trim().isNotEmpty;
+    if (strengtheningLevel == null &&
+        !card.isInternalized &&
+        !hasExceptionNotes) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: PactaSpacing.sm),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        children: [
+          if (strengtheningLevel != null)
+            PactaStatusBadge(
+              label: '强化 $strengtheningLevel 级',
+              icon: Icons.trending_up,
+              tone: PactaStatusBadgeTone.primary,
+            ),
+          if (card.isInternalized)
+            const PactaStatusBadge(
+              label: '已内化',
+              icon: Icons.verified_outlined,
+              tone: PactaStatusBadgeTone.success,
+            ),
+          if (hasExceptionNotes)
+            const PactaStatusBadge(
+              label: '含判例',
+              icon: Icons.menu_book_outlined,
+            ),
+        ],
       ),
+    );
+  }
+}
+
+/// 卡片底栏左侧的等宽摘要 + 4dp 内化轨。
+class _LibraryCardProgress extends StatelessWidget {
+  const _LibraryCardProgress({required this.card});
+
+  final NationalFocusCard card;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final progress = card.internalizationProgress.clamp(0.0, 100.0);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          '成功日 ${card.successfulDays} 天 · 内化 ${progress.toStringAsFixed(1)}%',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+        const SizedBox(height: 6),
+        NationalFocusInternalizationBar(card: card, height: 4),
+      ],
     );
   }
 }
@@ -752,49 +1097,19 @@ class _DeletedLibraryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final hasExceptionNotes = (card.exceptionNotes ?? '').trim().isNotEmpty;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(card.name, style: theme.textTheme.titleMedium),
-            const SizedBox(height: PactaSpacing.sm),
-            // 已删除列表与卡片库保持同一档信息密度：三行规则 + 判例徽标。
-            Text('国策规则', style: theme.textTheme.titleSmall),
-            const SizedBox(height: PactaSpacing.xs),
-            Text(
-              card.effectiveAction.isEmpty ? '未设置' : card.effectiveAction,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodyLarge,
-            ),
-            if (hasExceptionNotes) ...[
-              const SizedBox(height: PactaSpacing.sm),
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: PactaStatusBadge(
-                  label: '含判例',
-                  icon: Icons.menu_book_outlined,
-                ),
-              ),
-            ],
-            const SizedBox(height: PactaSpacing.md),
-            _NationalFocusRecordSummary(card: card, compact: true),
-            const SizedBox(height: PactaSpacing.sm),
-            Text('恢复后会回到卡片库；树位置和点亮状态需要重新选择。', style: theme.textTheme.bodySmall),
-            const SizedBox(height: PactaSpacing.sm),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton.tonalIcon(
-                onPressed: onRestore,
-                icon: const Icon(Icons.restore),
-                label: const Text('恢复到卡片库'),
-              ),
-            ),
-          ],
+    return _LibraryCardShell(
+      card: card,
+      // 已删除列表与卡片库共用同一套三段布局，只把主操作换成恢复。
+      middle: Text(
+        '恢复后会回到卡片库；树位置和点亮状态需要重新选择。',
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
         ),
+      ),
+      action: FilledButton.tonalIcon(
+        onPressed: onRestore,
+        icon: const Icon(Icons.restore, size: PactaIconSizes.sm),
+        label: const Text('恢复到卡片库'),
       ),
     );
   }
@@ -827,8 +1142,10 @@ class NationalFocusCardDetailPage extends StatelessWidget {
       );
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+  Widget build(BuildContext context) =>
+      PactaSurfaces.wrapIfMissing(context, Builder(builder: _buildPage));
+
+  Widget _buildPage(BuildContext context) {
     return StreamBuilder<List<NationalFocusCard>>(
       stream: card.isInTree
           ? repository.watchTreeCards()
@@ -840,13 +1157,34 @@ class NationalFocusCardDetailPage extends StatelessWidget {
                 .firstOrNull ??
             this.card;
         final exceptionNotes = card.exceptionNotes?.trim() ?? '';
-        final ruleLabel = card.activeStrengtheningLevel == null
-            ? '国策规则'
-            : '当前规则 · 强化等级 ${card.activeStrengtheningLevel}';
+        final sourceLabel = cascadeSourceLabel;
         return Scaffold(
-          appBar: AppBar(title: const Text('国策卡详情')),
+          appBar: AppBar(
+            title: const Text('国策卡详情'),
+            // 编辑是这张卡唯一的写入口：收进顶栏右侧，与阅读内容不再抢位置。
+            actions: [
+              Padding(
+                padding: const EdgeInsets.only(right: PactaSpacing.sm),
+                child: Tooltip(
+                  message: '编辑卡片',
+                  child: TextButton.icon(
+                    key: const ValueKey('national-focus-detail-edit'),
+                    style: TextButton.styleFrom(
+                      minimumSize: const Size(48, 48),
+                    ),
+                    onPressed: () => _editCard(context, card),
+                    icon: const Icon(
+                      Icons.edit_outlined,
+                      size: PactaIconSizes.sm,
+                    ),
+                    label: const Text('编辑'),
+                  ),
+                ),
+              ),
+            ],
+          ),
           // 推入式二级页统一居中并限制正文宽度：宽屏下与页面级卡片同一条
-          // 阅读线，左右边距改回对称的 PactaSpacing.pageInsets。
+          // 阅读线，左右边距取对称的 PactaSpacing.pageInsets。
           body: Align(
             alignment: Alignment.topCenter,
             child: ConstrainedBox(
@@ -854,79 +1192,29 @@ class NationalFocusCardDetailPage extends StatelessWidget {
               child: ListView(
                 padding: PactaSpacing.pageInsets(context),
                 children: [
-                  Text(card.state.label, style: theme.textTheme.labelMedium),
-                  const SizedBox(height: 6),
-                  // 名称与连续点亮胶囊同排：短名称时胶囊紧跟右侧，长名称自动换行。
-                  Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      Text(card.name, style: theme.textTheme.headlineSmall),
-                      NationalFocusStreakTags(
-                        currentConsecutiveDays: card.currentConsecutiveDays,
-                        bestConsecutiveDays: card.bestConsecutiveDays,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 22),
-                  // 规则区与记录区各自成卡：亮暗模式下都靠 M3 Card 的容器色
-                  // 和 16dp 间隙划界，读者不会把「要求什么」和「记录了什么」
-                  // 读成同一段文字。
-                  Card(
-                    key: const ValueKey('national-focus-detail-rules-card'),
-                    child: Padding(
-                      padding: PactaSpacing.cardInsets,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          NationalFocusFieldText(
-                            label: ruleLabel,
-                            value: card.effectiveAction,
-                          ),
-                          if (exceptionNotes.isNotEmpty) ...[
-                            const SizedBox(height: PactaSpacing.sm),
-                            _ExceptionNotesSection(notes: exceptionNotes),
-                          ],
-                        ],
-                      ),
-                    ),
+                  NationalFocusCardIdentityCard(
+                    key: const ValueKey('national-focus-detail-header-card'),
+                    card: card,
+                    cascadeNote: sourceLabel == null
+                        ? null
+                        : lightBlocked
+                        ? '因「$sourceLabel」连带熄灭；父节点恢复后仍需单独点亮。'
+                        : '父节点已恢复；此节点仍需单独点亮。',
                   ),
                   const SizedBox(height: PactaSpacing.lg),
-                  Card(
-                    key: const ValueKey('national-focus-detail-records-card'),
-                    child: Padding(
-                      padding: PactaSpacing.cardInsets,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text('记录', style: theme.textTheme.titleSmall),
-                          const SizedBox(height: PactaSpacing.sm),
-                          // 连续天数已在名称旁的胶囊里，记录区只留累计成功日
-                          // 与内化进度。
-                          _NationalFocusRecordSummary(
-                            card: card,
-                            showStreaks: false,
-                          ),
-                        ],
-                      ),
-                    ),
+                  // 规则区与记录区各自成卡，和只读镜像共用同一对组件：
+                  // 亮暗模式下都靠 M3 Card 的容器色和 16dp 间隙划界。
+                  NationalFocusDetailRulesCard(
+                    key: const ValueKey('national-focus-detail-rules-card'),
+                    card: card,
+                    footer: exceptionNotes.isEmpty
+                        ? null
+                        : _ExceptionNotesSection(notes: exceptionNotes),
                   ),
-                  if (cascadeSourceLabel != null) ...[
-                    const SizedBox(height: 16),
-                    _CascadeStatusNote(
-                      sourceLabel: cascadeSourceLabel!,
-                      lightBlocked: lightBlocked,
-                    ),
-                  ],
-                  const SizedBox(height: 24),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: FilledButton.tonalIcon(
-                      onPressed: () => _editCard(context, card),
-                      icon: const Icon(Icons.edit_outlined),
-                      label: const Text('编辑卡片'),
-                    ),
+                  const SizedBox(height: PactaSpacing.lg),
+                  NationalFocusDetailRecordsCard(
+                    key: const ValueKey('national-focus-detail-records-card'),
+                    card: card,
                   ),
                 ],
               ),
@@ -956,89 +1244,6 @@ class _ExceptionNotesSection extends StatelessWidget {
       ),
     ],
   );
-}
-
-class _CascadeStatusNote extends StatelessWidget {
-  const _CascadeStatusNote({
-    required this.sourceLabel,
-    required this.lightBlocked,
-  });
-
-  final String sourceLabel;
-  final bool lightBlocked;
-
-  @override
-  Widget build(BuildContext context) => Text(
-    lightBlocked ? '因「$sourceLabel」连带熄灭；父节点恢复后仍需单独点亮。' : '父节点已恢复；此节点仍需单独点亮。',
-    style: Theme.of(context).textTheme.bodySmall,
-  );
-}
-
-class _NationalFocusRecordSummary extends StatelessWidget {
-  const _NationalFocusRecordSummary({
-    required this.card,
-    this.showStreaks = true,
-    this.compact = false,
-  });
-
-  final NationalFocusCard card;
-
-  /// 详情页名称旁已用 [NationalFocusStreakTags] 展示连续天数，记录区不再重复。
-  final bool showStreaks;
-
-  /// 列表卡片的紧凑档：一行「成功日 / 内化」加一条进度条，不再铺三行。
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final progress = card.internalizationProgress.clamp(0.0, 100.0);
-    if (compact) {
-      final theme = Theme.of(context);
-      final style = theme.textTheme.bodySmall?.copyWith(
-        color: theme.colorScheme.onSurfaceVariant,
-      );
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text('成功日 ${card.successfulDays} 天', style: style),
-              ),
-              Text('内化 ${progress.toStringAsFixed(1)}%', style: style),
-            ],
-          ),
-          const SizedBox(height: PactaSpacing.xs),
-          Semantics(
-            label: '内化进度 ${progress.toStringAsFixed(1)}%',
-            child: LinearProgressIndicator(value: progress / 100),
-          ),
-        ],
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          showStreaks
-              ? '当前连续 ${card.currentConsecutiveDays} 天 · 历史最高 '
-                    '${card.bestConsecutiveDays} 天 · 成功日 ${card.successfulDays} 天'
-              : '累计成功日 ${card.successfulDays} 天',
-          style: Theme.of(context).textTheme.bodyMedium,
-        ),
-        const SizedBox(height: 8),
-        Semantics(
-          label: '内化进度 ${progress.toStringAsFixed(1)}%',
-          child: LinearProgressIndicator(value: progress / 100),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          '内化进度 ${progress.toStringAsFixed(1)}% · 按成功日累计计算',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ],
-    );
-  }
 }
 
 String? _requiredFieldError(String? value, String label) =>

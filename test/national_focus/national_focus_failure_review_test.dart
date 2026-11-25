@@ -60,7 +60,7 @@ void main() {
       .map(
         (card) =>
             '${card.id}|${card.name}|${card.state}|'
-            '${card.effectiveAction}|${card.requirementVersionNumber}|'
+            '${card.effectiveAction}|${card.iconKey}|'
             '${card.currentConsecutiveDays}|${card.bestConsecutiveDays}',
       )
       .join(',');
