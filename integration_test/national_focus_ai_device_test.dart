@@ -212,6 +212,11 @@ class _DeviceNationalFocusAiGrantRepository
   }
 
   @override
+  Future<void> deleteGrant(String grantId) async {
+    _grants.removeWhere((grant) => grant.id == grantId);
+  }
+
+  @override
   Future<int> revokeAllGrants() async {
     var count = 0;
     final now = DateTime.now().toUtc();

@@ -145,12 +145,12 @@ class _FocusClockReviewPageState extends State<FocusClockReviewPage> {
             ),
             const SizedBox(height: 4),
             Text(
-              '跳变前已确认 ${formatEffectiveDuration(reviewCase.reliableSeconds)}',
+              '跳变前已确认 ${formatExactEffectiveDuration(reviewCase.reliableSeconds)}',
             ),
             Text(
               uncertainSeconds == null
                   ? '跳变期间缺少连续计时证据，这段时间暂不计入。'
-                  : '跳变期间连续计时约 ${formatEffectiveDuration(uncertainSeconds)}；原始时间仍待核对。',
+                  : '跳变期间连续计时约 ${formatExactEffectiveDuration(uncertainSeconds)}；原始时间仍待核对。',
             ),
             const SizedBox(height: 12),
             if (busy) const LinearProgressIndicator(),

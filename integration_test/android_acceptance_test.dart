@@ -164,7 +164,7 @@ void main() {
       );
       expect(find.text('取快递'), findsWidgets);
       expect(find.text('专注与国策'), findsOneWidget);
-      expect(find.text('13分00秒'), findsOneWidget);
+      expect(find.text('13分钟'), findsOneWidget);
       // 完整月历二级页已删除：日期详情不再提供「完整月历 →」入口。
       expect(
         find.byKey(const ValueKey('board-focus-open-month')),
@@ -197,7 +197,7 @@ void main() {
       await settle();
       expect(find.text('11月12日国策记录'), findsOneWidget);
       expect(find.text('未知'), findsOneWidget);
-      expect(find.text('0分00秒'), findsOneWidget);
+      expect(find.text('0分钟'), findsOneWidget);
       await shot('02-day-record');
       // Back to today so the remaining captures keep today's facts.
       final day18Cell = find.byKey(const ValueKey('board-focus-day-18'));
@@ -264,7 +264,7 @@ void main() {
       expect(find.text('编辑资料'), findsOneWidget);
       await tester.tap(find.text('纽约'));
       await settle();
-      expect(find.textContaining('纽约 · America/New_York'), findsWidgets);
+      expect(find.textContaining('纽约（America/New_York）'), findsWidgets);
       await shot('10-profile-time-zone');
       await tester.pageBack();
       await settle();

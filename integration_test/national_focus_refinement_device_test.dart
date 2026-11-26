@@ -303,7 +303,7 @@ void main() {
       expect(find.byType(TextFormField), findsNWidgets(2));
       await _tapAndSettle(tester, find.text('例外与判例'), '展开例外与判例字段');
       // 已填写的判例在折叠标题上直接标明状态，不再另起一行说明。
-      expect(find.text('已填写 · 按需展开'), findsOneWidget);
+      expect(find.text('已填写（按需展开）'), findsOneWidget);
       expect(find.byType(TextFormField), findsNWidgets(3));
       await shot('three-field-card-editor');
       await tester.pageBack();

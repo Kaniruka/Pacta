@@ -73,7 +73,7 @@ void main() {
       await _openCalendar(tester);
 
       expect(find.text('2027年2月'), findsOneWidget);
-      expect(find.textContaining('2月10日 · 0 项安排'), findsOneWidget);
+      expect(find.textContaining('2月10日（0 项安排）'), findsOneWidget);
     } finally {
       await harness.dispose(tester);
     }

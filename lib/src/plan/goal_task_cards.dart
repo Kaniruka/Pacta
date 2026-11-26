@@ -166,14 +166,13 @@ class GoalCardState extends State<GoalCard> {
       for (final task in goal.tasks)
         if (task.isComplete) task,
     ];
-    final status = goal.tasks.isEmpty
-        ? '暂无任务 · 未完成'
-        : goal.isComplete
-        ? '已完成'
-        : '进行中';
-    final summary = StringBuffer('${goal.tasks.length} 项任务 · $status');
+    final summary = StringBuffer(
+      goal.tasks.isEmpty
+          ? '暂无任务，未完成'
+          : '${goal.tasks.length} 项任务，${goal.isComplete ? '已完成' : '进行中'}',
+    );
     if (widget.hideCompletedTasks && completedCount > 0) {
-      summary.write(' · 已隐藏 $completedCount 项已完成');
+      summary.write('，已隐藏 $completedCount 项已完成');
     }
     final allCompletedHidden =
         widget.hideCompletedTasks && goal.tasks.isNotEmpty && openTasks.isEmpty;

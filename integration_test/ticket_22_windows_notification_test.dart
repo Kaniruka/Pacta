@@ -72,7 +72,7 @@ void main() {
     );
     await expectLater(
       trayChannel.invokeMethod<void>('updateStatus', {
-        'text': 'T22 Windows 专注中 · 00:30',
+        'text': 'T22 Windows 专注中（00:30）',
         'active': true,
       }),
       completes,

@@ -318,7 +318,7 @@ class _FailureBatchCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              '$checkpointLabel · ${failures.length} 个节点',
+              '$checkpointLabel（${failures.length} 个节点）',
               style: theme.textTheme.titleMedium?.copyWith(
                 fontWeight: PactaFonts.semibold,
                 fontFeatures: const [FontFeature.tabularFigures()],
@@ -420,7 +420,7 @@ class _FailureNodeRow extends StatelessWidget {
         failure.cause.label +
         (failure.failureReason == failure.cause.label
             ? ''
-            : ' · ${failure.failureReason ?? '原因未填写'}');
+            : '：${failure.failureReason ?? '原因未填写'}');
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: PactaSpacing.xs),
       child: Row(
@@ -500,7 +500,7 @@ class NationalFocusFailureTreePage extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '$checkpointLabel · ${failure.cause.label}',
+                  '$checkpointLabel（${failure.cause.label}）',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 12),
@@ -679,8 +679,8 @@ class NationalFocusFailureTreePage extends StatelessWidget {
                 label: '记录',
                 value:
                     '连续 ${card.currentConsecutiveDays} 天'
-                    ' · 最高 ${card.bestConsecutiveDays} 天'
-                    ' · 成功日 ${card.successfulDays} 天',
+                    '，最高 ${card.bestConsecutiveDays} 天'
+                    '，成功日 ${card.successfulDays} 天',
               ),
               for (final note in _failureNotes(card, index))
                 Padding(
@@ -968,7 +968,7 @@ class _HistoricalFocusNode extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '${_historyStateLabel(card.state)} · 连续 ${card.currentConsecutiveDays} 天',
+                  '${_historyStateLabel(card.state)}，连续 ${card.currentConsecutiveDays} 天',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall,
                   maxLines: 1,
@@ -1010,8 +1010,8 @@ class _HistoricalLibrarySection extends StatelessWidget {
               iconKey: card.iconKey,
               diameter: PactaIconSizes.lg,
             ),
-            title: Text('卡片库内 · ${card.name}'),
-            subtitle: Text('${card.state.label} · ${card.effectiveAction}'),
+            title: Text('卡片库内：${card.name}'),
+            subtitle: Text('${card.state.label}：${card.effectiveAction}'),
             onTap: () => onOpen(card),
           ),
       ],

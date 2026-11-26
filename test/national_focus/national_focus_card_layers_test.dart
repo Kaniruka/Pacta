@@ -430,7 +430,7 @@ void main() {
       find.descendant(of: records, matching: find.textContaining('%')),
       findsOneWidget,
     );
-    expect(find.text('内化进度 · 按成功日累计计算'), findsOneWidget);
+    expect(find.text('内化进度（按成功日累计计算）'), findsOneWidget);
     // 两张卡片之间留一档 16dp 间隙：边界靠容器色与间距，不靠分割线。
     expect(
       tester.getRect(records).top - tester.getRect(rules).bottom,
@@ -747,7 +747,7 @@ void main() {
 
     // 初始没有启用强化档位：提示条不占位，副标题写基础要求。
     expect(find.textContaining('当前正使用强化等级'), findsNothing);
-    expect(find.text('当前使用基础要求 · 进入调整草稿，随卡片一起保存'), findsOneWidget);
+    expect(find.text('当前使用基础要求，进入调整草稿并随卡片保存'), findsOneWidget);
 
     final manage = find.text('强化要求');
     await tester.ensureVisible(manage);
@@ -780,7 +780,7 @@ void main() {
 
     // 回到编辑页：提示条与副标题读的是草稿态，不是构造时的 widget.card。
     expect(find.text('当前正使用强化等级 2，此处修改的是基础要求。'), findsOneWidget);
-    expect(find.text('当前使用强化等级 2 · 进入调整草稿，随卡片一起保存'), findsOneWidget);
+    expect(find.text('当前使用强化等级 2，进入调整草稿并随卡片保存'), findsOneWidget);
     expect(find.text('2 / 5 级'), findsOneWidget);
     expect(find.text('编辑国策卡'), findsOneWidget);
 
@@ -804,25 +804,25 @@ void main() {
       ),
     );
     await pumpUi(tester);
-    expect(find.text('可选 · 按需展开'), findsOneWidget);
-    expect(find.text('已填写 · 按需展开'), findsNothing);
+    expect(find.text('可选（按需展开）'), findsOneWidget);
+    expect(find.text('已填写（按需展开）'), findsNothing);
 
     await tester.tap(find.text('例外与判例'));
     await tester.pumpAndSettle();
     final field = find.byKey(const ValueKey('national-focus-exception-notes'));
     await tester.enterText(field, '出差时顺延');
     await tester.pump();
-    expect(find.text('已填写 · 按需展开'), findsOneWidget);
-    expect(find.text('可选 · 按需展开'), findsNothing);
+    expect(find.text('已填写（按需展开）'), findsOneWidget);
+    expect(find.text('可选（按需展开）'), findsNothing);
 
     await tester.enterText(field, '   ');
     await tester.pump();
-    expect(find.text('可选 · 按需展开'), findsOneWidget);
-    expect(find.text('已填写 · 按需展开'), findsNothing);
+    expect(find.text('可选（按需展开）'), findsOneWidget);
+    expect(find.text('已填写（按需展开）'), findsNothing);
 
     await tester.enterText(field, '再次填写');
     await tester.pump();
-    expect(find.text('已填写 · 按需展开'), findsOneWidget);
+    expect(find.text('已填写（按需展开）'), findsOneWidget);
     // 副标题重建不影响输入内容与展开状态。
     expect(find.text('再次填写'), findsOneWidget);
 
@@ -882,7 +882,7 @@ void main() {
     );
     // 右上角 100.0% 只出现一次，底部只解释口径。
     expect(find.text('100.0%'), findsOneWidget);
-    expect(find.text('内化进度 · 按成功日累计计算'), findsOneWidget);
+    expect(find.text('内化进度（按成功日累计计算）'), findsOneWidget);
     expect(find.textContaining('内化进度 100.0%'), findsNothing);
     expect(tester.takeException(), isNull);
   });

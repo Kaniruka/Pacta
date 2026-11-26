@@ -49,7 +49,7 @@ enum NationalFocusAgentPreset {
   };
 
   String get label => switch (this) {
-    NationalFocusAgentPreset.antigravity => '反重力',
+    NationalFocusAgentPreset.antigravity => 'Antigravity',
     NationalFocusAgentPreset.claudeCode => 'Claude Code',
     NationalFocusAgentPreset.codex => 'Codex',
     NationalFocusAgentPreset.dsh => 'DSH',
@@ -58,7 +58,7 @@ enum NationalFocusAgentPreset {
   };
 
   String get defaultConnectionName => switch (this) {
-    NationalFocusAgentPreset.antigravity => '反重力',
+    NationalFocusAgentPreset.antigravity => 'Antigravity',
     NationalFocusAgentPreset.claudeCode => 'Claude Code',
     NationalFocusAgentPreset.codex => 'Codex',
     NationalFocusAgentPreset.dsh => 'DSH',
@@ -101,6 +101,44 @@ enum NationalFocusAiTtlPreset {
     NationalFocusAiTtlPreset.thirtyDays => const Duration(days: 30),
     NationalFocusAiTtlPreset.never => null,
   };
+}
+
+/// 自定义有效期的单位。
+enum NationalFocusAiCustomTtlUnit {
+  minutes,
+  hours,
+  days;
+
+  String get label => switch (this) {
+    NationalFocusAiCustomTtlUnit.minutes => '分钟',
+    NationalFocusAiCustomTtlUnit.hours => '小时',
+    NationalFocusAiCustomTtlUnit.days => '天',
+  };
+
+  int get secondsPerUnit => switch (this) {
+    NationalFocusAiCustomTtlUnit.minutes => 60,
+    NationalFocusAiCustomTtlUnit.hours => 3600,
+    NationalFocusAiCustomTtlUnit.days => 86400,
+  };
+}
+
+/// 服务端允许的最小/最大连接有效期（秒）：1 分钟 ~ 10 年（3650 天）。
+const int minNationalFocusAiTtlSeconds = 60;
+const int maxNationalFocusAiTtlSeconds = 315360000;
+
+/// 解析并校验用户输入的自定义有效期；非法或越界返回 `null`。
+Duration? parseCustomNationalFocusTtl(
+  String raw,
+  NationalFocusAiCustomTtlUnit unit,
+) {
+  final value = int.tryParse(raw.trim());
+  if (value == null || value <= 0) return null;
+  final seconds = value * unit.secondsPerUnit;
+  if (seconds < minNationalFocusAiTtlSeconds ||
+      seconds > maxNationalFocusAiTtlSeconds) {
+    return null;
+  }
+  return Duration(seconds: seconds);
 }
 
 class NationalFocusAiGrant {
@@ -284,6 +322,8 @@ abstract interface class NationalFocusAiGrantRepository {
 
   Future<void> revokeGrant(String grantId);
 
+  Future<void> deleteGrant(String grantId);
+
   Future<int> revokeAllGrants();
 
   Future<List<NationalFocusAiAuditLog>> listRecentAuditLogs({int limit = 20});
@@ -301,7 +341,7 @@ class SupabaseNationalFocusAiGrantRepository
 
   void _assertCurrentUser() {
     if (client.auth.currentUser?.id != userId) {
-      throw StateError('当前登录用户已变化，请重新打开国策 AI 分析页。');
+      throw StateError('当前登录用户已变化，请重新打开开放能力页。');
     }
   }
 
@@ -353,6 +393,19 @@ class SupabaseNationalFocusAiGrantRepository
     try {
       await client.rpc(
         'revoke_national_focus_mcp_grant',
+        params: {'p_grant_id': grantId},
+      );
+    } on PostgrestException catch (error) {
+      throw NationalFocusAiAccessError(error.code);
+    }
+  }
+
+  @override
+  Future<void> deleteGrant(String grantId) async {
+    _assertCurrentUser();
+    try {
+      await client.rpc(
+        'delete_national_focus_mcp_grant',
         params: {'p_grant_id': grantId},
       );
     } on PostgrestException catch (error) {

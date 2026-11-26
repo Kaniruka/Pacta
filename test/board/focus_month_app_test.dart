@@ -127,8 +127,8 @@ void main() {
       );
       // 融合卡片把 11 月 12 日的 13 分钟落在日期详情里；完整月历页
       // 已删除，同一条事实直接在看板卡内可见。
-      expect(find.text('11 月 12 日 · 今日'), findsOneWidget);
-      expect(find.text('13分00秒'), findsOneWidget);
+      expect(find.text('11 月 12 日（今日）'), findsOneWidget);
+      expect(find.text('13分钟'), findsOneWidget);
       expect(find.text('2026年11月'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('board-focus-open-month')),
@@ -189,7 +189,7 @@ void main() {
       );
 
       // 安排已融合进融合卡的日期详情：项数标题在卡内，不再是独立卡片。
-      expect(find.text('今日安排 · 1 项'), findsOneWidget);
+      expect(find.text('今日安排（1 项）'), findsOneWidget);
       expect(find.text('今天的取快递'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('board-focus-schedule-dot-12')),
@@ -266,7 +266,7 @@ void main() {
       // 完成计划页的独立安排不会写入专注：当天详情仍是 0 分钟，也没有
       // 任何失败语言。
       expect(find.text('2026年11月'), findsOneWidget);
-      expect(find.text('0分00秒'), findsOneWidget);
+      expect(find.text('0分钟'), findsOneWidget);
       expect(find.textContaining('失败'), findsNothing);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
@@ -396,7 +396,7 @@ void main() {
         ),
         size: const Size(360, 800),
       );
-      expect(find.text('13分00秒'), findsOneWidget);
+      expect(find.text('13分钟'), findsOneWidget);
 
       await tester.pumpWidget(
         appHost(
@@ -409,7 +409,7 @@ void main() {
       );
       await tester.pump();
       expect(
-        find.text('13分00秒'),
+        find.text('13分钟'),
         findsNothing,
         reason: '切账号后等待新投影时，不能继续显示上一账号的数字',
       );
@@ -429,18 +429,18 @@ void main() {
       await tester.pump();
       profile.emit('Asia/Shanghai');
       await tester.pumpAndSettle();
-      expect(find.text('13分00秒'), findsOneWidget);
+      expect(find.text('13分钟'), findsOneWidget);
 
       profile.emit('America/New_York');
       for (var frame = 0; frame < 10; frame++) {
         await tester.pump();
         final switched =
             zoneFocus.requestedTimeZoneIds.contains('America/New_York') &&
-            find.text('13分00秒').evaluate().isEmpty;
+            find.text('13分钟').evaluate().isEmpty;
         if (switched) break;
       }
       expect(zoneFocus.requestedTimeZoneIds, contains('America/New_York'));
-      expect(find.text('13分00秒'), findsNothing);
+      expect(find.text('13分钟'), findsNothing);
       expect(tester.takeException(), isNull);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());

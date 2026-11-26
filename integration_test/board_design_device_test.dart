@@ -225,7 +225,7 @@ void main() {
       expect(find.text('专注与国策'), findsOneWidget);
       expect(find.text('今日国策状态'), findsOneWidget);
       expect(find.text('点击查看国策树及具体节点状态 →'), findsOneWidget);
-      expect(find.text('13分00秒'), findsOneWidget);
+      expect(find.text('13分钟'), findsOneWidget);
       // 完整月历二级页已删除：日期详情不再有「完整月历 →」入口，年月仍
       // 只在热力月历的切换器里出现一次。
       expect(
@@ -243,7 +243,7 @@ void main() {
       expect(find.byType(PlanPage), findsOneWidget);
       await tester.ensureVisible(find.text('季度规划'));
       await tester.pumpAndSettle();
-      expect(find.text('置顶目标 · 长按拖动排序'), findsOneWidget);
+      expect(find.text('置顶目标'), findsOneWidget);
       expect(find.text('每周回顾并调整计划'), findsOneWidget);
       expect(find.text('整理发布材料'), findsOneWidget);
       expect(find.text('先核对发布清单'), findsOneWidget);
@@ -319,7 +319,7 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.text('专注与国策'), findsOneWidget);
-        expect(find.text('13分00秒'), findsOneWidget);
+        expect(find.text('13分钟'), findsOneWidget);
         expect(find.textContaining('检查点'), findsNothing);
         expect(find.textContaining('固定规则为北京时间'), findsNothing);
         expect(find.text('日历块'), findsNothing);

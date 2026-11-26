@@ -139,7 +139,7 @@ class _NationalFocusSummaryCardState extends State<NationalFocusSummaryCard> {
             const Text('国策树尚无节点。')
           else
             Text(
-              '点亮 ${counts.litCount} · 确认 ${counts.pendingCount} · '
+              '点亮 ${counts.litCount}，确认 ${counts.pendingCount}，'
               '熄灭 ${counts.extinguishedCount}',
             ),
         ],

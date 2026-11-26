@@ -81,8 +81,8 @@ void main() {
     expect(find.text('独立根：整理桌面'), findsOneWidget);
 
     // 历史措辞：描述当时状态，而不是实时动作标签。
-    expect(find.text('待今日确认 · 连续 1 天'), findsWidgets);
-    expect(find.text('确认 · 连续 1 天'), findsNothing);
+    expect(find.text('待今日确认，连续 1 天'), findsWidgets);
+    expect(find.text('确认，连续 1 天'), findsNothing);
 
     // 节点卡必须浮在 surfaceContainerLow 画布之上：卡片底色 + 细边框 +
     // 页面级 20dp 圆角，不再与画布同色融成一片。

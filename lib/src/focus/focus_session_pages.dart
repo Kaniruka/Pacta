@@ -822,7 +822,7 @@ class _FocusSessionPageState extends ConsumerState<FocusSessionPage> {
                         const SizedBox(height: PactaSpacing.sm),
                         if (session.isPaused)
                           Text(
-                            '已暂停 · 预计时间待继续',
+                            '已暂停，预计时间待继续',
                             style: _expectedEndStyle(context),
                             textAlign: TextAlign.center,
                           )

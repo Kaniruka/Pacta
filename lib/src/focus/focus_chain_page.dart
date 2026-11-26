@@ -1014,10 +1014,10 @@ class _FocusTaskPickerPageState extends ConsumerState<FocusTaskPickerPage> {
     final progress = formatCompactFocusDuration(task.focusProgressSeconds);
     if (estimate == null) {
       return task.focusProgressSeconds > 0
-          ? '${goal.title} · 已专注 $progress'
-          : '${goal.title} · 尚未专注';
+          ? '${goal.title}，已专注 $progress'
+          : '${goal.title}，尚未专注';
     }
-    return '${goal.title} · 已专注 $progress / '
+    return '${goal.title}，已专注 $progress / '
         '${formatCompactEstimateMinutes(estimate)}';
   }
 
@@ -1987,7 +1987,7 @@ class _FocusHistoryTimeline extends StatelessWidget {
       timeZoneId: displayTimeZoneId,
     );
     final meta =
-        '$status · $occurred · '
+        '$status，$occurred，'
         '${formatEffectiveDuration(entry.effectiveSeconds)}';
     return _historyTimelineCard(
       cardKey: ValueKey('focus-history-node-${entry.id}'),
@@ -2110,7 +2110,7 @@ class _FocusHistoryTimeline extends StatelessWidget {
         ),
         const SizedBox(height: PactaSpacing.xs),
         Text(
-          '${taskTitles[entry.taskId] ?? '原任务'} · '
+          '${taskTitles[entry.taskId] ?? '原任务'}，'
           '原因：${entry.failureReason ?? '未填写'}',
           style: theme.textTheme.bodyMedium,
           maxLines: 3,
@@ -2120,7 +2120,7 @@ class _FocusHistoryTimeline extends StatelessWidget {
         Text(
           '$durationLabel '
           '${formatEffectiveDuration(entry.effectiveSeconds)}'
-          ' · 之后重新从 #1 起算',
+          '，之后重新从 #1 起算',
           style: theme.textTheme.bodySmall?.copyWith(
             color: colors.onSurfaceVariant,
           ),
@@ -2157,7 +2157,7 @@ class _FocusHistoryTimeline extends StatelessWidget {
         ),
         const SizedBox(height: PactaSpacing.xxs),
         Text(
-          '${formatPactaDateTimeInZone(entry.occurredAt, timeZoneId: displayTimeZoneId)} · '
+          '${formatPactaDateTimeInZone(entry.occurredAt, timeZoneId: displayTimeZoneId)}，'
           '${formatEffectiveDuration(entry.effectiveSeconds)}',
           style: theme.textTheme.bodySmall?.copyWith(
             color: colors.onSurfaceVariant,

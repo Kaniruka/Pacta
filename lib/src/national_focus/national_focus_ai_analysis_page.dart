@@ -33,8 +33,8 @@ class NationalFocusAiAnalysisEntry extends StatelessWidget {
       PactaSettingsTile(
         tileKey: const ValueKey('national-focus-ai-entry'),
         leadingIcon: Icons.auto_awesome_outlined,
-        title: '国策 AI 分析',
-        subtitle: '多端 Agent 接入、只读/读写授权与调用记录',
+        title: '开放能力',
+        subtitle: '连接外部 AI 工具与服务，管理访问权限与记录',
         onTap: () => Navigator.of(context).push<void>(
           MaterialPageRoute<void>(
             builder: (_) => NationalFocusAiAnalysisPage(
@@ -200,6 +200,43 @@ class _NationalFocusAiAnalysisPageState
     }
   }
 
+  Future<void> _deleteGrant(NationalFocusAiGrant grant) async {
+    final repository = widget.repository;
+    if (repository == null || _working) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('删除「${grant.label}」？'),
+        content: const Text('删除后该条失效连接记录将从列表中移除，历史调用日志仍会保留。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('确认删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() {
+      _working = true;
+      _actionMessage = null;
+    });
+    try {
+      await repository.deleteGrant(grant.id);
+      if (!mounted) return;
+      setState(() => _actionMessage = '已删除失效连接「${grant.label}」。');
+      await _loadData();
+    } catch (error) {
+      if (mounted) setState(() => _actionMessage = _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
   Future<void> _revokeAllGrants() async {
     final repository = widget.repository;
     if (repository == null || _working) return;
@@ -249,7 +286,7 @@ class _NationalFocusAiAnalysisPageState
       context,
       Scaffold(
         appBar: AppBar(
-          title: const Text('国策 AI 分析'),
+          title: const Text('开放能力'),
           actions: [
             IconButton(
               onPressed: (_loading || _working || widget.repository == null)
@@ -321,8 +358,8 @@ class _NationalFocusAiAnalysisPageState
     final statusText = widget.mcpUrl == null || widget.repository == null
         ? '连接服务未配置'
         : activeCount == 0
-        ? '当前无有效连接 · 支持反重力 / Claude / Codex / DSH / Cursor'
-        : '生效中 $activeCount 个连接 · 支持只读与受限读写';
+        ? '支持 Antigravity、Claude Code、Codex、DSH、Cursor 等客户端'
+        : '已有 $activeCount 个连接生效，支持只读分析与受限编辑';
 
     return Card(
       child: Padding(
@@ -354,7 +391,7 @@ class _NationalFocusAiAnalysisPageState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '多端 Agent 接入',
+                        '外部工具接入',
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: PactaFonts.semibold,
                         ),
@@ -521,15 +558,25 @@ class _NationalFocusAiAnalysisPageState
         ? PactaStatusBadgeTone.success
         : PactaStatusBadgeTone.neutral;
     final preset = NationalFocusAgentPreset.fromStorage(grant.agentPreset);
-    final expiryText = grant.expiresAt == null
-        ? '永不过期'
-        : '到期 ${formatPactaDateTimeInZone(grant.expiresAt!, timeZoneId: _displayTimeZoneId)}';
+    final String timeMetaText;
+    if (grant.revokedAt != null) {
+      timeMetaText =
+          '撤销于 ${formatPactaRelativePast(grant.revokedAt!, now: now, timeZoneId: _displayTimeZoneId)}';
+    } else if (grant.expiresAt == null) {
+      timeMetaText = '永不过期';
+    } else if (expired) {
+      timeMetaText =
+          '已于 ${formatPactaRelativePast(grant.expiresAt!, now: now, timeZoneId: _displayTimeZoneId)}过期';
+    } else {
+      timeMetaText =
+          '${formatPactaCompactRemaining(grant.expiresAt!.difference(now))}到期';
+    }
     final lastUsedText = grant.lastUsedAt == null
         ? '尚未使用'
-        : '最近调用 ${formatPactaDateTimeInZone(grant.lastUsedAt!, timeZoneId: _displayTimeZoneId)}';
+        : '最近调用 ${formatPactaRelativePast(grant.lastUsedAt!, now: now, timeZoneId: _displayTimeZoneId)}';
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 12, active ? 8 : 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -540,6 +587,8 @@ class _NationalFocusAiAnalysisPageState
               children: [
                 Text(
                   grant.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: PactaFonts.semibold,
                   ),
@@ -550,6 +599,12 @@ class _NationalFocusAiAnalysisPageState
                   runSpacing: 4,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
+                    if (preset != null)
+                      PactaStatusBadge(
+                        label: preset.label,
+                        icon: Icons.smart_toy_outlined,
+                        tone: PactaStatusBadgeTone.neutral,
+                      ),
                     PactaStatusBadge(
                       label: grant.scope.label,
                       tone: grant.scope == NationalFocusAiScope.readWrite
@@ -557,20 +612,23 @@ class _NationalFocusAiAnalysisPageState
                           : PactaStatusBadgeTone.neutral,
                     ),
                     PactaStatusBadge(label: statusLabel, tone: statusTone),
-                    if (preset != null)
-                      PactaStatusBadge(
-                        label: preset.label,
-                        tone: PactaStatusBadgeTone.neutral,
-                      ),
                   ],
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  '${grant.tokenPrefix} · $expiryText · $lastUsedText',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 14,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _GrantMetaItem(
+                      icon: Icons.schedule_outlined,
+                      text: timeMetaText,
+                    ),
+                    _GrantMetaItem(
+                      icon: Icons.history_outlined,
+                      text: lastUsedText,
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -584,6 +642,17 @@ class _NationalFocusAiAnalysisPageState
                 Icons.link_off_outlined,
                 size: PactaIconSizes.md,
                 color: colors.error,
+              ),
+            )
+          else
+            IconButton(
+              key: ValueKey('national-focus-ai-delete-${grant.id}'),
+              onPressed: _working ? null : () => _deleteGrant(grant),
+              tooltip: '删除此记录',
+              icon: Icon(
+                Icons.delete_outline,
+                size: PactaIconSizes.md,
+                color: colors.onSurfaceVariant,
               ),
             ),
         ],
@@ -630,8 +699,7 @@ class _NationalFocusAiAnalysisPageState
 
   Widget _buildAuditRow(BuildContext context, NationalFocusAiAuditLog log) {
     final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final timeLabel = formatPactaDateTimeInZone(
+    final timeLabel = formatPactaRelativePast(
       log.createdAt,
       timeZoneId: _displayTimeZoneId,
     );
@@ -649,7 +717,7 @@ class _NationalFocusAiAnalysisPageState
           ),
           const SizedBox(height: 6),
           Wrap(
-            spacing: 6,
+            spacing: 8,
             runSpacing: 4,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
@@ -664,13 +732,8 @@ class _NationalFocusAiAnalysisPageState
                   label: 'r${log.snapshotRevision}',
                   tone: PactaStatusBadgeTone.neutral,
                 ),
-              Text(
-                '${log.grantLabel} · $timeLabel',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colors.onSurfaceVariant,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
+              _GrantMetaItem(icon: Icons.link_outlined, text: log.grantLabel),
+              _GrantMetaItem(icon: Icons.schedule_outlined, text: timeLabel),
             ],
           ),
         ],
@@ -690,6 +753,33 @@ class _NationalFocusAiAnalysisPageState
       }
     }
     return formatUserError(error, fallback: '无法完成 AI 连接操作，请检查网络后重试。');
+  }
+}
+
+class _GrantMetaItem extends StatelessWidget {
+  const _GrantMetaItem({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = theme.colorScheme.onSurfaceVariant;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: PactaIconSizes.micro, color: color),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: color,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
+      ],
+    );
   }
 }
 
@@ -713,9 +803,13 @@ class _CreateConnectionSheetState extends State<_CreateConnectionSheet> {
   final _labelController = TextEditingController(
     text: NationalFocusAgentPreset.antigravity.defaultConnectionName,
   );
+  final _customTtlController = TextEditingController(text: '14');
   NationalFocusAgentPreset _preset = NationalFocusAgentPreset.antigravity;
   NationalFocusAiScope _scope = NationalFocusAiScope.read;
   NationalFocusAiTtlPreset _ttlPreset = NationalFocusAiTtlPreset.sevenDays;
+  bool _customTtlSelected = false;
+  NationalFocusAiCustomTtlUnit _customTtlUnit =
+      NationalFocusAiCustomTtlUnit.days;
   bool _labelEditedManually = false;
   bool _submitting = false;
   String? _error;
@@ -724,6 +818,7 @@ class _CreateConnectionSheetState extends State<_CreateConnectionSheet> {
   @override
   void dispose() {
     _labelController.dispose();
+    _customTtlController.dispose();
     super.dispose();
   }
 
@@ -742,6 +837,19 @@ class _CreateConnectionSheetState extends State<_CreateConnectionSheet> {
       setState(() => _error = '请输入连接名称。');
       return;
     }
+    Duration? ttl;
+    if (_customTtlSelected) {
+      ttl = parseCustomNationalFocusTtl(
+        _customTtlController.text,
+        _customTtlUnit,
+      );
+      if (ttl == null) {
+        setState(() => _error = '自定义有效期需在 1 分钟至 3650 天之间。');
+        return;
+      }
+    } else {
+      ttl = _ttlPreset.duration;
+    }
     setState(() {
       _submitting = true;
       _error = null;
@@ -750,7 +858,7 @@ class _CreateConnectionSheetState extends State<_CreateConnectionSheet> {
       final created = await widget.onCreate(
         label: label,
         scope: _scope,
-        ttl: _ttlPreset.duration,
+        ttl: ttl,
         agentPreset: _preset.storageValue,
       );
       if (!mounted) return;
@@ -866,13 +974,64 @@ class _CreateConnectionSheetState extends State<_CreateConnectionSheet> {
             for (final ttl in NationalFocusAiTtlPreset.values)
               ChoiceChip(
                 label: Text(ttl.label),
-                selected: _ttlPreset == ttl,
+                selected: !_customTtlSelected && _ttlPreset == ttl,
                 onSelected: _submitting
                     ? null
-                    : (_) => setState(() => _ttlPreset = ttl),
+                    : (_) => setState(() {
+                        _customTtlSelected = false;
+                        _ttlPreset = ttl;
+                      }),
               ),
+            ChoiceChip(
+              key: const ValueKey('national-focus-ai-ttl-custom'),
+              label: const Text('自定义'),
+              selected: _customTtlSelected,
+              onSelected: _submitting
+                  ? null
+                  : (_) => setState(() => _customTtlSelected = true),
+            ),
           ],
         ),
+        if (_customTtlSelected) ...[
+          const SizedBox(height: PactaSpacing.sm),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: 108,
+                child: TextField(
+                  key: const ValueKey('national-focus-ai-ttl-custom-value'),
+                  controller: _customTtlController,
+                  enabled: !_submitting,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: pactaCardInputDecoration(
+                    context,
+                    labelText: '时长',
+                    hintText: '14',
+                  ),
+                ),
+              ),
+              const SizedBox(width: PactaSpacing.sm),
+              Expanded(
+                child: SegmentedButton<NationalFocusAiCustomTtlUnit>(
+                  segments: [
+                    for (final unit in NationalFocusAiCustomTtlUnit.values)
+                      ButtonSegment<NationalFocusAiCustomTtlUnit>(
+                        value: unit,
+                        label: Text(unit.label),
+                      ),
+                  ],
+                  selected: {_customTtlUnit},
+                  onSelectionChanged: _submitting
+                      ? null
+                      : (selection) =>
+                            setState(() => _customTtlUnit = selection.first),
+                ),
+              ),
+            ],
+          ),
+        ],
         if (_error != null) ...[
           const SizedBox(height: PactaSpacing.md),
           NationalFocusInlineError(_error!),

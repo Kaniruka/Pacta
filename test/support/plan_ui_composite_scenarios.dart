@@ -595,7 +595,7 @@ Future<void> runAccountZoneScenario(
   await revealPlanUi(tester, newYork);
   await tester.tap(newYork);
   await fixture.settle(tester);
-  expect(find.text('纽约 · America/New_York'), findsOneWidget);
+  expect(find.text('纽约（America/New_York）'), findsOneWidget);
   await fixture.capture(tester, 'profile-zone-picker-light-wide');
 
   // 另一台设备先写伦敦：保存时账号存储按修订号保留伦敦，页面必须如实

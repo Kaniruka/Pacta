@@ -1756,7 +1756,7 @@ class FocusNotificationService {
         await _scheduleAndroidNotification(
           id: _appointmentStatusNotificationId,
           title: '专注中',
-          body: '${plan.taskTitle} · ${plan.modeLabel}',
+          body: '${plan.taskTitle}（${plan.modeLabel}）',
           at: transitionAt,
           payload: plan.notificationPayload,
           details: _statusDetails(
@@ -1788,7 +1788,7 @@ class FocusNotificationService {
       await _androidNotifications.show(
         id: _statusNotificationId,
         title: '专注已暂停',
-        body: '${plan.taskTitle} · 剩余 ${_formatClock(secondsRemaining)}',
+        body: '${plan.taskTitle}，剩余 ${_formatClock(secondsRemaining)}',
         notificationDetails: _statusDetails(
           showProgress: true,
           maxProgress: plan.progressTotalSeconds,
@@ -1846,7 +1846,7 @@ class FocusNotificationService {
       await _showAndroidStatus(
         id: _statusNotificationId,
         title: titlePrefix,
-        body: '${plan.taskTitle} · ${plan.modeLabel}',
+        body: '${plan.taskTitle}（${plan.modeLabel}）',
         endAt: endsAt,
         timeoutAt: endsAt,
         payload: plan.notificationPayload,
@@ -1963,16 +1963,16 @@ class FocusNotificationService {
     var active = true;
     if (plan.isPaused) {
       final seconds = plan.remainingSecondsAt(_now());
-      status = '专注已暂停 · ${_formatClock(seconds)} · ${plan.taskTitle}';
+      status = '专注已暂停（${_formatClock(seconds)}）- ${plan.taskTitle}';
     } else if (plan.isPreparing && plan.stageEndsAt!.isAfter(_now())) {
       final seconds = plan.stageEndsAt!.difference(_now()).inSeconds;
-      status = '预约准备中 · ${_formatClock(seconds)} · ${plan.taskTitle}';
+      status = '预约准备中（${_formatClock(seconds)}）- ${plan.taskTitle}';
     } else {
       final seconds = plan.focusEndsAt
           .difference(_now())
           .inSeconds
           .clamp(0, 24 * 60 * 60);
-      status = '专注中 · ${_formatClock(seconds)} · ${plan.taskTitle}';
+      status = '专注中（${_formatClock(seconds)}）- ${plan.taskTitle}';
     }
     if (!preferences.backgroundRunningEnabled) active = false;
     await _windowsChannel.invokeMethod<void>('updateStatus', {

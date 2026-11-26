@@ -47,7 +47,7 @@ void main() {
       ),
     );
     await harness.showPlan(tester);
-    expect(find.text('2 项任务 · 进行中'), findsOneWidget);
+    expect(find.text('2 项任务，进行中'), findsOneWidget);
     final card = find.ancestor(
       of: find.text('季度规划'),
       matching: find.byType(Card),
@@ -55,7 +55,7 @@ void main() {
     final expandedHeight = tester.getSize(card).height;
     await tester.tap(find.text('季度规划'));
     await tester.pumpAndSettle();
-    expect(find.text('2 项任务 · 进行中'), findsOneWidget);
+    expect(find.text('2 项任务，进行中'), findsOneWidget);
     expect(find.text('保留目标描述'), findsOneWidget);
     expect(find.text('准备资料'), findsNothing);
     expect(tester.getSize(card).height, lessThan(expandedHeight - 100));
@@ -185,7 +185,7 @@ void main() {
     expect(find.text('暂无任务，点击添加'), findsNothing);
     expect(find.text('添加任务'), findsNothing);
     expect(find.text('折叠仍可读的目标说明'), findsOneWidget);
-    expect(find.text('0 项任务 · 暂无任务 · 未完成'), findsOneWidget);
+    expect(find.text('暂无任务，未完成'), findsOneWidget);
     const taskTitle = '任务内容不应并入标题语义';
     await harness.tasks.createTask(
       goal.id,

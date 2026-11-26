@@ -213,13 +213,13 @@ void main() {
       await tester.tap(find.text('失败记录'));
       await tester.pumpAndSettle();
       expect(find.text('国策失败记录'), findsOneWidget);
-      await tester.tap(find.textContaining('· 2 个节点'));
+      await tester.tap(find.textContaining('（2 个节点）'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('查看当时树'));
       await tester.pumpAndSettle();
       await tester.tap(find.textContaining('当时在卡片库'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('卡片库内 · 孙卡'), findsOneWidget);
+      expect(find.textContaining('卡片库内：孙卡'), findsOneWidget);
       await tester.pageBack();
       await tester.pumpAndSettle();
       Navigator.of(tester.element(find.text('国策失败记录'))).pop();

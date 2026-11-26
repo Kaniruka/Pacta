@@ -109,7 +109,7 @@ void main() {
       );
       final titleRect = tester.getRect(find.text(_shortTitle));
       expect(titleRect.height, lessThan(40), reason: '短标题应保持一行，而不是被迫折成两行');
-      final summaryRect = tester.getRect(find.text('1 项任务 · 进行中'));
+      final summaryRect = tester.getRect(find.text('1 项任务，进行中'));
       expect(summaryRect.height, lessThan(30), reason: '元信息应保持一行，不碎成多段');
       expect(
         find.descendant(
@@ -175,16 +175,13 @@ void main() {
       await harness.tasks.setGoalPinned(goal.id, isPinned: true);
       await harness.pump(tester);
 
-      expect(find.text('置顶目标 · 长按拖动排序'), findsOneWidget);
+      expect(find.text('置顶目标'), findsOneWidget);
       // 置顶分区标题是谷歌蓝 PactaSectionHeader：主色、左缘与目标卡对齐。
-      final pinnedHeader = find.widgetWithText(
-        PactaSectionHeader,
-        '置顶目标 · 长按拖动排序',
-      );
+      final pinnedHeader = find.widgetWithText(PactaSectionHeader, '置顶目标');
       expect(pinnedHeader, findsOneWidget);
       final pinnedTitle = find.descendant(
         of: pinnedHeader,
-        matching: find.text('置顶目标 · 长按拖动排序'),
+        matching: find.text('置顶目标'),
       );
       expect(
         tester.widget<Text>(pinnedTitle).style?.color,
@@ -313,7 +310,7 @@ void main() {
         );
         final summary = find.descendant(
           of: card,
-          matching: find.text('1 项任务 · 进行中'),
+          matching: find.text('1 项任务，进行中'),
         );
         final firstTask = find.ancestor(
           of: find.text(taskTitle),
@@ -394,7 +391,7 @@ void main() {
           find.descendant(of: card, matching: find.text(goalTitle)),
         );
         final summaryRect = tester.getRect(
-          find.descendant(of: card, matching: find.text('1 项任务 · 进行中')),
+          find.descendant(of: card, matching: find.text('1 项任务，进行中')),
         );
         return [
           titleRect.top - cardRect.top,

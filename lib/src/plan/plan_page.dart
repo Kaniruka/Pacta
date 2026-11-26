@@ -458,9 +458,20 @@ class _PlanPageState extends ConsumerState<PlanPage> {
       if (pinned.isNotEmpty) ...[
         // 分区标题统一为谷歌蓝 PactaSectionHeader：左侧归零与目标卡片同一条
         // 左缘，16dp 顶距 + 8dp 底距由组件自己承担，不再另加 SizedBox。
-        const PactaSectionHeader(
-          title: '置顶目标 · 长按拖动排序',
-          padding: EdgeInsets.fromLTRB(0, PactaSpacing.lg, 0, PactaSpacing.sm),
+        PactaSectionHeader(
+          title: '置顶目标',
+          trailing: Text(
+            '长按拖动排序',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+          padding: const EdgeInsets.fromLTRB(
+            0,
+            PactaSpacing.lg,
+            0,
+            PactaSpacing.sm,
+          ),
         ),
         // 置顶与其他目标各用一份独立列表：跨分组拖动没有意义，
         // 分组内排序又分别落到 local_goals.sort_order 的同一列。
@@ -494,7 +505,13 @@ class _PlanPageState extends ConsumerState<PlanPage> {
       ],
       if (others.isNotEmpty) ...[
         PactaSectionHeader(
-          title: pinned.isEmpty ? '全部目标 · 长按拖动排序' : '其他目标 · 长按拖动排序',
+          title: pinned.isEmpty ? '全部目标' : '其他目标',
+          trailing: Text(
+            '长按拖动排序',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
           padding: const EdgeInsets.fromLTRB(
             0,
             PactaSpacing.lg,
@@ -608,15 +625,13 @@ class _PlanPageState extends ConsumerState<PlanPage> {
   ) async {
     final completedCount = goal.tasks.where((task) => task.isComplete).length;
     final hidden = _hideCompletedFor(goal, userId);
-    final status = goal.tasks.isEmpty
-        ? '暂无任务 · 未完成'
-        : goal.isComplete
-        ? '已完成'
-        : '进行中';
+    final subtitle = goal.tasks.isEmpty
+        ? '暂无任务，未完成'
+        : '${goal.tasks.length} 项任务，${goal.isComplete ? '已完成' : '进行中'}';
     await showPactaActionSheet(
       context,
       title: goal.title,
-      subtitle: '${goal.tasks.length} 项任务 · $status',
+      subtitle: subtitle,
       actions: [
         // 「添加任务」不再是卡片底部的大按钮：它是目标菜单的首项，空目标
         // 另有可点的空态引导行，两者都走同一条新建流程。

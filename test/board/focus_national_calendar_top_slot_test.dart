@@ -409,10 +409,10 @@ void main() {
     await _tapDay(tester, 9);
     expect(find.text('11月9日国策记录'), findsOneWidget);
     expect(_badge(tester, '有失败记录').tone, PactaStatusBadgeTone.warning);
-    expect(find.text('节点0 · 未完成今日确认'), findsOneWidget);
-    expect(find.text('节点1 · 未完成今日确认'), findsOneWidget);
-    expect(find.text('节点2 · 未完成今日确认'), findsOneWidget);
-    expect(find.text('节点3 · 未完成今日确认'), findsNothing);
+    expect(find.text('节点0（未完成今日确认）'), findsOneWidget);
+    expect(find.text('节点1（未完成今日确认）'), findsOneWidget);
+    expect(find.text('节点2（未完成今日确认）'), findsOneWidget);
+    expect(find.text('节点3（未完成今日确认）'), findsNothing);
     expect(find.text('等 4 个节点'), findsOneWidget);
     expect(find.text('未知'), findsNothing);
 

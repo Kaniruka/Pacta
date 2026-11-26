@@ -474,7 +474,7 @@ Future<List<String>> _runScenario({
   await pumpUi();
   await saveDialog();
   expect(find.text('整理发布材料'), findsOneWidget);
-  expect(find.text('0 项任务 · 暂无任务 · 未完成'), findsOneWidget);
+  expect(find.text('暂无任务，未完成'), findsOneWidget);
   await shot(
     '04-goal-created',
     marker: pageText(PlanPage, '整理发布材料'),
@@ -488,7 +488,7 @@ Future<List<String>> _runScenario({
   await tester.enterText(_field('任务名称'), '写提纲');
   await pumpUi();
   await saveDialog();
-  expect(find.text('1 项任务 · 进行中'), findsOneWidget);
+  expect(find.text('1 项任务，进行中'), findsOneWidget);
   await shot(
     '05-task-created',
     marker: pageText(PlanPage, '写提纲'),
@@ -513,7 +513,7 @@ Future<List<String>> _runScenario({
       matching: find.byType(PactaCheckCircle),
     ),
   );
-  expect(find.text('1 项任务 · 已完成'), findsOneWidget);
+  expect(find.text('1 项任务，已完成'), findsOneWidget);
   await shot(
     '07-task-completed',
     marker: pageText(PlanPage, '写提纲（修订）'),
@@ -553,7 +553,7 @@ Future<List<String>> _runScenario({
   await tester.enterText(_field('任务名称'), '补充证据');
   await pumpUi();
   await saveDialog();
-  expect(find.text('1 项任务 · 进行中'), findsOneWidget);
+  expect(find.text('1 项任务，进行中'), findsOneWidget);
   expect(find.text('补充证据'), findsOneWidget);
   await shot(
     '10-task-recreated',
@@ -592,14 +592,14 @@ Future<List<String>> _runScenario({
     await pumpUi();
     await tapVisible(find.text('置顶目标'));
   }
-  expect(find.text('置顶目标 · 长按拖动排序'), findsOneWidget);
+  expect(find.text('置顶目标'), findsOneWidget);
   expect(
     _top(tester, find.text('本周交付')),
     lessThan(_top(tester, find.text('整理发布材料'))),
   );
   await shot(
     '12-pins-order',
-    marker: pageText(PlanPage, '置顶目标 · 长按拖动排序'),
+    marker: pageText(PlanPage, '置顶目标'),
     about: '置顶顺序',
   );
 
@@ -620,7 +620,7 @@ Future<List<String>> _runScenario({
   );
   await shot(
     '13-pins-reordered',
-    marker: pageText(PlanPage, '置顶目标 · 长按拖动排序'),
+    marker: pageText(PlanPage, '置顶目标'),
     about: '重排后的顺序',
   );
 
@@ -869,8 +869,8 @@ Future<List<String>> _runScenario({
 
   // 12. 回到目标视图：任务仍在、置顶顺序仍在。
   await tapVisible(find.text('目标'), preferTop: true);
-  await reveal(find.text('置顶目标 · 长按拖动排序'), preferTop: true);
-  expect(find.text('置顶目标 · 长按拖动排序'), findsOneWidget);
+  await reveal(find.text('置顶目标'), preferTop: true);
+  expect(find.text('置顶目标'), findsOneWidget);
   await reveal(find.text('整理发布材料'), preferTop: true);
   expect(
     _top(tester, find.text('整理发布材料')),

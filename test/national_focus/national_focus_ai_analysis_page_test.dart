@@ -42,17 +42,20 @@ void main() {
 
     final page = await _openMyAiPage(tester);
     expect(
-      find.descendant(of: page, matching: find.text('多端 Agent 接入')),
+      find.descendant(of: page, matching: find.text('外部工具接入')),
       findsOneWidget,
     );
     expect(find.text('尚未创建连接'), findsOneWidget);
 
-    // 1. 创建默认反重力只读连接
+    // 1. 创建默认 Antigravity 只读连接
     await tester.tap(find.byKey(const ValueKey('national-focus-ai-create')));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('national-focus-ai-submit-create')),
+    final submitButton = find.byKey(
+      const ValueKey('national-focus-ai-submit-create'),
     );
+    await tester.ensureVisible(submitButton);
+    await tester.pumpAndSettle();
+    await tester.tap(submitButton);
     await tester.pumpAndSettle();
 
     expect(find.text('连接已创建'), findsOneWidget);
@@ -87,9 +90,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(doneButton);
     await tester.pumpAndSettle();
-    expect(find.text('反重力'), findsNWidgets(2));
+    expect(find.text('Antigravity'), findsNWidgets(2));
     expect(find.text('只读'), findsOneWidget);
     expect(find.text('生效中'), findsOneWidget);
+    expect(find.textContaining('后到期'), findsOneWidget);
 
     // 2. 创建第二个连接：Codex 读写 + 永不过期
     await tester.tap(find.byKey(const ValueKey('national-focus-ai-create')));
@@ -100,9 +104,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ChoiceChip, '永不过期'));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.byKey(const ValueKey('national-focus-ai-submit-create')),
-    );
+    await tester.ensureVisible(submitButton);
+    await tester.pumpAndSettle();
+    await tester.tap(submitButton);
     await tester.pumpAndSettle();
 
     await tester.tap(
@@ -116,33 +120,53 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(doneButton);
     await tester.pumpAndSettle();
-    expect(find.text('永不过期'), findsNothing); // 合成在元信息行里
-    expect(find.textContaining('永不过期'), findsOneWidget);
+    expect(find.text('永不过期'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('national-focus-ai-revoke-all')),
       findsOneWidget,
     );
 
-    // 3. 撤销单个连接
+    // 3. 撤销单个连接，随后可删除该条失效记录
     await tester.tap(
       find.byKey(const ValueKey('national-focus-ai-revoke-grant-1')),
     );
     await tester.pumpAndSettle();
-    expect(find.text('撤销「反重力」？'), findsOneWidget);
+    expect(find.text('撤销「Antigravity」？'), findsOneWidget);
     await tester.tap(find.text('确认撤销'));
     await tester.pumpAndSettle();
     expect(grants.revokeCalls, ['grant-1']);
     expect(find.text('已撤销'), findsOneWidget);
 
-    // 4. 再创建一个并测试全部撤销
+    await tester.tap(
+      find.byKey(const ValueKey('national-focus-ai-delete-grant-1')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('删除「Antigravity」？'), findsOneWidget);
+    await tester.tap(find.text('确认删除'));
+    await tester.pumpAndSettle();
+    expect(grants.deleteCalls, ['grant-1']);
+    expect(find.text('Antigravity'), findsNothing);
+
+    // 4. 再创建一个带自定义有效期（12 小时）的连接并测试全部撤销
     await tester.tap(find.byKey(const ValueKey('national-focus-ai-create')));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(ChoiceChip, 'DSH').last);
     await tester.pumpAndSettle();
     await tester.tap(
-      find.byKey(const ValueKey('national-focus-ai-submit-create')),
+      find.byKey(const ValueKey('national-focus-ai-ttl-custom')),
     );
     await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('national-focus-ai-ttl-custom-value')),
+      '12',
+    );
+    await tester.tap(find.text('小时'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(submitButton);
+    await tester.pumpAndSettle();
+    await tester.tap(submitButton);
+    await tester.pumpAndSettle();
+    expect(grants.createdCalls.last.ttl, const Duration(hours: 12));
     await tester.ensureVisible(doneButton);
     await tester.pumpAndSettle();
     await tester.tap(doneButton);
@@ -158,7 +182,7 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '全部撤销'));
     await tester.pumpAndSettle();
     expect(grants.revokeAllCalls, 1);
-    expect(find.text('已撤销'), findsNWidgets(3));
+    expect(find.text('已撤销'), findsNWidgets(2));
   });
 
   testWidgets('展示最近调用与写入记录并支持进入手动同步', (tester) async {
@@ -209,7 +233,7 @@ void main() {
     expect(find.textContaining('仅进入本页不会上传或下载'), findsOneWidget);
   });
 
-  testWidgets('国策树更多菜单进入同一个国策 AI 分析页', (tester) async {
+  testWidgets('国策树更多菜单进入同一个开放能力页', (tester) async {
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
@@ -230,7 +254,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('更多'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('国策 AI 分析').last);
+    await tester.tap(find.text('开放能力').last);
     await tester.pumpAndSettle();
 
     expect(
@@ -259,7 +283,7 @@ void main() {
     final page = await _openMyAiPage(tester);
 
     expect(Theme.of(tester.element(page)).brightness, Brightness.dark);
-    final heroRect = tester.getRect(find.text('多端 Agent 接入'));
+    final heroRect = tester.getRect(find.text('外部工具接入'));
     expect(heroRect.top, lessThan(180));
     expect(tester.takeException(), isNull);
 
@@ -318,6 +342,7 @@ class _FakeNationalFocusAiGrantRepository
   final auditLogs = <NationalFocusAiAuditLog>[];
   final createdCalls = <_CreatedArgs>[];
   final revokeCalls = <String>[];
+  final deleteCalls = <String>[];
   int revokeAllCalls = 0;
   Object? listError;
   int listCalls = 0;
@@ -361,6 +386,12 @@ class _FakeNationalFocusAiGrantRepository
     if (index != -1) {
       grants[index] = grants[index].copyWith(revokedAt: DateTime.now().toUtc());
     }
+  }
+
+  @override
+  Future<void> deleteGrant(String grantId) async {
+    deleteCalls.add(grantId);
+    grants.removeWhere((g) => g.id == grantId);
   }
 
   @override

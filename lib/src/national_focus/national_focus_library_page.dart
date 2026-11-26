@@ -655,7 +655,7 @@ class _NationalFocusCardEditorPageState
                                   const SizedBox(height: PactaSpacing.xxs),
                                   Text(
                                     _iconKey == null
-                                        ? '未设置 · 默认灯泡'
+                                        ? '未设置（默认灯泡）'
                                         : nationalFocusIconLabel(_iconKey),
                                     style: theme.textTheme.bodySmall?.copyWith(
                                       color: colors.onSurfaceVariant,
@@ -737,8 +737,8 @@ class _NationalFocusCardEditorPageState
                         valueListenable: _exceptionNotes,
                         builder: (context, value, _) => Text(
                           value.text.trim().isNotEmpty
-                              ? '已填写 · 按需展开'
-                              : '可选 · 按需展开',
+                              ? '已填写（按需展开）'
+                              : '可选（按需展开）',
                         ),
                       ),
                       children: [
@@ -852,7 +852,7 @@ class _StrengtheningEntry extends StatelessWidget {
       tileKey: const ValueKey('national-focus-editor-strengthening-entry'),
       leadingIcon: Icons.trending_up,
       title: '强化要求',
-      subtitle: '当前使用$current · 进入调整草稿，随卡片一起保存',
+      subtitle: '当前使用$current，进入调整草稿并随卡片保存',
       statusBadge: PactaStatusBadge(
         label: '$levelCount / $maxNationalFocusStrengtheningLevels 级',
         tone: activeLevel == null
@@ -1073,7 +1073,7 @@ class _LibraryCardProgress extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          '成功日 ${card.successfulDays} 天 · 内化 ${progress.toStringAsFixed(1)}%',
+          '成功日 ${card.successfulDays} 天，内化 ${progress.toStringAsFixed(1)}%',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: theme.textTheme.bodySmall?.copyWith(

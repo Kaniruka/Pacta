@@ -20,10 +20,11 @@ void main() {
       expect(formatCompactFocusDuration(3600), '1小时');
     });
 
-    test('专注进度保留秒级精度，小时位只在非零时出现', () {
-      expect(formatCompactFocusDuration(4498), '1小时14分58秒');
-      expect(formatCompactFocusDuration(3605), '1小时5秒');
-      expect(formatCompactFocusDuration(3661), '1小时1分1秒');
+    test('满 10 分钟省掉秒，不足 10 分钟保留非零秒，小时位只在非零时出现', () {
+      expect(formatCompactFocusDuration(185), '3分5秒');
+      expect(formatCompactFocusDuration(4498), '1小时14分');
+      expect(formatCompactFocusDuration(3605), '1小时');
+      expect(formatCompactFocusDuration(3661), '1小时1分');
     });
 
     test('不足一分钟按秒读，零值写 0分', () {
@@ -46,12 +47,12 @@ void main() {
     testWidgets('只保留目标名、已专注进度与预计时长', (tester) async {
       await _pumpPicker(tester, goals: _goals());
 
-      expect(_subtitleOf(tester, '精读一章'), '每日精进 · 已专注 0分 / 48小时');
-      expect(_subtitleOf(tester, '整理笔记'), '每日精进 · 已专注 25分 / 1小时30分');
-      expect(_subtitleOf(tester, '写摘要'), '每日精进 · 已专注 0分 / 25分钟');
-      expect(_subtitleOf(tester, '复盘'), '每日精进 · 尚未专注');
-      expect(_subtitleOf(tester, '晨间冥想'), '每日精进 · 已专注 45秒');
-      expect(_subtitleOf(tester, '双模式任务'), '每日精进 · 已专注 1小时 / 1小时');
+      expect(_subtitleOf(tester, '精读一章'), '每日精进，已专注 0分 / 48小时');
+      expect(_subtitleOf(tester, '整理笔记'), '每日精进，已专注 25分 / 1小时30分');
+      expect(_subtitleOf(tester, '写摘要'), '每日精进，已专注 0分 / 25分钟');
+      expect(_subtitleOf(tester, '复盘'), '每日精进，尚未专注');
+      expect(_subtitleOf(tester, '晨间冥想'), '每日精进，已专注 45秒');
+      expect(_subtitleOf(tester, '双模式任务'), '每日精进，已专注 1小时 / 1小时');
 
       // 不再回显左侧图标已经表达的分类，也不再写无意义的未设置占位。
       expect(find.textContaining('目标：'), findsNothing);

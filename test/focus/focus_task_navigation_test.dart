@@ -86,9 +86,9 @@ void main() {
     expect(find.text('已完成任务'), findsNothing);
     expect(find.textContaining('导航验收目标'), findsWidgets);
     // 无预计时长的任务只写「尚未专注」，不再出现「预计时长：未设置」占位。
-    expect(find.text('导航验收目标 · 尚未专注'), findsNWidgets(2));
+    expect(find.text('导航验收目标，尚未专注'), findsNWidgets(2));
     expect(find.textContaining('未设置'), findsNothing);
-    expect(find.text('导航验收目标 · 已专注 0分 / 40分钟'), findsOneWidget);
+    expect(find.text('导航验收目标，已专注 0分 / 40分钟'), findsOneWidget);
     await tester.tap(find.text('精锐').first);
     await tester.pumpAndSettle();
     expect(find.text('普通任务'), findsNothing);

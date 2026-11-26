@@ -628,11 +628,11 @@ class _PlanCalendarViewState extends State<PlanCalendarView> {
     // 失败/加载都不冒充"0 项安排"：那不是空内容，是还没读到或读不到。
     final String summary;
     if (_schedulesError != null) {
-      summary = '$dayLabel · 读取失败';
+      summary = '$dayLabel，读取失败';
     } else if (_loadingSchedules) {
-      summary = '$dayLabel · 正在读取';
+      summary = '$dayLabel，正在读取';
     } else {
-      summary = '$dayLabel · ${daySchedules.length} 项安排';
+      summary = '$dayLabel（${daySchedules.length} 项安排）';
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

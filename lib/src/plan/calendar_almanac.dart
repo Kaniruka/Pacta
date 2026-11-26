@@ -164,7 +164,7 @@ class CalendarAlmanac {
       lunarText,
       if (entry != null && entry.name.isNotEmpty) entry.name,
       if (suffix.isNotEmpty) suffix,
-    ].join(' · ');
+    ].join('，');
   }
 
   /// 与 [entry] 同名且相邻的连续日期区间（含端点）。

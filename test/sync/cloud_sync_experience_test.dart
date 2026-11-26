@@ -241,6 +241,7 @@ Future<void> _pumpCard(
         body: CloudSyncCard(
           repository: harness.phoneSync,
           focusRepository: focusRepository,
+          now: () => _SyncHarness.now(),
           onDownloaded: () async {},
         ),
       ),
@@ -259,12 +260,13 @@ void main() {
   testWidgets('卡片状态摘要：只报最近一次成功同步时间（当前已满足）', (tester) async {
     final harness = await _SyncHarness.create();
     try {
+      _SyncHarness.now = () =>
+          _localDataUpdatedAt.add(const Duration(hours: 2));
       await _pumpCard(tester, harness);
 
       final texts = _cardTexts(tester);
-      final syncTime = _fmt(_localDataUpdatedAt);
-      // 摘要即时间：时间只出现一次，且摘要不带方向、行数或设备标识。
-      expect(texts.where((text) => text == syncTime), hasLength(1));
+      // 摘要即相对时间：只出现一次，且摘要不带方向、行数或设备标识。
+      expect(texts.where((text) => text == '2 小时前'), hasLength(1));
       for (final text in texts) {
         expect(text, isNot(contains('上传')));
         expect(text, isNot(contains('下载')));
@@ -355,7 +357,7 @@ void main() {
       final cloud = (await harness.remote.inspect(userId: harness.userId))!;
       // 云端上传时间是云端事件，不等于本机上次同步时间。
       expect(_fmt(cloud.uploadedAt), isNot(_fmt(downloadTime)));
-      expect(_surfaceTexts(tester), contains(_fmt(downloadTime)));
+      expect(_surfaceTexts(tester), contains('刚刚'));
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
       await harness.dispose();
@@ -378,7 +380,7 @@ void main() {
       final cloud = (await harness.remote.inspect(userId: harness.userId))!;
       expect(cloud.revision, 2);
       expect(_fmt(cloud.uploadedAt), isNot(_fmt(uploadTime)));
-      expect(_surfaceTexts(tester), contains(_fmt(uploadTime)));
+      expect(_surfaceTexts(tester), contains('刚刚'));
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
       await harness.dispose();

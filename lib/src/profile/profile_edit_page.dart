@@ -397,18 +397,18 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
               Text('保留', style: theme.textTheme.titleSmall),
               const SizedBox(height: PactaSpacing.xxs),
               const Text(
-                '· 国策卡与国策树布局\n'
-                '· 下必为例与专注信号\n'
-                '· 目标（含置顶与排序）与任务',
+                '• 国策卡与国策树布局\n'
+                '• 下必为例与专注信号\n'
+                '• 目标（含置顶与排序）与任务',
               ),
               const SizedBox(height: PactaSpacing.md),
               Text('销毁', style: theme.textTheme.titleSmall),
               const SizedBox(height: PactaSpacing.xxs),
               const Text(
-                '· 点亮、连击、内化与失败记录\n'
-                '· 专注与预约记录\n'
-                '· 任务的完成状态与专注进度\n'
-                '· 全部日程、重复规则与导入副本',
+                '• 点亮、连击、内化与失败记录\n'
+                '• 专注与预约记录\n'
+                '• 任务的完成状态与专注进度\n'
+                '• 全部日程、重复规则与导入副本',
               ),
               const SizedBox(height: PactaSpacing.md),
               Text(
@@ -644,7 +644,7 @@ class _ProfileEditPageState extends State<ProfileEditPage> {
     final cityZoneId = currentCity?.timeZoneId;
     final summary = currentCity == null
         ? (offList ? selected! : '未设置')
-        : '$cityLabel · $cityZoneId';
+        : '$cityLabel（$cityZoneId）';
     final zoneLabel = selected ?? '未设置';
     final explanation = <String>[
       '时区 ID：$zoneLabel',

@@ -108,7 +108,7 @@ void main() {
     await tester.tap(find.byType(PactaCheckCircle).first);
     await tester.pumpAndSettle();
     // 卡片底部同时出现“隐藏已完成 (1)”入口，这里锁定统计摘要本身。
-    expect(find.text('1 项任务 · 已完成'), findsOneWidget);
+    expect(find.text('1 项任务，已完成'), findsOneWidget);
   });
 
   testWidgets('删除目标保留活动专注历史并阻止新开始', (tester) async {

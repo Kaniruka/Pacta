@@ -71,7 +71,7 @@ void main() {
 
       expect(find.text('链记录读取失败，请重试。'), findsOneWidget);
       expect(
-        find.text('0分00秒'),
+        find.text('0分钟'),
         findsNothing,
         reason: '读不到预约记录时不得把未知的准备时长显示成 0 分',
       );
@@ -89,8 +89,8 @@ void main() {
       }
       // 预约统计来自真实记录：180 + 300 = 480 秒，平均 240 秒。预约链的
       // 「累计/平均」与专注链同一口径，重试后不再停留在虚假的 0 分。
-      expect(find.text('8分00秒'), findsOneWidget);
-      expect(find.text('4分00秒'), findsOneWidget);
+      expect(find.text('8分钟'), findsOneWidget);
+      expect(find.text('4分钟'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();

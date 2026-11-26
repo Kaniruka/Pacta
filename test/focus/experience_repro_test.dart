@@ -120,14 +120,11 @@ void main() {
       await tester.tap(find.text('返回上一页'));
       await _boundedSettle(tester);
 
-      expect(find.text('已专注 25分00秒'), findsOneWidget);
+      expect(find.text('已专注 25分钟'), findsOneWidget);
       await h.openTab(tester, '专注链');
       expect(find.text('1'), findsWidgets, reason: '专注链次数应加 1');
       expect(
-        find.descendant(
-          of: _metric('精锐链', '累计'),
-          matching: find.text('25分00秒'),
-        ),
+        find.descendant(of: _metric('精锐链', '累计'), matching: find.text('25分钟')),
         findsOneWidget,
         reason: '专注链卡片的累计应为 25 分钟',
       );
@@ -166,14 +163,11 @@ void main() {
 
       await tester.tap(find.text('返回上一页'));
       await _boundedSettle(tester);
-      expect(find.text('已专注 25分00秒'), findsOneWidget);
+      expect(find.text('已专注 25分钟'), findsOneWidget);
 
       await h.openTab(tester, '专注链');
       expect(
-        find.descendant(
-          of: _metric('精锐链', '累计'),
-          matching: find.text('25分00秒'),
-        ),
+        find.descendant(of: _metric('精锐链', '累计'), matching: find.text('25分钟')),
         findsOneWidget,
       );
     } finally {
@@ -207,14 +201,11 @@ void main() {
 
       await tester.tap(find.text('返回上一页'));
       await _boundedSettle(tester);
-      expect(find.text('已专注 25分00秒'), findsOneWidget);
+      expect(find.text('已专注 25分钟'), findsOneWidget);
 
       await h.openTab(tester, '专注链');
       expect(
-        find.descendant(
-          of: _metric('精锐链', '累计'),
-          matching: find.text('25分00秒'),
-        ),
+        find.descendant(of: _metric('精锐链', '累计'), matching: find.text('25分钟')),
         findsOneWidget,
         reason: '后台恢复结算后累计应为 25 分钟',
       );
@@ -271,14 +262,11 @@ void main() {
 
       await tester.tap(find.text('返回上一页'));
       await _boundedSettle(tester);
-      expect(find.text('已专注 20分00秒'), findsOneWidget);
+      expect(find.text('已专注 20分钟'), findsOneWidget);
 
       await h.openTab(tester, '专注链');
       expect(
-        find.descendant(
-          of: _metric('精锐链', '累计'),
-          matching: find.text('20分00秒'),
-        ),
+        find.descendant(of: _metric('精锐链', '累计'), matching: find.text('20分钟')),
         findsOneWidget,
       );
       expect(find.text('1'), findsWidgets);
@@ -314,17 +302,14 @@ void main() {
       await _boundedSettle(tester);
 
       expect(
-        find.text('已专注 35分00秒'),
+        find.text('已专注 35分钟'),
         findsOneWidget,
         reason: '已有 10 分钟后完成 25 分钟应显示 35 分钟',
       );
 
       await h.openTab(tester, '专注链');
       expect(
-        find.descendant(
-          of: _metric('精锐链', '累计'),
-          matching: find.text('35分00秒'),
-        ),
+        find.descendant(of: _metric('精锐链', '累计'), matching: find.text('35分钟')),
         findsOneWidget,
         reason: '专注链卡片累计应为 35 分钟',
       );

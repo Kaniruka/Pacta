@@ -201,12 +201,9 @@ void main() {
             findsOneWidget,
           );
           // 底部日期详情：今天与真实专注时长。
-          expect(find.text('11 月 12 日 · 今日'), findsOneWidget);
+          expect(find.text('11 月 12 日（今日）'), findsOneWidget);
           // 详情按“选中的这一天”给时长，不是整月或近 7 天汇总。
-          expect(
-            find.text(activeDays == 0 ? '0分00秒' : '13分00秒'),
-            findsOneWidget,
-          );
+          expect(find.text(activeDays == 0 ? '0分钟' : '13分钟'), findsOneWidget);
           expect(tester.takeException(), isNull, reason: 'width=$width');
           // 今天没有安排时空态落在融合卡的日期详情里（不再是独立卡片）。
           await tester.scrollUntilVisible(
@@ -354,7 +351,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       await openPlan(tester);
-      for (final fact in ['120 分钟', '已专注 13分00秒', '截止 2026-11-15 18:30']) {
+      for (final fact in ['120 分钟', '已专注 13分钟', '截止 2026-11-15 18:30']) {
         final text = find.textContaining(fact);
         expect(text, findsOneWidget);
         final paragraph = tester.renderObject<RenderParagraph>(text);
@@ -454,8 +451,8 @@ void main() {
     expect(find.text('待确认 1'), findsOneWidget);
     await tester.ensureVisible(find.text('专注热力月历'));
     // 9 月 22 日的 13 分钟专注落在日期详情里，不是“近期 7 天”汇总。
-    expect(find.text('9 月 22 日 · 今日'), findsOneWidget);
-    expect(find.text('13分00秒'), findsOneWidget);
+    expect(find.text('9 月 22 日（今日）'), findsOneWidget);
+    expect(find.text('13分钟'), findsOneWidget);
     // 今天选中时不在日期详情重复国策汇总，只由顶部「今日国策状态」说一次。
     expect(find.textContaining('国策记录'), findsNothing);
     // 完整任务列表与开始入口迁到计划：看板不再展开全部任务。
@@ -463,7 +460,7 @@ void main() {
 
     await openPlan(tester);
     expect(find.text('整理发布材料'), findsOneWidget);
-    expect(find.textContaining('已专注 13分00秒'), findsOneWidget);
+    expect(find.textContaining('已专注 13分钟'), findsOneWidget);
     await tester.ensureVisible(find.byTooltip('开始专注'));
     await tester.tap(find.byTooltip('开始专注'));
     await tester.pumpAndSettle();
@@ -595,11 +592,11 @@ void main() {
     expect(find.textContaining('1 项任务'), findsWidgets);
     final collapsedCountFinder = find.descendant(
       of: firstGoalCard,
-      matching: find.text('1 项任务 · 进行中'),
+      matching: find.text('1 项任务，进行中'),
     );
     expect(collapsedCountFinder, findsOneWidget);
     final collapsedCount = tester.widget<Text>(collapsedCountFinder);
-    expect(collapsedCount.data, '1 项任务 · 进行中');
+    expect(collapsedCount.data, '1 项任务，进行中');
     expect(collapsedCount.maxLines, isNull);
     final theme = Theme.of(tester.element(collapsedCountFinder));
     expect(collapsedCount.style?.fontSize, theme.textTheme.bodySmall?.fontSize);

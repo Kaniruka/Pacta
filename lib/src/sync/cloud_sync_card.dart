@@ -21,6 +21,7 @@ class CloudSyncCard extends StatefulWidget {
     this.focusRepository,
     this.autoUpload,
     this.accountTimeZoneIdLoader,
+    this.now,
   });
 
   final CloudVersionCheck? versionCheck;
@@ -31,6 +32,7 @@ class CloudSyncCard extends StatefulWidget {
   final CloudSnapshotRepository? repository;
   final Future<void> Function() onDownloaded;
   final Future<String?> Function()? accountTimeZoneIdLoader;
+  final DateTime Function()? now;
 
   @override
   State<CloudSyncCard> createState() => _CloudSyncCardState();
@@ -554,17 +556,17 @@ class _CloudSyncCardState extends State<CloudSyncCard> {
       ? '本地数据时间较新，请选择要保留的数据。'
       : '更新时间相同，内容仍可能不同，请选择要保留的数据。';
 
-  /// 常驻摘要只报最近一次成功同步时间；方向、检查中与失败反馈改为弹层
+  /// 常驻摘要只报最近一次成功同步的相对时间；方向、检查中与失败反馈改为弹层
   /// 内容或非阻断 SnackBar，不再占用常驻摘要。
   String get _summary {
     if (widget.repository == null) return '当前未配置云端连接。';
     final result = _result;
-    return result == null
-        ? '尚未同步'
-        : formatPactaDateTimeSeconds(
-            result.succeededAt,
-            timeZoneId: _displayTimeZoneId,
-          );
+    if (result == null) return '尚未同步';
+    return formatPactaRelativePast(
+      result.succeededAt,
+      now: (widget.now ?? DateTime.now)(),
+      timeZoneId: _displayTimeZoneId,
+    );
   }
 
   bool _reportedFailure = false;

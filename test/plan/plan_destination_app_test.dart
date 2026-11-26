@@ -254,11 +254,11 @@ void main() {
 
       await _createGoal(tester, '季度复盘');
       expect(find.text('季度复盘'), findsOneWidget);
-      expect(find.text('0 项任务 · 暂无任务 · 未完成'), findsOneWidget);
+      expect(find.text('暂无任务，未完成'), findsOneWidget);
 
       await _addTask(tester, '写提纲');
       expect(find.text('写提纲'), findsOneWidget);
-      expect(find.text('1 项任务 · 进行中'), findsOneWidget);
+      expect(find.text('1 项任务，进行中'), findsOneWidget);
 
       await tester.tap(find.text('写提纲'));
       await tester.pumpAndSettle();
@@ -283,7 +283,7 @@ void main() {
         (await harness.tasks.getGoals()).single.tasks.single.isComplete,
         isTrue,
       );
-      expect(find.text('1 项任务 · 已完成'), findsOneWidget);
+      expect(find.text('1 项任务，已完成'), findsOneWidget);
 
       await _openTaskActions(tester, '写提纲（修订）');
       expect(find.text('标记未完成'), findsOneWidget);
@@ -294,7 +294,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('写提纲（修订）'), findsNothing);
       expect(find.text('季度复盘'), findsOneWidget);
-      expect(find.text('0 项任务 · 暂无任务 · 未完成'), findsOneWidget);
+      expect(find.text('暂无任务，未完成'), findsOneWidget);
 
       await _openGoalActions(tester, '季度复盘');
       await tester.tap(find.text('删除目标'));
@@ -323,27 +323,21 @@ void main() {
       await _openPlan(tester);
 
       await _openGoalActions(tester, '目标乙');
-      await tester.tap(find.text('置顶目标'));
+      await tester.tap(find.text('置顶目标').last);
       await tester.pumpAndSettle();
       await _openGoalActions(tester, '目标甲');
-      await tester.tap(find.text('置顶目标'));
+      await tester.tap(find.text('置顶目标').last);
       await tester.pumpAndSettle();
 
       // 两处分区小标题都走谷歌蓝 PactaSectionHeader，不再是灰色小字。
       expect(find.byType(PactaSectionHeader), findsNWidgets(2));
-      final pinnedHeader = find.widgetWithText(
-        PactaSectionHeader,
-        '置顶目标 · 长按拖动排序',
-      );
-      final othersHeader = find.widgetWithText(
-        PactaSectionHeader,
-        '其他目标 · 长按拖动排序',
-      );
+      final pinnedHeader = find.widgetWithText(PactaSectionHeader, '置顶目标');
+      final othersHeader = find.widgetWithText(PactaSectionHeader, '其他目标');
       expect(pinnedHeader, findsOneWidget);
       expect(othersHeader, findsOneWidget);
       final pinnedTitle = find.descendant(
         of: pinnedHeader,
-        matching: find.text('置顶目标 · 长按拖动排序'),
+        matching: find.text('置顶目标'),
       );
       expect(
         tester.widget<Text>(pinnedTitle).style?.color,
@@ -399,7 +393,7 @@ void main() {
         _top(tester, find.text('目标甲')),
         lessThan(_top(tester, find.text('目标乙'))),
       );
-      expect(find.text('置顶目标 · 长按拖动排序'), findsOneWidget);
+      expect(find.text('置顶目标'), findsOneWidget);
     } finally {
       await harness.dispose(tester);
     }

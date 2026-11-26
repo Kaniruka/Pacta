@@ -83,7 +83,7 @@ void main() {
     await pumpNationalFocusUi(tester);
     await tester.tap(find.textContaining('1 个节点'));
     await tester.pumpAndSettle();
-    expect(find.text('未完成今日确认 · 未完成今日确认'), findsNothing);
+    expect(find.text('未完成今日确认（未完成今日确认）'), findsNothing);
     expect(find.text('未完成今日确认'), findsWidgets);
     expect((await repository.getFailures()).single.failureReason, '未完成今日确认');
     await tester.pumpWidget(const SizedBox.shrink());
@@ -906,7 +906,7 @@ void main() {
     await tester.ensureVisible(find.text('当时在卡片库（1）'));
     await tester.tap(find.text('当时在卡片库（1）'));
     await pumpNationalFocusUi(tester);
-    final libraryTile = find.text('卡片库内 · 子节点');
+    final libraryTile = find.text('卡片库内：子节点');
     await tester.ensureVisible(libraryTile);
     await pumpNationalFocusUi(tester);
     await tester.tap(libraryTile);
@@ -1061,7 +1061,7 @@ void main() {
     await pumpNationalFocusUi(tester);
     await openRecords(tester);
     expect(find.text('国策失败记录'), findsOneWidget);
-    await tester.tap(find.textContaining('· 1 个节点'));
+    await tester.tap(find.textContaining('（1 个节点）'));
     await pumpNationalFocusUi(tester);
     expect(find.text(card.name), findsWidgets);
     await tester.tap(find.text('补充说明'));

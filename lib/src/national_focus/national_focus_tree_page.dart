@@ -1096,10 +1096,7 @@ class _TreePageHeader extends StatelessWidget {
                         child: Text('失败记录'),
                       ),
                       if (onOpenAiAnalysis != null)
-                        const PopupMenuItem(
-                          value: 'ai',
-                          child: Text('国策 AI 分析'),
-                        ),
+                        const PopupMenuItem(value: 'ai', child: Text('开放能力')),
                     ],
                   ),
                 ],

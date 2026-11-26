@@ -264,15 +264,45 @@ do $audit_and_revoke_probe$
 declare
   log_count integer;
   revoked integer;
+  remaining_grants integer;
+  preserved_label text;
 begin
   select count(*) into log_count from public.list_national_focus_mcp_audit_logs(20);
   if log_count <> 1 then
     raise exception 'expected_one_audit_log_got_%', log_count;
   end if;
 
+  -- Active grant cannot be deleted before revocation.
+  begin
+    perform public.delete_national_focus_mcp_grant(current_setting('nf_mcp_test.rw_id')::uuid);
+    raise exception 'active_grant_deleted';
+  exception when sqlstate '22023' then null;
+  end;
+
+  -- Foreign grant cannot be deleted.
+  begin
+    perform public.delete_national_focus_mcp_grant(current_setting('nf_mcp_test.other_grant_id')::uuid);
+    raise exception 'foreign_grant_deleted';
+  exception when sqlstate '42501' then null;
+  end;
+
   revoked := public.revoke_all_national_focus_mcp_grants();
   if revoked <> 2 then
     raise exception 'expected_two_revoked_grants_got_%', revoked;
+  end if;
+
+  -- Revoked grant can be deleted while keeping historical audit log intact.
+  perform public.delete_national_focus_mcp_grant(current_setting('nf_mcp_test.rw_id')::uuid);
+  select count(*) into remaining_grants from public.list_national_focus_mcp_grants();
+  if remaining_grants <> 1 then
+    raise exception 'expected_one_remaining_grant_got_%', remaining_grants;
+  end if;
+
+  select grant_label into preserved_label
+  from public.list_national_focus_mcp_audit_logs(20)
+  limit 1;
+  if preserved_label <> 'Antigravity RW' then
+    raise exception 'audit_log_not_preserved_after_grant_delete';
   end if;
 end
 $audit_and_revoke_probe$;

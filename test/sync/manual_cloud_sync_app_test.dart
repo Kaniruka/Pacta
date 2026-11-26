@@ -103,15 +103,16 @@ void main() {
                 ),
               ),
               cloudSnapshotRepositoryFactory: (_) => cloudRepository,
+              displayClock: () => DateTime(2026, 10, 26, 12, 0, 0),
             ),
           );
           await tester.pumpAndSettle();
           await tester.tap(find.text('我的'));
           await tester.pumpAndSettle();
           expect(find.text('尚未同步'), findsOneWidget);
-          await tester.tap(find.text('国策 AI 分析'));
+          await tester.tap(find.text('开放能力'));
           await tester.pumpAndSettle();
-          await tester.tap(find.text('前往手动同步'));
+          await tester.tap(find.text('前往数据同步'));
           await tester.pumpAndSettle();
           await tester.tap(find.byTooltip('查看云同步'));
           await tester.pumpAndSettle();
@@ -128,7 +129,7 @@ void main() {
           await tester.pageBack();
           await tester.pumpAndSettle();
           expect(find.text('尚未同步'), findsNothing);
-          expect(find.text('2026-10-26 10:00:00'), findsOneWidget);
+          expect(find.text('2 小时前'), findsOneWidget);
 
           // A second successful upload must replace an already visible summary
           // and the baseline used by this still-mounted card's next preview.
@@ -154,9 +155,9 @@ void main() {
           await tester.tap(find.text('取消'));
           await tester.pumpAndSettle();
           syncTime = DateTime(2026, 10, 26, 11, 30, 0);
-          await tester.tap(find.text('国策 AI 分析'));
+          await tester.tap(find.text('开放能力'));
           await tester.pumpAndSettle();
-          await tester.tap(find.text('前往手动同步'));
+          await tester.tap(find.text('前往数据同步'));
           await tester.pumpAndSettle();
           await tester.tap(find.byTooltip('查看云同步'));
           await tester.pumpAndSettle();
@@ -170,8 +171,8 @@ void main() {
           await tester.pumpAndSettle();
           await tester.pageBack();
           await tester.pumpAndSettle();
-          expect(find.text('2026-10-26 11:30:00'), findsOneWidget);
-          expect(find.text('2026-10-26 10:00:00'), findsNothing);
+          expect(find.text('30 分钟前'), findsOneWidget);
+          expect(find.text('2 小时前'), findsNothing);
           await tester.tap(find.byTooltip('查看云同步'));
           await tester.pumpAndSettle();
           await tester.ensureVisible(find.text('下载'));
@@ -181,7 +182,7 @@ void main() {
           expect(find.textContaining('本机有尚未同步的修改'), findsNothing);
           await tester.tap(find.text('取消'));
           await tester.pumpAndSettle();
-          expect(find.text('2026-10-26 11:30:00'), findsOneWidget);
+          expect(find.text('30 分钟前'), findsOneWidget);
         } finally {
           resultStore.release();
           await tester.pumpWidget(const SizedBox.shrink());
@@ -376,6 +377,7 @@ void main() {
                   ),
                 ),
                 cloudSnapshotRepositoryFactory: (_) => cloudRepository,
+                displayClock: () => DateTime(2026, 10, 23, 14, 34, 56),
               ),
             );
             await tester.pumpAndSettle();
@@ -423,7 +425,7 @@ void main() {
             await tester.pumpAndSettle();
             expect(cloudRemote.uploadCalls, 1);
             expect(find.text('上传完成，已覆盖云端数据。'), findsOneWidget);
-            expect(find.text('2026-10-23 12:34:56'), findsOneWidget);
+            expect(find.text('2 小时前'), findsOneWidget);
             final successfulTime =
                 (await cloudRepository.loadSyncResult())!.succeededAt;
 
@@ -488,15 +490,15 @@ void main() {
             await tester.pumpAndSettle();
             await tester.tap(find.text('我的'));
             await tester.pumpAndSettle();
-            expect(find.text('2026-10-23 12:34:56'), findsOneWidget);
+            expect(find.text('2 小时前'), findsOneWidget);
             await cloudRemote.publishOtherDevice();
             await tester.tap(find.byTooltip('查看云同步'));
             await tester.pumpAndSettle();
             expect(find.textContaining('设备标识'), findsNothing);
             await tester.tap(find.text('关闭'));
             await tester.pumpAndSettle();
-            // 待处理版本不再占用常驻摘要；摘要仍是上次成功同步时间。
-            expect(find.text('2026-10-23 12:34:56'), findsOneWidget);
+            // 待处理版本不再占用常驻摘要；摘要仍是上次成功同步相对时间。
+            expect(find.text('2 小时前'), findsOneWidget);
             expect(find.textContaining('有待处理'), findsNothing);
             expect(
               (await cloudRepository.loadSyncResult())!.succeededAt,

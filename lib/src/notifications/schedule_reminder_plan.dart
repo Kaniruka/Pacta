@@ -221,7 +221,7 @@ class ScheduleReminderPlanner {
       scheduleId: schedule.id,
       dateKey: dateKey,
       deliverAt: boundary.subtract(offset),
-      body: '${schedule.title} · $bodySuffix',
+      body: '${schedule.title}（$bodySuffix）',
     );
   }
 

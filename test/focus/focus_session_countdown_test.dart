@@ -374,7 +374,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('预计 '), findsOneWidget);
-    expect(find.text('已暂停 · 预计时间待继续'), findsNothing);
+    expect(find.text('已暂停，预计时间待继续'), findsNothing);
     // 结算规则不再在计时页复述：两句说教都必须消失。
     expect(find.textContaining('倒计时归零后自动结算'), findsNothing);
     expect(find.textContaining('任务仍需你单独确认完成'), findsNothing);
@@ -382,7 +382,7 @@ void main() {
     await h.unmount(tester);
   });
 
-  testWidgets('暂停时预计结束时间改为「已暂停 · 预计时间待继续」', (tester) async {
+  testWidgets('暂停时预计结束时间改为「已暂停，预计时间待继续」', (tester) async {
     final h = _Fixture();
     addTearDown(h.dispose);
     final task = await h.seed();
@@ -399,7 +399,7 @@ void main() {
     await h.focus.pauseSession(session.id, ruleText: '需要短暂离开');
     await _tick(tester);
 
-    expect(find.text('已暂停 · 预计时间待继续'), findsOneWidget);
+    expect(find.text('已暂停，预计时间待继续'), findsOneWidget);
     expect(find.textContaining('预计 '), findsNothing);
     expect(tester.takeException(), isNull);
     await h.unmount(tester);

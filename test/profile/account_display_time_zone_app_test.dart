@@ -191,8 +191,8 @@ void main() {
 
     // 迁移未完成：显示按固定 fallback（UTC）分摊，而不是设备时区；整段
     // 30 分钟落在 9/22，9/23 的有效专注仍为 0。
-    await expectDayValue(tester, 22, '30分00秒');
-    await expectDayValue(tester, 23, '0分00秒');
+    await expectDayValue(tester, 22, '30分钟');
+    await expectDayValue(tester, 23, '0分钟');
 
     gate.complete(null);
     remote.fetchGate = null;
@@ -204,8 +204,8 @@ void main() {
     expect(remote.stored['user-a']?.displayName, '小林');
     final migrated = await tester.runAsync(() => profile.getProfile());
     expect(migrated?.displayTimeZoneId, 'Asia/Tokyo');
-    await expectDayValue(tester, 23, '30分00秒');
-    await expectDayValue(tester, 22, '0分00秒');
+    await expectDayValue(tester, 23, '30分钟');
+    await expectDayValue(tester, 22, '0分钟');
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
@@ -222,8 +222,8 @@ void main() {
     await tester.pumpWidget(buildApp(deviceTimeZoneId: 'America/Los_Angeles'));
     await pumpBoard(tester);
 
-    await expectDayValue(tester, 23, '30分00秒');
-    await expectDayValue(tester, 22, '0分00秒');
+    await expectDayValue(tester, 23, '30分钟');
+    await expectDayValue(tester, 22, '0分钟');
     final cached = await tester.runAsync(() => profile.getProfile());
     expect(cached?.displayTimeZoneId, 'Asia/Tokyo');
     expect(remote.initializeCalls, 0, reason: '已有账号值时不得再写入种子');
@@ -250,8 +250,8 @@ void main() {
     expect(cached?.displayTimeZoneId, 'Asia/Tokyo');
 
     // 有账号值后按东京分摊：整段落在 9/23。
-    await expectDayValue(tester, 23, '30分00秒');
-    await expectDayValue(tester, 22, '0分00秒');
+    await expectDayValue(tester, 23, '30分钟');
+    await expectDayValue(tester, 22, '0分钟');
 
     // 昵称未设置时，"我的"仍显示占位称呼而不是空白。
     await tester.tap(find.text('我的'));
@@ -276,7 +276,7 @@ void main() {
     // 不输入昵称，只选择另一个城市并保存。
     await tester.tap(find.text('新加坡'));
     await tester.pump();
-    expect(find.textContaining('新加坡 · Asia/Singapore'), findsOneWidget);
+    expect(find.textContaining('新加坡（Asia/Singapore）'), findsOneWidget);
     await tester.ensureVisible(find.text('保存'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('保存'));
@@ -293,8 +293,8 @@ void main() {
     // 返回看板：按新加坡（UTC+8）分摊，9/22 有 10 分钟、9/23 有 20 分钟。
     await tester.tap(find.text('看板'));
     await pumpBoard(tester);
-    await expectDayValue(tester, 23, '20分00秒');
-    await expectDayValue(tester, 22, '10分00秒');
+    await expectDayValue(tester, 23, '20分钟');
+    await expectDayValue(tester, 22, '10分钟');
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));
@@ -341,7 +341,7 @@ void main() {
 
     await tester.pumpWidget(buildApp(deviceTimeZoneId: 'Asia/Tokyo'));
     await pumpBoard(tester);
-    await expectDayValue(tester, 23, '30分00秒');
+    await expectDayValue(tester, 23, '30分钟');
 
     await tester.pumpWidget(
       buildApp(
@@ -353,9 +353,9 @@ void main() {
       ),
     );
     await pumpBoard(tester);
-    await expectDayValue(tester, 22, '30分00秒');
+    await expectDayValue(tester, 22, '30分钟');
     // 伦敦此时仍是 9/22：整段落在 9/22，9/23 的有效专注为 0。
-    await expectDayValue(tester, 23, '0分00秒');
+    await expectDayValue(tester, 23, '0分钟');
     expect(remote.stored['user-a']?.displayTimeZoneId, 'Asia/Tokyo');
     expect(remote.stored['user-b']?.displayTimeZoneId, 'Europe/London');
 

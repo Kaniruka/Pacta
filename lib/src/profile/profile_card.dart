@@ -296,7 +296,7 @@ class _MyProfileCardState extends State<MyProfileCard> {
                         ),
                         const SizedBox(height: PactaSpacing.xxs),
                         Text(
-                          widget.accountIdentifier ?? '账号资料 · 随账号同步',
+                          widget.accountIdentifier ?? '账号资料随账号同步',
                           style: texts.bodySmall,
                           overflow: TextOverflow.ellipsis,
                         ),

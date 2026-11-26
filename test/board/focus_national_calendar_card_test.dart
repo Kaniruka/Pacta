@@ -138,8 +138,8 @@ void main() {
       findsOneWidget,
     );
     // 默认选中本月今天，详情给出真实时长。
-    expect(find.text('11 月 12 日 · 今日'), findsOneWidget);
-    expect(find.text('13分00秒'), findsOneWidget);
+    expect(find.text('11 月 12 日（今日）'), findsOneWidget);
+    expect(find.text('13分钟'), findsOneWidget);
     // 今日汇总只属于卡片顶部的「今日国策状态」，日期详情不再复述一次。
     expect(find.text('国策记录'), findsNothing);
     // 不传安排仓储就完全不渲染安排区块：不猜“有没有安排”。
@@ -186,7 +186,7 @@ void main() {
     expect(find.text('全点亮'), findsNothing);
     expect(find.text('存在已确认'), findsNothing);
     expect(find.text('历史日期只显示实际有数据支持的记录；没有记录时明确标记为未知。'), findsOneWidget);
-    expect(find.text('15分00秒'), findsOneWidget);
+    expect(find.text('15分钟'), findsOneWidget);
     await _unmount(tester);
   });
 
@@ -282,7 +282,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('有失败记录'), findsOneWidget);
-    expect(find.text('先写第一步 · 未完成今日确认'), findsOneWidget);
+    expect(find.text('先写第一步（未完成今日确认）'), findsOneWidget);
     expect(find.text('未知'), findsNothing);
     await _unmount(tester);
   });
@@ -628,7 +628,7 @@ void main() {
     // 今日失败行并入顶部动态状态卡（最多 3 条 + 溢出提示），日期详情
     // 不再单开「今日失败记录」区块。
     expect(find.text('今日失败记录'), findsNothing);
-    expect(find.text('先写第一步 · 未完成今日确认'), findsOneWidget);
+    expect(find.text('先写第一步（未完成今日确认）'), findsOneWidget);
     // 顶部「今日国策状态」仍负责实时计数；详情只补失败追溯，不复述数字。
     expect(find.text('熄灭 1'), findsOneWidget);
     expect(find.text('存在已熄灭'), findsNothing);
@@ -666,7 +666,7 @@ void main() {
     // 安排与月投影同属一次订阅：账号时区 + 展示月份只有一个窗口。
     expect(schedules.requests, hasLength(1));
     expect(schedules.requests.single.$1.isUtc, isTrue);
-    expect(find.text('今日安排 · 1 项'), findsOneWidget);
+    expect(find.text('今日安排（1 项）'), findsOneWidget);
     expect(find.text('取快递'), findsOneWidget);
     // 04:00Z 在上海是 12:00–13:00。
     expect(find.text('12:00–13:00'), findsOneWidget);
@@ -697,7 +697,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('board-focus-day-10')));
     await tester.pumpAndSettle();
-    expect(find.text('当日安排 · 1 项'), findsOneWidget);
+    expect(find.text('当日安排（1 项）'), findsOneWidget);
     expect(find.text('写周报'), findsOneWidget);
     expect(find.text('取快递'), findsNothing);
     expect(
@@ -717,7 +717,7 @@ void main() {
     expect(find.text('暂时不能读取安排。'), findsOneWidget);
     // 失败时标题不带项数：不能把“不知道”说成 0 项。
     expect(find.text('今日安排'), findsOneWidget);
-    expect(find.textContaining('今日安排 ·'), findsNothing);
+    expect(find.textContaining('今日安排（'), findsNothing);
     expect(
       find.byKey(const ValueKey('board-focus-schedule-dot-12')),
       findsNothing,
@@ -732,7 +732,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(schedules.requests.length, greaterThan(calls));
     expect(find.text('暂时不能读取安排。'), findsNothing);
-    expect(find.text('今日安排 · 0 项'), findsOneWidget);
+    expect(find.text('今日安排（0 项）'), findsOneWidget);
     expect(find.text('今天还没有安排。'), findsOneWidget);
     await _unmount(tester);
   });
@@ -767,7 +767,7 @@ void main() {
       reason: '「日期详情」是谷歌蓝分组标题，不再用灰色 titleSmall 裸文字',
     );
     // 日期作为 header 的右侧副文本，与标题同一行。
-    final date = find.text('11 月 12 日 · 今日');
+    final date = find.text('11 月 12 日（今日）');
     expect(date, findsOneWidget);
     final titleRect = tester.getRect(title);
     final dateRect = tester.getRect(date);
@@ -804,7 +804,7 @@ void main() {
       reason: '标签与时长各自成行，不挤成一团',
     );
     expect(durationRect.left, closeTo(durationLabelRect.left, 0.01));
-    expect(tester.widget<Text>(duration).data, '13分00秒');
+    expect(tester.widget<Text>(duration).data, '13分钟');
 
     // 安排同样在独立 tonal 容器里，标题与列表之间留出 8dp。
     final schedulePanel = find.byKey(
@@ -817,10 +817,10 @@ void main() {
       colors.surfaceContainerLow,
     );
     expect(
-      find.descendant(of: schedulePanel, matching: find.text('今日安排 · 1 项')),
+      find.descendant(of: schedulePanel, matching: find.text('今日安排（1 项）')),
       findsOneWidget,
     );
-    final scheduleTitleRect = tester.getRect(find.text('今日安排 · 1 项'));
+    final scheduleTitleRect = tester.getRect(find.text('今日安排（1 项）'));
     final scheduleRowRect = tester.getRect(find.text('取快递'));
     expect(
       scheduleRowRect.top - scheduleTitleRect.bottom,
@@ -861,15 +861,15 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('日期详情'), findsOneWidget);
     expect(find.text('有效专注'), findsOneWidget);
-    expect(find.text('今日安排 · 1 项'), findsOneWidget);
+    expect(find.text('今日安排（1 项）'), findsOneWidget);
     final cardRect = tester.getRect(
       find.byKey(const ValueKey('board-focus-national-card')),
     );
     for (final finder in <Finder>[
       find.text('日期详情'),
-      find.text('11 月 12 日 · 今日'),
+      find.text('11 月 12 日（今日）'),
       find.byKey(const ValueKey('board-focus-day-duration')),
-      find.text('今日安排 · 1 项'),
+      find.text('今日安排（1 项）'),
       find.byKey(const ValueKey('board-focus-schedule-panel')),
     ]) {
       final rect = tester.getRect(finder);

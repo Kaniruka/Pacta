@@ -802,7 +802,7 @@ void main() {
     expect(find.textContaining('账号时区已被其他设备更新'), findsOneWidget);
     expect(find.textContaining('已采用最新值：Europe/London'), findsOneWidget);
     // 页面不再停留在旧选择上：摘要与已加载值都指向账号最新值。
-    expect(find.textContaining('伦敦 · Europe/London'), findsOneWidget);
+    expect(find.textContaining('伦敦（Europe/London）'), findsOneWidget);
   });
 
   testWidgets('编辑资料页提供七个城市时区并保存为账号值', (tester) async {
@@ -826,7 +826,7 @@ void main() {
       expect(find.text(city.label), findsOneWidget);
     }
     expect(find.textContaining('跟随设备'), findsNothing);
-    expect(find.textContaining('北京 · Asia/Shanghai'), findsOneWidget);
+    expect(find.textContaining('北京（Asia/Shanghai）'), findsOneWidget);
     // 时区摘要严格单行；时区 ID 与结算规则收进行内 ⓘ 的提示里。
     final zoneTooltip = tester.widget<Tooltip>(
       find.ancestor(
@@ -843,14 +843,14 @@ void main() {
       reason: '结算点按账号时区表达，不再写死北京时间',
     );
     expect(
-      tester.widget<Text>(find.text('北京 · Asia/Shanghai')).maxLines,
+      tester.widget<Text>(find.text('北京（Asia/Shanghai）')).maxLines,
       1,
       reason: '摘要不得折成两行',
     );
 
     await tester.tap(find.text('东京'));
     await tester.pump();
-    expect(find.textContaining('东京 · Asia/Tokyo'), findsOneWidget);
+    expect(find.textContaining('东京（Asia/Tokyo）'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), '小林');
     await tester.ensureVisible(find.text('保存'));
@@ -927,7 +927,7 @@ void main() {
     await tester.tap(find.text('洛杉矶'));
     await tester.pumpAndSettle();
 
-    const summary = '洛杉矶 · America/Los_Angeles';
+    const summary = '洛杉矶（America/Los_Angeles）';
     expect(find.text(summary), findsOneWidget);
     expect(
       tester.widget<Text>(find.text(summary)).maxLines,

@@ -94,7 +94,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('失败记录'));
       await tester.pumpAndSettle();
-      await tester.tap(find.textContaining('· 1 个节点'));
+      await tester.tap(find.textContaining('（1 个节点）'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('查看当时树'));
       await tester.pumpAndSettle();

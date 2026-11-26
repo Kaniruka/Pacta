@@ -58,6 +58,7 @@ class MyPage extends ConsumerWidget {
           versionCheck: ref.watch(cloudVersionCheckProvider),
           autoUpload: ref.watch(cloudAutoUploadCoordinatorProvider),
           focusRepository: ref.watch(focusRepositoryProvider),
+          now: ref.watch(displayClockProvider),
           accountTimeZoneIdLoader: () async =>
               (await ref.read(profileRepositoryProvider).getProfile())
                   .displayTimeZoneId,
@@ -179,6 +180,7 @@ void openAiManualSync(BuildContext context, WidgetRef ref) {
                     repository: ref.read(cloudSnapshotRepositoryProvider),
                     versionCheck: ref.read(cloudVersionCheckProvider),
                     autoUpload: ref.read(cloudAutoUploadCoordinatorProvider),
+                    now: ref.read(displayClockProvider),
                     accountTimeZoneIdLoader: () async =>
                         (await ref.read(profileRepositoryProvider).getProfile())
                             .displayTimeZoneId,

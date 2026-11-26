@@ -99,7 +99,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('13分00秒'), findsOneWidget);
+    expect(find.text('13分钟'), findsOneWidget);
 
     final silent = _SilentFocusRepository();
     addTearDown(silent.disposeControllers);
@@ -112,7 +112,7 @@ void main() {
     );
     await tester.pump();
     expect(
-      find.text('13分00秒'),
+      find.text('13分钟'),
       findsNothing,
       reason: '等待新仓储的首个投影时，不能继续显示上一仓储的数字',
     );
@@ -142,7 +142,7 @@ void main() {
     await tester.pump();
     profile.emit('Asia/Shanghai');
     await tester.pumpAndSettle();
-    expect(find.text('13分00秒'), findsOneWidget);
+    expect(find.text('13分钟'), findsOneWidget);
 
     profile.emit('America/New_York');
     // 资料事件经流送达后，卡片才切换到新时区投影；切换完成后新的流仍是
@@ -151,15 +151,11 @@ void main() {
       await tester.pump();
       final switched =
           focus.requestedTimeZoneIds.contains('America/New_York') &&
-          find.text('13分00秒').evaluate().isEmpty;
+          find.text('13分钟').evaluate().isEmpty;
       if (switched) break;
     }
     expect(focus.requestedTimeZoneIds, contains('America/New_York'));
-    expect(
-      find.text('13分00秒'),
-      findsNothing,
-      reason: '换时区后要等待新投影，旧时区的日分摊不能留在屏上',
-    );
+    expect(find.text('13分钟'), findsNothing, reason: '换时区后要等待新投影，旧时区的日分摊不能留在屏上');
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
@@ -180,7 +176,7 @@ void main() {
       _monthMetrics(month: DateTime.utc(2026, 11), seconds: {12: 780}),
     );
     await tester.pumpAndSettle();
-    expect(find.text('13分00秒'), findsOneWidget);
+    expect(find.text('13分钟'), findsOneWidget);
     expect(focus.requests, hasLength(1));
 
     await tester.ensureVisible(find.byTooltip('下个月'));
@@ -188,7 +184,7 @@ void main() {
     await tester.tap(find.byTooltip('下个月'));
     await tester.pump();
     expect(find.text('2026年12月'), findsOneWidget);
-    expect(find.text('13分00秒'), findsNothing);
+    expect(find.text('13分钟'), findsNothing);
     expect(focus.requests, hasLength(2));
     expect(focus.last.month, DateTime.utc(2026, 12));
 
@@ -196,7 +192,7 @@ void main() {
       _monthMetrics(month: DateTime.utc(2026, 12), seconds: {3: 60}),
     );
     await tester.pumpAndSettle();
-    expect(find.text('1分00秒'), findsOneWidget);
+    expect(find.text('1分钟'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
@@ -267,7 +263,7 @@ void main() {
     expect(focus.monthCalls, greaterThan(failedCalls));
     expect(tasks.goalsCalls, greaterThan(goalCalls), reason: '重试重新读取整块投影');
     expect(find.text('暂时不能读取专注投影。'), findsNothing);
-    expect(find.text('13分00秒'), findsOneWidget);
+    expect(find.text('13分钟'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });

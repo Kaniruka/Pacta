@@ -54,7 +54,7 @@ void main() {
     expect(find.byKey(appointmentEditKey), findsOneWidget);
     expect(find.byType(IconButton), findsNWidgets(2));
     expect(find.text('12'), findsOneWidget);
-    expect(find.text('1小时30分01秒'), findsOneWidget);
+    expect(find.text('1小时30分'), findsOneWidget);
     // 三条链都带「累计/平均」：预约链不再只有连续次数、没有时长。
     expect(find.text('累计'), findsNWidgets(3));
     expect(find.text('平均'), findsNWidgets(3));
@@ -142,7 +142,7 @@ void main() {
             eliteTotalSeconds: 360000001,
           );
           expect(find.text(action), findsOneWidget);
-          expect(find.text('100000小时00分01秒'), findsOneWidget);
+          expect(find.text('100000小时'), findsOneWidget);
           expect(find.text('12'), findsOneWidget);
           await _openEditor(tester, markerEditKey);
           expect(find.widgetWithText(TextField, action), findsOneWidget);
@@ -197,7 +197,7 @@ void main() {
       expect(find.text('0'), findsNWidgets(6));
       expect(find.text('累计'), findsNWidgets(3));
       expect(find.text('平均'), findsNWidgets(3));
-      expect(find.text('0分00秒'), findsNWidgets(6));
+      expect(find.text('0分钟'), findsNWidgets(6));
       expect(find.text('尚未设置'), findsNWidgets(2));
       await _disposeWidget(tester);
     },
@@ -264,18 +264,18 @@ void main() {
         acceptedSessionCount: 2,
       ),
     );
-    // 1830s = 30分30秒；平均 915s = 15分15秒。
+    // 1830s = 30分钟；平均 915s = 15分钟。
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('focus-chain-stat-预约链-累计')),
-        matching: find.text('30分30秒'),
+        matching: find.text('30分钟'),
       ),
       findsOneWidget,
     );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('focus-chain-stat-预约链-平均')),
-        matching: find.text('15分15秒'),
+        matching: find.text('15分钟'),
       ),
       findsOneWidget,
     );
@@ -377,9 +377,9 @@ void main() {
         .getSemantics(find.byKey(const ValueKey('focus-chain-stat-精锐链-累计')))
         .getSemanticsData();
     expect(data.label, contains('累计'));
-    expect(data.label, contains('1小时30分01秒'));
+    expect(data.label, contains('1小时30分'));
     expect(data.label, contains('平均'));
-    expect(data.label, contains('30分00秒'));
+    expect(data.label, contains('30分钟'));
     semantics.dispose();
     await _disposeWidget(tester);
   });

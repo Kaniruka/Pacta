@@ -753,7 +753,7 @@ class NationalFocusDetailRecordsCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '内化进度 · 按成功日累计计算',
+                  '内化进度（按成功日累计计算）',
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colors.onSurfaceVariant,
                   ),

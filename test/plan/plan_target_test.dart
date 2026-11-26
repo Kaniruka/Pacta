@@ -185,7 +185,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('2026年12月'), findsOneWidget);
-    expect(find.textContaining('12月3日 · 0 项安排'), findsOneWidget);
+    expect(find.textContaining('12月3日（0 项安排）'), findsOneWidget);
   });
 
   testWidgets('通知定位的安排被强调；改期后跟它当前所在的账号时区日', (tester) async {
@@ -226,7 +226,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('2026年11月'), findsOneWidget);
-    expect(find.textContaining('11月16日 · 1 项安排'), findsOneWidget);
+    expect(find.textContaining('11月16日（1 项安排）'), findsOneWidget);
     expect(
       find.byKey(ValueKey('schedule-highlight-${schedule.id}')),
       findsOneWidget,
@@ -239,7 +239,7 @@ void main() {
       find.byKey(ValueKey('schedule-highlight-${schedule.id}')),
       findsNothing,
     );
-    expect(find.textContaining('11月17日 · 0 项安排'), findsOneWidget);
+    expect(find.textContaining('11月17日（0 项安排）'), findsOneWidget);
   });
 
   testWidgets('通知里的安排已不存在时只打开那一天，不猜、不建专注', (tester) async {
@@ -270,7 +270,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('2026年12月'), findsOneWidget);
-    expect(find.textContaining('12月3日 · 0 项安排'), findsOneWidget);
+    expect(find.textContaining('12月3日（0 项安排）'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('schedule-highlight-deleted-schedule')),
       findsNothing,
@@ -344,13 +344,13 @@ void main() {
     // 旧数据源的定位读取被闸门挡住，页面先按负载日期显示。
     await tester.pumpWidget(build(viewFor(oldRepository)));
     await tester.pumpAndSettle();
-    expect(find.textContaining('11月16日 · 1 项安排'), findsOneWidget);
+    expect(find.textContaining('11月16日（1 项安排）'), findsOneWidget);
 
     // 换成另一个账号的同 id 数据源：应立刻按新源改到 12 月 20 日。
     await tester.pumpWidget(build(viewFor(newRepository)));
     await tester.pumpAndSettle();
     expect(find.text('2026年12月'), findsOneWidget);
-    expect(find.textContaining('12月20日 · 1 项安排'), findsOneWidget);
+    expect(find.textContaining('12月20日（1 项安排）'), findsOneWidget);
     expect(find.text('新账号安排'), findsOneWidget);
     expect(
       find.byKey(const ValueKey('schedule-highlight-$sharedId')),
@@ -361,8 +361,8 @@ void main() {
     gate.complete();
     await tester.pumpAndSettle();
     expect(find.text('2026年12月'), findsOneWidget);
-    expect(find.textContaining('12月20日 · 1 项安排'), findsOneWidget);
-    expect(find.textContaining('11月16日 · 1 项安排'), findsNothing);
+    expect(find.textContaining('12月20日（1 项安排）'), findsOneWidget);
+    expect(find.textContaining('11月16日（1 项安排）'), findsNothing);
     expect(find.text('旧账号安排'), findsNothing);
   });
 

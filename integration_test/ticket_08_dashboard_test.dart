@@ -91,12 +91,12 @@ void main() {
 
       // 上海（UTC+8）：15:50Z–16:20Z 是 23:50–00:20，跨到 9/23。
       // 今天（9/22）只拿到 00:00 之前的 10 分钟，9/23 拿到 20 分钟。
-      expect(find.text('9 月 22 日 · 今日'), findsOneWidget);
-      expect(find.text('10分00秒'), findsOneWidget);
+      expect(find.text('9 月 22 日（今日）'), findsOneWidget);
+      expect(find.text('10分钟'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('board-focus-day-23')));
       await _pumpBoard(tester);
       expect(find.text('9 月 23 日'), findsOneWidget);
-      expect(find.text('20分00秒'), findsOneWidget);
+      expect(find.text('20分钟'), findsOneWidget);
 
       // 同一账号改成洛杉矶（UTC−7）：08:50–09:20，整段落在 9/22。
       await profileRepository.saveProfile(
@@ -105,8 +105,8 @@ void main() {
       );
       await _pumpBoard(tester);
       await _revealBoard(tester, find.text('专注与国策'));
-      expect(find.text('9 月 22 日 · 今日'), findsOneWidget);
-      expect(find.text('30分00秒'), findsOneWidget);
+      expect(find.text('9 月 22 日（今日）'), findsOneWidget);
+      expect(find.text('30分钟'), findsOneWidget);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(milliseconds: 1));

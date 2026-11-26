@@ -117,6 +117,7 @@ void main() {
                 ),
               ),
               cloudSnapshotRepositoryFactory: (_) => sync,
+              displayClock: () => DateTime(2026, 11, 12, 13, 30, 0),
             ),
           ),
         );
@@ -124,9 +125,7 @@ void main() {
         await tester.tap(find.text('我的'));
         await tester.pumpAndSettle();
         await _capture(tester, 'summary-320');
-        final statusHeight = tester
-            .getSize(find.text('2026-11-12 10:30:00'))
-            .height;
+        final statusHeight = tester.getSize(find.text('3 小时前')).height;
         if (_baseline) {
           expect(statusHeight, greaterThan(20));
         } else {
@@ -148,7 +147,7 @@ void main() {
         }
         await tester.tap(find.text('关闭'));
         await tester.pumpAndSettle();
-        expect(find.text('2026-11-12 10:30:00'), findsOneWidget);
+        expect(find.text('3 小时前'), findsOneWidget);
         expect(tester.takeException(), isNull);
       } finally {
         await tester.pumpWidget(const SizedBox.shrink());

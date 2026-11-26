@@ -457,7 +457,7 @@ void main() {
           expect(card, findsOneWidget);
           final summary = find.descendant(
             of: card,
-            matching: find.text('1 项任务 · 进行中'),
+            matching: find.text('1 项任务，进行中'),
           );
           expect(summary, findsOneWidget);
           final taskRow = find
@@ -1699,9 +1699,9 @@ void main() {
         expect(find.textContaining('待确认 1 · 熄灭 1'), findsNothing);
 
         // 今天与今天的热力、安排都直接长在融合卡里。
-        expect(find.text('11 月 18 日 · 今日'), findsOneWidget);
-        expect(find.text('13分00秒'), findsOneWidget);
-        expect(find.text('今日安排 · 1 项'), findsOneWidget);
+        expect(find.text('11 月 18 日（今日）'), findsOneWidget);
+        expect(find.text('13分钟'), findsOneWidget);
+        expect(find.text('今日安排（1 项）'), findsOneWidget);
         expect(
           find.descendant(of: cardFinder, matching: find.text('与设计评审对齐专注链层级')),
           findsOneWidget,
@@ -1751,7 +1751,7 @@ void main() {
         // 日期副文本在标题右侧同一行，贴右缘但不越过卡片。
         final cardRect = tester.getRect(cardFinder);
         final titleRect = tester.getRect(headerTitle);
-        final dateRect = tester.getRect(find.text('11 月 18 日 · 今日'));
+        final dateRect = tester.getRect(find.text('11 月 18 日（今日）'));
         expect(dateRect.left, greaterThanOrEqualTo(titleRect.right));
         expect(dateRect.right, lessThanOrEqualTo(cardRect.right));
         expect(dateRect.top, lessThan(titleRect.bottom), reason: '日期与标题同一行');
@@ -1798,10 +1798,10 @@ void main() {
         expect(durationRect.left, closeTo(durationLabelRect.left, 0.01));
 
         expect(
-          find.descendant(of: schedulePanel, matching: find.text('今日安排 · 1 项')),
+          find.descendant(of: schedulePanel, matching: find.text('今日安排（1 项）')),
           findsOneWidget,
         );
-        final scheduleTitleRect = tester.getRect(find.text('今日安排 · 1 项'));
+        final scheduleTitleRect = tester.getRect(find.text('今日安排（1 项）'));
         final scheduleRowRect = tester.getRect(find.text('与设计评审对齐专注链层级'));
         expect(
           scheduleRowRect.top - scheduleTitleRect.bottom,
@@ -1951,7 +1951,7 @@ void main() {
         );
         Finder summaryOf(String title) => find.descendant(
           of: cardOf(title),
-          matching: find.text('1 项任务 · 进行中'),
+          matching: find.text('1 项任务，进行中'),
         );
 
         double expandedGap(String title) {
@@ -2929,20 +2929,14 @@ void main() {
         await tester.pumpAndSettle();
         await openPlan(tester);
 
-        final pinnedHeader = find.widgetWithText(
-          PactaSectionHeader,
-          '置顶目标 · 长按拖动排序',
-        );
-        final othersHeader = find.widgetWithText(
-          PactaSectionHeader,
-          '其他目标 · 长按拖动排序',
-        );
+        final pinnedHeader = find.widgetWithText(PactaSectionHeader, '置顶目标');
+        final othersHeader = find.widgetWithText(PactaSectionHeader, '其他目标');
         expect(pinnedHeader, findsOneWidget);
         expect(othersHeader, findsOneWidget);
 
         final pinnedTitle = find.descendant(
           of: pinnedHeader,
-          matching: find.text('置顶目标 · 长按拖动排序'),
+          matching: find.text('置顶目标'),
         );
         final colors = Theme.of(tester.element(pinnedTitle)).colorScheme;
         expect(
@@ -2966,10 +2960,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         expect(
-          find.descendant(
-            of: pinnedHeader,
-            matching: find.text('置顶目标 · 长按拖动排序'),
-          ),
+          find.descendant(of: pinnedHeader, matching: find.text('置顶目标')),
           findsOneWidget,
         );
       } finally {
@@ -3139,6 +3130,26 @@ Widget demo(BuildContext context) => PopupMenuItem<String>(
 ''';
       expect(_popupMenuTextThemeLines(violatingSource), hasLength(1));
       expect(_popupMenuTextThemeLines(compliantSource), isEmpty);
+    });
+
+    test('lib/src 字符串字面量禁止使用中圆点「·」拼接文案', () {
+      final offenders = <String>[];
+      for (final file in _libSources()) {
+        final source = file.readAsStringSync();
+        final visitor = _MiddotStringVisitor();
+        parseString(
+          content: source,
+          throwIfDiagnostics: false,
+        ).unit.accept(visitor);
+        for (final offset in visitor.offsets) {
+          offenders.add('${_relativePath(file)}:${_lineOf(source, offset)}');
+        }
+      }
+      expect(
+        offenders,
+        isEmpty,
+        reason: '全项目 UI 文案禁止用中圆点「·」拼接并列字段，应使用自然中文标点、括号或结构化组件：$offenders',
+      );
     });
 
     testWidgets('20:9 长屏（393×873dp）正文顶部紧贴 AppBar', (tester) async {
@@ -3316,6 +3327,22 @@ List<int> _tokenOffsets(String source, String token) {
 
 int _lineOf(String source, int offset) =>
     '\n'.allMatches(source.substring(0, offset)).length + 1;
+
+class _MiddotStringVisitor extends RecursiveAstVisitor<void> {
+  final offsets = <int>[];
+
+  @override
+  void visitSimpleStringLiteral(SimpleStringLiteral node) {
+    if (node.value.contains('·')) offsets.add(node.offset);
+    super.visitSimpleStringLiteral(node);
+  }
+
+  @override
+  void visitInterpolationString(InterpolationString node) {
+    if (node.value.contains('·')) offsets.add(node.offset);
+    super.visitInterpolationString(node);
+  }
+}
 
 class _IconSize {
   _IconSize(this.offset, this.size, this.arguments);

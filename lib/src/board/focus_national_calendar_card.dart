@@ -1431,7 +1431,7 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
         // 各自换行，窄屏 2.0x 字号下也不会溢出或截断。
         _buildDayDetailHeader(
           context,
-          dateLabel: '${month.month} 月 $day 日${isToday ? ' · 今日' : ''}',
+          dateLabel: '${month.month} 月 $day 日${isToday ? '（今日）' : ''}',
         ),
         // 有效专注单独装进柔和 tonal 容器：标签与时长各自成行，不再和
         // 日期副文本、安排标题挤成一团裸文字。
@@ -1546,7 +1546,7 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
             Text(
               _schedulesLoading || failed
                   ? scheduleTitle
-                  : '$scheduleTitle · ${daySchedules.length} 项',
+                  : '$scheduleTitle（${daySchedules.length} 项）',
               style: theme.textTheme.bodyMedium,
             ),
             const SizedBox(height: PactaSpacing.sm),
@@ -1650,7 +1650,7 @@ class _FocusNationalCalendarCardState extends State<FocusNationalCalendarCard> {
   /// 失败节点明细：最多三行，超出时给出总数，不隐藏发生过的事。
   List<String> _failureLines(List<NationalFocusFailure> failures) => [
     for (final failure in failures.take(3))
-      '${_failureCardName(failure)} · ${failure.cause.label}',
+      '${_failureCardName(failure)}（${failure.cause.label}）',
     if (failures.length > 3) '等 ${failures.length} 个节点',
   ];
 
