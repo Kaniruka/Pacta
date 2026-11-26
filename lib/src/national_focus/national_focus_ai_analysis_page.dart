@@ -8,6 +8,7 @@ import '../theme/pacta_icon_sizes.dart';
 import '../theme/pacta_spacing.dart';
 import '../theme/pacta_surfaces.dart';
 import '../ui/pacta_date_format.dart';
+import '../ui/pacta_disclosure_section.dart';
 import '../ui/pacta_error_text.dart';
 import '../ui/pacta_grouped_list.dart';
 import 'national_focus_ai_access.dart';
@@ -78,6 +79,7 @@ class _NationalFocusAiAnalysisPageState
   String? _actionMessage;
   bool _loading = true;
   bool _working = false;
+  bool _expiredExpanded = false;
   String? _displayTimeZoneId;
 
   @override
@@ -170,7 +172,7 @@ class _NationalFocusAiAnalysisPageState
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text('撤销「${grant.label}」？'),
-        content: const Text('撤销后，该连接令牌会立即失效，无法再读取或修改你的国策云端快照。'),
+        content: const Text('撤销后，该连接令牌会立即失效并从列表移除，历史调用日志仍会保留。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -244,7 +246,7 @@ class _NationalFocusAiAnalysisPageState
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('撤销全部连接？'),
-        content: const Text('当前所有有效 MCP 连接令牌都会立即失效，需要重新创建后才能继续使用。'),
+        content: const Text('当前所有生效中的连接令牌都会立即失效并移除，历史调用日志仍会保留。'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -274,12 +276,32 @@ class _NationalFocusAiAnalysisPageState
     }
   }
 
+  Future<void> _clearExpiredGrants() async {
+    final repository = widget.repository;
+    if (repository == null || _working) return;
+    setState(() {
+      _working = true;
+      _actionMessage = null;
+    });
+    try {
+      final count = await repository.clearExpiredGrants();
+      if (!mounted) return;
+      setState(() => _actionMessage = '已清空 $count 条已过期连接。');
+      await _loadData();
+    } catch (error) {
+      if (mounted) setState(() => _actionMessage = _friendlyError(error));
+    } finally {
+      if (mounted) setState(() => _working = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final now = DateTime.now().toUtc();
     final activeGrants = _grants.where((g) => g.isActiveAt(now)).toList();
+    final expiredGrants = _grants.where((g) => !g.isActiveAt(now)).toList();
     final canManage = widget.mcpUrl != null && widget.repository != null;
 
     return PactaSurfaces.wrapIfMissing(
@@ -337,7 +359,13 @@ class _NationalFocusAiAnalysisPageState
                         )
                       : null,
                 ),
-                _buildGrantsSection(context, now, colors),
+                _buildGrantsSection(
+                  context,
+                  now,
+                  colors,
+                  activeGrants: activeGrants,
+                  expiredGrants: expiredGrants,
+                ),
                 const PactaSectionHeader(title: '最近调用与写入记录'),
                 _buildAuditSection(context, colors),
               ],
@@ -469,8 +497,10 @@ class _NationalFocusAiAnalysisPageState
   Widget _buildGrantsSection(
     BuildContext context,
     DateTime now,
-    ColorScheme colors,
-  ) {
+    ColorScheme colors, {
+    required List<NationalFocusAiGrant> activeGrants,
+    required List<NationalFocusAiGrant> expiredGrants,
+  }) {
     final theme = Theme.of(context);
     if (_loading) {
       return PactaGroupedList(
@@ -511,31 +541,79 @@ class _NationalFocusAiAnalysisPageState
         ),
       );
     }
-    if (_grants.isEmpty) {
-      return PactaGroupedList(
-        children: [
-          Padding(
-            padding: PactaSpacing.cardInsets,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+    final activeList = activeGrants.isEmpty
+        ? PactaGroupedList(
+            children: [
+              Padding(
+                padding: PactaSpacing.cardInsets,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      expiredGrants.isEmpty ? '尚未创建连接' : '当前无生效连接',
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    const SizedBox(height: PactaSpacing.xs),
+                    Text(
+                      '点击上方「创建连接」，选择只读或读写权限并生成一次性配置。',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          )
+        : PactaGroupedList(
+            children: [
+              for (final grant in activeGrants)
+                _buildGrantRow(context, grant, now),
+            ],
+          );
+
+    if (expiredGrants.isEmpty) return activeList;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        activeList,
+        const SizedBox(height: PactaSpacing.md),
+        PactaGroupedList(
+          children: [
+            PactaDisclosureSection(
+              key: const ValueKey('national-focus-ai-expired-section'),
+              initiallyExpanded: _expiredExpanded,
+              onExpansionChanged: (expanded) => _expiredExpanded = expanded,
+              tilePadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 2,
+              ),
+              childrenPadding: const EdgeInsets.only(bottom: 8),
+              title: Text('已过期连接（${expiredGrants.length}）'),
+              subtitle: const Text('已自动失效，可按需清理'),
               children: [
-                Text('尚未创建连接', style: theme.textTheme.titleSmall),
-                const SizedBox(height: PactaSpacing.xs),
-                Text(
-                  '点击上方「创建连接」，选择只读或读写权限并生成一次性配置。',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: colors.onSurfaceVariant,
+                for (final grant in expiredGrants)
+                  _buildGrantRow(context, grant, now),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      key: const ValueKey('national-focus-ai-clear-expired'),
+                      onPressed: _working ? null : _clearExpiredGrants,
+                      icon: const Icon(
+                        Icons.cleaning_services_outlined,
+                        size: PactaIconSizes.sm,
+                      ),
+                      label: const Text('清空已过期'),
+                    ),
                   ),
                 ),
               ],
             ),
-          ),
-        ],
-      );
-    }
-    return PactaGroupedList(
-      children: [
-        for (final grant in _grants) _buildGrantRow(context, grant, now),
+          ],
+        ),
       ],
     );
   }

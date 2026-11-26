@@ -126,7 +126,7 @@ void main() {
       findsOneWidget,
     );
 
-    // 3. 撤销单个连接，随后可删除该条失效记录
+    // 3. 撤销单个连接后立即从列表移除（不再残留「已撤销」条目）
     await tester.tap(
       find.byKey(const ValueKey('national-focus-ai-revoke-grant-1')),
     );
@@ -135,17 +135,8 @@ void main() {
     await tester.tap(find.text('确认撤销'));
     await tester.pumpAndSettle();
     expect(grants.revokeCalls, ['grant-1']);
-    expect(find.text('已撤销'), findsOneWidget);
-
-    await tester.tap(
-      find.byKey(const ValueKey('national-focus-ai-delete-grant-1')),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('删除「Antigravity」？'), findsOneWidget);
-    await tester.tap(find.text('确认删除'));
-    await tester.pumpAndSettle();
-    expect(grants.deleteCalls, ['grant-1']);
     expect(find.text('Antigravity'), findsNothing);
+    expect(find.text('已撤销'), findsNothing);
 
     // 4. 再创建一个带自定义有效期（12 小时）的连接并测试全部撤销
     await tester.tap(find.byKey(const ValueKey('national-focus-ai-create')));
@@ -182,7 +173,89 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '全部撤销'));
     await tester.pumpAndSettle();
     expect(grants.revokeAllCalls, 1);
-    expect(find.text('已撤销'), findsNWidgets(2));
+    expect(find.text('尚未创建连接'), findsOneWidget);
+  });
+
+  testWidgets('自然过期的连接默认折叠在底部，支持单条删除与一键清空', (tester) async {
+    final now = DateTime.now().toUtc();
+    final grants = _FakeNationalFocusAiGrantRepository()
+      ..grants.addAll([
+        NationalFocusAiGrant(
+          id: 'active-1',
+          label: '正在用的 Codex',
+          agentPreset: 'codex',
+          scope: NationalFocusAiScope.readWrite,
+          tokenPrefix: 'pacta_mcp_act...',
+          createdAt: now.subtract(const Duration(days: 1)),
+          expiresAt: now.add(const Duration(days: 6)),
+        ),
+        NationalFocusAiGrant(
+          id: 'exp-1',
+          label: '过期旧连接 A',
+          agentPreset: 'antigravity',
+          scope: NationalFocusAiScope.read,
+          tokenPrefix: 'pacta_mcp_ex1...',
+          createdAt: now.subtract(const Duration(days: 10)),
+          expiresAt: now.subtract(const Duration(hours: 3)),
+        ),
+        NationalFocusAiGrant(
+          id: 'exp-2',
+          label: '过期旧连接 B',
+          agentPreset: 'dsh',
+          scope: NationalFocusAiScope.read,
+          tokenPrefix: 'pacta_mcp_ex2...',
+          createdAt: now.subtract(const Duration(days: 8)),
+          expiresAt: now.subtract(const Duration(hours: 1)),
+        ),
+      ]);
+
+    await tester.pumpWidget(
+      PactaApp(
+        authRepository: FakeAuthRepository()..signedInUser = 'user@example.com',
+        nationalFocusMcpUrl: mcpUrl,
+        nationalFocusAiGrantRepositoryFactory: (_) => grants,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final page = await _openMyAiPage(tester);
+
+    expect(find.text('正在用的 Codex'), findsOneWidget);
+    expect(find.text('已过期连接（2）'), findsOneWidget);
+    expect(find.text('过期旧连接 A'), findsNothing);
+
+    await _scrollUntilVisible(tester, page, find.text('已过期连接（2）'));
+    await tester.tap(find.text('已过期连接（2）'));
+    await tester.pumpAndSettle();
+    expect(find.text('过期旧连接 A'), findsOneWidget);
+    expect(find.text('过期旧连接 B'), findsOneWidget);
+
+    await _scrollUntilVisible(
+      tester,
+      page,
+      find.byKey(const ValueKey('national-focus-ai-delete-exp-1')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('national-focus-ai-delete-exp-1')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认删除'));
+    await tester.pumpAndSettle();
+    expect(grants.deleteCalls, ['exp-1']);
+    expect(find.text('过期旧连接 A'), findsNothing);
+    expect(find.text('已过期连接（1）'), findsOneWidget);
+
+    await _scrollUntilVisible(
+      tester,
+      page,
+      find.byKey(const ValueKey('national-focus-ai-clear-expired')),
+    );
+    await tester.tap(
+      find.byKey(const ValueKey('national-focus-ai-clear-expired')),
+    );
+    await tester.pumpAndSettle();
+    expect(grants.clearExpiredCalls, 1);
+    expect(find.text('已过期连接（1）'), findsNothing);
+    expect(find.text('正在用的 Codex'), findsOneWidget);
   });
 
   testWidgets('展示最近调用与写入记录并支持进入手动同步', (tester) async {
@@ -344,6 +417,7 @@ class _FakeNationalFocusAiGrantRepository
   final revokeCalls = <String>[];
   final deleteCalls = <String>[];
   int revokeAllCalls = 0;
+  int clearExpiredCalls = 0;
   Object? listError;
   int listCalls = 0;
 
@@ -382,10 +456,7 @@ class _FakeNationalFocusAiGrantRepository
   @override
   Future<void> revokeGrant(String grantId) async {
     revokeCalls.add(grantId);
-    final index = grants.indexWhere((g) => g.id == grantId);
-    if (index != -1) {
-      grants[index] = grants[index].copyWith(revokedAt: DateTime.now().toUtc());
-    }
+    grants.removeWhere((g) => g.id == grantId);
   }
 
   @override
@@ -397,15 +468,22 @@ class _FakeNationalFocusAiGrantRepository
   @override
   Future<int> revokeAllGrants() async {
     revokeAllCalls++;
-    var count = 0;
     final now = DateTime.now().toUtc();
-    for (var i = 0; i < grants.length; i++) {
-      if (grants[i].revokedAt == null) {
-        grants[i] = grants[i].copyWith(revokedAt: now);
-        count++;
-      }
-    }
-    return count;
+    final activeIds = grants
+        .where((g) => g.isActiveAt(now))
+        .map((g) => g.id)
+        .toSet();
+    grants.removeWhere((g) => activeIds.contains(g.id));
+    return activeIds.length;
+  }
+
+  @override
+  Future<int> clearExpiredGrants() async {
+    clearExpiredCalls++;
+    final now = DateTime.now().toUtc();
+    final before = grants.length;
+    grants.removeWhere((g) => !g.isActiveAt(now));
+    return before - grants.length;
   }
 
   @override

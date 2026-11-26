@@ -291,21 +291,60 @@ begin
     raise exception 'expected_two_revoked_grants_got_%', revoked;
   end if;
 
-  -- Revoked grant can be deleted while keeping historical audit log intact.
-  perform public.delete_national_focus_mcp_grant(current_setting('nf_mcp_test.rw_id')::uuid);
+  -- Revoking deletes grants directly while keeping historical audit log intact.
   select count(*) into remaining_grants from public.list_national_focus_mcp_grants();
-  if remaining_grants <> 1 then
-    raise exception 'expected_one_remaining_grant_got_%', remaining_grants;
+  if remaining_grants <> 0 then
+    raise exception 'expected_zero_remaining_grants_got_%', remaining_grants;
   end if;
 
   select grant_label into preserved_label
   from public.list_national_focus_mcp_audit_logs(20)
   limit 1;
   if preserved_label <> 'Antigravity RW' then
-    raise exception 'audit_log_not_preserved_after_grant_delete';
+    raise exception 'audit_log_not_preserved_after_grant_revoke';
   end if;
 end
 $audit_and_revoke_probe$;
+
+reset role;
+set local role service_role;
+
+-- Insert two expired grants for the test user to verify single delete and bulk clear.
+do $seed_expired_grants$
+declare
+  uid uuid := current_setting('nf_mcp_test.user_id')::uuid;
+  exp1 uuid;
+begin
+  insert into public.national_focus_mcp_grants(
+    user_id, label, agent_preset, scope, token_hash, token_prefix, expires_at
+  ) values
+    (uid, 'Expired One', 'codex', 'national_focus:read', encode(sha256('exp1'::bytea), 'hex'), 'pacta_mcp_exp1...', now() - interval '2 hours'),
+    (uid, 'Expired Two', 'codex', 'national_focus:read', encode(sha256('exp2'::bytea), 'hex'), 'pacta_mcp_exp2...', now() - interval '1 hour');
+  select id into exp1 from public.national_focus_mcp_grants where user_id = uid and label = 'Expired One';
+  perform set_config('nf_mcp_test.exp1_id', exp1::text, true);
+end
+$seed_expired_grants$;
+
+reset role;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', current_setting('nf_mcp_test.user_id'), true);
+
+do $clear_expired_probe$
+declare
+  cleared integer;
+  remaining integer;
+begin
+  perform public.delete_national_focus_mcp_grant(current_setting('nf_mcp_test.exp1_id')::uuid);
+  cleared := public.clear_expired_national_focus_mcp_grants();
+  if cleared <> 1 then
+    raise exception 'expected_one_cleared_expired_grant_got_%', cleared;
+  end if;
+  select count(*) into remaining from public.list_national_focus_mcp_grants();
+  if remaining <> 0 then
+    raise exception 'expected_zero_grants_after_clear_got_%', remaining;
+  end if;
+end
+$clear_expired_probe$;
 
 reset role;
 set local role service_role;

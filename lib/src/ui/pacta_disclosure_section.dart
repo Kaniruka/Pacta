@@ -10,6 +10,8 @@ class PactaDisclosureSection extends StatefulWidget {
     this.leading,
     this.tilePadding = EdgeInsets.zero,
     this.childrenPadding = const EdgeInsets.only(bottom: 8),
+    this.initiallyExpanded = false,
+    this.onExpansionChanged,
   });
 
   final Widget title;
@@ -21,6 +23,8 @@ class PactaDisclosureSection extends StatefulWidget {
   final List<Widget> children;
   final EdgeInsetsGeometry tilePadding;
   final EdgeInsetsGeometry childrenPadding;
+  final bool initiallyExpanded;
+  final ValueChanged<bool>? onExpansionChanged;
 
   @override
   State<PactaDisclosureSection> createState() => _PactaDisclosureSectionState();
@@ -42,10 +46,12 @@ class _PactaDisclosureSectionState extends State<PactaDisclosureSection> {
     shape: const Border(),
     collapsedShape: const Border(),
     maintainState: true,
+    initiallyExpanded: widget.initiallyExpanded,
     onExpansionChanged: (expanded) {
       if (!expanded && _contentFocus.hasFocus) {
         FocusManager.instance.primaryFocus?.unfocus();
       }
+      widget.onExpansionChanged?.call(expanded);
     },
     title: DefaultTextStyle.merge(
       style: Theme.of(context).textTheme.titleSmall,

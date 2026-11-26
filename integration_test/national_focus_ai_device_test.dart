@@ -206,9 +206,7 @@ class _DeviceNationalFocusAiGrantRepository
   @override
   Future<void> revokeGrant(String grantId) async {
     revokedIds.add(grantId);
-    final index = _grants.indexWhere((grant) => grant.id == grantId);
-    if (index == -1) return;
-    _grants[index] = _grants[index].copyWith(revokedAt: DateTime.now().toUtc());
+    _grants.removeWhere((grant) => grant.id == grantId);
   }
 
   @override
@@ -218,15 +216,21 @@ class _DeviceNationalFocusAiGrantRepository
 
   @override
   Future<int> revokeAllGrants() async {
-    var count = 0;
     final now = DateTime.now().toUtc();
-    for (var i = 0; i < _grants.length; i++) {
-      if (_grants[i].revokedAt == null) {
-        _grants[i] = _grants[i].copyWith(revokedAt: now);
-        count++;
-      }
-    }
-    return count;
+    final activeIds = _grants
+        .where((grant) => grant.isActiveAt(now))
+        .map((grant) => grant.id)
+        .toSet();
+    _grants.removeWhere((grant) => activeIds.contains(grant.id));
+    return activeIds.length;
+  }
+
+  @override
+  Future<int> clearExpiredGrants() async {
+    final now = DateTime.now().toUtc();
+    final before = _grants.length;
+    _grants.removeWhere((grant) => !grant.isActiveAt(now));
+    return before - _grants.length;
   }
 
   @override

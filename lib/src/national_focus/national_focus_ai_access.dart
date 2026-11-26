@@ -326,6 +326,8 @@ abstract interface class NationalFocusAiGrantRepository {
 
   Future<int> revokeAllGrants();
 
+  Future<int> clearExpiredGrants();
+
   Future<List<NationalFocusAiAuditLog>> listRecentAuditLogs({int limit = 20});
 }
 
@@ -418,6 +420,20 @@ class SupabaseNationalFocusAiGrantRepository
     _assertCurrentUser();
     try {
       final result = await client.rpc('revoke_all_national_focus_mcp_grants');
+      if (result is num) return result.toInt();
+      throw const FormatException();
+    } on PostgrestException catch (error) {
+      throw NationalFocusAiAccessError(error.code);
+    }
+  }
+
+  @override
+  Future<int> clearExpiredGrants() async {
+    _assertCurrentUser();
+    try {
+      final result = await client.rpc(
+        'clear_expired_national_focus_mcp_grants',
+      );
       if (result is num) return result.toInt();
       throw const FormatException();
     } on PostgrestException catch (error) {
